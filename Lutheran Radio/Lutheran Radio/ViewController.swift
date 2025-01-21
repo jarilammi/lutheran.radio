@@ -10,8 +10,29 @@ import AVFoundation
 
 class ViewController: UIViewController {
     
-    // Luodaan AVPlayer instanssi
+    // AVPlayer instance
     var player: AVPlayer?
+    var isPlaying: Bool = false // Tracks playback state
+
+    // Title label
+    let titleLabel: UILabel = {
+        let label = UILabel()
+        label.text = "Lutheran Radio"
+        label.textAlignment = .center
+        label.font = UIFont.systemFont(ofSize: 24, weight: .bold)
+        label.translatesAutoresizingMaskIntoConstraints = false
+        return label
+    }()
+
+    // Play/Pause button
+    let playPauseButton: UIButton = {
+        let button = UIButton(type: .system)
+        let config = UIImage.SymbolConfiguration(weight: .bold)
+        button.setImage(UIImage(systemName: "play.fill", withConfiguration: config), for: .normal)
+        button.tintColor = .black
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }()
 
     // Status label
     let statusLabel: UILabel = {
@@ -19,6 +40,10 @@ class ViewController: UIViewController {
         label.text = "Connecting…"
         label.textAlignment = .center
         label.font = UIFont.systemFont(ofSize: 18, weight: .medium)
+        label.backgroundColor = UIColor.yellow
+        label.textColor = UIColor.black
+        label.layer.cornerRadius = 8
+        label.clipsToBounds = true
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
     }()
@@ -26,59 +51,92 @@ class ViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
 
+        view.backgroundColor = .white
+
         // Setup UI
         setupUI()
 
-        // Aseta Icecastin streamin URL
-        guard let streamURL = URL(string: "https://livestream.lutheran.radio:8443/lutheranradio.mp3") else {
-            updateStatus("Error: Invalid stream URL")
-            return
-        }
+        // Configure play/pause button action
+        playPauseButton.addTarget(self, action: #selector(playPauseTapped), for: .touchUpInside)
 
-        // Luo AVPlayer streamin URL:lle
+        // Set up the AVPlayer with the stream URL
+        let streamURL = URL(string: "https://livestream.lutheran.radio:8443/lutheranradio.mp3")!
         player = AVPlayer(url: streamURL)
 
-        // Aloita toisto ja päivitä tila
-        updateStatus("Connecting…")
+        // Start playback
         player?.play()
-
-        // Tarkkaile toiston tilaa
-        observePlayerStatus()
+        isPlaying = true
+        updateStatusLabel(isPlaying: true)
     }
 
+    // Setup the user interface
     private func setupUI() {
-        view.backgroundColor = .white
-        view.addSubview(statusLabel)
+        view.addSubview(titleLabel)
 
-        // Center the status label in the view
+        // StackView for horizontal layout of play/pause button and status label
+        let controlsStackView = UIStackView(arrangedSubviews: [playPauseButton, statusLabel])
+        controlsStackView.axis = .horizontal
+        controlsStackView.spacing = 20
+        controlsStackView.alignment = .center
+        controlsStackView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(controlsStackView)
+
+        // Title label constraints
         NSLayoutConstraint.activate([
-            statusLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            statusLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor)
+            titleLabel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 40),
+            titleLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor)
+        ])
+
+        // StackView constraints
+        NSLayoutConstraint.activate([
+            controlsStackView.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 20),
+            controlsStackView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            controlsStackView.heightAnchor.constraint(equalToConstant: 50)
+        ])
+
+        // Set fixed width for the status label within the stack view
+        NSLayoutConstraint.activate([
+            statusLabel.widthAnchor.constraint(equalToConstant: 120),
+            statusLabel.heightAnchor.constraint(equalToConstant: 40),
+            playPauseButton.widthAnchor.constraint(equalToConstant: 50),
+            playPauseButton.heightAnchor.constraint(equalToConstant: 50)
         ])
     }
 
-    private func updateStatus(_ text: String) {
-        DispatchQueue.main.async {
-            self.statusLabel.text = text
+    // Play/Pause button tapped
+    @objc private func playPauseTapped() {
+        guard let player = player else { return }
+
+        if isPlaying {
+            player.pause()
+            isPlaying = false
+            updatePlayPauseButton(isPlaying: false)
+            updateStatusLabel(isPlaying: false)
+        } else {
+            player.play()
+            isPlaying = true
+            updatePlayPauseButton(isPlaying: true)
+            updateStatusLabel(isPlaying: true)
         }
     }
 
-    private func observePlayerStatus() {
-        // Tarkkaile playerin tilaa
-        player?.addObserver(self, forKeyPath: "timeControlStatus", options: [.new, .initial], context: nil)
+    // Update the play/pause button appearance
+    private func updatePlayPauseButton(isPlaying: Bool) {
+        let config = UIImage.SymbolConfiguration(weight: .bold)
+        let symbolName = isPlaying ? "pause.fill" : "play.fill"
+        playPauseButton.setImage(UIImage(systemName: symbolName, withConfiguration: config), for: .normal)
     }
-
-    override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
-        if keyPath == "timeControlStatus" {
-            if player?.timeControlStatus == .playing {
-                updateStatus("Playing")
-            } else if player?.timeControlStatus == .paused {
-                updateStatus("Paused")
-            }
+    
+    // Update the status label
+    private func updateStatusLabel(isPlaying: Bool) {
+        if isPlaying {
+            statusLabel.text = "Playing"
+            statusLabel.backgroundColor = UIColor.green
+            statusLabel.textColor = UIColor.black
+        } else {
+            statusLabel.text = "Paused"
+            statusLabel.backgroundColor = UIColor.gray
+            statusLabel.textColor = UIColor.white
         }
-    }
-
-    deinit {
-        player?.removeObserver(self, forKeyPath: "timeControlStatus")
     }
 }
