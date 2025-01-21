@@ -48,6 +48,16 @@ class ViewController: UIViewController {
         return label
     }()
 
+    // Volume slider
+    let volumeSlider: UISlider = {
+        let slider = UISlider()
+        slider.minimumValue = 0.0
+        slider.maximumValue = 1.0
+        slider.value = 0.5 // Default volume
+        slider.translatesAutoresizingMaskIntoConstraints = false
+        return slider
+    }()
+
     override func viewDidLoad() {
         super.viewDidLoad()
 
@@ -59,11 +69,20 @@ class ViewController: UIViewController {
         // Configure play/pause button action
         playPauseButton.addTarget(self, action: #selector(playPauseTapped), for: .touchUpInside)
 
+        // Configure volume slider action
+        volumeSlider.addTarget(self, action: #selector(volumeChanged(_:)), for: .valueChanged)
+
         // Set up the AVPlayer with the stream URL
         let streamURL = URL(string: "https://livestream.lutheran.radio:8443/lutheranradio.mp3")!
         player = AVPlayer(url: streamURL)
 
+        // Set initial volume
+        player?.volume = volumeSlider.value
+
         // Start playback
+        statusLabel.text = "Connecting…"
+        statusLabel.backgroundColor = UIColor.yellow
+        statusLabel.textColor = UIColor.black
         player?.play()
         isPlaying = true
         updateStatusLabel(isPlaying: true)
@@ -80,6 +99,9 @@ class ViewController: UIViewController {
         controlsStackView.alignment = .center
         controlsStackView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(controlsStackView)
+
+        // Volume slider
+        view.addSubview(volumeSlider)
 
         // Title label constraints
         NSLayoutConstraint.activate([
@@ -101,6 +123,13 @@ class ViewController: UIViewController {
             playPauseButton.widthAnchor.constraint(equalToConstant: 50),
             playPauseButton.heightAnchor.constraint(equalToConstant: 50)
         ])
+
+        // Volume slider constraints
+        NSLayoutConstraint.activate([
+            volumeSlider.topAnchor.constraint(equalTo: controlsStackView.bottomAnchor, constant: 20),
+            volumeSlider.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 40),
+            volumeSlider.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -40)
+        ])
     }
 
     // Play/Pause button tapped
@@ -118,6 +147,11 @@ class ViewController: UIViewController {
             updatePlayPauseButton(isPlaying: true)
             updateStatusLabel(isPlaying: true)
         }
+    }
+
+    // Volume slider value changed
+    @objc private func volumeChanged(_ sender: UISlider) {
+        player?.volume = sender.value
     }
 
     // Update the play/pause button appearance
