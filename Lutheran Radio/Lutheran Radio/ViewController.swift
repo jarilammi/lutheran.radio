@@ -13,7 +13,8 @@ class ViewController: UIViewController {
     // AVPlayer instance
     var player: AVPlayer?
     var isPlaying: Bool = false // Tracks playback state
-
+    var isManualPause: Bool = false // Tracks if pause was triggered manually
+    
     // Title label
     let titleLabel: UILabel = {
         let label = UILabel()
@@ -68,24 +69,30 @@ class ViewController: UIViewController {
 
         // Configure play/pause button action
         playPauseButton.addTarget(self, action: #selector(playPauseTapped), for: .touchUpInside)
-
-        // Configure volume slider action
-        volumeSlider.addTarget(self, action: #selector(volumeChanged(_:)), for: .valueChanged)
+        volumeSlider.addTarget(self, action: #selector(volumeChanged(_:)), for: .valueChanged) // Add action for volume slider
 
         // Set up the AVPlayer with the stream URL
         let streamURL = URL(string: "https://livestream.lutheran.radio:8443/lutheranradio.mp3")!
-        player = AVPlayer(url: streamURL)
+        let playerItem = AVPlayerItem(url: streamURL) // Create an AVPlayerItem
+        player = AVPlayer(playerItem: playerItem) // Assign it to the AVPlayer
 
-        // Set initial volume
-        player?.volume = volumeSlider.value
-
-        // Start playback
+        // Set initial status before playback starts
         statusLabel.text = "Connecting…"
         statusLabel.backgroundColor = UIColor.yellow
         statusLabel.textColor = UIColor.black
+
+        // Start playback and wait until player is ready before updating the status
         player?.play()
         isPlaying = true
-        updateStatusLabel(isPlaying: true)
+
+        // Observe when the player is ready to play
+        let interval = CMTime(seconds: 1, preferredTimescale: 1)
+        player?.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] _ in
+            guard let self = self else { return }
+            if self.player?.currentItem?.status == .readyToPlay, self.isPlaying, !self.isManualPause {
+                self.updateStatusLabel(isPlaying: true)
+            }
+        }
     }
 
     // Setup the user interface
@@ -139,11 +146,13 @@ class ViewController: UIViewController {
         if isPlaying {
             player.pause()
             isPlaying = false
+            isManualPause = true // Track manual pause
             updatePlayPauseButton(isPlaying: false)
             updateStatusLabel(isPlaying: false)
         } else {
             player.play()
             isPlaying = true
+            isManualPause = false // Reset manual pause flag
             updatePlayPauseButton(isPlaying: true)
             updateStatusLabel(isPlaying: true)
         }
@@ -151,7 +160,16 @@ class ViewController: UIViewController {
 
     // Volume slider value changed
     @objc private func volumeChanged(_ sender: UISlider) {
-        player?.volume = sender.value
+        guard let player = player else { return }
+
+        // Create an AVPlayerItem audio mix input
+        let audioMixInput = AVMutableAudioMixInputParameters()
+        audioMixInput.setVolume(sender.value, at: .zero) // Set the volume
+
+        // Apply the audio mix to the current player item
+        let audioMix = AVMutableAudioMix()
+        audioMix.inputParameters = [audioMixInput]
+        player.currentItem?.audioMix = audioMix
     }
 
     // Update the play/pause button appearance
@@ -160,7 +178,7 @@ class ViewController: UIViewController {
         let symbolName = isPlaying ? "pause.fill" : "play.fill"
         playPauseButton.setImage(UIImage(systemName: symbolName, withConfiguration: config), for: .normal)
     }
-    
+
     // Update the status label
     private func updateStatusLabel(isPlaying: Bool) {
         if isPlaying {
