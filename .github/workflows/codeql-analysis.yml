@@ -4,12 +4,16 @@ on:
   push:
     branches: [ "main" ]
   schedule:
-    - cron: '00 07 * * 7' # Weekly on Sunday at 07:00 UTC
+    - cron: '00 07 * * 0' # Weekly on Sunday at 07:00 UTC
 
 jobs:
   analyze:
     name: Analyze
     runs-on: macos-latest
+    permissions:
+      security-events: write
+      checks: write
+      pull-requests: write
     strategy:
       fail-fast: false
       matrix:
@@ -19,25 +23,24 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v2
+        uses: github/codeql-action/init@v3
         with:
           languages: ${{ matrix.language }}
           config-file: .github/codeql/codeql-config.yml
 
       - name: Set up Xcode Developer Directory
-        run: sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
+        run: sudo xcode-select -s /Applications/Xcode_16.1.app/Contents/Developer
 
       - name: Build with Xcode
         run: |
           xcodebuild -scheme "Lutheran Radio" \
-            -sdk iphonesimulator18.2 \
-            -destination 'platform=iOS Simulator,OS=18.2,name=iPhone 16 Pro' \
+            -sdk iphonesimulator18.1 \
+            -destination 'platform=iOS Simulator,OS=18.1,name=iPhone 16 Pro' \
             clean build
         env:
-          # Add any environment variables that your build needs here
-          DEVELOPER_DIR: /Applications/Xcode_16.2.app/Contents/Developer
+          DEVELOPER_DIR: /Applications/Xcode_16.1.app/Contents/Developer
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v2
+        uses: github/codeql-action/analyze@v3
         with:
           output: results.sarif

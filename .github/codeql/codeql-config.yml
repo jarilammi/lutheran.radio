@@ -1,4 +1,4 @@
 name: "CodeQL Configuration"
-queries:
+default:
   - security-extended
   - maintainability
