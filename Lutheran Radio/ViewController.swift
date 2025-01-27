@@ -69,7 +69,9 @@ class ViewController: UIViewController {
 
         // Configure play/pause button action
         playPauseButton.addTarget(self, action: #selector(playPauseTapped), for: .touchUpInside)
+        playPauseButton.accessibilityIdentifier = "playPauseButton"
         volumeSlider.addTarget(self, action: #selector(volumeChanged(_:)), for: .valueChanged) // Add action for volume slider
+        volumeSlider.accessibilityIdentifier = "volumeSlider"
 
         // Set up the AVPlayer with the stream URL
         let streamURL = URL(string: "https://livestream.lutheran.radio:8443/lutheranradio.mp3")!
