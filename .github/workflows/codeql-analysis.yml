@@ -31,6 +31,12 @@ jobs:
       - name: Set up Xcode Developer Directory
         run: sudo xcode-select -s /Applications/Xcode_16.1.app/Contents/Developer
 
+      - name: Reset and List Simulators
+        run: |
+          xcrun simctl shutdown all
+          xcrun simctl erase all
+          xcrun simctl list
+
       - name: Build with Xcode
         run: |
           xcodebuild -scheme "Lutheran Radio" \
