@@ -7,13 +7,14 @@
 
 import UIKit
 import AVFoundation
+import MediaPlayer
 
-class ViewController: UIViewController {
-    
+class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
     // AVPlayer instance
     var player: AVPlayer?
     var isPlaying: Bool = false // Tracks playback state
     var isManualPause: Bool = false // Tracks if pause was triggered manually
+    private var metadataOutput: AVPlayerItemMetadataOutput?
     
     // Title label
     let titleLabel: UILabel = {
@@ -58,7 +59,18 @@ class ViewController: UIViewController {
         slider.translatesAutoresizingMaskIntoConstraints = false
         return slider
     }()
-
+    
+    let metadataLabel: UILabel = {
+        let label = UILabel()
+        label.text = "No track information"
+        label.textAlignment = .center
+        label.font = UIFont.systemFont(ofSize: 16)
+        label.textColor = .darkGray
+        label.numberOfLines = 0
+        label.translatesAutoresizingMaskIntoConstraints = false
+        return label
+    }()
+    
     override func viewDidLoad() {
         super.viewDidLoad()
 
@@ -66,16 +78,31 @@ class ViewController: UIViewController {
 
         // Setup UI
         setupUI()
-
+        setupControls()
+        setupAVPlayer()
+        setupNowPlaying()
+    }
+    
+    private func setupControls() {
         // Configure play/pause button action
         playPauseButton.addTarget(self, action: #selector(playPauseTapped), for: .touchUpInside)
         playPauseButton.accessibilityIdentifier = "playPauseButton"
         volumeSlider.addTarget(self, action: #selector(volumeChanged(_:)), for: .valueChanged) // Add action for volume slider
         volumeSlider.accessibilityIdentifier = "volumeSlider"
-
+    }
+    
+    private func setupAVPlayer() {
         // Set up the AVPlayer with the stream URL
         let streamURL = URL(string: "https://livestream.lutheran.radio:8443/lutheranradio.mp3")!
         let playerItem = AVPlayerItem(url: streamURL) // Create an AVPlayerItem
+        
+        // Setup metadata output
+        metadataOutput = AVPlayerItemMetadataOutput(identifiers: nil)
+        if let metadataOutput = metadataOutput {
+            metadataOutput.setDelegate(self, queue: DispatchQueue.main)
+            playerItem.add(metadataOutput)
+        }
+        
         player = AVPlayer(playerItem: playerItem) // Assign it to the AVPlayer
 
         // Set initial status before playback starts
@@ -96,8 +123,69 @@ class ViewController: UIViewController {
             }
         }
     }
-
-    // Setup the user interface
+    
+    // AVPlayerItemMetadataOutputPushDelegate method
+    func metadataOutput(_ output: AVPlayerItemMetadataOutput,
+                       didOutputTimedMetadataGroups groups: [AVTimedMetadataGroup],
+                       from track: AVPlayerItemTrack?) {
+        guard let group = groups.first,
+              let items = group.items as? [AVMetadataItem] else { return }
+        
+        var songInfo: [String] = []
+        
+        for item in items {
+            if let value = item.value as? String {
+                if let key = item.key as? String {
+                    switch key.lowercased() {
+                    case "title", "tisml":
+                        songInfo.append("Title: \(value)")
+                    case "artist":
+                        songInfo.append("Artist: \(value)")
+                    default:
+                        break
+                    }
+                }
+            }
+        }
+        
+        DispatchQueue.main.async { [weak self] in
+            if songInfo.isEmpty {
+                self?.metadataLabel.text = "No track information"
+            } else {
+                self?.metadataLabel.text = songInfo.joined(separator: "\n")
+                
+                // Update lock screen now playing info
+                var nowPlayingInfo = [String: Any]()
+                nowPlayingInfo[MPMediaItemPropertyTitle] = songInfo.first?.replacingOccurrences(of: "Title: ", with: "") ?? "Lutheran Radio"
+                if songInfo.count > 1 {
+                    nowPlayingInfo[MPMediaItemPropertyArtist] = songInfo[1].replacingOccurrences(of: "Artist: ", with: "")
+                }
+                MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
+            }
+        }
+    }
+    
+    // Rest of the implementation remains the same
+    private func setupNowPlaying() {
+        let commandCenter = MPRemoteCommandCenter.shared()
+        
+        commandCenter.playCommand.addTarget { [weak self] _ in
+            self?.player?.play()
+            self?.isPlaying = true
+            self?.updatePlayPauseButton(isPlaying: true)
+            self?.updateStatusLabel(isPlaying: true)
+            return .success
+        }
+        
+        commandCenter.pauseCommand.addTarget { [weak self] _ in
+            self?.player?.pause()
+            self?.isPlaying = false
+            self?.updatePlayPauseButton(isPlaying: false)
+            self?.updateStatusLabel(isPlaying: false)
+            return .success
+        }
+    }
+    
     private func setupUI() {
         view.addSubview(titleLabel)
 
@@ -111,33 +199,29 @@ class ViewController: UIViewController {
 
         // Volume slider
         view.addSubview(volumeSlider)
+        view.addSubview(metadataLabel)
 
         // Title label constraints
         NSLayoutConstraint.activate([
             titleLabel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 40),
-            titleLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor)
-        ])
-
-        // StackView constraints
-        NSLayoutConstraint.activate([
+            titleLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            
             controlsStackView.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 20),
             controlsStackView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            controlsStackView.heightAnchor.constraint(equalToConstant: 50)
-        ])
-
-        // Set fixed width for the status label within the stack view
-        NSLayoutConstraint.activate([
+            controlsStackView.heightAnchor.constraint(equalToConstant: 50),
+            
             statusLabel.widthAnchor.constraint(equalToConstant: 120),
             statusLabel.heightAnchor.constraint(equalToConstant: 40),
             playPauseButton.widthAnchor.constraint(equalToConstant: 50),
-            playPauseButton.heightAnchor.constraint(equalToConstant: 50)
-        ])
-
-        // Volume slider constraints
-        NSLayoutConstraint.activate([
+            playPauseButton.heightAnchor.constraint(equalToConstant: 50),
+            
             volumeSlider.topAnchor.constraint(equalTo: controlsStackView.bottomAnchor, constant: 20),
             volumeSlider.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 40),
-            volumeSlider.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -40)
+            volumeSlider.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -40),
+            
+            metadataLabel.topAnchor.constraint(equalTo: volumeSlider.bottomAnchor, constant: 20),
+            metadataLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            metadataLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20)
         ])
     }
 
@@ -162,16 +246,7 @@ class ViewController: UIViewController {
 
     // Volume slider value changed
     @objc private func volumeChanged(_ sender: UISlider) {
-        guard let player = player else { return }
-
-        // Create an AVPlayerItem audio mix input
-        let audioMixInput = AVMutableAudioMixInputParameters()
-        audioMixInput.setVolume(sender.value, at: .zero) // Set the volume
-
-        // Apply the audio mix to the current player item
-        let audioMix = AVMutableAudioMix()
-        audioMix.inputParameters = [audioMixInput]
-        player.currentItem?.audioMix = audioMix
+        player?.volume = sender.value
     }
 
     // Update the play/pause button appearance
@@ -191,6 +266,12 @@ class ViewController: UIViewController {
             statusLabel.text = "Paused"
             statusLabel.backgroundColor = UIColor.gray
             statusLabel.textColor = UIColor.white
+        }
+    }
+    
+    deinit {
+        if let playerItem = player?.currentItem {
+            playerItem.remove(metadataOutput!)
         }
     }
 }
