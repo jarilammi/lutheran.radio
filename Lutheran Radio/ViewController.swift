@@ -128,8 +128,14 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
     func metadataOutput(_ output: AVPlayerItemMetadataOutput,
                        didOutputTimedMetadataGroups groups: [AVTimedMetadataGroup],
                        from track: AVPlayerItemTrack?) {
-        guard let group = groups.first,
-              let items = group.items as? [AVMetadataItem] else {            print("No metadata group or items found")
+        guard let group = groups.first else {
+            print("No metadata group found")
+            return
+        }
+        
+        let items = group.items
+        if items.isEmpty {
+            print("No metadata items found")
             return
         }
         
@@ -141,7 +147,7 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
             print("- Key: \(String(describing: item.key))")
             
             // Using modern API to get string value
-            guard let value = try? item.value(forKeyPath: "stringValue") as? String else {
+            guard let value = item.value(forKeyPath: "stringValue") as? String else {
                 continue
             }
             
