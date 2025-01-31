@@ -92,9 +92,11 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
     }
     
     private func setupAVPlayer() {
-        // Set up the AVPlayer with the stream URL
+        // Set up the AVPlayer with the stream URL and ICY metadata header
         let streamURL = URL(string: "https://livestream.lutheran.radio:8443/lutheranradio.mp3")!
-        let playerItem = AVPlayerItem(url: streamURL) // Create an AVPlayerItem
+        let headers = ["Icy-MetaData": "1"]
+        let asset = AVURLAsset(url: streamURL, options: ["AVURLAssetHTTPHeaderFieldsKey": headers])
+        let playerItem = AVPlayerItem(asset: asset)
         
         // Setup metadata output
         metadataOutput = AVPlayerItemMetadataOutput(identifiers: nil)
@@ -103,18 +105,16 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
             playerItem.add(metadataOutput)
         }
         
-        player = AVPlayer(playerItem: playerItem) // Assign it to the AVPlayer
+        player = AVPlayer(playerItem: playerItem)
 
         // Set initial status before playback starts
         statusLabel.text = "Connecting…"
         statusLabel.backgroundColor = UIColor.yellow
         statusLabel.textColor = UIColor.black
 
-        // Start playback and wait until player is ready before updating the status
         player?.play()
         isPlaying = true
 
-        // Observe when the player is ready to play
         let interval = CMTime(seconds: 1, preferredTimescale: 1)
         player?.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] _ in
             guard let self = self else { return }
@@ -129,37 +129,49 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
                        didOutputTimedMetadataGroups groups: [AVTimedMetadataGroup],
                        from track: AVPlayerItemTrack?) {
         guard let group = groups.first,
-              let items = group.items as? [AVMetadataItem] else { return }
+              let items = group.items as? [AVMetadataItem] else {            print("No metadata group or items found")
+            return
+        }
         
         var songInfo: [String] = []
         
         for item in items {
-            if let value = item.value as? String {
-                if let key = item.key as? String {
-                    switch key.lowercased() {
-                    case "title", "tisml":
-                        songInfo.append("Title: \(value)")
-                    case "artist":
-                        songInfo.append("Artist: \(value)")
-                    default:
-                        break
-                    }
-                }
+            print("Metadata item found:")
+            print("- Identifier: \(String(describing: item.identifier))")
+            print("- Key: \(String(describing: item.key))")
+            
+            // Using modern API to get string value
+            guard let value = try? item.value(forKeyPath: "stringValue") as? String else {
+                continue
+            }
+            
+            print("- Value: \(value)")
+            
+            // Process metadata with valid stream title
+            if item.identifier == AVMetadataIdentifier("icy/StreamTitle") {
+                songInfo.append(value)
+            } else if let key = item.key as? String,
+                      key == "StreamTitle" {
+                songInfo.append(value)
+            }
+            
+            // Fallback if we haven't caught it yet but have a valid value
+            if songInfo.isEmpty && !value.isEmpty {
+                songInfo.append(value)
             }
         }
         
         DispatchQueue.main.async { [weak self] in
             if songInfo.isEmpty {
                 self?.metadataLabel.text = "No track information"
+                print("No song info found in metadata")
             } else {
-                self?.metadataLabel.text = songInfo.joined(separator: "\n")
+                self?.metadataLabel.text = songInfo[0]
+                print("Updated metadata label with: \(songInfo)")
                 
                 // Update lock screen now playing info
                 var nowPlayingInfo = [String: Any]()
-                nowPlayingInfo[MPMediaItemPropertyTitle] = songInfo.first?.replacingOccurrences(of: "Title: ", with: "") ?? "Lutheran Radio"
-                if songInfo.count > 1 {
-                    nowPlayingInfo[MPMediaItemPropertyArtist] = songInfo[1].replacingOccurrences(of: "Artist: ", with: "")
-                }
+                nowPlayingInfo[MPMediaItemPropertyTitle] = songInfo[0]
                 MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
             }
         }
