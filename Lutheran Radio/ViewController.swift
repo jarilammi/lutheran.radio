@@ -22,6 +22,7 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         label.text = "Lutheran Radio"
         label.textAlignment = .center
         label.font = UIFont.systemFont(ofSize: 24, weight: .bold)
+        label.textColor = .label
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
     }()
@@ -31,7 +32,7 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         let button = UIButton(type: .system)
         let config = UIImage.SymbolConfiguration(weight: .bold)
         button.setImage(UIImage(systemName: "play.fill", withConfiguration: config), for: .normal)
-        button.tintColor = .label
+        button.tintColor = .tintColor
         button.translatesAutoresizingMaskIntoConstraints = false
         return button
     }()
@@ -56,6 +57,8 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         slider.minimumValue = 0.0
         slider.maximumValue = 1.0
         slider.value = 0.5 // Default volume
+        slider.minimumTrackTintColor = .tintColor
+        slider.maximumTrackTintColor = .tertiaryLabel
         slider.translatesAutoresizingMaskIntoConstraints = false
         return slider
     }()
