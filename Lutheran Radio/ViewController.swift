@@ -78,7 +78,15 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         super.viewDidLoad()
 
         view.backgroundColor = .systemBackground
-
+        
+        // Register for appearance changes using the system notification
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAppearanceChange),
+            name: UIApplication.didBecomeActiveNotification,
+            object: nil
+        )
+        
         // Setup UI
         setupUI()
         setupControls()
@@ -289,7 +297,24 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         }
     }
     
+    // Handle system appearance changes
+    @objc private func handleAppearanceChange() {
+        // Update status label colors based on current state
+        if isPlaying {
+            updateStatusLabel(isPlaying: true)
+        } else {
+            updateStatusLabel(isPlaying: false)
+        }
+        
+        // Re-apply connecting state if needed
+        if player?.currentItem?.status != .readyToPlay {
+            statusLabel.backgroundColor = .systemYellow
+            statusLabel.textColor = .black
+        }
+    }
+    
     deinit {
+        NotificationCenter.default.removeObserver(self)
         if let playerItem = player?.currentItem {
             playerItem.remove(metadataOutput!)
         }
