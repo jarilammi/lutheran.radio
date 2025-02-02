@@ -22,6 +22,7 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         label.text = "Lutheran Radio"
         label.textAlignment = .center
         label.font = UIFont.systemFont(ofSize: 24, weight: .bold)
+        label.textColor = .label
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
     }()
@@ -31,7 +32,7 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         let button = UIButton(type: .system)
         let config = UIImage.SymbolConfiguration(weight: .bold)
         button.setImage(UIImage(systemName: "play.fill", withConfiguration: config), for: .normal)
-        button.tintColor = .black
+        button.tintColor = .tintColor
         button.translatesAutoresizingMaskIntoConstraints = false
         return button
     }()
@@ -42,8 +43,8 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         label.text = "Connecting…"
         label.textAlignment = .center
         label.font = UIFont.systemFont(ofSize: 18, weight: .medium)
-        label.backgroundColor = UIColor.yellow
-        label.textColor = UIColor.black
+        label.backgroundColor = .systemYellow
+        label.textColor = .black
         label.layer.cornerRadius = 8
         label.clipsToBounds = true
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -56,6 +57,8 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         slider.minimumValue = 0.0
         slider.maximumValue = 1.0
         slider.value = 0.5 // Default volume
+        slider.minimumTrackTintColor = .tintColor
+        slider.maximumTrackTintColor = .tertiaryLabel
         slider.translatesAutoresizingMaskIntoConstraints = false
         return slider
     }()
@@ -65,7 +68,7 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         label.text = "No track information"
         label.textAlignment = .center
         label.font = UIFont.systemFont(ofSize: 16)
-        label.textColor = .darkGray
+        label.textColor = .secondaryLabel
         label.numberOfLines = 0
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
@@ -74,8 +77,16 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
     override func viewDidLoad() {
         super.viewDidLoad()
 
-        view.backgroundColor = .white
-
+        view.backgroundColor = .systemBackground
+        
+        // Register for appearance changes using the system notification
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAppearanceChange),
+            name: UIApplication.didBecomeActiveNotification,
+            object: nil
+        )
+        
         // Setup UI
         setupUI()
         setupControls()
@@ -109,8 +120,8 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
 
         // Set initial status before playback starts
         statusLabel.text = "Connecting…"
-        statusLabel.backgroundColor = UIColor.yellow
-        statusLabel.textColor = UIColor.black
+        statusLabel.backgroundColor = .systemYellow
+        statusLabel.textColor = .black
 
         player?.play()
         isPlaying = true
@@ -183,7 +194,6 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         }
     }
     
-    // Rest of the implementation remains the same
     private func setupNowPlaying() {
         let commandCenter = MPRemoteCommandCenter.shared()
         
@@ -278,16 +288,33 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
     private func updateStatusLabel(isPlaying: Bool) {
         if isPlaying {
             statusLabel.text = "Playing"
-            statusLabel.backgroundColor = UIColor.green
-            statusLabel.textColor = UIColor.black
+            statusLabel.backgroundColor = .systemGreen
+            statusLabel.textColor = .black
         } else {
             statusLabel.text = "Paused"
-            statusLabel.backgroundColor = UIColor.gray
-            statusLabel.textColor = UIColor.white
+            statusLabel.backgroundColor = .systemGray
+            statusLabel.textColor = .white
+        }
+    }
+    
+    // Handle system appearance changes
+    @objc private func handleAppearanceChange() {
+        // Update status label colors based on current state
+        if isPlaying {
+            updateStatusLabel(isPlaying: true)
+        } else {
+            updateStatusLabel(isPlaying: false)
+        }
+        
+        // Re-apply connecting state if needed
+        if player?.currentItem?.status != .readyToPlay {
+            statusLabel.backgroundColor = .systemYellow
+            statusLabel.textColor = .black
         }
     }
     
     deinit {
+        NotificationCenter.default.removeObserver(self)
         if let playerItem = player?.currentItem {
             playerItem.remove(metadataOutput!)
         }
