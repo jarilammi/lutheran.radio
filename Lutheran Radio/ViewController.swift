@@ -15,6 +15,8 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
     var isPlaying: Bool = false // Tracks playback state
     var isManualPause: Bool = false // Tracks if pause was triggered manually
     private var metadataOutput: AVPlayerItemMetadataOutput?
+    private var timeControlStatusObserver: NSKeyValueObservation?
+    private var itemStatusObserver: NSKeyValueObservation?
     
     // Title label
     let titleLabel: UILabel = {
@@ -117,6 +119,20 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         }
         
         player = AVPlayer(playerItem: playerItem)
+        
+        // Add observation for player item status
+        itemStatusObserver = playerItem.observe(\.status, options: [.new]) { [weak self] item, _ in
+            DispatchQueue.main.async {
+                self?.handlePlayerItemStatusChange(item)
+            }
+        }
+        
+        // Add observation for player time control status
+        timeControlStatusObserver = player?.observe(\.timeControlStatus, options: [.new]) { [weak self] player, _ in
+            DispatchQueue.main.async {
+                self?.handleTimeControlStatusChange(player)
+            }
+        }
 
         // Set initial status before playback starts
         statusLabel.text = "Connecting…"
@@ -313,10 +329,56 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         }
     }
     
+    private func handlePlayerItemStatusChange(_ item: AVPlayerItem) {
+        switch item.status {
+        case .failed:
+            handleStreamInterruption()
+        case .readyToPlay:
+            if isPlaying && !isManualPause {
+                updateStatusLabel(isPlaying: true)
+            }
+        default:
+            break
+        }
+    }
+    
+    private func handleTimeControlStatusChange(_ player: AVPlayer) {
+        switch player.timeControlStatus {
+        case .waitingToPlayAtSpecifiedRate:
+            // Stream is buffering or having issues
+            statusLabel.text = "Buffering..."
+            statusLabel.backgroundColor = .systemYellow
+            statusLabel.textColor = .black
+        case .paused:
+            if !isManualPause {
+                // If we didn't manually pause, it might be a stream interruption
+                handleStreamInterruption()
+            }
+        case .playing:
+            if isPlaying && !isManualPause {
+                updateStatusLabel(isPlaying: true)
+            }
+        @unknown default:
+            break
+        }
+    }
+    
+    private func handleStreamInterruption() {
+        isPlaying = false
+        isManualPause = false // Reset this so play button will work again
+        updatePlayPauseButton(isPlaying: false)
+        statusLabel.text = "Disconnected"
+        statusLabel.backgroundColor = .systemRed
+        statusLabel.textColor = .white
+        metadataLabel.text = "No track information"
+    }
+    
     deinit {
         NotificationCenter.default.removeObserver(self)
         if let playerItem = player?.currentItem {
             playerItem.remove(metadataOutput!)
         }
+        timeControlStatusObserver?.invalidate()
+        itemStatusObserver?.invalidate()
     }
 }
