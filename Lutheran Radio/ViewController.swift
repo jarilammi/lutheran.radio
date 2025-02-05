@@ -19,7 +19,7 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
     private var timeControlStatusObserver: NSKeyValueObservation?
     private var itemStatusObserver: NSKeyValueObservation?
     private var networkMonitor: NWPathMonitor?
-    internal var hasInternetConnection: Bool = true
+    internal var hasInternetConnection = true
     
     // Title label
     let titleLabel: UILabel = {
@@ -201,33 +201,23 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
 
         player?.play()
         isPlaying = true
-        updatePlayPauseButton(isPlaying: true)  // Add this
+        updatePlayPauseButton(isPlaying: true)
     }
     
     func metadataOutput(_ output: AVPlayerItemMetadataOutput,
                        didOutputTimedMetadataGroups groups: [AVTimedMetadataGroup],
                        from track: AVPlayerItemTrack?) {
-        guard let group = groups.first, !group.items.isEmpty else { return }
+        guard let item = groups.first?.items.first,
+              let value = item.value(forKeyPath: "stringValue") as? String,
+              !value.isEmpty else { return }
         
-        var songInfo: [String] = []
-        
-        for item in group.items {
-            guard let value = item.value(forKeyPath: "stringValue") as? String else { continue }
-            
-            if item.identifier == AVMetadataIdentifier("icy/StreamTitle") ||
-               (item.key as? String) == "StreamTitle" {
-                songInfo.append(value)
-            } else if songInfo.isEmpty && !value.isEmpty {
-                songInfo.append(value)
-            }
-        }
+        let songTitle = (item.identifier == AVMetadataIdentifier("icy/StreamTitle") ||
+                        (item.key as? String) == "StreamTitle") ? value : nil
         
         DispatchQueue.main.async { [weak self] in
-            self?.metadataLabel.text = songInfo.first ?? "No track information"
-            if let songTitle = songInfo.first {
-                var nowPlayingInfo = [String: Any]()
-                nowPlayingInfo[MPMediaItemPropertyTitle] = songTitle
-                MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
+            self?.metadataLabel.text = songTitle ?? "No track information"
+            if let songTitle {
+                MPNowPlayingInfoCenter.default().nowPlayingInfo = [MPMediaItemPropertyTitle: songTitle]
             }
         }
     }
