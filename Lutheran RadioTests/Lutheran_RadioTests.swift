@@ -14,11 +14,7 @@ final class Lutheran_RadioTests: XCTestCase {
     
     override func setUpWithError() throws {
         try super.setUpWithError()
-        
-        // Create an instance of ViewController
         viewController = ViewController()
-        
-        // Trigger view loading
         viewController.loadViewIfNeeded()
     }
     
@@ -28,20 +24,23 @@ final class Lutheran_RadioTests: XCTestCase {
     }
     
     func testPlayPauseButtonTogglesPlaybackState() {
-        // Initial state: Connecting…
-        XCTAssertTrue(viewController.isPlaying, "Player should initially be playing.")
-
-        // Simulate a tap on the play/pause button
+        // Initial state should be not playing
+        XCTAssertFalse(viewController.isPlaying, "Player should initially be stopped.")
+        
+        // Set hasInternetConnection to true to simulate network availability
+        viewController.hasInternetConnection = true
+        
+        // Simulate first tap on play/pause button - should start playing
         viewController.playPauseButton.sendActions(for: .touchUpInside)
-
-        // Verify that the player stops playing
-        XCTAssertFalse(viewController.isPlaying, "Player should be paused after tapping playPauseButton.")
-
-        // Simulate another tap on the play/pause button
+        XCTAssertTrue(viewController.isPlaying, "Player should start playing after first tap.")
+        
+        // Simulate second tap - should pause
         viewController.playPauseButton.sendActions(for: .touchUpInside)
-
-        // Verify that the player resumes playing
-        XCTAssertTrue(viewController.isPlaying, "Player should resume playing after tapping playPauseButton again.")
+        XCTAssertFalse(viewController.isPlaying, "Player should pause after second tap.")
+        
+        // Simulate third tap - should resume
+        viewController.playPauseButton.sendActions(for: .touchUpInside)
+        XCTAssertTrue(viewController.isPlaying, "Player should resume playing after third tap.")
     }
     
     func testVolumeSliderChangesVolume() {

@@ -8,6 +8,7 @@
 import UIKit
 import AVFoundation
 import MediaPlayer
+import Network
 
 class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
     // AVPlayer instance
@@ -15,6 +16,10 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
     var isPlaying: Bool = false // Tracks playback state
     var isManualPause: Bool = false // Tracks if pause was triggered manually
     private var metadataOutput: AVPlayerItemMetadataOutput?
+    private var timeControlStatusObserver: NSKeyValueObservation?
+    private var itemStatusObserver: NSKeyValueObservation?
+    private var networkMonitor: NWPathMonitor?
+    internal var hasInternetConnection = true
     
     // Title label
     let titleLabel: UILabel = {
@@ -76,7 +81,6 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
     
     override func viewDidLoad() {
         super.viewDidLoad()
-
         view.backgroundColor = .systemBackground
         
         // Register for appearance changes using the system notification
@@ -90,7 +94,7 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         // Setup UI
         setupUI()
         setupControls()
-        setupAVPlayer()
+        setupNetworkMonitoring()
         setupNowPlaying()
     }
     
@@ -102,8 +106,73 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         volumeSlider.accessibilityIdentifier = "volumeSlider"
     }
     
+    private func setupNetworkMonitoring() {
+        networkMonitor = NWPathMonitor()
+        
+        networkMonitor?.pathUpdateHandler = { [weak self] path in
+            let isConnected = path.status == .satisfied && path.supportsDNS
+            print("Network path changed:")
+            print("- Status: \(path.status)")
+            print("- Connected: \(isConnected)")
+            print("- Interfaces: \(path.availableInterfaces)")
+            print("- Supports DNS: \(path.supportsDNS)")
+            
+            DispatchQueue.main.async {
+                self?.hasInternetConnection = isConnected
+                self?.handleNetworkStatusChange()
+            }
+        }
+        
+        let monitorQueue = DispatchQueue(label: "NetworkMonitor")
+        networkMonitor?.start(queue: monitorQueue)
+    }
+
+    private func testConnectivity(completion: @escaping (Bool) -> Void) {
+        // Test connection to our actual stream URL
+        let url = URL(string: "https://livestream.lutheran.radio:8443/lutheranradio.mp3")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "HEAD"  // Only get headers, don't download content
+        
+        let task = URLSession.shared.dataTask(with: request) { _, response, _ in
+            if let httpResponse = response as? HTTPURLResponse {
+                completion(httpResponse.statusCode == 200)
+            } else {
+                completion(false)
+            }
+        }
+        task.resume()
+    }
+    
+    private func handleNetworkStatusChange() {
+        print("Network status changed - hasInternet: \(hasInternetConnection)")
+        if !hasInternetConnection {
+            cleanupStreamResources()
+            updateUIForNoInternet()
+        }
+    }
+    
+    private func cleanupStreamResources() {
+        if let playerItem = player?.currentItem {
+            playerItem.remove(metadataOutput!)
+        }
+        player = nil
+        isPlaying = false
+        isManualPause = false
+    }
+    
+    private func updateUIForNoInternet() {
+        statusLabel.text = "Stopped"
+        statusLabel.backgroundColor = .systemGray
+        statusLabel.textColor = .white
+        metadataLabel.text = "No track information"
+        updatePlayPauseButton(isPlaying: false)
+    }
+    
     private func setupAVPlayer() {
-        // Set up the AVPlayer with the stream URL and ICY metadata header
+        statusLabel.text = "Connecting..."  // This will show while we attempt connection
+        statusLabel.backgroundColor = .systemYellow
+        statusLabel.textColor = .black
+        
         let streamURL = URL(string: "https://livestream.lutheran.radio:8443/lutheranradio.mp3")!
         let headers = ["Icy-MetaData": "1"]
         let asset = AVURLAsset(url: streamURL, options: ["AVURLAssetHTTPHeaderFieldsKey": headers])
@@ -117,79 +186,38 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         }
         
         player = AVPlayer(playerItem: playerItem)
-
-        // Set initial status before playback starts
-        statusLabel.text = "Connecting…"
-        statusLabel.backgroundColor = .systemYellow
-        statusLabel.textColor = .black
+        
+        itemStatusObserver = playerItem.observe(\.status, options: [.new]) { [weak self] item, _ in
+            DispatchQueue.main.async {
+                self?.handlePlayerItemStatusChange(item)
+            }
+        }
+        
+        timeControlStatusObserver = player?.observe(\.timeControlStatus, options: [.new]) { [weak self] player, _ in
+            DispatchQueue.main.async {
+                self?.handleTimeControlStatusChange(player)
+            }
+        }
 
         player?.play()
         isPlaying = true
-
-        let interval = CMTime(seconds: 1, preferredTimescale: 1)
-        player?.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] _ in
-            guard let self = self else { return }
-            if self.player?.currentItem?.status == .readyToPlay, self.isPlaying, !self.isManualPause {
-                self.updateStatusLabel(isPlaying: true)
-            }
-        }
+        updatePlayPauseButton(isPlaying: true)
     }
     
-    // AVPlayerItemMetadataOutputPushDelegate method
     func metadataOutput(_ output: AVPlayerItemMetadataOutput,
                        didOutputTimedMetadataGroups groups: [AVTimedMetadataGroup],
                        from track: AVPlayerItemTrack?) {
-        guard let group = groups.first else {
-            print("No metadata group found")
-            return
-        }
+        guard let item = groups.first?.items.first,
+              let value = item.value(forKeyPath: "stringValue") as? String,
+              !value.isEmpty else { return }
         
-        let items = group.items
-        if items.isEmpty {
-            print("No metadata items found")
-            return
-        }
-        
-        var songInfo: [String] = []
-        
-        for item in items {
-            print("Metadata item found:")
-            print("- Identifier: \(String(describing: item.identifier))")
-            print("- Key: \(String(describing: item.key))")
-            
-            // Using modern API to get string value
-            guard let value = item.value(forKeyPath: "stringValue") as? String else {
-                continue
-            }
-            
-            print("- Value: \(value)")
-            
-            // Process metadata with valid stream title
-            if item.identifier == AVMetadataIdentifier("icy/StreamTitle") {
-                songInfo.append(value)
-            } else if let key = item.key as? String,
-                      key == "StreamTitle" {
-                songInfo.append(value)
-            }
-            
-            // Fallback if we haven't caught it yet but have a valid value
-            if songInfo.isEmpty && !value.isEmpty {
-                songInfo.append(value)
-            }
-        }
+        let songTitle = (item.identifier == AVMetadataIdentifier("icy/StreamTitle") ||
+                        (item.key as? String) == "StreamTitle") ? value : nil
         
         DispatchQueue.main.async { [weak self] in
-            if songInfo.isEmpty {
-                self?.metadataLabel.text = "No track information"
-                print("No song info found in metadata")
-            } else {
-                self?.metadataLabel.text = songInfo[0]
-                print("Updated metadata label with: \(songInfo)")
-                
-                // Update lock screen now playing info
-                var nowPlayingInfo = [String: Any]()
-                nowPlayingInfo[MPMediaItemPropertyTitle] = songInfo[0]
-                MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
+            self?.metadataLabel.text = songTitle ?? "No track information"
+            if let songTitle {
+                MPNowPlayingInfoCenter.default().nowPlayingInfo = [MPMediaItemPropertyTitle: songTitle]
             }
         }
     }
@@ -198,25 +226,39 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         let commandCenter = MPRemoteCommandCenter.shared()
         
         commandCenter.playCommand.addTarget { [weak self] _ in
-            self?.player?.play()
-            self?.isPlaying = true
-            self?.updatePlayPauseButton(isPlaying: true)
-            self?.updateStatusLabel(isPlaying: true)
+            self?.handlePlayCommand()
             return .success
         }
         
         commandCenter.pauseCommand.addTarget { [weak self] _ in
-            self?.player?.pause()
-            self?.isPlaying = false
-            self?.updatePlayPauseButton(isPlaying: false)
-            self?.updateStatusLabel(isPlaying: false)
+            self?.handlePauseCommand()
             return .success
         }
     }
     
+    private func handlePlayCommand() {
+        if player == nil {
+            setupAVPlayer()
+        } else {
+            player?.play()
+        }
+        isPlaying = true
+        isManualPause = false
+        updatePlayPauseButton(isPlaying: true)
+        updateStatusLabel(isPlaying: true)
+    }
+    
+    private func handlePauseCommand() {
+        player?.pause()
+        isPlaying = false
+        isManualPause = true
+        updatePlayPauseButton(isPlaying: false)
+        updateStatusLabel(isPlaying: false)
+    }
+    
     private func setupUI() {
         view.addSubview(titleLabel)
-
+        
         // StackView for horizontal layout of play/pause button and status label
         let controlsStackView = UIStackView(arrangedSubviews: [playPauseButton, statusLabel])
         controlsStackView.axis = .horizontal
@@ -224,12 +266,10 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         controlsStackView.alignment = .center
         controlsStackView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(controlsStackView)
-
-        // Volume slider
+        
         view.addSubview(volumeSlider)
         view.addSubview(metadataLabel)
-
-        // Title label constraints
+        
         NSLayoutConstraint.activate([
             titleLabel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 40),
             titleLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
@@ -253,38 +293,31 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         ])
     }
 
-    // Play/Pause button tapped
     @objc private func playPauseTapped() {
-        guard let player = player else { return }
-
+        print("Play tapped - hasInternet: \(hasInternetConnection), isPlaying: \(isPlaying), player: \(player != nil)")
+        
         if isPlaying {
-            player.pause()
-            isPlaying = false
-            isManualPause = true // Track manual pause
-            updatePlayPauseButton(isPlaying: false)
-            updateStatusLabel(isPlaying: false)
+            handlePauseCommand()
         } else {
-            player.play()
-            isPlaying = true
-            isManualPause = false // Reset manual pause flag
-            updatePlayPauseButton(isPlaying: true)
-            updateStatusLabel(isPlaying: true)
+            if player == nil {
+                print("Setting up new player")
+                setupAVPlayer()
+            } else {
+                handlePlayCommand()
+            }
         }
     }
 
-    // Volume slider value changed
     @objc private func volumeChanged(_ sender: UISlider) {
         player?.volume = sender.value
     }
 
-    // Update the play/pause button appearance
     private func updatePlayPauseButton(isPlaying: Bool) {
         let config = UIImage.SymbolConfiguration(weight: .bold)
         let symbolName = isPlaying ? "pause.fill" : "play.fill"
         playPauseButton.setImage(UIImage(systemName: symbolName, withConfiguration: config), for: .normal)
     }
 
-    // Update the status label
     private func updateStatusLabel(isPlaying: Bool) {
         if isPlaying {
             statusLabel.text = "Playing"
@@ -297,26 +330,55 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         }
     }
     
-    // Handle system appearance changes
     @objc private func handleAppearanceChange() {
-        // Update status label colors based on current state
-        if isPlaying {
+        if !hasInternetConnection {
+            updateUIForNoInternet()
+        } else if isPlaying {
             updateStatusLabel(isPlaying: true)
         } else {
             updateStatusLabel(isPlaying: false)
         }
-        
-        // Re-apply connecting state if needed
-        if player?.currentItem?.status != .readyToPlay {
+    }
+    
+    private func handlePlayerItemStatusChange(_ item: AVPlayerItem) {
+        switch item.status {
+        case .failed:
+            cleanupStreamResources()
+            updateUIForNoInternet()
+        case .readyToPlay:
+            if isPlaying && !isManualPause {
+                updateStatusLabel(isPlaying: true)
+            }
+        default:
+            break
+        }
+    }
+    
+    private func handleTimeControlStatusChange(_ player: AVPlayer) {
+        switch player.timeControlStatus {
+        case .waitingToPlayAtSpecifiedRate:
+            statusLabel.text = "Buffering..."
             statusLabel.backgroundColor = .systemYellow
             statusLabel.textColor = .black
+        case .paused:
+            if !isManualPause && hasInternetConnection {
+                cleanupStreamResources()
+                updateUIForNoInternet()
+            }
+        case .playing:
+            if isPlaying && !isManualPause {
+                updateStatusLabel(isPlaying: true)
+            }
+        @unknown default:
+            break
         }
     }
     
     deinit {
         NotificationCenter.default.removeObserver(self)
-        if let playerItem = player?.currentItem {
-            playerItem.remove(metadataOutput!)
-        }
+        networkMonitor?.cancel()
+        cleanupStreamResources()
+        timeControlStatusObserver?.invalidate()
+        itemStatusObserver?.invalidate()
     }
 }
