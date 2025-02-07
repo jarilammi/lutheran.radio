@@ -91,6 +91,13 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
             object: nil
         )
         
+        do {
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
+            try AVAudioSession.sharedInstance().setActive(true)
+        } catch {
+            print("Failed to set audio session category: \(error)")
+        }
+        
         // Setup UI
         setupUI()
         setupControls()
@@ -169,7 +176,7 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
     }
     
     private func setupAVPlayer() {
-        statusLabel.text = "Connecting..."  // This will show while we attempt connection
+        statusLabel.text = "Connecting…"  // This will show while we attempt connection
         statusLabel.backgroundColor = .systemYellow
         statusLabel.textColor = .black
         
@@ -217,7 +224,7 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         DispatchQueue.main.async { [weak self] in
             self?.metadataLabel.text = songTitle ?? "No track information"
             if let songTitle {
-                MPNowPlayingInfoCenter.default().nowPlayingInfo = [MPMediaItemPropertyTitle: songTitle]
+                self?.updateNowPlayingInfo(title: songTitle)
             }
         }
     }
@@ -234,6 +241,20 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
             self?.handlePauseCommand()
             return .success
         }
+    }
+    
+    private func updateNowPlayingInfo(title: String) {
+        // Create a basic placeholder image
+        let artwork = MPMediaItemArtwork(boundsSize: CGSize(width: 120, height: 120)) { size in
+            // Return the app icon or a placeholder image
+            return UIImage(named: "radio-placeholder") ?? UIImage()
+        }
+        
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = [
+            MPMediaItemPropertyTitle: title,
+            MPMediaItemPropertyArtist: "Lutheran Radio",
+            MPMediaItemPropertyArtwork: artwork
+        ]
     }
     
     private func handlePlayCommand() {
