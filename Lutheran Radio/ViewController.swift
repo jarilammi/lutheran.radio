@@ -17,6 +17,7 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
     var isManualPause: Bool = false // Tracks if pause was triggered manually
     private var previouslyPlaying = false
     private var wasPlayingBeforeInterruption = false
+    private var wasPlayingBeforeRouteChange = false
     private var metadataOutput: AVPlayerItemMetadataOutput?
     private var timeControlStatusObserver: NSKeyValueObservation?
     private var itemStatusObserver: NSKeyValueObservation?
@@ -105,6 +106,7 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         setupControls()
         setupNetworkMonitoring()
         setupInterruptionHandling()
+        setupRouteChangeHandling()
         setupNowPlaying()
     }
     
@@ -270,6 +272,55 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
             }
             
         @unknown default:
+            break
+        }
+    }
+    
+    private func setupRouteChangeHandling() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleRouteChange),
+            name: AVAudioSession.routeChangeNotification,
+            object: nil
+        )
+    }
+    
+    @objc private func handleRouteChange(_ notification: Notification) {
+        guard let userInfo = notification.userInfo,
+              let reasonValue = userInfo[AVAudioSessionRouteChangeReasonKey] as? UInt,
+              let reason = AVAudioSession.RouteChangeReason(rawValue: reasonValue) else {
+            return
+        }
+        
+        switch reason {
+        case .oldDeviceUnavailable:
+            // Headphones unplugged or Bluetooth disconnected
+            wasPlayingBeforeRouteChange = isPlaying
+            player?.pause()
+            isPlaying = false
+            updatePlayPauseButton(isPlaying: false)
+            updateStatusLabel(isPlaying: false)
+            
+            // Optionally show an alert or update UI
+            DispatchQueue.main.async {
+                self.metadataLabel.text = "Audio output disconnected"
+            }
+            
+        case .newDeviceAvailable:
+            // New route available (headphones connected, etc)
+            try? AVAudioSession.sharedInstance().setActive(true)
+            if wasPlayingBeforeRouteChange && !isManualPause {
+                player?.play()
+                isPlaying = true
+                updatePlayPauseButton(isPlaying: true)
+                updateStatusLabel(isPlaying: true)
+            }
+            
+        case .categoryChange:
+            // Handle category changes if needed
+            try? AVAudioSession.sharedInstance().setActive(true)
+            
+        default:
             break
         }
     }
