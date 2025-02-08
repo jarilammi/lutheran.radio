@@ -86,6 +86,14 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
         
+        // Enable background audio
+        do {
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
+            try AVAudioSession.sharedInstance().setActive(true)
+        } catch {
+            print("Failed to set up background audio: \(error)")
+        }
+        
         // Register for appearance changes using the system notification
         NotificationCenter.default.addObserver(
             self,
@@ -384,11 +392,12 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
                 .playback,
                 mode: .default,
                 policy: .longFormAudio,
-                options: [.allowAirPlay, .allowBluetooth, .allowBluetoothA2DP]
+                options: [.allowAirPlay, .allowBluetooth, .allowBluetoothA2DP, .duckOthers]
             )
-            try session.setActive(true)
+            try session.setActive(true, options: .notifyOthersOnDeactivation)
             
-            // Enable background audio capabilities
+            // Configure audio session for background playback
+            try session.setActive(true)
             UIApplication.shared.beginReceivingRemoteControlEvents()
             setupBackgroundAudioControls()
         } catch {
