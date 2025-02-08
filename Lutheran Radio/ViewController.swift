@@ -9,6 +9,7 @@ import UIKit
 import AVFoundation
 import MediaPlayer
 import Network
+import AVKit
 
 class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
     // AVPlayer instance
@@ -29,7 +30,8 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         let label = UILabel()
         label.text = "Lutheran Radio"
         label.textAlignment = .center
-        label.font = UIFont.systemFont(ofSize: 24, weight: .bold)
+        label.font = UIFont.preferredFont(forTextStyle: .title1)
+        label.adjustsFontForContentSizeCategory = true
         label.textColor = .label
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
@@ -50,7 +52,8 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         let label = UILabel()
         label.text = "Connecting…"
         label.textAlignment = .center
-        label.font = UIFont.systemFont(ofSize: 18, weight: .medium)
+        label.font = UIFont.preferredFont(forTextStyle: .body)
+        label.adjustsFontForContentSizeCategory = true
         label.backgroundColor = .systemYellow
         label.textColor = .black
         label.layer.cornerRadius = 8
@@ -75,16 +78,17 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         let label = UILabel()
         label.text = "No track information"
         label.textAlignment = .center
-        label.font = UIFont.systemFont(ofSize: 16)
+        label.font = UIFont.preferredFont(forTextStyle: .callout)
+        label.adjustsFontForContentSizeCategory = true
         label.textColor = .secondaryLabel
         label.numberOfLines = 0
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
     }()
     
-    private let airplayButton: MPVolumeView = {
-        let view = MPVolumeView(frame: .zero)
-        view.showsVolumeSlider = false
+    private let airplayButton: AVRoutePickerView = {
+        let view = AVRoutePickerView(frame: CGRect(x: 0, y: 0, width: 44, height: 44))
+        view.tintColor = .tintColor
         view.translatesAutoresizingMaskIntoConstraints = false
         return view
     }()
@@ -118,6 +122,16 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         setupInterruptionHandling()
         setupRouteChangeHandling()
         setupNowPlaying()
+    }
+    
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        
+        // Ensure route picker is visible after layout
+        if let routePickerButton = airplayButton.subviews.first(where: { $0 is UIButton }) as? UIButton {
+            routePickerButton.isHidden = false
+            routePickerButton.tintColor = .tintColor
+        }
     }
     
     private func setupControls() {
@@ -485,13 +499,24 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
     }
 
     @objc private func playPauseTapped() {
-        print("Play tapped - hasInternet: \(hasInternetConnection), isPlaying: \(isPlaying), player: \(player != nil)")
+        // Haptic feedback
+        let generator = UIImpactFeedbackGenerator(style: .medium)
+        generator.impactOccurred()
         
+        // Scale animation
+        UIView.animate(withDuration: 0.1, animations: {
+            self.playPauseButton.transform = CGAffineTransform(scaleX: 0.95, y: 0.95)
+        }) { _ in
+            UIView.animate(withDuration: 0.1) {
+                self.playPauseButton.transform = .identity
+            }
+        }
+        
+        // Existing play/pause logic
         if isPlaying {
             handlePauseCommand()
         } else {
             if player == nil {
-                print("Setting up new player")
                 setupAVPlayer()
             } else {
                 handlePlayCommand()
