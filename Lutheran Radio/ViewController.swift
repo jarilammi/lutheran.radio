@@ -94,12 +94,7 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
             object: nil
         )
         
-        do {
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
-            try AVAudioSession.sharedInstance().setActive(true)
-        } catch {
-            print("Failed to set audio session category: \(error)")
-        }
+        setupEnhancedAudioSession()
         
         // Setup UI
         setupUI()
@@ -340,17 +335,21 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
     }
     
     private func updateNowPlayingInfo(title: String) {
-        // Create a basic placeholder image
-        let artwork = MPMediaItemArtwork(boundsSize: CGSize(width: 120, height: 120)) { size in
-            // Return the app icon or a placeholder image
-            return UIImage(named: "radio-placeholder") ?? UIImage()
-        }
-        
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = [
+        var info: [String: Any] = [
             MPMediaItemPropertyTitle: title,
             MPMediaItemPropertyArtist: "Lutheran Radio",
-            MPMediaItemPropertyArtwork: artwork
+            MPNowPlayingInfoPropertyIsLiveStream: true,
+            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0
         ]
+        
+        if let image = UIImage(named: "radio-placeholder") {
+            let artwork = MPMediaItemArtwork(boundsSize: CGSize(width: 120, height: 120)) { _ in
+                return image
+            }
+            info[MPMediaItemPropertyArtwork] = artwork
+        }
+        
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
     }
     
     private func handlePlayCommand() {
@@ -373,6 +372,57 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         updateStatusLabel(isPlaying: false)
     }
     
+    private func setupEnhancedAudioSession() {
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(
+                .playback,
+                mode: .default,
+                policy: .longFormAudio,
+                options: [
+                    .allowAirPlay,
+                    .allowBluetooth,
+                    .allowBluetoothA2DP,
+                    .duckOthers
+                ]
+            )
+            try session.setActive(true, options: .notifyOthersOnDeactivation)
+            
+            // Enable background audio capabilities
+            UIApplication.shared.beginReceivingRemoteControlEvents()
+            setupBackgroundAudioControls()
+        } catch {
+            print("Failed to configure audio session: \(error.localizedDescription)")
+            // Maybe show a user-facing error here?
+        }
+    }
+    
+    private func setupBackgroundAudioControls() {
+        let commandCenter = MPRemoteCommandCenter.shared()
+        
+        // Clear existing handlers first
+        commandCenter.playCommand.removeTarget(nil)
+        commandCenter.pauseCommand.removeTarget(nil)
+        
+        commandCenter.playCommand.addTarget { [weak self] _ in
+            guard let self = self else { return .commandFailed }
+            if !self.isPlaying {
+                self.handlePlayCommand()
+                return .success
+            }
+            return .commandFailed
+        }
+        
+        commandCenter.pauseCommand.addTarget { [weak self] _ in
+            guard let self = self else { return .commandFailed }
+            if self.isPlaying {
+                self.handlePauseCommand()
+                return .success
+            }
+            return .commandFailed
+        }
+    }
+
     private func setupUI() {
         view.addSubview(titleLabel)
         
