@@ -15,6 +15,8 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
     var player: AVPlayer?
     var isPlaying: Bool = false // Tracks playback state
     var isManualPause: Bool = false // Tracks if pause was triggered manually
+    private var previouslyPlaying = false
+    private var wasPlayingBeforeInterruption = false
     private var metadataOutput: AVPlayerItemMetadataOutput?
     private var timeControlStatusObserver: NSKeyValueObservation?
     private var itemStatusObserver: NSKeyValueObservation?
@@ -102,6 +104,7 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         setupUI()
         setupControls()
         setupNetworkMonitoring()
+        setupInterruptionHandling()
         setupNowPlaying()
     }
     
@@ -226,6 +229,48 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
             if let songTitle {
                 self?.updateNowPlayingInfo(title: songTitle)
             }
+        }
+    }
+    
+    private func setupInterruptionHandling() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleInterruption),
+            name: AVAudioSession.interruptionNotification,
+            object: nil
+        )
+    }
+    
+    @objc private func handleInterruption(_ notification: Notification) {
+        guard let userInfo = notification.userInfo,
+              let typeValue = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
+              let type = AVAudioSession.InterruptionType(rawValue: typeValue) else {
+            return
+        }
+        
+        switch type {
+        case .began:
+            wasPlayingBeforeInterruption = isPlaying
+            player?.pause()
+            isPlaying = false
+            updatePlayPauseButton(isPlaying: false)
+            updateStatusLabel(isPlaying: false)
+            
+        case .ended:
+            guard let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt else { return }
+            let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
+            
+            try? AVAudioSession.sharedInstance().setActive(true, options: .notifyOthersOnDeactivation)
+            
+            if options.contains(.shouldResume) && wasPlayingBeforeInterruption {
+                player?.play()
+                isPlaying = true
+                updatePlayPauseButton(isPlaying: true)
+                updateStatusLabel(isPlaying: true)
+            }
+            
+        @unknown default:
+            break
         }
     }
     
