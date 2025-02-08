@@ -334,18 +334,21 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         }
     }
     
-    private func updateNowPlayingInfo(title: String) {
+    private func updateNowPlayingInfo(title: String? = nil) {
         var info: [String: Any] = [
-            MPMediaItemPropertyTitle: title,
             MPMediaItemPropertyArtist: "Lutheran Radio",
             MPNowPlayingInfoPropertyIsLiveStream: true,
-            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0
+            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
+            MPMediaItemPropertyMediaType: MPMediaType.anyAudio.rawValue
         ]
         
+        // Only set title if we have one from metadata
+        if let title = title {
+            info[MPMediaItemPropertyTitle] = title
+        }
+        
         if let image = UIImage(named: "radio-placeholder") {
-            let artwork = MPMediaItemArtwork(boundsSize: CGSize(width: 120, height: 120)) { _ in
-                return image
-            }
+            let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
             info[MPMediaItemPropertyArtwork] = artwork
         }
         
@@ -362,6 +365,7 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         isManualPause = false
         updatePlayPauseButton(isPlaying: true)
         updateStatusLabel(isPlaying: true)
+        updateNowPlayingInfo()
     }
     
     private func handlePauseCommand() {
@@ -370,6 +374,7 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         isManualPause = true
         updatePlayPauseButton(isPlaying: false)
         updateStatusLabel(isPlaying: false)
+        updateNowPlayingInfo()
     }
     
     private func setupEnhancedAudioSession() {
@@ -379,21 +384,15 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
                 .playback,
                 mode: .default,
                 policy: .longFormAudio,
-                options: [
-                    .allowAirPlay,
-                    .allowBluetooth,
-                    .allowBluetoothA2DP,
-                    .duckOthers
-                ]
+                options: [.allowAirPlay, .allowBluetooth, .allowBluetoothA2DP]
             )
-            try session.setActive(true, options: .notifyOthersOnDeactivation)
+            try session.setActive(true)
             
             // Enable background audio capabilities
             UIApplication.shared.beginReceivingRemoteControlEvents()
             setupBackgroundAudioControls()
         } catch {
-            print("Failed to configure audio session: \(error.localizedDescription)")
-            // Maybe show a user-facing error here?
+            print("Failed to configure audio session: \(error)")
         }
     }
     
