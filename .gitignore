@@ -60,3 +60,29 @@ fastlane/report.xml
 fastlane/Preview.html
 fastlane/screenshots/**/*.png
 fastlane/test_output
+
+# Secrets and credentials
+*.p8             # Apple Push Notification service keys
+*.p12            # iOS Distribution certificates
+*.cer            # iOS certificates
+*.mobileprovision # iOS provisioning profiles
+*.keychain       # Keychain files
+.env*            # Environment files that might contain API keys/secrets
+**/GoogleService-Info.plist  # Firebase configuration
+**/Keys.plist    # Custom keys/config files
+**/Secrets.plist
+ApiKeys.swift    # Files containing API keys
+Secrets.swift
+Config.xcconfig  # Xcode configuration files that might contain secrets
+
+# Additional build artifacts
+*.generated.swift # Generated files that might contain secrets
+build/
+DerivedData/     # More comprehensive than just xcuserdata
+
+# IDE specific
+.idea/           # AppCode
+*.xcconfig       # If storing sensitive data in xcconfig files
+.DS_Store        # macOS specific
+*.swp            # Vim temporary files
+*~.nib           # Interface builder temporary files
