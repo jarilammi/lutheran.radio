@@ -82,6 +82,13 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         return label
     }()
     
+    private let airplayButton: MPVolumeView = {
+        let view = MPVolumeView(frame: .zero)
+        view.showsVolumeSlider = false
+        view.translatesAutoresizingMaskIntoConstraints = false
+        return view
+    }()
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
@@ -347,7 +354,9 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
             MPMediaItemPropertyArtist: "Lutheran Radio",
             MPNowPlayingInfoPropertyIsLiveStream: true,
             MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
-            MPMediaItemPropertyMediaType: MPMediaType.anyAudio.rawValue
+            MPMediaItemPropertyMediaType: MPMediaType.anyAudio.rawValue,
+            MPNowPlayingInfoPropertyAvailableLanguageOptions: [], // Enable language options menu
+            MPNowPlayingInfoPropertyAssetURL: URL(string: "https://livestream.lutheran.radio:8443/lutheranradio.mp3")! // Enable proper routing
         ]
         
         // Only set title if we have one from metadata
@@ -444,6 +453,7 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         
         view.addSubview(volumeSlider)
         view.addSubview(metadataLabel)
+        view.addSubview(airplayButton)
         
         NSLayoutConstraint.activate([
             titleLabel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 40),
@@ -464,7 +474,13 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
             
             metadataLabel.topAnchor.constraint(equalTo: volumeSlider.bottomAnchor, constant: 20),
             metadataLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
-            metadataLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20)
+            metadataLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+            
+            // Add constraints for airplayButton
+            airplayButton.topAnchor.constraint(equalTo: metadataLabel.bottomAnchor, constant: 20),
+            airplayButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            airplayButton.widthAnchor.constraint(equalToConstant: 44),
+            airplayButton.heightAnchor.constraint(equalToConstant: 44)
         ])
     }
 
