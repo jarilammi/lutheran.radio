@@ -9,12 +9,16 @@ import UIKit
 import AVFoundation
 import MediaPlayer
 import Network
+import AVKit
 
 class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
     // AVPlayer instance
     var player: AVPlayer?
     var isPlaying: Bool = false // Tracks playback state
     var isManualPause: Bool = false // Tracks if pause was triggered manually
+    private var previouslyPlaying = false
+    private var wasPlayingBeforeInterruption = false
+    private var wasPlayingBeforeRouteChange = false
     private var metadataOutput: AVPlayerItemMetadataOutput?
     private var timeControlStatusObserver: NSKeyValueObservation?
     private var itemStatusObserver: NSKeyValueObservation?
@@ -26,7 +30,8 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         let label = UILabel()
         label.text = "Lutheran Radio"
         label.textAlignment = .center
-        label.font = UIFont.systemFont(ofSize: 24, weight: .bold)
+        label.font = UIFont.preferredFont(forTextStyle: .title1)
+        label.adjustsFontForContentSizeCategory = true
         label.textColor = .label
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
@@ -47,7 +52,8 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         let label = UILabel()
         label.text = "Connecting…"
         label.textAlignment = .center
-        label.font = UIFont.systemFont(ofSize: 18, weight: .medium)
+        label.font = UIFont.preferredFont(forTextStyle: .body)
+        label.adjustsFontForContentSizeCategory = true
         label.backgroundColor = .systemYellow
         label.textColor = .black
         label.layer.cornerRadius = 8
@@ -72,16 +78,32 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         let label = UILabel()
         label.text = "No track information"
         label.textAlignment = .center
-        label.font = UIFont.systemFont(ofSize: 16)
+        label.font = UIFont.preferredFont(forTextStyle: .callout)
+        label.adjustsFontForContentSizeCategory = true
         label.textColor = .secondaryLabel
         label.numberOfLines = 0
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
     }()
     
+    private let airplayButton: AVRoutePickerView = {
+        let view = AVRoutePickerView(frame: CGRect(x: 0, y: 0, width: 44, height: 44))
+        view.tintColor = .tintColor
+        view.translatesAutoresizingMaskIntoConstraints = false
+        return view
+    }()
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
+        
+        // Enable background audio
+        do {
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
+            try AVAudioSession.sharedInstance().setActive(true)
+        } catch {
+            print("Failed to set up background audio: \(error)")
+        }
         
         // Register for appearance changes using the system notification
         NotificationCenter.default.addObserver(
@@ -91,18 +113,25 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
             object: nil
         )
         
-        do {
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
-            try AVAudioSession.sharedInstance().setActive(true)
-        } catch {
-            print("Failed to set audio session category: \(error)")
-        }
+        setupEnhancedAudioSession()
         
         // Setup UI
         setupUI()
         setupControls()
         setupNetworkMonitoring()
+        setupInterruptionHandling()
+        setupRouteChangeHandling()
         setupNowPlaying()
+    }
+    
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        
+        // Ensure route picker is visible after layout
+        if let routePickerButton = airplayButton.subviews.first(where: { $0 is UIButton }) as? UIButton {
+            routePickerButton.isHidden = false
+            routePickerButton.tintColor = .tintColor
+        }
     }
     
     private func setupControls() {
@@ -229,6 +258,97 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         }
     }
     
+    private func setupInterruptionHandling() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleInterruption),
+            name: AVAudioSession.interruptionNotification,
+            object: nil
+        )
+    }
+    
+    @objc private func handleInterruption(_ notification: Notification) {
+        guard let userInfo = notification.userInfo,
+              let typeValue = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
+              let type = AVAudioSession.InterruptionType(rawValue: typeValue) else {
+            return
+        }
+        
+        switch type {
+        case .began:
+            wasPlayingBeforeInterruption = isPlaying
+            player?.pause()
+            isPlaying = false
+            updatePlayPauseButton(isPlaying: false)
+            updateStatusLabel(isPlaying: false)
+            
+        case .ended:
+            guard let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt else { return }
+            let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
+            
+            try? AVAudioSession.sharedInstance().setActive(true, options: .notifyOthersOnDeactivation)
+            
+            if options.contains(.shouldResume) && wasPlayingBeforeInterruption {
+                player?.play()
+                isPlaying = true
+                updatePlayPauseButton(isPlaying: true)
+                updateStatusLabel(isPlaying: true)
+            }
+            
+        @unknown default:
+            break
+        }
+    }
+    
+    private func setupRouteChangeHandling() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleRouteChange),
+            name: AVAudioSession.routeChangeNotification,
+            object: nil
+        )
+    }
+    
+    @objc private func handleRouteChange(_ notification: Notification) {
+        guard let userInfo = notification.userInfo,
+              let reasonValue = userInfo[AVAudioSessionRouteChangeReasonKey] as? UInt,
+              let reason = AVAudioSession.RouteChangeReason(rawValue: reasonValue) else {
+            return
+        }
+        
+        switch reason {
+        case .oldDeviceUnavailable:
+            // Headphones unplugged or Bluetooth disconnected
+            wasPlayingBeforeRouteChange = isPlaying
+            player?.pause()
+            isPlaying = false
+            updatePlayPauseButton(isPlaying: false)
+            updateStatusLabel(isPlaying: false)
+            
+            // Optionally show an alert or update UI
+            DispatchQueue.main.async {
+                self.metadataLabel.text = "Audio output disconnected"
+            }
+            
+        case .newDeviceAvailable:
+            // New route available (headphones connected, etc)
+            try? AVAudioSession.sharedInstance().setActive(true)
+            if wasPlayingBeforeRouteChange && !isManualPause {
+                player?.play()
+                isPlaying = true
+                updatePlayPauseButton(isPlaying: true)
+                updateStatusLabel(isPlaying: true)
+            }
+            
+        case .categoryChange:
+            // Handle category changes if needed
+            try? AVAudioSession.sharedInstance().setActive(true)
+            
+        default:
+            break
+        }
+    }
+    
     private func setupNowPlaying() {
         let commandCenter = MPRemoteCommandCenter.shared()
         
@@ -243,18 +363,27 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         }
     }
     
-    private func updateNowPlayingInfo(title: String) {
-        // Create a basic placeholder image
-        let artwork = MPMediaItemArtwork(boundsSize: CGSize(width: 120, height: 120)) { size in
-            // Return the app icon or a placeholder image
-            return UIImage(named: "radio-placeholder") ?? UIImage()
+    private func updateNowPlayingInfo(title: String? = nil) {
+        var info: [String: Any] = [
+            MPMediaItemPropertyArtist: "Lutheran Radio",
+            MPNowPlayingInfoPropertyIsLiveStream: true,
+            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
+            MPMediaItemPropertyMediaType: MPMediaType.anyAudio.rawValue,
+            MPNowPlayingInfoPropertyAvailableLanguageOptions: [], // Enable language options menu
+            MPNowPlayingInfoPropertyAssetURL: URL(string: "https://livestream.lutheran.radio:8443/lutheranradio.mp3")! // Enable proper routing
+        ]
+        
+        // Only set title if we have one from metadata
+        if let title = title {
+            info[MPMediaItemPropertyTitle] = title
         }
         
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = [
-            MPMediaItemPropertyTitle: title,
-            MPMediaItemPropertyArtist: "Lutheran Radio",
-            MPMediaItemPropertyArtwork: artwork
-        ]
+        if let image = UIImage(named: "radio-placeholder") {
+            let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+            info[MPMediaItemPropertyArtwork] = artwork
+        }
+        
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
     }
     
     private func handlePlayCommand() {
@@ -267,6 +396,7 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         isManualPause = false
         updatePlayPauseButton(isPlaying: true)
         updateStatusLabel(isPlaying: true)
+        updateNowPlayingInfo()
     }
     
     private func handlePauseCommand() {
@@ -275,8 +405,55 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         isManualPause = true
         updatePlayPauseButton(isPlaying: false)
         updateStatusLabel(isPlaying: false)
+        updateNowPlayingInfo()
     }
     
+    private func setupEnhancedAudioSession() {
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(
+                .playback,
+                mode: .default,
+                policy: .longFormAudio,
+                options: [.allowAirPlay, .allowBluetooth, .allowBluetoothA2DP, .duckOthers]
+            )
+            try session.setActive(true, options: .notifyOthersOnDeactivation)
+            
+            // Configure audio session for background playback
+            try session.setActive(true)
+            UIApplication.shared.beginReceivingRemoteControlEvents()
+            setupBackgroundAudioControls()
+        } catch {
+            print("Failed to configure audio session: \(error)")
+        }
+    }
+    
+    private func setupBackgroundAudioControls() {
+        let commandCenter = MPRemoteCommandCenter.shared()
+        
+        // Clear existing handlers first
+        commandCenter.playCommand.removeTarget(nil)
+        commandCenter.pauseCommand.removeTarget(nil)
+        
+        commandCenter.playCommand.addTarget { [weak self] _ in
+            guard let self = self else { return .commandFailed }
+            if !self.isPlaying {
+                self.handlePlayCommand()
+                return .success
+            }
+            return .commandFailed
+        }
+        
+        commandCenter.pauseCommand.addTarget { [weak self] _ in
+            guard let self = self else { return .commandFailed }
+            if self.isPlaying {
+                self.handlePauseCommand()
+                return .success
+            }
+            return .commandFailed
+        }
+    }
+
     private func setupUI() {
         view.addSubview(titleLabel)
         
@@ -290,6 +467,7 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         
         view.addSubview(volumeSlider)
         view.addSubview(metadataLabel)
+        view.addSubview(airplayButton)
         
         NSLayoutConstraint.activate([
             titleLabel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 40),
@@ -310,18 +488,35 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
             
             metadataLabel.topAnchor.constraint(equalTo: volumeSlider.bottomAnchor, constant: 20),
             metadataLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
-            metadataLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20)
+            metadataLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+            
+            // Add constraints for airplayButton
+            airplayButton.topAnchor.constraint(equalTo: metadataLabel.bottomAnchor, constant: 20),
+            airplayButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            airplayButton.widthAnchor.constraint(equalToConstant: 44),
+            airplayButton.heightAnchor.constraint(equalToConstant: 44)
         ])
     }
 
     @objc private func playPauseTapped() {
-        print("Play tapped - hasInternet: \(hasInternetConnection), isPlaying: \(isPlaying), player: \(player != nil)")
+        // Haptic feedback
+        let generator = UIImpactFeedbackGenerator(style: .medium)
+        generator.impactOccurred()
         
+        // Scale animation
+        UIView.animate(withDuration: 0.1, animations: {
+            self.playPauseButton.transform = CGAffineTransform(scaleX: 0.95, y: 0.95)
+        }) { _ in
+            UIView.animate(withDuration: 0.1) {
+                self.playPauseButton.transform = .identity
+            }
+        }
+        
+        // Existing play/pause logic
         if isPlaying {
             handlePauseCommand()
         } else {
             if player == nil {
-                print("Setting up new player")
                 setupAVPlayer()
             } else {
                 handlePlayCommand()
