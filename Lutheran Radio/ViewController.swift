@@ -24,6 +24,11 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
     private var itemStatusObserver: NSKeyValueObservation?
     private var networkMonitor: NWPathMonitor?
     internal var hasInternetConnection = true
+    // Retry configuration
+    private let maxRetryAttempts = 3
+    private let retryInterval: TimeInterval = 2.0 // seconds
+    private var currentRetryAttempt = 0
+    private var retryTimer: Timer?
     
     // Title label
     let titleLabel: UILabel = {
@@ -205,9 +210,11 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
     }
     
     private func setupAVPlayer() {
-        statusLabel.text = "Connecting…"  // This will show while we attempt connection
-        statusLabel.backgroundColor = .systemYellow
-        statusLabel.textColor = .black
+        if currentRetryAttempt == 0 {
+            statusLabel.text = "Connecting…"
+            statusLabel.backgroundColor = .systemYellow
+            statusLabel.textColor = .black
+        }
         
         let streamURL = URL(string: "https://livestream.lutheran.radio:8443/lutheranradio.mp3")!
         let headers = ["Icy-MetaData": "1"]
@@ -559,9 +566,9 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
     private func handlePlayerItemStatusChange(_ item: AVPlayerItem) {
         switch item.status {
         case .failed:
-            cleanupStreamResources()
-            updateUIForNoInternet()
+            handleStreamError(item.error)
         case .readyToPlay:
+            resetRetryCount() // Reset retry count on successful connection
             if isPlaying && !isManualPause {
                 updateStatusLabel(isPlaying: true)
             }
@@ -573,7 +580,7 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
     private func handleTimeControlStatusChange(_ player: AVPlayer) {
         switch player.timeControlStatus {
         case .waitingToPlayAtSpecifiedRate:
-            statusLabel.text = "Buffering..."
+            statusLabel.text = "Buffering…"
             statusLabel.backgroundColor = .systemYellow
             statusLabel.textColor = .black
         case .paused:
@@ -590,11 +597,54 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         }
     }
     
+    private func handleStreamError(_ error: Error?) {
+        if currentRetryAttempt < maxRetryAttempts {
+            currentRetryAttempt += 1
+            
+            // Update UI to show retry attempt
+            statusLabel.text = "Reconnect (\(currentRetryAttempt)/\(maxRetryAttempts))"
+            statusLabel.backgroundColor = .systemYellow
+            statusLabel.textColor = .black
+            
+            // Schedule retry
+            retryTimer?.invalidate()
+            retryTimer = Timer.scheduledTimer(withTimeInterval: retryInterval, repeats: false) { [weak self] _ in
+                self?.setupAVPlayer()
+            }
+        } else {
+            // Max retries reached, update UI and clean up
+            cleanupStreamResources()
+            statusLabel.text = "Connection Failed"
+            statusLabel.backgroundColor = .systemRed
+            statusLabel.textColor = .white
+            
+            // Show error alert to user
+            let alert = UIAlertController(
+                title: "Connection Failed",
+                message: "Unable to connect to the stream. Please check your connection and try again.",
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: "Retry", style: .default) { [weak self] _ in
+                self?.resetRetryCount()
+                self?.setupAVPlayer()
+            })
+            alert.addAction(UIAlertAction(title: "OK", style: .cancel))
+            present(alert, animated: true)
+        }
+    }
+    
+    private func resetRetryCount() {
+        currentRetryAttempt = 0
+        retryTimer?.invalidate()
+        retryTimer = nil
+    }
+    
     deinit {
         NotificationCenter.default.removeObserver(self)
         networkMonitor?.cancel()
         cleanupStreamResources()
         timeControlStatusObserver?.invalidate()
         itemStatusObserver?.invalidate()
+        retryTimer?.invalidate()
     }
 }
