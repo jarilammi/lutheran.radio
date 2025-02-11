@@ -34,7 +34,7 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
     // Title label
     let titleLabel: UILabel = {
         let label = UILabel()
-        label.text = "Lutheran Radio"
+        label.text = String(localized: "lutheran_radio_title")
         label.textAlignment = .center
         label.font = UIFont.preferredFont(forTextStyle: .title1)
         label.adjustsFontForContentSizeCategory = true
@@ -56,7 +56,7 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
     // Status label
     let statusLabel: UILabel = {
         let label = UILabel()
-        label.text = "Connecting…"
+        label.text = String(localized: "status_connecting")
         label.textAlignment = .center
         label.font = UIFont.preferredFont(forTextStyle: .body)
         label.adjustsFontForContentSizeCategory = true
@@ -82,7 +82,7 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
     
     let metadataLabel: UILabel = {
         let label = UILabel()
-        label.text = "No track information"
+        label.text = String(localized: "no_track_info")
         label.textAlignment = .center
         label.font = UIFont.preferredFont(forTextStyle: .callout)
         label.adjustsFontForContentSizeCategory = true
@@ -207,10 +207,10 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
     }
     
     private func updateUIForNoInternet() {
-        statusLabel.text = "Stopped"
+        statusLabel.text = String(localized: "status_stopped")
         statusLabel.backgroundColor = .systemGray
         statusLabel.textColor = .white
-        metadataLabel.text = "No track information"
+        metadataLabel.text = String(localized: "no_track_info")
         updatePlayPauseButton(isPlaying: false)
     }
     
@@ -339,7 +339,7 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
             
             // Optionally show an alert or update UI
             DispatchQueue.main.async {
-                self.metadataLabel.text = "Audio output disconnected"
+                self.metadataLabel.text = String(localized: "audio_disconnected")
             }
             
         case .newDeviceAvailable:
@@ -548,11 +548,11 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
 
     private func updateStatusLabel(isPlaying: Bool) {
         if isPlaying {
-            statusLabel.text = "Playing"
+            statusLabel.text = String(localized: "status_playing")
             statusLabel.backgroundColor = .systemGreen
             statusLabel.textColor = .black
         } else {
-            statusLabel.text = "Paused"
+            statusLabel.text = String(localized: "status_paused")
             statusLabel.backgroundColor = .systemGray
             statusLabel.textColor = .white
         }
@@ -585,7 +585,7 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
     private func handleTimeControlStatusChange(_ player: AVPlayer) {
         switch player.timeControlStatus {
         case .waitingToPlayAtSpecifiedRate:
-            statusLabel.text = "Buffering…"
+            statusLabel.text = String(localized: "status_buffering")
             statusLabel.backgroundColor = .systemYellow
             statusLabel.textColor = .black
         case .paused:
@@ -616,36 +616,36 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
             currentRetryAttempt += 1
             
             // Update UI to show retry attempt
-            statusLabel.text = "Reconnect (\(currentRetryAttempt)/\(maxRetryAttempts))"
+            statusLabel.text = String(format: String(localized: "status_reconnect_format"), currentRetryAttempt, maxRetryAttempts)
             statusLabel.backgroundColor = .systemYellow
             statusLabel.textColor = .black
             
             // Schedule retry
             retryTimer?.invalidate()
             let nextRetryInterval = calculateRetryInterval()
-            statusLabel.text = "Reconnect in \(Int(nextRetryInterval))s (\(currentRetryAttempt)/\(maxRetryAttempts))"
-            
+            statusLabel.text = String(format: String(localized: "status_reconnect_countdown_format"), Int(nextRetryInterval), currentRetryAttempt, maxRetryAttempts)
+
             retryTimer = Timer.scheduledTimer(withTimeInterval: nextRetryInterval, repeats: false) { [weak self] _ in
                 self?.setupAVPlayer()
             }
         } else {
             // Max retries reached, update UI and clean up
             cleanupStreamResources()
-            statusLabel.text = "Connection Failed"
+            statusLabel.text = String(localized: "alert_connection_failed_title")
             statusLabel.backgroundColor = .systemRed
             statusLabel.textColor = .white
             
             // Show error alert to user
             let alert = UIAlertController(
-                title: "Connection Failed",
-                message: "Unable to connect to the stream. Please check your connection and try again.",
+                title: String(localized: "alert_connection_failed_title"),
+                message: String(localized: "alert_connection_failed_message"),
                 preferredStyle: .alert
             )
-            alert.addAction(UIAlertAction(title: "Retry", style: .default) { [weak self] _ in
+            alert.addAction(UIAlertAction(title: String(localized: "alert_retry"), style: .default) { [weak self] _ in
                 self?.resetRetryCount()
                 self?.setupAVPlayer()
             })
-            alert.addAction(UIAlertAction(title: "OK", style: .cancel))
+            alert.addAction(UIAlertAction(title: String(localized: "alert_ok"), style: .cancel))
             present(alert, animated: true)
         }
     }
