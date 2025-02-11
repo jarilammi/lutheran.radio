@@ -408,7 +408,11 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         isManualPause = false
         updatePlayPauseButton(isPlaying: true)
         updateStatusLabel(isPlaying: true)
-        updateNowPlayingInfo()
+        if let currentTitle = metadataLabel.text, currentTitle != String(localized: "no_track_info") {
+            updateNowPlayingInfo(title: currentTitle)
+        } else {
+            updateNowPlayingInfo()
+        }
     }
     
     private func handlePauseCommand() {
