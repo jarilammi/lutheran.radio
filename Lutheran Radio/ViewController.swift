@@ -25,8 +25,9 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
     private var networkMonitor: NWPathMonitor?
     internal var hasInternetConnection = true
     // Retry configuration
-    private let maxRetryAttempts = 3
-    private let retryInterval: TimeInterval = 2.0 // seconds
+    private let maxRetryAttempts = 5
+    private let baseRetryInterval: TimeInterval = 2.0
+    private let maxRetryInterval: TimeInterval = 64.0
     private var currentRetryAttempt = 0
     private var retryTimer: Timer?
     
@@ -189,6 +190,10 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         if !hasInternetConnection {
             cleanupStreamResources()
             updateUIForNoInternet()
+        } else if !isManualPause {
+            // Network is back and we weren't manually paused
+            resetRetryCount()  // Reset retry counter for fresh start
+            setupAVPlayer()    // Attempt to reconnect
         }
     }
     
@@ -597,6 +602,15 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         }
     }
     
+    private func calculateRetryInterval() -> TimeInterval {
+        // Calculate exponential backoff: baseInterval * 2^attempt
+        let interval = baseRetryInterval * pow(2.0, Double(currentRetryAttempt - 1))
+        // Add some jitter (±20%) to prevent thundering herd problem
+        let jitter = interval * Double.random(in: -0.2...0.2)
+        // Clamp the final interval to maxRetryInterval
+        return min(interval + jitter, maxRetryInterval)
+    }
+    
     private func handleStreamError(_ error: Error?) {
         if currentRetryAttempt < maxRetryAttempts {
             currentRetryAttempt += 1
@@ -608,7 +622,10 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
             
             // Schedule retry
             retryTimer?.invalidate()
-            retryTimer = Timer.scheduledTimer(withTimeInterval: retryInterval, repeats: false) { [weak self] _ in
+            let nextRetryInterval = calculateRetryInterval()
+            statusLabel.text = "Reconnect in \(Int(nextRetryInterval))s (\(currentRetryAttempt)/\(maxRetryAttempts))"
+            
+            retryTimer = Timer.scheduledTimer(withTimeInterval: nextRetryInterval, repeats: false) { [weak self] _ in
                 self?.setupAVPlayer()
             }
         } else {
