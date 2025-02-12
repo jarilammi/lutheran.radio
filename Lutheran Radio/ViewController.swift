@@ -30,6 +30,12 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
     private let maxRetryInterval: TimeInterval = 64.0
     private var currentRetryAttempt = 0
     private var retryTimer: Timer?
+    // Add new properties for metadata optimization
+    private var lastMetadataUpdate: Date?
+    private let minimumMetadataInterval: TimeInterval = 5.0 // Minimum seconds between metadata updates
+    private var currentMetadata: String?
+    private var metadataTimer: Timer?
+    private let metadataQueue = DispatchQueue(label: "radio.lutheran.metadata", qos: .utility)
     
     // Title label
     let titleLabel: UILabel = {
@@ -205,6 +211,10 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         player = nil
         isPlaying = false
         isManualPause = false
+        metadataTimer?.invalidate()
+        metadataTimer = nil
+        currentMetadata = nil
+        lastMetadataUpdate = nil
     }
     
     private func updateUIForNoInternet() {
@@ -223,14 +233,25 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         }
         
         let streamURL = URL(string: "https://livestream.lutheran.radio:8443/lutheranradio.mp3")!
-        let headers = ["Icy-MetaData": "1"]
+        
+        // Optimize headers to only request metadata when needed
+        var headers: [String: String] = [:]
+        if metadataOutput != nil {
+            headers["Icy-MetaData"] = "1"
+        }
+        
         let asset = AVURLAsset(url: streamURL, options: ["AVURLAssetHTTPHeaderFieldsKey": headers])
         let playerItem = AVPlayerItem(asset: asset)
         
-        // Setup metadata output
-        metadataOutput = AVPlayerItemMetadataOutput(identifiers: nil)
+        // Setup metadata output with optimization
+        if metadataOutput == nil {
+            metadataOutput = AVPlayerItemMetadataOutput(identifiers: nil)
+            if let metadataOutput = metadataOutput {
+                metadataOutput.setDelegate(self, queue: metadataQueue)
+            }
+        }
+        
         if let metadataOutput = metadataOutput {
-            metadataOutput.setDelegate(self, queue: DispatchQueue.main)
             playerItem.add(metadataOutput)
         }
         
@@ -257,6 +278,13 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
     func metadataOutput(_ output: AVPlayerItemMetadataOutput,
                        didOutputTimedMetadataGroups groups: [AVTimedMetadataGroup],
                        from track: AVPlayerItemTrack?) {
+        
+        // Check if enough time has passed since last update
+        if let lastUpdate = lastMetadataUpdate,
+           Date().timeIntervalSince(lastUpdate) < minimumMetadataInterval {
+            return
+        }
+        
         guard let item = groups.first?.items.first,
               let value = item.value(forKeyPath: "stringValue") as? String,
               !value.isEmpty else { return }
@@ -264,14 +292,25 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         let songTitle = (item.identifier == AVMetadataIdentifier("icy/StreamTitle") ||
                         (item.key as? String) == "StreamTitle") ? value : nil
         
-        DispatchQueue.main.async { [weak self] in
-            self?.metadataLabel.text = songTitle ?? "No track information"
-            if let songTitle {
-                self?.updateNowPlayingInfo(title: songTitle)
+        // Only update if the metadata has actually changed
+        if songTitle != currentMetadata {
+            currentMetadata = songTitle
+            lastMetadataUpdate = Date()
+            
+            // Schedule UI update on main thread
+            DispatchQueue.main.async { [weak self] in
+                self?.updateMetadataUI(songTitle: songTitle)
             }
         }
     }
     
+    private func updateMetadataUI(songTitle: String?) {
+        metadataLabel.text = songTitle ?? "No track information"
+        if let songTitle = songTitle {
+            updateNowPlayingInfo(title: songTitle)
+        }
+    }
+        
     private func setupInterruptionHandling() {
         NotificationCenter.default.addObserver(
             self,
