@@ -109,6 +109,14 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
         
+        // Add state restoration notification
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAppDidBecomeActive),
+            name: UIApplication.didBecomeActiveNotification,
+            object: nil
+        )
+        
         // Enable background audio
         do {
             try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
@@ -417,31 +425,23 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
     }
     
     private func updateNowPlayingInfo(title: String? = nil) {
-        var info: [String: Any] = [
-            MPMediaItemPropertyTitle: title ?? "Lutheran Radio Live",  // Provide a default title
-            MPMediaItemPropertyArtist: "Lutheran Radio",
-            MPNowPlayingInfoPropertyIsLiveStream: true,
-            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
-            MPMediaItemPropertyMediaType: MPMediaType.anyAudio.rawValue,
-            MPNowPlayingInfoPropertyAvailableLanguageOptions: [], // Enable language options menu
-            MPNowPlayingInfoPropertyAssetURL: URL(string: "https://livestream.lutheran.radio:8443/lutheranradio.mp3")! // Enable proper routing
-        ]
-        
-        // Add description for better context when no track info
-        if title == nil {
-            info[MPMediaItemPropertyComments] = "Christian radio station"
-            // You could also use these fields for additional context:
-            // info[MPMediaItemPropertyAlbumTitle] = "Live Stream"
-            // info[MPMediaItemPropertyGenre] = "Christian Radio"
+        DispatchQueue.main.async {
+            var info: [String: Any] = [
+                MPMediaItemPropertyTitle: title ?? "Lutheran Radio Live",
+                MPMediaItemPropertyArtist: "Lutheran Radio",
+                MPNowPlayingInfoPropertyIsLiveStream: true,
+                MPNowPlayingInfoPropertyPlaybackRate: self.isPlaying ? 1.0 : 0.0,
+                MPMediaItemPropertyMediaType: MPMediaType.anyAudio.rawValue
+            ]
+            
+            // Add artwork on main thread
+            if let image = UIImage(named: "radio-placeholder") {
+                let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+                info[MPMediaItemPropertyArtwork] = artwork
+            }
+            
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = info
         }
-        
-        // Always ensure we have artwork
-        if let image = UIImage(named: "radio-placeholder") {
-            let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
-            info[MPMediaItemPropertyArtwork] = artwork
-        }
-        
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
     }
     
     private func handlePlayCommand() {
@@ -473,49 +473,86 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
     private func setupEnhancedAudioSession() {
         do {
             let session = AVAudioSession.sharedInstance()
+            
+            // First deactivate to reset any problematic state
+            try? session.setActive(false, options: .notifyOthersOnDeactivation)
+            
             try session.setCategory(
                 .playback,
                 mode: .default,
                 policy: .longFormAudio,
-                options: [.allowAirPlay, .allowBluetooth, .allowBluetoothA2DP, .duckOthers]
+                options: [.allowAirPlay, .allowBluetooth, .allowBluetoothA2DP]
             )
+            
+            // Updated to use new iOS 17+ API
+            #if compiler(>=5.9)  // iOS 17+
+            if AVAudioApplication.shared.recordPermission != .granted {
+                print("No audio record permission, but that's OK for playback only")
+            }
+            #else
+            if session.recordPermission != .granted {
+                print("No audio record permission, but that's OK for playback only")
+            }
+            #endif
+            
             try session.setActive(true, options: .notifyOthersOnDeactivation)
             
-            // Configure audio session for background playback
-            try session.setActive(true)
-            UIApplication.shared.beginReceivingRemoteControlEvents()
+            // Ensure remote command center is properly setup
             setupBackgroundAudioControls()
         } catch {
-            print("Failed to configure audio session: \(error)")
+            print("Audio session setup failed: \(error.localizedDescription)")
         }
     }
     
     private func setupBackgroundAudioControls() {
         let commandCenter = MPRemoteCommandCenter.shared()
         
-        // Clear existing handlers first
-        commandCenter.playCommand.removeTarget(nil)
-        commandCenter.pauseCommand.removeTarget(nil)
+        // Remove all targets first
+        [commandCenter.playCommand,
+         commandCenter.pauseCommand,
+         commandCenter.togglePlayPauseCommand].forEach { $0.removeTarget(nil) }
         
-        commandCenter.playCommand.addTarget { [weak self] _ in
+        // Add play command
+        commandCenter.playCommand.addTarget { [weak self] event -> MPRemoteCommandHandlerStatus in
             guard let self = self else { return .commandFailed }
+            
             if !self.isPlaying {
-                self.handlePlayCommand()
+                DispatchQueue.main.async {
+                    self.handlePlayCommand()
+                }
                 return .success
             }
             return .commandFailed
         }
         
-        commandCenter.pauseCommand.addTarget { [weak self] _ in
+        // Add pause command
+        commandCenter.pauseCommand.addTarget { [weak self] event -> MPRemoteCommandHandlerStatus in
             guard let self = self else { return .commandFailed }
+            
             if self.isPlaying {
-                self.handlePauseCommand()
+                DispatchQueue.main.async {
+                    self.handlePauseCommand()
+                }
                 return .success
             }
             return .commandFailed
+        }
+        
+        // Also handle toggle command
+        commandCenter.togglePlayPauseCommand.addTarget { [weak self] event -> MPRemoteCommandHandlerStatus in
+            guard let self = self else { return .commandFailed }
+            
+            DispatchQueue.main.async {
+                if self.isPlaying {
+                    self.handlePauseCommand()
+                } else {
+                    self.handlePlayCommand()
+                }
+            }
+            return .success
         }
     }
-
+    
     private func setupUI() {
         view.addSubview(titleLabel)
         
@@ -649,6 +686,22 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
             }
         @unknown default:
             break
+        }
+    }
+    
+    @objc private func handleAppDidBecomeActive() {
+        // Ensure our now playing info is current
+        if isPlaying {
+            updateNowPlayingInfo(title: currentMetadata)
+        }
+        
+        // Verify audio session
+        do {
+            if !AVAudioSession.sharedInstance().isOtherAudioPlaying {
+                try AVAudioSession.sharedInstance().setActive(true)
+            }
+        } catch {
+            print("Failed to reactivate audio session: \(error)")
         }
     }
     
