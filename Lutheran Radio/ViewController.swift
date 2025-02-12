@@ -213,9 +213,11 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
     }
     
     private func cleanupStreamResources() {
-        if let playerItem = player?.currentItem {
-            playerItem.remove(metadataOutput!)
+        if let playerItem = player?.currentItem,
+           let metadataOutput = metadataOutput {
+            playerItem.remove(metadataOutput)
         }
+        
         player = nil
         isPlaying = false
         isManualPause = false
@@ -223,6 +225,7 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         metadataTimer = nil
         currentMetadata = nil
         lastMetadataUpdate = nil
+        metadataOutput = nil  // Clear the reference
     }
     
     private func updateUIForNoInternet() {
@@ -241,25 +244,13 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         }
         
         let streamURL = URL(string: "https://livestream.lutheran.radio:8443/lutheranradio.mp3")!
-        
-        // Optimize headers to only request metadata when needed
-        var headers: [String: String] = [:]
-        if metadataOutput != nil {
-            headers["Icy-MetaData"] = "1"
-        }
-        
-        let asset = AVURLAsset(url: streamURL, options: ["AVURLAssetHTTPHeaderFieldsKey": headers])
+        let asset = AVURLAsset(url: streamURL)
         let playerItem = AVPlayerItem(asset: asset)
         
-        // Setup metadata output with optimization
-        if metadataOutput == nil {
-            metadataOutput = AVPlayerItemMetadataOutput(identifiers: nil)
-            if let metadataOutput = metadataOutput {
-                metadataOutput.setDelegate(self, queue: metadataQueue)
-            }
-        }
-        
+        // Create a new metadata output for this player item
+        metadataOutput = AVPlayerItemMetadataOutput(identifiers: nil)
         if let metadataOutput = metadataOutput {
+            metadataOutput.setDelegate(self, queue: metadataQueue)
             playerItem.add(metadataOutput)
         }
         
