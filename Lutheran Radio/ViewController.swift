@@ -422,10 +422,12 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
                 MPMediaItemPropertyArtist: "Lutheran Radio",
                 MPNowPlayingInfoPropertyIsLiveStream: true,
                 MPNowPlayingInfoPropertyPlaybackRate: self.isPlaying ? 1.0 : 0.0,
-                MPMediaItemPropertyMediaType: MPMediaType.anyAudio.rawValue
+                MPMediaItemPropertyMediaType: MPMediaType.anyAudio.rawValue,
+                MPNowPlayingInfoPropertyElapsedPlaybackTime: 0,
+                MPMediaItemPropertyPlaybackDuration: 0, // Live stream, no duration
+                MPNowPlayingInfoPropertyPlaybackProgress: 0
             ]
             
-            // Add artwork on main thread
             if let image = UIImage(named: "radio-placeholder") {
                 let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
                 info[MPMediaItemPropertyArtwork] = artwork
@@ -445,13 +447,9 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         isManualPause = false
         updatePlayPauseButton(isPlaying: true)
         updateStatusLabel(isPlaying: true)
-        if let currentTitle = metadataLabel.text, currentTitle != String(localized: "no_track_info") {
-            updateNowPlayingInfo(title: currentTitle)
-        } else {
-            updateNowPlayingInfo()
-        }
+        updateNowPlayingInfo(title: currentMetadata)
     }
-    
+
     private func handlePauseCommand() {
         player?.pause()
         isPlaying = false
@@ -465,30 +463,24 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         do {
             let session = AVAudioSession.sharedInstance()
             
-            // First deactivate to reset any problematic state
-            try? session.setActive(false, options: .notifyOthersOnDeactivation)
+            // Deactivate first to clean any existing state
+            try? session.setActive(false)
             
+            // Set category with all necessary options
             try session.setCategory(
                 .playback,
                 mode: .default,
                 policy: .longFormAudio,
-                options: [.allowAirPlay, .allowBluetooth, .allowBluetoothA2DP]
+                options: [.allowAirPlay, .allowBluetooth, .allowBluetoothA2DP, .duckOthers]
             )
             
-            // Updated to use new iOS 17+ API
-            #if compiler(>=5.9)  // iOS 17+
-            if AVAudioApplication.shared.recordPermission != .granted {
-                print("No audio record permission, but that's OK for playback only")
-            }
-            #else
-            if session.recordPermission != .granted {
-                print("No audio record permission, but that's OK for playback only")
-            }
-            #endif
-            
+            // Set active and configure background behavior
             try session.setActive(true, options: .notifyOthersOnDeactivation)
             
-            // Ensure remote command center is properly setup
+            // Ensure we handle audio route changes
+            setupRouteChangeHandling()
+            
+            // Set up background audio controls with proper state management
             setupBackgroundAudioControls()
         } catch {
             print("Audio session setup failed: \(error.localizedDescription)")
@@ -498,39 +490,43 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
     private func setupBackgroundAudioControls() {
         let commandCenter = MPRemoteCommandCenter.shared()
         
-        // Remove all targets first
+        // Clear existing handlers
         [commandCenter.playCommand,
          commandCenter.pauseCommand,
-         commandCenter.togglePlayPauseCommand].forEach { $0.removeTarget(nil) }
+         commandCenter.togglePlayPauseCommand,
+         commandCenter.stopCommand].forEach { $0.removeTarget(nil) }
         
-        // Add play command
-        commandCenter.playCommand.addTarget { [weak self] event -> MPRemoteCommandHandlerStatus in
+        // Configure play command
+        commandCenter.playCommand.isEnabled = true
+        commandCenter.playCommand.addTarget { [weak self] _ -> MPRemoteCommandHandlerStatus in
             guard let self = self else { return .commandFailed }
             
-            if !self.isPlaying {
-                DispatchQueue.main.async {
+            DispatchQueue.main.async {
+                if !self.isPlaying {
                     self.handlePlayCommand()
+                    return
                 }
-                return .success
             }
-            return .commandFailed
+            return .success
         }
         
-        // Add pause command
-        commandCenter.pauseCommand.addTarget { [weak self] event -> MPRemoteCommandHandlerStatus in
+        // Configure pause command
+        commandCenter.pauseCommand.isEnabled = true
+        commandCenter.pauseCommand.addTarget { [weak self] _ -> MPRemoteCommandHandlerStatus in
             guard let self = self else { return .commandFailed }
             
-            if self.isPlaying {
-                DispatchQueue.main.async {
+            DispatchQueue.main.async {
+                if self.isPlaying {
                     self.handlePauseCommand()
+                    return
                 }
-                return .success
             }
-            return .commandFailed
+            return .success
         }
         
-        // Also handle toggle command
-        commandCenter.togglePlayPauseCommand.addTarget { [weak self] event -> MPRemoteCommandHandlerStatus in
+        // Update toggle command
+        commandCenter.togglePlayPauseCommand.isEnabled = true
+        commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ -> MPRemoteCommandHandlerStatus in
             guard let self = self else { return .commandFailed }
             
             DispatchQueue.main.async {
@@ -683,7 +679,9 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
     @objc private func handleAppDidBecomeActive() {
         // Ensure our now playing info is current
         if isPlaying {
-            updateNowPlayingInfo(title: currentMetadata)
+            // Use last known metadata or fallback while maintaining state
+            let lastKnownTitle = currentMetadata ?? metadataLabel.text
+            updateNowPlayingInfo(title: lastKnownTitle != String(localized: "no_track_info") ? lastKnownTitle : nil)
         }
         
         // Verify audio session
