@@ -30,6 +30,12 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
     private let maxRetryInterval: TimeInterval = 64.0
     private var currentRetryAttempt = 0
     private var retryTimer: Timer?
+    // Add new properties for metadata optimization
+    private var lastMetadataUpdate: Date?
+    private let minimumMetadataInterval: TimeInterval = 5.0 // Minimum seconds between metadata updates
+    private var currentMetadata: String?
+    private var metadataTimer: Timer?
+    private let metadataQueue = DispatchQueue(label: "radio.lutheran.metadata", qos: .utility)
     
     // Title label
     let titleLabel: UILabel = {
@@ -103,10 +109,19 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
         
+        // Add state restoration notification
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAppDidBecomeActive),
+            name: UIApplication.didBecomeActiveNotification,
+            object: nil
+        )
+        
         // Enable background audio
         do {
             try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
             try AVAudioSession.sharedInstance().setActive(true)
+            updateNowPlayingInfo()  // Set default info on launch
         } catch {
             print("Failed to set up background audio: \(error)")
         }
@@ -198,12 +213,19 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
     }
     
     private func cleanupStreamResources() {
-        if let playerItem = player?.currentItem {
-            playerItem.remove(metadataOutput!)
+        if let playerItem = player?.currentItem,
+           let metadataOutput = metadataOutput {
+            playerItem.remove(metadataOutput)
         }
+        
         player = nil
         isPlaying = false
         isManualPause = false
+        metadataTimer?.invalidate()
+        metadataTimer = nil
+        currentMetadata = nil
+        lastMetadataUpdate = nil
+        metadataOutput = nil  // Clear the reference
     }
     
     private func updateUIForNoInternet() {
@@ -222,14 +244,13 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         }
         
         let streamURL = URL(string: "https://livestream.lutheran.radio:8443/lutheranradio.mp3")!
-        let headers = ["Icy-MetaData": "1"]
-        let asset = AVURLAsset(url: streamURL, options: ["AVURLAssetHTTPHeaderFieldsKey": headers])
+        let asset = AVURLAsset(url: streamURL)
         let playerItem = AVPlayerItem(asset: asset)
         
-        // Setup metadata output
+        // Create a new metadata output for this player item
         metadataOutput = AVPlayerItemMetadataOutput(identifiers: nil)
         if let metadataOutput = metadataOutput {
-            metadataOutput.setDelegate(self, queue: DispatchQueue.main)
+            metadataOutput.setDelegate(self, queue: metadataQueue)
             playerItem.add(metadataOutput)
         }
         
@@ -250,11 +271,19 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         player?.play()
         isPlaying = true
         updatePlayPauseButton(isPlaying: true)
+        updateNowPlayingInfo()
     }
     
     func metadataOutput(_ output: AVPlayerItemMetadataOutput,
                        didOutputTimedMetadataGroups groups: [AVTimedMetadataGroup],
                        from track: AVPlayerItemTrack?) {
+        
+        // Check if enough time has passed since last update
+        if let lastUpdate = lastMetadataUpdate,
+           Date().timeIntervalSince(lastUpdate) < minimumMetadataInterval {
+            return
+        }
+        
         guard let item = groups.first?.items.first,
               let value = item.value(forKeyPath: "stringValue") as? String,
               !value.isEmpty else { return }
@@ -262,14 +291,25 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         let songTitle = (item.identifier == AVMetadataIdentifier("icy/StreamTitle") ||
                         (item.key as? String) == "StreamTitle") ? value : nil
         
-        DispatchQueue.main.async { [weak self] in
-            self?.metadataLabel.text = songTitle ?? "No track information"
-            if let songTitle {
-                self?.updateNowPlayingInfo(title: songTitle)
+        // Only update if the metadata has actually changed
+        if songTitle != currentMetadata {
+            currentMetadata = songTitle
+            lastMetadataUpdate = Date()
+            
+            // Schedule UI update on main thread
+            DispatchQueue.main.async { [weak self] in
+                self?.updateMetadataUI(songTitle: songTitle)
             }
         }
     }
     
+    private func updateMetadataUI(songTitle: String?) {
+        metadataLabel.text = songTitle ?? "No track information"
+        if let songTitle = songTitle {
+            updateNowPlayingInfo(title: songTitle)
+        }
+    }
+        
     private func setupInterruptionHandling() {
         NotificationCenter.default.addObserver(
             self,
@@ -376,26 +416,25 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
     }
     
     private func updateNowPlayingInfo(title: String? = nil) {
-        var info: [String: Any] = [
-            MPMediaItemPropertyArtist: "Lutheran Radio",
-            MPNowPlayingInfoPropertyIsLiveStream: true,
-            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
-            MPMediaItemPropertyMediaType: MPMediaType.anyAudio.rawValue,
-            MPNowPlayingInfoPropertyAvailableLanguageOptions: [], // Enable language options menu
-            MPNowPlayingInfoPropertyAssetURL: URL(string: "https://livestream.lutheran.radio:8443/lutheranradio.mp3")! // Enable proper routing
-        ]
-        
-        // Only set title if we have one from metadata
-        if let title = title {
-            info[MPMediaItemPropertyTitle] = title
+        DispatchQueue.main.async {
+            var info: [String: Any] = [
+                MPMediaItemPropertyTitle: title ?? "Lutheran Radio Live",
+                MPMediaItemPropertyArtist: "Lutheran Radio",
+                MPNowPlayingInfoPropertyIsLiveStream: true,
+                MPNowPlayingInfoPropertyPlaybackRate: self.isPlaying ? 1.0 : 0.0,
+                MPMediaItemPropertyMediaType: MPMediaType.anyAudio.rawValue,
+                MPNowPlayingInfoPropertyElapsedPlaybackTime: 0,
+                MPMediaItemPropertyPlaybackDuration: 0, // Live stream, no duration
+                MPNowPlayingInfoPropertyPlaybackProgress: 0
+            ]
+            
+            if let image = UIImage(named: "radio-placeholder") {
+                let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+                info[MPMediaItemPropertyArtwork] = artwork
+            }
+            
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = info
         }
-        
-        if let image = UIImage(named: "radio-placeholder") {
-            let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
-            info[MPMediaItemPropertyArtwork] = artwork
-        }
-        
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
     }
     
     private func handlePlayCommand() {
@@ -408,9 +447,9 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         isManualPause = false
         updatePlayPauseButton(isPlaying: true)
         updateStatusLabel(isPlaying: true)
-        updateNowPlayingInfo()
+        updateNowPlayingInfo(title: currentMetadata)
     }
-    
+
     private func handlePauseCommand() {
         player?.pause()
         isPlaying = false
@@ -423,49 +462,84 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
     private func setupEnhancedAudioSession() {
         do {
             let session = AVAudioSession.sharedInstance()
+            
+            // Deactivate first to clean any existing state
+            try? session.setActive(false)
+            
+            // Set category with all necessary options
             try session.setCategory(
                 .playback,
                 mode: .default,
                 policy: .longFormAudio,
                 options: [.allowAirPlay, .allowBluetooth, .allowBluetoothA2DP, .duckOthers]
             )
+            
+            // Set active and configure background behavior
             try session.setActive(true, options: .notifyOthersOnDeactivation)
             
-            // Configure audio session for background playback
-            try session.setActive(true)
-            UIApplication.shared.beginReceivingRemoteControlEvents()
+            // Ensure we handle audio route changes
+            setupRouteChangeHandling()
+            
+            // Set up background audio controls with proper state management
             setupBackgroundAudioControls()
         } catch {
-            print("Failed to configure audio session: \(error)")
+            print("Audio session setup failed: \(error.localizedDescription)")
         }
     }
     
     private func setupBackgroundAudioControls() {
         let commandCenter = MPRemoteCommandCenter.shared()
         
-        // Clear existing handlers first
-        commandCenter.playCommand.removeTarget(nil)
-        commandCenter.pauseCommand.removeTarget(nil)
+        // Clear existing handlers
+        [commandCenter.playCommand,
+         commandCenter.pauseCommand,
+         commandCenter.togglePlayPauseCommand,
+         commandCenter.stopCommand].forEach { $0.removeTarget(nil) }
         
-        commandCenter.playCommand.addTarget { [weak self] _ in
+        // Configure play command
+        commandCenter.playCommand.isEnabled = true
+        commandCenter.playCommand.addTarget { [weak self] _ -> MPRemoteCommandHandlerStatus in
             guard let self = self else { return .commandFailed }
-            if !self.isPlaying {
-                self.handlePlayCommand()
-                return .success
+            
+            DispatchQueue.main.async {
+                if !self.isPlaying {
+                    self.handlePlayCommand()
+                    return
+                }
             }
-            return .commandFailed
+            return .success
         }
         
-        commandCenter.pauseCommand.addTarget { [weak self] _ in
+        // Configure pause command
+        commandCenter.pauseCommand.isEnabled = true
+        commandCenter.pauseCommand.addTarget { [weak self] _ -> MPRemoteCommandHandlerStatus in
             guard let self = self else { return .commandFailed }
-            if self.isPlaying {
-                self.handlePauseCommand()
-                return .success
+            
+            DispatchQueue.main.async {
+                if self.isPlaying {
+                    self.handlePauseCommand()
+                    return
+                }
             }
-            return .commandFailed
+            return .success
+        }
+        
+        // Update toggle command
+        commandCenter.togglePlayPauseCommand.isEnabled = true
+        commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ -> MPRemoteCommandHandlerStatus in
+            guard let self = self else { return .commandFailed }
+            
+            DispatchQueue.main.async {
+                if self.isPlaying {
+                    self.handlePauseCommand()
+                } else {
+                    self.handlePlayCommand()
+                }
+            }
+            return .success
         }
     }
-
+    
     private func setupUI() {
         view.addSubview(titleLabel)
         
@@ -599,6 +673,24 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
             }
         @unknown default:
             break
+        }
+    }
+    
+    @objc private func handleAppDidBecomeActive() {
+        // Ensure our now playing info is current
+        if isPlaying {
+            // Use last known metadata or fallback while maintaining state
+            let lastKnownTitle = currentMetadata ?? metadataLabel.text
+            updateNowPlayingInfo(title: lastKnownTitle != String(localized: "no_track_info") ? lastKnownTitle : nil)
+        }
+        
+        // Verify audio session
+        do {
+            if !AVAudioSession.sharedInstance().isOtherAudioPlaying {
+                try AVAudioSession.sharedInstance().setActive(true)
+            }
+        } catch {
+            print("Failed to reactivate audio session: \(error)")
         }
     }
     
