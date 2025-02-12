@@ -107,6 +107,7 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         do {
             try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
             try AVAudioSession.sharedInstance().setActive(true)
+            updateNowPlayingInfo()  // Set default info on launch
         } catch {
             print("Failed to set up background audio: \(error)")
         }
@@ -250,6 +251,7 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         player?.play()
         isPlaying = true
         updatePlayPauseButton(isPlaying: true)
+        updateNowPlayingInfo()
     }
     
     func metadataOutput(_ output: AVPlayerItemMetadataOutput,
@@ -377,6 +379,7 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
     
     private func updateNowPlayingInfo(title: String? = nil) {
         var info: [String: Any] = [
+            MPMediaItemPropertyTitle: title ?? "Lutheran Radio Live",  // Provide a default title
             MPMediaItemPropertyArtist: "Lutheran Radio",
             MPNowPlayingInfoPropertyIsLiveStream: true,
             MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
@@ -385,11 +388,15 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
             MPNowPlayingInfoPropertyAssetURL: URL(string: "https://livestream.lutheran.radio:8443/lutheranradio.mp3")! // Enable proper routing
         ]
         
-        // Only set title if we have one from metadata
-        if let title = title {
-            info[MPMediaItemPropertyTitle] = title
+        // Add description for better context when no track info
+        if title == nil {
+            info[MPMediaItemPropertyComments] = "Christian radio station"
+            // You could also use these fields for additional context:
+            // info[MPMediaItemPropertyAlbumTitle] = "Live Stream"
+            // info[MPMediaItemPropertyGenre] = "Christian Radio"
         }
         
+        // Always ensure we have artwork
         if let image = UIImage(named: "radio-placeholder") {
             let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
             info[MPMediaItemPropertyArtwork] = artwork
