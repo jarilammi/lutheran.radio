@@ -1,5 +1,11 @@
 [![CodeQL](https://github.com/jarilammi/lutheran.radio/actions/workflows/codeql-analysis.yml/badge.svg)](https://github.com/jarilammi/lutheran.radio/actions/workflows/codeql-analysis.yml)
 
+# Lutheran Radio
+
+📱 [Available on the App Store](https://apps.apple.com/fi/app/lutheran-radio/id6738301787?l=fi)
+
+Listen to Lutheran Radio on iOS.
+
 ## Local Development and Contributing
 
 To ensure a smooth development experience, follow these steps before contributing:
