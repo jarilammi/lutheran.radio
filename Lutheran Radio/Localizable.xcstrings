@@ -33,6 +33,12 @@
             "value" : "Nie można połączyć się ze strumieniem. Sprawdź połączenie internetowe i spróbuj ponownie."
           }
         },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не удалось подключиться к потоку. Пожалуйста, проверьте подключение к интернету и попробуйте снова."
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -73,6 +79,12 @@
             "value" : "Połączenie nie powiodło się"
           }
         },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ошибка подключения"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -108,6 +120,12 @@
           }
         },
         "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
+        "ru" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "OK"
@@ -153,6 +171,12 @@
             "value" : "Spróbuj ponownie"
           }
         },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Повторить"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -193,6 +217,12 @@
             "value" : "Wyjście audio odłączone"
           }
         },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Аудиовыход отключен"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -228,6 +258,12 @@
           }
         },
         "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "ru" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio"
@@ -273,6 +309,12 @@
             "value" : "Brak informacji o utworze"
           }
         },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Нет информации о треке"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -311,6 +353,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Buforowanie…"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Буферизация…"
           }
         },
         "sv" : {
@@ -353,6 +401,12 @@
             "value" : "Łączenie…"
           }
         },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Подключение…"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -393,6 +447,12 @@
             "value" : "Wstrzymano"
           }
         },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Пауза"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -431,6 +491,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Odtwarzanie"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Воспроизведение"
           }
         },
         "sv" : {
@@ -474,6 +540,12 @@
             "value" : "Ponowne połączenie za %ds (%d/%d)"
           }
         },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Переподключение через %dс (%d/%d)"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -515,6 +587,12 @@
             "value" : "Ponowne łączenie (%d/%d)"
           }
         },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Переподключение (%d/%d)"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -553,6 +631,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Zatrzymano"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Остановлено"
           }
         },
         "sv" : {
