@@ -26,6 +26,12 @@
             "state" : "translated",
             "value" : "Suoratoistoon ei saada yhteyttä. Tarkista yhteytesi ja yritä uudelleen."
           }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kunde inte ansluta till strömmen. Kontrollera din internetanslutning och försök igen."
+          }
         }
       }
     },
@@ -54,6 +60,12 @@
             "state" : "translated",
             "value" : "Yhteys epäonnistui"
           }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anslutningen misslyckades"
+          }
         }
       }
     },
@@ -78,6 +90,12 @@
           }
         },
         "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
+        "sv" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "OK"
@@ -110,6 +128,12 @@
             "state" : "translated",
             "value" : "Yritä uudelleen"
           }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Försök igen"
+          }
         }
       }
     },
@@ -138,6 +162,12 @@
             "state" : "translated",
             "value" : "Äänilähtö katkaistu"
           }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ljud frånkopplat"
+          }
         }
       }
     },
@@ -162,6 +192,12 @@
           }
         },
         "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "sv" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio"
@@ -194,6 +230,12 @@
             "state" : "translated",
             "value" : "Ei kappaletietoja"
           }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ingen spårinformation"
+          }
         }
       }
     },
@@ -221,6 +263,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Puskuroi…"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buffrar…"
           }
         }
       }
@@ -250,6 +298,12 @@
             "state" : "translated",
             "value" : "Yhdistä…"
           }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ansluter…"
+          }
         }
       }
     },
@@ -278,6 +332,12 @@
             "state" : "translated",
             "value" : "Keskeytys"
           }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pausad"
+          }
         }
       }
     },
@@ -305,6 +365,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Toisto"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spelar"
           }
         }
       }
@@ -335,6 +401,12 @@
             "state" : "translated",
             "value" : "Yhdistä %d s (%d/%d)"
           }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Återansluter om %ds (%d/%d)"
+          }
         }
       }
     },
@@ -364,6 +436,12 @@
             "state" : "translated",
             "value" : "Yhdistä (%d/%d)"
           }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Återansluter (%d/%d)"
+          }
         }
       }
     },
@@ -391,6 +469,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pysäytys"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stoppad"
           }
         }
       }
