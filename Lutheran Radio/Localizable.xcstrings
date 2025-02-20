@@ -27,6 +27,12 @@
             "value" : "Suoratoistoon ei saada yhteyttä. Tarkista yhteytesi ja yritä uudelleen."
           }
         },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nie można połączyć się ze strumieniem. Sprawdź połączenie internetowe i spróbuj ponownie."
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -61,6 +67,12 @@
             "value" : "Yhteys epäonnistui"
           }
         },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Połączenie nie powiodło się"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -90,6 +102,12 @@
           }
         },
         "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
+        "pl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "OK"
@@ -129,6 +147,12 @@
             "value" : "Yritä uudelleen"
           }
         },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spróbuj ponownie"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -163,6 +187,12 @@
             "value" : "Äänilähtö katkaistu"
           }
         },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wyjście audio odłączone"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -192,6 +222,12 @@
           }
         },
         "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "pl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio"
@@ -231,6 +267,12 @@
             "value" : "Ei kappaletietoja"
           }
         },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Brak informacji o utworze"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -263,6 +305,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Puskuroi…"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buforowanie…"
           }
         },
         "sv" : {
@@ -299,6 +347,12 @@
             "value" : "Yhdistä…"
           }
         },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Łączenie…"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -333,6 +387,12 @@
             "value" : "Keskeytys"
           }
         },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wstrzymano"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -365,6 +425,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Toisto"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Odtwarzanie"
           }
         },
         "sv" : {
@@ -402,6 +468,12 @@
             "value" : "Yhdistä %d s (%d/%d)"
           }
         },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ponowne połączenie za %ds (%d/%d)"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -437,6 +509,12 @@
             "value" : "Yhdistä (%d/%d)"
           }
         },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ponowne łączenie (%d/%d)"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -469,6 +547,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pysäytys"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zatrzymano"
           }
         },
         "sv" : {
