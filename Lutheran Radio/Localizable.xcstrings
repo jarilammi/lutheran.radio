@@ -27,6 +27,12 @@
             "value" : "Suoratoistoon ei saada yhteyttä. Tarkista yhteytesi ja yritä uudelleen."
           }
         },
+        "lt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nepavyko prisijungti prie srauto. Patikrinkite interneto ryšį ir bandykite dar kartą."
+          }
+        },
         "lv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -77,6 +83,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Yhteys epäonnistui"
+          }
+        },
+        "lt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prisijungimas nepavyko"
           }
         },
         "lv" : {
@@ -131,6 +143,12 @@
             "value" : "OK"
           }
         },
+        "lt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gerai"
+          }
+        },
         "lv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -181,6 +199,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Yritä uudelleen"
+          }
+        },
+        "lt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bandyti dar kartą"
           }
         },
         "lv" : {
@@ -235,6 +259,12 @@
             "value" : "Äänilähtö katkaistu"
           }
         },
+        "lt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Garso išvestis atjungta"
+          }
+        },
         "lv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -282,6 +312,12 @@
           }
         },
         "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "lt" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio"
@@ -339,6 +375,12 @@
             "value" : "Ei kappaletietoja"
           }
         },
+        "lt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nėra kūrinio informacijos"
+          }
+        },
         "lv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -389,6 +431,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Puskuroi…"
+          }
+        },
+        "lt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buferizuojama…"
           }
         },
         "lv" : {
@@ -443,6 +491,12 @@
             "value" : "Yhdistä…"
           }
         },
+        "lt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jungiamasi…"
+          }
+        },
         "lv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -495,6 +549,12 @@
             "value" : "Keskeytys"
           }
         },
+        "lt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pristabdyta"
+          }
+        },
         "lv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -545,6 +605,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Toisto"
+          }
+        },
+        "lt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grojama"
           }
         },
         "lv" : {
@@ -600,6 +666,12 @@
             "value" : "Yhdistä %d s (%d/%d)"
           }
         },
+        "lt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pakartotinis prisijungimas po %ds (%d/%d)"
+          }
+        },
         "lv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -653,6 +725,12 @@
             "value" : "Yhdistä (%d/%d)"
           }
         },
+        "lt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pakartotinis prisijungimas (%d/%d)"
+          }
+        },
         "lv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -703,6 +781,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pysäytys"
+          }
+        },
+        "lt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sustabdyta"
           }
         },
         "lv" : {
