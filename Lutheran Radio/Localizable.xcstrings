@@ -9,6 +9,12 @@
             "value" : "Unable to connect to the stream. Please check your connection and try again."
           }
         },
+        "et" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Voogedastusega ei õnnestunud ühendust luua. Palun kontrollige internetiühendust ja proovige uuesti."
+          }
+        },
         "fi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -25,6 +31,12 @@
             "value" : "Connection Failed"
           }
         },
+        "et" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ühendus ebaõnnestus"
+          }
+        },
         "fi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -36,6 +48,12 @@
     "alert_ok" : {
       "localizations" : {
         "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
+        "et" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "OK"
@@ -57,6 +75,12 @@
             "value" : "Retry"
           }
         },
+        "et" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Proovi uuesti"
+          }
+        },
         "fi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -73,6 +97,12 @@
             "value" : "Audio output disconnected"
           }
         },
+        "et" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Heli lahti ühendatud"
+          }
+        },
         "fi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -84,6 +114,12 @@
     "lutheran_radio_title" : {
       "localizations" : {
         "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "et" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio"
@@ -105,6 +141,12 @@
             "value" : "No track information"
           }
         },
+        "et" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loo info puudub"
+          }
+        },
         "fi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -119,6 +161,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Buffering…"
+          }
+        },
+        "et" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Puhverdamine"
           }
         },
         "fi" : {
@@ -137,6 +185,12 @@
             "value" : "Connecting…"
           }
         },
+        "et" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ühendamine"
+          }
+        },
         "fi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -153,6 +207,12 @@
             "value" : "Paused"
           }
         },
+        "et" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Peatatud"
+          }
+        },
         "fi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -167,6 +227,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Playing"
+          }
+        },
+        "et" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mängib"
           }
         },
         "fi" : {
@@ -186,6 +252,12 @@
             "value" : "Reconnect in %ds (%d/%d)"
           }
         },
+        "et" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taasühendamine %d s (%d/%d)"
+          }
+        },
         "fi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -203,6 +275,12 @@
             "value" : "Reconnect (%d/%d)"
           }
         },
+        "et" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taasühendamine (%d/%d)"
+          }
+        },
         "fi" : {
           "stringUnit" : {
             "state" : "translated",
@@ -217,6 +295,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Stopped"
+          }
+        },
+        "et" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seisatud"
           }
         },
         "fi" : {
