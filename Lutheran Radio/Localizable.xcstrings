@@ -3,6 +3,12 @@
   "strings" : {
     "alert_connection_failed_message" : {
       "localizations" : {
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kunne ikke oprette forbindelse til streamen. Kontrollér din internetforbindelse og prøv igen."
+          }
+        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
@@ -61,6 +67,12 @@
     },
     "alert_connection_failed_title" : {
       "localizations" : {
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Forbindelse mislykkedes"
+          }
+        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
@@ -119,6 +131,12 @@
     },
     "alert_ok" : {
       "localizations" : {
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
@@ -177,6 +195,12 @@
     },
     "alert_retry" : {
       "localizations" : {
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prøv igen"
+          }
+        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
@@ -235,6 +259,12 @@
     },
     "audio_disconnected" : {
       "localizations" : {
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lydudgang afbrudt"
+          }
+        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
@@ -293,6 +323,12 @@
     },
     "lutheran_radio_title" : {
       "localizations" : {
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
@@ -351,6 +387,12 @@
     },
     "no_track_info" : {
       "localizations" : {
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ingen sporoplysninger"
+          }
+        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
@@ -409,6 +451,12 @@
     },
     "status_buffering" : {
       "localizations" : {
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bufferer…"
+          }
+        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
@@ -467,6 +515,12 @@
     },
     "status_connecting" : {
       "localizations" : {
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Forbinder…"
+          }
+        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
@@ -525,6 +579,12 @@
     },
     "status_paused" : {
       "localizations" : {
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "På pause"
+          }
+        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
@@ -583,6 +643,12 @@
     },
     "status_playing" : {
       "localizations" : {
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afspiller"
+          }
+        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
@@ -642,6 +708,12 @@
     "status_reconnect_countdown_format" : {
       "comment" : "Format string for reconnection countdown. Parameters: seconds, current attempt, max attempts",
       "localizations" : {
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gentilslutter om %ds (%d/%d)"
+          }
+        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
@@ -701,6 +773,12 @@
     "status_reconnect_format" : {
       "comment" : "Format string for reconnection status. Parameters: current attempt, max attempts",
       "localizations" : {
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gentilslutter (%d/%d)"
+          }
+        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
@@ -759,6 +837,12 @@
     },
     "status_stopped" : {
       "localizations" : {
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stoppet"
+          }
+        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
