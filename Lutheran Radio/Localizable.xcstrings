@@ -3,6 +3,12 @@
   "strings" : {
     "alert_connection_failed_message" : {
       "localizations" : {
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kunne ikke oprette forbindelse til streamen. Kontrollér din internetforbindelse og prøv igen."
+          }
+        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
@@ -27,10 +33,28 @@
             "value" : "Suoratoistoon ei saada yhteyttä. Tarkista yhteytesi ja yritä uudelleen."
           }
         },
+        "lt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nepavyko prisijungti prie srauto. Patikrinkite interneto ryšį ir bandykite dar kartą."
+          }
+        },
+        "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Neizdevās izveidot savienojumu ar plūsmu. Lūdzu, pārbaudiet interneta savienojumu un mēģiniet vēlreiz."
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nie można połączyć się ze strumieniem. Sprawdź połączenie internetowe i spróbuj ponownie."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не удалось подключиться к потоку. Пожалуйста, проверьте подключение к интернету и попробуйте снова."
           }
         },
         "sv" : {
@@ -43,6 +67,12 @@
     },
     "alert_connection_failed_title" : {
       "localizations" : {
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Forbindelse mislykkedes"
+          }
+        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
@@ -67,10 +97,28 @@
             "value" : "Yhteys epäonnistui"
           }
         },
+        "lt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prisijungimas nepavyko"
+          }
+        },
+        "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Savienojums neizdevās"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Połączenie nie powiodło się"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ошибка подключения"
           }
         },
         "sv" : {
@@ -83,6 +131,12 @@
     },
     "alert_ok" : {
       "localizations" : {
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
@@ -107,7 +161,25 @@
             "value" : "OK"
           }
         },
+        "lt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gerai"
+          }
+        },
+        "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Labi"
+          }
+        },
         "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
+        "ru" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "OK"
@@ -123,6 +195,12 @@
     },
     "alert_retry" : {
       "localizations" : {
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prøv igen"
+          }
+        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
@@ -147,10 +225,28 @@
             "value" : "Yritä uudelleen"
           }
         },
+        "lt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bandyti dar kartą"
+          }
+        },
+        "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mēģināt vēlreiz"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spróbuj ponownie"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Повторить"
           }
         },
         "sv" : {
@@ -163,6 +259,12 @@
     },
     "audio_disconnected" : {
       "localizations" : {
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lydudgang afbrudt"
+          }
+        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
@@ -187,10 +289,28 @@
             "value" : "Äänilähtö katkaistu"
           }
         },
+        "lt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Garso išvestis atjungta"
+          }
+        },
+        "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Audio izeja atvienota"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Wyjście audio odłączone"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Аудиовыход отключен"
           }
         },
         "sv" : {
@@ -203,6 +323,12 @@
     },
     "lutheran_radio_title" : {
       "localizations" : {
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
@@ -227,7 +353,25 @@
             "value" : "Lutheran Radio"
           }
         },
+        "lt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
         "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "ru" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio"
@@ -243,6 +387,12 @@
     },
     "no_track_info" : {
       "localizations" : {
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ingen sporoplysninger"
+          }
+        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
@@ -267,10 +417,28 @@
             "value" : "Ei kappaletietoja"
           }
         },
+        "lt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nėra kūrinio informacijos"
+          }
+        },
+        "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nav informācijas par dziesmu"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Brak informacji o utworze"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Нет информации о треке"
           }
         },
         "sv" : {
@@ -283,6 +451,12 @@
     },
     "status_buffering" : {
       "localizations" : {
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bufferer…"
+          }
+        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
@@ -307,10 +481,28 @@
             "value" : "Puskuroi…"
           }
         },
+        "lt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buferizuojama…"
+          }
+        },
+        "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buferizācija…"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Buforowanie…"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Буферизация…"
           }
         },
         "sv" : {
@@ -323,6 +515,12 @@
     },
     "status_connecting" : {
       "localizations" : {
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Forbinder…"
+          }
+        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
@@ -347,10 +545,28 @@
             "value" : "Yhdistä…"
           }
         },
+        "lt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jungiamasi…"
+          }
+        },
+        "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Savienojas…"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Łączenie…"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Подключение…"
           }
         },
         "sv" : {
@@ -363,6 +579,12 @@
     },
     "status_paused" : {
       "localizations" : {
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "På pause"
+          }
+        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
@@ -387,10 +609,28 @@
             "value" : "Keskeytys"
           }
         },
+        "lt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pristabdyta"
+          }
+        },
+        "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pauzēts"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Wstrzymano"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Пауза"
           }
         },
         "sv" : {
@@ -403,6 +643,12 @@
     },
     "status_playing" : {
       "localizations" : {
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afspiller"
+          }
+        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
@@ -427,10 +673,28 @@
             "value" : "Toisto"
           }
         },
+        "lt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grojama"
+          }
+        },
+        "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Atskaņo"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Odtwarzanie"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Воспроизведение"
           }
         },
         "sv" : {
@@ -444,6 +708,12 @@
     "status_reconnect_countdown_format" : {
       "comment" : "Format string for reconnection countdown. Parameters: seconds, current attempt, max attempts",
       "localizations" : {
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gentilslutter om %ds (%d/%d)"
+          }
+        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
@@ -468,10 +738,28 @@
             "value" : "Yhdistä %d s (%d/%d)"
           }
         },
+        "lt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pakartotinis prisijungimas po %ds (%d/%d)"
+          }
+        },
+        "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Atkārtota savienošana pēc %ds (%d/%d)"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ponowne połączenie za %ds (%d/%d)"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Переподключение через %dс (%d/%d)"
           }
         },
         "sv" : {
@@ -485,6 +773,12 @@
     "status_reconnect_format" : {
       "comment" : "Format string for reconnection status. Parameters: current attempt, max attempts",
       "localizations" : {
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gentilslutter (%d/%d)"
+          }
+        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
@@ -509,10 +803,28 @@
             "value" : "Yhdistä (%d/%d)"
           }
         },
+        "lt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pakartotinis prisijungimas (%d/%d)"
+          }
+        },
+        "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Atkārtota savienošana (%d/%d)"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ponowne łączenie (%d/%d)"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Переподключение (%d/%d)"
           }
         },
         "sv" : {
@@ -525,6 +837,12 @@
     },
     "status_stopped" : {
       "localizations" : {
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stoppet"
+          }
+        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
@@ -549,10 +867,28 @@
             "value" : "Pysäytys"
           }
         },
+        "lt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sustabdyta"
+          }
+        },
+        "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apturēts"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Zatrzymano"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Остановлено"
           }
         },
         "sv" : {
