@@ -27,6 +27,12 @@
             "value" : "Suoratoistoon ei saada yhteyttä. Tarkista yhteytesi ja yritä uudelleen."
           }
         },
+        "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Neizdevās izveidot savienojumu ar plūsmu. Lūdzu, pārbaudiet interneta savienojumu un mēģiniet vēlreiz."
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -71,6 +77,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Yhteys epäonnistui"
+          }
+        },
+        "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Savienojums neizdevās"
           }
         },
         "pl" : {
@@ -119,6 +131,12 @@
             "value" : "OK"
           }
         },
+        "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Labi"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -163,6 +181,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Yritä uudelleen"
+          }
+        },
+        "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mēģināt vēlreiz"
           }
         },
         "pl" : {
@@ -211,6 +235,12 @@
             "value" : "Äänilähtö katkaistu"
           }
         },
+        "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Audio izeja atvienota"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -252,6 +282,12 @@
           }
         },
         "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "lv" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio"
@@ -303,6 +339,12 @@
             "value" : "Ei kappaletietoja"
           }
         },
+        "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nav informācijas par dziesmu"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -347,6 +389,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Puskuroi…"
+          }
+        },
+        "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buferizācija…"
           }
         },
         "pl" : {
@@ -395,6 +443,12 @@
             "value" : "Yhdistä…"
           }
         },
+        "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Savienojas…"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -441,6 +495,12 @@
             "value" : "Keskeytys"
           }
         },
+        "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pauzēts"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -485,6 +545,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Toisto"
+          }
+        },
+        "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Atskaņo"
           }
         },
         "pl" : {
@@ -534,6 +600,12 @@
             "value" : "Yhdistä %d s (%d/%d)"
           }
         },
+        "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Atkārtota savienošana pēc %ds (%d/%d)"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -581,6 +653,12 @@
             "value" : "Yhdistä (%d/%d)"
           }
         },
+        "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Atkārtota savienošana (%d/%d)"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -625,6 +703,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pysäytys"
+          }
+        },
+        "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apturēts"
           }
         },
         "pl" : {
