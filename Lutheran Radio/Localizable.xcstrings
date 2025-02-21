@@ -63,6 +63,12 @@
             "value" : "Neizdevās izveidot savienojumu ar plūsmu. Lūdzu, pārbaudiet interneta savienojumu un mēģiniet vēlreiz."
           }
         },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kunne ikke koble til strømmen. Vennligst sjekk internettforbindelsen din og prøv igjen."
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -149,6 +155,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Savienojums neizdevās"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tilkobling mislyktes"
           }
         },
         "pl" : {
@@ -239,6 +251,12 @@
             "value" : "Labi"
           }
         },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -325,6 +343,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mēģināt vēlreiz"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prøv igjen"
           }
         },
         "pl" : {
@@ -415,6 +439,12 @@
             "value" : "Audio izeja atvienota"
           }
         },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lydutgang frakoblet"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -498,6 +528,12 @@
           }
         },
         "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "nb" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio"
@@ -591,6 +627,12 @@
             "value" : "Nav informācijas par dziesmu"
           }
         },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ingen sporinformasjon"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -677,6 +719,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Buferizācija…"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bufrer"
           }
         },
         "pl" : {
@@ -767,6 +815,12 @@
             "value" : "Savienojas…"
           }
         },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kobler til"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -855,6 +909,12 @@
             "value" : "Pauzēts"
           }
         },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pauset"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -941,6 +1001,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Atskaņo"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spiller"
           }
         },
         "pl" : {
@@ -1032,6 +1098,12 @@
             "value" : "Atkārtota savienošana pēc %ds (%d/%d)"
           }
         },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kobler til igjen om %ds (%d/%d)"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1121,6 +1193,12 @@
             "value" : "Atkārtota savienošana (%d/%d)"
           }
         },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kobler til igjen (%d/%d)"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1207,6 +1285,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Apturēts"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stoppet"
           }
         },
         "pl" : {
