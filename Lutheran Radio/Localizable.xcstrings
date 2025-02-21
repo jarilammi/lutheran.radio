@@ -45,6 +45,12 @@
             "value" : "Kann ikki sambinda við streymin. Kanna internetsamband títt og royn aftur."
           }
         },
+        "kl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attavigisinnaanngilaq. Internettimut attavik misissuruk naggataatigullu misileqqiguk."
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -127,6 +133,12 @@
             "value" : "Samband miseydnaðist"
           }
         },
+        "kl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attavik ajutoorpoq"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -204,6 +216,12 @@
           }
         },
         "fo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
+        "kl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "OK"
@@ -291,6 +309,12 @@
             "value" : "Royn aftur"
           }
         },
+        "kl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Misileqqiguk"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -373,6 +397,12 @@
             "value" : "Ljóðútgongd frátikin"
           }
         },
+        "kl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nipi unippoq"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -450,6 +480,12 @@
           }
         },
         "fo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "kl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio"
@@ -537,6 +573,12 @@
             "value" : "Ongar spor upplýsingar"
           }
         },
+        "kl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erinarsuutip paasissutissartai soqanngillat"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -617,6 +659,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bufrar…"
+          }
+        },
+        "kl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Utaqqivoq"
           }
         },
         "lt" : {
@@ -701,6 +749,12 @@
             "value" : "Sambindi"
           }
         },
+        "kl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attavilerpoq"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -783,6 +837,12 @@
             "value" : "Steðgað"
           }
         },
+        "kl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uninngavoq"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -863,6 +923,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spælir"
+          }
+        },
+        "kl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tusarnaagassaq"
           }
         },
         "lt" : {
@@ -948,6 +1014,12 @@
             "value" : "Endursambinding um %ds (%d/%d)"
           }
         },
+        "kl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attavileeqqippoq %ds (%d/%d)"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1031,6 +1103,12 @@
             "value" : "Endursambindi (%d/%d)"
           }
         },
+        "kl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attavileeqqippoq (%d/%d)"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1111,6 +1189,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Steðgað"
+          }
+        },
+        "kl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unippoq"
           }
         },
         "lt" : {
