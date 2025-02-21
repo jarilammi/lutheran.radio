@@ -39,6 +39,12 @@
             "value" : "Ei saatu yhtheyttä striimhin. Tarkista yhteys ja kokeile uuesti."
           }
         },
+        "fo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kann ikki sambinda við streymin. Kanna internetsamband títt og royn aftur."
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -115,6 +121,12 @@
             "value" : "Yhteys epäonnistu"
           }
         },
+        "fo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Samband miseydnaðist"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -186,6 +198,12 @@
           }
         },
         "fit" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
+        "fo" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "OK"
@@ -267,6 +285,12 @@
             "value" : "Uusin"
           }
         },
+        "fo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Royn aftur"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -343,6 +367,12 @@
             "value" : "Äänilähtö katkaistu"
           }
         },
+        "fo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ljóðútgongd frátikin"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -414,6 +444,12 @@
           }
         },
         "fit" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "fo" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio"
@@ -495,6 +531,12 @@
             "value" : "Ei kappalheen tietoja"
           }
         },
+        "fo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ongar spor upplýsingar"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -569,6 +611,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Puskuroi"
+          }
+        },
+        "fo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bufrar…"
           }
         },
         "lt" : {
@@ -647,6 +695,12 @@
             "value" : "Yhistää…"
           }
         },
+        "fo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sambindi"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -723,6 +777,12 @@
             "value" : "Pysäytetty"
           }
         },
+        "fo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steðgað"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -797,6 +857,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Soittaa"
+          }
+        },
+        "fo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spælir"
           }
         },
         "lt" : {
@@ -876,6 +942,12 @@
             "value" : "Yhistää uuesti %ds (%d/%d)"
           }
         },
+        "fo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Endursambinding um %ds (%d/%d)"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -953,6 +1025,12 @@
             "value" : "Yhistää uuesti (%d/%d)"
           }
         },
+        "fo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Endursambindi (%d/%d)"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1027,6 +1105,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pysäytetty"
+          }
+        },
+        "fo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steðgað"
           }
         },
         "lt" : {
