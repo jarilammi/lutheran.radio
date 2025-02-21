@@ -15,6 +15,7 @@ The app is fully localized in the following languages:
 - Finnish (fi)
 - Tornedalen Finnish (fit)
 - Faroese (fo)
+- Icelandic (is)
 - Greenlandic (kl)
 - Lithuanian (lt)
 - Latvian (lv)
