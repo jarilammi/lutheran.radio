@@ -26,6 +26,8 @@ The app is fully localized in the following languages:
 - Northern Sami (se)
 - Swedish (sv)
 
+![Geographic distribution of supported languages](docs/language-map.svg)
+
 ## Local Development and Contributing
 
 To ensure a smooth development experience, follow these steps before contributing:
