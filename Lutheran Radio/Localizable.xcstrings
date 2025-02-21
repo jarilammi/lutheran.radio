@@ -63,6 +63,18 @@
             "value" : "Neizdevās izveidot savienojumu ar plūsmu. Lūdzu, pārbaudiet interneta savienojumu un mēģiniet vēlreiz."
           }
         },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kunne ikke koble til strømmen. Vennligst sjekk internettforbindelsen din og prøv igjen."
+          }
+        },
+        "nn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kunne ikkje kople til straumen. Ver venleg og sjekk internettilkoplinga di og prøv igjen."
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -149,6 +161,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Savienojums neizdevās"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tilkobling mislyktes"
+          }
+        },
+        "nn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tilkopling mislukka"
           }
         },
         "pl" : {
@@ -239,6 +263,18 @@
             "value" : "Labi"
           }
         },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
+        "nn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -325,6 +361,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mēģināt vēlreiz"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prøv igjen"
+          }
+        },
+        "nn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prøv igjen"
           }
         },
         "pl" : {
@@ -415,6 +463,18 @@
             "value" : "Audio izeja atvienota"
           }
         },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lydutgang frakoblet"
+          }
+        },
+        "nn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lydutgang fråkopla"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -498,6 +558,18 @@
           }
         },
         "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "nn" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio"
@@ -591,6 +663,18 @@
             "value" : "Nav informācijas par dziesmu"
           }
         },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ingen sporinformasjon"
+          }
+        },
+        "nn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ingen sporinformasjon"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -677,6 +761,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Buferizācija…"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bufrer"
+          }
+        },
+        "nn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buffrar"
           }
         },
         "pl" : {
@@ -767,6 +863,18 @@
             "value" : "Savienojas…"
           }
         },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kobler til"
+          }
+        },
+        "nn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Koplar til"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -855,6 +963,18 @@
             "value" : "Pauzēts"
           }
         },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pauset"
+          }
+        },
+        "nn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pausa"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -941,6 +1061,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Atskaņo"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spiller"
+          }
+        },
+        "nn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spelar"
           }
         },
         "pl" : {
@@ -1032,6 +1164,18 @@
             "value" : "Atkārtota savienošana pēc %ds (%d/%d)"
           }
         },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kobler til igjen om %ds (%d/%d)"
+          }
+        },
+        "nn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Koplar til igjen om %ds (%d/%d)"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1121,6 +1265,18 @@
             "value" : "Atkārtota savienošana (%d/%d)"
           }
         },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kobler til igjen (%d/%d)"
+          }
+        },
+        "nn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Koplar til igjen (%d/%d)"
+          }
+        },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1207,6 +1363,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Apturēts"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stoppet"
+          }
+        },
+        "nn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stoppa"
           }
         },
         "pl" : {

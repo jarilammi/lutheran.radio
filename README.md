@@ -6,6 +6,25 @@
 
 Listen to Lutheran Radio on iOS.
 
+## Localizations
+The app is fully localized in the following languages:
+- Danish (da)
+- German (de)
+- English (en)
+- Estonian (et)
+- Finnish (fi)
+- Tornedalen Finnish (fit)
+- Faroese (fo)
+- Greenlandic (kl)
+- Lithuanian (lt)
+- Latvian (lv)
+- Norwegian Bokmål (nb)
+- Norwegian Nynorsk (nn)
+- Polish (pl)
+- Russian (ru)
+- Northern Sami (se)
+- Swedish (sv)
+
 ## Local Development and Contributing
 
 To ensure a smooth development experience, follow these steps before contributing:

@@ -238,7 +238,7 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
     
     private func setupAVPlayer() {
         if currentRetryAttempt == 0 {
-            statusLabel.text = "Connecting…"
+            statusLabel.text = String(localized: "status_connecting")
             statusLabel.backgroundColor = .systemYellow
             statusLabel.textColor = .black
         }
