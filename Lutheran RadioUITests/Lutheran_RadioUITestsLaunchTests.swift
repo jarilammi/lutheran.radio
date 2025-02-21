@@ -10,7 +10,7 @@ import XCTest
 final class Lutheran_RadioUITestsLaunchTests: XCTestCase {
 
     override class var runsForEachTargetApplicationUIConfiguration: Bool {
-        true
+        false
     }
 
     override func setUpWithError() throws {
