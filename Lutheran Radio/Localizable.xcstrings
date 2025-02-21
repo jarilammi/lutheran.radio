@@ -45,6 +45,12 @@
             "value" : "Kann ikki sambinda við streymin. Kanna internetsamband títt og royn aftur."
           }
         },
+        "is" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ekki tókst að tengjast straumnum. Vinsamlegast athugaðu nettenginguna þína og reyndu aftur."
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -143,6 +149,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Samband miseydnaðist"
+          }
+        },
+        "is" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tenging mistókst"
           }
         },
         "kl" : {
@@ -245,6 +257,12 @@
             "value" : "OK"
           }
         },
+        "is" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Í lagi"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -343,6 +361,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Royn aftur"
+          }
+        },
+        "is" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reyna aftur"
           }
         },
         "kl" : {
@@ -445,6 +469,12 @@
             "value" : "Ljóðútgongd frátikin"
           }
         },
+        "is" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hljóðúttak aftengt"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -540,6 +570,12 @@
           }
         },
         "fo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "is" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio"
@@ -645,6 +681,12 @@
             "value" : "Ongar spor upplýsingar"
           }
         },
+        "is" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Engar upplýsingar um lag"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -743,6 +785,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bufrar…"
+          }
+        },
+        "is" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Biðminni…"
           }
         },
         "kl" : {
@@ -845,6 +893,12 @@
             "value" : "Sambindi"
           }
         },
+        "is" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tengist…"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -945,6 +999,12 @@
             "value" : "Steðgað"
           }
         },
+        "is" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Í bið"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1043,6 +1103,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spælir"
+          }
+        },
+        "is" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spilun"
           }
         },
         "kl" : {
@@ -1146,6 +1212,12 @@
             "value" : "Endursambinding um %ds (%d/%d)"
           }
         },
+        "is" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Endurtenging eftir %ds (%d/%d)"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1247,6 +1319,12 @@
             "value" : "Endursambindi (%d/%d)"
           }
         },
+        "is" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Endurtenging (%d/%d)"
+          }
+        },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1345,6 +1423,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Steðgað"
+          }
+        },
+        "is" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stöðvað"
           }
         },
         "kl" : {

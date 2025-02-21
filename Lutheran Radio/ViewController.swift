@@ -71,6 +71,9 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         label.layer.cornerRadius = 8
         label.clipsToBounds = true
         label.translatesAutoresizingMaskIntoConstraints = false
+        label.adjustsFontSizeToFitWidth = true
+        label.minimumScaleFactor = 0.75
+        label.lineBreakMode = .byTruncatingTail
         return label
     }()
 
@@ -563,7 +566,8 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
             controlsStackView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             controlsStackView.heightAnchor.constraint(equalToConstant: 50),
             
-            statusLabel.widthAnchor.constraint(equalToConstant: 120),
+            statusLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 120),
+            statusLabel.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor, multiplier: 0.4),
             statusLabel.heightAnchor.constraint(equalToConstant: 40),
             playPauseButton.widthAnchor.constraint(equalToConstant: 50),
             playPauseButton.heightAnchor.constraint(equalToConstant: 50),
