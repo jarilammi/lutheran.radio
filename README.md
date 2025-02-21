@@ -7,6 +7,10 @@
 Listen to Lutheran Radio on iOS.
 
 ## Localizations
+<table style="border: none;">
+<tr>
+<td width="40%" style="border: none;">
+
 The app is fully localized in the following languages:
 - Danish (da)
 - German (de)
@@ -26,7 +30,14 @@ The app is fully localized in the following languages:
 - Northern Sami (se)
 - Swedish (sv)
 
+</td>
+<td width="60%" style="border: none;">
+
 ![Geographic distribution of supported languages](docs/language-map.svg)
+
+</td>
+</tr>
+</table>
 
 ## Local Development and Contributing
 
