@@ -33,6 +33,12 @@
             "value" : "Suoratoistoon ei saada yhteyttä. Tarkista yhteytesi ja yritä uudelleen."
           }
         },
+        "fit" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ei saatu yhtheyttä striimhin. Tarkista yhteys ja kokeile uuesti."
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -55,6 +61,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Не удалось подключиться к потоку. Пожалуйста, проверьте подключение к интернету и попробуйте снова."
+          }
+        },
+        "se" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ii sáhte laktásit rávnnjái. Dárkkis iežat internetlaktádusa ja geahččal fas."
           }
         },
         "sv" : {
@@ -97,6 +109,12 @@
             "value" : "Yhteys epäonnistui"
           }
         },
+        "fit" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yhteys epäonnistu"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -119,6 +137,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ошибка подключения"
+          }
+        },
+        "se" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Laktádeapmi filtii"
           }
         },
         "sv" : {
@@ -161,6 +185,12 @@
             "value" : "OK"
           }
         },
+        "fit" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -180,6 +210,12 @@
           }
         },
         "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
+        "se" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "OK"
@@ -225,6 +261,12 @@
             "value" : "Yritä uudelleen"
           }
         },
+        "fit" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uusin"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -247,6 +289,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Повторить"
+          }
+        },
+        "se" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geahččal fas"
           }
         },
         "sv" : {
@@ -289,6 +337,12 @@
             "value" : "Äänilähtö katkaistu"
           }
         },
+        "fit" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Äänilähtö katkaistu"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -311,6 +365,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Аудиовыход отключен"
+          }
+        },
+        "se" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jietnaolggos fáktejuvvon"
           }
         },
         "sv" : {
@@ -353,6 +413,12 @@
             "value" : "Lutheran Radio"
           }
         },
+        "fit" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -372,6 +438,12 @@
           }
         },
         "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "se" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio"
@@ -417,6 +489,12 @@
             "value" : "Ei kappaletietoja"
           }
         },
+        "fit" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ei kappalheen tietoja"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -439,6 +517,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Нет информации о треке"
+          }
+        },
+        "se" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eai gávdno čuojanasadieđut"
           }
         },
         "sv" : {
@@ -481,6 +565,12 @@
             "value" : "Puskuroi…"
           }
         },
+        "fit" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Puskuroi"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -503,6 +593,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Буферизация…"
+          }
+        },
+        "se" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buffere…"
           }
         },
         "sv" : {
@@ -545,6 +641,12 @@
             "value" : "Yhdistä…"
           }
         },
+        "fit" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yhistää…"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -567,6 +669,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Подключение…"
+          }
+        },
+        "se" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Laktádeamen…"
           }
         },
         "sv" : {
@@ -609,6 +717,12 @@
             "value" : "Keskeytys"
           }
         },
+        "fit" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pysäytetty"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -631,6 +745,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Пауза"
+          }
+        },
+        "se" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Boddjojuvvon"
           }
         },
         "sv" : {
@@ -673,6 +793,12 @@
             "value" : "Toisto"
           }
         },
+        "fit" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Soittaa"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -695,6 +821,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Воспроизведение"
+          }
+        },
+        "se" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Čuojaha"
           }
         },
         "sv" : {
@@ -738,6 +870,12 @@
             "value" : "Yhdistä %d s (%d/%d)"
           }
         },
+        "fit" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yhistää uuesti %ds (%d/%d)"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -760,6 +898,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Переподключение через %dс (%d/%d)"
+          }
+        },
+        "se" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ođđasit laktádeapmi %ds (%d/%d)"
           }
         },
         "sv" : {
@@ -803,6 +947,12 @@
             "value" : "Yhdistä (%d/%d)"
           }
         },
+        "fit" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yhistää uuesti (%d/%d)"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -825,6 +975,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Переподключение (%d/%d)"
+          }
+        },
+        "se" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ođđasit laktádeamen (%d/%d)"
           }
         },
         "sv" : {
@@ -867,6 +1023,12 @@
             "value" : "Pysäytys"
           }
         },
+        "fit" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pysäytetty"
+          }
+        },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
@@ -889,6 +1051,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Остановлено"
+          }
+        },
+        "se" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bisánan"
           }
         },
         "sv" : {
