@@ -12,6 +12,8 @@ import Network
 import AVKit
 
 class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
+    private let certificatePinningDelegate = CertificatePinningDelegate()
+    private var secureSession: URLSession!
     // AVPlayer instance
     var player: AVPlayer?
     var isPlaying: Bool = false // Tracks playback state
@@ -110,6 +112,7 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
     
     override func viewDidLoad() {
         super.viewDidLoad()
+        setupSecureSession()
         view.backgroundColor = .systemBackground
         
         // Add state restoration notification
@@ -158,6 +161,13 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         }
     }
     
+    private func setupSecureSession() {
+        let configuration = URLSessionConfiguration.default
+        secureSession = URLSession(configuration: configuration,
+                                 delegate: certificatePinningDelegate,
+                                 delegateQueue: nil)
+    }
+    
     private func setupControls() {
         // Configure play/pause button action
         playPauseButton.addTarget(self, action: #selector(playPauseTapped), for: .touchUpInside)
@@ -192,8 +202,7 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         let url = URL(string: "https://livestream.lutheran.radio:8443/lutheranradio.mp3")!
         var request = URLRequest(url: url)
         request.httpMethod = "HEAD"  // Only get headers, don't download content
-        
-        let task = URLSession.shared.dataTask(with: request) { _, response, _ in
+        let task = secureSession.dataTask(with: request) { _, response, _ in
             if let httpResponse = response as? HTTPURLResponse {
                 completion(httpResponse.statusCode == 200)
             } else {
@@ -248,6 +257,7 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         
         let streamURL = URL(string: "https://livestream.lutheran.radio:8443/lutheranradio.mp3")!
         let asset = AVURLAsset(url: streamURL)
+        asset.resourceLoader.setDelegate(certificatePinningDelegate, queue: .main)
         let playerItem = AVPlayerItem(asset: asset)
         
         // Create a new metadata output for this player item
