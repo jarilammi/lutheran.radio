@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600">
+  <!-- Background -->
+  <rect width="800" height="600" fill="#f8f9fa"/>
+  
+  <!-- Germanic Languages (Blues) -->
+  <!-- North Germanic subgroup -->
+  <path d="M100 80 Q120 60 140 80 T160 100 T140 120 T100 110 T100 80" 
+        fill="#4a90e2" opacity="0.8"/>
+  <text x="120" y="95" font-family="Arial" font-size="10">Icelandic</text>
+  <text x="120" y="105" font-family="Arial" font-size="10" fill="#ccc">íslenska</text>
+  
+  <circle cx="200" cy="140" r="25" fill="#5a9ee2" opacity="0.8"/>
+  <text x="200" y="135" font-family="Arial" font-size="10" text-anchor="middle">Faroese</text>
+  <text x="200" y="145" font-family="Arial" font-size="10" text-anchor="middle" fill="#ccc">føroyskt</text>
+
+  <path d="M380 160 Q420 140 440 180 T460 240 T420 280 T380 260 T380 160" 
+        fill="#6aace2" opacity="0.8"/>
+  <text x="410" y="200" font-family="Arial" font-size="10">Norwegian Bokmål</text>
+  <text x="410" y="210" font-family="Arial" font-size="10" fill="#555">norsk bokmål</text>
+  <text x="410" y="225" font-family="Arial" font-size="10">Norwegian Nynorsk</text>
+  <text x="410" y="235" font-family="Arial" font-size="10" fill="#555">norsk nynorsk</text>
+
+  <path d="M460 180 Q500 160 520 200 T540 260 T500 300 T460 280 T460 180" 
+        fill="#7abae2" opacity="0.8"/>
+  <text x="490" y="235" font-family="Arial" font-size="10">Swedish</text>
+  <text x="490" y="245" font-family="Arial" font-size="10" fill="#555">svenska</text>
+
+  <path d="M380 300 Q420 280 440 300 T460 340 T420 360 T380 340 T380 300" 
+        fill="#8ac8e2" opacity="0.8"/>
+  <text x="410" y="320" font-family="Arial" font-size="10">Danish</text>
+  <text x="410" y="330" font-family="Arial" font-size="10" fill="#888">dansk</text>
+
+  <!-- West Germanic subgroup -->
+  <path d="M360 360 Q400 340 440 360 T480 400 T440 440 T360 420 T360 360" 
+        fill="#2171b5" opacity="0.8"/>
+  <text x="410" y="390" font-family="Arial" font-size="10">German</text>
+  <text x="410" y="400" font-family="Arial" font-size="10" fill="#ccc">Deutsch</text>
+
+  <!-- Finno-Ugric Languages -->
+  <!-- Finnic branch (Oranges) -->
+  <path d="M540 160 Q580 140 600 180 T620 240 T580 280 T540 260 T540 160" 
+        fill="#f39c12" opacity="0.8"/>
+  <text x="550" y="200" font-family="Arial" font-size="10">Tornedalen Finnish</text>
+  <text x="550" y="210" font-family="Arial" font-size="10" fill="#555">meänkieli</text>
+  <text x="550" y="225" font-family="Arial" font-size="10">Finnish</text>
+  <text x="550" y="235" font-family="Arial" font-size="10" fill="#555">suomi</text>
+
+  <!-- Sami branch (Burgundy) -->
+  <path d="M440 140 Q480 120 520 140 T540 180 T500 200 T440 180 T440 140" 
+        fill="#c0392b" opacity="0.8"/>
+  <text x="480" y="155" font-family="Arial" font-size="10">Northern Sami</text>
+  <text x="480" y="165" font-family="Arial" font-size="10" fill="#555">davvisámegiella</text>
+
+  <!-- Finnic branch (continued) -->
+  <path d="M520 300 Q560 280 580 300 T600 340 T560 360 T520 340 T520 300" 
+        fill="#e67e22" opacity="0.8"/>
+  <text x="550" y="320" font-family="Arial" font-size="10">Estonian</text>
+  <text x="550" y="330" font-family="Arial" font-size="10" fill="#888">eesti</text>
+
+  <!-- Balto-Slavic Languages (Greens) -->
+  <!-- Baltic subgroup -->
+  <path d="M520 340 Q560 320 580 340 T600 380 T560 400 T520 380 T520 340" 
+        fill="#2ecc71" opacity="0.8"/>
+  <text x="550" y="360" font-family="Arial" font-size="10">Latvian</text>
+  <text x="550" y="370" font-family="Arial" font-size="10" fill="#888">latviešu</text>
+
+  <path d="M520 380 Q560 360 580 380 T600 420 T560 440 T520 420 T520 380" 
+        fill="#27ae60" opacity="0.8"/>
+  <text x="550" y="400" font-family="Arial" font-size="10">Lithuanian</text>
+  <text x="550" y="410" font-family="Arial" font-size="10" fill="#888">lietuvių</text>
+
+  <!-- Slavic subgroup -->
+  <path d="M460 400 Q500 380 520 400 T540 440 T500 460 T460 440 T460 400" 
+        fill="#1abc9c" opacity="0.8"/>
+  <text x="490" y="420" font-family="Arial" font-size="10">Polish</text>
+  <text x="490" y="430" font-family="Arial" font-size="10" fill="#888">polski</text>
+
+  <path d="M620 200 Q660 180 680 220 T700 280 T660 300 T620 280 T620 200" 
+        fill="#16a085" opacity="0.8"/>
+  <text x="650" y="240" font-family="Arial" font-size="10">Russian</text>
+  <text x="650" y="250" font-family="Arial" font-size="10" fill="#555">русский</text>
+
+  <!-- Eskimo-Aleut Languages (Purple) -->
+  <path d="M60 40 Q100 20 120 40 T140 80 T100 100 T60 80 T60 40" 
+        fill="#9b59b6" opacity="0.8"/>
+  <text x="90" y="55" font-family="Arial" font-size="10">Greenlandic</text>
+  <text x="90" y="65" font-family="Arial" font-size="10" fill="#ccc">kalaallisut</text>
+
+  <!-- Connecting lines to show relationships -->
+  <g stroke="#ccd3e0" stroke-width="1" opacity="0.3">
+    <path d="M140 100 L200 140" fill="none"/>
+    <path d="M200 140 L380 220" fill="none"/>
+    <path d="M480 180 L540 200" fill="none"/>
+    <path d="M460 280 L380 320" fill="none"/>
+    <path d="M420 360 L460 420" fill="none"/>
+    <path d="M480 420 L520 400" fill="none"/>
+    <path d="M580 320 L580 360" fill="none"/>
+    <path d="M580 360 L580 400" fill="none"/>
+  </g>
+</svg>
