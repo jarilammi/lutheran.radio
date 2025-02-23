@@ -10,9 +10,20 @@ import Security
 import CommonCrypto
 import AVFoundation
 
+/**
+ * Certificate pinning delegate for securing network connections.
+ * Validates servers by comparing their public key hash against a known value
+ * to prevent MITM attacks.
+ */
 class CertificatePinningDelegate: NSObject, URLSessionDelegate, AVAssetResourceLoaderDelegate {
-    // Hardcoded certificate hash (SHA256)
-    private let pinnedCertificateHash = "mm31qgyBr2aXX8NzxmX/OeKzrUeOtxim4foWmxL4TZY="
+    // Hash of the server's public key, generated using:
+    // $ openssl s_client -connect livestream.lutheran.radio:8443 \
+    //   -servername livestream.lutheran.radio < /dev/null \
+    //   | openssl x509 -outform pem \
+    //   | openssl x509 -pubkey -noout \
+    //   | openssl dgst -sha512 -binary \
+    //   | base64
+    private let pinnedPublicKeyHash = "G7lfOgLOyYZNMoltoAIbB8fd8kMJSUvetPXAAEk6uHivMTP5pnMy+rYLapGaLsn7EryZstIUSh2Ee28alLzqLA=="
     
     private var secureSession: URLSession!
     
@@ -50,10 +61,10 @@ class CertificatePinningDelegate: NSObject, URLSessionDelegate, AVAssetResourceL
         }
         
         // Calculate the hash of the public key
-        let serverCertificateHash = publicKeyData.sha256().base64EncodedString()
+        let serverPublicKeyHash = publicKeyData.sha512().base64EncodedString()
         
         // Compare the hash with our pinned hash
-        if serverCertificateHash == pinnedCertificateHash {
+        if serverPublicKeyHash == pinnedPublicKeyHash {
             // Certificate matches, proceed with the connection
             completionHandler(.useCredential, URLCredential(trust: serverTrust))
         } else {
@@ -95,12 +106,12 @@ class CertificatePinningDelegate: NSObject, URLSessionDelegate, AVAssetResourceL
     }
 }
 
-// Extension to calculate SHA256 hash
+// Extension to calculate SHA512 hash
 extension Data {
-    func sha256() -> Data {
-        var hash = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
+    func sha512() -> Data {
+        var hash = [UInt8](repeating: 0, count: Int(CC_SHA512_DIGEST_LENGTH))
         withUnsafeBytes { buffer in
-            _ = CC_SHA256(buffer.baseAddress, CC_LONG(count), &hash)
+            _ = CC_SHA512(buffer.baseAddress, CC_LONG(count), &hash)
         }
         return Data(hash)
     }
