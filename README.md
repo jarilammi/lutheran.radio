@@ -63,3 +63,35 @@ If you encounter build or test issues, try these steps:
 3. **Clean Derived Data**: This removes all derived data for all projects, so use with caution: ```rm -rf ~/Library/Developer/Xcode/DerivedData/*```
 
 After cleaning, retry the build and test steps above.
+
+# Security Implementation
+
+## Certificate Pinning
+
+The app implements certificate pinning to prevent man-in-the-middle (MITM) attacks. This is achieved by:
+
+1. Generating a SHA-512 hash of the server's public key during development
+2. Embedding this hash in the app
+3. Verifying the server's public key hash during each connection
+4. Preventing redirects to maintain connection integrity with the fixed endpoint
+
+### Implementation Note
+
+While the codebase uses SHA-512 for certificate pinning, this is intentional and secure. Some security scanners may flag this as a potential issue because SHA-512 would be inappropriate for password hashing (where computationally expensive algorithms like bcrypt should be used). However, for certificate pinning:
+
+- SHA-512 is cryptographically secure and appropriate for integrity verification
+- Fast hash computation is desired since it occurs on every connection
+- The use case is fundamentally different from password hashing
+
+### Verifying the Certificate Hash
+
+To verify or update the certificate hash:
+
+```bash
+openssl s_client -connect livestream.lutheran.radio:8443 \
+  -servername livestream.lutheran.radio < /dev/null \
+  | openssl x509 -outform pem \
+  | openssl x509 -pubkey -noout \
+  | openssl dgst -sha512 -binary \
+  | base64
+```

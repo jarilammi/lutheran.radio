@@ -23,6 +23,8 @@ class CertificatePinningDelegate: NSObject, URLSessionDelegate, AVAssetResourceL
     //   | openssl x509 -pubkey -noout \
     //   | openssl dgst -sha512 -binary \
     //   | base64
+    
+    // SHA-512 is used here for fast integrity checks
     private let pinnedPublicKeyHash = "G7lfOgLOyYZNMoltoAIbB8fd8kMJSUvetPXAAEk6uHivMTP5pnMy+rYLapGaLsn7EryZstIUSh2Ee28alLzqLA=="
     
     private var secureSession: URLSession!
@@ -71,6 +73,15 @@ class CertificatePinningDelegate: NSObject, URLSessionDelegate, AVAssetResourceL
             // Certificate doesn't match, reject the connection
             completionHandler(.cancelAuthenticationChallenge, nil)
         }
+    }
+    
+    // Prevent redirects since we use fixed endpoint
+    func urlSession(_ session: URLSession,
+                   task: URLSessionTask,
+                   willPerformHTTPRedirection response: HTTPURLResponse,
+                   newRequest request: URLRequest,
+                   completionHandler: @escaping (URLRequest?) -> Void) {
+        completionHandler(nil)
     }
     
     // AVAssetResourceLoaderDelegate methods
