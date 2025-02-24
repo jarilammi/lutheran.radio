@@ -89,9 +89,11 @@ To verify or update the certificate hash:
 
 ```bash
 openssl s_client -connect livestream.lutheran.radio:8443 \
-  -servername livestream.lutheran.radio < /dev/null \
+  -servername livestream.lutheran.radio < /dev/null 2>/dev/null \
   | openssl x509 -outform pem \
   | openssl x509 -pubkey -noout \
+  | openssl ec -pubin -inform pem -outform der -conv_form uncompressed \
+  | tail -c +24 \
   | openssl dgst -sha512 -binary \
-  | base64
+  | base64 -w 0
 ```

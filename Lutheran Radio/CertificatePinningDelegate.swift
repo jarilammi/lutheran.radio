@@ -25,7 +25,7 @@ class CertificatePinningDelegate: NSObject, URLSessionDelegate, AVAssetResourceL
     //   | base64
     
     // SHA-512 is used here for fast integrity checks
-    private let pinnedPublicKeyHash = "G7lfOgLOyYZNMoltoAIbB8fd8kMJSUvetPXAAEk6uHivMTP5pnMy+rYLapGaLsn7EryZstIUSh2Ee28alLzqLA=="
+    private let pinnedPublicKeyHash = "rMadBtyLpBp0ybRQW6+WGcFm6wGG7OldSI6pA/eRVQy/xnpjBsDu897E1HcGZPB+mZQhUkfswZVVvWF9YPALFQ=="
     
     private var secureSession: URLSession!
     
