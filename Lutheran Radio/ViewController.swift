@@ -8,38 +8,11 @@
 import UIKit
 import AVFoundation
 import MediaPlayer
-import Network
 import AVKit
+import Network
 
-class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
-    private let certificatePinningDelegate = CertificatePinningDelegate()
-    private var secureSession: URLSession!
-    // AVPlayer instance
-    var player: AVPlayer?
-    var isPlaying: Bool = false // Tracks playback state
-    var isManualPause: Bool = false // Tracks if pause was triggered manually
-    private var previouslyPlaying = false
-    private var wasPlayingBeforeInterruption = false
-    private var wasPlayingBeforeRouteChange = false
-    private var metadataOutput: AVPlayerItemMetadataOutput?
-    private var timeControlStatusObserver: NSKeyValueObservation?
-    private var itemStatusObserver: NSKeyValueObservation?
-    private var networkMonitor: NWPathMonitor?
-    internal var hasInternetConnection = true
-    // Retry configuration
-    private let maxRetryAttempts = 5
-    private let baseRetryInterval: TimeInterval = 2.0
-    private let maxRetryInterval: TimeInterval = 64.0
-    private var currentRetryAttempt = 0
-    private var retryTimer: Timer?
-    // Add new properties for metadata optimization
-    private var lastMetadataUpdate: Date?
-    private let minimumMetadataInterval: TimeInterval = 5.0 // Minimum seconds between metadata updates
-    private var currentMetadata: String?
-    private var metadataTimer: Timer?
-    private let metadataQueue = DispatchQueue(label: "radio.lutheran.metadata", qos: .utility)
-    
-    // Title label
+class ViewController: UIViewController {
+    // UI components (your existing UI declarations)
     let titleLabel: UILabel = {
         let label = UILabel()
         label.text = String(localized: "lutheran_radio_title")
@@ -51,7 +24,6 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         return label
     }()
 
-    // Play/Pause button
     let playPauseButton: UIButton = {
         let button = UIButton(type: .system)
         let config = UIImage.SymbolConfiguration(weight: .bold)
@@ -61,7 +33,6 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         return button
     }()
 
-    // Status label
     let statusLabel: UILabel = {
         let label = UILabel()
         label.text = String(localized: "status_connecting")
@@ -79,7 +50,6 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         return label
     }()
 
-    // Volume slider
     let volumeSlider: UISlider = {
         let slider = UISlider()
         slider.minimumValue = 0.0
@@ -103,226 +73,150 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         return label
     }()
     
-    private let airplayButton: AVRoutePickerView = {
+    let airplayButton: AVRoutePickerView = {
         let view = AVRoutePickerView(frame: CGRect(x: 0, y: 0, width: 44, height: 44))
         view.tintColor = .tintColor
         view.translatesAutoresizingMaskIntoConstraints = false
         return view
     }()
     
+    // New streaming player
+    private let streamingPlayer = DirectStreamingPlayer()
+    private var isPlaying = false
+    private var isManualPause = false
+    private var networkMonitor: NWPathMonitor?
+    private var hasInternetConnection = true
+    private var connectivityCheckTimer: Timer?
+    private var lastConnectionAttemptTime: Date?
+    
     override func viewDidLoad() {
         super.viewDidLoad()
-        setupSecureSession()
         view.backgroundColor = .systemBackground
         
-        // Add state restoration notification
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(handleAppDidBecomeActive),
-            name: UIApplication.didBecomeActiveNotification,
-            object: nil
-        )
-        
-        // Enable background audio
-        do {
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
-            try AVAudioSession.sharedInstance().setActive(true)
-            updateNowPlayingInfo()  // Set default info on launch
-        } catch {
-            print("Failed to set up background audio: \(error)")
-        }
-        
-        // Register for appearance changes using the system notification
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(handleAppearanceChange),
-            name: UIApplication.didBecomeActiveNotification,
-            object: nil
-        )
-        
-        setupEnhancedAudioSession()
-        
-        // Setup UI
+        // Set up UI and controls
         setupUI()
         setupControls()
         setupNetworkMonitoring()
+        setupBackgroundAudioControls()
         setupInterruptionHandling()
         setupRouteChangeHandling()
-        setupNowPlaying()
-    }
-    
-    override func viewDidLayoutSubviews() {
-        super.viewDidLayoutSubviews()
         
-        // Ensure route picker is visible after layout
-        if let routePickerButton = airplayButton.subviews.first(where: { $0 is UIButton }) as? UIButton {
-            routePickerButton.isHidden = false
-            routePickerButton.tintColor = .tintColor
+        // Set up streaming player callbacks
+        setupStreamingCallbacks()
+        
+        // Start radio if we have internet
+        if hasInternetConnection && !isManualPause {
+            startPlayback()
         }
     }
     
-    private func setupSecureSession() {
-        let configuration = URLSessionConfiguration.default
-        secureSession = URLSession(configuration: configuration,
-                                 delegate: certificatePinningDelegate,
-                                 delegateQueue: nil)
+    private func setupStreamingCallbacks() {
+        // Update UI when streaming status changes
+        streamingPlayer.onStatusChange = { [weak self] isPlaying, statusText in
+            guard let self = self else { return }
+            
+            self.isPlaying = isPlaying
+            self.updatePlayPauseButton(isPlaying: isPlaying)
+            
+            if isPlaying {
+                self.statusLabel.text = String(localized: "status_playing")
+                self.statusLabel.backgroundColor = .systemGreen
+                self.statusLabel.textColor = .black
+            } else {
+                self.statusLabel.text = statusText
+                self.statusLabel.backgroundColor = isManualPause ? .systemGray : .systemRed
+                self.statusLabel.textColor = .white
+            }
+            
+            // Update now playing info
+            self.updateNowPlayingInfo()
+        }
+        
+        // Update metadata when track changes
+        streamingPlayer.onMetadataChange = { [weak self] metadata in
+            guard let self = self else { return }
+            
+            DispatchQueue.main.async {
+                if let metadata = metadata {
+                    self.metadataLabel.text = metadata
+                    self.updateNowPlayingInfo(title: metadata)
+                } else {
+                    self.metadataLabel.text = String(localized: "no_track_info")
+                    self.updateNowPlayingInfo()
+                }
+            }
+        }
     }
     
     private func setupControls() {
         // Configure play/pause button action
         playPauseButton.addTarget(self, action: #selector(playPauseTapped), for: .touchUpInside)
         playPauseButton.accessibilityIdentifier = "playPauseButton"
-        volumeSlider.addTarget(self, action: #selector(volumeChanged(_:)), for: .valueChanged) // Add action for volume slider
+        volumeSlider.addTarget(self, action: #selector(volumeChanged(_:)), for: .valueChanged)
         volumeSlider.accessibilityIdentifier = "volumeSlider"
     }
     
     private func setupNetworkMonitoring() {
+        // Cancel existing monitor if any
+        networkMonitor?.cancel()
+        networkMonitor = nil
+        
+        // Create a dedicated monitor that will persist
         networkMonitor = NWPathMonitor()
         
+        print("📱 Setting up network monitoring")
+        
+        // Add persistent reference to prevent deallocation
         networkMonitor?.pathUpdateHandler = { [weak self] path in
-            let isConnected = path.status == .satisfied && path.supportsDNS
-            print("Network path changed:")
-            print("- Status: \(path.status)")
-            print("- Connected: \(isConnected)")
-            print("- Interfaces: \(path.availableInterfaces)")
-            print("- Supports DNS: \(path.supportsDNS)")
+            guard let self = self else { return }
+            
+            let isConnected = path.status == .satisfied
             
             DispatchQueue.main.async {
-                self?.hasInternetConnection = isConnected
-                self?.handleNetworkStatusChange()
+                // Store previous connection state
+                let wasConnected = self.hasInternetConnection
+                
+                // Update current connection state
+                self.hasInternetConnection = isConnected
+                
+                // Log connection state changes
+                print("📱 Network path update: status=\(path.status), isExpensive=\(path.isExpensive), isConstrained=\(path.isConstrained)")
+                
+                if isConnected != wasConnected {
+                    print("📱 Network status changed: \(isConnected ? "Connected" : "Disconnected")")
+                    print("📱 isManualPause: \(self.isManualPause)")
+                }
+                
+                // Handle connection state transitions
+                if isConnected && !wasConnected {
+                    // Network reconnected
+                    print("📱 Network monitor detected reconnection")
+                    self.handleNetworkReconnection()
+                } else if !isConnected && wasConnected {
+                    // Network disconnected
+                    print("📱 Network disconnected - stopping playback")
+                    
+                    // Save current playing state
+                    let wasPlayingBeforeDisconnect = self.isPlaying
+                    
+                    // Stop playback and update UI
+                    self.stopPlayback()
+                    self.updateUIForNoInternet()
+                    
+                    // Preserve manual pause only if user explicitly paused
+                    self.isManualPause = self.isManualPause && !wasPlayingBeforeDisconnect
+                }
             }
         }
         
-        let monitorQueue = DispatchQueue(label: "NetworkMonitor")
+        // Use a dedicated serial queue for network monitoring
+        let monitorQueue = DispatchQueue(label: "NetworkMonitor", qos: .utility)
         networkMonitor?.start(queue: monitorQueue)
-    }
-
-    private func testConnectivity(completion: @escaping (Bool) -> Void) {
-        // Test connection to our actual stream URL
-        let url = URL(string: "https://livestream.lutheran.radio:8443/lutheranradio.mp3")!
-        var request = URLRequest(url: url)
-        request.httpMethod = "HEAD"  // Only get headers, don't download content
-        let task = secureSession.dataTask(with: request) { _, response, _ in
-            if let httpResponse = response as? HTTPURLResponse {
-                completion(httpResponse.statusCode == 200)
-            } else {
-                completion(false)
-            }
-        }
-        task.resume()
+        
+        // Also set up a backup connectivity check
+        setupConnectivityCheckTimer()
     }
     
-    private func handleNetworkStatusChange() {
-        print("Network status changed - hasInternet: \(hasInternetConnection)")
-        if !hasInternetConnection {
-            cleanupStreamResources()
-            updateUIForNoInternet()
-        } else if !isManualPause {
-            // Network is back and we weren't manually paused
-            resetRetryCount()  // Reset retry counter for fresh start
-            setupAVPlayer()    // Attempt to reconnect
-        }
-    }
-    
-    private func cleanupStreamResources() {
-        if let playerItem = player?.currentItem,
-           let metadataOutput = metadataOutput {
-            playerItem.remove(metadataOutput)
-        }
-        
-        player = nil
-        isPlaying = false
-        isManualPause = false
-        metadataTimer?.invalidate()
-        metadataTimer = nil
-        currentMetadata = nil
-        lastMetadataUpdate = nil
-        metadataOutput = nil  // Clear the reference
-    }
-    
-    private func updateUIForNoInternet() {
-        statusLabel.text = String(localized: "status_stopped")
-        statusLabel.backgroundColor = .systemGray
-        statusLabel.textColor = .white
-        metadataLabel.text = String(localized: "no_track_info")
-        updatePlayPauseButton(isPlaying: false)
-    }
-    
-    private func setupAVPlayer() {
-        if currentRetryAttempt == 0 {
-            statusLabel.text = String(localized: "status_connecting")
-            statusLabel.backgroundColor = .systemYellow
-            statusLabel.textColor = .black
-        }
-        
-        let streamURL = URL(string: "https://livestream.lutheran.radio:8443/lutheranradio.mp3")!
-        let asset = AVURLAsset(url: streamURL)
-        asset.resourceLoader.setDelegate(certificatePinningDelegate, queue: .main)
-        let playerItem = AVPlayerItem(asset: asset)
-        
-        // Create a new metadata output for this player item
-        metadataOutput = AVPlayerItemMetadataOutput(identifiers: nil)
-        if let metadataOutput = metadataOutput {
-            metadataOutput.setDelegate(self, queue: metadataQueue)
-            playerItem.add(metadataOutput)
-        }
-        
-        player = AVPlayer(playerItem: playerItem)
-        
-        itemStatusObserver = playerItem.observe(\.status, options: [.new]) { [weak self] item, _ in
-            DispatchQueue.main.async {
-                self?.handlePlayerItemStatusChange(item)
-            }
-        }
-        
-        timeControlStatusObserver = player?.observe(\.timeControlStatus, options: [.new]) { [weak self] player, _ in
-            DispatchQueue.main.async {
-                self?.handleTimeControlStatusChange(player)
-            }
-        }
-
-        player?.play()
-        isPlaying = true
-        updatePlayPauseButton(isPlaying: true)
-        updateNowPlayingInfo()
-    }
-    
-    func metadataOutput(_ output: AVPlayerItemMetadataOutput,
-                       didOutputTimedMetadataGroups groups: [AVTimedMetadataGroup],
-                       from track: AVPlayerItemTrack?) {
-        
-        // Check if enough time has passed since last update
-        if let lastUpdate = lastMetadataUpdate,
-           Date().timeIntervalSince(lastUpdate) < minimumMetadataInterval {
-            return
-        }
-        
-        guard let item = groups.first?.items.first,
-              let value = item.value(forKeyPath: "stringValue") as? String,
-              !value.isEmpty else { return }
-        
-        let songTitle = (item.identifier == AVMetadataIdentifier("icy/StreamTitle") ||
-                        (item.key as? String) == "StreamTitle") ? value : nil
-        
-        // Only update if the metadata has actually changed
-        if songTitle != currentMetadata {
-            currentMetadata = songTitle
-            lastMetadataUpdate = Date()
-            
-            // Schedule UI update on main thread
-            DispatchQueue.main.async { [weak self] in
-                self?.updateMetadataUI(songTitle: songTitle)
-            }
-        }
-    }
-    
-    private func updateMetadataUI(songTitle: String?) {
-        metadataLabel.text = songTitle ?? "No track information"
-        if let songTitle = songTitle {
-            updateNowPlayingInfo(title: songTitle)
-        }
-    }
-        
     private func setupInterruptionHandling() {
         NotificationCenter.default.addObserver(
             self,
@@ -341,11 +235,9 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         
         switch type {
         case .began:
-            wasPlayingBeforeInterruption = isPlaying
-            player?.pause()
-            isPlaying = false
-            updatePlayPauseButton(isPlaying: false)
-            updateStatusLabel(isPlaying: false)
+            if isPlaying {
+                stopPlayback()
+            }
             
         case .ended:
             guard let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt else { return }
@@ -353,11 +245,8 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
             
             try? AVAudioSession.sharedInstance().setActive(true, options: .notifyOthersOnDeactivation)
             
-            if options.contains(.shouldResume) && wasPlayingBeforeInterruption {
-                player?.play()
-                isPlaying = true
-                updatePlayPauseButton(isPlaying: true)
-                updateStatusLabel(isPlaying: true)
+            if options.contains(.shouldResume) && !isManualPause {
+                startPlayback()
             }
             
         @unknown default:
@@ -384,25 +273,15 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         switch reason {
         case .oldDeviceUnavailable:
             // Headphones unplugged or Bluetooth disconnected
-            wasPlayingBeforeRouteChange = isPlaying
-            player?.pause()
-            isPlaying = false
-            updatePlayPauseButton(isPlaying: false)
-            updateStatusLabel(isPlaying: false)
-            
-            // Optionally show an alert or update UI
-            DispatchQueue.main.async {
-                self.metadataLabel.text = String(localized: "audio_disconnected")
+            if isPlaying {
+                stopPlayback()
             }
             
         case .newDeviceAvailable:
             // New route available (headphones connected, etc)
             try? AVAudioSession.sharedInstance().setActive(true)
-            if wasPlayingBeforeRouteChange && !isManualPause {
-                player?.play()
-                isPlaying = true
-                updatePlayPauseButton(isPlaying: true)
-                updateStatusLabel(isPlaying: true)
+            if !isManualPause {
+                startPlayback()
             }
             
         case .categoryChange:
@@ -414,89 +293,63 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         }
     }
     
-    private func setupNowPlaying() {
-        let commandCenter = MPRemoteCommandCenter.shared()
+    private func setupConnectivityCheckTimer() {
+        // Cancel any existing timer
+        connectivityCheckTimer?.invalidate()
         
-        commandCenter.playCommand.addTarget { [weak self] _ in
-            self?.handlePlayCommand()
-            return .success
-        }
-        
-        commandCenter.pauseCommand.addTarget { [weak self] _ in
-            self?.handlePauseCommand()
-            return .success
+        // Create a new timer that checks connectivity periodically
+        connectivityCheckTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+            self?.performActiveConnectivityCheck()
         }
     }
     
-    private func updateNowPlayingInfo(title: String? = nil) {
-        DispatchQueue.main.async {
-            var info: [String: Any] = [
-                MPMediaItemPropertyTitle: title ?? "Lutheran Radio Live",
-                MPMediaItemPropertyArtist: "Lutheran Radio",
-                MPNowPlayingInfoPropertyIsLiveStream: true,
-                MPNowPlayingInfoPropertyPlaybackRate: self.isPlaying ? 1.0 : 0.0,
-                MPMediaItemPropertyMediaType: MPMediaType.anyAudio.rawValue,
-                MPNowPlayingInfoPropertyElapsedPlaybackTime: 0,
-                MPMediaItemPropertyPlaybackDuration: 0, // Live stream, no duration
-                MPNowPlayingInfoPropertyPlaybackProgress: 0
-            ]
+    private func performActiveConnectivityCheck() {
+        // Only perform the check if we think we're offline
+        guard !hasInternetConnection else { return }
+        
+        // Don't check too frequently
+        if let lastAttempt = lastConnectionAttemptTime,
+           Date().timeIntervalSince(lastAttempt) < 10.0 {
+            return
+        }
+        
+        lastConnectionAttemptTime = Date()
+        
+        // Set up a simple URL session configuration
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForResource = 5.0
+        let session = URLSession(configuration: config)
+        
+        // Try to connect to a reliable endpoint (Apple's captive portal detection)
+        let url = URL(string: "https://www.apple.com/library/test/success.html")!
+        let task = session.dataTask(with: url) { [weak self] data, response, error in
+            guard let self = self else { return }
             
-            if let image = UIImage(named: "radio-placeholder") {
-                let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
-                info[MPMediaItemPropertyArtwork] = artwork
+            let success = error == nil &&
+                         (response as? HTTPURLResponse)?.statusCode == 200
+            
+            DispatchQueue.main.async {
+                if success && !self.hasInternetConnection {
+                    print("📱 Active check detected internet connection")
+                    self.hasInternetConnection = true
+                    self.handleNetworkReconnection()
+                }
             }
-            
-            MPNowPlayingInfoCenter.default().nowPlayingInfo = info
         }
+        
+        task.resume()
     }
     
-    private func handlePlayCommand() {
-        if player == nil {
-            setupAVPlayer()
-        } else {
-            player?.play()
-        }
-        isPlaying = true
-        isManualPause = false
-        updatePlayPauseButton(isPlaying: true)
-        updateStatusLabel(isPlaying: true)
-        updateNowPlayingInfo(title: currentMetadata)
-    }
-
-    private func handlePauseCommand() {
-        player?.pause()
-        isPlaying = false
-        isManualPause = true
-        updatePlayPauseButton(isPlaying: false)
-        updateStatusLabel(isPlaying: false)
-        updateNowPlayingInfo()
-    }
-    
-    private func setupEnhancedAudioSession() {
-        do {
-            let session = AVAudioSession.sharedInstance()
-            
-            // Deactivate first to clean any existing state
-            try? session.setActive(false)
-            
-            // Set category with all necessary options
-            try session.setCategory(
-                .playback,
-                mode: .default,
-                policy: .longFormAudio,
-                options: [.allowAirPlay, .allowBluetooth, .allowBluetoothA2DP, .duckOthers]
-            )
-            
-            // Set active and configure background behavior
-            try session.setActive(true, options: .notifyOthersOnDeactivation)
-            
-            // Ensure we handle audio route changes
-            setupRouteChangeHandling()
-            
-            // Set up background audio controls with proper state management
-            setupBackgroundAudioControls()
-        } catch {
-            print("Audio session setup failed: \(error.localizedDescription)")
+    private func handleNetworkReconnection() {
+        // Only auto-restart if user didn't manually pause
+        if !isManualPause {
+            // Add a delay to allow network to fully stabilize
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { // Changed from 2.0 to 5.0
+                if self.hasInternetConnection && !self.isPlaying && !self.isManualPause {
+                    print("📱 Auto-restarting playback after reconnection")
+                    self.startPlayback()
+                }
+            }
         }
     }
     
@@ -512,13 +365,8 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         // Configure play command
         commandCenter.playCommand.isEnabled = true
         commandCenter.playCommand.addTarget { [weak self] _ -> MPRemoteCommandHandlerStatus in
-            guard let self = self else { return .commandFailed }
-            
             DispatchQueue.main.async {
-                if !self.isPlaying {
-                    self.handlePlayCommand()
-                    return
-                }
+                self?.startPlayback()
             }
             return .success
         }
@@ -526,34 +374,176 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
         // Configure pause command
         commandCenter.pauseCommand.isEnabled = true
         commandCenter.pauseCommand.addTarget { [weak self] _ -> MPRemoteCommandHandlerStatus in
-            guard let self = self else { return .commandFailed }
-            
             DispatchQueue.main.async {
-                if self.isPlaying {
-                    self.handlePauseCommand()
-                    return
-                }
+                self?.pausePlayback()
             }
             return .success
         }
         
-        // Update toggle command
+        // Configure toggle command
         commandCenter.togglePlayPauseCommand.isEnabled = true
         commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ -> MPRemoteCommandHandlerStatus in
-            guard let self = self else { return .commandFailed }
-            
             DispatchQueue.main.async {
-                if self.isPlaying {
-                    self.handlePauseCommand()
+                if self?.isPlaying == true {
+                    self?.pausePlayback()
                 } else {
-                    self.handlePlayCommand()
+                    self?.startPlayback()
                 }
             }
             return .success
         }
     }
     
+    private func updateNowPlayingInfo(title: String? = nil) {
+        var info: [String: Any] = [
+            MPMediaItemPropertyTitle: title ?? "Lutheran Radio Live",
+            MPMediaItemPropertyArtist: "Lutheran Radio",
+            MPNowPlayingInfoPropertyIsLiveStream: true,
+            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
+            MPMediaItemPropertyMediaType: MPMediaType.anyAudio.rawValue
+        ]
+        
+        if let image = UIImage(named: "radio-placeholder") {
+            let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+            info[MPMediaItemPropertyArtwork] = artwork
+        }
+        
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+    }
+    
+    private func updateUIForNoInternet() {
+        statusLabel.text = String(localized: "status_no_internet")
+        statusLabel.backgroundColor = .systemGray
+        statusLabel.textColor = .white
+        metadataLabel.text = String(localized: "no_track_info")
+        updatePlayPauseButton(isPlaying: false)
+    }
+    
+    // MARK: - Playback Control
+    
+    private func startPlayback() {
+        print("📱 startPlayback called - hasInternet: \(hasInternetConnection), isManualPause: \(isManualPause)")
+        
+        // Double check connectivity with an active test
+        performActiveConnectivityCheck()
+        
+        if !hasInternetConnection {
+            updateUIForNoInternet()
+            
+            // Schedule a retry in case network is in transition
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                if !self.isPlaying && !self.isManualPause {
+                    print("📱 Retry playback after network check")
+                    self.startPlayback()
+                }
+            }
+            return
+        }
+        
+        isManualPause = false
+        statusLabel.text = String(localized: "status_connecting")
+        statusLabel.backgroundColor = .systemYellow
+        statusLabel.textColor = .black
+        
+        // If we've had network issues, reset the player first
+        streamingPlayer.handleNetworkInterruption()
+        
+        // Wait a moment then start playback with exponential retry
+        attemptPlaybackWithRetry(attempt: 1, maxAttempts: 3)
+    }
+
+    private func attemptPlaybackWithRetry(attempt: Int, maxAttempts: Int) {
+        // Only retry if we still have internet and aren't manually paused
+        guard hasInternetConnection && !isManualPause else {
+            print("📱 Aborting playback attempt \(attempt) - no internet or manually paused")
+            return
+        }
+        
+        print("📱 Playback attempt \(attempt)/\(maxAttempts)")
+        
+        // Set delay based on attempt number (exponential backoff)
+        let delay = pow(2.0, Double(attempt-1)) // 1, 2, 4 seconds instead of 0.5, 1.0, 1.5
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            // Rest of function remains unchanged
+            // Double-check conditions before attempting playback
+            guard self.hasInternetConnection && !self.isManualPause else {
+                print("📱 Conditions changed before attempt \(attempt) could start")
+                return
+            }
+            
+            // Set volume from slider
+            self.streamingPlayer.setVolume(self.volumeSlider.value)
+            
+            // Start playback
+            self.streamingPlayer.play()
+            
+            // If we're still not playing after a reasonable timeout and have attempts left, retry
+            if attempt < maxAttempts {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+                    if !self.isPlaying && self.hasInternetConnection && !self.isManualPause {
+                        print("📱 Playback attempt \(attempt) not successful, retrying...")
+                        self.attemptPlaybackWithRetry(attempt: attempt + 1, maxAttempts: maxAttempts)
+                    }
+                }
+            }
+        }
+    }
+    
+    private func pausePlayback() {
+        isManualPause = true
+        streamingPlayer.stop()
+        
+        statusLabel.text = String(localized: "status_paused")
+        statusLabel.backgroundColor = .systemGray
+        statusLabel.textColor = .white
+        
+        isPlaying = false
+        updatePlayPauseButton(isPlaying: false)
+        updateNowPlayingInfo()
+    }
+    
+    private func stopPlayback() {
+        streamingPlayer.stop()
+        isPlaying = false
+        updatePlayPauseButton(isPlaying: false)
+    }
+    
+    @objc private func playPauseTapped() {
+        // Haptic feedback
+        let generator = UIImpactFeedbackGenerator(style: .medium)
+        generator.impactOccurred()
+        
+        // Animation
+        UIView.animate(withDuration: 0.1, animations: {
+            self.playPauseButton.transform = CGAffineTransform(scaleX: 0.95, y: 0.95)
+        }) { _ in
+            UIView.animate(withDuration: 0.1) {
+                self.playPauseButton.transform = .identity
+            }
+        }
+        
+        // Toggle playback
+        if isPlaying {
+            pausePlayback()
+        } else {
+            startPlayback()
+        }
+    }
+        
+    @objc private func volumeChanged(_ sender: UISlider) {
+        streamingPlayer.setVolume(sender.value)
+    }
+    
+    private func updatePlayPauseButton(isPlaying: Bool) {
+        let config = UIImage.SymbolConfiguration(weight: .bold)
+        let symbolName = isPlaying ? "pause.fill" : "play.fill"
+        playPauseButton.setImage(UIImage(systemName: symbolName, withConfiguration: config), for: .normal)
+    }
+    
+    // UI setup code (use your existing implementation)
     private func setupUI() {
+        // Your existing UI setup code
         view.addSubview(titleLabel)
         
         // StackView for horizontal layout of play/pause button and status label
@@ -590,184 +580,17 @@ class ViewController: UIViewController, AVPlayerItemMetadataOutputPushDelegate {
             metadataLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             metadataLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             
-            // Add constraints for airplayButton
             airplayButton.topAnchor.constraint(equalTo: metadataLabel.bottomAnchor, constant: 20),
             airplayButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             airplayButton.widthAnchor.constraint(equalToConstant: 44),
             airplayButton.heightAnchor.constraint(equalToConstant: 44)
         ])
     }
-
-    @objc private func playPauseTapped() {
-        // Haptic feedback
-        let generator = UIImpactFeedbackGenerator(style: .medium)
-        generator.impactOccurred()
-        
-        // Scale animation
-        UIView.animate(withDuration: 0.1, animations: {
-            self.playPauseButton.transform = CGAffineTransform(scaleX: 0.95, y: 0.95)
-        }) { _ in
-            UIView.animate(withDuration: 0.1) {
-                self.playPauseButton.transform = .identity
-            }
-        }
-        
-        // Existing play/pause logic
-        if isPlaying {
-            handlePauseCommand()
-        } else {
-            if player == nil {
-                setupAVPlayer()
-            } else {
-                handlePlayCommand()
-            }
-        }
-    }
-
-    @objc private func volumeChanged(_ sender: UISlider) {
-        player?.volume = sender.value
-    }
-
-    private func updatePlayPauseButton(isPlaying: Bool) {
-        let config = UIImage.SymbolConfiguration(weight: .bold)
-        let symbolName = isPlaying ? "pause.fill" : "play.fill"
-        playPauseButton.setImage(UIImage(systemName: symbolName, withConfiguration: config), for: .normal)
-    }
-
-    private func updateStatusLabel(isPlaying: Bool) {
-        if isPlaying {
-            statusLabel.text = String(localized: "status_playing")
-            statusLabel.backgroundColor = .systemGreen
-            statusLabel.textColor = .black
-        } else {
-            statusLabel.text = String(localized: "status_paused")
-            statusLabel.backgroundColor = .systemGray
-            statusLabel.textColor = .white
-        }
-    }
-    
-    @objc private func handleAppearanceChange() {
-        if !hasInternetConnection {
-            updateUIForNoInternet()
-        } else if isPlaying {
-            updateStatusLabel(isPlaying: true)
-        } else {
-            updateStatusLabel(isPlaying: false)
-        }
-    }
-    
-    private func handlePlayerItemStatusChange(_ item: AVPlayerItem) {
-        switch item.status {
-        case .failed:
-            handleStreamError(item.error)
-        case .readyToPlay:
-            resetRetryCount() // Reset retry count on successful connection
-            if isPlaying && !isManualPause {
-                updateStatusLabel(isPlaying: true)
-            }
-        default:
-            break
-        }
-    }
-    
-    private func handleTimeControlStatusChange(_ player: AVPlayer) {
-        switch player.timeControlStatus {
-        case .waitingToPlayAtSpecifiedRate:
-            statusLabel.text = String(localized: "status_buffering")
-            statusLabel.backgroundColor = .systemYellow
-            statusLabel.textColor = .black
-        case .paused:
-            if !isManualPause && hasInternetConnection {
-                cleanupStreamResources()
-                updateUIForNoInternet()
-            }
-        case .playing:
-            if isPlaying && !isManualPause {
-                updateStatusLabel(isPlaying: true)
-            }
-        @unknown default:
-            break
-        }
-    }
-    
-    @objc private func handleAppDidBecomeActive() {
-        // Ensure our now playing info is current
-        if isPlaying {
-            // Use last known metadata or fallback while maintaining state
-            let lastKnownTitle = currentMetadata ?? metadataLabel.text
-            updateNowPlayingInfo(title: lastKnownTitle != String(localized: "no_track_info") ? lastKnownTitle : nil)
-        }
-        
-        // Verify audio session
-        do {
-            if !AVAudioSession.sharedInstance().isOtherAudioPlaying {
-                try AVAudioSession.sharedInstance().setActive(true)
-            }
-        } catch {
-            print("Failed to reactivate audio session: \(error)")
-        }
-    }
-    
-    private func calculateRetryInterval() -> TimeInterval {
-        // Calculate exponential backoff: baseInterval * 2^attempt
-        let interval = baseRetryInterval * pow(2.0, Double(currentRetryAttempt - 1))
-        // Add some jitter (±20%) to prevent thundering herd problem
-        let jitter = interval * Double.random(in: -0.2...0.2)
-        // Clamp the final interval to maxRetryInterval
-        return min(interval + jitter, maxRetryInterval)
-    }
-    
-    private func handleStreamError(_ error: Error?) {
-        if currentRetryAttempt < maxRetryAttempts {
-            currentRetryAttempt += 1
-            
-            // Update UI to show retry attempt
-            statusLabel.text = String(format: String(localized: "status_reconnect_format"), currentRetryAttempt, maxRetryAttempts)
-            statusLabel.backgroundColor = .systemYellow
-            statusLabel.textColor = .black
-            
-            // Schedule retry
-            retryTimer?.invalidate()
-            let nextRetryInterval = calculateRetryInterval()
-            statusLabel.text = String(format: String(localized: "status_reconnect_countdown_format"), Int(nextRetryInterval), currentRetryAttempt, maxRetryAttempts)
-
-            retryTimer = Timer.scheduledTimer(withTimeInterval: nextRetryInterval, repeats: false) { [weak self] _ in
-                self?.setupAVPlayer()
-            }
-        } else {
-            // Max retries reached, update UI and clean up
-            cleanupStreamResources()
-            statusLabel.text = String(localized: "alert_connection_failed_title")
-            statusLabel.backgroundColor = .systemRed
-            statusLabel.textColor = .white
-            
-            // Show error alert to user
-            let alert = UIAlertController(
-                title: String(localized: "alert_connection_failed_title"),
-                message: String(localized: "alert_connection_failed_message"),
-                preferredStyle: .alert
-            )
-            alert.addAction(UIAlertAction(title: String(localized: "alert_retry"), style: .default) { [weak self] _ in
-                self?.resetRetryCount()
-                self?.setupAVPlayer()
-            })
-            alert.addAction(UIAlertAction(title: String(localized: "alert_ok"), style: .cancel))
-            present(alert, animated: true)
-        }
-    }
-    
-    private func resetRetryCount() {
-        currentRetryAttempt = 0
-        retryTimer?.invalidate()
-        retryTimer = nil
-    }
     
     deinit {
         NotificationCenter.default.removeObserver(self)
         networkMonitor?.cancel()
-        cleanupStreamResources()
-        timeControlStatusObserver?.invalidate()
-        itemStatusObserver?.invalidate()
-        retryTimer?.invalidate()
+        connectivityCheckTimer?.invalidate()
+        connectivityCheckTimer = nil
     }
 }
