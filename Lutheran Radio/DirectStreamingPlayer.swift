@@ -96,7 +96,7 @@ class DirectStreamingPlayer: NSObject {
         player?.play()
         
         // Set initial status
-        onStatusChange?(false, "Connecting...")
+        onStatusChange?(false, String(localized: "status_connecting"))
     }
     
     private func addObservers() {
@@ -110,16 +110,17 @@ class DirectStreamingPlayer: NSObject {
                 switch item.status {
                 case .readyToPlay:
                     print("🎵 Player item ready to play!")
-                    self.onStatusChange?(true, "Playing")
+                    self.onStatusChange?(true, String(localized: "status_playing"))
                     
                 case .failed:
                     let errorMessage = item.error?.localizedDescription ?? "unknown error"
                     print("🎵 Player item failed: \(errorMessage)")
-                    self.onStatusChange?(false, "Playback failed: \(errorMessage)")
-                    
+                    self.onStatusChange?(false, String.localizedStringWithFormat(
+                        NSLocalizedString("status_playback_failed_format", comment: "Format for playback failure"),
+                        errorMessage))
                 case .unknown:
                     // Still loading/buffering
-                    self.onStatusChange?(false, "Buffering...")
+                    self.onStatusChange?(false, String(localized: "status_buffering"))
                     
                 @unknown default:
                     break
@@ -140,7 +141,7 @@ class DirectStreamingPlayer: NSObject {
         timeObserver = player?.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] _ in
             if self?.player?.rate ?? 0 > 0 {
                 // Player is playing
-                self?.onStatusChange?(true, "Playing")
+                self?.onStatusChange?(true, String(localized: "status_playing"))
             }
         }
         
@@ -160,19 +161,19 @@ class DirectStreamingPlayer: NSObject {
             if keyPath == "playbackBufferEmpty" {
                 if playerItem.isPlaybackBufferEmpty {
                     print("⏳ Playback buffer is empty - buffering...")
-                    self.onStatusChange?(false, "Buffering...")
+                    self.onStatusChange?(false, String(localized: "status_buffering"))
                 }
             } else if keyPath == "playbackLikelyToKeepUp" {
                 if playerItem.isPlaybackLikelyToKeepUp && playerItem.status == .readyToPlay {
                     print("✅ Playback is likely to keep up - ready to play")
                     self.player?.play()
-                    self.onStatusChange?(true, "Playing")
+                    self.onStatusChange?(true, String(localized: "status_playing"))
                 }
             } else if keyPath == "playbackBufferFull" {
                 if playerItem.isPlaybackBufferFull {
                     print("✅ Playback buffer is full")
                     self.player?.play()
-                    self.onStatusChange?(true, "Playing")
+                    self.onStatusChange?(true, String(localized: "status_playing"))
                 }
             }
         }
@@ -209,7 +210,7 @@ class DirectStreamingPlayer: NSObject {
         player = nil
         playerItem = nil
         
-        onStatusChange?(false, "Stopped")
+        onStatusChange?(false, String(localized: "status_stopped"))
     }
     
     deinit {
@@ -241,7 +242,7 @@ extension DirectStreamingPlayer {
         
         // Add a small delay before returning to ready state
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            self.onStatusChange?(false, "Ready to reconnect")
+            self.onStatusChange?(false, String(localized: "alert_retry"))
         }
     }
 }

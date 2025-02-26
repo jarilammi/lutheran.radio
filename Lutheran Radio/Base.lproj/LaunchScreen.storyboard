@@ -16,17 +16,17 @@
                         <rect key="frame" x="0.0" y="0.0" width="393" height="852"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <subviews>
-                            <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleToFill" horizontalHuggingPriority="251" verticalHuggingPriority="251" image="LaunchScreenImage" translatesAutoresizingMaskIntoConstraints="NO" id="nke-lq-7In">
+                            <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFill" horizontalHuggingPriority="251" verticalHuggingPriority="251" image="LaunchScreenImage" translatesAutoresizingMaskIntoConstraints="NO" id="nke-lq-7In">
                                 <rect key="frame" x="0.0" y="0.0" width="393" height="852"/>
                             </imageView>
                         </subviews>
                         <viewLayoutGuide key="safeArea" id="6Tk-OE-BBY"/>
                         <color key="backgroundColor" systemColor="systemBackgroundColor"/>
                         <constraints>
-                            <constraint firstItem="nke-lq-7In" firstAttribute="centerY" secondItem="Ze5-6b-2t3" secondAttribute="centerY" id="1HX-2h-KHX"/>
-                            <constraint firstItem="nke-lq-7In" firstAttribute="leading" secondItem="6Tk-OE-BBY" secondAttribute="leading" id="7Qq-u3-T2R"/>
-                            <constraint firstItem="nke-lq-7In" firstAttribute="centerX" secondItem="Ze5-6b-2t3" secondAttribute="centerX" id="Gc2-D1-89F"/>
-                            <constraint firstItem="nke-lq-7In" firstAttribute="top" secondItem="Ze5-6b-2t3" secondAttribute="topMargin" constant="-59" id="jUC-tc-2jD"/>
+                            <constraint firstAttribute="trailing" secondItem="nke-lq-7In" secondAttribute="trailing" id="2do-qb-Ryy"/>
+                            <constraint firstItem="nke-lq-7In" firstAttribute="leading" secondItem="Ze5-6b-2t3" secondAttribute="leading" id="Dpj-J5-Zfn"/>
+                            <constraint firstItem="nke-lq-7In" firstAttribute="bottom" secondItem="Ze5-6b-2t3" secondAttribute="bottom" id="JyH-nE-Ww9"/>
+                            <constraint firstItem="nke-lq-7In" firstAttribute="top" secondItem="Ze5-6b-2t3" secondAttribute="top" id="e9Q-7C-oa4"/>
                         </constraints>
                     </view>
                 </viewController>
