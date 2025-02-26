@@ -25,6 +25,8 @@ class DirectStreamingPlayer: NSObject {
     
     // Certificate pinning hash
     private let pinnedPublicKeyHash = "rMadBtyLpBp0ybRQW6+WGcFm6wGG7OldSI6pA/eRVQy/xnpjBsDu897E1HcGZPB+mZQhUkfswZVVvWF9YPALFQ=="
+    private let pinningDelegate = CertificatePinningDelegate()
+    private var securityLockActive = false
     
     // Status callbacks
     var onStatusChange: ((Bool, String) -> Void)?
@@ -33,6 +35,22 @@ class DirectStreamingPlayer: NSObject {
     override init() {
         super.init()
         setupAudioSession()
+        
+        // Configure certificate pinning callback
+        pinningDelegate.onPinningFailure = { [weak self] in
+            self?.handleSecurityFailure()
+        }
+    }
+    
+    func handleSecurityFailure() {
+        // Lock streaming for security reasons
+        securityLockActive = true
+        
+        // Stop any current playback
+        stop()
+        
+        // Notify UI of security issue
+        onStatusChange?(false, "Connection cannot be verified. Please try again later.")
     }
     
     func setupAudioSession() {
@@ -53,6 +71,12 @@ class DirectStreamingPlayer: NSObject {
     }
     
     func play() {
+        // Check if security lock is active
+        if securityLockActive {
+            onStatusChange?(false, "Connection cannot be verified. Please try again later.")
+            return
+        }
+        
         // Stop any existing playback first
         stop()
         

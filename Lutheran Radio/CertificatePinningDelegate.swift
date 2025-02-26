@@ -19,10 +19,13 @@ class CertificatePinningDelegate: NSObject, URLSessionDelegate {
     // SHA-512 is used here for fast integrity checks
     private let pinnedPublicKeyHash = "rMadBtyLpBp0ybRQW6+WGcFm6wGG7OldSI6pA/eRVQy/xnpjBsDu897E1HcGZPB+mZQhUkfswZVVvWF9YPALFQ=="
     
-    // Keeps track of active sessions to prevent deallocation
-    private var activeSessions = [URLSession]()
+    // Added to track pinning status
+    private(set) var pinningVerified = false
+    private(set) var isPinningFailed = false
     
-    // URLSessionDelegate method for certificate validation
+    // Closure for notifying of pinning failures
+    var onPinningFailure: (() -> Void)?
+    
     func urlSession(_ session: URLSession,
                    didReceive challenge: URLAuthenticationChallenge,
                    completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
@@ -33,118 +36,63 @@ class CertificatePinningDelegate: NSObject, URLSessionDelegate {
               challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust else {
             print("🔒 Invalid authentication method")
             completionHandler(.cancelAuthenticationChallenge, nil)
+            failPinningCheck()
             return
         }
         
-        // FIXED: Use updated iOS 15+ API for certificate extraction
         guard let certificates = SecTrustCopyCertificateChain(serverTrust) as? [SecCertificate],
               let certificate = certificates.first else {
             print("🔒 No certificates found")
             completionHandler(.cancelAuthenticationChallenge, nil)
+            failPinningCheck()
             return
         }
         
-        // FIXED: Use updated iOS 12+ API for key extraction
         guard let publicKey = SecCertificateCopyKey(certificate) else {
             print("🔒 Failed to extract public key")
             completionHandler(.cancelAuthenticationChallenge, nil)
+            failPinningCheck()
             return
         }
         
-        // Get external representation safely
         var error: Unmanaged<CFError>?
         guard let publicKeyData = SecKeyCopyExternalRepresentation(publicKey, &error) as Data? else {
             print("🔒 Failed to get key external representation: \(error?.takeRetainedValue().localizedDescription ?? "unknown")")
             completionHandler(.cancelAuthenticationChallenge, nil)
+            failPinningCheck()
             return
         }
         
-        // Calculate the hash safely
         let serverPublicKeyHash = publicKeyData.sha512().base64EncodedString()
         
         print("🔒 Server hash: \(serverPublicKeyHash)")
         print("🔒 Pinned hash: \(pinnedPublicKeyHash)")
         
-        // Compare the hash with our pinned hash
         if serverPublicKeyHash == pinnedPublicKeyHash {
             print("✅ Certificate verification passed: Public key hash matches")
-            // Certificate matches, proceed with the connection
+            pinningVerified = true
+            isPinningFailed = false
             completionHandler(.useCredential, URLCredential(trust: serverTrust))
         } else {
             print("❌ Certificate verification failed: Public key hash mismatch")
-            // Certificate doesn't match, reject the connection
             completionHandler(.cancelAuthenticationChallenge, nil)
+            failPinningCheck()
         }
     }
     
-    // AVAssetResourceLoaderDelegate implementation for streaming
-    func resourceLoader(_ resourceLoader: AVAssetResourceLoader,
-                       shouldWaitForLoadingOfRequestedResource loadingRequest: AVAssetResourceLoadingRequest) -> Bool {
-        print("📡 Resource loader called with URL: \(loadingRequest.request.url?.absoluteString ?? "nil")")
+    private func failPinningCheck() {
+        isPinningFailed = true
+        pinningVerified = false
         
-        // Check if this is our custom URL scheme
-        guard let url = loadingRequest.request.url,
-              let urlScheme = url.scheme,
-              urlScheme == "streaming" else {
-            print("📡 Resource loader rejected: Wrong scheme \(loadingRequest.request.url?.scheme ?? "nil")")
-            loadingRequest.finishLoading(with: NSError(domain: "InvalidScheme", code: -1, userInfo: nil))
-            return false
+        // Notify app of pinning failure
+        DispatchQueue.main.async { [weak self] in
+            self?.onPinningFailure?()
         }
-        
-        // Convert the custom scheme URL to an HTTPS URL
-        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
-        components.scheme = "https"
-        
-        guard let httpsURL = components.url else {
-            print("📡 Resource loader failed: URL conversion failed")
-            loadingRequest.finishLoading(with: NSError(domain: "URLConversion", code: -1, userInfo: nil))
-            return false
-        }
-        
-        print("📡 Converting URL scheme from streaming to https: \(httpsURL)")
-        
-        // Use a dedicated configuration for streaming with longer timeout
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForResource = 120 // Longer resource timeout
-        config.requestCachePolicy = .reloadIgnoringLocalCacheData
-        
-        // Create a custom data delegate that will handle both security and streaming
-        let streamingDelegate = StreamingSessionDelegate(loadingRequest: loadingRequest, pinningDelegate: self)
-        
-        // Create a session with the streaming delegate
-        let session = URLSession(configuration: config, delegate: streamingDelegate, delegateQueue: nil)
-        activeSessions.append(session)
-        
-        print("📡 Creating request to \(httpsURL)")
-        var request = URLRequest(url: httpsURL)
-        request.cachePolicy = .reloadIgnoringLocalCacheData
-        request.addValue("*/*", forHTTPHeaderField: "Accept")
-        request.addValue("identity", forHTTPHeaderField: "Accept-Encoding") // Don't compress audio
-        request.addValue("Mozilla/5.0", forHTTPHeaderField: "User-Agent")
-        
-        print("📡 Starting data task")
-        let task = session.dataTask(with: request)
-        task.resume()
-        
-        // Set up cleanup when this resource loader is cancelled
-        loadingRequest.contentInformationRequest?.contentType = "audio/mpeg" // Default content type
-        
-        return true
     }
     
-    // Handle cancellation of resource loading
-    func resourceLoader(_ resourceLoader: AVAssetResourceLoader,
-                       didCancel loadingRequest: AVAssetResourceLoadingRequest) {
-        print("📡 Resource loader request canceled")
-        // The session will be cleaned up by the StreamingSessionDelegate
-    }
-    
-    deinit {
-        // Clean up all active sessions
-        for session in activeSessions {
-            session.invalidateAndCancel()
-        }
-        activeSessions.removeAll()
+    func resetPinningStatus() {
+        isPinningFailed = false
+        pinningVerified = false
     }
 }
 
