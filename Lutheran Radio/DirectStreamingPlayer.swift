@@ -21,11 +21,11 @@ class DirectStreamingPlayer: NSObject {
     static let availableStreams = [
         Stream(title: NSLocalizedString("lutheran_radio_title", comment: "Title for Lutheran Radio") + " - " +
                NSLocalizedString("language_english", comment: "English language option"),
-               url: URL(string: "https://livestream.lutheran.radio:8443/lutheranradio.mp3")!,
+               url: URL(string: "https://liveenglish.lutheran.radio:8443/english/stream.mp3")!,
                language: NSLocalizedString("language_english", comment: "English language option")),
         Stream(title: NSLocalizedString("lutheran_radio_title", comment: "Title for Lutheran Radio") + " - " +
                NSLocalizedString("language_finnish", comment: "Finnish language option"),
-               url: URL(string: "https://livestriimi.lutheran.radio:8443/lutheranradio.mp3")!,
+               url: URL(string: "https://livestream.lutheran.radio:8443/lutheranradio.mp3")!,
                language: NSLocalizedString("language_finnish", comment: "Finnish language option")),
     ]
 
@@ -101,7 +101,11 @@ class DirectStreamingPlayer: NSObject {
         }
         stop()
         print("▶️ Starting direct playback for \(selectedStream.language)")
+
+        // Configure AVURLAsset with a resource loader
         let asset = AVURLAsset(url: selectedStream.url)
+        asset.resourceLoader.setDelegate(self, queue: DispatchQueue(label: "radio.lutheran.resourceloader"))
+
         playerItem = AVPlayerItem(asset: asset)
         player = AVPlayer(playerItem: playerItem)
         addObservers()
@@ -267,5 +271,33 @@ extension DirectStreamingPlayer {
 extension DirectStreamingPlayer {
     func setVolume(_ volume: Float) {
         player?.volume = volume
+    }
+}
+
+extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
+    func resourceLoader(_ resourceLoader: AVAssetResourceLoader,
+                       shouldWaitForLoadingOfRequestedResource loadingRequest: AVAssetResourceLoadingRequest) -> Bool {
+        guard let url = loadingRequest.request.url else {
+            loadingRequest.finishLoading(with: NSError(domain: "radio.lutheran", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid URL"]))
+            return false
+        }
+
+        // Create a URLSession with the pinning delegate
+        let sessionConfig = URLSessionConfiguration.default
+        let session = URLSession(configuration: sessionConfig, delegate: pinningDelegate, delegateQueue: nil)
+        let streamingDelegate = StreamingSessionDelegate(loadingRequest: loadingRequest, pinningDelegate: pinningDelegate)
+
+        // Create a data task to fetch the stream
+        let task = session.dataTask(with: url)
+        task.delegate = streamingDelegate
+        task.resume()
+
+        return true
+    }
+
+    func resourceLoader(_ resourceLoader: AVAssetResourceLoader,
+                       didCancel loadingRequest: AVAssetResourceLoadingRequest) {
+        // Handle cancellation if needed
+        print("Resource loading cancelled")
     }
 }
