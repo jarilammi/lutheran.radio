@@ -123,7 +123,6 @@ class ViewController: UIViewController, UIPickerViewDelegate, UIPickerViewDataSo
     }
     
     private func setupStreamingCallbacks() {
-        // Update UI when streaming status changes
         streamingPlayer.onStatusChange = { [weak self] isPlaying, statusText in
             guard let self = self else { return }
             
@@ -134,13 +133,16 @@ class ViewController: UIViewController, UIPickerViewDelegate, UIPickerViewDataSo
                 self.statusLabel.text = String(localized: "status_playing")
                 self.statusLabel.backgroundColor = .systemGreen
                 self.statusLabel.textColor = .black
+            } else if statusText == String(localized: "status_stream_unavailable") {
+                self.statusLabel.text = statusText
+                self.statusLabel.backgroundColor = .systemOrange // Distinct color for offline
+                self.statusLabel.textColor = .white
             } else {
                 self.statusLabel.text = statusText
                 self.statusLabel.backgroundColor = isManualPause ? .systemGray : .systemRed
                 self.statusLabel.textColor = .white
             }
             
-            // Update now playing info
             self.updateNowPlayingInfo()
         }
         
@@ -465,37 +467,43 @@ class ViewController: UIViewController, UIPickerViewDelegate, UIPickerViewDataSo
     }
 
     private func attemptPlaybackWithRetry(attempt: Int, maxAttempts: Int) {
-        // Only retry if we still have internet and aren't manually paused
         guard hasInternetConnection && !isManualPause else {
             print("📱 Aborting playback attempt \(attempt) - no internet or manually paused")
             return
         }
         
         print("📱 Playback attempt \(attempt)/\(maxAttempts)")
-        
-        // Set delay based on attempt number (exponential backoff)
-        let delay = pow(2.0, Double(attempt-1)) // 1, 2, 4 seconds instead of 0.5, 1.0, 1.5
+        let delay = pow(2.0, Double(attempt-1))
         
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-            // Rest of function remains unchanged
-            // Double-check conditions before attempting playback
             guard self.hasInternetConnection && !self.isManualPause else {
                 print("📱 Conditions changed before attempt \(attempt) could start")
                 return
             }
             
-            // Set volume from slider
             self.streamingPlayer.setVolume(self.volumeSlider.value)
-            
-            // Start playback
             self.streamingPlayer.play()
             
-            // If we're still not playing after a reasonable timeout and have attempts left, retry
-            if attempt < maxAttempts {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-                    if !self.isPlaying && self.hasInternetConnection && !self.isManualPause {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+                if !self.isPlaying && self.hasInternetConnection && !self.isManualPause {
+                    switch self.streamingPlayer.getPlaybackState() {
+                    case .failed(let error):
+                        if let nsError = error as NSError?, nsError.domain == NSURLErrorDomain && nsError.code == -1003 {
+                            print("📱 Unrecoverable error detected (code: -1003) - stopping retries")
+                            self.streamingPlayer.stop()
+                            self.streamingPlayer.onStatusChange?(false, String(localized: "status_stream_unavailable"))
+                            return
+                        }
+                    default:
+                        break
+                    }
+                    
+                    if attempt < maxAttempts {
                         print("📱 Playback attempt \(attempt) not successful, retrying...")
                         self.attemptPlaybackWithRetry(attempt: attempt + 1, maxAttempts: maxAttempts)
+                    } else {
+                        print("📱 Max attempts (\(maxAttempts)) reached - giving up")
+                        self.streamingPlayer.onStatusChange?(false, String(localized: "alert_connection_failed_title"))
                     }
                 }
             }

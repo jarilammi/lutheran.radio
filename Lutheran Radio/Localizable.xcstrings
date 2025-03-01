@@ -109,7 +109,6 @@
       }
     },
     "alert_connection_failed_title" : {
-      "extractionState" : "stale",
       "localizations" : {
         "da" : {
           "stringUnit" : {
@@ -2024,6 +2023,112 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Stoppad"
+          }
+        }
+      }
+    },
+    "status_stream_unavailable" : {
+      "localizations" : {
+        "da" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ikke på sendingen"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sendepause"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offline"
+          }
+        },
+        "et" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Eetriväline"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ei lähetystä"
+          }
+        },
+        "fit" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ei lähetystä"
+          }
+        },
+        "fo" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ikki í sending"
+          }
+        },
+        "is" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ekki í útsendingu"
+          }
+        },
+        "kl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aallakaatitsisoqanngilaq"
+          }
+        },
+        "lt" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Netransliuojama"
+          }
+        },
+        "lv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nav ēterā"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ikke på lufta"
+          }
+        },
+        "nn" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ikkje på lufta"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Poza anteną"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Вне эфира"
+          }
+        },
+        "se" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ii sáddejuvvo"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sändningsuppehåll"
           }
         }
       }

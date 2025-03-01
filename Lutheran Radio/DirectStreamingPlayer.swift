@@ -36,6 +36,25 @@ class DirectStreamingPlayer: NSObject {
                languageCode: "sv")
     ]
     
+    public enum PlaybackState {
+            case unknown
+            case readyToPlay
+            case failed(Error?)
+        }
+
+        public func getPlaybackState() -> PlaybackState {
+            switch playerItem?.status {
+            case .unknown:
+                return .unknown
+            case .readyToPlay:
+                return .readyToPlay
+            case .failed:
+                return .failed(playerItem?.error)
+            default:
+                return .unknown
+            }
+        }
+    
     // Current selected stream
     private var selectedStream: Stream {
         didSet {
@@ -114,15 +133,21 @@ class DirectStreamingPlayer: NSObject {
         stop()
         print("▶️ Starting direct playback for \(selectedStream.language)")
 
-        // Configure AVURLAsset with a resource loader
         let asset = AVURLAsset(url: selectedStream.url)
         asset.resourceLoader.setDelegate(self, queue: DispatchQueue(label: "radio.lutheran.resourceloader"))
-
         playerItem = AVPlayerItem(asset: asset)
         player = AVPlayer(playerItem: playerItem)
         addObservers()
         player?.play()
-        onStatusChange?(false, String(localized: "status_connecting"))
+        
+        // Check for immediate failure conditions
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
+            if self.playerItem?.status == .failed && self.player?.rate == 0 {
+                self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
+            } else {
+                self.onStatusChange?(false, String(localized: "status_connecting"))
+            }
+        }
     }
     
     func setStream(to stream: Stream) {
