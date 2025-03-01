@@ -749,6 +749,113 @@
         }
       }
     },
+    "language_swedish" : {
+      "comment" : "Swedish language option",
+      "localizations" : {
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Svensk"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Schwedisch"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Swedish"
+          }
+        },
+        "et" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rootsi"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ruotsi"
+          }
+        },
+        "fit" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ruotti"
+          }
+        },
+        "fo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Svenskt"
+          }
+        },
+        "is" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sænska"
+          }
+        },
+        "kl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Svenskisut"
+          }
+        },
+        "lt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Švedų"
+          }
+        },
+        "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zviedru"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Svensk"
+          }
+        },
+        "nn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Svensk"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Szwedzki"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Шведский"
+          }
+        },
+        "se" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ruoŧagiella"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Svenska"
+          }
+        }
+      }
+    },
     "lutheran_radio_title" : {
       "comment" : "Title for Lutheran Radio",
       "localizations" : {

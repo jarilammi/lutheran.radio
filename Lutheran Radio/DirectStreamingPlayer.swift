@@ -11,24 +11,31 @@ import CommonCrypto
 import AVFoundation
 
 class DirectStreamingPlayer: NSObject {
-    // The URL to stream
     struct Stream {
         let title: String
         let url: URL
         let language: String
+        let languageCode: String
     }
 
     static let availableStreams = [
         Stream(title: NSLocalizedString("lutheran_radio_title", comment: "Title for Lutheran Radio") + " - " +
                NSLocalizedString("language_english", comment: "English language option"),
                url: URL(string: "https://liveenglish.lutheran.radio:8443/english/stream.mp3")!,
-               language: NSLocalizedString("language_english", comment: "English language option")),
+               language: NSLocalizedString("language_english", comment: "English language option"),
+               languageCode: "en"),
         Stream(title: NSLocalizedString("lutheran_radio_title", comment: "Title for Lutheran Radio") + " - " +
                NSLocalizedString("language_finnish", comment: "Finnish language option"),
                url: URL(string: "https://livestream.lutheran.radio:8443/lutheranradio.mp3")!,
-               language: NSLocalizedString("language_finnish", comment: "Finnish language option")),
+               language: NSLocalizedString("language_finnish", comment: "Finnish language option"),
+               languageCode: "fi"),
+        Stream(title: NSLocalizedString("lutheran_radio_title", comment: "Title for Lutheran Radio") + " - " +
+               NSLocalizedString("language_swedish", comment: "Swedish language option"),
+               url: URL(string: "https://liveswedish.lutheran.radio:8443/swedish/stream.mp3")!,
+               language: NSLocalizedString("language_swedish", comment: "Swedish language option"),
+               languageCode: "sv")
     ]
-
+    
     // Current selected stream
     private var selectedStream: Stream {
         didSet {
@@ -57,8 +64,13 @@ class DirectStreamingPlayer: NSObject {
     
     override init() {
         let currentLocale = Locale.current
-        let isFinnish = currentLocale.language.languageCode?.identifier == "fi"
-        selectedStream = DirectStreamingPlayer.availableStreams[isFinnish ? 1 : 0]
+        let languageCode = currentLocale.language.languageCode?.identifier
+        
+        if let stream = DirectStreamingPlayer.availableStreams.first(where: { $0.languageCode == languageCode }) {
+            selectedStream = stream
+        } else {
+            selectedStream = DirectStreamingPlayer.availableStreams[0] // Default to English
+        }
         super.init()
         setupAudioSession()
         pinningDelegate.onPinningFailure = { [weak self] in

@@ -102,10 +102,13 @@ class ViewController: UIViewController, UIPickerViewDelegate, UIPickerViewDataSo
         languagePicker.delegate = self
         languagePicker.dataSource = self
         
-        // Set initial picker selection based on locale
         let currentLocale = Locale.current
-        let isFinnish = currentLocale.language.languageCode?.identifier == "fi"
-        languagePicker.selectRow(isFinnish ? 1 : 0, inComponent: 0, animated: false)
+        let languageCode = currentLocale.language.languageCode?.identifier
+        if let index = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.languageCode == languageCode }) {
+            languagePicker.selectRow(index, inComponent: 0, animated: false)
+        } else {
+            languagePicker.selectRow(0, inComponent: 0, animated: false) // Default to English
+        }
         
         setupControls()
         setupNetworkMonitoring()
@@ -567,33 +570,40 @@ class ViewController: UIViewController, UIPickerViewDelegate, UIPickerViewDataSo
         view.addSubview(airplayButton)
         
         NSLayoutConstraint.activate([
+            // Title Label
             titleLabel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 40),
             titleLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             
-            languagePicker.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: -5),
-            languagePicker.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            languagePicker.widthAnchor.constraint(equalTo: view.widthAnchor, multiplier: 0.6),
-            languagePicker.heightAnchor.constraint(lessThanOrEqualToConstant: 120),
-            
-            controlsStackView.topAnchor.constraint(equalTo: languagePicker.bottomAnchor, constant: 5),
+            // Controls Stack View (moved up to below titleLabel)
+            controlsStackView.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 20),
             controlsStackView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             controlsStackView.heightAnchor.constraint(equalToConstant: 50),
             
+            // Status Label and Play/Pause Button constraints
             statusLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 120),
             statusLabel.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor, multiplier: 0.4),
             statusLabel.heightAnchor.constraint(equalToConstant: 40),
             playPauseButton.widthAnchor.constraint(equalToConstant: 50),
             playPauseButton.heightAnchor.constraint(equalToConstant: 50),
             
+            // Volume Slider
             volumeSlider.topAnchor.constraint(equalTo: controlsStackView.bottomAnchor, constant: 20),
             volumeSlider.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 40),
             volumeSlider.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -40),
             
+            // Metadata Label
             metadataLabel.topAnchor.constraint(equalTo: volumeSlider.bottomAnchor, constant: 20),
             metadataLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             metadataLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             
-            airplayButton.topAnchor.constraint(equalTo: metadataLabel.bottomAnchor, constant: 20),
+            // Language Picker
+            languagePicker.topAnchor.constraint(equalTo: metadataLabel.bottomAnchor, constant: 20),
+            languagePicker.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            languagePicker.widthAnchor.constraint(equalTo: view.widthAnchor, multiplier: 0.6),
+            languagePicker.heightAnchor.constraint(lessThanOrEqualToConstant: 120),
+            
+            // AirPlay Button
+            airplayButton.topAnchor.constraint(equalTo: languagePicker.bottomAnchor, constant: 20),
             airplayButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             airplayButton.widthAnchor.constraint(equalToConstant: 44),
             airplayButton.heightAnchor.constraint(equalToConstant: 44)
