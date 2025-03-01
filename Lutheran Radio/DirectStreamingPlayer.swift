@@ -56,7 +56,9 @@ class DirectStreamingPlayer: NSObject {
     var onMetadataChange: ((String?) -> Void)?
     
     override init() {
-        selectedStream = DirectStreamingPlayer.availableStreams[0] // Default to English
+        let currentLocale = Locale.current
+        let isFinnish = currentLocale.language.languageCode?.identifier == "fi"
+        selectedStream = DirectStreamingPlayer.availableStreams[isFinnish ? 1 : 0]
         super.init()
         setupAudioSession()
         pinningDelegate.onPinningFailure = { [weak self] in

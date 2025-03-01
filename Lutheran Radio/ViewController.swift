@@ -98,20 +98,22 @@ class ViewController: UIViewController, UIPickerViewDelegate, UIPickerViewDataSo
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
         
-        // Set up UI and controls
         setupUI()
         languagePicker.delegate = self
         languagePicker.dataSource = self
+        
+        // Set initial picker selection based on locale
+        let currentLocale = Locale.current
+        let isFinnish = currentLocale.language.languageCode?.identifier == "fi"
+        languagePicker.selectRow(isFinnish ? 1 : 0, inComponent: 0, animated: false)
+        
         setupControls()
         setupNetworkMonitoring()
         setupBackgroundAudioControls()
         setupInterruptionHandling()
         setupRouteChangeHandling()
-        
-        // Set up streaming player callbacks
         setupStreamingCallbacks()
         
-        // Start radio if we have internet
         if hasInternetConnection && !isManualPause {
             startPlayback()
         }
