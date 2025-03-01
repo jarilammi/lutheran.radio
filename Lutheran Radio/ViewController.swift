@@ -11,8 +11,7 @@ import MediaPlayer
 import AVKit
 import Network
 
-class ViewController: UIViewController {
-    // UI components (your existing UI declarations)
+class ViewController: UIViewController, UIPickerViewDelegate, UIPickerViewDataSource {
     let titleLabel: UILabel = {
         let label = UILabel()
         label.text = String(localized: "lutheran_radio_title")
@@ -23,7 +22,13 @@ class ViewController: UIViewController {
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
     }()
-
+    
+    let languagePicker: UIPickerView = {
+        let picker = UIPickerView()
+        picker.translatesAutoresizingMaskIntoConstraints = false
+        return picker
+    }()
+    
     let playPauseButton: UIButton = {
         let button = UIButton(type: .system)
         let config = UIImage.SymbolConfiguration(weight: .bold)
@@ -95,6 +100,8 @@ class ViewController: UIViewController {
         
         // Set up UI and controls
         setupUI()
+        languagePicker.delegate = self
+        languagePicker.dataSource = self
         setupControls()
         setupNetworkMonitoring()
         setupBackgroundAudioControls()
@@ -543,10 +550,9 @@ class ViewController: UIViewController {
     
     // UI setup code (use your existing implementation)
     private func setupUI() {
-        // Your existing UI setup code
         view.addSubview(titleLabel)
+        view.addSubview(languagePicker)
         
-        // StackView for horizontal layout of play/pause button and status label
         let controlsStackView = UIStackView(arrangedSubviews: [playPauseButton, statusLabel])
         controlsStackView.axis = .horizontal
         controlsStackView.spacing = 20
@@ -562,7 +568,12 @@ class ViewController: UIViewController {
             titleLabel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 40),
             titleLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             
-            controlsStackView.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 20),
+            languagePicker.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: -5),
+            languagePicker.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            languagePicker.widthAnchor.constraint(equalTo: view.widthAnchor, multiplier: 0.6),
+            languagePicker.heightAnchor.constraint(lessThanOrEqualToConstant: 120),
+            
+            controlsStackView.topAnchor.constraint(equalTo: languagePicker.bottomAnchor, constant: 5),
             controlsStackView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             controlsStackView.heightAnchor.constraint(equalToConstant: 50),
             
@@ -585,6 +596,28 @@ class ViewController: UIViewController {
             airplayButton.widthAnchor.constraint(equalToConstant: 44),
             airplayButton.heightAnchor.constraint(equalToConstant: 44)
         ])
+    }
+    
+    // MARK: - UIPickerView DataSource
+    func numberOfComponents(in pickerView: UIPickerView) -> Int {
+        return 1
+    }
+
+    func pickerView(_ pickerView: UIPickerView, numberOfRowsInComponent component: Int) -> Int {
+        return DirectStreamingPlayer.availableStreams.count
+    }
+
+    // MARK: - UIPickerView Delegate
+    func pickerView(_ pickerView: UIPickerView, titleForRow row: Int, forComponent component: Int) -> String? {
+        return DirectStreamingPlayer.availableStreams[row].language
+    }
+
+    func pickerView(_ pickerView: UIPickerView, didSelectRow row: Int, inComponent component: Int) {
+        let selectedStream = DirectStreamingPlayer.availableStreams[row]
+        streamingPlayer.setStream(to: selectedStream)
+        if isPlaying || !isManualPause {
+            startPlayback() // Restart playback with new stream
+        }
     }
     
     deinit {

@@ -12,7 +12,30 @@ import AVFoundation
 
 class DirectStreamingPlayer: NSObject {
     // The URL to stream
-    private let streamURL = URL(string: "https://livestream.lutheran.radio:8443/lutheranradio.mp3")!
+    struct Stream {
+        let title: String
+        let url: URL
+        let language: String
+    }
+
+    static let availableStreams = [
+        Stream(title: NSLocalizedString("lutheran_radio_title", comment: "Title for Lutheran Radio") + " - " +
+               NSLocalizedString("language_english", comment: "English language option"),
+               url: URL(string: "https://livestream.lutheran.radio:8443/lutheranradio.mp3")!,
+               language: NSLocalizedString("language_english", comment: "English language option")),
+        Stream(title: NSLocalizedString("lutheran_radio_title", comment: "Title for Lutheran Radio") + " - " +
+               NSLocalizedString("language_finnish", comment: "Finnish language option"),
+               url: URL(string: "https://livestriimi.lutheran.radio:8443/lutheranradio.mp3")!,
+               language: NSLocalizedString("language_finnish", comment: "Finnish language option")),
+    ]
+
+    // Current selected stream
+    private var selectedStream: Stream {
+        didSet {
+            // Update metadata when stream changes
+            onMetadataChange?(selectedStream.title)
+        }
+    }
     
     // Player components
     private var player: AVPlayer?
@@ -33,10 +56,9 @@ class DirectStreamingPlayer: NSObject {
     var onMetadataChange: ((String?) -> Void)?
     
     override init() {
+        selectedStream = DirectStreamingPlayer.availableStreams[0] // Default to English
         super.init()
         setupAudioSession()
-        
-        // Configure certificate pinning callback
         pinningDelegate.onPinningFailure = { [weak self] in
             self?.handleSecurityFailure()
         }
@@ -71,32 +93,24 @@ class DirectStreamingPlayer: NSObject {
     }
     
     func play() {
-        // Check if security lock is active
         if securityLockActive {
             onStatusChange?(false, "Connection cannot be verified. Please try again later.")
             return
         }
-        
-        // Stop any existing playback first
         stop()
-        
-        print("▶️ Starting direct playback")
-        
-        // Create the player directly
-        let asset = AVURLAsset(url: streamURL)
+        print("▶️ Starting direct playback for \(selectedStream.language)")
+        let asset = AVURLAsset(url: selectedStream.url)
         playerItem = AVPlayerItem(asset: asset)
-        
-        // Create player before adding observers
         player = AVPlayer(playerItem: playerItem)
-        
-        // Now add observers
         addObservers()
-        
-        // Start playback
         player?.play()
-        
-        // Set initial status
         onStatusChange?(false, String(localized: "status_connecting"))
+    }
+    
+    func setStream(to stream: Stream) {
+        stop() // Stop current playback
+        selectedStream = stream
+        play() // Start new stream
     }
     
     private func addObservers() {
