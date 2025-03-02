@@ -144,6 +144,7 @@ class DirectStreamingPlayer: NSObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
             if self.playerItem?.status == .failed && self.player?.rate == 0 {
                 self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
+                self.stop() // This calls stop(), but we’ll adjust stop() below
             } else {
                 self.onStatusChange?(false, String(localized: "status_connecting"))
             }
@@ -172,11 +173,14 @@ class DirectStreamingPlayer: NSObject {
                 case .failed:
                     let errorMessage = item.error?.localizedDescription ?? "unknown error"
                     print("🎵 Player item failed: \(errorMessage)")
-                    self.onStatusChange?(false, String.localizedStringWithFormat(
-                        NSLocalizedString("status_playback_failed_format", comment: "Format for playback failure"),
-                        errorMessage))
+                    self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
+                    self.stop() // Stop playback immediately on failure
+                    // Optionally, log specific error details for debugging
+                    if let error = item.error as NSError? {
+                        print("🎵 Error details - Domain: \(error.domain), Code: \(error.code)")
+                    }
+                    
                 case .unknown:
-                    // Still loading/buffering
                     self.onStatusChange?(false, String(localized: "status_buffering"))
                     
                 @unknown default:
@@ -259,15 +263,15 @@ class DirectStreamingPlayer: NSObject {
     }
     
     func stop() {
-        // First remove all observers
         removeObservers()
-        
-        // Then release player resources
         player?.pause()
         player = nil
         playerItem = nil
-        
-        onStatusChange?(false, String(localized: "status_stopped"))
+        // Only update status if not already set to "status_stream_unavailable"
+        let currentStatus = playerItem?.status == .failed ? String(localized: "status_stream_unavailable") : nil
+        if currentStatus != String(localized: "status_stream_unavailable") {
+            onStatusChange?(false, String(localized: "status_stopped"))
+        }
     }
     
     deinit {
@@ -319,19 +323,30 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
             return false
         }
 
-        // Create a URLSession with the pinning delegate
         let sessionConfig = URLSessionConfiguration.default
         let session = URLSession(configuration: sessionConfig, delegate: pinningDelegate, delegateQueue: nil)
         let streamingDelegate = StreamingSessionDelegate(loadingRequest: loadingRequest, pinningDelegate: pinningDelegate)
-
-        // Create a data task to fetch the stream
+        streamingDelegate.onError = { [weak self] error in
+            DispatchQueue.main.async {
+                self?.handleLoadingError(error)
+            }
+        }
+        
         let task = session.dataTask(with: url)
         task.delegate = streamingDelegate
         task.resume()
-
         return true
     }
-
+    
+    private func handleLoadingError(_ error: Error) {
+        print("📡 Loading error: \(error.localizedDescription)")
+        if let nsError = error as NSError?, nsError.domain == NSURLErrorDomain, nsError.code == -1003 {
+            print("📡 DNS resolution failed")
+        }
+        onStatusChange?(false, String(localized: "status_stream_unavailable"))
+        stop()
+    }
+    
     func resourceLoader(_ resourceLoader: AVAssetResourceLoader,
                        didCancel loadingRequest: AVAssetResourceLoadingRequest) {
         // Handle cancellation if needed
