@@ -89,6 +89,7 @@ class ViewController: UIViewController, UIPickerViewDelegate, UIPickerViewDataSo
     private let streamingPlayer = DirectStreamingPlayer()
     private var isPlaying = false
     private var isManualPause = false
+    private var hasPermanentPlaybackError = false
     private var networkMonitor: NWPathMonitor?
     private var hasInternetConnection = true
     private var connectivityCheckTimer: Timer?
@@ -355,11 +356,9 @@ class ViewController: UIViewController, UIPickerViewDelegate, UIPickerViewDataSo
     }
     
     private func handleNetworkReconnection() {
-        // Only auto-restart if user didn't manually pause
-        if !isManualPause {
-            // Add a delay to allow network to fully stabilize
-            DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { // Changed from 2.0 to 5.0
-                if self.hasInternetConnection && !self.isPlaying && !self.isManualPause {
+        if !isManualPause && !hasPermanentPlaybackError { // Check permanent error flag
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
+                if self.hasInternetConnection && !self.isPlaying && !self.isManualPause && !self.hasPermanentPlaybackError {
                     print("📱 Auto-restarting playback after reconnection")
                     self.startPlayback()
                 }
@@ -467,43 +466,50 @@ class ViewController: UIViewController, UIPickerViewDelegate, UIPickerViewDataSo
     }
 
     private func attemptPlaybackWithRetry(attempt: Int, maxAttempts: Int) {
-        guard hasInternetConnection && !isManualPause else {
-            print("📱 Aborting playback attempt \(attempt) - no internet or manually paused")
+        guard hasInternetConnection && !isManualPause && !hasPermanentPlaybackError else {
+            print("📱 Aborting playback attempt \(attempt) - no internet, manually paused, or previous permanent error")
+            if hasPermanentPlaybackError {
+                streamingPlayer.stop()
+                streamingPlayer.onStatusChange?(false, String(localized: "status_stream_unavailable"))
+            }
             return
         }
         
         print("📱 Playback attempt \(attempt)/\(maxAttempts)")
-        let delay = pow(2.0, Double(attempt-1))
+        let delay = pow(2.0, Double(attempt-1)) // Exponential backoff
         
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-            guard self.hasInternetConnection && !self.isManualPause else {
-                print("📱 Conditions changed before attempt \(attempt) could start")
-                return
+            self.streamingPlayer.setVolume(self.volumeSlider.value)
+            self.streamingPlayer.play { [weak self] success in
+                // This completion handler won't be called immediately,
+                // the status observer below will handle the initial response
+                guard self != nil else { return }
+                if success {
+                    print("📱 Playback succeeded on attempt \(attempt)")
+                }
             }
             
-            self.streamingPlayer.setVolume(self.volumeSlider.value)
-            self.streamingPlayer.play()
-            
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-                if !self.isPlaying && self.hasInternetConnection && !self.isManualPause {
-                    switch self.streamingPlayer.getPlaybackState() {
-                    case .failed(let error):
-                        if let nsError = error as NSError?, nsError.domain == NSURLErrorDomain && nsError.code == -1003 {
-                            print("📱 Unrecoverable error detected (code: -1003) - stopping retries")
+            // Add a temporary observer to react to status changes
+            var statusObserver: NSKeyValueObservation?
+            statusObserver = self.streamingPlayer.playerItem?.observe(\.status, options: [.new]) { [weak self] item, _ in
+                guard let self = self else { return }
+                if item.status != .unknown { // Wait until status settles
+                    statusObserver?.invalidate() // Remove observer once status changes
+                    if item.status == .failed {
+                        if self.streamingPlayer.hasPermanentError {
+                            print("📱 Permanent error detected - stopping retries")
+                            self.hasPermanentPlaybackError = true
                             self.streamingPlayer.stop()
                             self.streamingPlayer.onStatusChange?(false, String(localized: "status_stream_unavailable"))
-                            return
+                        } else if attempt < maxAttempts {
+                            print("📱 Playback attempt \(attempt) failed, retrying...")
+                            self.attemptPlaybackWithRetry(attempt: attempt + 1, maxAttempts: maxAttempts)
+                        } else {
+                            print("📱 Max attempts (\(maxAttempts)) reached - giving up")
+                            self.streamingPlayer.onStatusChange?(false, String(localized: "alert_connection_failed_title"))
                         }
-                    default:
-                        break
-                    }
-                    
-                    if attempt < maxAttempts {
-                        print("📱 Playback attempt \(attempt) not successful, retrying...")
-                        self.attemptPlaybackWithRetry(attempt: attempt + 1, maxAttempts: maxAttempts)
-                    } else {
-                        print("📱 Max attempts (\(maxAttempts)) reached - giving up")
-                        self.streamingPlayer.onStatusChange?(false, String(localized: "alert_connection_failed_title"))
+                    } else if item.status == .readyToPlay {
+                        print("📱 Playback started successfully")
                     }
                 }
             }
@@ -547,6 +553,7 @@ class ViewController: UIViewController, UIPickerViewDelegate, UIPickerViewDataSo
         if isPlaying {
             pausePlayback()
         } else {
+            hasPermanentPlaybackError = false // Reset on manual play
             startPlayback()
         }
     }
@@ -635,8 +642,9 @@ class ViewController: UIViewController, UIPickerViewDelegate, UIPickerViewDataSo
     func pickerView(_ pickerView: UIPickerView, didSelectRow row: Int, inComponent component: Int) {
         let selectedStream = DirectStreamingPlayer.availableStreams[row]
         streamingPlayer.setStream(to: selectedStream)
+        hasPermanentPlaybackError = false // Reset on stream change
         if isPlaying || !isManualPause {
-            startPlayback() // Restart playback with new stream
+            startPlayback()
         }
     }
     
