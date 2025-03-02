@@ -89,6 +89,7 @@ class ViewController: UIViewController, UIPickerViewDelegate, UIPickerViewDataSo
     private let streamingPlayer = DirectStreamingPlayer()
     private var isPlaying = false
     private var isManualPause = false
+    private var hasPermanentPlaybackError = false
     private var networkMonitor: NWPathMonitor?
     private var hasInternetConnection = true
     private var connectivityCheckTimer: Timer?
@@ -102,10 +103,13 @@ class ViewController: UIViewController, UIPickerViewDelegate, UIPickerViewDataSo
         languagePicker.delegate = self
         languagePicker.dataSource = self
         
-        // Set initial picker selection based on locale
         let currentLocale = Locale.current
-        let isFinnish = currentLocale.language.languageCode?.identifier == "fi"
-        languagePicker.selectRow(isFinnish ? 1 : 0, inComponent: 0, animated: false)
+        let languageCode = currentLocale.language.languageCode?.identifier
+        if let index = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.languageCode == languageCode }) {
+            languagePicker.selectRow(index, inComponent: 0, animated: false)
+        } else {
+            languagePicker.selectRow(0, inComponent: 0, animated: false) // Default to English
+        }
         
         setupControls()
         setupNetworkMonitoring()
@@ -120,9 +124,16 @@ class ViewController: UIViewController, UIPickerViewDelegate, UIPickerViewDataSo
     }
     
     private func setupStreamingCallbacks() {
-        // Update UI when streaming status changes
         streamingPlayer.onStatusChange = { [weak self] isPlaying, statusText in
             guard let self = self else { return }
+            
+            streamingPlayer.onPinningFailure = { [weak self] in
+                guard let self = self else { return }
+                self.statusLabel.text = String(localized: "status_security_failed")
+                self.statusLabel.backgroundColor = .systemPurple
+                self.statusLabel.textColor = .white
+                self.stopPlayback()
+            }
             
             self.isPlaying = isPlaying
             self.updatePlayPauseButton(isPlaying: isPlaying)
@@ -131,13 +142,16 @@ class ViewController: UIViewController, UIPickerViewDelegate, UIPickerViewDataSo
                 self.statusLabel.text = String(localized: "status_playing")
                 self.statusLabel.backgroundColor = .systemGreen
                 self.statusLabel.textColor = .black
+            } else if statusText == String(localized: "status_stream_unavailable") {
+                self.statusLabel.text = statusText
+                self.statusLabel.backgroundColor = .systemOrange // Distinct color for offline
+                self.statusLabel.textColor = .white
             } else {
                 self.statusLabel.text = statusText
                 self.statusLabel.backgroundColor = isManualPause ? .systemGray : .systemRed
                 self.statusLabel.textColor = .white
             }
             
-            // Update now playing info
             self.updateNowPlayingInfo()
         }
         
@@ -350,11 +364,9 @@ class ViewController: UIViewController, UIPickerViewDelegate, UIPickerViewDataSo
     }
     
     private func handleNetworkReconnection() {
-        // Only auto-restart if user didn't manually pause
-        if !isManualPause {
-            // Add a delay to allow network to fully stabilize
-            DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { // Changed from 2.0 to 5.0
-                if self.hasInternetConnection && !self.isPlaying && !self.isManualPause {
+        if !isManualPause && !hasPermanentPlaybackError { // Check permanent error flag
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
+                if self.hasInternetConnection && !self.isPlaying && !self.isManualPause && !self.hasPermanentPlaybackError {
                     print("📱 Auto-restarting playback after reconnection")
                     self.startPlayback()
                 }
@@ -462,37 +474,34 @@ class ViewController: UIViewController, UIPickerViewDelegate, UIPickerViewDataSo
     }
 
     private func attemptPlaybackWithRetry(attempt: Int, maxAttempts: Int) {
-        // Only retry if we still have internet and aren't manually paused
-        guard hasInternetConnection && !isManualPause else {
-            print("📱 Aborting playback attempt \(attempt) - no internet or manually paused")
+        guard hasInternetConnection && !isManualPause && !hasPermanentPlaybackError else {
+            print("📱 Aborting playback attempt \(attempt) - no internet, manually paused, or previous permanent error")
+            if hasPermanentPlaybackError {
+                streamingPlayer.onStatusChange?(false, String(localized: "status_stream_unavailable"))
+            }
             return
         }
         
         print("📱 Playback attempt \(attempt)/\(maxAttempts)")
-        
-        // Set delay based on attempt number (exponential backoff)
-        let delay = pow(2.0, Double(attempt-1)) // 1, 2, 4 seconds instead of 0.5, 1.0, 1.5
+        let delay = pow(2.0, Double(attempt-1)) // Exponential backoff
         
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-            // Rest of function remains unchanged
-            // Double-check conditions before attempting playback
-            guard self.hasInternetConnection && !self.isManualPause else {
-                print("📱 Conditions changed before attempt \(attempt) could start")
-                return
-            }
-            
-            // Set volume from slider
             self.streamingPlayer.setVolume(self.volumeSlider.value)
-            
-            // Start playback
-            self.streamingPlayer.play()
-            
-            // If we're still not playing after a reasonable timeout and have attempts left, retry
-            if attempt < maxAttempts {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-                    if !self.isPlaying && self.hasInternetConnection && !self.isManualPause {
-                        print("📱 Playback attempt \(attempt) not successful, retrying...")
+            self.streamingPlayer.play { [weak self] success in
+                guard let self = self else { return }
+                if success {
+                    print("📱 Playback succeeded on attempt \(attempt)")
+                } else {
+                    if self.streamingPlayer.isLastErrorPermanent() {
+                        print("📱 Permanent error detected - stopping retries")
+                        self.hasPermanentPlaybackError = true
+                        self.streamingPlayer.onStatusChange?(false, String(localized: "status_stream_unavailable"))
+                    } else if attempt < maxAttempts {
+                        print("📱 Playback attempt \(attempt) failed, retrying...")
                         self.attemptPlaybackWithRetry(attempt: attempt + 1, maxAttempts: maxAttempts)
+                    } else {
+                        print("📱 Max attempts (\(maxAttempts)) reached - giving up")
+                        self.streamingPlayer.onStatusChange?(false, String(localized: "alert_connection_failed_title"))
                     }
                 }
             }
@@ -536,6 +545,7 @@ class ViewController: UIViewController, UIPickerViewDelegate, UIPickerViewDataSo
         if isPlaying {
             pausePlayback()
         } else {
+            hasPermanentPlaybackError = false // Reset on manual play
             startPlayback()
         }
     }
@@ -567,33 +577,40 @@ class ViewController: UIViewController, UIPickerViewDelegate, UIPickerViewDataSo
         view.addSubview(airplayButton)
         
         NSLayoutConstraint.activate([
+            // Title Label
             titleLabel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 40),
             titleLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             
-            languagePicker.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: -5),
-            languagePicker.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            languagePicker.widthAnchor.constraint(equalTo: view.widthAnchor, multiplier: 0.6),
-            languagePicker.heightAnchor.constraint(lessThanOrEqualToConstant: 120),
-            
-            controlsStackView.topAnchor.constraint(equalTo: languagePicker.bottomAnchor, constant: 5),
+            // Controls Stack View (moved up to below titleLabel)
+            controlsStackView.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 20),
             controlsStackView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             controlsStackView.heightAnchor.constraint(equalToConstant: 50),
             
+            // Status Label and Play/Pause Button constraints
             statusLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 120),
             statusLabel.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor, multiplier: 0.4),
             statusLabel.heightAnchor.constraint(equalToConstant: 40),
             playPauseButton.widthAnchor.constraint(equalToConstant: 50),
             playPauseButton.heightAnchor.constraint(equalToConstant: 50),
             
+            // Volume Slider
             volumeSlider.topAnchor.constraint(equalTo: controlsStackView.bottomAnchor, constant: 20),
             volumeSlider.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 40),
             volumeSlider.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -40),
             
+            // Metadata Label
             metadataLabel.topAnchor.constraint(equalTo: volumeSlider.bottomAnchor, constant: 20),
             metadataLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             metadataLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             
-            airplayButton.topAnchor.constraint(equalTo: metadataLabel.bottomAnchor, constant: 20),
+            // Language Picker
+            languagePicker.topAnchor.constraint(equalTo: metadataLabel.bottomAnchor, constant: 20),
+            languagePicker.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            languagePicker.widthAnchor.constraint(equalTo: view.widthAnchor, multiplier: 0.6),
+            languagePicker.heightAnchor.constraint(lessThanOrEqualToConstant: 120),
+            
+            // AirPlay Button
+            airplayButton.topAnchor.constraint(equalTo: languagePicker.bottomAnchor, constant: 20),
             airplayButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             airplayButton.widthAnchor.constraint(equalToConstant: 44),
             airplayButton.heightAnchor.constraint(equalToConstant: 44)
@@ -617,8 +634,9 @@ class ViewController: UIViewController, UIPickerViewDelegate, UIPickerViewDataSo
     func pickerView(_ pickerView: UIPickerView, didSelectRow row: Int, inComponent component: Int) {
         let selectedStream = DirectStreamingPlayer.availableStreams[row]
         streamingPlayer.setStream(to: selectedStream)
+        hasPermanentPlaybackError = false // Reset on stream change
         if isPlaying || !isManualPause {
-            startPlayback() // Restart playback with new stream
+            startPlayback()
         }
     }
     

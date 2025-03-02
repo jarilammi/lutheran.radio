@@ -18,7 +18,7 @@ import AVFoundation
 class CertificatePinningDelegate: NSObject, URLSessionDelegate {
     // SHA-512 is used here for fast integrity checks
     private let pinnedPublicKeyHash = "rMadBtyLpBp0ybRQW6+WGcFm6wGG7OldSI6pA/eRVQy/xnpjBsDu897E1HcGZPB+mZQhUkfswZVVvWF9YPALFQ=="
-    
+
     // Added to track pinning status
     private(set) var pinningVerified = false
     private(set) var isPinningFailed = false
@@ -105,6 +105,7 @@ class StreamingSessionDelegate: NSObject, URLSessionDelegate, URLSessionDataDele
     private weak var pinningDelegate: CertificatePinningDelegate?
     private var bytesReceived = 0
     private var receivedResponse = false
+    var onError: ((Error) -> Void)? // Add error callback
     
     init(loadingRequest: AVAssetResourceLoadingRequest, pinningDelegate: CertificatePinningDelegate) {
         self.loadingRequest = loadingRequest
@@ -112,17 +113,26 @@ class StreamingSessionDelegate: NSObject, URLSessionDelegate, URLSessionDataDele
         super.init()
     }
     
-    // Forward certificate challenges to the pinning delegate
-    func urlSession(_ session: URLSession,
-                   didReceive challenge: URLAuthenticationChallenge,
-                   completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
-        pinningDelegate?.urlSession(session, didReceive: challenge, completionHandler: completionHandler)
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        if let error = error {
+            if (error as NSError).domain != NSURLErrorDomain || (error as NSError).code != NSURLErrorCancelled {
+                print("📡 Streaming task failed: \(error.localizedDescription)")
+                onError?(error) // Notify of the error
+                loadingRequest?.finishLoading(with: error)
+            } else {
+                print("📡 Streaming task cancelled")
+            }
+        } else {
+            print("📡 Streaming task completed normally")
+            // Do not call finishLoading() here for streaming
+        }
+        session.invalidateAndCancel()
     }
     
     // Handle HTTP response
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask,
-                   didReceive response: URLResponse,
-                   completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+                    didReceive response: URLResponse,
+                    completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
         
         guard let loadingRequest = loadingRequest,
               let httpResponse = response as? HTTPURLResponse else {
@@ -159,26 +169,6 @@ class StreamingSessionDelegate: NSObject, URLSessionDelegate, URLSessionDataDele
         loadingRequest.dataRequest?.respond(with: data)
         
         // DO NOT call finishLoading() - we want to keep the connection open for streaming
-    }
-    
-    // Handle task completion (could be error or normal completion)
-    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        if let error = error {
-            // Only report non-cancellation errors
-            if (error as NSError).domain != NSURLErrorDomain ||
-               (error as NSError).code != NSURLErrorCancelled {
-                print("📡 Streaming task failed: \(error.localizedDescription)")
-                loadingRequest?.finishLoading(with: error)
-            } else {
-                print("📡 Streaming task cancelled")
-            }
-        } else {
-            print("📡 Streaming task completed normally")
-            // We don't finish loading on normal completion for streaming
-        }
-        
-        // Invalidate the session when done with it
-        session.invalidateAndCancel()
     }
 }
 

@@ -1,323 +1,108 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-    "alert_connection_failed_message" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "da" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Kunne ikke oprette forbindelse til streamen. Kontrollér din internetforbindelse og prøv igen."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Verbindung zum Stream konnte nicht hergestellt werden. Bitte überprüfen Sie Ihre Internetverbindung und versuchen Sie es erneut."
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Unable to connect to the stream. Please check your connection and try again."
-          }
-        },
-        "et" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Voogedastusega ei õnnestunud ühendust luua. Palun kontrollige internetiühendust ja proovige uuesti."
-          }
-        },
-        "fi" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Suoratoistoon ei saada yhteyttä. Tarkista yhteytesi ja yritä uudelleen."
-          }
-        },
-        "fit" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ei saatu yhtheyttä striimhin. Tarkista yhteys ja kokeile uuesti."
-          }
-        },
-        "fo" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Kann ikki sambinda við streymin. Kanna internetsamband títt og royn aftur."
-          }
-        },
-        "is" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ekki tókst að tengjast straumnum. Vinsamlegast athugaðu nettenginguna þína og reyndu aftur."
-          }
-        },
-        "kl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Attavigisinnaanngilaq. Internettimut attavik misissuruk naggataatigullu misileqqiguk."
-          }
-        },
-        "lt" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nepavyko prisijungti prie srauto. Patikrinkite interneto ryšį ir bandykite dar kartą."
-          }
-        },
-        "lv" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Neizdevās izveidot savienojumu ar plūsmu. Lūdzu, pārbaudiet interneta savienojumu un mēģiniet vēlreiz."
-          }
-        },
-        "nb" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Kunne ikke koble til strømmen. Vennligst sjekk internettforbindelsen din og prøv igjen."
-          }
-        },
-        "nn" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Kunne ikkje kople til straumen. Ver venleg og sjekk internettilkoplinga di og prøv igjen."
-          }
-        },
-        "pl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nie można połączyć się ze strumieniem. Sprawdź połączenie internetowe i spróbuj ponownie."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Не удалось подключиться к потоку. Пожалуйста, проверьте подключение к интернету и попробуйте снова."
-          }
-        },
-        "se" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ii sáhte laktásit rávnnjái. Dárkkis iežat internetlaktádusa ja geahččal fas."
-          }
-        },
-        "sv" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Kunde inte ansluta till strömmen. Kontrollera din internetanslutning och försök igen."
-          }
-        }
-      }
-    },
     "alert_connection_failed_title" : {
-      "extractionState" : "stale",
       "localizations" : {
         "da" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Forbindelse mislykkedes"
+            "value" : "Fejl"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Verbindung fehlgeschlagen"
+            "value" : "Fehler"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Connection Failed"
+            "value" : "Failed"
           }
         },
         "et" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ühendus ebaõnnestus"
+            "value" : "Ebaõnnestus"
           }
         },
         "fi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Yhteys epäonnistui"
+            "value" : "Epäonnistui"
           }
         },
         "fit" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Yhteys epäonnistu"
+            "value" : "Epäonnistu"
           }
         },
         "fo" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Samband miseydnaðist"
+            "value" : "Miseydnaðist"
           }
         },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tenging mistókst"
+            "value" : "Mistókst"
           }
         },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Attavik ajutoorpoq"
+            "value" : "Ajutoorpoq"
           }
         },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Prisijungimas nepavyko"
+            "value" : "Nepavyko"
           }
         },
         "lv" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Savienojums neizdevās"
+            "value" : "Neizdevās"
           }
         },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tilkobling mislyktes"
+            "value" : "Mislyktes"
           }
         },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tilkopling mislukka"
+            "value" : "Mislukka"
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Połączenie nie powiodło się"
+            "value" : "Niepowodzenie"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ошибка подключения"
+            "value" : "Ошибка"
           }
         },
         "se" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Laktádeapmi filtii"
+            "value" : "Filtii"
           }
         },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Anslutningen misslyckades"
-          }
-        }
-      }
-    },
-    "alert_ok" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "da" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "OK"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "OK"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "OK"
-          }
-        },
-        "et" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "OK"
-          }
-        },
-        "fi" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "OK"
-          }
-        },
-        "fit" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "OK"
-          }
-        },
-        "fo" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "OK"
-          }
-        },
-        "is" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Í lagi"
-          }
-        },
-        "kl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "OK"
-          }
-        },
-        "lt" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Gerai"
-          }
-        },
-        "lv" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Labi"
-          }
-        },
-        "nb" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "OK"
-          }
-        },
-        "nn" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "OK"
-          }
-        },
-        "pl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "OK"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "OK"
-          }
-        },
-        "se" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "OK"
-          }
-        },
-        "sv" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "OK"
+            "value" : "Misslyckades"
           }
         }
       }
@@ -327,13 +112,13 @@
         "da" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Prøv igen"
+            "value" : "Igen"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Wiederholen"
+            "value" : "Wieder"
           }
         },
         "en" : {
@@ -345,13 +130,13 @@
         "et" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Proovi uuesti"
+            "value" : "Uuesti"
           }
         },
         "fi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Yritä uudelleen"
+            "value" : "Uudelleen"
           }
         },
         "fit" : {
@@ -363,174 +148,67 @@
         "fo" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Royn aftur"
+            "value" : "Aftur"
           }
         },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Reyna aftur"
+            "value" : "Aftur"
           }
         },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Misileqqiguk"
+            "value" : "Misile"
           }
         },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Bandyti dar kartą"
+            "value" : "Dar kartą"
           }
         },
         "lv" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mēģināt vēlreiz"
+            "value" : "Vēlreiz"
           }
         },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Prøv igjen"
+            "value" : "Igjen"
           }
         },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Prøv igjen"
+            "value" : "Igjen"
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Spróbuj ponownie"
+            "value" : "Ponów"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Повторить"
+            "value" : "Повтор"
           }
         },
         "se" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Geahččal fas"
+            "value" : "Fas"
           }
         },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Försök igen"
-          }
-        }
-      }
-    },
-    "audio_disconnected" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "da" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lydudgang afbrudt"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Audioausgabe getrennt"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Audio output disconnected"
-          }
-        },
-        "et" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Heli lahti ühendatud"
-          }
-        },
-        "fi" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Äänilähtö katkaistu"
-          }
-        },
-        "fit" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Äänilähtö katkaistu"
-          }
-        },
-        "fo" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ljóðútgongd frátikin"
-          }
-        },
-        "is" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Hljóðúttak aftengt"
-          }
-        },
-        "kl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nipi unippoq"
-          }
-        },
-        "lt" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Garso išvestis atjungta"
-          }
-        },
-        "lv" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Audio izeja atvienota"
-          }
-        },
-        "nb" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lydutgang frakoblet"
-          }
-        },
-        "nn" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lydutgang fråkopla"
-          }
-        },
-        "pl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wyjście audio odłączone"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Аудиовыход отключен"
-          }
-        },
-        "se" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Jietnaolggos fáktejuvvon"
-          }
-        },
-        "sv" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ljud frånkopplat"
+            "value" : "Igen"
           }
         }
       }
@@ -745,6 +423,113 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Finska"
+          }
+        }
+      }
+    },
+    "language_swedish" : {
+      "comment" : "Swedish language option",
+      "localizations" : {
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Svensk"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Schwedisch"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Swedish"
+          }
+        },
+        "et" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rootsi"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ruotsi"
+          }
+        },
+        "fit" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ruotti"
+          }
+        },
+        "fo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Svenskt"
+          }
+        },
+        "is" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sænska"
+          }
+        },
+        "kl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Svenskisut"
+          }
+        },
+        "lt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Švedų"
+          }
+        },
+        "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zviedru"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Svensk"
+          }
+        },
+        "nn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Svensk"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Szwedzki"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Шведский"
+          }
+        },
+        "se" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ruoŧagiella"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Svenska"
           }
         }
       }
@@ -967,103 +752,103 @@
         "da" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Bufferer…"
+            "value" : "Buffer"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Puffern…"
+            "value" : "Puffer"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Buffering…"
+            "value" : "Buffer"
           }
         },
         "et" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Puhverdamine"
+            "value" : "Puhver"
           }
         },
         "fi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Puskuroi…"
+            "value" : "Puskuri"
           }
         },
         "fit" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Puskuroi"
+            "value" : "Puskur"
           }
         },
         "fo" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Bufrar…"
+            "value" : "Bufra"
           }
         },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Biðminni…"
+            "value" : "Biðminni"
           }
         },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Utaqqivoq"
+            "value" : "Utaqqi"
           }
         },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Buferizuojama…"
+            "value" : "Buferis"
           }
         },
         "lv" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Buferizācija…"
+            "value" : "Buferis"
           }
         },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Bufrer"
+            "value" : "Buffer"
           }
         },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Buffrar"
+            "value" : "Buffer"
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Buforowanie…"
+            "value" : "Bufor"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Буферизация…"
+            "value" : "Буфер"
           }
         },
         "se" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Buffere…"
+            "value" : "Buffere"
           }
         },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Buffrar…"
+            "value" : "Buffra"
           }
         }
       }
@@ -1073,103 +858,103 @@
         "da" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Forbinder…"
+            "value" : "Tilslut"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Verbinden…"
+            "value" : "Verbinden"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Connecting…"
+            "value" : "Connect"
           }
         },
         "et" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ühendamine"
+            "value" : "Ühenda"
           }
         },
         "fi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Yhdistä…"
+            "value" : "Yhdistä"
           }
         },
         "fit" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Yhistää…"
+            "value" : "Yhistä"
           }
         },
         "fo" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sambindi"
+            "value" : "Sambind"
           }
         },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tengist…"
+            "value" : "Tengist"
           }
         },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Attavilerpoq"
+            "value" : "Attaviler"
           }
         },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Jungiamasi…"
+            "value" : "Jungiasi"
           }
         },
         "lv" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Savienojas…"
+            "value" : "Savienojas"
           }
         },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kobler til"
+            "value" : "Kobler"
           }
         },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Koplar til"
+            "value" : "Koplar"
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Łączenie…"
+            "value" : "Łączy"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Подключение…"
+            "value" : "Подключает"
           }
         },
         "se" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Laktádeamen…"
+            "value" : "Laktáde"
           }
         },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ansluter…"
+            "value" : "Ansluter"
           }
         }
       }
@@ -1179,91 +964,91 @@
         "da" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ingen forbindelse"
+            "value" : "Offline"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Keine Verbindung"
+            "value" : "Offline"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No connection"
+            "value" : "Offline"
           }
         },
         "et" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ühendus puudub"
+            "value" : "Võrguta"
           }
         },
         "fi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ei yhteyttä"
+            "value" : "Ei verkkoa"
           }
         },
         "fit" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ei yhteyttä"
+            "value" : "Ei verkkoo"
           }
         },
         "fo" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Eingin samband"
+            "value" : "Ósamband"
           }
         },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Engin tenging"
+            "value" : "Ótengt"
           }
         },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Attaveqanngilaq"
+            "value" : "Attaveqanngi"
           }
         },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Nėra ryšio"
+            "value" : "Be ryšio"
           }
         },
         "lv" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Nav savienojuma"
+            "value" : "Bez tīkla"
           }
         },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ingen tilkobling"
+            "value" : "Frakoblet"
           }
         },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Inga tilkopling"
+            "value" : "Fråkopla"
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Brak połączenia"
+            "value" : "Offline"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Нет соединения"
+            "value" : "Нет сети"
           }
         },
         "se" : {
@@ -1275,7 +1060,7 @@
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ingen anslutning"
+            "value" : "Offline"
           }
         }
       }
@@ -1285,67 +1070,67 @@
         "da" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "På pause"
+            "value" : "Pause"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pausiert"
+            "value" : "Pause"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Paused"
+            "value" : "Pause"
           }
         },
         "et" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Peatatud"
+            "value" : "Paus"
           }
         },
         "fi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Keskeytys"
+            "value" : "Tauko"
           }
         },
         "fit" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pysäytetty"
+            "value" : "Pysäys"
           }
         },
         "fo" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Steðgað"
+            "value" : "Steðgur"
           }
         },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Í bið"
+            "value" : "Bið"
           }
         },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Uninngavoq"
+            "value" : "Uninnga"
           }
         },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pristabdyta"
+            "value" : "Pauzė"
           }
         },
         "lv" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pauzēts"
+            "value" : "Pauze"
           }
         },
         "nb" : {
@@ -1363,7 +1148,7 @@
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Wstrzymano"
+            "value" : "Pauza"
           }
         },
         "ru" : {
@@ -1375,13 +1160,13 @@
         "se" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Boddjojuvvon"
+            "value" : "Boddjo"
           }
         },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pausad"
+            "value" : "Paus"
           }
         }
       }
@@ -1498,19 +1283,19 @@
         "da" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Afspiller"
+            "value" : "Spiller"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Wiedergabe"
+            "value" : "Abspielen"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Playing"
+            "value" : "Play"
           }
         },
         "et" : {
@@ -1522,13 +1307,13 @@
         "fi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Toisto"
+            "value" : "Toista"
           }
         },
         "fit" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Soittaa"
+            "value" : "Soita"
           }
         },
         "fo" : {
@@ -1540,19 +1325,19 @@
         "is" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Spilun"
+            "value" : "Spilar"
           }
         },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tusarnaagassaq"
+            "value" : "Tusarnaa"
           }
         },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Grojama"
+            "value" : "Grok"
           }
         },
         "lv" : {
@@ -1576,19 +1361,19 @@
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Odtwarzanie"
+            "value" : "Gra"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Воспроизведение"
+            "value" : "Играет"
           }
         },
         "se" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Čuojaha"
+            "value" : "Čuoja"
           }
         },
         "sv" : {
@@ -1599,218 +1384,108 @@
         }
       }
     },
-    "status_reconnect_countdown_format" : {
-      "comment" : "Format string for reconnection countdown. Parameters: seconds, current attempt, max attempts",
-      "extractionState" : "stale",
+    "status_security_failed" : {
       "localizations" : {
         "da" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Gentilslutter om %ds (%d/%d)"
+            "value" : "Sikkerhed"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Neu verbinden in %ds (%d/%d)"
+            "value" : "Sicherheit"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Reconnect in %ds (%d/%d)"
+            "value" : "Security"
           }
         },
         "et" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Taasühendamine %d s (%d/%d)"
+            "value" : "Turvalisus"
           }
         },
         "fi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Yhdistä %d s (%d/%d)"
+            "value" : "Turva"
           }
         },
         "fit" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Yhistää uuesti %ds (%d/%d)"
+            "value" : "Turva"
           }
         },
         "fo" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Endursambinding um %ds (%d/%d)"
+            "value" : "Trygd"
           }
         },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Endurtenging eftir %ds (%d/%d)"
+            "value" : "Öryggi"
           }
         },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Attavileeqqippoq %ds (%d/%d)"
+            "value" : "Nakkutilliissuseq"
           }
         },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pakartotinis prisijungimas po %ds (%d/%d)"
+            "value" : "Saugumas"
           }
         },
         "lv" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Atkārtota savienošana pēc %ds (%d/%d)"
+            "value" : "Drošība"
           }
         },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kobler til igjen om %ds (%d/%d)"
+            "value" : "Sikkerhet"
           }
         },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Koplar til igjen om %ds (%d/%d)"
+            "value" : "Tryggleik"
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ponowne połączenie za %ds (%d/%d)"
+            "value" : "Bezpieczeństwo"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Переподключение через %dс (%d/%d)"
+            "value" : "Безопасность"
           }
         },
         "se" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ođđasit laktádeapmi %ds (%d/%d)"
+            "value" : "Sihkarvuohta"
           }
         },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Återansluter om %ds (%d/%d)"
-          }
-        }
-      }
-    },
-    "status_reconnect_format" : {
-      "comment" : "Format string for reconnection status. Parameters: current attempt, max attempts",
-      "extractionState" : "stale",
-      "localizations" : {
-        "da" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Gentilslutter (%d/%d)"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Neu verbinden (%d/%d)"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reconnect (%d/%d)"
-          }
-        },
-        "et" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Taasühendamine (%d/%d)"
-          }
-        },
-        "fi" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Yhdistä (%d/%d)"
-          }
-        },
-        "fit" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Yhistää uuesti (%d/%d)"
-          }
-        },
-        "fo" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Endursambindi (%d/%d)"
-          }
-        },
-        "is" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Endurtenging (%d/%d)"
-          }
-        },
-        "kl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Attavileeqqippoq (%d/%d)"
-          }
-        },
-        "lt" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Pakartotinis prisijungimas (%d/%d)"
-          }
-        },
-        "lv" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Atkārtota savienošana (%d/%d)"
-          }
-        },
-        "nb" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Kobler til igjen (%d/%d)"
-          }
-        },
-        "nn" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Koplar til igjen (%d/%d)"
-          }
-        },
-        "pl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ponowne łączenie (%d/%d)"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Переподключение (%d/%d)"
-          }
-        },
-        "se" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ođđasit laktádeamen (%d/%d)"
-          }
-        },
-        "sv" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Återansluter (%d/%d)"
+            "value" : "Säkerhet"
           }
         }
       }
@@ -1917,6 +1592,112 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Stoppad"
+          }
+        }
+      }
+    },
+    "status_stream_unavailable" : {
+      "localizations" : {
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fra"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aus"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Off"
+          }
+        },
+        "et" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Väljas"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pois"
+          }
+        },
+        "fit" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pois"
+          }
+        },
+        "fo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ikki í"
+          }
+        },
+        "is" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Úti"
+          }
+        },
+        "kl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aallakaatitsisoqanngi"
+          }
+        },
+        "lt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Išjungta"
+          }
+        },
+        "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Izslēgts"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Av"
+          }
+        },
+        "nn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Av"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wył"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Выкл"
+          }
+        },
+        "se" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ii sádde"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Av"
           }
         }
       }
