@@ -41,19 +41,21 @@ class DirectStreamingPlayer: NSObject {
             case readyToPlay
             case failed(Error?)
         }
-
-        public func getPlaybackState() -> PlaybackState {
-            switch playerItem?.status {
-            case .unknown:
-                return .unknown
-            case .readyToPlay:
-                return .readyToPlay
-            case .failed:
-                return .failed(playerItem?.error)
-            default:
-                return .unknown
-            }
+    
+    private var lastError: Error?
+    
+    public func getPlaybackState() -> PlaybackState {
+        switch playerItem?.status {
+        case .unknown:
+            return .unknown
+        case .readyToPlay:
+            return .readyToPlay
+        case .failed:
+            return .failed(playerItem?.error)
+        default:
+            return .unknown
         }
+    }
     
     // Current selected stream
     private var selectedStream: Stream {
@@ -131,33 +133,25 @@ class DirectStreamingPlayer: NSObject {
             onStatusChange?(false, "Connection cannot be verified. Please try again later.")
             return
         }
-        // Stop any existing playback
         stop()
         hasPermanentError = false // Reset on each play attempt
         print("▶️ Starting direct playback for \(selectedStream.language)")
 
-        // Set up the player item and player
         let asset = AVURLAsset(url: selectedStream.url)
         asset.resourceLoader.setDelegate(self, queue: DispatchQueue(label: "radio.lutheran.resourceloader"))
         playerItem = AVPlayerItem(asset: asset)
         player = AVPlayer(playerItem: playerItem)
-        addObservers() // Assuming this sets up existing observers
+        addObservers()
         player?.play()
 
-        // Temporary status observer for completion
         var tempStatusObserver: NSKeyValueObservation?
-        tempStatusObserver = playerItem?.observe(\.status, options: [.new]) { [weak self] item, _ in
-            guard let self = self else { return }
+        tempStatusObserver = playerItem?.observe(\.status, options: [.new]) { item, _ in
             if item.status == .readyToPlay {
-                completion(true) // Playback succeeded
-                tempStatusObserver?.invalidate() // Stop observing
+                completion(true)
+                tempStatusObserver?.invalidate()
             } else if item.status == .failed {
-                // Check for permanent error (e.g., DNS failure)
-                if let error = item.error as NSError?, error.domain == NSURLErrorDomain && error.code == -1003 {
-                    self.hasPermanentError = true
-                }
-                completion(false) // Playback failed
-                tempStatusObserver?.invalidate() // Stop observing
+                completion(false)
+                tempStatusObserver?.invalidate()
             }
         }
     }
@@ -188,12 +182,15 @@ class DirectStreamingPlayer: NSObject {
                 case .failed:
                     let errorMessage = item.error?.localizedDescription ?? "unknown error"
                     print("🎵 Player item failed: \(errorMessage)")
+                    self.lastError = item.error
                     if let error = item.error as NSError?, error.domain == NSURLErrorDomain && error.code == -1003 {
                         print("📡 Permanent error detected: DNS resolution failed")
                         self.hasPermanentError = true
+                        self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
+                    } else {
+                        self.onStatusChange?(false, String(localized: "status_buffering"))
                     }
-                    self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
-                    self.stop()
+                    self.removeObservers() // Remove observers instead of calling stop()
                     if let error = item.error as NSError? {
                         print("🎵 Error details - Domain: \(error.domain), Code: \(error.code)")
                     }
@@ -278,14 +275,19 @@ class DirectStreamingPlayer: NSObject {
         }
     }
     
+    func isLastErrorPermanent() -> Bool {
+        if let error = lastError as NSError?, error.domain == NSURLErrorDomain && error.code == -1003 {
+            return true
+        }
+        return false
+    }
+    
     func stop() {
         removeObservers()
         player?.pause()
         player = nil
         playerItem = nil
-        // Only update status if not already set to "status_stream_unavailable"
-        let currentStatus = playerItem?.status == .failed ? String(localized: "status_stream_unavailable") : nil
-        if currentStatus != String(localized: "status_stream_unavailable") {
+        if !hasPermanentError {
             onStatusChange?(false, String(localized: "status_stopped"))
         }
     }
@@ -294,6 +296,7 @@ class DirectStreamingPlayer: NSObject {
         stop()
     }
 }
+
 
 // MARK: - Metadata Handling
 extension DirectStreamingPlayer: AVPlayerItemMetadataOutputPushDelegate {

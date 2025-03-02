@@ -469,7 +469,6 @@ class ViewController: UIViewController, UIPickerViewDelegate, UIPickerViewDataSo
         guard hasInternetConnection && !isManualPause && !hasPermanentPlaybackError else {
             print("📱 Aborting playback attempt \(attempt) - no internet, manually paused, or previous permanent error")
             if hasPermanentPlaybackError {
-                streamingPlayer.stop()
                 streamingPlayer.onStatusChange?(false, String(localized: "status_stream_unavailable"))
             }
             return
@@ -481,35 +480,20 @@ class ViewController: UIViewController, UIPickerViewDelegate, UIPickerViewDataSo
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
             self.streamingPlayer.setVolume(self.volumeSlider.value)
             self.streamingPlayer.play { [weak self] success in
-                // This completion handler won't be called immediately,
-                // the status observer below will handle the initial response
-                guard self != nil else { return }
+                guard let self = self else { return }
                 if success {
                     print("📱 Playback succeeded on attempt \(attempt)")
-                }
-            }
-            
-            // Add a temporary observer to react to status changes
-            var statusObserver: NSKeyValueObservation?
-            statusObserver = self.streamingPlayer.playerItem?.observe(\.status, options: [.new]) { [weak self] item, _ in
-                guard let self = self else { return }
-                if item.status != .unknown { // Wait until status settles
-                    statusObserver?.invalidate() // Remove observer once status changes
-                    if item.status == .failed {
-                        if self.streamingPlayer.hasPermanentError {
-                            print("📱 Permanent error detected - stopping retries")
-                            self.hasPermanentPlaybackError = true
-                            self.streamingPlayer.stop()
-                            self.streamingPlayer.onStatusChange?(false, String(localized: "status_stream_unavailable"))
-                        } else if attempt < maxAttempts {
-                            print("📱 Playback attempt \(attempt) failed, retrying...")
-                            self.attemptPlaybackWithRetry(attempt: attempt + 1, maxAttempts: maxAttempts)
-                        } else {
-                            print("📱 Max attempts (\(maxAttempts)) reached - giving up")
-                            self.streamingPlayer.onStatusChange?(false, String(localized: "alert_connection_failed_title"))
-                        }
-                    } else if item.status == .readyToPlay {
-                        print("📱 Playback started successfully")
+                } else {
+                    if self.streamingPlayer.isLastErrorPermanent() {
+                        print("📱 Permanent error detected - stopping retries")
+                        self.hasPermanentPlaybackError = true
+                        self.streamingPlayer.onStatusChange?(false, String(localized: "status_stream_unavailable"))
+                    } else if attempt < maxAttempts {
+                        print("📱 Playback attempt \(attempt) failed, retrying...")
+                        self.attemptPlaybackWithRetry(attempt: attempt + 1, maxAttempts: maxAttempts)
+                    } else {
+                        print("📱 Max attempts (\(maxAttempts)) reached - giving up")
+                        self.streamingPlayer.onStatusChange?(false, String(localized: "alert_connection_failed_title"))
                     }
                 }
             }
