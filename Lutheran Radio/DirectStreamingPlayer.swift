@@ -44,6 +44,16 @@ class DirectStreamingPlayer: NSObject {
     
     private var lastError: Error?
     
+    var onPinningFailure: (() -> Void)? {
+        didSet {
+            // Ensure pinningDelegate's callback is updated
+            pinningDelegate.onPinningFailure = { [weak self] in
+                self?.handleSecurityFailure()
+                self?.onPinningFailure?()
+            }
+        }
+    }
+    
     public func getPlaybackState() -> PlaybackState {
         switch playerItem?.status {
         case .unknown:
@@ -97,6 +107,7 @@ class DirectStreamingPlayer: NSObject {
         setupAudioSession()
         pinningDelegate.onPinningFailure = { [weak self] in
             self?.handleSecurityFailure()
+            self?.onPinningFailure?()
         }
     }
     
@@ -107,8 +118,10 @@ class DirectStreamingPlayer: NSObject {
         // Stop any current playback
         stop()
         
-        // Notify UI of security issue
-        onStatusChange?(false, "Connection cannot be verified. Please try again later.")
+        // Only call onStatusChange if onPinningFailure isn't set, to avoid duplicate messaging
+        if onPinningFailure == nil {
+                onStatusChange?(false, "Connection cannot be verified. Please try again later.")
+            }
     }
     
     func setupAudioSession() {

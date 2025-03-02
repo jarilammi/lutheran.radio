@@ -18,7 +18,7 @@ import AVFoundation
 class CertificatePinningDelegate: NSObject, URLSessionDelegate {
     // SHA-512 is used here for fast integrity checks
     private let pinnedPublicKeyHash = "rMadBtyLpBp0ybRQW6+WGcFm6wGG7OldSI6pA/eRVQy/xnpjBsDu897E1HcGZPB+mZQhUkfswZVVvWF9YPALFQ=="
-    
+
     // Added to track pinning status
     private(set) var pinningVerified = false
     private(set) var isPinningFailed = false
