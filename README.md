@@ -88,12 +88,9 @@ While the codebase uses SHA-512 for certificate pinning, this is intentional and
 To verify or update the certificate hash:
 
 ```bash
-openssl s_client -connect livestream.lutheran.radio:8443 \
-  -servername livestream.lutheran.radio < /dev/null 2>/dev/null \
-  | openssl x509 -outform pem \
-  | openssl x509 -pubkey -noout \
-  | openssl ec -pubin -inform pem -outform der -conv_form uncompressed \
-  | tail -c +24 \
-  | openssl dgst -sha512 -binary \
-  | base64 -w 0
+openssl s_client -connect livestream.lutheran.radio:8443 -servername livestream.lutheran.radio < /dev/null 2>/dev/null \
+| openssl x509 -pubkey -noout \
+| openssl pkey -pubin -inform pem -outform der \
+| openssl dgst -sha256 -binary \
+| base64
 ```
