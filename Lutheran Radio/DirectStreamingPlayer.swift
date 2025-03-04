@@ -43,17 +43,7 @@ class DirectStreamingPlayer: NSObject {
         }
     
     private var lastError: Error?
-    
-    var onPinningFailure: (() -> Void)? {
-        didSet {
-            // Ensure pinningDelegate's callback is updated
-            pinningDelegate.onPinningFailure = { [weak self] in
-                self?.handleSecurityFailure()
-                self?.onPinningFailure?()
-            }
-        }
-    }
-    
+        
     public func getPlaybackState() -> PlaybackState {
         switch playerItem?.status {
         case .unknown:
@@ -85,11 +75,6 @@ class DirectStreamingPlayer: NSObject {
     // Keep track of which observers are active
     private var isObservingBuffer = false
     
-    // Certificate pinning hash
-    private let pinnedPublicKeyHash = "rMadBtyLpBp0ybRQW6+WGcFm6wGG7OldSI6pA/eRVQy/xnpjBsDu897E1HcGZPB+mZQhUkfswZVVvWF9YPALFQ=="
-    private let pinningDelegate = CertificatePinningDelegate()
-    private var securityLockActive = false
-    
     // Status callbacks
     var onStatusChange: ((Bool, String) -> Void)?
     var onMetadataChange: ((String?) -> Void)?
@@ -105,25 +90,8 @@ class DirectStreamingPlayer: NSObject {
         }
         super.init()
         setupAudioSession()
-        pinningDelegate.onPinningFailure = { [weak self] in
-            self?.handleSecurityFailure()
-            self?.onPinningFailure?()
-        }
     }
-    
-    func handleSecurityFailure() {
-        // Lock streaming for security reasons
-        securityLockActive = true
         
-        // Stop any current playback
-        stop()
-        
-        // Only call onStatusChange if onPinningFailure isn't set, to avoid duplicate messaging
-        if onPinningFailure == nil {
-                onStatusChange?(false, "Connection cannot be verified. Please try again later.")
-            }
-    }
-    
     func setupAudioSession() {
         do {
             let session = AVAudioSession.sharedInstance()
@@ -142,10 +110,6 @@ class DirectStreamingPlayer: NSObject {
     }
     
     func play(completion: @escaping (Bool) -> Void) {
-        if securityLockActive {
-            onStatusChange?(false, "Connection cannot be verified. Please try again later.")
-            return
-        }
         stop()
         hasPermanentError = false // Reset on each play attempt
         print("▶️ Starting direct playback for \(selectedStream.language)")
@@ -355,17 +319,14 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
             return false
         }
 
-        let sessionConfig = URLSessionConfiguration.default
-        let session = URLSession(configuration: sessionConfig, delegate: pinningDelegate, delegateQueue: nil)
-        let streamingDelegate = StreamingSessionDelegate(loadingRequest: loadingRequest, pinningDelegate: pinningDelegate)
+        let streamingDelegate = StreamingSessionDelegate(loadingRequest: loadingRequest)
+        let session = URLSession(configuration: .default, delegate: streamingDelegate, delegateQueue: nil)
+        let task = session.dataTask(with: url)
         streamingDelegate.onError = { [weak self] error in
             DispatchQueue.main.async {
                 self?.handleLoadingError(error)
             }
         }
-        
-        let task = session.dataTask(with: url)
-        task.delegate = streamingDelegate
         task.resume()
         return true
     }
