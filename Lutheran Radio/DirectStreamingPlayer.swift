@@ -333,11 +333,27 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
     
     private func handleLoadingError(_ error: Error) {
         print("📡 Loading error: \(error.localizedDescription)")
-        if let nsError = error as NSError?, nsError.domain == NSURLErrorDomain, nsError.code == -1003 {
-            print("📡 DNS resolution failed")
-            hasPermanentError = true
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .serverCertificateUntrusted:
+                // Pinning failure
+                print("🔒 Pinning error: Connection cannot be verified")
+                onStatusChange?(false, String(localized: "status_security_failed"))
+            case .cannotFindHost:
+                // DNS resolution failure
+                print("📡 DNS resolution failed")
+                hasPermanentError = true
+                onStatusChange?(false, String(localized: "status_stream_unavailable"))
+            default:
+                // Other errors
+                print("📡 Generic loading error: \(urlError.code)")
+                onStatusChange?(false, String(localized: "status_stream_unavailable"))
+            }
+        } else {
+            // Non-URLError
+            print("📡 Non-URL error encountered")
+            onStatusChange?(false, String(localized: "status_stream_unavailable"))
         }
-        onStatusChange?(false, String(localized: "status_stream_unavailable"))
         stop()
     }
     

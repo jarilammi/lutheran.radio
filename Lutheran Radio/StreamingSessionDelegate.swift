@@ -23,7 +23,11 @@ class StreamingSessionDelegate: NSObject, URLSessionDelegate, URLSessionDataDele
         if let error = error {
             if (error as NSError).domain != NSURLErrorDomain || (error as NSError).code != NSURLErrorCancelled {
                 print("📡 Streaming task failed: \(error.localizedDescription)")
-                onError?(error) // Notify of the error
+                // Log pinning failure for debugging
+                if let urlError = error as? URLError, urlError.code == .serverCertificateUntrusted {
+                    print("🔒 Pinning failure detected: Certificate untrusted")
+                }
+                onError?(error) // Notify DirectStreamingPlayer of the error
                 loadingRequest?.finishLoading(with: error)
             } else {
                 print("📡 Streaming task cancelled")
