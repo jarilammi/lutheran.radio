@@ -127,14 +127,6 @@ class ViewController: UIViewController, UIPickerViewDelegate, UIPickerViewDataSo
         streamingPlayer.onStatusChange = { [weak self] isPlaying, statusText in
             guard let self = self else { return }
             
-            streamingPlayer.onPinningFailure = { [weak self] in
-                guard let self = self else { return }
-                self.statusLabel.text = String(localized: "status_security_failed")
-                self.statusLabel.backgroundColor = .systemPurple
-                self.statusLabel.textColor = .white
-                self.stopPlayback()
-            }
-            
             self.isPlaying = isPlaying
             self.updatePlayPauseButton(isPlaying: isPlaying)
             

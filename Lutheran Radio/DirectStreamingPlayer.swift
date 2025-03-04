@@ -43,17 +43,7 @@ class DirectStreamingPlayer: NSObject {
         }
     
     private var lastError: Error?
-    
-    var onPinningFailure: (() -> Void)? {
-        didSet {
-            // Ensure pinningDelegate's callback is updated
-            pinningDelegate.onPinningFailure = { [weak self] in
-                self?.handleSecurityFailure()
-                self?.onPinningFailure?()
-            }
-        }
-    }
-    
+        
     public func getPlaybackState() -> PlaybackState {
         switch playerItem?.status {
         case .unknown:
@@ -85,11 +75,6 @@ class DirectStreamingPlayer: NSObject {
     // Keep track of which observers are active
     private var isObservingBuffer = false
     
-    // Certificate pinning hash
-    private let pinnedPublicKeyHash = "rMadBtyLpBp0ybRQW6+WGcFm6wGG7OldSI6pA/eRVQy/xnpjBsDu897E1HcGZPB+mZQhUkfswZVVvWF9YPALFQ=="
-    private let pinningDelegate = CertificatePinningDelegate()
-    private var securityLockActive = false
-    
     // Status callbacks
     var onStatusChange: ((Bool, String) -> Void)?
     var onMetadataChange: ((String?) -> Void)?
@@ -105,25 +90,8 @@ class DirectStreamingPlayer: NSObject {
         }
         super.init()
         setupAudioSession()
-        pinningDelegate.onPinningFailure = { [weak self] in
-            self?.handleSecurityFailure()
-            self?.onPinningFailure?()
-        }
     }
-    
-    func handleSecurityFailure() {
-        // Lock streaming for security reasons
-        securityLockActive = true
         
-        // Stop any current playback
-        stop()
-        
-        // Only call onStatusChange if onPinningFailure isn't set, to avoid duplicate messaging
-        if onPinningFailure == nil {
-                onStatusChange?(false, "Connection cannot be verified. Please try again later.")
-            }
-    }
-    
     func setupAudioSession() {
         do {
             let session = AVAudioSession.sharedInstance()
@@ -142,10 +110,6 @@ class DirectStreamingPlayer: NSObject {
     }
     
     func play(completion: @escaping (Bool) -> Void) {
-        if securityLockActive {
-            onStatusChange?(false, "Connection cannot be verified. Please try again later.")
-            return
-        }
         stop()
         hasPermanentError = false // Reset on each play attempt
         print("▶️ Starting direct playback for \(selectedStream.language)")
@@ -196,17 +160,22 @@ class DirectStreamingPlayer: NSObject {
                     let errorMessage = item.error?.localizedDescription ?? "unknown error"
                     print("🎵 Player item failed: \(errorMessage)")
                     self.lastError = item.error
-                    if let error = item.error as NSError?, error.domain == NSURLErrorDomain && error.code == -1003 {
-                        print("📡 Permanent error detected: DNS resolution failed")
-                        self.hasPermanentError = true
-                        self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
-                    } else {
-                        self.onStatusChange?(false, String(localized: "status_buffering"))
-                    }
-                    self.removeObservers() // Remove observers instead of calling stop()
                     if let error = item.error as NSError? {
+                        if error.domain == NSURLErrorDomain {
+                            switch error.code {
+                            case -1200, -1202: // SSL-related errors
+                                self.onStatusChange?(false, String(localized: "status_security_failed"))
+                            case -1003: // Cannot find host
+                                self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
+                            default:
+                                self.onStatusChange?(false, String(localized: "status_buffering"))
+                            }
+                        } else {
+                            self.onStatusChange?(false, String(localized: "status_buffering"))
+                        }
                         print("🎵 Error details - Domain: \(error.domain), Code: \(error.code)")
                     }
+                    self.removeObservers()
                 case .unknown:
                     self.onStatusChange?(false, String(localized: "status_buffering"))
                 @unknown default:
@@ -355,28 +324,41 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
             return false
         }
 
-        let sessionConfig = URLSessionConfiguration.default
-        let session = URLSession(configuration: sessionConfig, delegate: pinningDelegate, delegateQueue: nil)
-        let streamingDelegate = StreamingSessionDelegate(loadingRequest: loadingRequest, pinningDelegate: pinningDelegate)
+        let streamingDelegate = StreamingSessionDelegate(loadingRequest: loadingRequest)
+        let session = URLSession(configuration: .default, delegate: streamingDelegate, delegateQueue: nil)
+        let task = session.dataTask(with: url)
         streamingDelegate.onError = { [weak self] error in
             DispatchQueue.main.async {
                 self?.handleLoadingError(error)
             }
         }
-        
-        let task = session.dataTask(with: url)
-        task.delegate = streamingDelegate
         task.resume()
         return true
     }
     
     private func handleLoadingError(_ error: Error) {
         print("📡 Loading error: \(error.localizedDescription)")
-        if let nsError = error as NSError?, nsError.domain == NSURLErrorDomain, nsError.code == -1003 {
-            print("📡 DNS resolution failed")
-            hasPermanentError = true
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .serverCertificateUntrusted, .secureConnectionFailed:
+                // Handle pinning failure or general SSL failure
+                print("🔒 SSL error: Connection cannot be verified")
+                onStatusChange?(false, String(localized: "status_security_failed"))
+            case .cannotFindHost:
+                // DNS resolution failure
+                print("📡 DNS resolution failed")
+                hasPermanentError = true
+                onStatusChange?(false, String(localized: "status_stream_unavailable"))
+            default:
+                // Other errors
+                print("📡 Generic loading error: \(urlError.code)")
+                onStatusChange?(false, String(localized: "status_stream_unavailable"))
+            }
+        } else {
+            // Non-URLError
+            print("📡 Non-URL error encountered")
+            onStatusChange?(false, String(localized: "status_stream_unavailable"))
         }
-        onStatusChange?(false, String(localized: "status_stream_unavailable"))
         stop()
     }
     
