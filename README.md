@@ -70,22 +70,28 @@ After cleaning, retry the build and test steps above.
 
 The app implements certificate pinning to prevent man-in-the-middle (MITM) attacks. This is achieved by:
 
-1. Generating a SHA-512 hash of the server's public key during development
-2. Embedding this hash in the app
+1. Generating a SHA-256 hash of the server's public key during development
+2. Embedding this hash in the app's Info.plist file under NSAppTransportSecurity
 3. Verifying the server's public key hash during each connection
-4. Preventing redirects to maintain connection integrity with the fixed endpoint
+4. Including subdomains in the pinning configuration
 
 ### Implementation Note
 
-While the codebase uses SHA-512 for certificate pinning, this is intentional and secure. Some security scanners may flag this as a potential issue because SHA-512 would be inappropriate for password hashing (where computationally expensive algorithms like bcrypt should be used). However, for certificate pinning:
+The app uses SHA-256 with Base64 encoding for certificate pinning, as specified in the Info.plist under `NSPinnedLeafIdentities`. This is a cryptographically secure choice for public key pinning because:
 
-- SHA-512 is cryptographically secure and appropriate for integrity verification
-- Fast hash computation is desired since it occurs on every connection
-- The use case is fundamentally different from password hashing
+- SHA-256 provides sufficient collision resistance for this use case
+- Fast hash computation is desirable since verification occurs on every connection
+- The pinned value is a public key hash, not a password or sensitive data requiring slower hashing algorithms
+- Base64 encoding ensures consistent representation across platforms
+
+The configuration also:
+- Applies to all subdomains of lutheran.radio (`NSIncludesSubdomains` set to true)
+- Enforces a minimum TLS version of 1.3 (`NSTemporaryExceptionMinimumTLSVersion`)
+- Requires forward secrecy (`NSTemporaryExceptionRequiresForwardSecrecy`)
 
 ### Verifying the Certificate Hash
 
-To verify or update the certificate hash:
+To verify or update the certificate hash for lutheran.radio:
 
 ```bash
 openssl s_client -connect livestream.lutheran.radio:8443 -servername livestream.lutheran.radio < /dev/null 2>/dev/null \
@@ -94,3 +100,11 @@ openssl s_client -connect livestream.lutheran.radio:8443 -servername livestream.
 | openssl dgst -sha256 -binary \
 | base64
 ```
+
+Compare the output to the value in Info.plist:
+
+```
+mm31qgyBr2aXX8NzxmX/OeKzrUeOtxim4foWmxL4TZY=
+```
+
+If the hash differs, update the SPKI-SHA256-BASE64 value in the Info.plist file accordingly.
