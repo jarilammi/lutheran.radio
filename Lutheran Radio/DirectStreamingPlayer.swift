@@ -160,17 +160,22 @@ class DirectStreamingPlayer: NSObject {
                     let errorMessage = item.error?.localizedDescription ?? "unknown error"
                     print("🎵 Player item failed: \(errorMessage)")
                     self.lastError = item.error
-                    if let error = item.error as NSError?, error.domain == NSURLErrorDomain && error.code == -1003 {
-                        print("📡 Permanent error detected: DNS resolution failed")
-                        self.hasPermanentError = true
-                        self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
-                    } else {
-                        self.onStatusChange?(false, String(localized: "status_buffering"))
-                    }
-                    self.removeObservers() // Remove observers instead of calling stop()
                     if let error = item.error as NSError? {
+                        if error.domain == NSURLErrorDomain {
+                            switch error.code {
+                            case -1200, -1202: // SSL-related errors
+                                self.onStatusChange?(false, String(localized: "status_security_failed"))
+                            case -1003: // Cannot find host
+                                self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
+                            default:
+                                self.onStatusChange?(false, String(localized: "status_buffering"))
+                            }
+                        } else {
+                            self.onStatusChange?(false, String(localized: "status_buffering"))
+                        }
                         print("🎵 Error details - Domain: \(error.domain), Code: \(error.code)")
                     }
+                    self.removeObservers()
                 case .unknown:
                     self.onStatusChange?(false, String(localized: "status_buffering"))
                 @unknown default:
@@ -335,9 +340,9 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
         print("📡 Loading error: \(error.localizedDescription)")
         if let urlError = error as? URLError {
             switch urlError.code {
-            case .serverCertificateUntrusted:
-                // Pinning failure
-                print("🔒 Pinning error: Connection cannot be verified")
+            case .serverCertificateUntrusted, .secureConnectionFailed:
+                // Handle pinning failure or general SSL failure
+                print("🔒 SSL error: Connection cannot be verified")
                 onStatusChange?(false, String(localized: "status_security_failed"))
             case .cannotFindHost:
                 // DNS resolution failure
