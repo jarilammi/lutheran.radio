@@ -160,28 +160,24 @@ class DirectStreamingPlayer: NSObject {
                 case .readyToPlay:
                     print("🎵 Player item ready to play!")
                     self.onStatusChange?(true, String(localized: "status_playing"))
+                    
                 case .failed:
                     let errorMessage = item.error?.localizedDescription ?? "unknown error"
                     print("🎵 Player item failed: \(errorMessage)")
                     self.lastError = item.error
+                    
+                    let errorType = StreamErrorType.from(error: item.error)
+                    self.hasPermanentError = errorType.isPermanent
+                    self.onStatusChange?(false, errorType.statusString)
+                    
                     if let error = item.error as NSError? {
-                        if error.domain == NSURLErrorDomain {
-                            switch error.code {
-                            case -1200, -1202: // SSL-related errors
-                                self.onStatusChange?(false, String(localized: "status_security_failed"))
-                            case -1003: // Cannot find host
-                                self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
-                            default:
-                                self.onStatusChange?(false, String(localized: "status_buffering"))
-                            }
-                        } else {
-                            self.onStatusChange?(false, String(localized: "status_buffering"))
-                        }
                         print("🎵 Error details - Domain: \(error.domain), Code: \(error.code)")
                     }
                     self.removeObservers()
+                    
                 case .unknown:
                     self.onStatusChange?(false, String(localized: "status_buffering"))
+                    
                 @unknown default:
                     break
                 }
@@ -262,10 +258,7 @@ class DirectStreamingPlayer: NSObject {
     }
     
     func isLastErrorPermanent() -> Bool {
-        if let error = lastError as NSError?, error.domain == NSURLErrorDomain && error.code == -1003 {
-            return true
-        }
-        return false
+        StreamErrorType.from(error: lastError).isPermanent
     }
     
     func stop() {
@@ -364,5 +357,51 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
                        didCancel loadingRequest: AVAssetResourceLoadingRequest) {
         // Handle cancellation if needed
         print("Resource loading cancelled")
+    }
+}
+
+extension DirectStreamingPlayer {
+    enum StreamErrorType {
+        case securityFailure
+        case permanentFailure
+        case transientFailure
+        case unknown
+        
+        static func from(error: Error?) -> StreamErrorType {
+            guard let nsError = error as NSError?, nsError.domain == NSURLErrorDomain else {
+                return .unknown
+            }
+            
+            switch nsError.code {
+            case URLError.Code.secureConnectionFailed.rawValue, // -1200
+                 URLError.Code.serverCertificateUntrusted.rawValue: // -1202
+                return .securityFailure
+            case URLError.Code.cannotFindHost.rawValue, // -1003
+                 URLError.Code.fileDoesNotExist.rawValue: // -1100
+                return .permanentFailure
+            default:
+                return .transientFailure
+            }
+        }
+        
+        var statusString: String {
+            switch self {
+            case .securityFailure:
+                return String(localized: "status_security_failed")
+            case .permanentFailure:
+                return String(localized: "status_stream_unavailable")
+            case .transientFailure, .unknown:
+                return String(localized: "status_buffering")
+            }
+        }
+        
+        var isPermanent: Bool {
+            switch self {
+            case .permanentFailure:
+                return true
+            default:
+                return false
+            }
+        }
     }
 }
