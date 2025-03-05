@@ -147,6 +147,10 @@ class DirectStreamingPlayer: NSObject {
         }
     }
     
+    func setVolume(_ volume: Float) {
+        player?.volume = volume
+    }
+    
     private func addObservers() {
         statusObserver = playerItem?.observe(\.status, options: [.new, .initial]) { [weak self] item, _ in
             guard let self = self else { return }
@@ -310,12 +314,6 @@ extension DirectStreamingPlayer {
 }
 
 // MARK: - DirectStreamingPlayer Extension
-extension DirectStreamingPlayer {
-    func setVolume(_ volume: Float) {
-        player?.volume = volume
-    }
-}
-
 extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
     func resourceLoader(_ resourceLoader: AVAssetResourceLoader,
                        shouldWaitForLoadingOfRequestedResource loadingRequest: AVAssetResourceLoadingRequest) -> Bool {
@@ -344,20 +342,20 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
                 // Handle pinning failure or general SSL failure
                 print("🔒 SSL error: Connection cannot be verified")
                 onStatusChange?(false, String(localized: "status_security_failed"))
-            case .cannotFindHost:
-                // DNS resolution failure
-                print("📡 DNS resolution failed")
+            case .cannotFindHost, .fileDoesNotExist: // Add -1100 (file not found)
+                // Permanent errors
+                print("📡 Permanent error: \(urlError.code == .cannotFindHost ? "Host not found" : "File not found")")
                 hasPermanentError = true
                 onStatusChange?(false, String(localized: "status_stream_unavailable"))
             default:
                 // Other errors
                 print("📡 Generic loading error: \(urlError.code)")
-                onStatusChange?(false, String(localized: "status_stream_unavailable"))
+                onStatusChange?(false, String(localized: "status_buffering"))
             }
         } else {
             // Non-URLError
             print("📡 Non-URL error encountered")
-            onStatusChange?(false, String(localized: "status_stream_unavailable"))
+            onStatusChange?(false, String(localized: "status_buffering"))
         }
         stop()
     }

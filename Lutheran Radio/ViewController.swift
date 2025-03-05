@@ -86,7 +86,19 @@ class ViewController: UIViewController, UIPickerViewDelegate, UIPickerViewDataSo
     }()
     
     // New streaming player
-    private let streamingPlayer = DirectStreamingPlayer()
+    private var streamingPlayer: DirectStreamingPlayer
+    
+    // Add initializer for testing
+    init(streamingPlayer: DirectStreamingPlayer = DirectStreamingPlayer()) {
+        self.streamingPlayer = streamingPlayer
+        super.init(nibName: nil, bundle: nil)
+    }
+    
+    required init?(coder: NSCoder) {
+        self.streamingPlayer = DirectStreamingPlayer()
+        super.init(coder: coder)
+    }
+    
     private var isPlaying = false
     private var isManualPause = false
     private var hasPermanentPlaybackError = false
@@ -94,6 +106,16 @@ class ViewController: UIViewController, UIPickerViewDelegate, UIPickerViewDataSo
     private var hasInternetConnection = true
     private var connectivityCheckTimer: Timer?
     private var lastConnectionAttemptTime: Date?
+    
+    // Testable accessors
+    @objc var isPlayingState: Bool {
+        get { isPlaying }
+    }
+    
+    @objc var hasInternet: Bool {
+        get { hasInternetConnection }
+        set { hasInternetConnection = newValue } // Allow setting for test setup
+    }
     
     override func viewDidLoad() {
         super.viewDidLoad()

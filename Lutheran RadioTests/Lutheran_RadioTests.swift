@@ -8,50 +8,69 @@
 import XCTest
 @testable import Lutheran_Radio
 
-final class Lutheran_RadioTests: XCTestCase {
+class MockStreamingPlayer: DirectStreamingPlayer, @unchecked Sendable {
+    var playCalled = false
+    var stopCalled = false
+    var volumeSet: Float?
     
+    override func play(completion: @escaping (Bool) -> Void) {
+        playCalled = true
+        completion(true)
+    }
+    
+    override func stop() {
+        stopCalled = true
+    }
+    
+    override func setVolume(_ volume: Float) {
+        volumeSet = volume
+    }
+}
+
+final class Lutheran_RadioTests: XCTestCase {
     var viewController: ViewController!
+    var mockPlayer: MockStreamingPlayer!
     
     override func setUpWithError() throws {
         try super.setUpWithError()
-        viewController = ViewController()
+        mockPlayer = MockStreamingPlayer()
+        viewController = ViewController(streamingPlayer: mockPlayer)
         viewController.loadViewIfNeeded()
     }
     
     override func tearDownWithError() throws {
         viewController = nil
+        mockPlayer = nil
         try super.tearDownWithError()
     }
     
     func testPlayPauseButtonTogglesPlaybackState() {
-        // Initial state should be not playing
-        XCTAssertFalse(viewController.isPlaying, "Player should initially be stopped.")
+        XCTAssertFalse(viewController.isPlayingState, "Player should initially be stopped.")
+        viewController.hasInternet = true
         
-        // Set hasInternetConnection to true to simulate network availability
-        viewController.hasInternetConnection = true
-        
-        // Simulate first tap on play/pause button - should start playing
         viewController.playPauseButton.sendActions(for: .touchUpInside)
-        XCTAssertTrue(viewController.isPlaying, "Player should start playing after first tap.")
+        XCTAssertTrue(viewController.isPlayingState, "Player should start playing after first tap.")
+        XCTAssertTrue(mockPlayer.playCalled, "Play should have been called.")
         
-        // Simulate second tap - should pause
         viewController.playPauseButton.sendActions(for: .touchUpInside)
-        XCTAssertFalse(viewController.isPlaying, "Player should pause after second tap.")
+        XCTAssertFalse(viewController.isPlayingState, "Player should pause after second tap.")
+        XCTAssertTrue(mockPlayer.stopCalled, "Stop should have been called.")
         
-        // Simulate third tap - should resume
+        mockPlayer.playCalled = false
+        mockPlayer.stopCalled = false
+        
         viewController.playPauseButton.sendActions(for: .touchUpInside)
-        XCTAssertTrue(viewController.isPlaying, "Player should resume playing after third tap.")
+        XCTAssertTrue(viewController.isPlayingState, "Player should resume after third tap.")
+        XCTAssertTrue(mockPlayer.playCalled, "Play should have been called again.")
     }
     
     func testVolumeSliderChangesVolume() {
-        // Initial volume slider value
-        XCTAssertEqual(viewController.volumeSlider.value, 0.5, "Initial volume slider value should be 0.5.")
+        XCTAssertEqual(viewController.volumeSlider.value, 0.5, "Initial volume should be 0.5.")
         
-        // Simulate volume slider value change
         viewController.volumeSlider.value = 0.8
         viewController.volumeSlider.sendActions(for: .valueChanged)
         
-        // Assert the slider's value is updated
         XCTAssertEqual(viewController.volumeSlider.value, 0.8, "Volume slider should reflect the updated value.")
+        XCTAssertEqual(mockPlayer.volumeSet, 0.8, "Player should have received the updated volume.")
     }
 }
