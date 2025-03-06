@@ -149,23 +149,42 @@ class ViewController: UIViewController, UIPickerViewDelegate, UIPickerViewDataSo
         streamingPlayer.onStatusChange = { [weak self] isPlaying, statusText in
             guard let self = self else { return }
             
+            // Update the playing state and play/pause button
             self.isPlaying = isPlaying
             self.updatePlayPauseButton(isPlaying: isPlaying)
             
+            // Set the status text
             if isPlaying {
                 self.statusLabel.text = String(localized: "status_playing")
-                self.statusLabel.backgroundColor = .systemGreen
-                self.statusLabel.textColor = .black
-            } else if statusText == String(localized: "status_stream_unavailable") {
-                self.statusLabel.text = statusText
-                self.statusLabel.backgroundColor = .systemOrange // Distinct color for offline
-                self.statusLabel.textColor = .white
             } else {
                 self.statusLabel.text = statusText
-                self.statusLabel.backgroundColor = isManualPause ? .systemGray : .systemRed
+            }
+            
+            // Get the current status text
+            let currentText = self.statusLabel.text ?? ""
+            
+            // Define the active statuses to merge
+            let activeStatuses = [
+                String(localized: "status_playing"),
+                String(localized: "status_buffering"),
+                String(localized: "status_connecting")
+            ]
+            
+            // Apply colors based on the current status
+            if activeStatuses.contains(currentText) {
+                self.statusLabel.backgroundColor = .systemGreen
+                self.statusLabel.textColor = .black
+            } else if currentText == String(localized: "status_stream_unavailable") {
+                self.statusLabel.backgroundColor = .systemOrange
+                self.statusLabel.textColor = .white
+            } else if currentText == String(localized: "alert_retry") {
+                // keep the previous color scheme, very brief duration
+            } else {
+                self.statusLabel.backgroundColor = self.isManualPause ? .systemGray : .systemRed
                 self.statusLabel.textColor = .white
             }
             
+            // Update additional UI elements
             self.updateNowPlayingInfo()
         }
         
