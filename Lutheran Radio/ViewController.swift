@@ -560,7 +560,7 @@ class ViewController: UIViewController, UIPickerViewDelegate, UIPickerViewDataSo
         updatePlayPauseButton(isPlaying: false)
     }
     
-    @objc private func playPauseTapped() {
+    @objc func playPauseTapped() {
         // Haptic feedback
         let generator = UIImpactFeedbackGenerator(style: .medium)
         generator.impactOccurred()
