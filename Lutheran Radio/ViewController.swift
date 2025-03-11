@@ -36,7 +36,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
 
     let selectionIndicator: UIView = {
         let view = UIView()
-        view.backgroundColor = .red
+        view.backgroundColor = .systemRed.withAlphaComponent(0.7)
         view.translatesAutoresizingMaskIntoConstraints = false
         return view
     }()
@@ -674,9 +674,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             languageCollectionView.heightAnchor.constraint(equalToConstant: 50),
             
             // Selection Indicator (needle)
-            selectionIndicator.widthAnchor.constraint(equalToConstant: 2),
-            selectionIndicator.heightAnchor.constraint(equalTo: languageCollectionView.heightAnchor),
-            selectionIndicator.topAnchor.constraint(equalTo: languageCollectionView.topAnchor),
+            selectionIndicator.widthAnchor.constraint(equalToConstant: 4),
+                selectionIndicator.heightAnchor.constraint(equalTo: languageCollectionView.heightAnchor, multiplier: 0.8),
+                selectionIndicator.centerYAnchor.constraint(equalTo: languageCollectionView.centerYAnchor),
             
             // AirPlay Button
             airplayButton.topAnchor.constraint(equalTo: selectionIndicator.bottomAnchor, constant: 20),
@@ -734,20 +734,22 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
 
     // MARK: - UICollectionViewDelegateFlowLayout
     func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, sizeForItemAt indexPath: IndexPath) -> CGSize {
-        // Fixed size for consistency
-        return CGSize(width: 80, height: 50) // Adjust width as needed
+        // Dynamic width based on the number of items to distribute evenly
+        let totalItems = CGFloat(DirectStreamingPlayer.availableStreams.count)
+        let minSpacing = self.collectionView(collectionView, layout: collectionViewLayout, minimumLineSpacingForSectionAt: indexPath.section) // Call the method
+        let availableWidth = collectionView.bounds.width - (minSpacing * (totalItems - 1))
+        let cellWidth = availableWidth / totalItems
+        return CGSize(width: max(50, cellWidth), height: 50) // Ensure minimum width for visibility
     }
 
     func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, insetForSectionAt section: Int) -> UIEdgeInsets {
-        let totalCellWidth = CGFloat(DirectStreamingPlayer.availableStreams.count) * 80 // Using fixed width from above
-        let totalSpacingWidth = CGFloat(DirectStreamingPlayer.availableStreams.count - 1) * 10 // minimumLineSpacing
-        let totalWidth = totalCellWidth + totalSpacingWidth
-        let inset = max((collectionView.bounds.width - totalWidth) / 2, 0)
+        let totalCellWidth = collectionView.collectionViewLayout.collectionViewContentSize.width
+        let inset = max((collectionView.bounds.width - totalCellWidth) / 2, 0)
         return UIEdgeInsets(top: 0, left: inset, bottom: 0, right: inset)
     }
 
     func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, minimumLineSpacingForSectionAt section: Int) -> CGFloat {
-        return 10 // Add spacing between cells
+        return 10 // Consistent spacing between cells
     }
     
     deinit {
@@ -811,9 +813,14 @@ extension ViewController {
             // Convert cell's center to collection view coordinates
             let cellCenterInCollection = languageCollectionView.convert(cell.center, from: cell.superview)
             
-            // Update indicator position
+            // Update indicator position with animation
             UIView.animate(withDuration: 0.3) {
                 self.selectionIndicator.center.x = cellCenterInCollection.x
+                self.selectionIndicator.transform = CGAffineTransform(scaleX: 1.5, y: 1.0) // Slightly widen for visibility
+            } completion: { _ in
+                UIView.animate(withDuration: 0.1) {
+                    self.selectionIndicator.transform = .identity // Reset to normal width
+                }
             }
             
             // Center the selected cell in the collection view

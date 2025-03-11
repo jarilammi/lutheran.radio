@@ -35,8 +35,7 @@ class LanguageCell: UICollectionViewCell {
     override var isSelected: Bool {
         didSet {
             flagLabel.textColor = isSelected ? .systemBlue : .label
-            contentView.layer.borderWidth = isSelected ? 2 : 0
-            contentView.layer.borderColor = UIColor.systemBlue.cgColor
+            contentView.layer.borderWidth = 0
             setNeedsLayout()
         }
     }
