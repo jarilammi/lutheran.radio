@@ -16,6 +16,7 @@ class DirectStreamingPlayer: NSObject {
         let url: URL
         let language: String
         let languageCode: String
+        let flag: String
     }
 
     static let availableStreams = [
@@ -23,17 +24,20 @@ class DirectStreamingPlayer: NSObject {
                NSLocalizedString("language_english", comment: "English language option"),
                url: URL(string: "https://liveenglish.lutheran.radio:8443/lutheranradio.mp3")!,
                language: NSLocalizedString("language_english", comment: "English language option"),
-               languageCode: "en"),
+               languageCode: "en",
+               flag: "🇺🇸"),
         Stream(title: NSLocalizedString("lutheran_radio_title", comment: "Title for Lutheran Radio") + " - " +
                NSLocalizedString("language_finnish", comment: "Finnish language option"),
                url: URL(string: "https://livefinnish.lutheran.radio:8443/lutheranradio.mp3")!,
                language: NSLocalizedString("language_finnish", comment: "Finnish language option"),
-               languageCode: "fi"),
+               languageCode: "fi",
+               flag: "🇫🇮"),
         Stream(title: NSLocalizedString("lutheran_radio_title", comment: "Title for Lutheran Radio") + " - " +
                NSLocalizedString("language_swedish", comment: "Swedish language option"),
                url: URL(string: "https://liveswedish.lutheran.radio:8443/lutheranradio.mp3")!,
                language: NSLocalizedString("language_swedish", comment: "Swedish language option"),
-               languageCode: "sv")
+               languageCode: "sv",
+               flag: "🇸🇪"),
     ]
     
     public enum PlaybackState {

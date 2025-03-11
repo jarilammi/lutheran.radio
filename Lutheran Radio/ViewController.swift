@@ -11,8 +11,8 @@ import MediaPlayer
 import AVKit
 import Network
 
-class ViewController: UIViewController, UIPickerViewDelegate, UIPickerViewDataSource {
-    let titleLabel: UILabel = {
+class ViewController: UIViewController, UICollectionViewDelegate, UICollectionViewDataSource, UIScrollViewDelegate {
+        let titleLabel: UILabel = {
         let label = UILabel()
         label.text = String(localized: "lutheran_radio_title")
         label.textAlignment = .center
@@ -23,10 +23,22 @@ class ViewController: UIViewController, UIPickerViewDelegate, UIPickerViewDataSo
         return label
     }()
     
-    let languagePicker: UIPickerView = {
-        let picker = UIPickerView()
-        picker.translatesAutoresizingMaskIntoConstraints = false
-        return picker
+    let languageCollectionView: UICollectionView = {
+        let layout = UICollectionViewFlowLayout()
+        layout.scrollDirection = .horizontal
+        layout.minimumLineSpacing = 0
+        let cv = UICollectionView(frame: .zero, collectionViewLayout: layout)
+        cv.translatesAutoresizingMaskIntoConstraints = false
+        cv.showsHorizontalScrollIndicator = false
+        cv.backgroundColor = .systemBackground
+        return cv
+    }()
+
+    let selectionIndicator: UIView = {
+        let view = UIView()
+        view.backgroundColor = .red
+        view.translatesAutoresizingMaskIntoConstraints = false
+        return view
     }()
     
     let playPauseButton: UIButton = {
@@ -120,26 +132,44 @@ class ViewController: UIViewController, UIPickerViewDelegate, UIPickerViewDataSo
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
-        
+
         setupUI()
-        languagePicker.delegate = self
-        languagePicker.dataSource = self
-        
+        languageCollectionView.delegate = self
+        languageCollectionView.dataSource = self
+        languageCollectionView.register(LanguageCell.self, forCellWithReuseIdentifier: "LanguageCell")
+
         let currentLocale = Locale.current
         let languageCode = currentLocale.language.languageCode?.identifier
-        if let index = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.languageCode == languageCode }) {
-            languagePicker.selectRow(index, inComponent: 0, animated: false)
-        } else {
-            languagePicker.selectRow(0, inComponent: 0, animated: false) // Default to English
+        let initialIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.languageCode == languageCode }) ?? 0
+        streamingPlayer.setStream(to: DirectStreamingPlayer.availableStreams[initialIndex])
+        languageCollectionView.reloadData()
+            
+        // Ensure initial positioning
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            self.languageCollectionView.scrollToItem(
+                at: IndexPath(item: initialIndex, section: 0),
+                at: .centeredHorizontally,
+                animated: false
+            )
+            self.updateSelectionIndicator(to: initialIndex)
+            self.languageCollectionView.selectItem(
+                at: IndexPath(item: initialIndex, section: 0),
+                animated: false,
+                scrollPosition: .centeredHorizontally
+            )
         }
         
+        streamingPlayer.setStream(to: DirectStreamingPlayer.availableStreams[initialIndex])
+        languageCollectionView.reloadData() // Force reload
+        languageCollectionView.selectItem(at: IndexPath(item: initialIndex, section: 0), animated: false, scrollPosition: .centeredHorizontally)
+
         setupControls()
         setupNetworkMonitoring()
         setupBackgroundAudioControls()
         setupInterruptionHandling()
         setupRouteChangeHandling()
         setupStreamingCallbacks()
-        
+
         if hasInternetConnection && !isManualPause {
             startPlayback()
         }
@@ -596,8 +626,8 @@ class ViewController: UIViewController, UIPickerViewDelegate, UIPickerViewDataSo
     // UI setup code (use your existing implementation)
     private func setupUI() {
         view.addSubview(titleLabel)
-        view.addSubview(languagePicker)
-        
+        view.addSubview(languageCollectionView)
+
         let controlsStackView = UIStackView(arrangedSubviews: [playPauseButton, statusLabel])
         controlsStackView.axis = .horizontal
         controlsStackView.spacing = 20
@@ -608,42 +638,48 @@ class ViewController: UIViewController, UIPickerViewDelegate, UIPickerViewDataSo
         view.addSubview(volumeSlider)
         view.addSubview(metadataLabel)
         view.addSubview(airplayButton)
+        languageCollectionView.addSubview(selectionIndicator)
+        view.bringSubviewToFront(selectionIndicator)
         
         NSLayoutConstraint.activate([
             // Title Label
             titleLabel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 40),
             titleLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            
-            // Controls Stack View (moved up to below titleLabel)
+
+            // Controls Stack View
             controlsStackView.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 20),
             controlsStackView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             controlsStackView.heightAnchor.constraint(equalToConstant: 50),
-            
-            // Status Label and Play/Pause Button constraints
+
             statusLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 120),
             statusLabel.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor, multiplier: 0.4),
             statusLabel.heightAnchor.constraint(equalToConstant: 40),
             playPauseButton.widthAnchor.constraint(equalToConstant: 50),
             playPauseButton.heightAnchor.constraint(equalToConstant: 50),
-            
+
             // Volume Slider
             volumeSlider.topAnchor.constraint(equalTo: controlsStackView.bottomAnchor, constant: 20),
             volumeSlider.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 40),
             volumeSlider.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -40),
-            
+
             // Metadata Label
             metadataLabel.topAnchor.constraint(equalTo: volumeSlider.bottomAnchor, constant: 20),
             metadataLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             metadataLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+
+            // Language Collection View
+            languageCollectionView.topAnchor.constraint(equalTo: metadataLabel.bottomAnchor, constant: 20),
+            languageCollectionView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            languageCollectionView.widthAnchor.constraint(equalTo: view.widthAnchor),
+            languageCollectionView.heightAnchor.constraint(equalToConstant: 50),
             
-            // Language Picker
-            languagePicker.topAnchor.constraint(equalTo: metadataLabel.bottomAnchor, constant: 20),
-            languagePicker.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            languagePicker.widthAnchor.constraint(equalTo: view.widthAnchor, multiplier: 0.6),
-            languagePicker.heightAnchor.constraint(lessThanOrEqualToConstant: 120),
+            // Selection Indicator (needle)
+            selectionIndicator.widthAnchor.constraint(equalToConstant: 2),
+            selectionIndicator.heightAnchor.constraint(equalTo: languageCollectionView.heightAnchor),
+            selectionIndicator.topAnchor.constraint(equalTo: languageCollectionView.topAnchor),
             
             // AirPlay Button
-            airplayButton.topAnchor.constraint(equalTo: languagePicker.bottomAnchor, constant: 20),
+            airplayButton.topAnchor.constraint(equalTo: selectionIndicator.bottomAnchor, constant: 20),
             airplayButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             airplayButton.widthAnchor.constraint(equalToConstant: 44),
             airplayButton.heightAnchor.constraint(equalToConstant: 44)
@@ -672,11 +708,120 @@ class ViewController: UIViewController, UIPickerViewDelegate, UIPickerViewDataSo
             startPlayback()
         }
     }
+
+    // MARK: - UICollectionView DataSource
+    func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
+        return DirectStreamingPlayer.availableStreams.count
+    }
+    
+    func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
+        let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "LanguageCell", for: indexPath) as! LanguageCell
+        let stream = DirectStreamingPlayer.availableStreams[indexPath.item]
+        cell.configure(with: stream)
+        return cell
+    }
+
+    // MARK: - UICollectionView Delegate
+    func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
+        streamingPlayer.setStream(to: DirectStreamingPlayer.availableStreams[indexPath.item])
+        hasPermanentPlaybackError = false
+        if isPlaying || !isManualPause {
+            startPlayback()
+        }
+        updateSelectionIndicator(to: indexPath.item)
+        collectionView.scrollToItem(at: indexPath, at: .centeredHorizontally, animated: true)
+    }
+
+    // MARK: - UICollectionViewDelegateFlowLayout
+    func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, sizeForItemAt indexPath: IndexPath) -> CGSize {
+        // Fixed size for consistency
+        return CGSize(width: 80, height: 50) // Adjust width as needed
+    }
+
+    func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, insetForSectionAt section: Int) -> UIEdgeInsets {
+        let totalCellWidth = CGFloat(DirectStreamingPlayer.availableStreams.count) * 80 // Using fixed width from above
+        let totalSpacingWidth = CGFloat(DirectStreamingPlayer.availableStreams.count - 1) * 10 // minimumLineSpacing
+        let totalWidth = totalCellWidth + totalSpacingWidth
+        let inset = max((collectionView.bounds.width - totalWidth) / 2, 0)
+        return UIEdgeInsets(top: 0, left: inset, bottom: 0, right: inset)
+    }
+
+    func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, minimumLineSpacingForSectionAt section: Int) -> CGFloat {
+        return 10 // Add spacing between cells
+    }
     
     deinit {
         NotificationCenter.default.removeObserver(self)
         networkMonitor?.cancel()
         connectivityCheckTimer?.invalidate()
         connectivityCheckTimer = nil
+    }
+}
+
+extension ViewController {
+    func scrollViewWillEndDragging(_ scrollView: UIScrollView, withVelocity velocity: CGPoint, targetContentOffset: UnsafeMutablePointer<CGPoint>) {
+        _ = languageCollectionView.collectionViewLayout as! UICollectionViewFlowLayout
+        var offset = targetContentOffset.pointee.x + scrollView.contentInset.left
+        var cumulativeWidth: CGFloat = 0
+        var selectedIndex = 0
+        
+        for (index, stream) in DirectStreamingPlayer.availableStreams.enumerated() {
+            let text = "\(stream.flag) \(stream.language)"
+            let font = UIFont.systemFont(ofSize: 18)
+            let attributes: [NSAttributedString.Key: Any] = [.font: font]
+            let textSize = (text as NSString).boundingRect(with: CGSize(width: scrollView.bounds.width, height: 100), options: [.usesLineFragmentOrigin], attributes: attributes, context: nil)
+            let cellWidth = ceil(textSize.width) + 40
+            let cellEnd = cumulativeWidth + cellWidth
+            if offset <= cellEnd {
+                selectedIndex = index
+                offset = cumulativeWidth
+                break
+            }
+            cumulativeWidth += cellWidth + 10 // Include minimumLineSpacing
+        }
+        
+        targetContentOffset.pointee = CGPoint(x: offset - scrollView.contentInset.left, y: -scrollView.contentInset.top)
+        updateSelectionIndicator(to: selectedIndex)
+    }
+    
+    func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+        let centerX = languageCollectionView.bounds.midX
+        let centerPoint = CGPoint(x: centerX, y: languageCollectionView.bounds.midY)
+        if let indexPath = languageCollectionView.indexPathForItem(at: centerPoint) {
+            languageCollectionView.selectItem(at: indexPath, animated: false, scrollPosition: [])
+            let selectedStream = DirectStreamingPlayer.availableStreams[indexPath.item]
+            streamingPlayer.setStream(to: selectedStream)
+            hasPermanentPlaybackError = false
+            if isPlaying || !isManualPause {
+                startPlayback()
+            }
+            updateSelectionIndicator(to: indexPath.item)
+        }
+    }
+    
+    func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
+        scrollViewDidEndDecelerating(scrollView)
+    }
+    
+    private func updateSelectionIndicator(to index: Int) {
+        guard index >= 0 && index < DirectStreamingPlayer.availableStreams.count else { return }
+        
+        // Get the cell at the index path
+        if let cell = languageCollectionView.cellForItem(at: IndexPath(item: index, section: 0)) {
+            // Convert cell's center to collection view coordinates
+            let cellCenterInCollection = languageCollectionView.convert(cell.center, from: cell.superview)
+            
+            // Update indicator position
+            UIView.animate(withDuration: 0.3) {
+                self.selectionIndicator.center.x = cellCenterInCollection.x
+            }
+            
+            // Center the selected cell in the collection view
+            languageCollectionView.scrollToItem(
+                at: IndexPath(item: index, section: 0),
+                at: .centeredHorizontally,
+                animated: true
+            )
+        }
     }
 }
