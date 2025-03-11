@@ -8,13 +8,34 @@
 import XCTest
 @testable import Lutheran_Radio
 
-class MockStreamingPlayer: DirectStreamingPlayer, @unchecked Sendable {
-    var playCalled = false
-    var stopCalled = false
-    var volumeSet: Float?
+// Make the class final to satisfy Swift 6 sendable requirements
+final class MockStreamingPlayer: DirectStreamingPlayer {
+    private let lock = NSLock()
     
-    // Add a property to hold the completion handler
-    var savedCompletion: ((Bool) -> Void)?
+    // Use actor-isolated properties with thread-safe access
+    private var _playCalled = false
+    var playCalled: Bool {
+        get { lock.withLock { _playCalled } }
+        set { lock.withLock { _playCalled = newValue } }
+    }
+    
+    private var _stopCalled = false
+    var stopCalled: Bool {
+        get { lock.withLock { _stopCalled } }
+        set { lock.withLock { _stopCalled = newValue } }
+    }
+    
+    private var _volumeSet: Float?
+    var volumeSet: Float? {
+        get { lock.withLock { _volumeSet } }
+        set { lock.withLock { _volumeSet = newValue } }
+    }
+    
+    private var _savedCompletion: ((Bool) -> Void)?
+    var savedCompletion: ((Bool) -> Void)? {
+        get { lock.withLock { _savedCompletion } }
+        set { lock.withLock { _savedCompletion = newValue } }
+    }
     
     override func play(completion: @escaping (Bool) -> Void) {
         playCalled = true
