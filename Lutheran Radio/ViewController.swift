@@ -118,6 +118,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     private var hasInternetConnection = true
     private var connectivityCheckTimer: Timer?
     private var lastConnectionAttemptTime: Date?
+    private var didInitialLayout = false
+    private var didPositionNeedle = false
     
     // Testable accessors
     @objc var isPlayingState: Bool {
@@ -143,8 +145,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         let initialIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.languageCode == languageCode }) ?? 0
         streamingPlayer.setStream(to: DirectStreamingPlayer.availableStreams[initialIndex])
         
-        // In viewDidLoad(), replace the existing collection view setup code with:
-        // Configure layout and centering
         if let layout = languageCollectionView.collectionViewLayout as? UICollectionViewFlowLayout {
             layout.scrollDirection = .horizontal
             layout.minimumLineSpacing = 10
@@ -153,9 +153,14 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
 
         // Ensure data is loaded first
         languageCollectionView.reloadData()
-
+        
+        // Position the selection indicator in the center initially
+        selectionIndicator.center.x = view.bounds.width / 2
+        
         // Schedule layout after view appears to ensure bounds are correct
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            let indexPath = IndexPath(item: initialIndex, section: 0)
+            self.languageCollectionView.selectItem(at: indexPath, animated: false, scrollPosition: .centeredHorizontally)
             self.centerCollectionViewContent()
             // Ensure selection indicator is positioned correctly
             self.updateSelectionIndicator(to: initialIndex)
@@ -178,6 +183,30 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
 
         if hasInternetConnection && !isManualPause {
             startPlayback()
+        }
+    }
+    
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        
+        if !didInitialLayout {
+            didInitialLayout = true
+            
+            // Position the selection indicator at the center of the screen first
+            selectionIndicator.center.x = view.bounds.width / 2
+            
+            // Get the same initialIndex that was set in viewDidLoad
+            let currentLocale = Locale.current
+            let languageCode = currentLocale.language.languageCode?.identifier
+            let initialIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.languageCode == languageCode }) ?? 0
+            
+            // Wait briefly for layout to complete, then scroll to the selected item
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                let indexPath = IndexPath(item: initialIndex, section: 0)
+                self.languageCollectionView.scrollToItem(at: indexPath,
+                                                        at: .centeredHorizontally,
+                                                        animated: true)
+            }
         }
     }
     
@@ -857,6 +886,9 @@ extension ViewController {
         
         // First scroll to make sure cell is visible
         languageCollectionView.scrollToItem(at: indexPath, at: .centeredHorizontally, animated: true)
+        
+        // Force layout if needed
+        languageCollectionView.layoutIfNeeded()
         
         // Use layout attributes for precise positioning
         if let layoutAttributes = languageCollectionView.layoutAttributesForItem(at: indexPath) {
