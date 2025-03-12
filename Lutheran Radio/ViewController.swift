@@ -134,7 +134,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         view.backgroundColor = .systemBackground
 
         setupUI()
-        languageCollectionView.delegate = self
+        languageCollectionView.delegate = self // Explicitly set delegate
         languageCollectionView.dataSource = self
         languageCollectionView.register(LanguageCell.self, forCellWithReuseIdentifier: "LanguageCell")
 
@@ -142,26 +142,32 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         let languageCode = currentLocale.language.languageCode?.identifier
         let initialIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.languageCode == languageCode }) ?? 0
         streamingPlayer.setStream(to: DirectStreamingPlayer.availableStreams[initialIndex])
-        languageCollectionView.reloadData()
-            
-        // Ensure initial positioning
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            self.languageCollectionView.scrollToItem(
-                at: IndexPath(item: initialIndex, section: 0),
-                at: .centeredHorizontally,
-                animated: false
-            )
-            self.updateSelectionIndicator(to: initialIndex)
-            self.languageCollectionView.selectItem(
-                at: IndexPath(item: initialIndex, section: 0),
-                animated: false,
-                scrollPosition: .centeredHorizontally
-            )
-        }
         
+        // In viewDidLoad(), replace the existing collection view setup code with:
+        // Configure layout and centering
+        if let layout = languageCollectionView.collectionViewLayout as? UICollectionViewFlowLayout {
+            layout.scrollDirection = .horizontal
+            layout.minimumLineSpacing = 10
+            layout.minimumInteritemSpacing = 0
+        }
+
+        // Ensure data is loaded first
+        languageCollectionView.reloadData()
+
+        // Schedule layout after view appears to ensure bounds are correct
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            self.centerCollectionViewContent()
+            // Ensure selection indicator is positioned correctly
+            self.updateSelectionIndicator(to: initialIndex)
+            self.languageCollectionView.scrollToItem(at: IndexPath(item: initialIndex, section: 0),
+                                                    at: UICollectionView.ScrollPosition.centeredHorizontally,
+                                                    animated: false)
+        }
+
         streamingPlayer.setStream(to: DirectStreamingPlayer.availableStreams[initialIndex])
-        languageCollectionView.reloadData() // Force reload
-        languageCollectionView.selectItem(at: IndexPath(item: initialIndex, section: 0), animated: false, scrollPosition: .centeredHorizontally)
+        languageCollectionView.reloadData()
+        languageCollectionView.collectionViewLayout.invalidateLayout()
+        languageCollectionView.selectItem(at: IndexPath(item: initialIndex, section: 0), animated: false, scrollPosition: UICollectionView.ScrollPosition.centeredHorizontally)
 
         setupControls()
         setupNetworkMonitoring()
@@ -240,6 +246,36 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         playPauseButton.accessibilityIdentifier = "playPauseButton"
         volumeSlider.addTarget(self, action: #selector(volumeChanged(_:)), for: .valueChanged)
         volumeSlider.accessibilityIdentifier = "volumeSlider"
+    }
+    
+    private func centerCollectionViewContent() {
+        // Ensure the method doesn't run until layout is complete
+        guard languageCollectionView.bounds.width > 0, DirectStreamingPlayer.availableStreams.count > 0 else {
+            return
+        }
+        
+        // Force layout to complete first
+        languageCollectionView.layoutIfNeeded()
+        
+        // Center the content by adjusting insets rather than content offset
+        let layout = languageCollectionView.collectionViewLayout as! UICollectionViewFlowLayout
+        
+        // Calculate the total width needed for all cells
+        let totalItems = DirectStreamingPlayer.availableStreams.count
+        let cellWidth: CGFloat = 50
+        let spacing: CGFloat = 10
+        let totalCellWidth = (cellWidth * CGFloat(totalItems)) + (spacing * CGFloat(totalItems - 1))
+        
+        // Calculate the inset needed to center all cells
+        let collectionViewWidth = languageCollectionView.bounds.width
+        let inset = max((collectionViewWidth - totalCellWidth) / 2, 0)
+        
+        // Apply insets
+        layout.sectionInset = UIEdgeInsets(top: 0, left: inset, bottom: 0, right: inset)
+        
+        // Invalidate the layout to apply changes
+        languageCollectionView.collectionViewLayout.invalidateLayout()
+        print("Centered content with insets: \(inset)")
     }
     
     private func setupNetworkMonitoring() {
@@ -675,8 +711,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             
             // Selection Indicator (needle)
             selectionIndicator.widthAnchor.constraint(equalToConstant: 4),
-                selectionIndicator.heightAnchor.constraint(equalTo: languageCollectionView.heightAnchor, multiplier: 0.8),
-                selectionIndicator.centerYAnchor.constraint(equalTo: languageCollectionView.centerYAnchor),
+            selectionIndicator.heightAnchor.constraint(equalTo: languageCollectionView.heightAnchor, multiplier: 0.8),
+            selectionIndicator.centerYAnchor.constraint(equalTo: languageCollectionView.centerYAnchor),
             
             // AirPlay Button
             airplayButton.topAnchor.constraint(equalTo: selectionIndicator.bottomAnchor, constant: 20),
@@ -734,22 +770,15 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
 
     // MARK: - UICollectionViewDelegateFlowLayout
     func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, sizeForItemAt indexPath: IndexPath) -> CGSize {
-        // Dynamic width based on the number of items to distribute evenly
-        let totalItems = CGFloat(DirectStreamingPlayer.availableStreams.count)
-        let minSpacing = self.collectionView(collectionView, layout: collectionViewLayout, minimumLineSpacingForSectionAt: indexPath.section) // Call the method
-        let availableWidth = collectionView.bounds.width - (minSpacing * (totalItems - 1))
-        let cellWidth = availableWidth / totalItems
-        return CGSize(width: max(50, cellWidth), height: 50) // Ensure minimum width for visibility
-    }
-
-    func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, insetForSectionAt section: Int) -> UIEdgeInsets {
-        let totalCellWidth = collectionView.collectionViewLayout.collectionViewContentSize.width
-        let inset = max((collectionView.bounds.width - totalCellWidth) / 2, 0)
-        return UIEdgeInsets(top: 0, left: inset, bottom: 0, right: inset)
+        let cellWidth: CGFloat = 50 // Fixed width matching flagLabel constraints
+        print("Cell size for item \(indexPath.item): width = \(cellWidth), height = 50")
+        return CGSize(width: cellWidth, height: 50)
     }
 
     func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, minimumLineSpacingForSectionAt section: Int) -> CGFloat {
-        return 10 // Consistent spacing between cells
+        let spacing = 10.0
+        print("Minimum line spacing for section \(section): \(spacing)")
+        return spacing
     }
     
     deinit {
@@ -762,34 +791,10 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
 
 extension ViewController {
     func scrollViewWillEndDragging(_ scrollView: UIScrollView, withVelocity velocity: CGPoint, targetContentOffset: UnsafeMutablePointer<CGPoint>) {
-        _ = languageCollectionView.collectionViewLayout as! UICollectionViewFlowLayout
-        var offset = targetContentOffset.pointee.x + scrollView.contentInset.left
-        var cumulativeWidth: CGFloat = 0
-        var selectedIndex = 0
-        
-        for (index, stream) in DirectStreamingPlayer.availableStreams.enumerated() {
-            let text = "\(stream.flag) \(stream.language)"
-            let font = UIFont.systemFont(ofSize: 18)
-            let attributes: [NSAttributedString.Key: Any] = [.font: font]
-            let textSize = (text as NSString).boundingRect(with: CGSize(width: scrollView.bounds.width, height: 100), options: [.usesLineFragmentOrigin], attributes: attributes, context: nil)
-            let cellWidth = ceil(textSize.width) + 40
-            let cellEnd = cumulativeWidth + cellWidth
-            if offset <= cellEnd {
-                selectedIndex = index
-                offset = cumulativeWidth
-                break
-            }
-            cumulativeWidth += cellWidth + 10 // Include minimumLineSpacing
-        }
-        
-        targetContentOffset.pointee = CGPoint(x: offset - scrollView.contentInset.left, y: -scrollView.contentInset.top)
-        updateSelectionIndicator(to: selectedIndex)
-    }
-    
-    func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
         let centerX = languageCollectionView.bounds.midX
         let centerPoint = CGPoint(x: centerX, y: languageCollectionView.bounds.midY)
         if let indexPath = languageCollectionView.indexPathForItem(at: centerPoint) {
+            targetContentOffset.pointee = CGPoint(x: centerX - languageCollectionView.contentInset.left, y: 0)
             languageCollectionView.selectItem(at: indexPath, animated: false, scrollPosition: [])
             let selectedStream = DirectStreamingPlayer.availableStreams[indexPath.item]
             streamingPlayer.setStream(to: selectedStream)
@@ -798,6 +803,45 @@ extension ViewController {
                 startPlayback()
             }
             updateSelectionIndicator(to: indexPath.item)
+            print("Scroll ended at index \(indexPath.item), centered at \(centerX)")
+        }
+    }
+    
+    func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+        // Find the cell closest to the center
+        let centerX = languageCollectionView.bounds.midX + languageCollectionView.contentOffset.x
+        
+        var closestCell: UICollectionViewCell?
+        var closestDistance: CGFloat = CGFloat.greatestFiniteMagnitude
+        var closestIndex = 0
+        
+        for i in 0..<DirectStreamingPlayer.availableStreams.count {
+            if let cell = languageCollectionView.cellForItem(at: IndexPath(item: i, section: 0)) {
+                let cellCenterX = cell.frame.midX
+                let distance = abs(centerX - cellCenterX)
+                
+                if distance < closestDistance {
+                    closestDistance = distance
+                    closestCell = cell
+                    closestIndex = i
+                }
+            }
+        }
+        
+        if closestCell != nil {
+            let indexPath = IndexPath(item: closestIndex, section: 0)
+            languageCollectionView.selectItem(at: indexPath, animated: true, scrollPosition: .centeredHorizontally)
+            updateSelectionIndicator(to: closestIndex)
+            
+            // Update stream if needed
+            let selectedStream = DirectStreamingPlayer.availableStreams[closestIndex]
+            streamingPlayer.setStream(to: selectedStream)
+            
+            // Start playback if appropriate
+            hasPermanentPlaybackError = false
+            if isPlaying || !isManualPause {
+                startPlayback()
+            }
         }
     }
     
@@ -809,26 +853,25 @@ extension ViewController {
         guard index >= 0 && index < DirectStreamingPlayer.availableStreams.count else { return }
         
         // Get the cell at the index path
-        if let cell = languageCollectionView.cellForItem(at: IndexPath(item: index, section: 0)) {
-            // Convert cell's center to collection view coordinates
-            let cellCenterInCollection = languageCollectionView.convert(cell.center, from: cell.superview)
+        let indexPath = IndexPath(item: index, section: 0)
+        
+        // First scroll to make sure cell is visible
+        languageCollectionView.scrollToItem(at: indexPath, at: .centeredHorizontally, animated: true)
+        
+        // Use layout attributes for precise positioning
+        if let layoutAttributes = languageCollectionView.layoutAttributesForItem(at: indexPath) {
+            let cellFrame = layoutAttributes.frame
+            let cellCenterX = cellFrame.midX
             
             // Update indicator position with animation
             UIView.animate(withDuration: 0.3) {
-                self.selectionIndicator.center.x = cellCenterInCollection.x
-                self.selectionIndicator.transform = CGAffineTransform(scaleX: 1.5, y: 1.0) // Slightly widen for visibility
+                self.selectionIndicator.center.x = cellCenterX
+                self.selectionIndicator.transform = CGAffineTransform(scaleX: 1.5, y: 1.0)
             } completion: { _ in
                 UIView.animate(withDuration: 0.1) {
-                    self.selectionIndicator.transform = .identity // Reset to normal width
+                    self.selectionIndicator.transform = .identity
                 }
             }
-            
-            // Center the selected cell in the collection view
-            languageCollectionView.scrollToItem(
-                at: IndexPath(item: index, section: 0),
-                at: .centeredHorizontally,
-                animated: true
-            )
         }
     }
 }
