@@ -120,6 +120,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     private var lastConnectionAttemptTime: Date?
     private var didInitialLayout = false
     private var didPositionNeedle = false
+    private let audioEngine = AVAudioEngine()
+    private var tuningSoundNode: AVAudioSourceNode?
+    private var isTuningSoundPlaying = false
     
     // Testable accessors
     @objc var isPlayingState: Bool {
@@ -180,6 +183,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         setupInterruptionHandling()
         setupRouteChangeHandling()
         setupStreamingCallbacks()
+        setupAudioEngine()
 
         if hasInternetConnection && !isManualPause {
             startPlayback()
@@ -751,6 +755,84 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         ])
     }
     
+    // MARK: - Audio Setup
+    private func setupAudioEngine() {
+        let mainMixer = audioEngine.mainMixerNode
+        mainMixer.volume = 1.0 // Set default volume
+
+        do {
+            try audioEngine.start()
+            print("🎵 Audio engine started successfully")
+        } catch {
+            print("🎵 Failed to start audio engine: \(error.localizedDescription)")
+        }
+    }
+
+    private func playTuningSound() {
+        guard !isTuningSoundPlaying else { return }
+        
+        // Ensure the audio engine is running before proceeding
+        if !audioEngine.isRunning {
+            do {
+                try audioEngine.start()
+                print("🎵 Audio engine restarted successfully")
+            } catch {
+                print("🎵 Failed to restart audio engine: \(error.localizedDescription)")
+                return // Exit if starting the engine fails
+            }
+        }
+        
+        isTuningSoundPlaying = true
+
+        // Remove any existing tuning sound node
+        if let existingNode = tuningSoundNode {
+            audioEngine.disconnectNodeOutput(existingNode)
+            audioEngine.detach(existingNode)
+        }
+
+        // Create a synthetic shortwave tuning sound
+        tuningSoundNode = AVAudioSourceNode { _, _, frameCount, audioBufferList -> OSStatus in
+            let ablPointer = UnsafeMutableAudioBufferListPointer(audioBufferList)
+            let sampleRate = self.audioEngine.mainMixerNode.outputFormat(forBus: 0).sampleRate
+            let frequency = Float.random(in: 500...1500) // Random frequency for shortwave effect
+            let amplitude = Float(0.1) // Low amplitude to keep it subtle
+            
+            for frame in 0..<Int(frameCount) {
+                let time = Float(frame) / Float(sampleRate)
+                let noise = Float.random(in: -0.05...0.05) // Add static noise
+                let value = sinf(2.0 * .pi * frequency * time) * amplitude + noise
+                
+                for buffer in ablPointer {
+                    let buf: UnsafeMutableBufferPointer<Float> = UnsafeMutableBufferPointer(buffer)
+                    buf[frame] = value
+                }
+            }
+            return noErr
+        }
+
+        // Attach and connect the node
+        audioEngine.attach(tuningSoundNode!)
+        audioEngine.connect(tuningSoundNode!, to: audioEngine.mainMixerNode, format: nil)
+        tuningSoundNode!.volume = 0.5
+
+        // Play for a short duration (e.g., 0.3 seconds)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            self.stopTuningSound()
+        }
+    }
+
+    private func stopTuningSound() {
+        guard isTuningSoundPlaying, let node = tuningSoundNode else { return }
+        audioEngine.disconnectNodeOutput(node)
+        audioEngine.detach(node)
+        isTuningSoundPlaying = false
+        tuningSoundNode = nil
+        // Optionally stop the engine if no other audio is playing
+        if !isPlaying {
+            audioEngine.stop()
+        }
+    }
+    
     // MARK: - UIPickerView DataSource
     func numberOfComponents(in pickerView: UIPickerView) -> Int {
         return 1
@@ -788,14 +870,22 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
 
     // MARK: - UICollectionView Delegate
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
-        streamingPlayer.setStream(to: DirectStreamingPlayer.availableStreams[indexPath.item])
-        hasPermanentPlaybackError = false
-        if isPlaying || !isManualPause {
-            startPlayback()
+            // Haptic feedback
+            let generator = UIImpactFeedbackGenerator(style: .medium)
+            generator.impactOccurred()
+
+            // Play tuning sound
+            playTuningSound()
+
+            // Existing stream selection logic
+            streamingPlayer.setStream(to: DirectStreamingPlayer.availableStreams[indexPath.item])
+            hasPermanentPlaybackError = false
+            if isPlaying || !isManualPause {
+                startPlayback()
+            }
+            updateSelectionIndicator(to: indexPath.item)
+            collectionView.scrollToItem(at: indexPath, at: .centeredHorizontally, animated: true)
         }
-        updateSelectionIndicator(to: indexPath.item)
-        collectionView.scrollToItem(at: indexPath, at: .centeredHorizontally, animated: true)
-    }
 
     // MARK: - UICollectionViewDelegateFlowLayout
     func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, sizeForItemAt indexPath: IndexPath) -> CGSize {
@@ -815,16 +905,30 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         networkMonitor?.cancel()
         connectivityCheckTimer?.invalidate()
         connectivityCheckTimer = nil
+        audioEngine.stop()
+        if let node = tuningSoundNode {
+            audioEngine.detach(node)
+        }
     }
 }
 
 extension ViewController {
+    // MARK: - ScrollView Delegate
     func scrollViewWillEndDragging(_ scrollView: UIScrollView, withVelocity velocity: CGPoint, targetContentOffset: UnsafeMutablePointer<CGPoint>) {
         let centerX = languageCollectionView.bounds.midX
         let centerPoint = CGPoint(x: centerX, y: languageCollectionView.bounds.midY)
         if let indexPath = languageCollectionView.indexPathForItem(at: centerPoint) {
             targetContentOffset.pointee = CGPoint(x: centerX - languageCollectionView.contentInset.left, y: 0)
             languageCollectionView.selectItem(at: indexPath, animated: false, scrollPosition: [])
+
+            // Haptic feedback
+            let generator = UIImpactFeedbackGenerator(style: .light)
+            generator.impactOccurred()
+
+            // Play tuning sound
+            playTuningSound()
+
+            // Existing stream selection logic
             let selectedStream = DirectStreamingPlayer.availableStreams[indexPath.item]
             streamingPlayer.setStream(to: selectedStream)
             hasPermanentPlaybackError = false
@@ -835,20 +939,19 @@ extension ViewController {
             print("Scroll ended at index \(indexPath.item), centered at \(centerX)")
         }
     }
-    
+
     func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
-        // Find the cell closest to the center
         let centerX = languageCollectionView.bounds.midX + languageCollectionView.contentOffset.x
-        
+            
         var closestCell: UICollectionViewCell?
         var closestDistance: CGFloat = CGFloat.greatestFiniteMagnitude
         var closestIndex = 0
-        
+            
         for i in 0..<DirectStreamingPlayer.availableStreams.count {
             if let cell = languageCollectionView.cellForItem(at: IndexPath(item: i, section: 0)) {
                 let cellCenterX = cell.frame.midX
                 let distance = abs(centerX - cellCenterX)
-                
+                    
                 if distance < closestDistance {
                     closestDistance = distance
                     closestCell = cell
@@ -856,17 +959,22 @@ extension ViewController {
                 }
             }
         }
-        
+            
         if closestCell != nil {
             let indexPath = IndexPath(item: closestIndex, section: 0)
             languageCollectionView.selectItem(at: indexPath, animated: true, scrollPosition: .centeredHorizontally)
+
+            // Haptic feedback
+            let generator = UIImpactFeedbackGenerator(style: .light)
+            generator.impactOccurred()
+
+            // Play tuning sound
+            playTuningSound()
+
+            // Existing stream selection logic
             updateSelectionIndicator(to: closestIndex)
-            
-            // Update stream if needed
             let selectedStream = DirectStreamingPlayer.availableStreams[closestIndex]
             streamingPlayer.setStream(to: selectedStream)
-            
-            // Start playback if appropriate
             hasPermanentPlaybackError = false
             if isPlaying || !isManualPause {
                 startPlayback()
