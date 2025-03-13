@@ -434,21 +434,27 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     private func startPlayback() {
         print("📱 startPlayback called - hasInternet: \(hasInternetConnection), isManualPause: \(isManualPause)")
-        performActiveConnectivityCheck()
+        
         if !hasInternetConnection {
             updateUIForNoInternet()
+            performActiveConnectivityCheck()
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                if !self.hasInternetConnection {
+                    self.updateUIForNoInternet()
+                    return // Exit early if still offline
+                }
                 if !self.isPlaying && !self.isManualPause {
-                    print("📱 Retry playback after network check")
-                    self.startPlayback()
+                    self.startPlayback() // Retry only if online
                 }
             }
             return
         }
+        
         isManualPause = false
         statusLabel.text = String(localized: "status_connecting")
         statusLabel.backgroundColor = .systemYellow
         statusLabel.textColor = .black
+        
         streamingPlayer.handleNetworkInterruption()
         attemptPlaybackWithRetry(attempt: 1, maxAttempts: 3)
     }
