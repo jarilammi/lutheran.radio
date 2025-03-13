@@ -115,7 +115,7 @@ class DirectStreamingPlayer: NSObject {
     
     func play(completion: @escaping (Bool) -> Void) {
         stop()
-        hasPermanentError = false // Reset on each play attempt
+        hasPermanentError = false
         print("▶️ Starting direct playback for \(selectedStream.language)")
 
         let asset = AVURLAsset(url: selectedStream.url)
@@ -129,16 +129,15 @@ class DirectStreamingPlayer: NSObject {
         tempStatusObserver = playerItem?.observe(\.status, options: [.new]) { item, _ in
             if item.status == .readyToPlay {
                 completion(true)
-                tempStatusObserver?.invalidate()
             } else if item.status == .failed {
                 completion(false)
-                tempStatusObserver?.invalidate()
             }
+            tempStatusObserver?.invalidate()
         }
     }
     
     func setStream(to stream: Stream) {
-        stop() // Stop current playback
+        stop()
         selectedStream = stream
         play { [weak self] success in
             if success {
@@ -156,39 +155,29 @@ class DirectStreamingPlayer: NSObject {
     }
     
     private func addObservers() {
+        removeObservers()
+        
         statusObserver = playerItem?.observe(\.status, options: [.new, .initial]) { [weak self] item, _ in
             guard let self = self else { return }
             DispatchQueue.main.async {
                 print("🎵 Player item status: \(item.status.rawValue)")
                 switch item.status {
                 case .readyToPlay:
-                    print("🎵 Player item ready to play!")
                     self.onStatusChange?(true, String(localized: "status_playing"))
-                    
                 case .failed:
-                    let errorMessage = item.error?.localizedDescription ?? "unknown error"
-                    print("🎵 Player item failed: \(errorMessage)")
                     self.lastError = item.error
-                    
                     let errorType = StreamErrorType.from(error: item.error)
                     self.hasPermanentError = errorType.isPermanent
                     self.onStatusChange?(false, errorType.statusString)
-                    
-                    if let error = item.error as NSError? {
-                        print("🎵 Error details - Domain: \(error.domain), Code: \(error.code)")
-                    }
                     self.removeObservers()
-                    
                 case .unknown:
                     self.onStatusChange?(false, String(localized: "status_buffering"))
-                    
                 @unknown default:
                     break
                 }
             }
         }
         
-        // Add KVO observers safely
         if let playerItem = playerItem {
             playerItem.addObserver(self, forKeyPath: "playbackBufferEmpty", options: .new, context: nil)
             playerItem.addObserver(self, forKeyPath: "playbackLikelyToKeepUp", options: .new, context: nil)
@@ -196,16 +185,13 @@ class DirectStreamingPlayer: NSObject {
             isObservingBuffer = true
         }
         
-        // Time observer to check if playback is actually progressing
         let interval = CMTime(seconds: 1.0, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
         timeObserver = player?.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] _ in
             if self?.player?.rate ?? 0 > 0 {
-                // Player is playing
                 self?.onStatusChange?(true, String(localized: "status_playing"))
             }
         }
         
-        // Add metadata observation
         let metadataOutput = AVPlayerItemMetadataOutput(identifiers: nil)
         metadataOutput.setDelegate(self, queue: .main)
         playerItem?.add(metadataOutput)
