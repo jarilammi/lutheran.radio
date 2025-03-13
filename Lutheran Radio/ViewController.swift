@@ -125,6 +125,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     private var isTuningSoundPlaying = false
     private var streamSwitchTimer: Timer?
     private var pendingStreamIndex: Int?
+    private var lastPlaybackAttempt: Date?
+    private let minPlaybackInterval: TimeInterval = 1.0 // 1 second
     
     // Testable accessors
     @objc var isPlayingState: Bool {
@@ -465,6 +467,15 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             if hasPermanentPlaybackError { streamingPlayer.onStatusChange?(false, String(localized: "status_stream_unavailable")) }
             return
         }
+        let now = Date()
+        if let lastAttempt = lastPlaybackAttempt, now.timeIntervalSince(lastAttempt) < minPlaybackInterval {
+            DispatchQueue.main.asyncAfter(deadline: .now() + minPlaybackInterval) {
+                self.attemptPlaybackWithRetry(attempt: attempt, maxAttempts: maxAttempts)
+            }
+            return
+        }
+        
+        lastPlaybackAttempt = now
         print("📱 Playback attempt \(attempt)/\(maxAttempts)")
         let delay = pow(2.0, Double(attempt-1))
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
