@@ -290,13 +290,16 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 }
                 if isConnected && !wasConnected {
                     print("📱 Network monitor detected reconnection")
+                    self.stopTuningSound() // Ensure tuning sound stops on reconnect
                     self.handleNetworkReconnection()
                 } else if !isConnected && wasConnected {
-                    print("📱 Network disconnected - stopping playback")
+                    print("📱 Network disconnected - stopping playback and tuning sound")
+                    self.stopTuningSound() // Stop tuning sound immediately
                     let wasPlayingBeforeDisconnect = self.isPlaying
                     self.stopPlayback()
                     self.updateUIForNoInternet()
                     self.isManualPause = self.isManualPause && !wasPlayingBeforeDisconnect
+                    self.audioEngine.pause() // Pause audio engine to prevent overload
                 }
             }
         }
@@ -439,14 +442,15 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         
         if !hasInternetConnection {
             updateUIForNoInternet()
+            stopTuningSound() // Stop tuning sound if offline
             performActiveConnectivityCheck()
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
                 if !self.hasInternetConnection {
                     self.updateUIForNoInternet()
-                    return // Exit early if still offline
+                    return
                 }
                 if !self.isPlaying && !self.isManualPause {
-                    self.startPlayback() // Retry only if online
+                    self.startPlayback()
                 }
             }
             return
@@ -605,7 +609,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     }
 
     private func playTuningSound() {
-        guard !isTuningSoundPlaying else { return }
+        guard !isTuningSoundPlaying, hasInternetConnection else { return } // Only play if online
         
         if !audioEngine.isRunning {
             do {
@@ -624,7 +628,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             audioEngine.detach(existingNode)
         }
         
-        tuningSoundNode = AVAudioSourceNode { _, _, frameCount, audioBufferList -> OSStatus in
+        tuningSoundNode = AVAudioSourceNode { [weak self] _, _, frameCount, audioBufferList -> OSStatus in
+            guard let self = self, self.hasInternetConnection else { return noErr } // Stop processing if offline
             let ablPointer = UnsafeMutableAudioBufferListPointer(audioBufferList)
             let sampleRate = self.audioEngine.mainMixerNode.outputFormat(forBus: 0).sampleRate
             let frequency = Float.random(in: 500...1500)
@@ -645,7 +650,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         audioEngine.connect(tuningSoundNode!, to: audioEngine.mainMixerNode, format: nil)
         tuningSoundNode!.volume = 0.5
         
-        // Ensure cleanup happens even under rapid calls
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
             self?.stopTuningSound()
         }
@@ -657,7 +661,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         audioEngine.detach(node)
         isTuningSoundPlaying = false
         tuningSoundNode = nil
-        if !isPlaying { audioEngine.stop() }
+        if !isPlaying && audioEngine.isRunning { audioEngine.stop() }
     }
     
     // MARK: - Selection Indicator
@@ -747,6 +751,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         networkMonitor?.cancel()
         connectivityCheckTimer?.invalidate()
         connectivityCheckTimer = nil
+        stopTuningSound()
         audioEngine.stop()
         if let node = tuningSoundNode { audioEngine.detach(node) }
     }
