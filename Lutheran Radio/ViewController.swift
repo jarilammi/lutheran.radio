@@ -595,6 +595,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
 
     private func playTuningSound() {
         guard !isTuningSoundPlaying else { return }
+        
         if !audioEngine.isRunning {
             do {
                 try audioEngine.start()
@@ -604,11 +605,14 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 return
             }
         }
+        
         isTuningSoundPlaying = true
+        
         if let existingNode = tuningSoundNode {
             audioEngine.disconnectNodeOutput(existingNode)
             audioEngine.detach(existingNode)
         }
+        
         tuningSoundNode = AVAudioSourceNode { _, _, frameCount, audioBufferList -> OSStatus in
             let ablPointer = UnsafeMutableAudioBufferListPointer(audioBufferList)
             let sampleRate = self.audioEngine.mainMixerNode.outputFormat(forBus: 0).sampleRate
@@ -625,10 +629,15 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             }
             return noErr
         }
+        
         audioEngine.attach(tuningSoundNode!)
         audioEngine.connect(tuningSoundNode!, to: audioEngine.mainMixerNode, format: nil)
         tuningSoundNode!.volume = 0.5
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { self.stopTuningSound() }
+        
+        // Ensure cleanup happens even under rapid calls
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            self?.stopTuningSound()
+        }
     }
 
     private func stopTuningSound() {
