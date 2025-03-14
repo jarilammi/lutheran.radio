@@ -379,7 +379,8 @@ extension DirectStreamingPlayer {
                  URLError.Code.serverCertificateUntrusted.rawValue: // -1202
                 return .securityFailure
             case URLError.Code.cannotFindHost.rawValue, // -1003
-                 URLError.Code.fileDoesNotExist.rawValue: // -1100
+                 URLError.Code.fileDoesNotExist.rawValue, // -1100
+                 URLError.Code.cannotConnectToHost.rawValue: // -1004
                 return .permanentFailure
             default:
                 return .transientFailure
