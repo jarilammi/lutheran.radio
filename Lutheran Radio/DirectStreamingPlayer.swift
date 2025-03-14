@@ -27,6 +27,12 @@ class DirectStreamingPlayer: NSObject {
                languageCode: "en",
                flag: "🇺🇸"),
         Stream(title: NSLocalizedString("lutheran_radio_title", comment: "Title for Lutheran Radio") + " - " +
+               NSLocalizedString("language_german", comment: "German language option"),
+               url: URL(string: "https://livedeutsch.lutheran.radio:8443/lutheranradio.mp3")!,
+               language: NSLocalizedString("language_german", comment: "German language option"),
+               languageCode: "de",
+               flag: "🇩🇪"),
+        Stream(title: NSLocalizedString("lutheran_radio_title", comment: "Title for Lutheran Radio") + " - " +
                NSLocalizedString("language_finnish", comment: "Finnish language option"),
                url: URL(string: "https://livefinnish.lutheran.radio:8443/lutheranradio.mp3")!,
                language: NSLocalizedString("language_finnish", comment: "Finnish language option"),
@@ -38,6 +44,12 @@ class DirectStreamingPlayer: NSObject {
                language: NSLocalizedString("language_swedish", comment: "Swedish language option"),
                languageCode: "sv",
                flag: "🇸🇪"),
+        Stream(title: NSLocalizedString("lutheran_radio_title", comment: "Title for Lutheran Radio") + " - " +
+               NSLocalizedString("language_estonian", comment: "Estonian language option"),
+               url: URL(string: "https://liveestonian.lutheran.radio:8443/lutheranradio.mp3")!,
+               language: NSLocalizedString("language_estonian", comment: "Estonian language option"),
+               languageCode: "ee",
+               flag: "🇪🇪"),
     ]
     
     public enum PlaybackState {
