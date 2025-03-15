@@ -495,12 +495,18 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                         print("📱 Permanent error detected - stopping retries")
                         self.hasPermanentPlaybackError = true
                         self.streamingPlayer.onStatusChange?(false, String(localized: "status_stream_unavailable"))
+                        self.statusLabel.text = String(localized: "status_stream_unavailable")
+                        self.statusLabel.backgroundColor = .systemOrange
+                        self.statusLabel.textColor = .white
                     } else if attempt < maxAttempts {
                         print("📱 Playback attempt \(attempt) failed, retrying...")
                         self.attemptPlaybackWithRetry(attempt: attempt + 1, maxAttempts: maxAttempts)
                     } else {
                         print("📱 Max attempts (\(maxAttempts)) reached - giving up")
                         self.streamingPlayer.onStatusChange?(false, String(localized: "alert_connection_failed_title"))
+                        self.statusLabel.text = String(localized: "alert_connection_failed_title")
+                        self.statusLabel.backgroundColor = .systemRed
+                        self.statusLabel.textColor = .white
                     }
                 }
             }
