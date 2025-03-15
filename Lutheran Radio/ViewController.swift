@@ -782,16 +782,36 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     }
     
     deinit {
+        // Remove all notification observers
         NotificationCenter.default.removeObserver(self)
+        
+        // Cancel network monitor
         networkMonitor?.cancel()
+        networkMonitor = nil
+        
+        // Invalidate timers
         connectivityCheckTimer?.invalidate()
         connectivityCheckTimer = nil
+        streamSwitchTimer?.invalidate()
+        streamSwitchTimer = nil
+        
+        // Stop and clean up audio engine and tuning sound
         audioQueue.async { [weak self] in
-            self?.stopTuningSound()
-            if self?.audioEngine.isRunning == true {
-                self?.audioEngine.stop()
+            guard let self = self else { return }
+            self.stopTuningSound() // This will detach and stop the tuning sound node
+            if self.audioEngine.isRunning {
+                self.audioEngine.stop()
+                print("🎵 Audio engine stopped in deinit")
+            }
+            // Ensure all nodes are detached
+            if let node = self.tuningSoundNode {
+                self.audioEngine.detach(node)
+                self.tuningSoundNode = nil
             }
         }
+        
+        // Clean up streaming player (if it has its own deinit or cleanup)
+        streamingPlayer.stop()
     }
 }
 
