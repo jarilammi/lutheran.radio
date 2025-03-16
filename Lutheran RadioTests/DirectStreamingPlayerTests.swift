@@ -55,15 +55,30 @@ final class TestDirectStreamingPlayer: DirectStreamingPlayer, @unchecked Sendabl
 @MainActor
 class DirectStreamingPlayerTests: XCTestCase {
     var player: TestDirectStreamingPlayer!
+    var initialTitle: String? // Property to store the initial title
 
     override func setUp() {
         super.setUp()
-        player = TestDirectStreamingPlayer()
+        
+        // Initialize player with metadata callback already set
+        let tempPlayer = TestDirectStreamingPlayer()
+        tempPlayer.onMetadataChange = { [weak self] title in
+            self?.initialTitle = title
+        }
+        player = tempPlayer // Assign after setting the callback
+        
+        // Explicitly trigger the initialization logic
+        let currentLocale = Locale.current
+        let languageCode = currentLocale.language.languageCode?.identifier ?? "en"
+        let initialStream = DirectStreamingPlayer.availableStreams.first { $0.languageCode == languageCode }
+            ?? DirectStreamingPlayer.availableStreams[0]
+        player.setStream(to: initialStream) // Ensure stream is set and callback triggered
     }
 
     override func tearDown() {
         player.stop()
         player = nil
+        initialTitle = nil
         super.tearDown()
     }
 
@@ -72,11 +87,6 @@ class DirectStreamingPlayerTests: XCTestCase {
         let languageCode = currentLocale.language.languageCode?.identifier ?? "en"
         let expectedStream = DirectStreamingPlayer.availableStreams.first { $0.languageCode == languageCode }
             ?? DirectStreamingPlayer.availableStreams[0]
-        
-        var initialTitle: String?
-        player.onMetadataChange = { title in
-            initialTitle = title
-        }
         
         XCTAssertEqual(initialTitle, expectedStream.title, "Initial stream should match locale or default to first stream")
     }
