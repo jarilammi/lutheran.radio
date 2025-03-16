@@ -99,6 +99,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     // New streaming player
     private var streamingPlayer: DirectStreamingPlayer
+    private let audioQueue = DispatchQueue(label: "radio.lutheran.audio", qos: .userInitiated)
     
     // Add initializer for testing
     init(streamingPlayer: DirectStreamingPlayer = DirectStreamingPlayer()) {
@@ -384,6 +385,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
                 if self.hasInternetConnection && !self.isPlaying && !self.isManualPause && !self.hasPermanentPlaybackError {
                     print("📱 Auto-restarting playback after reconnection")
+                    self.isTuningSoundPlaying = false
                     self.startPlayback()
                 }
             }
@@ -493,12 +495,18 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                         print("📱 Permanent error detected - stopping retries")
                         self.hasPermanentPlaybackError = true
                         self.streamingPlayer.onStatusChange?(false, String(localized: "status_stream_unavailable"))
+                        self.statusLabel.text = String(localized: "status_stream_unavailable")
+                        self.statusLabel.backgroundColor = .systemOrange
+                        self.statusLabel.textColor = .white
                     } else if attempt < maxAttempts {
                         print("📱 Playback attempt \(attempt) failed, retrying...")
                         self.attemptPlaybackWithRetry(attempt: attempt + 1, maxAttempts: maxAttempts)
                     } else {
                         print("📱 Max attempts (\(maxAttempts)) reached - giving up")
                         self.streamingPlayer.onStatusChange?(false, String(localized: "alert_connection_failed_title"))
+                        self.statusLabel.text = String(localized: "alert_connection_failed_title")
+                        self.statusLabel.backgroundColor = .systemRed
+                        self.statusLabel.textColor = .white
                     }
                 }
             }
@@ -600,6 +608,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     private func setupAudioEngine() {
         let mainMixer = audioEngine.mainMixerNode
         mainMixer.volume = 1.0
+        
         do {
             try audioEngine.start()
             print("🎵 Audio engine started successfully")
@@ -609,59 +618,91 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     }
 
     private func playTuningSound() {
-        guard !isTuningSoundPlaying, hasInternetConnection else { return } // Only play if online
-        
-        if !audioEngine.isRunning {
-            do {
-                try audioEngine.start()
-                print("🎵 Audio engine restarted successfully")
-            } catch {
-                print("🎵 Failed to restart audio engine: \(error.localizedDescription)")
-                return
-            }
+        print("🎵 Attempting to play tuning sound - isTuningSoundPlaying: \(isTuningSoundPlaying), hasInternetConnection: \(hasInternetConnection)")
+        guard !isTuningSoundPlaying, hasInternetConnection else {
+            print("🎵 Skipping tuning sound: already playing or offline")
+            return
         }
-        
-        isTuningSoundPlaying = true
-        
-        if let existingNode = tuningSoundNode {
-            audioEngine.disconnectNodeOutput(existingNode)
-            audioEngine.detach(existingNode)
-        }
-        
-        tuningSoundNode = AVAudioSourceNode { [weak self] _, _, frameCount, audioBufferList -> OSStatus in
-            guard let self = self, self.hasInternetConnection else { return noErr } // Stop processing if offline
-            let ablPointer = UnsafeMutableAudioBufferListPointer(audioBufferList)
-            let sampleRate = self.audioEngine.mainMixerNode.outputFormat(forBus: 0).sampleRate
-            let frequency = Float.random(in: 500...1500)
-            let amplitude = Float(0.1)
-            for frame in 0..<Int(frameCount) {
-                let time = Float(frame) / Float(sampleRate)
-                let noise = Float.random(in: -0.05...0.05)
-                let value = sinf(2.0 * .pi * frequency * time) * amplitude + noise
-                for buffer in ablPointer {
-                    let buf: UnsafeMutableBufferPointer<Float> = UnsafeMutableBufferPointer(buffer)
-                    buf[frame] = value
+
+        audioQueue.async { [weak self] in
+            guard let self = self else { return }
+            
+            if !self.audioEngine.isRunning {
+                do {
+                    try self.audioEngine.start()
+                    print("🎵 Audio engine restarted successfully")
+                } catch {
+                    print("🎵 Failed to restart audio engine: \(error.localizedDescription)")
+                    return
                 }
             }
-            return noErr
-        }
-        
-        audioEngine.attach(tuningSoundNode!)
-        audioEngine.connect(tuningSoundNode!, to: audioEngine.mainMixerNode, format: nil)
-        tuningSoundNode!.volume = 0.5
-        
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-            self?.stopTuningSound()
+            
+            self.isTuningSoundPlaying = true
+            print("🎵 Tuning sound started")
+            
+            // Cleanup existing node if present
+            if let existingNode = self.tuningSoundNode {
+                self.audioEngine.disconnectNodeOutput(existingNode)
+                self.audioEngine.detach(existingNode)
+            }
+            
+            // Use the output node's format for compatibility
+            let outputNode = self.audioEngine.outputNode
+            let format = outputNode.outputFormat(forBus: 0)
+            
+            self.tuningSoundNode = AVAudioSourceNode(format: format) { [weak self] _, _, frameCount, audioBufferList -> OSStatus in
+                guard let self = self, self.isTuningSoundPlaying else { return noErr }
+                
+                let ablPointer = UnsafeMutableAudioBufferListPointer(audioBufferList)
+                let sampleRate = Float(format.sampleRate)
+                let frequency = Float.random(in: 500...1500)
+                let amplitude = Float(0.1)
+                
+                for frame in 0..<Int(frameCount) {
+                    let time = Float(frame) / sampleRate
+                    let noise = Float.random(in: -0.05...0.05)
+                    let value = sinf(2.0 * .pi * frequency * time) * amplitude + noise
+                    for buffer in ablPointer {
+                        let buf: UnsafeMutableBufferPointer<Float> = UnsafeMutableBufferPointer(buffer)
+                        buf[frame] = value
+                    }
+                }
+                return noErr
+            }
+            
+            guard let node = self.tuningSoundNode else {
+                print("🎵 Failed to create tuning sound node")
+                self.isTuningSoundPlaying = false
+                return
+            }
+            
+            self.audioEngine.attach(node)
+            self.audioEngine.connect(node, to: self.audioEngine.mainMixerNode, format: format)
+            self.audioEngine.connect(self.audioEngine.mainMixerNode, to: outputNode, format: format)
+            node.volume = 0.5
+            
+            // Stop after 0.3 seconds
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                self?.stopTuningSound()
+            }
         }
     }
 
     private func stopTuningSound() {
-        guard isTuningSoundPlaying, let node = tuningSoundNode else { return }
-        audioEngine.disconnectNodeOutput(node)
-        audioEngine.detach(node)
-        isTuningSoundPlaying = false
-        tuningSoundNode = nil
-        if !isPlaying && audioEngine.isRunning { audioEngine.stop() }
+        audioQueue.async { [weak self] in
+            guard let self = self, self.isTuningSoundPlaying, let node = self.tuningSoundNode else { return }
+            
+            self.audioEngine.disconnectNodeOutput(node)
+            self.audioEngine.detach(node)
+            self.isTuningSoundPlaying = false
+            self.tuningSoundNode = nil
+            
+            // Only stop engine if no streaming is active
+            if !self.isPlaying && self.audioEngine.isRunning {
+                self.audioEngine.stop()
+                print("🎵 Audio engine stopped")
+            }
+        }
     }
     
     // MARK: - Selection Indicator
@@ -747,13 +788,36 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     }
     
     deinit {
+        // Remove all notification observers
         NotificationCenter.default.removeObserver(self)
+        
+        // Cancel network monitor
         networkMonitor?.cancel()
+        networkMonitor = nil
+        
+        // Invalidate timers
         connectivityCheckTimer?.invalidate()
         connectivityCheckTimer = nil
-        stopTuningSound()
-        audioEngine.stop()
-        if let node = tuningSoundNode { audioEngine.detach(node) }
+        streamSwitchTimer?.invalidate()
+        streamSwitchTimer = nil
+        
+        // Stop and clean up audio engine and tuning sound
+        audioQueue.async { [weak self] in
+            guard let self = self else { return }
+            self.stopTuningSound() // This will detach and stop the tuning sound node
+            if self.audioEngine.isRunning {
+                self.audioEngine.stop()
+                print("🎵 Audio engine stopped in deinit")
+            }
+            // Ensure all nodes are detached
+            if let node = self.tuningSoundNode {
+                self.audioEngine.detach(node)
+                self.tuningSoundNode = nil
+            }
+        }
+        
+        // Clean up streaming player (if it has its own deinit or cleanup)
+        streamingPlayer.stop()
     }
 }
 

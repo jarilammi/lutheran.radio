@@ -27,6 +27,12 @@ class DirectStreamingPlayer: NSObject {
                languageCode: "en",
                flag: "🇺🇸"),
         Stream(title: NSLocalizedString("lutheran_radio_title", comment: "Title for Lutheran Radio") + " - " +
+               NSLocalizedString("language_german", comment: "German language option"),
+               url: URL(string: "https://livedeutsch.lutheran.radio:8443/lutheranradio.mp3")!,
+               language: NSLocalizedString("language_german", comment: "German language option"),
+               languageCode: "de",
+               flag: "🇩🇪"),
+        Stream(title: NSLocalizedString("lutheran_radio_title", comment: "Title for Lutheran Radio") + " - " +
                NSLocalizedString("language_finnish", comment: "Finnish language option"),
                url: URL(string: "https://livefinnish.lutheran.radio:8443/lutheranradio.mp3")!,
                language: NSLocalizedString("language_finnish", comment: "Finnish language option"),
@@ -38,6 +44,12 @@ class DirectStreamingPlayer: NSObject {
                language: NSLocalizedString("language_swedish", comment: "Swedish language option"),
                languageCode: "sv",
                flag: "🇸🇪"),
+        Stream(title: NSLocalizedString("lutheran_radio_title", comment: "Title for Lutheran Radio") + " - " +
+               NSLocalizedString("language_estonian", comment: "Estonian language option"),
+               url: URL(string: "https://liveestonian.lutheran.radio:8443/lutheranradio.mp3")!,
+               language: NSLocalizedString("language_estonian", comment: "Estonian language option"),
+               languageCode: "ee",
+               flag: "🇪🇪"),
     ]
     
     public enum PlaybackState {
@@ -154,7 +166,7 @@ class DirectStreamingPlayer: NSObject {
         player?.volume = volume
     }
     
-    private func addObservers() {
+    func addObservers() {
         removeObservers()
         
         statusObserver = playerItem?.observe(\.status, options: [.new, .initial]) { [weak self] item, _ in
@@ -166,6 +178,12 @@ class DirectStreamingPlayer: NSObject {
                     self.onStatusChange?(true, String(localized: "status_playing"))
                 case .failed:
                     self.lastError = item.error
+                    if let error = item.error {
+                        let nsError = error as NSError
+                        print("🎵 Player item failed with error: \(error.localizedDescription), code: \(nsError.code), domain: \(nsError.domain)")
+                    } else {
+                        print("🎵 Player item failed with no error details")
+                    }
                     let errorType = StreamErrorType.from(error: item.error)
                     self.hasPermanentError = errorType.isPermanent
                     self.onStatusChange?(false, errorType.statusString)
@@ -319,24 +337,21 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
     
     private func handleLoadingError(_ error: Error) {
         print("📡 Loading error: \(error.localizedDescription)")
+        let errorType = StreamErrorType.from(error: error)
+        hasPermanentError = errorType.isPermanent
         if let urlError = error as? URLError {
             switch urlError.code {
             case .serverCertificateUntrusted, .secureConnectionFailed:
-                // Handle pinning failure or general SSL failure
                 print("🔒 SSL error: Connection cannot be verified")
                 onStatusChange?(false, String(localized: "status_security_failed"))
-            case .cannotFindHost, .fileDoesNotExist: // Add -1100 (file not found)
-                // Permanent errors
-                print("📡 Permanent error: \(urlError.code == .cannotFindHost ? "Host not found" : "File not found")")
-                hasPermanentError = true
+            case .cannotFindHost, .fileDoesNotExist, .badServerResponse: // Include 502
+                print("📡 Permanent error: \(urlError.code == .cannotFindHost ? "Host not found" : urlError.code == .fileDoesNotExist ? "File not found" : "Bad server response")")
                 onStatusChange?(false, String(localized: "status_stream_unavailable"))
             default:
-                // Other errors
                 print("📡 Generic loading error: \(urlError.code)")
                 onStatusChange?(false, String(localized: "status_buffering"))
             }
         } else {
-            // Non-URLError
             print("📡 Non-URL error encountered")
             onStatusChange?(false, String(localized: "status_buffering"))
         }
@@ -367,7 +382,10 @@ extension DirectStreamingPlayer {
                  URLError.Code.serverCertificateUntrusted.rawValue: // -1202
                 return .securityFailure
             case URLError.Code.cannotFindHost.rawValue, // -1003
-                 URLError.Code.fileDoesNotExist.rawValue: // -1100
+                 URLError.Code.resourceUnavailable.rawValue, // -1008
+                 URLError.Code.fileDoesNotExist.rawValue, // -1100
+                 URLError.Code.cannotConnectToHost.rawValue, // -1004
+                 URLError.Code.badServerResponse.rawValue: // -1011 (for 502)
                 return .permanentFailure
             default:
                 return .transientFailure
@@ -380,14 +398,16 @@ extension DirectStreamingPlayer {
                 return String(localized: "status_security_failed")
             case .permanentFailure:
                 return String(localized: "status_stream_unavailable")
-            case .transientFailure, .unknown:
+            case .transientFailure:
                 return String(localized: "status_buffering")
+            case .unknown:
+                return String(localized: "status_connecting")
             }
         }
         
         var isPermanent: Bool {
             switch self {
-            case .permanentFailure:
+            case .securityFailure, .permanentFailure:
                 return true
             default:
                 return false

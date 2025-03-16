@@ -43,14 +43,43 @@ class StreamingSessionDelegate: NSObject, URLSessionDelegate, URLSessionDataDele
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask,
                     didReceive response: URLResponse,
                     completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
-        
         guard let loadingRequest = loadingRequest,
               let httpResponse = response as? HTTPURLResponse else {
+            print("📡 Failed to process response: invalid loading request or response type")
             completionHandler(.cancel)
             return
         }
         
         print("📡 Received HTTP response with status code: \(httpResponse.statusCode)")
+        
+        let statusCode = httpResponse.statusCode
+        if (400...599).contains(statusCode) {
+            let error: URLError.Code
+            switch statusCode {
+            case 502:
+                error = .badServerResponse
+                print("📡 Detected 502 Bad Gateway - treating as permanent error")
+                onError?(URLError(error))
+                loadingRequest.finishLoading(with: URLError(error))
+                completionHandler(.cancel)
+                return
+            case 404: // Not Found
+                error = .fileDoesNotExist
+                onError?(URLError(error))
+                loadingRequest.finishLoading(with: URLError(error))
+                completionHandler(.cancel)
+                return
+            case 403: // Forbidden
+                error = .resourceUnavailable // Using this as a reasonable proxy for permission denial
+                print("📡 Detected 403 Forbidden - treating as permanent error")
+                onError?(URLError(error))
+                loadingRequest.finishLoading(with: URLError(error))
+                completionHandler(.cancel)
+                return
+            default:
+                print("📡 Unhandled HTTP status code: \(statusCode)")
+            }
+        }
         
         // Process content type and length for the loading request
         if let contentType = httpResponse.allHeaderFields["Content-Type"] as? String {
@@ -58,7 +87,6 @@ class StreamingSessionDelegate: NSObject, URLSessionDelegate, URLSessionDataDele
             loadingRequest.contentInformationRequest?.contentType = contentType
         }
         
-        // For streaming media, we typically don't know the total content length
         loadingRequest.contentInformationRequest?.contentLength = -1
         loadingRequest.contentInformationRequest?.isByteRangeAccessSupported = false
         
