@@ -270,37 +270,49 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         let inset = max((collectionViewWidth - totalCellWidth) / 2, 0)
         layout.sectionInset = UIEdgeInsets(top: 0, left: inset, bottom: 0, right: inset)
         languageCollectionView.collectionViewLayout.invalidateLayout()
+        #if DEBUG
         print("Centered content with insets: \(inset)")
+        #endif
     }
     
     private func setupNetworkMonitoring() {
         networkMonitor?.cancel()
         networkMonitor = nil
         networkMonitor = NWPathMonitor()
+        #if DEBUG
         print("📱 Setting up network monitoring")
+        #endif
         networkMonitor?.pathUpdateHandler = { [weak self] path in
             guard let self = self else { return }
             let isConnected = path.status == .satisfied
             DispatchQueue.main.async {
                 let wasConnected = self.hasInternetConnection
                 self.hasInternetConnection = isConnected
+                #if DEBUG
                 print("📱 Network path update: status=\(path.status), isExpensive=\(path.isExpensive), isConstrained=\(path.isConstrained)")
+                #endif
                 if isConnected != wasConnected {
+                    #if DEBUG
                     print("📱 Network status changed: \(isConnected ? "Connected" : "Disconnected")")
                     print("📱 isManualPause: \(self.isManualPause)")
+                    #endif
                 }
                 if isConnected && !wasConnected {
+                    #if DEBUG
                     print("📱 Network monitor detected reconnection")
-                    self.stopTuningSound() // Ensure tuning sound stops on reconnect
+                    #endif
+                    self.stopTuningSound()
                     self.handleNetworkReconnection()
                 } else if !isConnected && wasConnected {
+                    #if DEBUG
                     print("📱 Network disconnected - stopping playback and tuning sound")
-                    self.stopTuningSound() // Stop tuning sound immediately
+                    #endif
+                    self.stopTuningSound()
                     let wasPlayingBeforeDisconnect = self.isPlaying
                     self.stopPlayback()
                     self.updateUIForNoInternet()
                     self.isManualPause = self.isManualPause && !wasPlayingBeforeDisconnect
-                    self.audioEngine.pause() // Pause audio engine to prevent overload
+                    self.audioEngine.pause()
                 }
             }
         }
@@ -354,7 +366,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     private func setupConnectivityCheckTimer() {
         connectivityCheckTimer?.invalidate()
         connectivityCheckTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
-            self?.performActiveConnectivityCheck()
+            guard let self = self else { return }
+            self.performActiveConnectivityCheck()
         }
     }
     
@@ -371,7 +384,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             let success = error == nil && (response as? HTTPURLResponse)?.statusCode == 200
             DispatchQueue.main.async {
                 if success && !self.hasInternetConnection {
+                    #if DEBUG
                     print("📱 Active check detected internet connection")
+                    #endif
                     self.hasInternetConnection = true
                     self.handleNetworkReconnection()
                 }
@@ -384,7 +399,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         if !isManualPause && !hasPermanentPlaybackError {
             DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
                 if self.hasInternetConnection && !self.isPlaying && !self.isManualPause && !self.hasPermanentPlaybackError {
+                    #if DEBUG
                     print("📱 Auto-restarting playback after reconnection")
+                    #endif
                     self.isTuningSoundPlaying = false
                     self.startPlayback()
                 }
@@ -397,18 +414,21 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         [commandCenter.playCommand, commandCenter.pauseCommand, commandCenter.togglePlayPauseCommand, commandCenter.stopCommand].forEach { $0.removeTarget(nil) }
         commandCenter.playCommand.isEnabled = true
         commandCenter.playCommand.addTarget { [weak self] _ -> MPRemoteCommandHandlerStatus in
-            DispatchQueue.main.async { self?.startPlayback() }
+            guard let self = self else { return .commandFailed }
+            DispatchQueue.main.async { self.startPlayback() }
             return .success
         }
         commandCenter.pauseCommand.isEnabled = true
         commandCenter.pauseCommand.addTarget { [weak self] _ -> MPRemoteCommandHandlerStatus in
-            DispatchQueue.main.async { self?.pausePlayback() }
+            guard let self = self else { return .commandFailed }
+            DispatchQueue.main.async { self.pausePlayback() }
             return .success
         }
         commandCenter.togglePlayPauseCommand.isEnabled = true
         commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ -> MPRemoteCommandHandlerStatus in
+            guard let self = self else { return .commandFailed }
             DispatchQueue.main.async {
-                if self?.isPlaying == true { self?.pausePlayback() } else { self?.startPlayback() }
+                if self.isPlaying { self.pausePlayback() } else { self.startPlayback() }
             }
             return .success
         }
@@ -440,7 +460,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     // MARK: - Playback Control
     
     private func startPlayback() {
+        #if DEBUG
         print("📱 startPlayback called - hasInternet: \(hasInternetConnection), isManualPause: \(isManualPause)")
+        #endif
         
         if !hasInternetConnection {
             updateUIForNoInternet()
@@ -469,7 +491,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
 
     private func attemptPlaybackWithRetry(attempt: Int, maxAttempts: Int) {
         guard hasInternetConnection && !isManualPause && !hasPermanentPlaybackError else {
+            #if DEBUG
             print("📱 Aborting playback attempt \(attempt) - no internet, manually paused, or previous permanent error")
+            #endif
             if hasPermanentPlaybackError { streamingPlayer.onStatusChange?(false, String(localized: "status_stream_unavailable")) }
             return
         }
@@ -482,27 +506,37 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         }
         
         lastPlaybackAttempt = now
+        #if DEBUG
         print("📱 Playback attempt \(attempt)/\(maxAttempts)")
+        #endif
         let delay = pow(2.0, Double(attempt-1))
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
             self.streamingPlayer.setVolume(self.volumeSlider.value)
             self.streamingPlayer.play { [weak self] success in
                 guard let self = self else { return }
                 if success {
+                    #if DEBUG
                     print("📱 Playback succeeded on attempt \(attempt)")
+                    #endif
                 } else {
                     if self.streamingPlayer.isLastErrorPermanent() {
+                        #if DEBUG
                         print("📱 Permanent error detected - stopping retries")
+                        #endif
                         self.hasPermanentPlaybackError = true
                         self.streamingPlayer.onStatusChange?(false, String(localized: "status_stream_unavailable"))
                         self.statusLabel.text = String(localized: "status_stream_unavailable")
                         self.statusLabel.backgroundColor = .systemOrange
                         self.statusLabel.textColor = .white
                     } else if attempt < maxAttempts {
+                        #if DEBUG
                         print("📱 Playback attempt \(attempt) failed, retrying...")
+                        #endif
                         self.attemptPlaybackWithRetry(attempt: attempt + 1, maxAttempts: maxAttempts)
                     } else {
+                        #if DEBUG
                         print("📱 Max attempts (\(maxAttempts)) reached - giving up")
+                        #endif
                         self.streamingPlayer.onStatusChange?(false, String(localized: "alert_connection_failed_title"))
                         self.statusLabel.text = String(localized: "alert_connection_failed_title")
                         self.statusLabel.backgroundColor = .systemRed

@@ -214,8 +214,9 @@ class DirectStreamingPlayer: NSObject {
         
         let interval = CMTime(seconds: 1.0, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
         timeObserver = player?.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] _ in
-            if self?.player?.rate ?? 0 > 0 {
-                self?.onStatusChange?(true, String(localized: "status_playing"))
+            guard let self = self else { return }
+            if self.player?.rate ?? 0 > 0 {
+                self.onStatusChange?(true, String(localized: "status_playing"))
             }
         }
         
@@ -344,8 +345,9 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
         let session = URLSession(configuration: .default, delegate: streamingDelegate, delegateQueue: nil)
         let task = session.dataTask(with: url)
         streamingDelegate.onError = { [weak self] error in
+            guard let self = self else { return }
             DispatchQueue.main.async {
-                self?.handleLoadingError(error)
+                self.handleLoadingError(error)
             }
         }
         task.resume()
