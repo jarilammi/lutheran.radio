@@ -111,11 +111,6 @@ class DirectStreamingPlayer: NSObject {
     func setupAudioSession() {
         do {
             let session = AVAudioSession.sharedInstance()
-            
-            // First deactivate any existing session
-            try? session.setActive(false, options: .notifyOthersOnDeactivation)
-            
-            // Basic configuration for streaming audio
             try session.setCategory(.playback, mode: .default)
             try session.setActive(true)
             #if DEBUG
