@@ -118,18 +118,22 @@ class DirectStreamingPlayer: NSObject {
             // Basic configuration for streaming audio
             try session.setCategory(.playback, mode: .default)
             try session.setActive(true)
-            
+            #if DEBUG
             print("🔊 Audio session successfully configured")
+            #endif
         } catch {
+            #if DEBUG
             print("🔊 Audio session setup failed: \(error.localizedDescription)")
+            #endif
         }
     }
     
     func play(completion: @escaping (Bool) -> Void) {
         stop()
         hasPermanentError = false
+        #if DEBUG
         print("▶️ Starting direct playback for \(selectedStream.language)")
-
+        #endif
         let asset = AVURLAsset(url: selectedStream.url)
         asset.resourceLoader.setDelegate(self, queue: DispatchQueue(label: "radio.lutheran.resourceloader"))
         playerItem = AVPlayerItem(asset: asset)
@@ -153,10 +157,14 @@ class DirectStreamingPlayer: NSObject {
         selectedStream = stream
         play { [weak self] success in
             if success {
+                #if DEBUG
                 print("Stream switched successfully")
+                #endif
                 self?.onStatusChange?(true, String(localized: "status_playing"))
             } else {
+                #if DEBUG
                 print("Failed to switch stream")
+                #endif
                 self?.onStatusChange?(false, String(localized: "status_stream_unavailable"))
             }
         }
@@ -172,7 +180,9 @@ class DirectStreamingPlayer: NSObject {
         statusObserver = playerItem?.observe(\.status, options: [.new, .initial]) { [weak self] item, _ in
             guard let self = self else { return }
             DispatchQueue.main.async {
+                #if DEBUG
                 print("🎵 Player item status: \(item.status.rawValue)")
+                #endif
                 switch item.status {
                 case .readyToPlay:
                     self.onStatusChange?(true, String(localized: "status_playing"))
@@ -180,9 +190,13 @@ class DirectStreamingPlayer: NSObject {
                     self.lastError = item.error
                     if let error = item.error {
                         let nsError = error as NSError
+                        #if DEBUG
                         print("🎵 Player item failed with error: \(error.localizedDescription), code: \(nsError.code), domain: \(nsError.domain)")
+                        #endif
                     } else {
+                        #if DEBUG
                         print("🎵 Player item failed with no error details")
+                        #endif
                     }
                     let errorType = StreamErrorType.from(error: item.error)
                     self.hasPermanentError = errorType.isPermanent
@@ -224,18 +238,24 @@ class DirectStreamingPlayer: NSObject {
             
             if keyPath == "playbackBufferEmpty" {
                 if playerItem.isPlaybackBufferEmpty {
+                    #if DEBUG
                     print("⏳ Playback buffer is empty - buffering...")
+                    #endif
                     self.onStatusChange?(false, String(localized: "status_buffering"))
                 }
             } else if keyPath == "playbackLikelyToKeepUp" {
                 if playerItem.isPlaybackLikelyToKeepUp && playerItem.status == .readyToPlay {
+                    #if DEBUG
                     print("✅ Playback is likely to keep up - ready to play")
+                    #endif
                     self.player?.play()
                     self.onStatusChange?(true, String(localized: "status_playing"))
                 }
             } else if keyPath == "playbackBufferFull" {
                 if playerItem.isPlaybackBufferFull {
+                    #if DEBUG
                     print("✅ Playback buffer is full")
+                    #endif
                     self.player?.play()
                     self.onStatusChange?(true, String(localized: "status_playing"))
                 }
@@ -261,7 +281,9 @@ class DirectStreamingPlayer: NSObject {
             playerItem.removeObserver(self, forKeyPath: "playbackLikelyToKeepUp")
             playerItem.removeObserver(self, forKeyPath: "playbackBufferFull")
             isObservingBuffer = false
+            #if DEBUG
             print("📊 Removed buffer observers successfully")
+            #endif
         }
     }
     
@@ -336,23 +358,33 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
     }
     
     private func handleLoadingError(_ error: Error) {
+        #if DEBUG
         print("📡 Loading error: \(error.localizedDescription)")
+        #endif
         let errorType = StreamErrorType.from(error: error)
         hasPermanentError = errorType.isPermanent
         if let urlError = error as? URLError {
             switch urlError.code {
             case .serverCertificateUntrusted, .secureConnectionFailed:
+                #if DEBUG
                 print("🔒 SSL error: Connection cannot be verified")
+                #endif
                 onStatusChange?(false, String(localized: "status_security_failed"))
             case .cannotFindHost, .fileDoesNotExist, .badServerResponse: // Include 502
+                #if DEBUG
                 print("📡 Permanent error: \(urlError.code == .cannotFindHost ? "Host not found" : urlError.code == .fileDoesNotExist ? "File not found" : "Bad server response")")
+                #endif
                 onStatusChange?(false, String(localized: "status_stream_unavailable"))
             default:
+                #if DEBUG
                 print("📡 Generic loading error: \(urlError.code)")
+                #endif
                 onStatusChange?(false, String(localized: "status_buffering"))
             }
         } else {
+            #if DEBUG
             print("📡 Non-URL error encountered")
+            #endif
             onStatusChange?(false, String(localized: "status_buffering"))
         }
         stop()
@@ -361,7 +393,9 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
     func resourceLoader(_ resourceLoader: AVAssetResourceLoader,
                        didCancel loadingRequest: AVAssetResourceLoadingRequest) {
         // Handle cancellation if needed
+        #if DEBUG
         print("Resource loading cancelled")
+        #endif
     }
 }
 

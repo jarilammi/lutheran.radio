@@ -611,16 +611,24 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         
         do {
             try audioEngine.start()
+            #if DEBUG
             print("🎵 Audio engine started successfully")
+            #endif
         } catch {
+            #if DEBUG
             print("🎵 Failed to start audio engine: \(error.localizedDescription)")
+            #endif
         }
     }
 
     private func playTuningSound() {
+        #if DEBUG
         print("🎵 Attempting to play tuning sound - isTuningSoundPlaying: \(isTuningSoundPlaying), hasInternetConnection: \(hasInternetConnection)")
+        #endif
         guard !isTuningSoundPlaying, hasInternetConnection else {
+            #if DEBUG
             print("🎵 Skipping tuning sound: already playing or offline")
+            #endif
             return
         }
 
@@ -630,15 +638,21 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             if !self.audioEngine.isRunning {
                 do {
                     try self.audioEngine.start()
+                    #if DEBUG
                     print("🎵 Audio engine restarted successfully")
+                    #endif
                 } catch {
+                    #if DEBUG
                     print("🎵 Failed to restart audio engine: \(error.localizedDescription)")
+                    #endif
                     return
                 }
             }
             
             self.isTuningSoundPlaying = true
+            #if DEBUG
             print("🎵 Tuning sound started")
+            #endif
             
             // Cleanup existing node if present
             if let existingNode = self.tuningSoundNode {
@@ -671,7 +685,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             }
             
             guard let node = self.tuningSoundNode else {
+                #if DEBUG
                 print("🎵 Failed to create tuning sound node")
+                #endif
                 self.isTuningSoundPlaying = false
                 return
             }
@@ -700,7 +716,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             // Only stop engine if no streaming is active
             if !self.isPlaying && self.audioEngine.isRunning {
                 self.audioEngine.stop()
+                #if DEBUG
                 print("🎵 Audio engine stopped")
+                #endif
             }
         }
     }
@@ -807,7 +825,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             self.stopTuningSound() // This will detach and stop the tuning sound node
             if self.audioEngine.isRunning {
                 self.audioEngine.stop()
+                #if DEBUG
                 print("🎵 Audio engine stopped in deinit")
+                #endif
             }
             // Ensure all nodes are detached
             if let node = self.tuningSoundNode {
