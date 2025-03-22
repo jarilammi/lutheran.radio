@@ -25,13 +25,26 @@ class StreamingSessionDelegate: NSObject, URLSessionDelegate, URLSessionDataDele
                 #if DEBUG
                 print("📡 Streaming task failed: \(error.localizedDescription)")
                 #endif
-                // Log pinning failure for debugging
-                if let urlError = error as? URLError, urlError.code == .serverCertificateUntrusted {
-                    #if DEBUG
-                    print("🔒 Pinning failure detected: Certificate untrusted")
-                    #endif
+                // Add specific error handling
+                if let urlError = error as? URLError {
+                    switch urlError.code {
+                    case .notConnectedToInternet:
+                        // Handle no internet connection
+                        onError?(URLError(.notConnectedToInternet))
+                    case .cannotFindHost:
+                        // Handle host not found
+                        onError?(URLError(.cannotFindHost))
+                    case .serverCertificateUntrusted:
+                        #if DEBUG
+                        print("🔒 Pinning failure detected: Certificate untrusted")
+                        #endif
+                        onError?(URLError(.serverCertificateUntrusted))
+                    default:
+                        onError?(error)
+                    }
+                } else {
+                    onError?(error)
                 }
-                onError?(error) // Notify DirectStreamingPlayer of the error
                 loadingRequest?.finishLoading(with: error)
             } else {
                 #if DEBUG
