@@ -12,7 +12,7 @@ import AVKit
 import Network
 
 class ViewController: UIViewController, UICollectionViewDelegate, UICollectionViewDataSource, UIScrollViewDelegate {
-        let titleLabel: UILabel = {
+    let titleLabel: UILabel = {
         let label = UILabel()
         label.text = String(localized: "lutheran_radio_title")
         label.textAlignment = .center
@@ -105,17 +105,20 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     init(streamingPlayer: DirectStreamingPlayer = DirectStreamingPlayer()) {
         self.streamingPlayer = streamingPlayer
         super.init(nibName: nil, bundle: nil)
+        self.streamingPlayer.setDelegate(self)
     }
-    
+
     required init?(coder: NSCoder) {
         self.streamingPlayer = DirectStreamingPlayer()
         super.init(coder: coder)
+        self.streamingPlayer.setDelegate(self)
     }
     
     private var isPlaying = false
     private var isManualPause = false
     private var hasPermanentPlaybackError = false
     private var networkMonitor: NWPathMonitor?
+    private var networkMonitorHandler: ((NWPath) -> Void)? // Store handler to clear it
     private var hasInternetConnection = true
     private var connectivityCheckTimer: Timer?
     private var lastConnectionAttemptTime: Date?
@@ -123,11 +126,13 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     private var didPositionNeedle = false
     private let audioEngine = AVAudioEngine()
     private var tuningSoundNode: AVAudioSourceNode?
+    private var tuningSoundBlock: AVAudioSourceNodeRenderBlock?
     private var isTuningSoundPlaying = false
     private var streamSwitchTimer: Timer?
     private var pendingStreamIndex: Int?
     private var lastPlaybackAttempt: Date?
     private let minPlaybackInterval: TimeInterval = 1.0 // 1 second
+    private var isDeallocating = false // Flag to prevent operations during deallocation
     
     // Testable accessors
     @objc var isPlayingState: Bool {
@@ -163,7 +168,13 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         
         selectionIndicator.center.x = view.bounds.width / 2
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self = self else {
+                #if DEBUG
+                print("📱 viewDidLoad (asyncAfter): ViewController is nil, skipping callback")
+                #endif
+                return
+            }
             let indexPath = IndexPath(item: initialIndex, section: 0)
             self.languageCollectionView.selectItem(at: indexPath, animated: false, scrollPosition: .centeredHorizontally)
             self.centerCollectionViewContent()
@@ -200,16 +211,34 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             let languageCode = currentLocale.language.languageCode?.identifier
             let initialIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.languageCode == languageCode }) ?? 0
             
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+                guard let self = self else {
+                    #if DEBUG
+                    print("📱 viewDidAppear (asyncAfter): ViewController is nil, skipping callback")
+                    #endif
+                    return
+                }
                 let indexPath = IndexPath(item: initialIndex, section: 0)
                 self.languageCollectionView.scrollToItem(at: indexPath, at: .centeredHorizontally, animated: true)
             }
         }
     }
     
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        // Remove notification observers early to prevent them from firing during deallocation
+        NotificationCenter.default.removeObserver(self, name: AVAudioSession.interruptionNotification, object: nil)
+        NotificationCenter.default.removeObserver(self, name: AVAudioSession.routeChangeNotification, object: nil)
+    }
+    
     private func setupStreamingCallbacks() {
         streamingPlayer.onStatusChange = { [weak self] isPlaying, statusText in
-            guard let self = self else { return }
+            guard let self = self else {
+                #if DEBUG
+                print("📱 onStatusChange: ViewController is nil, skipping callback")
+                #endif
+                return
+            }
             self.isPlaying = isPlaying
             self.updatePlayPauseButton(isPlaying: isPlaying)
             if isPlaying {
@@ -238,7 +267,12 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         }
         
         streamingPlayer.onMetadataChange = { [weak self] metadata in
-            guard let self = self else { return }
+            guard let self = self else {
+                #if DEBUG
+                print("📱 onMetadataChange: ViewController is nil, skipping callback")
+                #endif
+                return
+            }
             DispatchQueue.main.async {
                 if let metadata = metadata {
                     self.metadataLabel.text = metadata
@@ -282,8 +316,13 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         #if DEBUG
         print("📱 Setting up network monitoring")
         #endif
-        networkMonitor?.pathUpdateHandler = { [weak self] path in
-            guard let self = self else { return }
+        networkMonitorHandler = { [weak self] path in
+            guard let self = self else {
+                #if DEBUG
+                print("📱 pathUpdateHandler: ViewController is nil, skipping callback")
+                #endif
+                return
+            }
             let isConnected = path.status == .satisfied
             DispatchQueue.main.async {
                 let wasConnected = self.hasInternetConnection
@@ -316,6 +355,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 }
             }
         }
+        networkMonitor?.pathUpdateHandler = networkMonitorHandler
         let monitorQueue = DispatchQueue(label: "NetworkMonitor", qos: .utility)
         networkMonitor?.start(queue: monitorQueue)
         setupConnectivityCheckTimer()
@@ -326,6 +366,12 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     }
     
     @objc private func handleInterruption(_ notification: Notification) {
+        guard !isDeallocating else {
+            #if DEBUG
+            print("📱 handleInterruption: ViewController is deallocating, skipping")
+            #endif
+            return
+        }
         guard let userInfo = notification.userInfo,
               let typeValue = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
               let type = AVAudioSession.InterruptionType(rawValue: typeValue) else { return }
@@ -347,6 +393,12 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     }
     
     @objc private func handleRouteChange(_ notification: Notification) {
+        guard !isDeallocating else {
+            #if DEBUG
+            print("📱 handleRouteChange: ViewController is deallocating, skipping")
+            #endif
+            return
+        }
         guard let userInfo = notification.userInfo,
               let reasonValue = userInfo[AVAudioSessionRouteChangeReasonKey] as? UInt,
               let reason = AVAudioSession.RouteChangeReason(rawValue: reasonValue) else { return }
@@ -365,8 +417,14 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     private func setupConnectivityCheckTimer() {
         connectivityCheckTimer?.invalidate()
+        guard !isDeallocating else { return }
         connectivityCheckTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
-            guard let self = self else { return }
+            guard let self = self else {
+                #if DEBUG
+                print("📱 connectivityCheckTimer: ViewController is nil, skipping callback")
+                #endif
+                return
+            }
             self.performActiveConnectivityCheck()
         }
     }
@@ -380,7 +438,12 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         let session = URLSession(configuration: config)
         let url = URL(string: "https://www.apple.com/library/test/success.html")!
         let task = session.dataTask(with: url) { [weak self] data, response, error in
-            guard let self = self else { return }
+            guard let self = self else {
+                #if DEBUG
+                print("📱 performActiveConnectivityCheck: ViewController is nil, skipping callback")
+                #endif
+                return
+            }
             let success = error == nil && (response as? HTTPURLResponse)?.statusCode == 200
             DispatchQueue.main.async {
                 if success && !self.hasInternetConnection {
@@ -397,7 +460,13 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     private func handleNetworkReconnection() {
         if !isManualPause && !hasPermanentPlaybackError {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { [weak self] in
+                guard let self = self else {
+                    #if DEBUG
+                    print("📱 handleNetworkReconnection: ViewController is nil, skipping callback")
+                    #endif
+                    return
+                }
                 if self.hasInternetConnection && !self.isPlaying && !self.isManualPause && !self.hasPermanentPlaybackError {
                     #if DEBUG
                     print("📱 Auto-restarting playback after reconnection")
@@ -414,19 +483,34 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         [commandCenter.playCommand, commandCenter.pauseCommand, commandCenter.togglePlayPauseCommand, commandCenter.stopCommand].forEach { $0.removeTarget(nil) }
         commandCenter.playCommand.isEnabled = true
         commandCenter.playCommand.addTarget { [weak self] _ -> MPRemoteCommandHandlerStatus in
-            guard let self = self else { return .commandFailed }
+            guard let self = self else {
+                #if DEBUG
+                print("📱 playCommand: ViewController is nil, skipping callback")
+                #endif
+                return .commandFailed
+            }
             DispatchQueue.main.async { self.startPlayback() }
             return .success
         }
         commandCenter.pauseCommand.isEnabled = true
         commandCenter.pauseCommand.addTarget { [weak self] _ -> MPRemoteCommandHandlerStatus in
-            guard let self = self else { return .commandFailed }
+            guard let self = self else {
+                #if DEBUG
+                print("📱 pauseCommand: ViewController is nil, skipping callback")
+                #endif
+                return .commandFailed
+            }
             DispatchQueue.main.async { self.pausePlayback() }
             return .success
         }
         commandCenter.togglePlayPauseCommand.isEnabled = true
         commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ -> MPRemoteCommandHandlerStatus in
-            guard let self = self else { return .commandFailed }
+            guard let self = self else {
+                #if DEBUG
+                print("📱 togglePlayPauseCommand: ViewController is nil, skipping callback")
+                #endif
+                return .commandFailed
+            }
             DispatchQueue.main.async {
                 if self.isPlaying { self.pausePlayback() } else { self.startPlayback() }
             }
@@ -468,7 +552,13 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             updateUIForNoInternet()
             stopTuningSound() // Stop tuning sound if offline
             performActiveConnectivityCheck()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+                guard let self = self else {
+                    #if DEBUG
+                    print("📱 startPlayback (asyncAfter): ViewController is nil, skipping callback")
+                    #endif
+                    return
+                }
                 if !self.hasInternetConnection {
                     self.updateUIForNoInternet()
                     return
@@ -499,7 +589,13 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         }
         let now = Date()
         if let lastAttempt = lastPlaybackAttempt, now.timeIntervalSince(lastAttempt) < minPlaybackInterval {
-            DispatchQueue.main.asyncAfter(deadline: .now() + minPlaybackInterval) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + minPlaybackInterval) { [weak self] in
+                guard let self = self else {
+                    #if DEBUG
+                    print("📱 attemptPlaybackWithRetry (asyncAfter): ViewController is nil, skipping callback")
+                    #endif
+                    return
+                }
                 self.attemptPlaybackWithRetry(attempt: attempt, maxAttempts: maxAttempts)
             }
             return
@@ -510,10 +606,21 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         print("📱 Playback attempt \(attempt)/\(maxAttempts)")
         #endif
         let delay = pow(2.0, Double(attempt-1))
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self = self else {
+                #if DEBUG
+                print("📱 attemptPlaybackWithRetry (asyncAfter): ViewController is nil, skipping callback")
+                #endif
+                return
+            }
             self.streamingPlayer.setVolume(self.volumeSlider.value)
             self.streamingPlayer.play { [weak self] success in
-                guard let self = self else { return }
+                guard let self = self else {
+                    #if DEBUG
+                    print("📱 play (completion): ViewController is nil, skipping callback")
+                    #endif
+                    return
+                }
                 if success {
                     #if DEBUG
                     print("📱 Playback succeeded on attempt \(attempt)")
@@ -666,8 +773,13 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             return
         }
 
-        audioQueue.async { [weak self] in
-            guard let self = self else { return }
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self = self else {
+                #if DEBUG
+                print("🎵 playTuningSound: ViewController is nil, skipping callback")
+                #endif
+                return
+            }
             
             if !self.audioEngine.isRunning {
                 do {
@@ -698,8 +810,21 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             let outputNode = self.audioEngine.outputNode
             let format = outputNode.outputFormat(forBus: 0)
             
-            self.tuningSoundNode = AVAudioSourceNode(format: format) { [weak self] _, _, frameCount, audioBufferList -> OSStatus in
-                guard let self = self, self.isTuningSoundPlaying else { return noErr }
+            self.tuningSoundBlock = { [weak self] isPlayingPtr, timestamp, frameCount, audioBufferList -> OSStatus in
+                guard let self = self, self.isTuningSoundPlaying else {
+                    #if DEBUG
+                    print("🎵 tuningSoundBlock: ViewController is nil or not playing, skipping")
+                    #endif
+                    return noErr
+                }
+                
+                let isPlaying = isPlayingPtr.pointee.boolValue // Convert ObjCBool to Bool
+                guard isPlaying else {
+                    #if DEBUG
+                    print("🎵 tuningSoundBlock: Node is not playing, skipping")
+                    #endif
+                    return noErr
+                }
                 
                 let ablPointer = UnsafeMutableAudioBufferListPointer(audioBufferList)
                 let sampleRate = Float(format.sampleRate)
@@ -718,6 +843,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 return noErr
             }
             
+            self.tuningSoundNode = AVAudioSourceNode(format: format, renderBlock: self.tuningSoundBlock!)
+            
             guard let node = self.tuningSoundNode else {
                 #if DEBUG
                 print("🎵 Failed to create tuning sound node")
@@ -732,29 +859,45 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             node.volume = 0.5
             
             // Stop after 0.3 seconds
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-                self?.stopTuningSound()
-            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: { [weak self] in
+                guard let self = self else {
+                    #if DEBUG
+                    print("🎵 asyncAfter (stopTuningSound): ViewController is nil, skipping")
+                    #endif
+                    return
+                }
+                self.stopTuningSound()
+            })
         }
+        
+        audioQueue.async(execute: workItem)
     }
 
     private func stopTuningSound() {
-        audioQueue.async { [weak self] in
-            guard let self = self, self.isTuningSoundPlaying, let node = self.tuningSoundNode else { return }
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self = self, self.isTuningSoundPlaying, let node = self.tuningSoundNode else {
+                #if DEBUG
+                print("🎵 stopTuningSound: ViewController is nil or conditions not met, skipping callback")
+                #endif
+                return
+            }
             
             self.audioEngine.disconnectNodeOutput(node)
             self.audioEngine.detach(node)
             self.isTuningSoundPlaying = false
             self.tuningSoundNode = nil
+            self.tuningSoundBlock = nil
             
-            // Only stop engine if no streaming is active
-            if !self.isPlaying && self.audioEngine.isRunning {
+            // Only stop engine if no streaming is active and not deallocating
+            if !self.isPlaying && self.audioEngine.isRunning && !self.isDeallocating {
                 self.audioEngine.stop()
                 #if DEBUG
                 print("🎵 Audio engine stopped")
                 #endif
             }
         }
+        
+        audioQueue.async(execute: workItem)
     }
     
     // MARK: - Selection Indicator
@@ -810,10 +953,16 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
 
     // MARK: - UICollectionView Delegate
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
+        guard !isDeallocating else { return }
         streamSwitchTimer?.invalidate()
         pendingStreamIndex = indexPath.item
         streamSwitchTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
-            guard let self = self, let index = self.pendingStreamIndex else { return }
+            guard let self = self, let index = self.pendingStreamIndex else {
+                #if DEBUG
+                print("📱 streamSwitchTimer: ViewController is nil, skipping callback")
+                #endif
+                return
+            }
             let generator = UIImpactFeedbackGenerator(style: .medium)
             generator.impactOccurred()
             self.playTuningSound()
@@ -840,10 +989,10 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     }
     
     deinit {
-        // Remove all notification observers
-        NotificationCenter.default.removeObserver(self)
-        
-        // Cancel network monitor
+        isDeallocating = true
+        // Clear network monitor handler first
+        networkMonitor?.pathUpdateHandler = nil
+        networkMonitorHandler = nil
         networkMonitor?.cancel()
         networkMonitor = nil
         
@@ -853,25 +1002,24 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         streamSwitchTimer?.invalidate()
         streamSwitchTimer = nil
         
-        // Stop and clean up audio engine and tuning sound
-        audioQueue.async { [weak self] in
-            guard let self = self else { return }
-            self.stopTuningSound() // This will detach and stop the tuning sound node
-            if self.audioEngine.isRunning {
-                self.audioEngine.stop()
-                #if DEBUG
-                print("🎵 Audio engine stopped in deinit")
-                #endif
-            }
-            // Ensure all nodes are detached
-            if let node = self.tuningSoundNode {
-                self.audioEngine.detach(node)
-                self.tuningSoundNode = nil
-            }
-        }
+        // Clear audio block
+        tuningSoundBlock = nil
         
-        // Clean up streaming player (if it has its own deinit or cleanup)
+        // Clear streaming player callbacks before stopping
+        streamingPlayer.clearCallbacks()
         streamingPlayer.stop()
+        
+        // Stop and clean up audio engine and tuning sound synchronously
+        if audioEngine.isRunning {
+            audioEngine.stop()
+            #if DEBUG
+            print("🎵 Audio engine stopped in deinit")
+            #endif
+        }
+        if let node = tuningSoundNode {
+            audioEngine.detach(node)
+            tuningSoundNode = nil
+        }
     }
 }
 
