@@ -33,7 +33,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         cv.backgroundColor = .systemBackground
         return cv
     }()
-
+    
     let selectionIndicator: UIView = {
         let view = UIView()
         view.backgroundColor = .systemRed.withAlphaComponent(0.7)
@@ -49,7 +49,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         button.translatesAutoresizingMaskIntoConstraints = false
         return button
     }()
-
+    
     let statusLabel: UILabel = {
         let label = UILabel()
         label.text = String(localized: "status_connecting")
@@ -66,7 +66,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         label.lineBreakMode = .byTruncatingTail
         return label
     }()
-
+    
     let volumeSlider: UISlider = {
         let slider = UISlider()
         slider.minimumValue = 0.0
@@ -107,7 +107,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         super.init(nibName: nil, bundle: nil)
         self.streamingPlayer.setDelegate(self)
     }
-
+    
     required init?(coder: NSCoder) {
         self.streamingPlayer = DirectStreamingPlayer()
         super.init(coder: coder)
@@ -125,8 +125,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     private var didInitialLayout = false
     private var didPositionNeedle = false
     private let audioEngine = AVAudioEngine()
-    private var tuningSoundNode: AVAudioSourceNode?
-    private var tuningSoundBlock: AVAudioSourceNodeRenderBlock?
+    private var tuningPlayerNode: AVAudioPlayerNode?
+    private var tuningBuffer: AVAudioPCMBuffer?
     private var isTuningSoundPlaying = false
     private var streamSwitchTimer: Timer?
     private var pendingStreamIndex: Int?
@@ -147,12 +147,12 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
-
+        
         setupUI()
         languageCollectionView.delegate = self
         languageCollectionView.dataSource = self
         languageCollectionView.register(LanguageCell.self, forCellWithReuseIdentifier: "LanguageCell")
-
+        
         let currentLocale = Locale.current
         let languageCode = currentLocale.language.languageCode?.identifier
         let initialIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.languageCode == languageCode }) ?? 0
@@ -163,7 +163,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             layout.minimumLineSpacing = 10
             layout.minimumInteritemSpacing = 0
         }
-
+        
         languageCollectionView.reloadData()
         
         selectionIndicator.center.x = view.bounds.width / 2
@@ -181,12 +181,12 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             self.updateSelectionIndicator(to: initialIndex)
             self.languageCollectionView.scrollToItem(at: indexPath, at: .centeredHorizontally, animated: false)
         }
-
+        
         streamingPlayer.setStream(to: DirectStreamingPlayer.availableStreams[initialIndex])
         languageCollectionView.reloadData()
         languageCollectionView.collectionViewLayout.invalidateLayout()
         languageCollectionView.selectItem(at: IndexPath(item: initialIndex, section: 0), animated: false, scrollPosition: .centeredHorizontally)
-
+        
         setupControls()
         setupNetworkMonitoring()
         setupBackgroundAudioControls()
@@ -194,7 +194,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         setupRouteChangeHandling()
         setupStreamingCallbacks()
         setupAudioEngine()
-
+        
         if hasInternetConnection && !isManualPause {
             startPlayback()
         }
@@ -545,12 +545,12 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     private func startPlayback() {
         #if DEBUG
-        print("📱 startPlayback called - hasInternet: \(hasInternetConnection), isManualPause: \(isManualPause)")
+        print("📱 startPlayback called - hasInternet: \(hasInternetConnection), isManualPause: \(isManualPause), isTuningSoundPlaying: \(isTuningSoundPlaying)")
         #endif
         
         if !hasInternetConnection {
             updateUIForNoInternet()
-            stopTuningSound() // Stop tuning sound if offline
+            stopTuningSound()
             performActiveConnectivityCheck()
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
                 guard let self = self else {
@@ -578,7 +578,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         streamingPlayer.handleNetworkInterruption()
         attemptPlaybackWithRetry(attempt: 1, maxAttempts: 3)
     }
-
+    
     private func attemptPlaybackWithRetry(attempt: Int, maxAttempts: Int) {
         guard hasInternetConnection && !isManualPause && !hasPermanentPlaybackError else {
             #if DEBUG
@@ -688,7 +688,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             startPlayback()
         }
     }
-        
+    
     @objc private func volumeChanged(_ sender: UISlider) {
         streamingPlayer.setVolume(sender.value)
     }
@@ -750,6 +750,55 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         let mainMixer = audioEngine.mainMixerNode
         mainMixer.volume = 1.0
         
+        #if DEBUG
+        print("🎵 Setting up audio engine - current state: isRunning=\(audioEngine.isRunning)")
+        #endif
+        
+        // Pre-generate tuning sound buffer with shortwave-like effect
+        let format = AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 2)!
+        let duration: Float = 0.5 // 0.5 seconds total duration
+        let frameCount = AVAudioFrameCount(Double(duration) * format.sampleRate) // Convert duration to Double
+        tuningBuffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount)!
+        tuningBuffer?.frameLength = frameCount
+        
+        let sampleRate = Float(format.sampleRate)
+        let amplitude = Float(0.1)
+        let audioBuffer = tuningBuffer!.floatChannelData!
+        
+        // Divide the buffer into short segments (e.g., 0.012 seconds each) with random frequencies
+        let segmentDuration: Float = 0.012 // 12ms segments
+        let framesPerSegment = Int(segmentDuration * sampleRate)
+        let totalSegments = Int(frameCount) / framesPerSegment
+        
+        for segment in 0..<totalSegments {
+            let startFrame = segment * framesPerSegment
+            let endFrame = min(startFrame + framesPerSegment, Int(frameCount))
+            let frequency = Float.random(in: 500...1500) // Random frequency per segment
+            
+            for frame in startFrame..<endFrame {
+                let time = Float(frame) / sampleRate
+                let noise = Float.random(in: -0.05...0.05)
+                let value = sinf(2.0 * .pi * frequency * time) * amplitude + noise
+                for channel in 0..<Int(format.channelCount) {
+                    audioBuffer[channel][frame] = value
+                }
+            }
+        }
+        
+        // Fill any remaining frames (if frameCount isn't perfectly divisible by framesPerSegment)
+        let lastSegmentEnd = totalSegments * framesPerSegment
+        if lastSegmentEnd < Int(frameCount) {
+            let frequency = Float.random(in: 500...1500)
+            for frame in lastSegmentEnd..<Int(frameCount) {
+                let time = Float(frame) / sampleRate
+                let noise = Float.random(in: -0.05...0.05)
+                let value = sinf(2.0 * .pi * frequency * time) * amplitude + noise
+                for channel in 0..<Int(format.channelCount) {
+                    audioBuffer[channel][frame] = value
+                }
+            }
+        }
+        
         do {
             try audioEngine.start()
             #if DEBUG
@@ -761,35 +810,40 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             #endif
         }
     }
-
+    
     private func playTuningSound() {
         #if DEBUG
-        print("🎵 Attempting to play tuning sound - isTuningSoundPlaying: \(isTuningSoundPlaying), hasInternetConnection: \(hasInternetConnection)")
+        print("🎵 playTuningSound called - isTuningSoundPlaying: \(isTuningSoundPlaying), hasInternetConnection: \(hasInternetConnection), audioEngine.isRunning: \(audioEngine.isRunning)")
         #endif
+        
         guard !isTuningSoundPlaying, hasInternetConnection else {
             #if DEBUG
-            print("🎵 Skipping tuning sound: already playing or offline")
+            print("🎵 Skipping tuning sound: already playing (\(isTuningSoundPlaying)) or offline (\(!hasInternetConnection))")
             #endif
             return
         }
-
+        
         let workItem = DispatchWorkItem { [weak self] in
             guard let self = self else {
                 #if DEBUG
-                print("🎵 playTuningSound: ViewController is nil, skipping callback")
+                print("🎵 playTuningSound (workItem): ViewController is nil, skipping")
                 #endif
                 return
             }
+            
+            #if DEBUG
+            print("🎵 Executing tuning sound work item - audioEngine.isRunning: \(self.audioEngine.isRunning)")
+            #endif
             
             if !self.audioEngine.isRunning {
                 do {
                     try self.audioEngine.start()
                     #if DEBUG
-                    print("🎵 Audio engine restarted successfully")
+                    print("🎵 Audio engine started successfully")
                     #endif
                 } catch {
                     #if DEBUG
-                    print("🎵 Failed to restart audio engine: \(error.localizedDescription)")
+                    print("🎵 Failed to start audio engine: \(error.localizedDescription)")
                     #endif
                     return
                 }
@@ -797,106 +851,91 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             
             self.isTuningSoundPlaying = true
             #if DEBUG
-            print("🎵 Tuning sound started")
+            print("🎵 Tuning sound marked as playing")
             #endif
             
             // Cleanup existing node if present
-            if let existingNode = self.tuningSoundNode {
+            if let existingNode = self.tuningPlayerNode {
                 self.audioEngine.disconnectNodeOutput(existingNode)
                 self.audioEngine.detach(existingNode)
             }
             
-            // Use the output node's format for compatibility
-            let outputNode = self.audioEngine.outputNode
-            let format = outputNode.outputFormat(forBus: 0)
+            let playerNode = AVAudioPlayerNode()
+            self.tuningPlayerNode = playerNode
             
-            self.tuningSoundBlock = { [weak self] isPlayingPtr, timestamp, frameCount, audioBufferList -> OSStatus in
-                guard let self = self, self.isTuningSoundPlaying else {
-                    #if DEBUG
-                    print("🎵 tuningSoundBlock: ViewController is nil or not playing, skipping")
-                    #endif
-                    return noErr
-                }
-                
-                let isPlaying = isPlayingPtr.pointee.boolValue // Convert ObjCBool to Bool
-                guard isPlaying else {
-                    #if DEBUG
-                    print("🎵 tuningSoundBlock: Node is not playing, skipping")
-                    #endif
-                    return noErr
-                }
-                
-                let ablPointer = UnsafeMutableAudioBufferListPointer(audioBufferList)
-                let sampleRate = Float(format.sampleRate)
-                let frequency = Float.random(in: 500...1500)
-                let amplitude = Float(0.1)
-                
-                for frame in 0..<Int(frameCount) {
-                    let time = Float(frame) / sampleRate
-                    let noise = Float.random(in: -0.05...0.05)
-                    let value = sinf(2.0 * .pi * frequency * time) * amplitude + noise
-                    for buffer in ablPointer {
-                        let buf: UnsafeMutableBufferPointer<Float> = UnsafeMutableBufferPointer(buffer)
-                        buf[frame] = value
-                    }
-                }
-                return noErr
-            }
+            #if DEBUG
+            print("🎵 Attaching and connecting tuning player node")
+            #endif
+            self.audioEngine.attach(playerNode)
+            self.audioEngine.connect(playerNode, to: self.audioEngine.mainMixerNode, format: self.tuningBuffer!.format)
+            playerNode.volume = 0.5
             
-            self.tuningSoundNode = AVAudioSourceNode(format: format, renderBlock: self.tuningSoundBlock!)
-            
-            guard let node = self.tuningSoundNode else {
+            guard let buffer = self.tuningBuffer else {
                 #if DEBUG
-                print("🎵 Failed to create tuning sound node")
+                print("🎵 Tuning buffer is nil, aborting")
                 #endif
                 self.isTuningSoundPlaying = false
                 return
             }
             
-            self.audioEngine.attach(node)
-            self.audioEngine.connect(node, to: self.audioEngine.mainMixerNode, format: format)
-            self.audioEngine.connect(self.audioEngine.mainMixerNode, to: outputNode, format: format)
-            node.volume = 0.5
-            
-            // Stop after 0.3 seconds
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: { [weak self] in
-                guard let self = self else {
-                    #if DEBUG
-                    print("🎵 asyncAfter (stopTuningSound): ViewController is nil, skipping")
-                    #endif
-                    return
-                }
+            playerNode.scheduleBuffer(buffer, completionHandler: { [weak self] in
+                guard let self = self else { return }
                 self.stopTuningSound()
             })
+            
+            #if DEBUG
+            print("🎵 Playing tuning sound")
+            #endif
+            playerNode.play()
         }
         
+        #if DEBUG
+        print("🎵 Queuing tuning sound work item on audioQueue")
+        #endif
         audioQueue.async(execute: workItem)
     }
-
+    
     private func stopTuningSound() {
         let workItem = DispatchWorkItem { [weak self] in
-            guard let self = self, self.isTuningSoundPlaying, let node = self.tuningSoundNode else {
+            guard let self = self else {
                 #if DEBUG
-                print("🎵 stopTuningSound: ViewController is nil or conditions not met, skipping callback")
+                print("🎵 stopTuningSound: ViewController is nil, skipping")
                 #endif
                 return
             }
             
+            #if DEBUG
+            print("🎵 stopTuningSound called - isTuningSoundPlaying: \(self.isTuningSoundPlaying), hasNode: \(self.tuningPlayerNode != nil), audioEngine.isRunning: \(self.audioEngine.isRunning)")
+            #endif
+            
+            guard self.isTuningSoundPlaying, let node = self.tuningPlayerNode else {
+            #if DEBUG
+                print("🎵 stopTuningSound: Not playing or no node, skipping cleanup")
+            #endif
+                return
+            }
+            
+            node.stop()
             self.audioEngine.disconnectNodeOutput(node)
             self.audioEngine.detach(node)
             self.isTuningSoundPlaying = false
-            self.tuningSoundNode = nil
-            self.tuningSoundBlock = nil
+            self.tuningPlayerNode = nil
             
-            // Only stop engine if no streaming is active and not deallocating
-            if !self.isPlaying && self.audioEngine.isRunning && !self.isDeallocating {
+            #if DEBUG
+            print("🎵 Tuning sound stopped and cleaned up")
+            #endif
+            
+            if !self.isPlaying && !self.isDeallocating && self.audioEngine.isRunning && !self.hasInternetConnection {
                 self.audioEngine.stop()
                 #if DEBUG
-                print("🎵 Audio engine stopped")
+                print("🎵 Audio engine stopped (no streaming active and offline)")
                 #endif
             }
         }
         
+        #if DEBUG
+        print("🎵 Queuing stopTuningSound work item on audioQueue")
+        #endif
         audioQueue.async(execute: workItem)
     }
     
@@ -922,23 +961,23 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     // MARK: - UIPickerView DataSource
     func numberOfComponents(in pickerView: UIPickerView) -> Int { 1 }
-
+    
     func pickerView(_ pickerView: UIPickerView, numberOfRowsInComponent component: Int) -> Int {
         DirectStreamingPlayer.availableStreams.count
     }
-
+    
     // MARK: - UIPickerView Delegate
     func pickerView(_ pickerView: UIPickerView, titleForRow row: Int, forComponent component: Int) -> String? {
         DirectStreamingPlayer.availableStreams[row].language
     }
-
+    
     func pickerView(_ pickerView: UIPickerView, didSelectRow row: Int, inComponent component: Int) {
         let selectedStream = DirectStreamingPlayer.availableStreams[row]
         streamingPlayer.setStream(to: selectedStream)
         hasPermanentPlaybackError = false
         if isPlaying || !isManualPause { startPlayback() }
     }
-
+    
     // MARK: - UICollectionView DataSource
     func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
         DirectStreamingPlayer.availableStreams.count
@@ -950,19 +989,25 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         cell.configure(with: stream)
         return cell
     }
-
+    
     // MARK: - UICollectionView Delegate
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         guard !isDeallocating else { return }
+#if DEBUG
+        print("🎵 collectionView:didSelectItemAt called for index \(indexPath.item)")
+#endif
         streamSwitchTimer?.invalidate()
         pendingStreamIndex = indexPath.item
         streamSwitchTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
             guard let self = self, let index = self.pendingStreamIndex else {
-                #if DEBUG
-                print("📱 streamSwitchTimer: ViewController is nil, skipping callback")
-                #endif
+#if DEBUG
+                print("🎵 streamSwitchTimer: ViewController is nil, skipping")
+#endif
                 return
             }
+#if DEBUG
+            print("🎵 Stream switch timer fired for index \(index)")
+#endif
             let generator = UIImpactFeedbackGenerator(style: .medium)
             generator.impactOccurred()
             self.playTuningSound()
@@ -971,17 +1016,17 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             if self.isPlaying || !self.isManualPause { self.startPlayback() }
             self.updateSelectionIndicator(to: index)
             collectionView.scrollToItem(at: indexPath, at: .centeredHorizontally, animated: true)
-            self.pendingStreamIndex = nil  // Reset after execution
+            self.pendingStreamIndex = nil
         }
     }
-
+    
     // MARK: - UICollectionViewDelegateFlowLayout
     func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, sizeForItemAt indexPath: IndexPath) -> CGSize {
         let cellWidth: CGFloat = 50
         print("Cell size for item \(indexPath.item): width = \(cellWidth), height = 50")
         return CGSize(width: cellWidth, height: 50)
     }
-
+    
     func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, minimumLineSpacingForSectionAt section: Int) -> CGFloat {
         let spacing = 10.0
         print("Minimum line spacing for section \(section): \(spacing)")
@@ -990,35 +1035,28 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     deinit {
         isDeallocating = true
-        // Clear network monitor handler first
         networkMonitor?.pathUpdateHandler = nil
         networkMonitorHandler = nil
         networkMonitor?.cancel()
         networkMonitor = nil
         
-        // Invalidate timers
         connectivityCheckTimer?.invalidate()
         connectivityCheckTimer = nil
         streamSwitchTimer?.invalidate()
         streamSwitchTimer = nil
         
-        // Clear audio block
-        tuningSoundBlock = nil
-        
-        // Clear streaming player callbacks before stopping
         streamingPlayer.clearCallbacks()
         streamingPlayer.stop()
         
-        // Stop and clean up audio engine and tuning sound synchronously
         if audioEngine.isRunning {
             audioEngine.stop()
             #if DEBUG
             print("🎵 Audio engine stopped in deinit")
             #endif
         }
-        if let node = tuningSoundNode {
+        if let node = tuningPlayerNode {
             audioEngine.detach(node)
-            tuningSoundNode = nil
+            tuningPlayerNode = nil
         }
     }
 }
