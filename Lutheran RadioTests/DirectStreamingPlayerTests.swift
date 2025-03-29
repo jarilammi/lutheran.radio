@@ -36,6 +36,14 @@ final class TestDirectStreamingPlayer: DirectStreamingPlayer, @unchecked Sendabl
     override func stop() {
         didCallStop = true
         super.stop()
+        // Align with real behavior: call onStatusChange with "status_stopped"
+        onStatusChange?(false, String(localized: "status_stopped"))
+    }
+
+    override func setStream(to stream: Stream) {
+        super.setStream(to: stream)
+        // Simulate metadata change immediately to match real behavior
+        onMetadataChange?(stream.title)
     }
 
     func simulateStatusChange(_ status: AVPlayerItem.Status) {
@@ -55,24 +63,23 @@ final class TestDirectStreamingPlayer: DirectStreamingPlayer, @unchecked Sendabl
 @MainActor
 class DirectStreamingPlayerTests: XCTestCase {
     var player: TestDirectStreamingPlayer!
-    var initialTitle: String? // Property to store the initial title
+    var initialTitle: String?
 
     override func setUp() {
         super.setUp()
         
-        // Initialize player with metadata callback already set
-        let tempPlayer = TestDirectStreamingPlayer()
-        tempPlayer.onMetadataChange = { [weak self] title in
+        player = TestDirectStreamingPlayer()
+        // Set the callback *before* initialization logic to capture initial title
+        player.onMetadataChange = { [weak self] title in
             self?.initialTitle = title
         }
-        player = tempPlayer // Assign after setting the callback
         
         // Explicitly trigger the initialization logic
         let currentLocale = Locale.current
         let languageCode = currentLocale.language.languageCode?.identifier ?? "en"
         let initialStream = DirectStreamingPlayer.availableStreams.first { $0.languageCode == languageCode }
             ?? DirectStreamingPlayer.availableStreams[0]
-        player.setStream(to: initialStream) // Ensure stream is set and callback triggered
+        player.setStream(to: initialStream) // This triggers onMetadataChange
     }
 
     override func tearDown() {
