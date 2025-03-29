@@ -114,6 +114,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         "ee": "estonia"
     ]
     
+    private var isInitialSetupComplete = false
+    private var isInitialScrollLocked = true
+    
     // New streaming player
     private var streamingPlayer: DirectStreamingPlayer
     private let audioQueue = DispatchQueue(label: "radio.lutheran.audio", qos: .userInitiated)
@@ -171,8 +174,12 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         languageCollectionView.register(LanguageCell.self, forCellWithReuseIdentifier: "LanguageCell")
         
         let currentLocale = Locale.current
-        let languageCode = currentLocale.language.languageCode?.identifier
+        let languageCode = currentLocale.language.languageCode?.identifier ?? "en"
         let initialIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.languageCode == languageCode }) ?? 0
+        #if DEBUG
+        print("📱 viewDidLoad: Locale languageCode=\(languageCode), initialIndex=\(initialIndex), stream=\(DirectStreamingPlayer.availableStreams[initialIndex].language)")
+        #endif
+        
         streamingPlayer.setStream(to: DirectStreamingPlayer.availableStreams[initialIndex])
         updateBackground(for: DirectStreamingPlayer.availableStreams[initialIndex])
         
@@ -183,27 +190,30 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         }
         
         languageCollectionView.reloadData()
+        languageCollectionView.layoutIfNeeded()
         
-        selectionIndicator.center.x = view.bounds.width / 2
+        let indexPath = IndexPath(item: initialIndex, section: 0)
+        languageCollectionView.selectItem(at: indexPath, animated: false, scrollPosition: .centeredHorizontally)
+        centerCollectionViewContent()
+        languageCollectionView.scrollToItem(at: indexPath, at: .centeredHorizontally, animated: false)
+        updateSelectionIndicator(to: initialIndex, isInitial: true)
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            guard let self = self else {
-                #if DEBUG
-                print("📱 viewDidLoad (asyncAfter): ViewController is nil, skipping callback")
-                #endif
-                return
-            }
-            let indexPath = IndexPath(item: initialIndex, section: 0)
-            self.languageCollectionView.selectItem(at: indexPath, animated: false, scrollPosition: .centeredHorizontally)
-            self.centerCollectionViewContent()
-            self.updateSelectionIndicator(to: initialIndex)
-            self.languageCollectionView.scrollToItem(at: indexPath, at: .centeredHorizontally, animated: false)
+        // Defer unlocking until layout is complete
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+            self?.isInitialScrollLocked = false
+            #if DEBUG
+            print("📱 Initial scroll lock released")
+            #endif
         }
         
-        streamingPlayer.setStream(to: DirectStreamingPlayer.availableStreams[initialIndex])
-        languageCollectionView.reloadData()
-        languageCollectionView.collectionViewLayout.invalidateLayout()
-        languageCollectionView.selectItem(at: IndexPath(item: initialIndex, section: 0), animated: false, scrollPosition: .centeredHorizontally)
+        #if DEBUG
+        if let selectedIndexPath = languageCollectionView.indexPathsForSelectedItems?.first {
+            print("📱 viewDidLoad: Selected indexPath=\(selectedIndexPath.item), expected=\(initialIndex)")
+        } else {
+            print("📱 viewDidLoad: No selected item after initialization")
+        }
+        print("📱 viewDidLoad: Selection indicator center.x=\(selectionIndicator.center.x)")
+        #endif
         
         setupControls()
         setupNetworkMonitoring()
@@ -213,6 +223,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         setupStreamingCallbacks()
         setupAudioEngine()
         
+        isInitialSetupComplete = true // Mark setup complete after all UI updates
+        
         if hasInternetConnection && !isManualPause {
             startPlayback()
         }
@@ -220,7 +232,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        
         if !didInitialLayout {
             didInitialLayout = true
             selectionIndicator.center.x = view.bounds.width / 2
@@ -230,14 +241,11 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             let initialIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.languageCode == languageCode }) ?? 0
             
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-                guard let self = self else {
-                    #if DEBUG
-                    print("📱 viewDidAppear (asyncAfter): ViewController is nil, skipping callback")
-                    #endif
-                    return
-                }
+                guard let self = self else { return }
                 let indexPath = IndexPath(item: initialIndex, section: 0)
                 self.languageCollectionView.scrollToItem(at: indexPath, at: .centeredHorizontally, animated: true)
+                // Ensure indicator stays put
+                self.updateSelectionIndicator(to: initialIndex, isInitial: true)
             }
         }
     }
@@ -311,7 +319,12 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     }
     
     private func centerCollectionViewContent() {
-        guard languageCollectionView.bounds.width > 0, DirectStreamingPlayer.availableStreams.count > 0 else { return }
+        guard languageCollectionView.bounds.width > 0, DirectStreamingPlayer.availableStreams.count > 0 else {
+            #if DEBUG
+            print("📱 centerCollectionViewContent: Invalid bounds or no streams, width=\(languageCollectionView.bounds.width)")
+            #endif
+            return
+        }
         languageCollectionView.layoutIfNeeded()
         let layout = languageCollectionView.collectionViewLayout as! UICollectionViewFlowLayout
         let totalItems = DirectStreamingPlayer.availableStreams.count
@@ -323,7 +336,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         layout.sectionInset = UIEdgeInsets(top: 0, left: inset, bottom: 0, right: inset)
         languageCollectionView.collectionViewLayout.invalidateLayout()
         #if DEBUG
-        print("Centered content with insets: \(inset)")
+        print("📱 centerCollectionViewContent: totalCellWidth=\(totalCellWidth), collectionViewWidth=\(collectionViewWidth), inset=\(inset)")
         #endif
     }
     
@@ -1122,22 +1135,39 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     }
     
     // MARK: - Selection Indicator
-    private func updateSelectionIndicator(to index: Int) {
-        guard index >= 0 && index < DirectStreamingPlayer.availableStreams.count else { return }
+    private func updateSelectionIndicator(to index: Int, isInitial: Bool = false) {
+        guard index >= 0 && index < DirectStreamingPlayer.availableStreams.count else {
+            #if DEBUG
+            print("📱 updateSelectionIndicator: Invalid index \(index), streams count=\(DirectStreamingPlayer.availableStreams.count)")
+            #endif
+            return
+        }
         let indexPath = IndexPath(item: index, section: 0)
-        languageCollectionView.scrollToItem(at: indexPath, at: .centeredHorizontally, animated: true)
+        languageCollectionView.scrollToItem(at: indexPath, at: .centeredHorizontally, animated: !isInitial)
         languageCollectionView.layoutIfNeeded()
         if let layoutAttributes = languageCollectionView.layoutAttributesForItem(at: indexPath) {
             let cellFrame = layoutAttributes.frame
             let cellCenterX = cellFrame.midX
-            UIView.animate(withDuration: 0.3) {
+            #if DEBUG
+            print("📱 updateSelectionIndicator: Moving to index=\(index), cellCenterX=\(cellCenterX), cellFrame=\(cellFrame), isInitial=\(isInitial), caller=\(Thread.callStackSymbols[1])")
+            #endif
+            UIView.animate(withDuration: isInitial ? 0.0 : 0.3) {
                 self.selectionIndicator.center.x = cellCenterX
-                self.selectionIndicator.transform = CGAffineTransform(scaleX: 1.5, y: 1.0)
+                self.selectionIndicator.transform = isInitial ? .identity : CGAffineTransform(scaleX: 1.5, y: 1.0)
             } completion: { _ in
-                UIView.animate(withDuration: 0.1) {
-                    self.selectionIndicator.transform = .identity
+                if !isInitial {
+                    UIView.animate(withDuration: 0.1) {
+                        self.selectionIndicator.transform = .identity
+                    }
                 }
+                #if DEBUG
+                print("📱 updateSelectionIndicator: Animation completed, final center.x=\(self.selectionIndicator.center.x)")
+                #endif
             }
+        } else {
+            #if DEBUG
+            print("📱 updateSelectionIndicator: No layout attributes for indexPath=\(indexPath)")
+            #endif
         }
     }
     
@@ -1176,7 +1206,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         guard !isDeallocating else { return }
         #if DEBUG
-        print("🎵 collectionView:didSelectItemAt called for index \(indexPath.item)")
+        print("📱 collectionView:didSelectItemAt called for index \(indexPath.item)")
         #endif
         let stream = DirectStreamingPlayer.availableStreams[indexPath.item]
         updateBackground(for: stream)
@@ -1184,14 +1214,14 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         pendingStreamIndex = indexPath.item
         streamSwitchTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
             guard let self = self, let index = self.pendingStreamIndex else {
-#if DEBUG
-                print("🎵 streamSwitchTimer: ViewController is nil, skipping")
-#endif
+                #if DEBUG
+                print("📱 streamSwitchTimer: ViewController is nil, skipping")
+                #endif
                 return
             }
-#if DEBUG
-            print("🎵 Stream switch timer fired for index \(index)")
-#endif
+            #if DEBUG
+            print("📱 streamSwitchTimer: Fired for index \(index)")
+            #endif
             let generator = UIImpactFeedbackGenerator(style: .medium)
             generator.impactOccurred()
             self.playTuningSound()
@@ -1248,6 +1278,12 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
 extension ViewController {
     // MARK: - ScrollView Delegate
     func scrollViewWillEndDragging(_ scrollView: UIScrollView, withVelocity velocity: CGPoint, targetContentOffset: UnsafeMutablePointer<CGPoint>) {
+        guard !isInitialScrollLocked else {
+            #if DEBUG
+            print("📱 scrollViewWillEndDragging: Scroll locked during initial setup")
+            #endif
+            return
+        }
         let centerX = languageCollectionView.bounds.midX
         let centerPoint = CGPoint(x: centerX, y: languageCollectionView.bounds.midY)
         if let indexPath = languageCollectionView.indexPathForItem(at: centerPoint) {
@@ -1261,11 +1297,19 @@ extension ViewController {
             hasPermanentPlaybackError = false
             if isPlaying || !isManualPause { startPlayback() }
             updateSelectionIndicator(to: indexPath.item)
-            print("Scroll ended at index \(indexPath.item), centered at \(centerX)")
+            #if DEBUG
+            print("📱 scrollViewWillEndDragging: Scroll ended at index \(indexPath.item), centered at \(centerX)")
+            #endif
         }
     }
-
+    
     func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+        guard !isInitialScrollLocked else {
+            #if DEBUG
+            print("📱 scrollViewDidEndDecelerating: Scroll locked during initial setup")
+            #endif
+            return
+        }
         let centerX = languageCollectionView.bounds.midX + languageCollectionView.contentOffset.x
         var closestCell: UICollectionViewCell?
         var closestDistance: CGFloat = CGFloat.greatestFiniteMagnitude
@@ -1294,6 +1338,9 @@ extension ViewController {
             streamingPlayer.setStream(to: selectedStream)
             hasPermanentPlaybackError = false
             if isPlaying || !isManualPause { startPlayback() }
+            #if DEBUG
+            print("📱 scrollViewDidEndDecelerating: Selected closest index \(closestIndex), centerX=\(centerX)")
+            #endif
         }
     }
     
