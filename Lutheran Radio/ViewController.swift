@@ -727,48 +727,150 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
 
         var finalImage: UIImage = baseImage
 
-        // Invert for dark mode if needed, preserving original details
-        if traitCollection.userInterfaceStyle == .dark {
-            if let ciImage = CIImage(image: baseImage),
-               let filter = CIFilter(name: "CIColorInvert") {
-                filter.setValue(ciImage, forKey: kCIInputImageKey)
-                if let outputImage = filter.outputImage,
-                   let cgImage = CIContext().createCGImage(outputImage, from: outputImage.extent) {
-                    finalImage = UIImage(cgImage: cgImage)
+        if let ciImage = CIImage(image: baseImage) {
+            var processedImage = ciImage
+            let context = CIContext(options: nil) // Explicit context for rendering
+
+            #if DEBUG
+            print("Processing image for \(stream.languageCode), mode: \(traitCollection.userInterfaceStyle == .dark ? "dark" : "light")")
+            #endif
+
+            if traitCollection.userInterfaceStyle == .dark {
+                // Dark mode: Invert colors, then adjust brightness and contrast
+                if let invertFilter = CIFilter(name: "CIColorInvert") {
+                    invertFilter.setValue(processedImage, forKey: kCIInputImageKey)
+                    if let outputImage = invertFilter.outputImage {
+                        processedImage = outputImage
+                        #if DEBUG
+                        print("Dark mode: Applied CIColorInvert - extent: \(processedImage.extent)")
+                        #endif
+                    } else {
+                        #if DEBUG
+                        print("Dark mode: Failed to apply CIColorInvert")
+                        #endif
+                    }
+                }
+
+                if let controlsFilter = CIFilter(name: "CIColorControls") {
+                    controlsFilter.setValue(processedImage, forKey: kCIInputImageKey)
+                    controlsFilter.setValue(1.3, forKey: kCIInputContrastKey) // Increase contrast
+                    controlsFilter.setValue(0.2, forKey: kCIInputBrightnessKey) // Boost brightness
+                    if let outputImage = controlsFilter.outputImage {
+                        processedImage = outputImage
+                        #if DEBUG
+                        print("Dark mode: Applied CIColorControls - extent: \(processedImage.extent)")
+                        #endif
+                    } else {
+                        #if DEBUG
+                        print("Dark mode: Failed to apply CIColorControls")
+                        #endif
+                    }
+                }
+
+                if let dilateFilter = CIFilter(name: "CIMorphologyMaximum") {
+                    dilateFilter.setValue(processedImage, forKey: kCIInputImageKey)
+                    dilateFilter.setValue(4.0, forKey: kCIInputRadiusKey)
+                    if let outputImage = dilateFilter.outputImage {
+                        processedImage = outputImage
+                        #if DEBUG
+                        print("Dark mode: Applied CIMorphologyMaximum - extent: \(processedImage.extent)")
+                        #endif
+                    } else {
+                        #if DEBUG
+                        print("Dark mode: Failed to apply CIMorphologyMaximum")
+                        #endif
+                    }
+                }
+            } else {
+                if let controlsFilter = CIFilter(name: "CIColorControls") {
+                    controlsFilter.setValue(processedImage, forKey: kCIInputImageKey)
+                    controlsFilter.setValue(1.3, forKey: kCIInputContrastKey) // Increase contrast
+                    controlsFilter.setValue(-0.2, forKey: kCIInputBrightnessKey) // Reduce brightness
+                    if let outputImage = controlsFilter.outputImage {
+                        processedImage = outputImage
+                        #if DEBUG
+                        print("Light mode: Applied CIColorControls - extent: \(processedImage.extent)")
+                        #endif
+                    } else {
+                        #if DEBUG
+                        print("Light mode: Failed to apply CIColorControls")
+                        #endif
+                    }
+                }
+
+                if let dilateFilter = CIFilter(name: "CIMorphologyMaximum") {
+                    dilateFilter.setValue(processedImage, forKey: kCIInputImageKey)
+                    dilateFilter.setValue(5.0, forKey: kCIInputRadiusKey) // Increased radius for more thickening
+                    if let outputImage = dilateFilter.outputImage {
+                        processedImage = outputImage
+                        #if DEBUG
+                        print("Light mode: Applied CIMorphologyMaximum - extent: \(processedImage.extent)")
+                        #endif
+                    } else {
+                        #if DEBUG
+                        print("Light mode: Failed to apply CIMorphologyMaximum")
+                        #endif
+                    }
+                }
+
+                if let erodeFilter = CIFilter(name: "CIMorphologyMinimum") {
+                    erodeFilter.setValue(processedImage, forKey: kCIInputImageKey)
+                    erodeFilter.setValue(1.0, forKey: kCIInputRadiusKey) // Light refinement
+                    if let outputImage = erodeFilter.outputImage {
+                        processedImage = outputImage
+                        #if DEBUG
+                        print("Light mode: Applied CIMorphologyMinimum - extent: \(processedImage.extent)")
+                        #endif
+                    } else {
+                        #if DEBUG
+                        print("Light mode: Failed to apply CIMorphologyMinimum")
+                        #endif
+                    }
                 }
             }
-            // Optionally adjust brightness/contrast to enhance coastlines
-            if let ciImage = CIImage(image: finalImage),
-               let filter = CIFilter(name: "CIColorControls") {
-                filter.setValue(ciImage, forKey: kCIInputImageKey)
-                filter.setValue(1.2, forKey: kCIInputContrastKey) // Boost contrast
-                filter.setValue(0.1, forKey: kCIInputBrightnessKey) // Slight brightness increase
-                if let outputImage = filter.outputImage,
-                   let cgImage = CIContext().createCGImage(outputImage, from: outputImage.extent) {
-                    finalImage = UIImage(cgImage: cgImage)
-                }
+
+            // Convert back to UIImage
+            if let cgImage = context.createCGImage(processedImage, from: processedImage.extent) {
+                finalImage = UIImage(cgImage: cgImage)
+                #if DEBUG
+                print("Successfully converted processed image to UIImage - size: \(finalImage.size)")
+                #endif
+            } else {
+                #if DEBUG
+                print("Failed to convert CIImage to CGImage - using base image as fallback")
+                #endif
+                finalImage = baseImage // Fallback to base image
             }
+        } else {
+            #if DEBUG
+            print("Failed to create CIImage from baseImage - using base image as fallback")
+            #endif
         }
-        
+
         // Adjust for smaller screens
         let screenSize = UIScreen.main.bounds.size
         let isSmallScreen = screenSize.height < 1600
         backgroundImageView.contentMode = .scaleAspectFill
         backgroundImageView.image = finalImage
-        
+
         if isSmallScreen {
             let imageSize = baseImage.size
             let screenAspect = screenSize.width / screenSize.height
             let imageAspect = imageSize.width / imageSize.height
-            let scaleFactor = min(0.9, screenAspect / imageAspect) // Cap at 90% to avoid over-thinning
+            let scaleFactor = min(0.85, screenAspect / imageAspect) // Cap at 85% to avoid over-thinning
             backgroundImageView.transform = CGAffineTransform(scaleX: scaleFactor, y: scaleFactor)
         } else {
             backgroundImageView.transform = .identity
         }
-        
+
+        // Adjust alpha based on mode for better visibility
         UIView.transition(with: backgroundImageView, duration: 0.5, options: .transitionCrossDissolve, animations: {
-            self.backgroundImageView.alpha = self.traitCollection.userInterfaceStyle == .dark ? 0.3 : 0.1
-        }, completion: nil)
+            self.backgroundImageView.alpha = self.traitCollection.userInterfaceStyle == .dark ? 0.3 : 0.15
+        }, completion: { _ in
+            #if DEBUG
+            print("Background update completed - alpha: \(self.backgroundImageView.alpha), image: \(self.backgroundImageView.image != nil ? "set" : "nil")")
+            #endif
+        })
     }
     
     private func setupUI() {
