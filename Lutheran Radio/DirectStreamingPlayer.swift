@@ -53,10 +53,10 @@ class DirectStreamingPlayer: NSObject {
     ]
     
     public enum PlaybackState {
-            case unknown
-            case readyToPlay
-            case failed(Error?)
-        }
+        case unknown
+        case readyToPlay
+        case failed(Error?)
+    }
     
     private var lastError: Error?
         
@@ -77,7 +77,9 @@ class DirectStreamingPlayer: NSObject {
     private var selectedStream: Stream {
         didSet {
             // Update metadata when stream changes
-            onMetadataChange?(selectedStream.title)
+            if delegate != nil {
+                onMetadataChange?(selectedStream.title)
+            }
         }
     }
     
@@ -94,6 +96,13 @@ class DirectStreamingPlayer: NSObject {
     // Status callbacks
     var onStatusChange: ((Bool, String) -> Void)?
     var onMetadataChange: ((String?) -> Void)?
+    
+    // Add a weak delegate to check before invoking callbacks
+    private weak var delegate: AnyObject?
+    
+    func setDelegate(_ delegate: AnyObject?) {
+        self.delegate = delegate
+    }
     
     override init() {
         let currentLocale = Locale.current
@@ -137,7 +146,11 @@ class DirectStreamingPlayer: NSObject {
         player?.play()
 
         var tempStatusObserver: NSKeyValueObservation?
-        tempStatusObserver = playerItem?.observe(\.status, options: [.new]) { item, _ in
+        tempStatusObserver = playerItem?.observe(\.status, options: [.new]) { [weak self] item, _ in
+            guard self != nil else {
+                tempStatusObserver?.invalidate()
+                return
+            }
             if item.status == .readyToPlay {
                 completion(true)
             } else if item.status == .failed {
@@ -151,16 +164,21 @@ class DirectStreamingPlayer: NSObject {
         stop()
         selectedStream = stream
         play { [weak self] success in
+            guard let self = self else { return }
             if success {
                 #if DEBUG
                 print("Stream switched successfully")
                 #endif
-                self?.onStatusChange?(true, String(localized: "status_playing"))
+                if self.delegate != nil {
+                    self.onStatusChange?(true, String(localized: "status_playing"))
+                }
             } else {
                 #if DEBUG
                 print("Failed to switch stream")
                 #endif
-                self?.onStatusChange?(false, String(localized: "status_stream_unavailable"))
+                if self.delegate != nil {
+                    self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
+                }
             }
         }
     }
@@ -178,6 +196,12 @@ class DirectStreamingPlayer: NSObject {
                 #if DEBUG
                 print("🎵 Player item status: \(item.status.rawValue)")
                 #endif
+                guard self.delegate != nil else {
+                    #if DEBUG
+                    print("🎵 Player item status: Delegate is nil, skipping callback")
+                    #endif
+                    return
+                }
                 switch item.status {
                 case .readyToPlay:
                     self.onStatusChange?(true, String(localized: "status_playing"))
@@ -214,7 +238,12 @@ class DirectStreamingPlayer: NSObject {
         
         let interval = CMTime(seconds: 1.0, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
         timeObserver = player?.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] _ in
-            guard let self = self else { return }
+            guard let self = self, self.delegate != nil else {
+                #if DEBUG
+                print("🎵 timeObserver: Delegate is nil, skipping callback")
+                #endif
+                return
+            }
             if self.player?.rate ?? 0 > 0 {
                 self.onStatusChange?(true, String(localized: "status_playing"))
             }
@@ -230,7 +259,12 @@ class DirectStreamingPlayer: NSObject {
         guard let keyPath = keyPath, let playerItem = object as? AVPlayerItem else { return }
         
         DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
+            guard let self = self, self.delegate != nil else {
+                #if DEBUG
+                print("🎵 observeValue: Delegate is nil, skipping callback")
+                #endif
+                return
+            }
             
             if keyPath == "playbackBufferEmpty" {
                 if playerItem.isPlaybackBufferEmpty {
@@ -292,9 +326,15 @@ class DirectStreamingPlayer: NSObject {
         player?.pause()
         player = nil
         playerItem = nil
-        if !hasPermanentError {
+        if !hasPermanentError && delegate != nil {
             onStatusChange?(false, String(localized: "status_stopped"))
         }
+    }
+    
+    func clearCallbacks() {
+        onStatusChange = nil
+        onMetadataChange = nil
+        delegate = nil
     }
     
     deinit {
@@ -302,12 +342,17 @@ class DirectStreamingPlayer: NSObject {
     }
 }
 
-
 // MARK: - Metadata Handling
 extension DirectStreamingPlayer: AVPlayerItemMetadataOutputPushDelegate {
     func metadataOutput(_ output: AVPlayerItemMetadataOutput,
                        didOutputTimedMetadataGroups groups: [AVTimedMetadataGroup],
                        from track: AVPlayerItemTrack?) {
+        guard delegate != nil else {
+            #if DEBUG
+            print("🎵 metadataOutput: Delegate is nil, skipping callback")
+            #endif
+            return
+        }
         
         guard let item = groups.first?.items.first,
               let value = item.value(forKeyPath: "stringValue") as? String,
@@ -326,7 +371,13 @@ extension DirectStreamingPlayer {
         stop()
         
         // Add a small delay before returning to ready state
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self = self, self.delegate != nil else {
+                #if DEBUG
+                print("🎵 handleNetworkInterruption: Delegate is nil, skipping callback")
+                #endif
+                return
+            }
             self.onStatusChange?(false, String(localized: "alert_retry"))
         }
     }
@@ -345,7 +396,12 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
         let session = URLSession(configuration: .default, delegate: streamingDelegate, delegateQueue: nil)
         let task = session.dataTask(with: url)
         streamingDelegate.onError = { [weak self] error in
-            guard let self = self else { return }
+            guard let self = self, self.delegate != nil else {
+                #if DEBUG
+                print("📡 resourceLoader: Delegate is nil, skipping error callback")
+                #endif
+                return
+            }
             DispatchQueue.main.async {
                 self.handleLoadingError(error)
             }

@@ -12,7 +12,7 @@ import AVKit
 import Network
 
 class ViewController: UIViewController, UICollectionViewDelegate, UICollectionViewDataSource, UIScrollViewDelegate {
-        let titleLabel: UILabel = {
+    let titleLabel: UILabel = {
         let label = UILabel()
         label.text = String(localized: "lutheran_radio_title")
         label.textAlignment = .center
@@ -33,7 +33,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         cv.backgroundColor = .systemBackground
         return cv
     }()
-
+    
     let selectionIndicator: UIView = {
         let view = UIView()
         view.backgroundColor = .systemRed.withAlphaComponent(0.7)
@@ -49,7 +49,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         button.translatesAutoresizingMaskIntoConstraints = false
         return button
     }()
-
+    
     let statusLabel: UILabel = {
         let label = UILabel()
         label.text = String(localized: "status_connecting")
@@ -66,7 +66,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         label.lineBreakMode = .byTruncatingTail
         return label
     }()
-
+    
     let volumeSlider: UISlider = {
         let slider = UISlider()
         slider.minimumValue = 0.0
@@ -97,6 +97,23 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         return view
     }()
     
+    private let backgroundImageView: UIImageView = {
+        let imageView = UIImageView()
+        imageView.contentMode = .scaleAspectFill
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        imageView.tintColor = UIColor.gray
+        imageView.alpha = 0.1
+        return imageView
+    }()
+    
+    private let backgroundImages: [String: String] = [
+        "en": "north_america",
+        "de": "germany",
+        "fi": "finland",
+        "sv": "sweden",
+        "ee": "estonia"
+    ]
+    
     // New streaming player
     private var streamingPlayer: DirectStreamingPlayer
     private let audioQueue = DispatchQueue(label: "radio.lutheran.audio", qos: .userInitiated)
@@ -105,29 +122,34 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     init(streamingPlayer: DirectStreamingPlayer = DirectStreamingPlayer()) {
         self.streamingPlayer = streamingPlayer
         super.init(nibName: nil, bundle: nil)
+        self.streamingPlayer.setDelegate(self)
     }
     
     required init?(coder: NSCoder) {
         self.streamingPlayer = DirectStreamingPlayer()
         super.init(coder: coder)
+        self.streamingPlayer.setDelegate(self)
     }
     
     private var isPlaying = false
     private var isManualPause = false
     private var hasPermanentPlaybackError = false
     private var networkMonitor: NWPathMonitor?
+    private var networkMonitorHandler: ((NWPath) -> Void)? // Store handler to clear it
     private var hasInternetConnection = true
     private var connectivityCheckTimer: Timer?
     private var lastConnectionAttemptTime: Date?
     private var didInitialLayout = false
     private var didPositionNeedle = false
     private let audioEngine = AVAudioEngine()
-    private var tuningSoundNode: AVAudioSourceNode?
+    private var tuningPlayerNode: AVAudioPlayerNode?
+    private var tuningBuffer: AVAudioPCMBuffer?
     private var isTuningSoundPlaying = false
     private var streamSwitchTimer: Timer?
     private var pendingStreamIndex: Int?
     private var lastPlaybackAttempt: Date?
     private let minPlaybackInterval: TimeInterval = 1.0 // 1 second
+    private var isDeallocating = false // Flag to prevent operations during deallocation
     
     // Testable accessors
     @objc var isPlayingState: Bool {
@@ -142,40 +164,47 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
-
+        
         setupUI()
         languageCollectionView.delegate = self
         languageCollectionView.dataSource = self
         languageCollectionView.register(LanguageCell.self, forCellWithReuseIdentifier: "LanguageCell")
-
+        
         let currentLocale = Locale.current
         let languageCode = currentLocale.language.languageCode?.identifier
         let initialIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.languageCode == languageCode }) ?? 0
         streamingPlayer.setStream(to: DirectStreamingPlayer.availableStreams[initialIndex])
+        updateBackground(for: DirectStreamingPlayer.availableStreams[initialIndex])
         
         if let layout = languageCollectionView.collectionViewLayout as? UICollectionViewFlowLayout {
             layout.scrollDirection = .horizontal
             layout.minimumLineSpacing = 10
             layout.minimumInteritemSpacing = 0
         }
-
+        
         languageCollectionView.reloadData()
         
         selectionIndicator.center.x = view.bounds.width / 2
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self = self else {
+                #if DEBUG
+                print("📱 viewDidLoad (asyncAfter): ViewController is nil, skipping callback")
+                #endif
+                return
+            }
             let indexPath = IndexPath(item: initialIndex, section: 0)
             self.languageCollectionView.selectItem(at: indexPath, animated: false, scrollPosition: .centeredHorizontally)
             self.centerCollectionViewContent()
             self.updateSelectionIndicator(to: initialIndex)
             self.languageCollectionView.scrollToItem(at: indexPath, at: .centeredHorizontally, animated: false)
         }
-
+        
         streamingPlayer.setStream(to: DirectStreamingPlayer.availableStreams[initialIndex])
         languageCollectionView.reloadData()
         languageCollectionView.collectionViewLayout.invalidateLayout()
         languageCollectionView.selectItem(at: IndexPath(item: initialIndex, section: 0), animated: false, scrollPosition: .centeredHorizontally)
-
+        
         setupControls()
         setupNetworkMonitoring()
         setupBackgroundAudioControls()
@@ -183,7 +212,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         setupRouteChangeHandling()
         setupStreamingCallbacks()
         setupAudioEngine()
-
+        
         if hasInternetConnection && !isManualPause {
             startPlayback()
         }
@@ -200,16 +229,34 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             let languageCode = currentLocale.language.languageCode?.identifier
             let initialIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.languageCode == languageCode }) ?? 0
             
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+                guard let self = self else {
+                    #if DEBUG
+                    print("📱 viewDidAppear (asyncAfter): ViewController is nil, skipping callback")
+                    #endif
+                    return
+                }
                 let indexPath = IndexPath(item: initialIndex, section: 0)
                 self.languageCollectionView.scrollToItem(at: indexPath, at: .centeredHorizontally, animated: true)
             }
         }
     }
     
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        // Remove notification observers early to prevent them from firing during deallocation
+        NotificationCenter.default.removeObserver(self, name: AVAudioSession.interruptionNotification, object: nil)
+        NotificationCenter.default.removeObserver(self, name: AVAudioSession.routeChangeNotification, object: nil)
+    }
+    
     private func setupStreamingCallbacks() {
         streamingPlayer.onStatusChange = { [weak self] isPlaying, statusText in
-            guard let self = self else { return }
+            guard let self = self else {
+                #if DEBUG
+                print("📱 onStatusChange: ViewController is nil, skipping callback")
+                #endif
+                return
+            }
             self.isPlaying = isPlaying
             self.updatePlayPauseButton(isPlaying: isPlaying)
             if isPlaying {
@@ -238,7 +285,12 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         }
         
         streamingPlayer.onMetadataChange = { [weak self] metadata in
-            guard let self = self else { return }
+            guard let self = self else {
+                #if DEBUG
+                print("📱 onMetadataChange: ViewController is nil, skipping callback")
+                #endif
+                return
+            }
             DispatchQueue.main.async {
                 if let metadata = metadata {
                     self.metadataLabel.text = metadata
@@ -282,8 +334,13 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         #if DEBUG
         print("📱 Setting up network monitoring")
         #endif
-        networkMonitor?.pathUpdateHandler = { [weak self] path in
-            guard let self = self else { return }
+        networkMonitorHandler = { [weak self] path in
+            guard let self = self else {
+                #if DEBUG
+                print("📱 pathUpdateHandler: ViewController is nil, skipping callback")
+                #endif
+                return
+            }
             let isConnected = path.status == .satisfied
             DispatchQueue.main.async {
                 let wasConnected = self.hasInternetConnection
@@ -316,6 +373,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 }
             }
         }
+        networkMonitor?.pathUpdateHandler = networkMonitorHandler
         let monitorQueue = DispatchQueue(label: "NetworkMonitor", qos: .utility)
         networkMonitor?.start(queue: monitorQueue)
         setupConnectivityCheckTimer()
@@ -326,6 +384,12 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     }
     
     @objc private func handleInterruption(_ notification: Notification) {
+        guard !isDeallocating else {
+            #if DEBUG
+            print("📱 handleInterruption: ViewController is deallocating, skipping")
+            #endif
+            return
+        }
         guard let userInfo = notification.userInfo,
               let typeValue = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
               let type = AVAudioSession.InterruptionType(rawValue: typeValue) else { return }
@@ -347,6 +411,12 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     }
     
     @objc private func handleRouteChange(_ notification: Notification) {
+        guard !isDeallocating else {
+            #if DEBUG
+            print("📱 handleRouteChange: ViewController is deallocating, skipping")
+            #endif
+            return
+        }
         guard let userInfo = notification.userInfo,
               let reasonValue = userInfo[AVAudioSessionRouteChangeReasonKey] as? UInt,
               let reason = AVAudioSession.RouteChangeReason(rawValue: reasonValue) else { return }
@@ -365,8 +435,14 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     private func setupConnectivityCheckTimer() {
         connectivityCheckTimer?.invalidate()
+        guard !isDeallocating else { return }
         connectivityCheckTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
-            guard let self = self else { return }
+            guard let self = self else {
+                #if DEBUG
+                print("📱 connectivityCheckTimer: ViewController is nil, skipping callback")
+                #endif
+                return
+            }
             self.performActiveConnectivityCheck()
         }
     }
@@ -380,7 +456,12 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         let session = URLSession(configuration: config)
         let url = URL(string: "https://www.apple.com/library/test/success.html")!
         let task = session.dataTask(with: url) { [weak self] data, response, error in
-            guard let self = self else { return }
+            guard let self = self else {
+                #if DEBUG
+                print("📱 performActiveConnectivityCheck: ViewController is nil, skipping callback")
+                #endif
+                return
+            }
             let success = error == nil && (response as? HTTPURLResponse)?.statusCode == 200
             DispatchQueue.main.async {
                 if success && !self.hasInternetConnection {
@@ -397,7 +478,13 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     private func handleNetworkReconnection() {
         if !isManualPause && !hasPermanentPlaybackError {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { [weak self] in
+                guard let self = self else {
+                    #if DEBUG
+                    print("📱 handleNetworkReconnection: ViewController is nil, skipping callback")
+                    #endif
+                    return
+                }
                 if self.hasInternetConnection && !self.isPlaying && !self.isManualPause && !self.hasPermanentPlaybackError {
                     #if DEBUG
                     print("📱 Auto-restarting playback after reconnection")
@@ -414,19 +501,34 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         [commandCenter.playCommand, commandCenter.pauseCommand, commandCenter.togglePlayPauseCommand, commandCenter.stopCommand].forEach { $0.removeTarget(nil) }
         commandCenter.playCommand.isEnabled = true
         commandCenter.playCommand.addTarget { [weak self] _ -> MPRemoteCommandHandlerStatus in
-            guard let self = self else { return .commandFailed }
+            guard let self = self else {
+                #if DEBUG
+                print("📱 playCommand: ViewController is nil, skipping callback")
+                #endif
+                return .commandFailed
+            }
             DispatchQueue.main.async { self.startPlayback() }
             return .success
         }
         commandCenter.pauseCommand.isEnabled = true
         commandCenter.pauseCommand.addTarget { [weak self] _ -> MPRemoteCommandHandlerStatus in
-            guard let self = self else { return .commandFailed }
+            guard let self = self else {
+                #if DEBUG
+                print("📱 pauseCommand: ViewController is nil, skipping callback")
+                #endif
+                return .commandFailed
+            }
             DispatchQueue.main.async { self.pausePlayback() }
             return .success
         }
         commandCenter.togglePlayPauseCommand.isEnabled = true
         commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ -> MPRemoteCommandHandlerStatus in
-            guard let self = self else { return .commandFailed }
+            guard let self = self else {
+                #if DEBUG
+                print("📱 togglePlayPauseCommand: ViewController is nil, skipping callback")
+                #endif
+                return .commandFailed
+            }
             DispatchQueue.main.async {
                 if self.isPlaying { self.pausePlayback() } else { self.startPlayback() }
             }
@@ -461,14 +563,20 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     private func startPlayback() {
         #if DEBUG
-        print("📱 startPlayback called - hasInternet: \(hasInternetConnection), isManualPause: \(isManualPause)")
+        print("📱 startPlayback called - hasInternet: \(hasInternetConnection), isManualPause: \(isManualPause), isTuningSoundPlaying: \(isTuningSoundPlaying)")
         #endif
         
         if !hasInternetConnection {
             updateUIForNoInternet()
-            stopTuningSound() // Stop tuning sound if offline
+            stopTuningSound()
             performActiveConnectivityCheck()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+                guard let self = self else {
+                    #if DEBUG
+                    print("📱 startPlayback (asyncAfter): ViewController is nil, skipping callback")
+                    #endif
+                    return
+                }
                 if !self.hasInternetConnection {
                     self.updateUIForNoInternet()
                     return
@@ -488,7 +596,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         streamingPlayer.handleNetworkInterruption()
         attemptPlaybackWithRetry(attempt: 1, maxAttempts: 3)
     }
-
+    
     private func attemptPlaybackWithRetry(attempt: Int, maxAttempts: Int) {
         guard hasInternetConnection && !isManualPause && !hasPermanentPlaybackError else {
             #if DEBUG
@@ -499,7 +607,13 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         }
         let now = Date()
         if let lastAttempt = lastPlaybackAttempt, now.timeIntervalSince(lastAttempt) < minPlaybackInterval {
-            DispatchQueue.main.asyncAfter(deadline: .now() + minPlaybackInterval) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + minPlaybackInterval) { [weak self] in
+                guard let self = self else {
+                    #if DEBUG
+                    print("📱 attemptPlaybackWithRetry (asyncAfter): ViewController is nil, skipping callback")
+                    #endif
+                    return
+                }
                 self.attemptPlaybackWithRetry(attempt: attempt, maxAttempts: maxAttempts)
             }
             return
@@ -510,10 +624,21 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         print("📱 Playback attempt \(attempt)/\(maxAttempts)")
         #endif
         let delay = pow(2.0, Double(attempt-1))
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self = self else {
+                #if DEBUG
+                print("📱 attemptPlaybackWithRetry (asyncAfter): ViewController is nil, skipping callback")
+                #endif
+                return
+            }
             self.streamingPlayer.setVolume(self.volumeSlider.value)
             self.streamingPlayer.play { [weak self] success in
-                guard let self = self else { return }
+                guard let self = self else {
+                    #if DEBUG
+                    print("📱 play (completion): ViewController is nil, skipping callback")
+                    #endif
+                    return
+                }
                 if success {
                     #if DEBUG
                     print("📱 Playback succeeded on attempt \(attempt)")
@@ -581,7 +706,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             startPlayback()
         }
     }
-        
+    
     @objc private func volumeChanged(_ sender: UISlider) {
         streamingPlayer.setVolume(sender.value)
     }
@@ -592,7 +717,55 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         playPauseButton.setImage(UIImage(systemName: symbolName, withConfiguration: config), for: .normal)
     }
     
+    private func updateBackground(for stream: DirectStreamingPlayer.Stream) {
+        guard let imageName = backgroundImages[stream.languageCode],
+              let baseImage = UIImage(named: imageName) else {
+            print("Error: Background image not found for \(stream.languageCode)")
+            backgroundImageView.image = nil
+            return
+        }
+
+        var finalImage: UIImage = baseImage
+
+        // Invert for dark mode if needed, preserving original details
+        if traitCollection.userInterfaceStyle == .dark {
+            if let ciImage = CIImage(image: baseImage),
+               let filter = CIFilter(name: "CIColorInvert") {
+                filter.setValue(ciImage, forKey: kCIInputImageKey)
+                if let outputImage = filter.outputImage,
+                   let cgImage = CIContext().createCGImage(outputImage, from: outputImage.extent) {
+                    finalImage = UIImage(cgImage: cgImage)
+                }
+            }
+            // Optionally adjust brightness/contrast to enhance coastlines
+            if let ciImage = CIImage(image: finalImage),
+               let filter = CIFilter(name: "CIColorControls") {
+                filter.setValue(ciImage, forKey: kCIInputImageKey)
+                filter.setValue(1.2, forKey: kCIInputContrastKey) // Boost contrast
+                filter.setValue(0.1, forKey: kCIInputBrightnessKey) // Slight brightness increase
+                if let outputImage = filter.outputImage,
+                   let cgImage = CIContext().createCGImage(outputImage, from: outputImage.extent) {
+                    finalImage = UIImage(cgImage: cgImage)
+                }
+            }
+        }
+
+        UIView.transition(with: backgroundImageView, duration: 0.5, options: .transitionCrossDissolve, animations: {
+            // Remove .alwaysTemplate to keep original image details
+            self.backgroundImageView.image = finalImage
+            self.backgroundImageView.alpha = self.traitCollection.userInterfaceStyle == .dark ? 0.3 : 0.1 // Increase alpha in dark mode
+        }, completion: nil)
+    }
+    
     private func setupUI() {
+        view.addSubview(backgroundImageView)
+        NSLayoutConstraint.activate([
+            backgroundImageView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            backgroundImageView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            backgroundImageView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            backgroundImageView.trailingAnchor.constraint(equalTo: view.trailingAnchor)
+        ])
+        
         view.addSubview(titleLabel)
         view.addSubview(languageCollectionView)
         let controlsStackView = UIStackView(arrangedSubviews: [playPauseButton, statusLabel])
@@ -643,6 +816,55 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         let mainMixer = audioEngine.mainMixerNode
         mainMixer.volume = 1.0
         
+        #if DEBUG
+        print("🎵 Setting up audio engine - current state: isRunning=\(audioEngine.isRunning)")
+        #endif
+        
+        // Pre-generate tuning sound buffer with shortwave-like effect
+        let format = AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 2)!
+        let duration: Float = 0.5 // 0.5 seconds total duration
+        let frameCount = AVAudioFrameCount(Double(duration) * format.sampleRate) // Convert duration to Double
+        tuningBuffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount)!
+        tuningBuffer?.frameLength = frameCount
+        
+        let sampleRate = Float(format.sampleRate)
+        let amplitude = Float(0.1)
+        let audioBuffer = tuningBuffer!.floatChannelData!
+        
+        // Divide the buffer into short segments (e.g., 0.012 seconds each) with random frequencies
+        let segmentDuration: Float = 0.012 // 12ms segments
+        let framesPerSegment = Int(segmentDuration * sampleRate)
+        let totalSegments = Int(frameCount) / framesPerSegment
+        
+        for segment in 0..<totalSegments {
+            let startFrame = segment * framesPerSegment
+            let endFrame = min(startFrame + framesPerSegment, Int(frameCount))
+            let frequency = Float.random(in: 500...1500) // Random frequency per segment
+            
+            for frame in startFrame..<endFrame {
+                let time = Float(frame) / sampleRate
+                let noise = Float.random(in: -0.05...0.05)
+                let value = sinf(2.0 * .pi * frequency * time) * amplitude + noise
+                for channel in 0..<Int(format.channelCount) {
+                    audioBuffer[channel][frame] = value
+                }
+            }
+        }
+        
+        // Fill any remaining frames (if frameCount isn't perfectly divisible by framesPerSegment)
+        let lastSegmentEnd = totalSegments * framesPerSegment
+        if lastSegmentEnd < Int(frameCount) {
+            let frequency = Float.random(in: 500...1500)
+            for frame in lastSegmentEnd..<Int(frameCount) {
+                let time = Float(frame) / sampleRate
+                let noise = Float.random(in: -0.05...0.05)
+                let value = sinf(2.0 * .pi * frequency * time) * amplitude + noise
+                for channel in 0..<Int(format.channelCount) {
+                    audioBuffer[channel][frame] = value
+                }
+            }
+        }
+        
         do {
             try audioEngine.start()
             #if DEBUG
@@ -654,30 +876,40 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             #endif
         }
     }
-
+    
     private func playTuningSound() {
         #if DEBUG
-        print("🎵 Attempting to play tuning sound - isTuningSoundPlaying: \(isTuningSoundPlaying), hasInternetConnection: \(hasInternetConnection)")
+        print("🎵 playTuningSound called - isTuningSoundPlaying: \(isTuningSoundPlaying), hasInternetConnection: \(hasInternetConnection), audioEngine.isRunning: \(audioEngine.isRunning)")
         #endif
+        
         guard !isTuningSoundPlaying, hasInternetConnection else {
             #if DEBUG
-            print("🎵 Skipping tuning sound: already playing or offline")
+            print("🎵 Skipping tuning sound: already playing (\(isTuningSoundPlaying)) or offline (\(!hasInternetConnection))")
             #endif
             return
         }
-
-        audioQueue.async { [weak self] in
-            guard let self = self else { return }
+        
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self = self else {
+                #if DEBUG
+                print("🎵 playTuningSound (workItem): ViewController is nil, skipping")
+                #endif
+                return
+            }
+            
+            #if DEBUG
+            print("🎵 Executing tuning sound work item - audioEngine.isRunning: \(self.audioEngine.isRunning)")
+            #endif
             
             if !self.audioEngine.isRunning {
                 do {
                     try self.audioEngine.start()
                     #if DEBUG
-                    print("🎵 Audio engine restarted successfully")
+                    print("🎵 Audio engine started successfully")
                     #endif
                 } catch {
                     #if DEBUG
-                    print("🎵 Failed to restart audio engine: \(error.localizedDescription)")
+                    print("🎵 Failed to start audio engine: \(error.localizedDescription)")
                     #endif
                     return
                 }
@@ -685,76 +917,92 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             
             self.isTuningSoundPlaying = true
             #if DEBUG
-            print("🎵 Tuning sound started")
+            print("🎵 Tuning sound marked as playing")
             #endif
             
             // Cleanup existing node if present
-            if let existingNode = self.tuningSoundNode {
+            if let existingNode = self.tuningPlayerNode {
                 self.audioEngine.disconnectNodeOutput(existingNode)
                 self.audioEngine.detach(existingNode)
             }
             
-            // Use the output node's format for compatibility
-            let outputNode = self.audioEngine.outputNode
-            let format = outputNode.outputFormat(forBus: 0)
+            let playerNode = AVAudioPlayerNode()
+            self.tuningPlayerNode = playerNode
             
-            self.tuningSoundNode = AVAudioSourceNode(format: format) { [weak self] _, _, frameCount, audioBufferList -> OSStatus in
-                guard let self = self, self.isTuningSoundPlaying else { return noErr }
-                
-                let ablPointer = UnsafeMutableAudioBufferListPointer(audioBufferList)
-                let sampleRate = Float(format.sampleRate)
-                let frequency = Float.random(in: 500...1500)
-                let amplitude = Float(0.1)
-                
-                for frame in 0..<Int(frameCount) {
-                    let time = Float(frame) / sampleRate
-                    let noise = Float.random(in: -0.05...0.05)
-                    let value = sinf(2.0 * .pi * frequency * time) * amplitude + noise
-                    for buffer in ablPointer {
-                        let buf: UnsafeMutableBufferPointer<Float> = UnsafeMutableBufferPointer(buffer)
-                        buf[frame] = value
-                    }
-                }
-                return noErr
-            }
+            #if DEBUG
+            print("🎵 Attaching and connecting tuning player node")
+            #endif
+            self.audioEngine.attach(playerNode)
+            self.audioEngine.connect(playerNode, to: self.audioEngine.mainMixerNode, format: self.tuningBuffer!.format)
+            playerNode.volume = 0.5
             
-            guard let node = self.tuningSoundNode else {
+            guard let buffer = self.tuningBuffer else {
                 #if DEBUG
-                print("🎵 Failed to create tuning sound node")
+                print("🎵 Tuning buffer is nil, aborting")
                 #endif
                 self.isTuningSoundPlaying = false
                 return
             }
             
-            self.audioEngine.attach(node)
-            self.audioEngine.connect(node, to: self.audioEngine.mainMixerNode, format: format)
-            self.audioEngine.connect(self.audioEngine.mainMixerNode, to: outputNode, format: format)
-            node.volume = 0.5
+            playerNode.scheduleBuffer(buffer, completionHandler: { [weak self] in
+                guard let self = self else { return }
+                self.stopTuningSound()
+            })
             
-            // Stop after 0.3 seconds
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-                self?.stopTuningSound()
-            }
+            #if DEBUG
+            print("🎵 Playing tuning sound")
+            #endif
+            playerNode.play()
         }
+        
+        #if DEBUG
+        print("🎵 Queuing tuning sound work item on audioQueue")
+        #endif
+        audioQueue.async(execute: workItem)
     }
-
+    
     private func stopTuningSound() {
-        audioQueue.async { [weak self] in
-            guard let self = self, self.isTuningSoundPlaying, let node = self.tuningSoundNode else { return }
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self = self else {
+                #if DEBUG
+                print("🎵 stopTuningSound: ViewController is nil, skipping")
+                #endif
+                return
+            }
             
+            #if DEBUG
+            print("🎵 stopTuningSound called - isTuningSoundPlaying: \(self.isTuningSoundPlaying), hasNode: \(self.tuningPlayerNode != nil), audioEngine.isRunning: \(self.audioEngine.isRunning)")
+            #endif
+            
+            guard self.isTuningSoundPlaying, let node = self.tuningPlayerNode else {
+            #if DEBUG
+                print("🎵 stopTuningSound: Not playing or no node, skipping cleanup")
+            #endif
+                return
+            }
+            
+            node.stop()
             self.audioEngine.disconnectNodeOutput(node)
             self.audioEngine.detach(node)
             self.isTuningSoundPlaying = false
-            self.tuningSoundNode = nil
+            self.tuningPlayerNode = nil
             
-            // Only stop engine if no streaming is active
-            if !self.isPlaying && self.audioEngine.isRunning {
+            #if DEBUG
+            print("🎵 Tuning sound stopped and cleaned up")
+            #endif
+            
+            if !self.isPlaying && !self.isDeallocating && self.audioEngine.isRunning && !self.hasInternetConnection {
                 self.audioEngine.stop()
                 #if DEBUG
-                print("🎵 Audio engine stopped")
+                print("🎵 Audio engine stopped (no streaming active and offline)")
                 #endif
             }
         }
+        
+        #if DEBUG
+        print("🎵 Queuing stopTuningSound work item on audioQueue")
+        #endif
+        audioQueue.async(execute: workItem)
     }
     
     // MARK: - Selection Indicator
@@ -779,23 +1027,23 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     // MARK: - UIPickerView DataSource
     func numberOfComponents(in pickerView: UIPickerView) -> Int { 1 }
-
+    
     func pickerView(_ pickerView: UIPickerView, numberOfRowsInComponent component: Int) -> Int {
         DirectStreamingPlayer.availableStreams.count
     }
-
+    
     // MARK: - UIPickerView Delegate
     func pickerView(_ pickerView: UIPickerView, titleForRow row: Int, forComponent component: Int) -> String? {
         DirectStreamingPlayer.availableStreams[row].language
     }
-
+    
     func pickerView(_ pickerView: UIPickerView, didSelectRow row: Int, inComponent component: Int) {
         let selectedStream = DirectStreamingPlayer.availableStreams[row]
         streamingPlayer.setStream(to: selectedStream)
         hasPermanentPlaybackError = false
         if isPlaying || !isManualPause { startPlayback() }
     }
-
+    
     // MARK: - UICollectionView DataSource
     func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
         DirectStreamingPlayer.availableStreams.count
@@ -807,13 +1055,27 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         cell.configure(with: stream)
         return cell
     }
-
+    
     // MARK: - UICollectionView Delegate
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
+        guard !isDeallocating else { return }
+        #if DEBUG
+        print("🎵 collectionView:didSelectItemAt called for index \(indexPath.item)")
+        #endif
+        let stream = DirectStreamingPlayer.availableStreams[indexPath.item]
+        updateBackground(for: stream)
         streamSwitchTimer?.invalidate()
         pendingStreamIndex = indexPath.item
         streamSwitchTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
-            guard let self = self, let index = self.pendingStreamIndex else { return }
+            guard let self = self, let index = self.pendingStreamIndex else {
+#if DEBUG
+                print("🎵 streamSwitchTimer: ViewController is nil, skipping")
+#endif
+                return
+            }
+#if DEBUG
+            print("🎵 Stream switch timer fired for index \(index)")
+#endif
             let generator = UIImpactFeedbackGenerator(style: .medium)
             generator.impactOccurred()
             self.playTuningSound()
@@ -822,17 +1084,17 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             if self.isPlaying || !self.isManualPause { self.startPlayback() }
             self.updateSelectionIndicator(to: index)
             collectionView.scrollToItem(at: indexPath, at: .centeredHorizontally, animated: true)
-            self.pendingStreamIndex = nil  // Reset after execution
+            self.pendingStreamIndex = nil
         }
     }
-
+    
     // MARK: - UICollectionViewDelegateFlowLayout
     func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, sizeForItemAt indexPath: IndexPath) -> CGSize {
         let cellWidth: CGFloat = 50
         print("Cell size for item \(indexPath.item): width = \(cellWidth), height = 50")
         return CGSize(width: cellWidth, height: 50)
     }
-
+    
     func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, minimumLineSpacingForSectionAt section: Int) -> CGFloat {
         let spacing = 10.0
         print("Minimum line spacing for section \(section): \(spacing)")
@@ -840,38 +1102,30 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     }
     
     deinit {
-        // Remove all notification observers
-        NotificationCenter.default.removeObserver(self)
-        
-        // Cancel network monitor
+        isDeallocating = true
+        networkMonitor?.pathUpdateHandler = nil
+        networkMonitorHandler = nil
         networkMonitor?.cancel()
         networkMonitor = nil
         
-        // Invalidate timers
         connectivityCheckTimer?.invalidate()
         connectivityCheckTimer = nil
         streamSwitchTimer?.invalidate()
         streamSwitchTimer = nil
         
-        // Stop and clean up audio engine and tuning sound
-        audioQueue.async { [weak self] in
-            guard let self = self else { return }
-            self.stopTuningSound() // This will detach and stop the tuning sound node
-            if self.audioEngine.isRunning {
-                self.audioEngine.stop()
-                #if DEBUG
-                print("🎵 Audio engine stopped in deinit")
-                #endif
-            }
-            // Ensure all nodes are detached
-            if let node = self.tuningSoundNode {
-                self.audioEngine.detach(node)
-                self.tuningSoundNode = nil
-            }
-        }
-        
-        // Clean up streaming player (if it has its own deinit or cleanup)
+        streamingPlayer.clearCallbacks()
         streamingPlayer.stop()
+        
+        if audioEngine.isRunning {
+            audioEngine.stop()
+            #if DEBUG
+            print("🎵 Audio engine stopped in deinit")
+            #endif
+        }
+        if let node = tuningPlayerNode {
+            audioEngine.detach(node)
+            tuningPlayerNode = nil
+        }
     }
 }
 
@@ -913,6 +1167,8 @@ extension ViewController {
         }
         if closestCell != nil {
             let indexPath = IndexPath(item: closestIndex, section: 0)
+            let stream = DirectStreamingPlayer.availableStreams[closestIndex]
+            updateBackground(for: stream)
             languageCollectionView.selectItem(at: indexPath, animated: true, scrollPosition: .centeredHorizontally)
             let generator = UIImpactFeedbackGenerator(style: .light)
             generator.impactOccurred()
