@@ -97,6 +97,23 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         return view
     }()
     
+    private let backgroundImageView: UIImageView = {
+        let imageView = UIImageView()
+        imageView.contentMode = .scaleAspectFill
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        imageView.tintColor = UIColor.gray
+        imageView.alpha = 0.1
+        return imageView
+    }()
+    
+    private let backgroundImages: [String: String] = [
+        "en": "north_america",
+        "de": "germany",
+        "fi": "finland",
+        "sv": "sweden",
+        "ee": "estonia"
+    ]
+    
     // New streaming player
     private var streamingPlayer: DirectStreamingPlayer
     private let audioQueue = DispatchQueue(label: "radio.lutheran.audio", qos: .userInitiated)
@@ -157,6 +174,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         let languageCode = currentLocale.language.languageCode?.identifier
         let initialIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.languageCode == languageCode }) ?? 0
         streamingPlayer.setStream(to: DirectStreamingPlayer.availableStreams[initialIndex])
+        updateBackground(for: DirectStreamingPlayer.availableStreams[initialIndex])
         
         if let layout = languageCollectionView.collectionViewLayout as? UICollectionViewFlowLayout {
             layout.scrollDirection = .horizontal
@@ -699,7 +717,27 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         playPauseButton.setImage(UIImage(systemName: symbolName, withConfiguration: config), for: .normal)
     }
     
+    private func updateBackground(for stream: DirectStreamingPlayer.Stream) {
+        guard let imageName = backgroundImages[stream.languageCode],
+              let image = UIImage(named: imageName)?.withRenderingMode(.alwaysTemplate) else {
+            print("Error: Background image not found for \(stream.languageCode)")
+            backgroundImageView.image = nil
+            return
+        }
+        UIView.transition(with: backgroundImageView, duration: 0.5, options: .transitionCrossDissolve, animations: {
+            self.backgroundImageView.image = image
+        }, completion: nil)
+    }
+    
     private func setupUI() {
+        view.addSubview(backgroundImageView)
+        NSLayoutConstraint.activate([
+            backgroundImageView.topAnchor.constraint(equalTo: view.topAnchor),
+            backgroundImageView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            backgroundImageView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            backgroundImageView.trailingAnchor.constraint(equalTo: view.trailingAnchor)
+        ])
+        
         view.addSubview(titleLabel)
         view.addSubview(languageCollectionView)
         let controlsStackView = UIStackView(arrangedSubviews: [playPauseButton, statusLabel])
@@ -993,9 +1031,11 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     // MARK: - UICollectionView Delegate
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         guard !isDeallocating else { return }
-#if DEBUG
+        #if DEBUG
         print("🎵 collectionView:didSelectItemAt called for index \(indexPath.item)")
-#endif
+        #endif
+        let stream = DirectStreamingPlayer.availableStreams[indexPath.item]
+        updateBackground(for: stream)
         streamSwitchTimer?.invalidate()
         pendingStreamIndex = indexPath.item
         streamSwitchTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
@@ -1099,6 +1139,8 @@ extension ViewController {
         }
         if closestCell != nil {
             let indexPath = IndexPath(item: closestIndex, section: 0)
+            let stream = DirectStreamingPlayer.availableStreams[closestIndex]
+            updateBackground(for: stream)
             languageCollectionView.selectItem(at: indexPath, animated: true, scrollPosition: .centeredHorizontally)
             let generator = UIImpactFeedbackGenerator(style: .light)
             generator.impactOccurred()
