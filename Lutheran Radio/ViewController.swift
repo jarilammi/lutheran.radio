@@ -749,11 +749,25 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 }
             }
         }
-
+        
+        // Adjust for smaller screens
+        let screenSize = UIScreen.main.bounds.size
+        let isSmallScreen = screenSize.height < 1600
+        backgroundImageView.contentMode = .scaleAspectFill
+        backgroundImageView.image = finalImage
+        
+        if isSmallScreen {
+            let imageSize = baseImage.size
+            let screenAspect = screenSize.width / screenSize.height
+            let imageAspect = imageSize.width / imageSize.height
+            let scaleFactor = min(0.9, screenAspect / imageAspect) // Cap at 90% to avoid over-thinning
+            backgroundImageView.transform = CGAffineTransform(scaleX: scaleFactor, y: scaleFactor)
+        } else {
+            backgroundImageView.transform = .identity
+        }
+        
         UIView.transition(with: backgroundImageView, duration: 0.5, options: .transitionCrossDissolve, animations: {
-            // Remove .alwaysTemplate to keep original image details
-            self.backgroundImageView.image = finalImage
-            self.backgroundImageView.alpha = self.traitCollection.userInterfaceStyle == .dark ? 0.3 : 0.1 // Increase alpha in dark mode
+            self.backgroundImageView.alpha = self.traitCollection.userInterfaceStyle == .dark ? 0.3 : 0.1
         }, completion: nil)
     }
     
