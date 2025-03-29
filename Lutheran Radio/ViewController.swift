@@ -719,13 +719,41 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     private func updateBackground(for stream: DirectStreamingPlayer.Stream) {
         guard let imageName = backgroundImages[stream.languageCode],
-              let image = UIImage(named: imageName)?.withRenderingMode(.alwaysTemplate) else {
+              let baseImage = UIImage(named: imageName) else {
             print("Error: Background image not found for \(stream.languageCode)")
             backgroundImageView.image = nil
             return
         }
+
+        var finalImage: UIImage = baseImage
+
+        // Invert for dark mode if needed, preserving original details
+        if traitCollection.userInterfaceStyle == .dark {
+            if let ciImage = CIImage(image: baseImage),
+               let filter = CIFilter(name: "CIColorInvert") {
+                filter.setValue(ciImage, forKey: kCIInputImageKey)
+                if let outputImage = filter.outputImage,
+                   let cgImage = CIContext().createCGImage(outputImage, from: outputImage.extent) {
+                    finalImage = UIImage(cgImage: cgImage)
+                }
+            }
+            // Optionally adjust brightness/contrast to enhance coastlines
+            if let ciImage = CIImage(image: finalImage),
+               let filter = CIFilter(name: "CIColorControls") {
+                filter.setValue(ciImage, forKey: kCIInputImageKey)
+                filter.setValue(1.2, forKey: kCIInputContrastKey) // Boost contrast
+                filter.setValue(0.1, forKey: kCIInputBrightnessKey) // Slight brightness increase
+                if let outputImage = filter.outputImage,
+                   let cgImage = CIContext().createCGImage(outputImage, from: outputImage.extent) {
+                    finalImage = UIImage(cgImage: cgImage)
+                }
+            }
+        }
+
         UIView.transition(with: backgroundImageView, duration: 0.5, options: .transitionCrossDissolve, animations: {
-            self.backgroundImageView.image = image
+            // Remove .alwaysTemplate to keep original image details
+            self.backgroundImageView.image = finalImage
+            self.backgroundImageView.alpha = self.traitCollection.userInterfaceStyle == .dark ? 0.3 : 0.1 // Increase alpha in dark mode
         }, completion: nil)
     }
     
