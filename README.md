@@ -68,30 +68,22 @@ After cleaning, retry the build and test steps above.
 
 ## Certificate Pinning
 
-The app implements certificate pinning to prevent man-in-the-middle (MITM) attacks. This is achieved by:
+The app implements certificate pinning to prevent man-in-the-middle (MITM) attacks. Key details:
 
-1. Generating a SHA-256 hash of the server's public key during development
-2. Embedding this hash in the app's Info.plist file under NSAppTransportSecurity
-3. Verifying the server's public key hash during each connection
-4. Including subdomains in the pinning configuration
+1. **Domain:** ```lutheran.radio``` (including subdomains)
+2. **Pinned Value:** SHA-256 hash of the server’s public key, Base64-encoded
+3. **Location:** Embedded in ```Info.plist``` under ```NSAppTransportSecurity > NSPinnedDomains```
+4. **Current Hash:** ```mm31qgyBr2aXX8NzxmX/OeKzrUeOtxim4foWmxL4TZY=```
 
-### Implementation Note
+### Why SHA-256?
 
-The app uses SHA-256 with Base64 encoding for certificate pinning, as specified in the Info.plist under `NSPinnedLeafIdentities`. This is a cryptographically secure choice for public key pinning because:
-
-- SHA-256 provides sufficient collision resistance for this use case
-- Fast hash computation is desirable since verification occurs on every connection
-- The pinned value is a public key hash, not a password or sensitive data requiring slower hashing algorithms
-- Base64 encoding ensures consistent representation across platforms
-
-The configuration also:
-- Applies to all subdomains of lutheran.radio (`NSIncludesSubdomains` set to true)
-- Enforces a minimum TLS version of 1.3 (`NSTemporaryExceptionMinimumTLSVersion`)
-- Requires forward secrecy (`NSTemporaryExceptionRequiresForwardSecrecy`)
+- Strong collision resistance
+- Fast verification for frequent connections
+- Suitable for public key pinning (not sensitive data)
 
 ### Verifying the Certificate Hash
 
-To verify or update the certificate hash for lutheran.radio:
+To check or update the pinned hash:
 
 ```bash
 openssl s_client -connect livestream.lutheran.radio:8443 -servername livestream.lutheran.radio < /dev/null 2>/dev/null \
@@ -101,10 +93,4 @@ openssl s_client -connect livestream.lutheran.radio:8443 -servername livestream.
 | base64
 ```
 
-Compare the output to the value in Info.plist:
-
-```
-mm31qgyBr2aXX8NzxmX/OeKzrUeOtxim4foWmxL4TZY=
-```
-
-If the hash differs, update the SPKI-SHA256-BASE64 value in the Info.plist file accordingly.
+Match the output against the ```SPKI-SHA256-BASE64``` value in ```Info.plist```. Update if necessary.
