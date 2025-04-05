@@ -2,6 +2,26 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSExceptionDomains</key>
+		<dict/>
+		<key>NSPinnedDomains</key>
+		<dict>
+			<key>lutheran.radio</key>
+			<dict>
+				<key>NSIncludesSubdomains</key>
+				<true/>
+				<key>NSPinnedLeafIdentities</key>
+				<array>
+					<dict>
+						<key>SPKI-SHA256-BASE64</key>
+						<string>mm31qgyBr2aXX8NzxmX/OeKzrUeOtxim4foWmxL4TZY=</string>
+					</dict>
+				</array>
+			</dict>
+		</dict>
+	</dict>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -25,37 +45,5 @@
 	<array>
 		<string>audio</string>
 	</array>
-	<key>NSAppTransportSecurity</key>
-	<dict>
-		<key>NSPinnedDomains</key>
-		<dict>
-			<key>lutheran.radio</key>
-			<dict>
-				<key>NSIncludesSubdomains</key>
-				<true/>
-				<key>NSPinnedLeafIdentities</key>
-				<array>
-					<dict>
-						<key>SPKI-SHA256-BASE64</key>
-						<string>mm31qgyBr2aXX8NzxmX/OeKzrUeOtxim4foWmxL4TZY=</string>
-					</dict>
-				</array>
-			</dict>
-		</dict>
-		<key>NSExceptionDomains</key>
-		<dict>
-			<key>lutheran.radio</key>
-			<dict>
-				<key>NSIncludesSubdomains</key>
-				<true/>
-				<key>NSTemporaryExceptionMinimumTLSVersion</key>
-				<string>TLSv1.3</string>
-				<key>NSTemporaryExceptionRequiresForwardSecrecy</key>
-				<true/>
-			</dict>
-		</dict>
-	</dict>
-	<key>ITSAppUsesNonExemptEncryption</key>
-	<false/>
 </dict>
 </plist>
