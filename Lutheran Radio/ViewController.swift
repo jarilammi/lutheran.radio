@@ -764,7 +764,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     }
     
     private func setupBackgroundParallax() {
-        backgroundImageView.addParallaxEffect(intensity: 30.0)
+        backgroundImageView.addParallaxEffect(intensity: 10.0)
     }
     
     private func updateBackground(for stream: DirectStreamingPlayer.Stream) {
@@ -914,7 +914,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         }
         
         // Reapply parallax effect after updating the image
-        backgroundImageView.addParallaxEffect(intensity: 30.0)
+        backgroundImageView.addParallaxEffect(intensity: 10.0)
 
         // Adjust alpha based on mode for better visibility
         UIView.transition(with: backgroundImageView, duration: 0.5, options: .transitionCrossDissolve, animations: {
