@@ -11,6 +11,37 @@ import MediaPlayer
 import AVKit
 import Network
 
+// MARK: - Parallax Effect Extension
+extension UIView {
+    func addParallaxEffect(intensity: CGFloat) {
+        // Remove any existing motion effects to avoid conflicts
+        motionEffects.forEach { removeMotionEffect($0) }
+        
+        // Horizontal tilt effect
+        let horizontalMotion = UIInterpolatingMotionEffect(
+            keyPath: "center.x",
+            type: .tiltAlongHorizontalAxis
+        )
+        horizontalMotion.minimumRelativeValue = -intensity
+        horizontalMotion.maximumRelativeValue = intensity
+        
+        // Vertical tilt effect
+        let verticalMotion = UIInterpolatingMotionEffect(
+            keyPath: "center.y",
+            type: .tiltAlongVerticalAxis
+        )
+        verticalMotion.minimumRelativeValue = -intensity
+        verticalMotion.maximumRelativeValue = intensity
+        
+        // Group the effects
+        let motionGroup = UIMotionEffectGroup()
+        motionGroup.motionEffects = [horizontalMotion, verticalMotion]
+        
+        // Apply to the view
+        addMotionEffect(motionGroup)
+    }
+}
+
 class ViewController: UIViewController, UICollectionViewDelegate, UICollectionViewDataSource, UIScrollViewDelegate {
     let titleLabel: UILabel = {
         let label = UILabel()
@@ -113,6 +144,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         "sv": "sweden",
         "ee": "estonia"
     ]
+    private var backgroundConstraints: [NSLayoutConstraint] = []
     
     private var isInitialSetupComplete = false
     private var isInitialScrollLocked = true
@@ -224,7 +256,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         setupAudioEngine()
         
         isInitialSetupComplete = true // Mark setup complete after all UI updates
-        
+        setupBackgroundParallax()
+
         if hasInternetConnection && !isManualPause {
             startPlayback()
         }
@@ -730,6 +763,10 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         playPauseButton.setImage(UIImage(systemName: symbolName, withConfiguration: config), for: .normal)
     }
     
+    private func setupBackgroundParallax() {
+        backgroundImageView.addParallaxEffect(intensity: 30.0)
+    }
+    
     private func updateBackground(for stream: DirectStreamingPlayer.Stream) {
         guard let imageName = backgroundImages[stream.languageCode],
               let baseImage = UIImage(named: imageName) else {
@@ -865,7 +902,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         let isSmallScreen = screenSize.height < 1600
         backgroundImageView.contentMode = .scaleAspectFill
         backgroundImageView.image = finalImage
-
+        
         if isSmallScreen {
             let imageSize = baseImage.size
             let screenAspect = screenSize.width / screenSize.height
@@ -875,6 +912,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         } else {
             backgroundImageView.transform = .identity
         }
+        
+        // Reapply parallax effect after updating the image
+        backgroundImageView.addParallaxEffect(intensity: 30.0)
 
         // Adjust alpha based on mode for better visibility
         UIView.transition(with: backgroundImageView, duration: 0.5, options: .transitionCrossDissolve, animations: {
@@ -888,12 +928,14 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     private func setupUI() {
         view.addSubview(backgroundImageView)
-        NSLayoutConstraint.activate([
-            backgroundImageView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
-            backgroundImageView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            backgroundImageView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            backgroundImageView.trailingAnchor.constraint(equalTo: view.trailingAnchor)
-        ])
+        backgroundConstraints = [
+            backgroundImageView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: -20),
+            backgroundImageView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: 20),
+            backgroundImageView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: -20),
+            backgroundImageView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: 20)
+        ]
+        NSLayoutConstraint.activate(backgroundConstraints)
+        backgroundImageView.layer.zPosition = -1
         
         view.addSubview(titleLabel)
         view.addSubview(languageCollectionView)
