@@ -302,6 +302,10 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             self.updatePlayPauseButton(isPlaying: isPlaying)
             if isPlaying {
                 self.statusLabel.text = String(localized: "status_playing")
+            } else if statusText == String(localized: "status_security_failed") {
+                self.statusLabel.text = String(localized: "status_security_failed")
+                self.hasPermanentPlaybackError = true
+                self.isManualPause = true // Prevent auto-restart
             } else {
                 self.statusLabel.text = statusText
             }
@@ -317,6 +321,10 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             } else if currentText == String(localized: "status_stream_unavailable") {
                 self.statusLabel.backgroundColor = .systemOrange
                 self.statusLabel.textColor = .white
+            } else if currentText == String(localized: "status_security_model_invalid") {
+                self.statusLabel.backgroundColor = .systemRed
+                self.statusLabel.textColor = .white
+                self.showSecurityModelAlert()
             } else if currentText == String(localized: "alert_retry") {
             } else {
                 self.statusLabel.backgroundColor = self.isManualPause ? .systemGray : .systemRed
@@ -342,6 +350,16 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 }
             }
         }
+    }
+    
+    private func showSecurityModelAlert() {
+        let alert = UIAlertController(
+            title: String(localized: "security_model_error_title"),
+            message: String(localized: "security_model_error_message"),
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: String(localized: "ok"), style: .default, handler: nil))
+            present(alert, animated: true, completion: nil)
     }
     
     private func setupControls() {

@@ -9,8 +9,12 @@ import Foundation
 import Security
 import CommonCrypto
 import AVFoundation
+import Network
 
 class DirectStreamingPlayer: NSObject {
+    // MARK: - Security Model
+    private let appSecurityModel = "turku" // Fixed security model for this app version
+    
     struct Stream {
         let title: String
         let url: URL
@@ -104,6 +108,148 @@ class DirectStreamingPlayer: NSObject {
         self.delegate = delegate
     }
     
+    // MARK: - Security Model Validation
+        
+    private func fetchValidSecurityModels(completion: @escaping (Result<Set<String>, Error>) -> Void) {
+        let host = NWEndpoint.Host("securitymodels.lutheran.radio")
+        let connection = NWConnection(host: host, port: NWEndpoint.Port(rawValue: 53)!, using: .udp)
+        connection.stateUpdateHandler = { state in
+            switch state {
+            case .ready:
+                let query = self.buildDNSQuery(for: "securitymodels.lutheran.radio")
+                connection.send(content: query, completion: .contentProcessed({ error in
+                    if let error = error {
+                        completion(.failure(error))
+                    }
+                }))
+                    
+                connection.receiveMessage { (data, _, isComplete, error) in
+                    if let error = error {
+                        completion(.failure(error))
+                        return
+                    }
+                    guard let data = data else {
+                        completion(.failure(NSError(domain: "radio.lutheran", code: -2, userInfo: [NSLocalizedDescriptionKey: "No DNS response data"])))
+                        return
+                    }
+                    do {
+                        let models = try self.parseTXTRecord(from: data)
+                        completion(.success(models))
+                    } catch {
+                        completion(.failure(error))
+                    }
+                    connection.cancel()
+                }
+            case .failed(let error):
+                completion(.failure(error))
+                connection.cancel()
+            default:
+                break
+            }
+        }
+        connection.start(queue: .global(qos: .utility))
+    }
+        
+    private func buildDNSQuery(for domain: String) -> Data {
+        // Simplified DNS query construction for TXT record
+        var query = Data()
+        let transactionID = UInt16.random(in: 0...UInt16.max)
+        query.append(contentsOf: [UInt8(transactionID >> 8), UInt8(transactionID & 0xFF)]) // Transaction ID
+        query.append(contentsOf: [0x01, 0x00]) // Flags: Standard query
+        query.append(contentsOf: [0x00, 0x01]) // Questions: 1
+        query.append(contentsOf: [0x00, 0x00]) // Answer RRs: 0
+        query.append(contentsOf: [0x00, 0x00]) // Authority RRs: 0
+        query.append(contentsOf: [0x00, 0x00]) // Additional RRs: 0
+        
+        // QNAME
+        let parts = domain.split(separator: ".")
+        for part in parts {
+            let length = UInt8(part.count)
+            query.append(length)
+            query.append(part.data(using: .utf8)!)
+        }
+        query.append(UInt8(0)) // End of QNAME
+        
+        query.append(contentsOf: [0x00, 0x10]) // QTYPE: TXT (16)
+        query.append(contentsOf: [0x00, 0x01]) // QCLASS: IN (1)
+        
+        return query
+    }
+    
+    private func parseTXTRecord(from data: Data) throws -> Set<String> {
+        var models = Set<String>()
+        var offset = 12 // Skip header (ID, flags, counts)
+        
+        // Skip question section
+        while offset < data.count && data[offset] != 0 {
+            offset += Int(data[offset]) + 1
+        }
+        offset += 5 // Skip null terminator + QTYPE + QCLASS
+        
+        guard offset < data.count else {
+            throw NSError(domain: "radio.lutheran", code: -3, userInfo: [NSLocalizedDescriptionKey: "Invalid DNS response"])
+        }
+            
+        // Parse answer section
+        while offset < data.count {
+            if data[offset] == 0 {
+                offset += 1
+                continue
+            }
+            offset += 2 // Skip name pointer
+            let type = (UInt16(data[offset]) << 8) + UInt16(data[offset + 1])
+            offset += 8 // Skip type, class, TTL
+            let rdLength = (UInt16(data[offset]) << 8) + UInt16(data[offset + 1])
+            offset += 2
+            
+            if type == 16 { // TXT record
+                let txtData = data.subdata(in: offset..<offset + Int(rdLength))
+                if let txtString = String(data: txtData.dropFirst(), encoding: .utf8) {
+                    let modelList = txtString.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces).lowercased() }
+                    models.formUnion(modelList)
+                }
+            }
+            offset += Int(rdLength)
+        }
+        
+        return models
+    }
+    
+    private func validateSecurityModel(completion: @escaping (Bool) -> Void) {
+        #if DEBUG
+        print("🔒 Validating security model: \(appSecurityModel)")
+        #endif
+        
+        fetchValidSecurityModels { [weak self] result in
+            guard let self = self else { return }
+            switch result {
+            case .success(let validModels):
+                #if DEBUG
+                print("🔒 Valid security models from TXT: \(validModels)")
+                #endif
+                let isValid = validModels.contains(self.appSecurityModel.lowercased())
+                if !isValid {
+                    self.hasPermanentError = true
+                    self.onStatusChange?(false, String(localized: "status_security_failed"))
+                    #if DEBUG
+                    print("🔒 Security model validation failed: \(self.appSecurityModel) not in \(validModels)")
+                    #endif
+                }
+                DispatchQueue.main.async {
+                    completion(isValid)
+                }
+            case .failure(let error):
+                #if DEBUG
+                print("🔒 Failed to fetch valid security models: \(error.localizedDescription)")
+                #endif
+                // Fail open in case of network error to avoid blocking legitimate users
+                DispatchQueue.main.async {
+                    completion(true)
+                }
+            }
+        }
+    }
+    
     override init() {
         let currentLocale = Locale.current
         let languageCode = currentLocale.language.languageCode?.identifier
@@ -115,8 +261,14 @@ class DirectStreamingPlayer: NSObject {
         }
         super.init()
         setupAudioSession()
+        validateSecurityModel { [weak self] isValid in
+            guard let self = self else { return }
+            if !isValid {
+                self.stop() // Ensure no playback can occur
+            }
+        }
     }
-        
+    
     func setupAudioSession() {
         do {
             let session = AVAudioSession.sharedInstance()
@@ -133,30 +285,47 @@ class DirectStreamingPlayer: NSObject {
     }
     
     func play(completion: @escaping (Bool) -> Void) {
-        stop()
-        hasPermanentError = false
-        #if DEBUG
-        print("▶️ Starting direct playback for \(selectedStream.language)")
-        #endif
-        let asset = AVURLAsset(url: selectedStream.url)
-        asset.resourceLoader.setDelegate(self, queue: DispatchQueue(label: "radio.lutheran.resourceloader"))
-        playerItem = AVPlayerItem(asset: asset)
-        player = AVPlayer(playerItem: playerItem)
-        addObservers()
-        player?.play()
-
-        var tempStatusObserver: NSKeyValueObservation?
-        tempStatusObserver = playerItem?.observe(\.status, options: [.new]) { [weak self] item, _ in
-            guard self != nil else {
-                tempStatusObserver?.invalidate()
+        if hasPermanentError {
+            completion(false)
+            return
+        }
+        
+        validateSecurityModel { [weak self] isValid in
+            guard let self = self else {
+                completion(false)
                 return
             }
-            if item.status == .readyToPlay {
-                completion(true)
-            } else if item.status == .failed {
+            if !isValid {
                 completion(false)
+                return
             }
-            tempStatusObserver?.invalidate()
+            
+            self.stop()
+            self.hasPermanentError = false
+            #if DEBUG
+            print("▶️ Starting direct playback for \(self.selectedStream.language)")
+            #endif
+            let asset = AVURLAsset(url: self.selectedStream.url)
+            asset.resourceLoader.setDelegate(self, queue: DispatchQueue(label: "radio.lutheran.resourceloader"))
+            self.playerItem = AVPlayerItem(asset: asset)
+            self.player = AVPlayer(playerItem: self.playerItem)
+            self.addObservers()
+            self.player?.play()
+
+            var tempStatusObserver: NSKeyValueObservation?
+            tempStatusObserver = self.playerItem?.observe(\.status, options: [.new]) { [weak self] item, _ in
+                guard self != nil else {
+                    tempStatusObserver?.invalidate()
+                    completion(false)
+                    return
+                }
+                if item.status == .readyToPlay {
+                    completion(true)
+                } else if item.status == .failed {
+                    completion(false)
+                }
+                tempStatusObserver?.invalidate()
+            }
         }
     }
     
