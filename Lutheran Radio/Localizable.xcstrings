@@ -1806,9 +1806,6 @@
         }
       }
     },
-    "status_security_model_invalid" : {
-
-    },
     "status_stopped" : {
       "localizations" : {
         "da" : {

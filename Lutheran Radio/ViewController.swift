@@ -301,7 +301,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             } else if currentText == String(localized: "status_stream_unavailable") {
                 self.statusLabel.backgroundColor = .systemOrange
                 self.statusLabel.textColor = .white
-            } else if currentText == String(localized: "status_security_model_invalid") {
+            } else if currentText == String(localized: "status_security_failed") {
                 self.statusLabel.backgroundColor = .systemRed
                 self.statusLabel.textColor = .white
                 self.showSecurityModelAlert()

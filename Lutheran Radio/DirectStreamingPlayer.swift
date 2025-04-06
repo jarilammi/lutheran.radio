@@ -12,7 +12,7 @@ import AVFoundation
 
 class DirectStreamingPlayer: NSObject {
     // MARK: - Security Model
-    private let appSecurityModel = "turdku" // Security model in use
+    private let appSecurityModel = "turku" // Security model in use
     private var isValidating = false
     private var isSecurityModelValid: Bool?
     
@@ -335,7 +335,7 @@ class DirectStreamingPlayer: NSObject {
                 if !isValid {
                     self.hasPermanentError = true
                     DispatchQueue.main.async {
-                        self.onStatusChange?(false, String(localized: "status_security_model_invalid"))
+                        self.onStatusChange?(false, String(localized: "status_security_failed"))
                         completion(isValid)
                     }
                 } else {
