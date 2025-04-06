@@ -961,6 +961,108 @@
         }
       }
     },
+    "ok" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
+        "et" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        }
+      }
+    },
+    "security_model_error_message" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Sicherheitsmodell der App konnte nicht validiert werden. Dies kann auf einen Konfigurationsfehler oder eine veraltete App-Version zurückzuführen sein. Bitte aktualisieren Sie die App oder kontaktieren Sie den Support, wenn das Problem weiterhin besteht."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The app's security model could not be validated. This may be due to a configuration error or an outdated app version. Please update the app or contact support if the issue persists."
+          }
+        },
+        "et" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rakenduse turvamudelit ei õnnestunud valideerida. See võib olla tingitud konfiguratsiooniveast või aegunud rakenduse versioonist. Palun värskendage rakendust või võtke ühendust toega, kui probleem püsib."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sovelluksen turvallisuusmallia ei voitu vahvistaa. Tämä voi johtua konfiguraatiovirheestä tai vanhentuneesta sovellusversiosta. Päivitä sovellus tai ota yhteyttä tukeen, jos ongelma jatkuu."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Appens säkerhetsmodell kunde inte valideras. Detta kan bero på ett konfigurationsfel eller en föråldrad appversion. Vänligen uppdatera appen eller kontakta supporten om problemet kvarstår."
+          }
+        }
+      }
+    },
+    "security_model_error_title" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sicherheitsvalidierung fehlgeschlagen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Security Validation Failed"
+          }
+        },
+        "et" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turvalisuse valideerimine ebaõnnestus"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turvallisuusvalidointi epäonnistui"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Säkerhetsvalidering misslyckades"
+          }
+        }
+      }
+    },
     "status_buffering" : {
       "localizations" : {
         "da" : {
@@ -1703,6 +1805,9 @@
           }
         }
       }
+    },
+    "status_security_model_invalid" : {
+
     },
     "status_stopped" : {
       "localizations" : {
