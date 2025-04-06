@@ -10,6 +10,7 @@ import AVFoundation
 import MediaPlayer
 import AVKit
 import Network
+import CoreImage
 
 // MARK: - Parallax Effect Extension
 extension UIView {
@@ -204,22 +205,12 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         languageCollectionView.delegate = self
         languageCollectionView.dataSource = self
         languageCollectionView.register(LanguageCell.self, forCellWithReuseIdentifier: "LanguageCell")
-        
+            
         let currentLocale = Locale.current
         let languageCode = currentLocale.language.languageCode?.identifier ?? "en"
         let initialIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.languageCode == languageCode }) ?? 0
-        #if DEBUG
-        print("📱 viewDidLoad: Locale languageCode=\(languageCode), initialIndex=\(initialIndex), stream=\(DirectStreamingPlayer.availableStreams[initialIndex].language)")
-        #endif
-        
         streamingPlayer.setStream(to: DirectStreamingPlayer.availableStreams[initialIndex])
         updateBackground(for: DirectStreamingPlayer.availableStreams[initialIndex])
-        
-        if let layout = languageCollectionView.collectionViewLayout as? UICollectionViewFlowLayout {
-            layout.scrollDirection = .horizontal
-            layout.minimumLineSpacing = 10
-            layout.minimumInteritemSpacing = 0
-        }
         
         languageCollectionView.reloadData()
         languageCollectionView.layoutIfNeeded()
@@ -230,22 +221,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         languageCollectionView.scrollToItem(at: indexPath, at: .centeredHorizontally, animated: false)
         updateSelectionIndicator(to: initialIndex, isInitial: true)
         
-        // Defer unlocking until layout is complete
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
             self?.isInitialScrollLocked = false
-            #if DEBUG
-            print("📱 Initial scroll lock released")
-            #endif
         }
-        
-        #if DEBUG
-        if let selectedIndexPath = languageCollectionView.indexPathsForSelectedItems?.first {
-            print("📱 viewDidLoad: Selected indexPath=\(selectedIndexPath.item), expected=\(initialIndex)")
-        } else {
-            print("📱 viewDidLoad: No selected item after initialization")
-        }
-        print("📱 viewDidLoad: Selection indicator center.x=\(selectionIndicator.center.x)")
-        #endif
         
         setupControls()
         setupNetworkMonitoring()
@@ -255,11 +233,13 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         setupStreamingCallbacks()
         setupAudioEngine()
         
-        isInitialSetupComplete = true // Mark setup complete after all UI updates
+        isInitialSetupComplete = true
         setupBackgroundParallax()
 
-        if hasInternetConnection && !isManualPause {
-            startPlayback()
+        // Defer playback until after initial validation completes
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self = self, self.hasInternetConnection && !self.isManualPause else { return }
+            self.startPlayback()
         }
     }
     
@@ -626,29 +606,10 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     // MARK: - Playback Control
     
     private func startPlayback() {
-        #if DEBUG
-        print("📱 startPlayback called - hasInternet: \(hasInternetConnection), isManualPause: \(isManualPause), isTuningSoundPlaying: \(isTuningSoundPlaying)")
-        #endif
-        
         if !hasInternetConnection {
             updateUIForNoInternet()
             stopTuningSound()
             performActiveConnectivityCheck()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
-                guard let self = self else {
-                    #if DEBUG
-                    print("📱 startPlayback (asyncAfter): ViewController is nil, skipping callback")
-                    #endif
-                    return
-                }
-                if !self.hasInternetConnection {
-                    self.updateUIForNoInternet()
-                    return
-                }
-                if !self.isPlaying && !self.isManualPause {
-                    self.startPlayback()
-                }
-            }
             return
         }
         
@@ -657,8 +618,20 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         statusLabel.backgroundColor = .systemYellow
         statusLabel.textColor = .black
         
-        streamingPlayer.handleNetworkInterruption()
-        attemptPlaybackWithRetry(attempt: 1, maxAttempts: 3)
+        streamingPlayer.play { [weak self] success in
+            guard let self = self else { return }
+            if success {
+                self.isPlaying = true
+                self.updatePlayPauseButton(isPlaying: true)
+                self.statusLabel.text = String(localized: "status_playing")
+                self.statusLabel.backgroundColor = .systemGreen
+            } else if self.streamingPlayer.isLastErrorPermanent() {
+                self.hasPermanentPlaybackError = true
+                self.statusLabel.text = String(localized: "status_stream_unavailable")
+                self.statusLabel.backgroundColor = .systemOrange
+                self.statusLabel.textColor = .white
+            }
+        }
     }
     
     private func attemptPlaybackWithRetry(attempt: Int, maxAttempts: Int) {
