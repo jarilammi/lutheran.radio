@@ -107,9 +107,9 @@ The app enforces security model validation to ensure only versions with an appro
 
 ### Why DNS TXT Records?
 
-- **Dynamic Updates:** Allows real-time revocation of compromised models without app updates
-- **Simplicity:** Leverages existing DNS infrastructure for lightweight validation
-- **Security:** Complements certificate pinning by tying app functionality to server-defined policies
+- **Dynamic Updates:** Allows real-time revocation of compromised models by updating the TXT record, without requiring app updates.
+- **Simplicity:** Leverages existing DNS infrastructure for lightweight validation, avoiding the need for a dedicated server.
+- **Security:** Complements certificate pinning by linking app functionality to a centrally managed DNS record.
 
 ### Verifying the Security Model
 
@@ -122,7 +122,37 @@ dig +short TXT securitymodels.lutheran.radio
 Example output:
 
 ```
-"korppoo,turku"
+"mariehamn,turku"
 ```
 
-Compare this against the appSecurityModel value in DirectStreamingPlayer.swift. If the app’s model (e.g., "turku") isn’t listed, it will fail validation. To update the list, modify the TXT record on the securitymodels.lutheran.radio DNS server.
+Compare this against the appSecurityModel value in DirectStreamingPlayer.swift. If the app’s model (e.g., "turku") isn’t listed, it will fail validation. To update the list, modify the TXT record for ```securitymodels.lutheran.radio``` through the DNS management interface for the ```lutheran.radio``` domain.
+
+## Security Model History
+
+To prevent naming collisions and maintain a clear history of security models, the table below lists all used security model names along with their validity periods. When selecting a new security model name, ensure it does not match any previously used name to avoid conflicts with older app versions or DNS TXT records.
+
+| Security Model Name | Valid From       | Valid Until     | App Version Introduced |
+|---------------------|------------------|-----------------|------------------------|
+| `turku`             | April 6, 2025    | (ongoing)       | 1.0.4                  |
+|                     |                  |                 |                        |
+
+**Notes:**
+- **Valid From:** The date when the security model was first introduced or became valid.
+- **Valid Until:** The date when the security model was deprecated (or "(ongoing)" if still active).
+- **App Version Introduced:** The app version where this security model was first implemented.
+- When adding a new security model, append a new row to this table and update the DNS TXT record accordingly (see "Verifying the Security Model" above).
+  
+## Why Track Security Model Names?
+
+Security model names (e.g., ```turku```) are embedded in the app and validated against the DNS TXT record. Once a name is used, it becomes part of the app's history and may still exist in older versions. Reusing a name could inadvertently allow a deprecated or compromised version to pass validation, undermining security. By maintaining this table, we ensure that:
+
+- New security model names are unique and avoid collisions with past names.
+- The history of security models is transparent for debugging and auditing.
+- Contributors can easily pick a fresh name (e.g., a unique city, codename, or identifier) when implementing a new security model.
+
+When introducing a new security model:
+
+1. Choose a unique name not listed in the table.
+2. Update the ```appSecurityModel``` value in ```DirectStreamingPlayer.swift```.
+3. Add the new name to the DNS TXT record of ```securitymodels.lutheran.radio```.
+4. Append a new row to this table with the current date and app version.
