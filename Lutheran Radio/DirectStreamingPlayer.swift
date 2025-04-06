@@ -327,30 +327,44 @@ class DirectStreamingPlayer: NSObject {
             self.isValidating = false
             switch result {
             case .success(let validModels):
-                let isValid = validModels.contains(self.appSecurityModel.lowercased())
-                self.isSecurityModelValid = isValid
-                #if DEBUG
-                print("🔒 Security model validation completed: isValid=\(isValid), validModels=\(validModels)")
-                #endif
-                if !isValid {
+                if validModels.isEmpty {
+                    #if DEBUG
+                    print("🔒 No security models returned from DNS, treating as permanent security error")
+                    #endif
+                    self.isSecurityModelValid = false
                     self.hasPermanentError = true
                     DispatchQueue.main.async {
                         self.onStatusChange?(false, String(localized: "status_security_failed"))
-                        completion(isValid)
+                        completion(false)
                     }
                 } else {
-                    DispatchQueue.main.async {
-                        completion(isValid)
+                    let isValid = validModels.contains(self.appSecurityModel.lowercased())
+                    self.isSecurityModelValid = isValid
+                    #if DEBUG
+                    print("🔒 Security model validation completed: isValid=\(isValid), validModels=\(validModels)")
+                    #endif
+                    if !isValid {
+                        self.hasPermanentError = true
+                        DispatchQueue.main.async {
+                            self.onStatusChange?(false, String(localized: "status_security_failed"))
+                            completion(false)
+                        }
+                    } else {
+                        DispatchQueue.main.async {
+                            completion(true)
+                        }
                     }
                 }
             case .failure(let error):
-                // Fail open on error
-                self.isSecurityModelValid = true
+                // Treat DNS failure (e.g., missing record) as a permanent security error
+                self.isSecurityModelValid = false
+                self.hasPermanentError = true
                 #if DEBUG
-                print("🔒 Security model validation failed with error: \(error.localizedDescription), failing open")
+                print("🔒 Security model fetch failed with error: \(error.localizedDescription), treating as permanent security error")
                 #endif
                 DispatchQueue.main.async {
-                    completion(true)
+                    self.onStatusChange?(false, String(localized: "status_security_failed"))
+                    completion(false)
                 }
             }
         }
