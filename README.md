@@ -125,16 +125,15 @@ Example output:
 "mariehamn,turku"
 ```
 
-Compare this against the appSecurityModel value in DirectStreamingPlayer.swift. If the app’s model (e.g., "turku") isn’t listed, it will fail validation. To update the list, modify the TXT record for ```securitymodels.lutheran.radio``` through the DNS management interface for the ```lutheran.radio``` domain.
+Compare this output to the security model defined in the app (found in ```DirectStreamingPlayer.swift``` as ```appSecurityModel```). If the app’s model (e.g., "turku") isn’t listed, it will fail validation. To update the list, modify the TXT record for ```securitymodels.lutheran.radio``` through the DNS management interface for the ```lutheran.radio``` domain.
 
-## Security Model History
+### Security Model History
 
 To prevent naming collisions and maintain a clear history of security models, the table below lists all used security model names along with their validity periods. When selecting a new security model name, ensure it does not match any previously used name to avoid conflicts with older app versions or DNS TXT records.
 
 | Security Model Name | Valid From       | Valid Until     | App Version Introduced |
 |---------------------|------------------|-----------------|------------------------|
 | `turku`             | April 6, 2025    | (ongoing)       | 1.0.4                  |
-|                     |                  |                 |                        |
 
 **Notes:**
 - **Valid From:** The date when the security model was first introduced or became valid.
@@ -142,7 +141,7 @@ To prevent naming collisions and maintain a clear history of security models, th
 - **App Version Introduced:** The app version where this security model was first implemented.
 - When adding a new security model, append a new row to this table and update the DNS TXT record accordingly (see "Verifying the Security Model" above).
   
-## Why Track Security Model Names?
+### Why Track Security Model Names?
 
 Security model names (e.g., ```turku```) are embedded in the app and validated against the DNS TXT record. Once a name is used, it becomes part of the app's history and may still exist in older versions. Reusing a name could inadvertently allow a deprecated or compromised version to pass validation, undermining security. By maintaining this table, we ensure that:
 
@@ -153,6 +152,6 @@ Security model names (e.g., ```turku```) are embedded in the app and validated a
 When introducing a new security model:
 
 1. Choose a unique name not listed in the table.
-2. Update the ```appSecurityModel``` value in ```DirectStreamingPlayer.swift```.
+2. Set the new name as the `appSecurityModel` value in `DirectStreamingPlayer.swift` (see "Verifying the Security Model" for how this is checked).
 3. Add the new name to the DNS TXT record of ```securitymodels.lutheran.radio```.
-4. Append a new row to this table with the current date and app version.
+4. Add a new row to the table in "Security Model History" with the current date and app version.
