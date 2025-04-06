@@ -961,6 +961,324 @@
         }
       }
     },
+    "ok" : {
+      "localizations" : {
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
+        "et" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
+        "fit" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Selvä"
+          }
+        },
+        "fo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Í lagi"
+          }
+        },
+        "is" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Í lagi"
+          }
+        },
+        "kl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aap"
+          }
+        },
+        "lt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gerai"
+          }
+        },
+        "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Labi"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Greit"
+          }
+        },
+        "nn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Greitt"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dobrze"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "О’кей"
+          }
+        },
+        "se" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buorre"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        }
+      }
+    },
+    "security_model_error_message" : {
+      "localizations" : {
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Appens sikkerhedsmodel kunne ikke valideres. Dette kan skyldes en konfigurationsfejl eller en forældet app-version. Opdater venligst appen eller kontakt support, hvis problemet fortsætter."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Sicherheitsmodell der App konnte nicht validiert werden. Dies kann auf einen Konfigurationsfehler oder eine veraltete App-Version zurückzuführen sein. Bitte aktualisieren Sie die App oder kontaktieren Sie den Support, wenn das Problem weiterhin besteht."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The app's security model could not be validated. This may be due to a configuration error or an outdated app version. Please update the app or contact support if the issue persists."
+          }
+        },
+        "et" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rakenduse turvamudelit ei õnnestunud valideerida. See võib olla tingitud konfiguratsiooniveast või aegunud rakenduse versioonist. Palun värskendage rakendust või võtke ühendust toega, kui probleem püsib."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sovelluksen turvallisuusmallia ei voitu vahvistaa. Tämä voi johtua konfiguraatiovirheestä tai vanhentuneesta sovellusversiosta. Päivitä sovellus tai ota yhteyttä tukeen, jos ongelma jatkuu."
+          }
+        },
+        "fit" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sovelluksen turvallisuusmalli ei voitu vahvistaa. Tämä voi johtua konfigurointivirheestä tai vanhentuneesta sovellusversiosta. Päivitä sovellus tai ota yhteyttä tukeen, jos ongelma jatkuu."
+          }
+        },
+        "fo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trygdarlíkan appinar kundu ikki staðfestast. Hetta kann skyldast einum konfiguratiónsfeili ella einari gamaldags app-útgávu. Vinarliga dagfør appina ella set teg í samband við stuðul, um trupulleikin heldur fram."
+          }
+        },
+        "is" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Öryggislíkan appsins gat ekki verið staðfest. Þetta gæti stafað af stillingarvillu eða úreltri útgáfu af appinu. Vinsamlegast uppfærðu appið eða hafðu samband við þjónustudeild ef vandamálið heldur áfram."
+          }
+        },
+        "kl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "App-ip illersuisarnera iliuuseqarsinnaanngilaq. Tamanna konfigurasioni ajortussaanerup matumalluunniit app-ip siulleq ingerlaneraniittussaanerup tungaanut pisariaqarpok. App taanna nutarteriarit imaluunniit tuluttut atornissaqarfimmut qaaqqusigit ajorunnaassappat."
+          }
+        },
+        "lt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Programėlės saugumo modelis negalėjo būti patvirtintas. Tai gali būti dėl konfigūracijos klaidos arba pasenusios programėlės versijos. Prašome atnaujinti programėlę arba kreiptis į palaikymo tarnybą, jei problema išlieka."
+          }
+        },
+        "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lietotnes drošības modelis nevarēja tikt validēts. Tas var būt saistīts ar konfigurācijas kļūdu vai novecojušu lietotnes versiju. Lūdzu, atjauniniet lietotni vai sazinieties ar atbalsta dienestu, ja problēma turpinās."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Appens sikkerhetsmodell kunne ikke valideres. Dette kan skyldes en konfigurasjonsfeil eller en utdatert appversjon. Vennligst oppdater appen eller kontakt support hvis problemet vedvarer."
+          }
+        },
+        "nn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tryggleiksmodellen til appen kunne ikkje validerast. Dette kan skuldast ein konfigurasjonsfeil eller ein utdatert appversjon. Ver venleg og oppdater appen eller kontakt brukerstøtte om problemet held fram."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Model zabezpieczeń aplikacji nie mógł zostać zweryfikowany. Może to być spowodowane błędem konfiguracji lub nieaktualną wersją aplikacji. Proszę zaktualizować aplikację lub skontaktować się z pomocą techniczną, jeśli problem będzie się powtarzał."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Модель безопасности приложения не удалось проверить. Это может быть связано с ошибкой конфигурации или устаревшей версией приложения. Пожалуйста, обновите приложение или обратитесь в службу поддержки, если проблема сохраняется."
+          }
+        },
+        "se" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sovellusa sihkarvuohtamalli ii sáhttán čielggaduvvot. Dát sáhttá leat geažil konfigurašuvdna meattáhus dahje boares sovellusveršuvdna. Leage buorre ja ođasmahte sovellusa dahje váldde oktavuođa dutkanbálvalusain jos meattáhus joatká."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Appens säkerhetsmodell kunde inte valideras. Detta kan bero på ett konfigurationsfel eller en föråldrad appversion. Vänligen uppdatera appen eller kontakta supporten om problemet kvarstår."
+          }
+        }
+      }
+    },
+    "security_model_error_title" : {
+      "localizations" : {
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sikkerhedsvalidering mislykkedes"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sicherheitsvalidierung fehlgeschlagen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Security Validation Failed"
+          }
+        },
+        "et" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turvalisuse valideerimine ebaõnnestus"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turvallisuusvalidointi epäonnistui"
+          }
+        },
+        "fit" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turvallisuustarkastus epäonnistui"
+          }
+        },
+        "fo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trygdarstaðfesting miseydnaðist"
+          }
+        },
+        "is" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Öryggisstaðfesting mistókst"
+          }
+        },
+        "kl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Illersuisarneq ajorpoq"
+          }
+        },
+        "lt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saugumo patvirtinimas nepavyko"
+          }
+        },
+        "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Drošības validācija neizdevās"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sikkerhetsvalidering mislyktes"
+          }
+        },
+        "nn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tryggleiksvalidering mislykka"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Weryfikacja zabezpieczeń nie powiodła się"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Проверка безопасности не удалась"
+          }
+        },
+        "se" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sihkarvuohtačielggadeapmi ii lihkostuvvan"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Säkerhetsvalidering misslyckades"
+          }
+        }
+      }
+    },
     "status_buffering" : {
       "localizations" : {
         "da" : {
