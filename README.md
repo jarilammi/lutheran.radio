@@ -94,3 +94,35 @@ openssl s_client -connect livestream.lutheran.radio:8443 -servername livestream.
 ```
 
 Match the output against the ```SPKI-SHA256-BASE64``` value in ```Info.plist```. Update if necessary.
+
+## Security Model Validation
+
+The app enforces security model validation to ensure only versions with an approved security implementation can stream content. This protects against compromised or obsolete app versions.
+
+1. **Domain:** ```securitymodels.lutheran.radio```
+2. **Mechanism:** Queries a DNS TXT record for a comma-separated list of valid security models (e.g., `"korppoo,turku"`)
+3. **Pinned Value:** Fixed security model string embedded in the app (currently `"turku"`)
+4. **Location:** Defined in `DirectStreamingPlayer.swift` as `appSecurityModel`
+5. **Behavior:** If the app’s security model isn’t in the TXT record, playback is permanently disabled with a user-facing error message
+
+### Why DNS TXT Records?
+
+- **Dynamic Updates:** Allows real-time revocation of compromised models without app updates
+- **Simplicity:** Leverages existing DNS infrastructure for lightweight validation
+- **Security:** Complements certificate pinning by tying app functionality to server-defined policies
+
+### Verifying the Security Model
+
+To check the current valid security models:
+
+```bash
+dig +short TXT securitymodels.lutheran.radio
+```
+
+Example output:
+
+```
+"korppoo,turku"
+```
+
+Compare this against the appSecurityModel value in DirectStreamingPlayer.swift. If the app’s model (e.g., "turku") isn’t listed, it will fail validation. To update the list, modify the TXT record on the securitymodels.lutheran.radio DNS server.
