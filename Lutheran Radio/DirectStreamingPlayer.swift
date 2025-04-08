@@ -589,13 +589,17 @@ class DirectStreamingPlayer: NSObject {
         
         // Only try to remove KVO observers if we added them
         if isObservingBuffer, let playerItem = playerItem {
-            // Remove observers with safety checks
+            // Remove observers only if we know they were added
             playerItem.removeObserver(self, forKeyPath: "playbackBufferEmpty")
             playerItem.removeObserver(self, forKeyPath: "playbackLikelyToKeepUp")
             playerItem.removeObserver(self, forKeyPath: "playbackBufferFull")
             isObservingBuffer = false
             #if DEBUG
             print("📊 Removed buffer observers successfully")
+            #endif
+        } else {
+            #if DEBUG
+            print("📊 No buffer observers to remove (isObservingBuffer=\(isObservingBuffer), playerItem=\(playerItem != nil ? "exists" : "nil"))")
             #endif
         }
     }
