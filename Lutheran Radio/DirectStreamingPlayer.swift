@@ -310,12 +310,27 @@ class DirectStreamingPlayer: NSObject {
             }
             return
         }
-        
+
         isValidating = true
         #if DEBUG
         print("🔒 Validating security model: \(appSecurityModel) - Starting validation process")
         #endif
-        
+
+        // Check for basic network connectivity
+        let dnsServers = getSystemDNSServers()
+        if dnsServers.isEmpty {
+            #if DEBUG
+            print("🔒 No DNS servers available (likely offline or airplane mode), treating as transient error")
+            #endif
+            isValidating = false
+            isSecurityModelValid = false // Temporary invalid state
+            DispatchQueue.main.async {
+                self.onStatusChange?(false, String(localized: "status_no_internet"))
+                completion(false)
+            }
+            return
+        }
+
         fetchValidSecurityModels { [weak self] result in
             guard let self = self else {
                 DispatchQueue.main.async {
@@ -323,7 +338,7 @@ class DirectStreamingPlayer: NSObject {
                 }
                 return
             }
-            
+
             self.isValidating = false
             switch result {
             case .success(let validModels):
@@ -356,15 +371,29 @@ class DirectStreamingPlayer: NSObject {
                     }
                 }
             case .failure(let error):
-                // Treat DNS failure (e.g., missing record) as a permanent security error
-                self.isSecurityModelValid = false
-                self.hasPermanentError = true
-                #if DEBUG
-                print("🔒 Security model fetch failed with error: \(error.localizedDescription), treating as permanent security error")
-                #endif
-                DispatchQueue.main.async {
-                    self.onStatusChange?(false, String(localized: "status_security_failed"))
-                    completion(false)
+                // Check if the error is due to network issues
+                let nsError = error as NSError
+                if nsError.domain == "radio.lutheran" && nsError.code < 0 { // DNS query failed
+                    #if DEBUG
+                    print("🔒 DNS query failed, likely due to network issue: \(error.localizedDescription)")
+                    #endif
+                    self.isSecurityModelValid = false
+                    // Do NOT set hasPermanentError here; treat as transient
+                    DispatchQueue.main.async {
+                        self.onStatusChange?(false, String(localized: "status_no_internet"))
+                        completion(false)
+                    }
+                } else {
+                    // Other errors treated as permanent security failures
+                    self.isSecurityModelValid = false
+                    self.hasPermanentError = true
+                    #if DEBUG
+                    print("🔒 Security model fetch failed with error: \(error.localizedDescription), treating as permanent security error")
+                    #endif
+                    DispatchQueue.main.async {
+                        self.onStatusChange?(false, String(localized: "status_security_failed"))
+                        completion(false)
+                    }
                 }
             }
         }
@@ -406,17 +435,25 @@ class DirectStreamingPlayer: NSObject {
     }
     
     func play(completion: @escaping (Bool) -> Void) {
-        if hasPermanentError {
-            completion(false)
+        // Check DNS servers as a proxy for connectivity
+        let dnsServers = getSystemDNSServers()
+        if dnsServers.isEmpty || hasPermanentError {
+            #if DEBUG
+            print("📡 Play aborted: \(dnsServers.isEmpty ? "No network connectivity" : "Permanent error exists")")
+            #endif
+            DispatchQueue.main.async {
+                self.onStatusChange?(false, String(localized: "status_no_internet"))
+                completion(false)
+            }
             return
         }
-        
+
         validateSecurityModel { [weak self] isValid in
             guard let self = self, isValid else {
                 completion(false)
                 return
             }
-            
+
             self.stop()
             self.hasPermanentError = false
             let asset = AVURLAsset(url: self.selectedStream.url)
@@ -425,7 +462,7 @@ class DirectStreamingPlayer: NSObject {
             self.player = AVPlayer(playerItem: self.playerItem)
             self.addObservers()
             self.player?.play()
-            
+
             var tempStatusObserver: NSKeyValueObservation?
             tempStatusObserver = self.playerItem?.observe(\.status, options: [.new]) { [weak self] item, _ in
                 guard self != nil else {
