@@ -399,6 +399,31 @@ class DirectStreamingPlayer: NSObject {
         }
     }
     
+    public func resetTransientErrors() {
+        let isValid = isSecurityModelValid ?? true
+        if !hasPermanentErrorDueToSecurity() || (isValid == false && !wasLastValidationSecurityMismatch()) {
+            hasPermanentError = false
+            isSecurityModelValid = nil // Force revalidation on next play
+            #if DEBUG
+            print("🔄 Resetting transient error state: hasPermanentError=\(hasPermanentError), forcing security model revalidation")
+            #endif
+        }
+    }
+
+    private func hasPermanentErrorDueToSecurity() -> Bool {
+        // Check if the permanent error is specifically due to a security model mismatch
+        if let isValid = isSecurityModelValid, !isValid {
+            return wasLastValidationSecurityMismatch()
+        }
+        return false
+    }
+    
+    private var lastValidationWasSecurityMismatch: Bool = false
+
+    private func wasLastValidationSecurityMismatch() -> Bool {
+        return lastValidationWasSecurityMismatch
+    }
+    
     override init() {
         let currentLocale = Locale.current
         let languageCode = currentLocale.language.languageCode?.identifier
@@ -435,11 +460,10 @@ class DirectStreamingPlayer: NSObject {
     }
     
     func play(completion: @escaping (Bool) -> Void) {
-        // Check DNS servers as a proxy for connectivity
         let dnsServers = getSystemDNSServers()
-        if dnsServers.isEmpty || hasPermanentError {
+        if dnsServers.isEmpty {
             #if DEBUG
-            print("📡 Play aborted: \(dnsServers.isEmpty ? "No network connectivity" : "Permanent error exists")")
+            print("📡 Play aborted: No network connectivity (no DNS servers)")
             #endif
             DispatchQueue.main.async {
                 self.onStatusChange?(false, String(localized: "status_no_internet"))
@@ -448,14 +472,30 @@ class DirectStreamingPlayer: NSObject {
             return
         }
 
+        if hasPermanentError && hasPermanentErrorDueToSecurity() {
+            #if DEBUG
+            print("📡 Play aborted: Permanent security error exists")
+            #endif
+            DispatchQueue.main.async {
+                self.onStatusChange?(false, String(localized: "status_security_failed"))
+                completion(false)
+            }
+            return
+        }
+
         validateSecurityModel { [weak self] isValid in
-            guard let self = self, isValid else {
+            guard let self = self else {
                 completion(false)
                 return
             }
 
+            if !isValid {
+                completion(false)
+                return
+            }
+
+            self.hasPermanentError = false // Reset on successful validation
             self.stop()
-            self.hasPermanentError = false
             let asset = AVURLAsset(url: self.selectedStream.url)
             asset.resourceLoader.setDelegate(self, queue: DispatchQueue(label: "radio.lutheran.resourceloader"))
             self.playerItem = AVPlayerItem(asset: asset)
