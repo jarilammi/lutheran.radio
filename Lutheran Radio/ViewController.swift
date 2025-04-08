@@ -150,6 +150,18 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     private var isInitialSetupComplete = false
     private var isInitialScrollLocked = true
     
+    let speakerImageView: UIImageView = {
+        let imageView = UIImageView()
+        imageView.contentMode = .scaleAspectFit
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        imageView.isHidden = true // Hidden by default
+        imageView.layer.cornerRadius = 10
+        imageView.clipsToBounds = true
+        return imageView
+    }()
+    
+    private var speakerImageHeightConstraint: NSLayoutConstraint!
+    
     // New streaming player
     private var streamingPlayer: DirectStreamingPlayer
     private let audioQueue = DispatchQueue(label: "radio.lutheran.audio", qos: .userInitiated)
@@ -324,9 +336,49 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 if let metadata = metadata {
                     self.metadataLabel.text = metadata
                     self.updateNowPlayingInfo(title: metadata)
+                    
+                    // Extract potential speaker names using regex
+                    let regex = try? NSRegularExpression(pattern: "\\b[A-Z][a-z]+(?:\\s[A-Z][a-z]+)*\\b")
+                    let matches = regex?.matches(in: metadata, range: NSRange(metadata.startIndex..., in: metadata))
+                    let potentialNames = matches?.compactMap { match in
+                        Range(match.range, in: metadata).map { String(metadata[$0]) }
+                    }
+                    
+                    // Check for specific speakers or "Lutheran Radio"
+                    let specificSpeakers = Set(["Jari Lammi"])
+                    let matchedSpeaker = potentialNames?.first(where: { specificSpeakers.contains($0) })
+                    
+                    if let speaker = matchedSpeaker, let image = UIImage(named: speaker.lowercased().replacingOccurrences(of: " ", with: "_") + "_photo") {
+                            UIView.transition(with: self.speakerImageView, duration: 0.3, options: .transitionCrossDissolve, animations: {
+                                self.speakerImageView.image = image
+                                self.speakerImageView.isHidden = false
+                                self.speakerImageHeightConstraint.constant = 100
+                                self.speakerImageView.accessibilityLabel = "Photo of \(speaker)"
+                            }, completion: { _ in
+                                #if DEBUG
+                                print("Speaker image frame: \(self.speakerImageView.frame)")
+                                print("Language collection view frame: \(self.languageCollectionView.frame)")
+                                #endif
+                            })
+                        } else if potentialNames?.contains("Lutheran Radio") == true, let image = UIImage(named: "radio-placeholder") {
+                            UIView.transition(with: self.speakerImageView, duration: 0.3, options: .transitionCrossDissolve, animations: {
+                            self.speakerImageView.image = image
+                            self.speakerImageView.isHidden = false
+                            self.speakerImageHeightConstraint.constant = 100
+                            self.speakerImageView.accessibilityLabel = "Lutheran Radio Logo"
+                        }, completion: { _ in
+                            #if DEBUG
+                            print("Speaker image frame: \(self.speakerImageView.frame)")
+                            print("Language collection view frame: \(self.languageCollectionView.frame)")
+                            #endif
+                        })
+                    } else {
+                        self.speakerImageView.isHidden = true
+                    }
                 } else {
                     self.metadataLabel.text = String(localized: "no_track_info")
                     self.updateNowPlayingInfo()
+                    self.speakerImageView.isHidden = true
                 }
             }
         }
@@ -937,7 +989,15 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         controlsStackView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(controlsStackView)
         view.addSubview(volumeSlider)
-        view.addSubview(metadataLabel)
+        
+        view.addSubview(speakerImageView)
+        let contentStackView = UIStackView(arrangedSubviews: [metadataLabel])
+        contentStackView.axis = .vertical
+        contentStackView.alignment = .center
+        contentStackView.spacing = 10
+        contentStackView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(contentStackView)
+        
         view.addSubview(airplayButton)
         languageCollectionView.addSubview(selectionIndicator)
         view.bringSubviewToFront(selectionIndicator)
@@ -956,21 +1016,26 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             volumeSlider.topAnchor.constraint(equalTo: controlsStackView.bottomAnchor, constant: 20),
             volumeSlider.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 40),
             volumeSlider.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -40),
-            metadataLabel.topAnchor.constraint(equalTo: volumeSlider.bottomAnchor, constant: 20),
-            metadataLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
-            metadataLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
-            languageCollectionView.topAnchor.constraint(equalTo: metadataLabel.bottomAnchor, constant: 20),
+            contentStackView.topAnchor.constraint(equalTo: volumeSlider.bottomAnchor, constant: 20),
+            contentStackView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            contentStackView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+            languageCollectionView.topAnchor.constraint(equalTo: contentStackView.bottomAnchor, constant: 20),
             languageCollectionView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             languageCollectionView.widthAnchor.constraint(equalTo: view.widthAnchor),
             languageCollectionView.heightAnchor.constraint(equalToConstant: 50),
+            speakerImageView.topAnchor.constraint(equalTo: languageCollectionView.bottomAnchor, constant: 20),
+            speakerImageView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            speakerImageView.widthAnchor.constraint(equalToConstant: 100),
             selectionIndicator.widthAnchor.constraint(equalToConstant: 4),
             selectionIndicator.heightAnchor.constraint(equalTo: languageCollectionView.heightAnchor, multiplier: 0.8),
             selectionIndicator.centerYAnchor.constraint(equalTo: languageCollectionView.centerYAnchor),
-            airplayButton.topAnchor.constraint(equalTo: selectionIndicator.bottomAnchor, constant: 20),
+            airplayButton.topAnchor.constraint(equalTo: speakerImageView.bottomAnchor, constant: 20),
             airplayButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             airplayButton.widthAnchor.constraint(equalToConstant: 44),
             airplayButton.heightAnchor.constraint(equalToConstant: 44)
         ])
+        speakerImageHeightConstraint = speakerImageView.heightAnchor.constraint(equalToConstant: 50)
+        speakerImageHeightConstraint.isActive = true
     }
     
     // MARK: - Audio Setup
