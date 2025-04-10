@@ -400,8 +400,10 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     private func setupControls() {
         playPauseButton.addTarget(self, action: #selector(playPauseTapped), for: .touchUpInside)
         playPauseButton.accessibilityIdentifier = "playPauseButton"
+        playPauseButton.accessibilityHint = String(localized: "accessibility_hint_play_pause")
         volumeSlider.addTarget(self, action: #selector(volumeChanged(_:)), for: .valueChanged)
         volumeSlider.accessibilityIdentifier = "volumeSlider"
+        volumeSlider.accessibilityHint = String(localized: "accessibility_hint_volume")
     }
     
     private func centerCollectionViewContent() {
