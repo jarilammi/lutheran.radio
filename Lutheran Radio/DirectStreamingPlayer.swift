@@ -338,7 +338,6 @@ class DirectStreamingPlayer: NSObject {
                 }
                 return
             }
-
             self.isValidating = false
             switch result {
             case .success(let validModels):
@@ -356,7 +355,7 @@ class DirectStreamingPlayer: NSObject {
                     let isValid = validModels.contains(self.appSecurityModel.lowercased())
                     self.isSecurityModelValid = isValid
                     #if DEBUG
-                    print("🔒 Security model validation completed: isValid=\(isValid), validModels=\(validModels)")
+                    print("🔒 Security model validation: model=\(self.appSecurityModel), isValid=\(isValid), validModels=\(validModels)")
                     #endif
                     if !isValid {
                         self.hasPermanentError = true

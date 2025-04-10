@@ -138,6 +138,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         return imageView
     }()
     
+    private static let imageProcessingContext = CIContext(options: nil)
+    
     private let backgroundImages: [String: String] = [
         "en": "north_america",
         "de": "germany",
@@ -400,8 +402,23 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     private func setupControls() {
         playPauseButton.addTarget(self, action: #selector(playPauseTapped), for: .touchUpInside)
         playPauseButton.accessibilityIdentifier = "playPauseButton"
+        playPauseButton.accessibilityHint = String(localized: "accessibility_hint_play_pause")
         volumeSlider.addTarget(self, action: #selector(volumeChanged(_:)), for: .valueChanged)
         volumeSlider.accessibilityIdentifier = "volumeSlider"
+        volumeSlider.accessibilityHint = String(localized: "accessibility_hint_volume")
+        
+        // Add AirPlay button tap feedback
+        airplayButton.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(airplayTapped)))
+    }
+
+    @objc private func airplayTapped() {
+        UIView.animate(withDuration: 0.1, animations: {
+            self.airplayButton.transform = CGAffineTransform(scaleX: 0.9, y: 0.9)
+        }) { _ in
+            UIView.animate(withDuration: 0.1) {
+                self.airplayButton.transform = .identity
+            }
+        }
     }
     
     private func centerCollectionViewContent() {
@@ -835,7 +852,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
 
         if let ciImage = CIImage(image: baseImage) {
             var processedImage = ciImage
-            let context = CIContext(options: nil) // Explicit context for rendering
+            let context = Self.imageProcessingContext
 
             #if DEBUG
             print("Processing image for \(stream.languageCode), mode: \(traitCollection.userInterfaceStyle == .dark ? "dark" : "light")")
