@@ -404,6 +404,19 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         volumeSlider.addTarget(self, action: #selector(volumeChanged(_:)), for: .valueChanged)
         volumeSlider.accessibilityIdentifier = "volumeSlider"
         volumeSlider.accessibilityHint = String(localized: "accessibility_hint_volume")
+        
+        // Add AirPlay button tap feedback
+        airplayButton.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(airplayTapped)))
+    }
+
+    @objc private func airplayTapped() {
+        UIView.animate(withDuration: 0.1, animations: {
+            self.airplayButton.transform = CGAffineTransform(scaleX: 0.9, y: 0.9)
+        }) { _ in
+            UIView.animate(withDuration: 0.1) {
+                self.airplayButton.transform = .identity
+            }
+        }
     }
     
     private func centerCollectionViewContent() {
