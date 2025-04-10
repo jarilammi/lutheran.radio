@@ -138,6 +138,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         return imageView
     }()
     
+    private static let imageProcessingContext = CIContext(options: nil)
+    
     private let backgroundImages: [String: String] = [
         "en": "north_america",
         "de": "germany",
@@ -850,7 +852,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
 
         if let ciImage = CIImage(image: baseImage) {
             var processedImage = ciImage
-            let context = CIContext(options: nil) // Explicit context for rendering
+            let context = Self.imageProcessingContext
 
             #if DEBUG
             print("Processing image for \(stream.languageCode), mode: \(traitCollection.userInterfaceStyle == .dark ? "dark" : "light")")
