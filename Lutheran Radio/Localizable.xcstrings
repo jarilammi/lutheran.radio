@@ -1072,103 +1072,103 @@
         "da" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Appens sikkerhedsmodel kunne ikke valideres. Dette kan skyldes en konfigurationsfejl eller en forældet app-version. Opdater venligst appen eller kontakt support, hvis problemet fortsætter."
+            "value" : "Kan ikke starte afspilning på grund af en fejl i sikkerhedsvalideringen. Kontroller venligst din internetforbindelse og sørg for, at appen er opdateret. Hvis problemet fortsætter, genstart appen og prøv igen."
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Das Sicherheitsmodell der App konnte nicht validiert werden. Dies kann auf einen Konfigurationsfehler oder eine veraltete App-Version zurückzuführen sein. Bitte aktualisieren Sie die App oder kontaktieren Sie den Support, wenn das Problem weiterhin besteht."
+            "value" : "Die Wiedergabe kann aufgrund eines Fehlers bei der Sicherheitsüberprüfung nicht gestartet werden. Bitte überprüfen Sie Ihre Internetverbindung und stellen Sie sicher, dass die App aktuell ist. Wenn das Problem weiterhin besteht, starten Sie die App neu und versuchen Sie es erneut."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The app's security model could not be validated. This may be due to a configuration error or an outdated app version. Please update the app or contact support if the issue persists."
+            "value" : "Unable to start playback due to a security validation failure. Please check your internet connection and make sure the app is up to date. If the issue continues, restart the app and try again."
           }
         },
         "et" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Rakenduse turvamudelit ei õnnestunud valideerida. See võib olla tingitud konfiguratsiooniveast või aegunud rakenduse versioonist. Palun värskendage rakendust või võtke ühendust toega, kui probleem püsib."
+            "value" : "Ei saa taasesitust alustada turvavalideerimise tõrke tõttu. Palun kontrollige oma internetiühendust ja veenduge, et rakendus on ajakohane. Kui probleem püsib, taaskäivitage rakendus ja proovige uuesti."
           }
         },
         "fi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sovelluksen turvallisuusmallia ei voitu vahvistaa. Tämä voi johtua konfiguraatiovirheestä tai vanhentuneesta sovellusversiosta. Päivitä sovellus tai ota yhteyttä tukeen, jos ongelma jatkuu."
+            "value" : "Toistoa ei voida käynnistää turvallisuusvarmennuksen epäonnistumisen vuoksi. Tarkista internet-yhteytesi ja varmista, että sovellus on ajan tasalla. Jos ongelma jatkuu, käynnistä sovellus uudelleen ja yritä uudestaan."
           }
         },
         "fit" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sovelluksen turvallisuusmalli ei voitu vahvistaa. Tämä voi johtua konfigurointivirheestä tai vanhentuneesta sovellusversiosta. Päivitä sovellus tai ota yhteyttä tukeen, jos ongelma jatkuu."
+            "value" : "Ei saata alottaa soittamista kun turvavalidointi meni pieleen. Tarkista internet-yhteys ja katto, että sovellus on ajantasalla. Jos vika vielä jatkuu, käynnistä sovellus uuvestaan ja koeta toisen kerran."
           }
         },
         "fo" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Trygdarlíkan appinar kundu ikki staðfestast. Hetta kann skyldast einum konfiguratiónsfeili ella einari gamaldags app-útgávu. Vinarliga dagfør appina ella set teg í samband við stuðul, um trupulleikin heldur fram."
+            "value" : "Kann ikki byrja avspæling vegna ein feil í trygdarvalideringini. Vinarliga kanna títt internet sambandið og tryggja, at appin er dagførd. Um trupulleikin heldur fram, byrja appina umaftur og royn aftur."
           }
         },
         "is" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Öryggislíkan appsins gat ekki verið staðfest. Þetta gæti stafað af stillingarvillu eða úreltri útgáfu af appinu. Vinsamlegast uppfærðu appið eða hafðu samband við þjónustudeild ef vandamálið heldur áfram."
+            "value" : "Ekki er hægt að hefja spilun vegna bilunar í öryggisstaðfestingu. Vinsamlegast athugaðu internettenginguna þína og gakktu úr skugga um að appið sé uppfært. Ef vandamálið heldur áfram, endurræstu appið og reyndu aftur."
           }
         },
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "App-ip illersuisarnera iliuuseqarsinnaanngilaq. Tamanna konfigurasioni ajortussaanerup matumalluunniit app-ip siulleq ingerlaneraniittussaanerup tungaanut pisariaqarpok. App taanna nutarteriarit imaluunniit tuluttut atornissaqarfimmut qaaqqusigit ajorunnaassappat."
+            "value" : "Nipilersorneq atorlugu siumut qanoq iliuuseq ajorpoq. Internettit atungaata toqqammavigit aammalu appi nutartertariaqarnera iliuusigit. Naak ajornartorpoq, appi nutaaq alerfigit naammit naammagunarpat."
           }
         },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Programėlės saugumo modelis negalėjo būti patvirtintas. Tai gali būti dėl konfigūracijos klaidos arba pasenusios programėlės versijos. Prašome atnaujinti programėlę arba kreiptis į palaikymo tarnybą, jei problema išlieka."
+            "value" : "Nepavyksta pradėti atkūrimo dėl saugumo patvirtinimo klaidos. Prašome patikrinti interneto ryšį ir įsitikinti, kad programa atnaujinta. Jei problema išlieka, paleiskite programą iš naujo ir bandykite dar kartą."
           }
         },
         "lv" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lietotnes drošības modelis nevarēja tikt validēts. Tas var būt saistīts ar konfigurācijas kļūdu vai novecojušu lietotnes versiju. Lūdzu, atjauniniet lietotni vai sazinieties ar atbalsta dienestu, ja problēma turpinās."
+            "value" : "Nevar sākt atskaņošanu drošības validācijas kļūmes dēļ. Lūdzu, pārbaudiet interneta savienojumu un pārliecinieties, ka lietotne ir atjaunināta. Ja problēma turpinās, restartējiet lietotni un mēģiniet vēlreiz."
           }
         },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Appens sikkerhetsmodell kunne ikke valideres. Dette kan skyldes en konfigurasjonsfeil eller en utdatert appversjon. Vennligst oppdater appen eller kontakt support hvis problemet vedvarer."
+            "value" : "Kan ikke starte avspilling på grunn av en feil i sikkerhetsvalideringen. Vennligst sjekk internettforbindelsen din og forsikre deg om at appen er oppdatert. Hvis problemet vedvarer, start appen på nytt og prøv igjen."
           }
         },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tryggleiksmodellen til appen kunne ikkje validerast. Dette kan skuldast ein konfigurasjonsfeil eller ein utdatert appversjon. Ver venleg og oppdater appen eller kontakt brukerstøtte om problemet held fram."
+            "value" : "Kan ikkje starte avspeling på grunn av ein feil i tryggleiksvalideringa. Ver snill og sjekk internettforbindelsen din og sjå til at appen er oppdatert. Dersom problemet held fram, start appen på nytt og prøv igjen."
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Model zabezpieczeń aplikacji nie mógł zostać zweryfikowany. Może to być spowodowane błędem konfiguracji lub nieaktualną wersją aplikacji. Proszę zaktualizować aplikację lub skontaktować się z pomocą techniczną, jeśli problem będzie się powtarzał."
+            "value" : "Nie można rozpocząć odtwarzania z powodu niepowodzenia weryfikacji bezpieczeństwa. Proszę sprawdzić połączenie internetowe i upewnić się, że aplikacja jest zaktualizowana. Jeśli problem persists, uruchom ponownie aplikację i spróbuj jeszcze raz."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Модель безопасности приложения не удалось проверить. Это может быть связано с ошибкой конфигурации или устаревшей версией приложения. Пожалуйста, обновите приложение или обратитесь в службу поддержки, если проблема сохраняется."
+            "value" : "Не удается начать воспроизведение из-за сбоя проверки безопасности. Пожалуйста, проверьте подключение к интернету и убедитесь, что приложение обновлено. Если проблема сохраняется, перезапустите приложение и попробуйте снова."
           }
         },
         "se" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sovellusa sihkarvuohtamalli ii sáhttán čielggaduvvot. Dát sáhttá leat geažil konfigurašuvdna meattáhus dahje boares sovellusveršuvdna. Leage buorre ja ođasmahte sovellusa dahje váldde oktavuođa dutkanbálvalusain jos meattáhus joatká."
+            "value" : "Ii sáhte álggit čuojahan go sihkarvuohtačielggadeapmi ii lihkos. Dárkkis interneahttačatnosa ja áddeštá ahte applikašuvdna lea ođđasit. Jos váttisvuohta joatka, álggat applikašuvnna ođđasit ja geahča ođđasit."
           }
         },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Appens säkerhetsmodell kunde inte valideras. Detta kan bero på ett konfigurationsfel eller en föråldrad appversion. Vänligen uppdatera appen eller kontakta supporten om problemet kvarstår."
+            "value" : "Kan inte starta uppspelning på grund av ett fel i säkerhetsvalideringen. Vänligen kontrollera din internetanslutning och se till att appen är uppdaterad. Om problemet kvarstår, starta om appen och försök igen."
           }
         }
       }
