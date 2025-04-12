@@ -13,7 +13,7 @@ import dnssd
 
 class DirectStreamingPlayer: NSObject {
     // MARK: - Security Model
-    private let appSecurityModel = "turku" // Security model in use
+    private let appSecurityModel = "mariehamn" // Security model in use
     private var isValidating = false
     private var isSecurityModelValid: Bool?
     
