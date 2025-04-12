@@ -335,6 +335,7 @@ class DirectStreamingPlayer: NSObject {
                     #endif
                     self.isSecurityModelValid = false
                     self.hasPermanentError = true
+                    self.lastValidationWasSecurityMismatch = true
                     DispatchQueue.main.async {
                         self.onStatusChange?(false, String(localized: "status_security_failed"))
                         completion(false)
@@ -347,11 +348,14 @@ class DirectStreamingPlayer: NSObject {
                     #endif
                     if !isValid {
                         self.hasPermanentError = true
+                        self.lastValidationWasSecurityMismatch = true
                         DispatchQueue.main.async {
                             self.onStatusChange?(false, String(localized: "status_security_failed"))
                             completion(false)
                         }
                     } else {
+                        self.hasPermanentError = false // Clear any previous permanent error on success
+                        self.lastValidationWasSecurityMismatch = false
                         DispatchQueue.main.async {
                             completion(true)
                         }
@@ -364,6 +368,7 @@ class DirectStreamingPlayer: NSObject {
                     print("❌ [Validate Security Model] DNS query failed, likely due to network issue: \(error.localizedDescription)")
                     #endif
                     self.isSecurityModelValid = false
+                    // Do not set hasPermanentError for network issues
                     DispatchQueue.main.async {
                         self.onStatusChange?(false, String(localized: "status_no_internet"))
                         completion(false)
@@ -374,6 +379,7 @@ class DirectStreamingPlayer: NSObject {
                     #endif
                     self.isSecurityModelValid = false
                     self.hasPermanentError = true
+                    self.lastValidationWasSecurityMismatch = true
                     DispatchQueue.main.async {
                         self.onStatusChange?(false, String(localized: "status_security_failed"))
                         completion(false)
@@ -384,22 +390,21 @@ class DirectStreamingPlayer: NSObject {
     }
     
     public func resetTransientErrors() {
-        let isValid = isSecurityModelValid ?? true
-        if !hasPermanentErrorDueToSecurity() || (isValid == false && !wasLastValidationSecurityMismatch()) {
+        if !hasPermanentErrorDueToSecurity() {
             hasPermanentError = false
             isSecurityModelValid = nil // Force revalidation on next play
             #if DEBUG
             print("🔄 Resetting transient error state: hasPermanentError=\(hasPermanentError), forcing security model revalidation")
             #endif
+        } else {
+            #if DEBUG
+            print("🔄 Skipping reset of transient errors due to permanent security error")
+            #endif
         }
     }
 
     private func hasPermanentErrorDueToSecurity() -> Bool {
-        // Check if the permanent error is specifically due to a security model mismatch
-        if let isValid = isSecurityModelValid, !isValid {
-            return wasLastValidationSecurityMismatch()
-        }
-        return false
+        return hasPermanentError && lastValidationWasSecurityMismatch
     }
     
     private var lastValidationWasSecurityMismatch: Bool = false
@@ -444,7 +449,7 @@ class DirectStreamingPlayer: NSObject {
     }
     
     func play(completion: @escaping (Bool) -> Void) {
-        if hasPermanentError && hasPermanentErrorDueToSecurity() {
+        if hasPermanentErrorDueToSecurity() {
             #if DEBUG
             print("📡 Play aborted: Permanent security error exists")
             #endif
@@ -466,7 +471,7 @@ class DirectStreamingPlayer: NSObject {
                 return
             }
 
-            self.hasPermanentError = false // Reset on successful validation
+            // Proceed with playback
             self.stop()
             let asset = AVURLAsset(url: self.selectedStream.url)
             asset.resourceLoader.setDelegate(self, queue: DispatchQueue(label: "radio.lutheran.resourceloader"))
@@ -493,6 +498,16 @@ class DirectStreamingPlayer: NSObject {
     }
     
     func setStream(to stream: Stream) {
+        if hasPermanentErrorDueToSecurity() {
+            #if DEBUG
+            print("📡 Stream switch aborted: Permanent security error exists")
+            #endif
+            DispatchQueue.main.async {
+                self.onStatusChange?(false, String(localized: "status_security_failed"))
+            }
+            return
+        }
+
         stop()
         selectedStream = stream
         play { [weak self] success in
