@@ -584,39 +584,39 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     }
     
     private func handleNetworkReconnection() {
-        if !isManualPause && !hasPermanentPlaybackError {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-                guard let self = self else {
-                    #if DEBUG
-                    print("📱 handleNetworkReconnection: ViewController is nil, skipping callback")
-                    #endif
-                    return
-                }
-                if self.hasInternetConnection && !self.isPlaying && !self.isManualPause {
-                    #if DEBUG
-                    print("📱 Network reconnected - checking validation state")
-                    #endif
-                    self.streamingPlayer.validateSecurityModelAsync { isValid in
-                        if isValid {
-                            #if DEBUG
-                            print("📱 Security model validated - attempting playback")
-                            #endif
-                            self.streamingPlayer.resetTransientErrors()
-                            self.isTuningSoundPlaying = false
-                            self.attemptPlaybackWithRetry(attempt: 1, maxAttempts: 3)
-                        } else {
-                            #if DEBUG
-                            print("📱 Security model validation failed after reconnection")
-                            #endif
-                            self.hasPermanentPlaybackError = self.streamingPlayer.isLastErrorPermanent()
-                            self.statusLabel.text = self.streamingPlayer.isLastErrorPermanent() ? String(localized: "status_security_failed") : String(localized: "status_no_internet")
-                            self.statusLabel.backgroundColor = self.streamingPlayer.isLastErrorPermanent() ? .systemRed : .systemGray
-                            self.statusLabel.textColor = .white
-                            if self.streamingPlayer.isLastErrorPermanent() {
-                                self.showSecurityModelAlert()
-                            }
-                        }
+        hasInternetConnection = true
+        #if DEBUG
+        print("📱 Network reconnected - checking validation state")
+        #endif
+        streamingPlayer.validationState = .pending // Reset to allow retry
+        streamingPlayer.hasPermanentError = false
+        streamingPlayer.validateSecurityModelAsync { [weak self] isValid in
+            guard let self = self else { return }
+            if isValid {
+                #if DEBUG
+                print("📱 Validation succeeded after reconnection - attempting playback")
+                #endif
+                self.streamingPlayer.play { success in
+                    if success {
+                        self.streamingPlayer.onStatusChange?(true, String(localized: "status_playing"))
+                    } else {
+                        self.streamingPlayer.onStatusChange?(false, String(localized: "status_stream_unavailable"))
                     }
+                }
+            } else {
+                #if DEBUG
+                print("📱 Security model validation failed after reconnection")
+                #endif
+                self.streamingPlayer.onStatusChange?(false, String(localized: self.streamingPlayer.validationState == .failedPermanent ? "status_security_failed" : "status_no_internet"))
+                // Show alert only if not already presenting
+                if self.presentedViewController == nil {
+                    let alert = UIAlertController(
+                        title: String(localized: "security_model_error_title"),
+                        message: String(localized: "security_model_error_message"),
+                        preferredStyle: .alert
+                    )
+                    alert.addAction(UIAlertAction(title: String(localized: "ok"), style: .default))
+                    self.present(alert, animated: true)
                 }
             }
         }

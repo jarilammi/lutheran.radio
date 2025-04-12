@@ -16,13 +16,13 @@ class DirectStreamingPlayer: NSObject {
     private let appSecurityModel = "mariehamn" // Security model in use
     private var isValidating = false
     // Changed: Replaced isSecurityModelValid with validationState for better state tracking
-    private enum ValidationState {
+    enum ValidationState {
         case pending
         case success
         case failedTransient
         case failedPermanent
     }
-    private var validationState: ValidationState = .pending
+    var validationState: ValidationState = .pending
     private var networkMonitor: NWPathMonitor?
     private var hasInternetConnection = true // Assume connected until checked
     
@@ -283,105 +283,107 @@ class DirectStreamingPlayer: NSObject {
             return
         }
 
-        // Check current network status dynamically
-        let isConnected = networkMonitor?.currentPath.status == .satisfied
-        if !isConnected {
-            #if DEBUG
-            print("🔒 [Validate Async] No internet, transient failure")
-            #endif
-            validationState = .failedTransient
-            hasInternetConnection = false
-            DispatchQueue.main.async {
-                self.onStatusChange?(false, String(localized: "status_no_internet"))
-                completion(false)
-            }
-            return
-        }
-
-        isValidating = true
-        hasInternetConnection = true
-        #if DEBUG
-        print("🔒 [Validate Async] Starting validation for model: \(appSecurityModel)")
-        #endif
-
-        // Set a timeout
-        let timeoutWorkItem = DispatchWorkItem { [weak self] in
-            guard let self = self, self.isValidating else { return }
-            #if DEBUG
-            print("🔒 [Validate Async] Validation timed out")
-            #endif
-            self.isValidating = false
-            self.validationState = .failedTransient // Keep transient to allow retries
-            DispatchQueue.main.async {
-                self.onStatusChange?(false, String(localized: "status_no_internet"))
-                completion(false)
-            }
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0, execute: timeoutWorkItem)
-
-        fetchValidSecurityModels { [weak self] result in
+        // Perform an active connectivity check
+        performConnectivityCheck { [weak self] isConnected in
             guard let self = self else {
                 completion(false)
                 return
             }
-            timeoutWorkItem.cancel()
-            self.isValidating = false
-            switch result {
-            case .success(let validModels):
-                if validModels.isEmpty {
-                    #if DEBUG
-                    print("❌ [Validate Async] No models returned, permanent failure")
-                    #endif
-                    self.validationState = .failedPermanent
-                    self.hasPermanentError = true
-                    DispatchQueue.main.async {
-                        self.onStatusChange?(false, String(localized: "status_security_failed"))
-                        completion(false)
-                    }
-                } else {
-                    let isValid = validModels.contains(self.appSecurityModel.lowercased())
-                    self.validationState = isValid ? .success : .failedPermanent
-                    #if DEBUG
-                    print("🔒 [Validate Async] Result: isValid=\(isValid), models=\(validModels)")
-                    #endif
-                    if !isValid {
+
+            if !isConnected {
+                #if DEBUG
+                print("🔒 [Validate Async] No internet, transient failure")
+                #endif
+                self.validationState = .failedTransient
+                self.hasInternetConnection = false
+                DispatchQueue.main.async {
+                    self.onStatusChange?(false, String(localized: "status_no_internet"))
+                    completion(false)
+                }
+                return
+            }
+
+            self.isValidating = true
+            self.hasInternetConnection = true
+            #if DEBUG
+            print("🔒 [Validate Async] Starting validation for model: \(self.appSecurityModel)")
+            #endif
+
+            // Set a timeout
+            let timeoutWorkItem = DispatchWorkItem { [weak self] in
+                guard let self = self, self.isValidating else { return }
+                self.isValidating = false
+                self.validationState = .failedTransient
+                DispatchQueue.main.async {
+                    self.onStatusChange?(false, String(localized: "status_no_internet"))
+                    completion(false)
+                }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5.0, execute: timeoutWorkItem)
+
+            self.fetchValidSecurityModels { [weak self] result in
+                guard let self = self else {
+                    completion(false)
+                    return
+                }
+                timeoutWorkItem.cancel()
+                self.isValidating = false
+                switch result {
+                case .success(let validModels):
+                    if validModels.isEmpty {
+                        self.validationState = .failedPermanent
                         self.hasPermanentError = true
                         DispatchQueue.main.async {
                             self.onStatusChange?(false, String(localized: "status_security_failed"))
                             completion(false)
                         }
                     } else {
-                        self.hasPermanentError = false
-                        DispatchQueue.main.async {
-                            self.onStatusChange?(false, String(localized: "status_connecting"))
-                            completion(true)
+                        let isValid = validModels.contains(self.appSecurityModel.lowercased())
+                        self.validationState = isValid ? .success : .failedPermanent
+                        #if DEBUG
+                        print("🔒 [Validate Async] Result: isValid=\(isValid), models=\(validModels)")
+                        #endif
+                        if !isValid {
+                            self.hasPermanentError = true
+                            DispatchQueue.main.async {
+                                self.onStatusChange?(false, String(localized: "status_security_failed"))
+                                completion(false)
+                            }
+                        } else {
+                            self.hasPermanentError = false
+                            DispatchQueue.main.async {
+                                self.onStatusChange?(false, String(localized: "status_connecting"))
+                                completion(true)
+                            }
                         }
                     }
-                }
-            case .failure(let error):
-                let nsError = error as NSError
-                if nsError.domain == "radio.lutheran" && nsError.code < 0 {
-                    #if DEBUG
-                    print("❌ [Validate Async] DNS failed, transient: \(error.localizedDescription)")
-                    #endif
+                case .failure(_):
                     self.validationState = .failedTransient
                     DispatchQueue.main.async {
                         self.onStatusChange?(false, String(localized: "status_no_internet"))
                         completion(false)
                     }
-                } else {
-                    #if DEBUG
-                    print("❌ [Validate Async] Fetch failed, permanent: \(error.localizedDescription)")
-                    #endif
-                    self.validationState = .failedPermanent
-                    self.hasPermanentError = true
-                    DispatchQueue.main.async {
-                        self.onStatusChange?(false, String(localized: "status_security_failed"))
-                        completion(false)
-                    }
                 }
             }
         }
+    }
+
+    // New method to actively check connectivity
+    private func performConnectivityCheck(completion: @escaping (Bool) -> Void) {
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 3.0
+        let session = URLSession(configuration: config)
+        let url = URL(string: "https://www.apple.com/library/test/success.html")!
+        let task = session.dataTask(with: url) { data, response, error in
+            let isConnected = error == nil && (response as? HTTPURLResponse)?.statusCode == 200
+            #if DEBUG
+            print("🔒 [Connectivity Check] Result: \(isConnected ? "Connected" : "Disconnected"), error: \(error?.localizedDescription ?? "None")")
+            #endif
+            DispatchQueue.main.async {
+                completion(isConnected)
+            }
+        }
+        task.resume()
     }
     
     public func resetTransientErrors() {
