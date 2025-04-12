@@ -9,6 +9,7 @@ import Foundation
 import Security
 import CommonCrypto
 import AVFoundation
+import dnssd
 
 class DirectStreamingPlayer: NSObject {
     // MARK: - Security Model
@@ -111,200 +112,201 @@ class DirectStreamingPlayer: NSObject {
     
     // MARK: - Security Model Validation
     
-    private func getSystemDNSServers() -> [String] {
-        var dnsServers: [String] = []
-        
-        // Allocate memory for a __res_9_state struct
-        let statePtr = UnsafeMutablePointer<__res_9_state>.allocate(capacity: 1)
-        
-        // Initialize the struct with res_9_ninit
-        res_9_ninit(statePtr)
-        
-        // Access the DNS servers from nsaddr_list (a tuple)
-        let nscount = statePtr.pointee.nscount
-        if nscount > 0 {
-            let addr0 = statePtr.pointee.nsaddr_list.0
-            let ip0 = String(cString: inet_ntoa(addr0.sin_addr))
-            dnsServers.append(ip0)
-        }
-        if nscount > 1 {
-            let addr1 = statePtr.pointee.nsaddr_list.1
-            let ip1 = String(cString: inet_ntoa(addr1.sin_addr))
-            dnsServers.append(ip1)
-        }
-        if nscount > 2 {
-            let addr2 = statePtr.pointee.nsaddr_list.2
-            let ip2 = String(cString: inet_ntoa(addr2.sin_addr))
-            dnsServers.append(ip2)
-        }
-        
-        // Clean up
-        res_9_nclose(statePtr)
-        statePtr.deallocate()
-        
-        return dnsServers
-    }
-    
     private func fetchValidSecurityModels(completion: @escaping (Result<Set<String>, Error>) -> Void) {
         let domain = "securitymodels.lutheran.radio"
-        let dnsQueue = DispatchQueue(label: "radio.lutheran.dns", qos: .utility)
-        dnsQueue.async {
-            let statePtr = UnsafeMutablePointer<__res_9_state>.allocate(capacity: 1)
-            defer {
-                res_9_nclose(statePtr)
-                statePtr.deallocate()
-                #if DEBUG
-                print("🔒 fetchValidSecurityModels: Resolver state cleaned up")
-                #endif
+        #if DEBUG
+        print("🔒 [Fetch Security Models] Fetching valid security models for domain: \(domain)")
+        #endif
+        queryTXTRecord(domain: domain) { result in
+            #if DEBUG
+            switch result {
+            case .success(let models):
+                print("✅ [Fetch Security Models] Successfully fetched models: \(models)")
+            case .failure(let error):
+                print("❌ [Fetch Security Models] Failed to fetch models: \(error.localizedDescription)")
             }
-            
-            let initResult = res_9_ninit(statePtr)
-            if initResult != 0 {
-                let error = NSError(domain: "radio.lutheran", code: Int(initResult), userInfo: [NSLocalizedDescriptionKey: "Failed to initialize resolver"])
-                DispatchQueue.main.async {
-                    completion(.failure(error))
-                }
-                return
-            }
-            
-            var response = [UInt8](repeating: 0, count: 4096)
-            let queryLength = res_9_nquery(statePtr, domain, 1, 16, &response, Int32(response.count))
-            if queryLength < 0 {
-                let error = NSError(domain: "radio.lutheran", code: Int(queryLength), userInfo: [NSLocalizedDescriptionKey: "DNS query failed"])
-                DispatchQueue.main.async {
-                    completion(.failure(error))
-                }
-                return
-            }
-            
-            do {
-                let models = try self.parseTXTRecord(from: Data(response[0..<Int(queryLength)]))
-                DispatchQueue.main.async {
-                    completion(.success(models))
-                }
-            } catch {
-                DispatchQueue.main.async {
-                    completion(.failure(error))
-                }
+            #endif
+            DispatchQueue.main.async {
+                completion(result)
             }
         }
     }
     
-    private func buildDNSQuery(for domain: String) -> Data {
+    private func queryTXTRecord(domain: String, completion: @escaping (Result<Set<String>, Error>) -> Void) {
+        // Define a context structure to hold self and the completion handler
+        class QueryContext {
+            weak var player: DirectStreamingPlayer?
+            let completion: (Result<Set<String>, Error>) -> Void
+
+            init(player: DirectStreamingPlayer, completion: @escaping (Result<Set<String>, Error>) -> Void) {
+                self.player = player
+                self.completion = completion
+            }
+        }
+
+        var serviceRef: DNSServiceRef?
+        let flags: DNSServiceFlags = kDNSServiceFlagsTimeout
+        let interfaceIndex: UInt32 = 0
+        let type: UInt16 = UInt16(kDNSServiceType_TXT)
+        let rrClass: UInt16 = UInt16(kDNSServiceClass_IN)
+
         #if DEBUG
-        print("🔒 buildDNSQuery: Constructing query for domain: \(domain)")
+        print("🔍 [DNS Query] Starting TXT record query for domain: \(domain), flags: \(flags), interface: \(interfaceIndex), type: \(type), class: \(rrClass)")
         #endif
-        var query = Data()
-        let transactionID = UInt16.random(in: 0...UInt16.max)
-        query.append(contentsOf: [UInt8(transactionID >> 8), UInt8(transactionID & 0xFF)])
-        query.append(contentsOf: [0x01, 0x00]) // Flags: Standard query
-        query.append(contentsOf: [0x00, 0x01]) // Questions: 1
-        query.append(contentsOf: [0x00, 0x00]) // Answer RRs: 0
-        query.append(contentsOf: [0x00, 0x00]) // Authority RRs: 0
-        query.append(contentsOf: [0x00, 0x00]) // Additional RRs: 0
-        
-        let parts = domain.split(separator: ".")
-        for part in parts {
-            let length = UInt8(part.count)
-            query.append(length)
-            query.append(part.data(using: .utf8)!)
+
+        guard let domainCStr = domain.cString(using: .utf8) else {
             #if DEBUG
-            print("🔒 buildDNSQuery: Added domain part: \(part), length: \(length)")
+            print("❌ [DNS Query] Failed to convert domain to C string: \(domain)")
+            #endif
+            completion(.failure(NSError(domain: "radio.lutheran", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid domain"])))
+            return
+        }
+
+        // Create the context and pass it to DNSServiceQueryRecord
+        let context = QueryContext(player: self, completion: completion)
+        let contextPointer = UnsafeMutablePointer<QueryContext>.allocate(capacity: 1)
+        contextPointer.initialize(to: context)
+        defer {
+            contextPointer.deinitialize(count: 1)
+            contextPointer.deallocate()
+            #if DEBUG
+            print("🧹 [DNS Query] Deallocated QueryContext memory")
             #endif
         }
-        query.append(UInt8(0))
-        query.append(contentsOf: [0x00, 0x10]) // QTYPE: TXT (16)
-        query.append(contentsOf: [0x00, 0x01]) // QCLASS: IN (1)
-        
-        #if DEBUG
-        print("🔒 buildDNSQuery: Query constructed, total length: \(query.count) bytes")
-        #endif
-        return query
+
+        let error = DNSServiceQueryRecord(
+            &serviceRef,
+            flags,
+            interfaceIndex,
+            domainCStr,
+            type,
+            rrClass,
+            { (ref, flags, interface, errorCode, fullName, rrtype, rrclass, rdlen, rdata, ttl, context) in
+                #if DEBUG
+                print("📩 [DNS Query Callback] Invoked with: errorCode=\(errorCode), fullName=\(String(cString: fullName!)), rrtype=\(rrtype), rrclass=\(rrclass), rdlen=\(rdlen), ttl=\(ttl)")
+                #endif
+
+                // Retrieve the context
+                let contextPointer = context?.assumingMemoryBound(to: QueryContext.self)
+                guard let queryContext = contextPointer?.pointee else {
+                    #if DEBUG
+                    print("❌ [DNS Query Callback] QueryContext is nil, aborting")
+                    #endif
+                    return
+                }
+                let completion = queryContext.completion
+                guard let player = queryContext.player else {
+                    #if DEBUG
+                    print("❌ [DNS Query Callback] Player instance deallocated")
+                    #endif
+                    completion(.failure(NSError(domain: "radio.lutheran", code: -1, userInfo: [NSLocalizedDescriptionKey: "Player deallocated"])))
+                    return
+                }
+
+                // Process the callback
+                guard errorCode == kDNSServiceErr_NoError, let rawData = rdata else {
+                    #if DEBUG
+                    print("❌ [DNS Query Callback] Query failed with errorCode=\(errorCode)")
+                    #endif
+                    completion(.failure(NSError(domain: "dnssd", code: Int(errorCode), userInfo: [NSLocalizedDescriptionKey: "DNS query failed"])))
+                    return
+                }
+
+                #if DEBUG
+                print("✅ [DNS Query Callback] Successfully retrieved TXT record data: length=\(rdlen)")
+                #endif
+
+                let txtData = Data(bytes: rawData, count: Int(rdlen))
+                let models = player.parseTXTRecordData(txtData)
+                #if DEBUG
+                print("🎉 [DNS Query Callback] Query completed, parsed models: \(models)")
+                #endif
+                completion(.success(models))
+            },
+            contextPointer
+        )
+
+        if error == kDNSServiceErr_NoError, let serviceRef = serviceRef {
+            #if DEBUG
+            print("🚀 [DNS Query] DNSServiceQueryRecord initiated successfully, processing result")
+            #endif
+            DNSServiceProcessResult(serviceRef)
+            DNSServiceRefDeallocate(serviceRef)
+            #if DEBUG
+            print("🧹 [DNS Query] DNSServiceRef deallocated")
+            #endif
+        } else {
+            #if DEBUG
+            print("❌ [DNS Query] DNSServiceQueryRecord initiation failed with error=\(error)")
+            #endif
+            completion(.failure(NSError(domain: "dnssd", code: Int(error), userInfo: [NSLocalizedDescriptionKey: "DNS service init failed"])))
+        }
     }
-    
-    private func parseTXTRecord(from data: Data) throws -> Set<String> {
+
+    private func parseTXTRecordData(_ data: Data) -> Set<String> {
         #if DEBUG
-        print("🔒 parseTXTRecord: Starting to parse DNS response, data length: \(data.count) bytes")
+        print("📜 [Parse TXT Record] Starting parsing of TXT record data, length: \(data.count) bytes")
         #endif
         var models = Set<String>()
-        var offset = 12 // Skip header
-        
-        while offset < data.count && data[offset] != 0 {
-            offset += Int(data[offset]) + 1
-        }
-        offset += 5 // Skip null terminator + QTYPE + QCLASS
-        #if DEBUG
-        print("🔒 parseTXTRecord: Skipped question section, new offset: \(offset)")
-        #endif
-        
-        guard offset < data.count else {
-            throw NSError(domain: "radio.lutheran", code: -3, userInfo: [NSLocalizedDescriptionKey: "Invalid DNS response"])
-        }
-        
-        while offset < data.count {
-            if data[offset] == 0 {
-                offset += 1
-                #if DEBUG
-                print("🔒 parseTXTRecord: Encountered zero byte at offset \(offset), skipping")
-                #endif
-                continue
-            }
-            offset += 2 // Skip name pointer
-            guard offset + 9 < data.count else { // Ensure enough bytes for type, class, TTL, rdLength
-                #if DEBUG
-                print("🔒 parseTXTRecord: Insufficient data at offset \(offset), stopping")
-                #endif
-                break
-            }
-            let type = (UInt16(data[offset]) << 8) + UInt16(data[offset + 1])
-            offset += 8 // Skip type, class, TTL
-            guard offset + 1 < data.count else {
-                #if DEBUG
-                print("🔒 parseTXTRecord: Cannot read rdLength at offset \(offset), stopping")
-                #endif
-                break
-            }
-            let rdLength = (UInt16(data[offset]) << 8) + UInt16(data[offset + 1])
-            offset += 2
+        var index = 0
+        while index < data.count {
+            let length = Int(data[index])
             #if DEBUG
-            print("🔒 parseTXTRecord: Record type: \(type), rdLength: \(rdLength), offset: \(offset)")
+            print("📜 [Parse TXT Record] Reading segment at index \(index), length: \(length)")
             #endif
-            
-            if type == 16 { // TXT record
-                guard offset + Int(rdLength) <= data.count else {
+            index += 1
+            if index + length <= data.count {
+                let strData = data.subdata(in: index..<index + length)
+                if let str = String(data: strData, encoding: .utf8) {
                     #if DEBUG
-                    print("🔒 parseTXTRecord: rdLength \(rdLength) exceeds remaining data at offset \(offset), skipping")
+                    print("📜 [Parse TXT Record] Parsed string: \(str)")
                     #endif
-                    break
-                }
-                let txtData = data.subdata(in: offset..<offset + Int(rdLength))
-                if let txtString = String(data: txtData.dropFirst(), encoding: .utf8) {
-                    let modelList = txtString.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces).lowercased() }
+                    let modelList = str.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces).lowercased() }
                     models.formUnion(modelList)
                     #if DEBUG
-                    print("🔒 parseTXTRecord: Parsed TXT record: \(txtString), extracted models: \(modelList)")
+                    print("📜 [Parse TXT Record] Extracted models: \(modelList)")
+                    #endif
+                } else {
+                    #if DEBUG
+                    print("❌ [Parse TXT Record] Failed to decode string at index \(index - 1)")
                     #endif
                 }
+                index += length
+            } else {
+                #if DEBUG
+                print("❌ [Parse TXT Record] Invalid length at index \(index - 1): length=\(length), remaining data=\(data.count - index)")
+                #endif
+                break
             }
-            offset += Int(rdLength)
         }
-        
         #if DEBUG
-        print("🔒 parseTXTRecord: Parsing complete, models: \(models)")
+        print("📜 [Parse TXT Record] Parsing complete, final models: \(models)")
         #endif
         return models
     }
     
     private func validateSecurityModel(completion: @escaping (Bool) -> Void) {
         guard !isValidating else {
+            #if DEBUG
+            print("🔒 [Validate Security Model] Validation already in progress, scheduling retry")
+            #endif
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-                guard let self = self else { completion(false); return }
+                guard let self = self else {
+                    #if DEBUG
+                    print("❌ [Validate Security Model] Self deallocated during retry")
+                    #endif
+                    completion(false)
+                    return
+                }
                 if let isValid = self.isSecurityModelValid {
                     #if DEBUG
-                    print("🔒 Validation already completed, returning cached result: isValid=\(isValid)")
+                    print("🔒 [Validate Security Model] Validation already completed, returning cached result: isValid=\(isValid)")
                     #endif
                     completion(isValid)
                 } else {
+                    #if DEBUG
+                    print("🔒 [Validate Security Model] Retrying validation")
+                    #endif
                     self.validateSecurityModel(completion: completion)
                 }
             }
@@ -313,29 +315,15 @@ class DirectStreamingPlayer: NSObject {
 
         isValidating = true
         #if DEBUG
-        print("🔒 Validating security model: \(appSecurityModel) - Starting validation process")
+        print("🔒 [Validate Security Model] Starting validation for security model: \(appSecurityModel)")
         #endif
-
-        // Check for basic network connectivity
-        let dnsServers = getSystemDNSServers()
-        if dnsServers.isEmpty {
-            #if DEBUG
-            print("🔒 No DNS servers available (likely offline or airplane mode), treating as transient error")
-            #endif
-            isValidating = false
-            isSecurityModelValid = false // Temporary invalid state
-            DispatchQueue.main.async {
-                self.onStatusChange?(false, String(localized: "status_no_internet"))
-                completion(false)
-            }
-            return
-        }
 
         fetchValidSecurityModels { [weak self] result in
             guard let self = self else {
-                DispatchQueue.main.async {
-                    completion(false)
-                }
+                #if DEBUG
+                print("❌ [Validate Security Model] Self deallocated during validation")
+                #endif
+                DispatchQueue.main.async { completion(false) }
                 return
             }
             self.isValidating = false
@@ -343,7 +331,7 @@ class DirectStreamingPlayer: NSObject {
             case .success(let validModels):
                 if validModels.isEmpty {
                     #if DEBUG
-                    print("🔒 No security models returned from DNS, treating as permanent security error")
+                    print("❌ [Validate Security Model] No security models returned from DNS, treating as permanent security error")
                     #endif
                     self.isSecurityModelValid = false
                     self.hasPermanentError = true
@@ -355,7 +343,7 @@ class DirectStreamingPlayer: NSObject {
                     let isValid = validModels.contains(self.appSecurityModel.lowercased())
                     self.isSecurityModelValid = isValid
                     #if DEBUG
-                    print("🔒 Security model validation: model=\(self.appSecurityModel), isValid=\(isValid), validModels=\(validModels)")
+                    print("🔒 [Validate Security Model] Validation result: model=\(self.appSecurityModel), isValid=\(isValid), validModels=\(validModels)")
                     #endif
                     if !isValid {
                         self.hasPermanentError = true
@@ -370,25 +358,22 @@ class DirectStreamingPlayer: NSObject {
                     }
                 }
             case .failure(let error):
-                // Check if the error is due to network issues
                 let nsError = error as NSError
                 if nsError.domain == "radio.lutheran" && nsError.code < 0 { // DNS query failed
                     #if DEBUG
-                    print("🔒 DNS query failed, likely due to network issue: \(error.localizedDescription)")
+                    print("❌ [Validate Security Model] DNS query failed, likely due to network issue: \(error.localizedDescription)")
                     #endif
                     self.isSecurityModelValid = false
-                    // Do NOT set hasPermanentError here; treat as transient
                     DispatchQueue.main.async {
                         self.onStatusChange?(false, String(localized: "status_no_internet"))
                         completion(false)
                     }
                 } else {
-                    // Other errors treated as permanent security failures
+                    #if DEBUG
+                    print("❌ [Validate Security Model] Security model fetch failed with error: \(error.localizedDescription), treating as permanent security error")
+                    #endif
                     self.isSecurityModelValid = false
                     self.hasPermanentError = true
-                    #if DEBUG
-                    print("🔒 Security model fetch failed with error: \(error.localizedDescription), treating as permanent security error")
-                    #endif
                     DispatchQueue.main.async {
                         self.onStatusChange?(false, String(localized: "status_security_failed"))
                         completion(false)
@@ -459,18 +444,6 @@ class DirectStreamingPlayer: NSObject {
     }
     
     func play(completion: @escaping (Bool) -> Void) {
-        let dnsServers = getSystemDNSServers()
-        if dnsServers.isEmpty {
-            #if DEBUG
-            print("📡 Play aborted: No network connectivity (no DNS servers)")
-            #endif
-            DispatchQueue.main.async {
-                self.onStatusChange?(false, String(localized: "status_no_internet"))
-                completion(false)
-            }
-            return
-        }
-
         if hasPermanentError && hasPermanentErrorDueToSecurity() {
             #if DEBUG
             print("📡 Play aborted: Permanent security error exists")
