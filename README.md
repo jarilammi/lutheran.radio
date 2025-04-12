@@ -134,7 +134,7 @@ To prevent naming collisions and maintain a clear history of security models, th
 | Security Model Name | Valid From       | Valid Until     | App Version Introduced |
 |---------------------|------------------|-----------------|------------------------|
 | `turku`             | April 6, 2025    | (ongoing)       | 1.0.4                  |
-| `mariehamn`         | April 21, 2025   | (ongoing)       | 1.0.7                  |
+| `mariehamn`         | April 13, 2025   | (ongoing)       | 1.0.7                  |
 
 **Notes:**
 - **Valid From:** The date when the security model was first introduced or became valid.
