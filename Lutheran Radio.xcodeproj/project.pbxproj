@@ -8,7 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		B7AFC6E22CCD7DD900BDDD83 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B7AFC6E12CCD7DD900BDDD83 /* AVFoundation.framework */; };
-		B7CF3B812DA2F35300C0D4F2 /* libresolv.9.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = B7CF3B802DA2F35300C0D4F2 /* libresolv.9.tbd */; };
+		B7F7B4712DAA463F00194E5C /* libmdns.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = B7F7B4702DAA463E00194E5C /* libmdns.tbd */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -33,8 +33,7 @@
 		B7AFC6C22CCD7D0C00BDDD83 /* Lutheran RadioTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Lutheran RadioTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		B7AFC6CC2CCD7D0C00BDDD83 /* Lutheran RadioUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Lutheran RadioUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		B7AFC6E12CCD7DD900BDDD83 /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
-		B7CF3B7F2DA2F15700C0D4F2 /* LutheranRadio-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "LutheranRadio-Bridging-Header.h"; sourceTree = "<group>"; };
-		B7CF3B802DA2F35300C0D4F2 /* libresolv.9.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libresolv.9.tbd; path = usr/lib/libresolv.9.tbd; sourceTree = SDKROOT; };
+		B7F7B4702DAA463E00194E5C /* libmdns.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libmdns.tbd; path = usr/lib/libmdns.tbd; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -73,8 +72,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				B7CF3B812DA2F35300C0D4F2 /* libresolv.9.tbd in Frameworks */,
 				B7AFC6E22CCD7DD900BDDD83 /* AVFoundation.framework in Frameworks */,
+				B7F7B4712DAA463F00194E5C /* libmdns.tbd in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -98,7 +97,6 @@
 		B7AFC6A32CCD7D0A00BDDD83 = {
 			isa = PBXGroup;
 			children = (
-				B7CF3B7F2DA2F15700C0D4F2 /* LutheranRadio-Bridging-Header.h */,
 				B7AFC6AE2CCD7D0A00BDDD83 /* Lutheran Radio */,
 				B7AFC6C52CCD7D0C00BDDD83 /* Lutheran RadioTests */,
 				B7AFC6CF2CCD7D0C00BDDD83 /* Lutheran RadioUITests */,
@@ -120,7 +118,7 @@
 		B7AFC6E02CCD7DD900BDDD83 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
-				B7CF3B802DA2F35300C0D4F2 /* libresolv.9.tbd */,
+				B7F7B4702DAA463E00194E5C /* libmdns.tbd */,
 				B7AFC6E12CCD7DD900BDDD83 /* AVFoundation.framework */,
 			);
 			name = Frameworks;
