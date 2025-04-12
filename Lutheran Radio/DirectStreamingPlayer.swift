@@ -9,12 +9,23 @@ import Foundation
 import Security
 import CommonCrypto
 import AVFoundation
+import dnssd
+import Network // Added for network monitoring
 
 class DirectStreamingPlayer: NSObject {
     // MARK: - Security Model
-    private let appSecurityModel = "turku" // Security model in use
+    private let appSecurityModel = "mariehamn" // Security model in use
     private var isValidating = false
-    private var isSecurityModelValid: Bool?
+    // Changed: Replaced isSecurityModelValid with validationState for better state tracking
+    enum ValidationState {
+        case pending
+        case success
+        case failedTransient
+        case failedPermanent
+    }
+    var validationState: ValidationState = .pending
+    private var networkMonitor: NWPathMonitor?
+    private var hasInternetConnection = true // Assume connected until checked
     
     struct Stream {
         let title: String
@@ -111,318 +122,286 @@ class DirectStreamingPlayer: NSObject {
     
     // MARK: - Security Model Validation
     
-    private func getSystemDNSServers() -> [String] {
-        var dnsServers: [String] = []
-        
-        // Allocate memory for a __res_9_state struct
-        let statePtr = UnsafeMutablePointer<__res_9_state>.allocate(capacity: 1)
-        
-        // Initialize the struct with res_9_ninit
-        res_9_ninit(statePtr)
-        
-        // Access the DNS servers from nsaddr_list (a tuple)
-        let nscount = statePtr.pointee.nscount
-        if nscount > 0 {
-            let addr0 = statePtr.pointee.nsaddr_list.0
-            let ip0 = String(cString: inet_ntoa(addr0.sin_addr))
-            dnsServers.append(ip0)
-        }
-        if nscount > 1 {
-            let addr1 = statePtr.pointee.nsaddr_list.1
-            let ip1 = String(cString: inet_ntoa(addr1.sin_addr))
-            dnsServers.append(ip1)
-        }
-        if nscount > 2 {
-            let addr2 = statePtr.pointee.nsaddr_list.2
-            let ip2 = String(cString: inet_ntoa(addr2.sin_addr))
-            dnsServers.append(ip2)
-        }
-        
-        // Clean up
-        res_9_nclose(statePtr)
-        statePtr.deallocate()
-        
-        return dnsServers
-    }
-    
     private func fetchValidSecurityModels(completion: @escaping (Result<Set<String>, Error>) -> Void) {
         let domain = "securitymodels.lutheran.radio"
-        let dnsQueue = DispatchQueue(label: "radio.lutheran.dns", qos: .utility)
-        dnsQueue.async {
-            let statePtr = UnsafeMutablePointer<__res_9_state>.allocate(capacity: 1)
-            defer {
-                res_9_nclose(statePtr)
-                statePtr.deallocate()
-                #if DEBUG
-                print("🔒 fetchValidSecurityModels: Resolver state cleaned up")
-                #endif
+        #if DEBUG
+        print("🔒 [Fetch Security Models] Fetching valid security models for domain: \(domain)")
+        #endif
+        queryTXTRecord(domain: domain) { result in
+            #if DEBUG
+            switch result {
+            case .success(let models):
+                print("✅ [Fetch Security Models] Successfully fetched models: \(models)")
+            case .failure(let error):
+                print("❌ [Fetch Security Models] Failed to fetch models: \(error.localizedDescription)")
             }
-            
-            let initResult = res_9_ninit(statePtr)
-            if initResult != 0 {
-                let error = NSError(domain: "radio.lutheran", code: Int(initResult), userInfo: [NSLocalizedDescriptionKey: "Failed to initialize resolver"])
-                DispatchQueue.main.async {
-                    completion(.failure(error))
-                }
-                return
-            }
-            
-            var response = [UInt8](repeating: 0, count: 4096)
-            let queryLength = res_9_nquery(statePtr, domain, 1, 16, &response, Int32(response.count))
-            if queryLength < 0 {
-                let error = NSError(domain: "radio.lutheran", code: Int(queryLength), userInfo: [NSLocalizedDescriptionKey: "DNS query failed"])
-                DispatchQueue.main.async {
-                    completion(.failure(error))
-                }
-                return
-            }
-            
-            do {
-                let models = try self.parseTXTRecord(from: Data(response[0..<Int(queryLength)]))
-                DispatchQueue.main.async {
-                    completion(.success(models))
-                }
-            } catch {
-                DispatchQueue.main.async {
-                    completion(.failure(error))
-                }
+            #endif
+            DispatchQueue.main.async {
+                completion(result)
             }
         }
     }
     
-    private func buildDNSQuery(for domain: String) -> Data {
+    private func queryTXTRecord(domain: String, completion: @escaping (Result<Set<String>, Error>) -> Void) {
+        class QueryContext {
+            weak var player: DirectStreamingPlayer?
+            let completion: (Result<Set<String>, Error>) -> Void
+            init(player: DirectStreamingPlayer, completion: @escaping (Result<Set<String>, Error>) -> Void) {
+                self.player = player
+                self.completion = completion
+            }
+        }
+
+        var serviceRef: DNSServiceRef?
+        let flags: DNSServiceFlags = kDNSServiceFlagsTimeout
+        let interfaceIndex: UInt32 = 0
+        let type: UInt16 = UInt16(kDNSServiceType_TXT)
+        let rrClass: UInt16 = UInt16(kDNSServiceClass_IN)
+
         #if DEBUG
-        print("🔒 buildDNSQuery: Constructing query for domain: \(domain)")
+        print("🔍 [DNS Query] Starting TXT record query for domain: \(domain)")
         #endif
-        var query = Data()
-        let transactionID = UInt16.random(in: 0...UInt16.max)
-        query.append(contentsOf: [UInt8(transactionID >> 8), UInt8(transactionID & 0xFF)])
-        query.append(contentsOf: [0x01, 0x00]) // Flags: Standard query
-        query.append(contentsOf: [0x00, 0x01]) // Questions: 1
-        query.append(contentsOf: [0x00, 0x00]) // Answer RRs: 0
-        query.append(contentsOf: [0x00, 0x00]) // Authority RRs: 0
-        query.append(contentsOf: [0x00, 0x00]) // Additional RRs: 0
-        
-        let parts = domain.split(separator: ".")
-        for part in parts {
-            let length = UInt8(part.count)
-            query.append(length)
-            query.append(part.data(using: .utf8)!)
+
+        guard let domainCStr = domain.cString(using: .utf8) else {
             #if DEBUG
-            print("🔒 buildDNSQuery: Added domain part: \(part), length: \(length)")
+            print("❌ [DNS Query] Failed to convert domain to C string")
+            #endif
+            completion(.failure(NSError(domain: "radio.lutheran", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid domain"])))
+            return
+        }
+
+        let context = QueryContext(player: self, completion: completion)
+        let contextPointer = UnsafeMutablePointer<QueryContext>.allocate(capacity: 1)
+        contextPointer.initialize(to: context)
+        defer {
+            contextPointer.deinitialize(count: 1)
+            contextPointer.deallocate()
+            #if DEBUG
+            print("🧹 [DNS Query] Deallocated QueryContext memory")
             #endif
         }
-        query.append(UInt8(0))
-        query.append(contentsOf: [0x00, 0x10]) // QTYPE: TXT (16)
-        query.append(contentsOf: [0x00, 0x01]) // QCLASS: IN (1)
-        
-        #if DEBUG
-        print("🔒 buildDNSQuery: Query constructed, total length: \(query.count) bytes")
-        #endif
-        return query
+
+        let error = DNSServiceQueryRecord(
+            &serviceRef,
+            flags,
+            interfaceIndex,
+            domainCStr,
+            type,
+            rrClass,
+            { (ref, flags, interface, errorCode, fullName, rrtype, rrclass, rdlen, rdata, ttl, context) in
+                let contextPointer = context?.assumingMemoryBound(to: QueryContext.self)
+                guard let queryContext = contextPointer?.pointee else {
+                    #if DEBUG
+                    print("❌ [DNS Query Callback] QueryContext is nil")
+                    #endif
+                    return
+                }
+                let completion = queryContext.completion
+                guard let player = queryContext.player else {
+                    #if DEBUG
+                    print("❌ [DNS Query Callback] Player instance deallocated")
+                    #endif
+                    completion(.failure(NSError(domain: "radio.lutheran", code: -1, userInfo: [NSLocalizedDescriptionKey: "Player deallocated"])))
+                    return
+                }
+
+                guard errorCode == kDNSServiceErr_NoError, let rawData = rdata else {
+                    #if DEBUG
+                    print("❌ [DNS Query Callback] Query failed with errorCode=\(errorCode)")
+                    #endif
+                    completion(.failure(NSError(domain: "dnssd", code: Int(errorCode), userInfo: [NSLocalizedDescriptionKey: "DNS query failed"])))
+                    return
+                }
+
+                #if DEBUG
+                print("✅ [DNS Query Callback] Retrieved TXT record data: length=\(rdlen)")
+                #endif
+
+                let txtData = Data(bytes: rawData, count: Int(rdlen))
+                let models = player.parseTXTRecordData(txtData)
+                completion(.success(models))
+            },
+            contextPointer
+        )
+
+        if error == kDNSServiceErr_NoError, let serviceRef = serviceRef {
+            #if DEBUG
+            print("🚀 [DNS Query] DNSServiceQueryRecord initiated successfully")
+            #endif
+            DNSServiceProcessResult(serviceRef)
+            DNSServiceRefDeallocate(serviceRef)
+        } else {
+            #if DEBUG
+            print("❌ [DNS Query] DNSServiceQueryRecord failed with error=\(error)")
+            #endif
+            completion(.failure(NSError(domain: "dnssd", code: Int(error), userInfo: [NSLocalizedDescriptionKey: "DNS service init failed"])))
+        }
     }
-    
-    private func parseTXTRecord(from data: Data) throws -> Set<String> {
-        #if DEBUG
-        print("🔒 parseTXTRecord: Starting to parse DNS response, data length: \(data.count) bytes")
-        #endif
+
+    private func parseTXTRecordData(_ data: Data) -> Set<String> {
         var models = Set<String>()
-        var offset = 12 // Skip header
-        
-        while offset < data.count && data[offset] != 0 {
-            offset += Int(data[offset]) + 1
-        }
-        offset += 5 // Skip null terminator + QTYPE + QCLASS
-        #if DEBUG
-        print("🔒 parseTXTRecord: Skipped question section, new offset: \(offset)")
-        #endif
-        
-        guard offset < data.count else {
-            throw NSError(domain: "radio.lutheran", code: -3, userInfo: [NSLocalizedDescriptionKey: "Invalid DNS response"])
-        }
-        
-        while offset < data.count {
-            if data[offset] == 0 {
-                offset += 1
-                #if DEBUG
-                print("🔒 parseTXTRecord: Encountered zero byte at offset \(offset), skipping")
-                #endif
-                continue
-            }
-            offset += 2 // Skip name pointer
-            guard offset + 9 < data.count else { // Ensure enough bytes for type, class, TTL, rdLength
-                #if DEBUG
-                print("🔒 parseTXTRecord: Insufficient data at offset \(offset), stopping")
-                #endif
-                break
-            }
-            let type = (UInt16(data[offset]) << 8) + UInt16(data[offset + 1])
-            offset += 8 // Skip type, class, TTL
-            guard offset + 1 < data.count else {
-                #if DEBUG
-                print("🔒 parseTXTRecord: Cannot read rdLength at offset \(offset), stopping")
-                #endif
-                break
-            }
-            let rdLength = (UInt16(data[offset]) << 8) + UInt16(data[offset + 1])
-            offset += 2
-            #if DEBUG
-            print("🔒 parseTXTRecord: Record type: \(type), rdLength: \(rdLength), offset: \(offset)")
-            #endif
-            
-            if type == 16 { // TXT record
-                guard offset + Int(rdLength) <= data.count else {
-                    #if DEBUG
-                    print("🔒 parseTXTRecord: rdLength \(rdLength) exceeds remaining data at offset \(offset), skipping")
-                    #endif
-                    break
-                }
-                let txtData = data.subdata(in: offset..<offset + Int(rdLength))
-                if let txtString = String(data: txtData.dropFirst(), encoding: .utf8) {
-                    let modelList = txtString.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces).lowercased() }
+        var index = 0
+        while index < data.count {
+            let length = Int(data[index])
+            index += 1
+            if index + length <= data.count {
+                let strData = data.subdata(in: index..<index + length)
+                if let str = String(data: strData, encoding: .utf8) {
+                    let modelList = str.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces).lowercased() }
                     models.formUnion(modelList)
-                    #if DEBUG
-                    print("🔒 parseTXTRecord: Parsed TXT record: \(txtString), extracted models: \(modelList)")
-                    #endif
                 }
+                index += length
+            } else {
+                break
             }
-            offset += Int(rdLength)
         }
-        
         #if DEBUG
-        print("🔒 parseTXTRecord: Parsing complete, models: \(models)")
+        print("📜 [Parse TXT Record] Parsed models: \(models)")
         #endif
         return models
     }
     
-    private func validateSecurityModel(completion: @escaping (Bool) -> Void) {
+    // Changed: New asynchronous validation method
+    func validateSecurityModelAsync(completion: @escaping (Bool) -> Void) {
         guard !isValidating else {
+            #if DEBUG
+            print("🔒 [Validate Async] Validation in progress, retrying later")
+            #endif
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-                guard let self = self else { completion(false); return }
-                if let isValid = self.isSecurityModelValid {
-                    #if DEBUG
-                    print("🔒 Validation already completed, returning cached result: isValid=\(isValid)")
-                    #endif
-                    completion(isValid)
-                } else {
-                    self.validateSecurityModel(completion: completion)
+                guard let self = self else {
+                    completion(false)
+                    return
+                }
+                switch self.validationState {
+                case .success:
+                    completion(true)
+                case .failedPermanent:
+                    completion(false)
+                default:
+                    self.validateSecurityModelAsync(completion: completion)
                 }
             }
             return
         }
 
-        isValidating = true
-        #if DEBUG
-        print("🔒 Validating security model: \(appSecurityModel) - Starting validation process")
-        #endif
-
-        // Check for basic network connectivity
-        let dnsServers = getSystemDNSServers()
-        if dnsServers.isEmpty {
-            #if DEBUG
-            print("🔒 No DNS servers available (likely offline or airplane mode), treating as transient error")
-            #endif
-            isValidating = false
-            isSecurityModelValid = false // Temporary invalid state
-            DispatchQueue.main.async {
-                self.onStatusChange?(false, String(localized: "status_no_internet"))
-                completion(false)
-            }
-            return
-        }
-
-        fetchValidSecurityModels { [weak self] result in
+        // Perform an active connectivity check
+        performConnectivityCheck { [weak self] isConnected in
             guard let self = self else {
+                completion(false)
+                return
+            }
+
+            if !isConnected {
+                #if DEBUG
+                print("🔒 [Validate Async] No internet, transient failure")
+                #endif
+                self.validationState = .failedTransient
+                self.hasInternetConnection = false
                 DispatchQueue.main.async {
+                    self.onStatusChange?(false, String(localized: "status_no_internet"))
                     completion(false)
                 }
                 return
             }
-            self.isValidating = false
-            switch result {
-            case .success(let validModels):
-                if validModels.isEmpty {
-                    #if DEBUG
-                    print("🔒 No security models returned from DNS, treating as permanent security error")
-                    #endif
-                    self.isSecurityModelValid = false
-                    self.hasPermanentError = true
-                    DispatchQueue.main.async {
-                        self.onStatusChange?(false, String(localized: "status_security_failed"))
-                        completion(false)
-                    }
-                } else {
-                    let isValid = validModels.contains(self.appSecurityModel.lowercased())
-                    self.isSecurityModelValid = isValid
-                    #if DEBUG
-                    print("🔒 Security model validation: model=\(self.appSecurityModel), isValid=\(isValid), validModels=\(validModels)")
-                    #endif
-                    if !isValid {
+
+            self.isValidating = true
+            self.hasInternetConnection = true
+            #if DEBUG
+            print("🔒 [Validate Async] Starting validation for model: \(self.appSecurityModel)")
+            #endif
+
+            // Set a timeout
+            let timeoutWorkItem = DispatchWorkItem { [weak self] in
+                guard let self = self, self.isValidating else { return }
+                self.isValidating = false
+                self.validationState = .failedTransient
+                DispatchQueue.main.async {
+                    self.onStatusChange?(false, String(localized: "status_no_internet"))
+                    completion(false)
+                }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5.0, execute: timeoutWorkItem)
+
+            self.fetchValidSecurityModels { [weak self] result in
+                guard let self = self else {
+                    completion(false)
+                    return
+                }
+                timeoutWorkItem.cancel()
+                self.isValidating = false
+                switch result {
+                case .success(let validModels):
+                    if validModels.isEmpty {
+                        self.validationState = .failedPermanent
                         self.hasPermanentError = true
                         DispatchQueue.main.async {
                             self.onStatusChange?(false, String(localized: "status_security_failed"))
                             completion(false)
                         }
                     } else {
-                        DispatchQueue.main.async {
-                            completion(true)
+                        let isValid = validModels.contains(self.appSecurityModel.lowercased())
+                        self.validationState = isValid ? .success : .failedPermanent
+                        #if DEBUG
+                        print("🔒 [Validate Async] Result: isValid=\(isValid), models=\(validModels)")
+                        #endif
+                        if !isValid {
+                            self.hasPermanentError = true
+                            DispatchQueue.main.async {
+                                self.onStatusChange?(false, String(localized: "status_security_failed"))
+                                completion(false)
+                            }
+                        } else {
+                            self.hasPermanentError = false
+                            DispatchQueue.main.async {
+                                self.onStatusChange?(false, String(localized: "status_connecting"))
+                                completion(true)
+                            }
                         }
                     }
-                }
-            case .failure(let error):
-                // Check if the error is due to network issues
-                let nsError = error as NSError
-                if nsError.domain == "radio.lutheran" && nsError.code < 0 { // DNS query failed
-                    #if DEBUG
-                    print("🔒 DNS query failed, likely due to network issue: \(error.localizedDescription)")
-                    #endif
-                    self.isSecurityModelValid = false
-                    // Do NOT set hasPermanentError here; treat as transient
+                case .failure(_):
+                    self.validationState = .failedTransient
                     DispatchQueue.main.async {
                         self.onStatusChange?(false, String(localized: "status_no_internet"))
-                        completion(false)
-                    }
-                } else {
-                    // Other errors treated as permanent security failures
-                    self.isSecurityModelValid = false
-                    self.hasPermanentError = true
-                    #if DEBUG
-                    print("🔒 Security model fetch failed with error: \(error.localizedDescription), treating as permanent security error")
-                    #endif
-                    DispatchQueue.main.async {
-                        self.onStatusChange?(false, String(localized: "status_security_failed"))
                         completion(false)
                     }
                 }
             }
         }
     }
+
+    // New method to actively check connectivity
+    private func performConnectivityCheck(completion: @escaping (Bool) -> Void) {
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 3.0
+        let session = URLSession(configuration: config)
+        let url = URL(string: "https://www.apple.com/library/test/success.html")!
+        let task = session.dataTask(with: url) { data, response, error in
+            let isConnected = error == nil && (response as? HTTPURLResponse)?.statusCode == 200
+            #if DEBUG
+            print("🔒 [Connectivity Check] Result: \(isConnected ? "Connected" : "Disconnected"), error: \(error?.localizedDescription ?? "None")")
+            #endif
+            DispatchQueue.main.async {
+                completion(isConnected)
+            }
+        }
+        task.resume()
+    }
     
     public func resetTransientErrors() {
-        let isValid = isSecurityModelValid ?? true
-        if !hasPermanentErrorDueToSecurity() || (isValid == false && !wasLastValidationSecurityMismatch()) {
-            hasPermanentError = false
-            isSecurityModelValid = nil // Force revalidation on next play
+        if validationState == .failedTransient {
+            validationState = .pending
             #if DEBUG
-            print("🔄 Resetting transient error state: hasPermanentError=\(hasPermanentError), forcing security model revalidation")
+            print("🔄 Reset transient errors to pending")
             #endif
         }
+        hasPermanentError = false
     }
 
-    private func hasPermanentErrorDueToSecurity() -> Bool {
-        // Check if the permanent error is specifically due to a security model mismatch
-        if let isValid = isSecurityModelValid, !isValid {
-            return wasLastValidationSecurityMismatch()
-        }
-        return false
+    func isLastErrorPermanent() -> Bool {
+        return validationState == .failedPermanent
     }
     
-    private var lastValidationWasSecurityMismatch: Bool = false
-
-    private func wasLastValidationSecurityMismatch() -> Bool {
-        return lastValidationWasSecurityMismatch
-    }
-    
+    // Changed: Removed synchronous validation
     override init() {
         let currentLocale = Locale.current
         let languageCode = currentLocale.language.languageCode?.identifier
@@ -433,14 +412,59 @@ class DirectStreamingPlayer: NSObject {
         }
         super.init()
         setupAudioSession()
-        // Perform validation synchronously during init
-        validateSecurityModel { [weak self] isValid in
-            self?.isSecurityModelValid = isValid
-            if !isValid {
-                self?.stop()
-                self?.hasPermanentError = true
+        setupNetworkMonitoring()
+        #if DEBUG
+        print("🎵 Player initialized, starting validation")
+        #endif
+        // Trigger validation if internet is available
+        if hasInternetConnection {
+            validateSecurityModelAsync { [weak self] isValid in
+                guard let self = self else { return }
+                #if DEBUG
+                print("🔒 Initial validation completed: \(isValid)")
+                #endif
+                if isValid {
+                    self.onStatusChange?(false, String(localized: "status_connecting"))
+                }
             }
         }
+    }
+    
+    private func setupNetworkMonitoring() {
+        networkMonitor = NWPathMonitor()
+        networkMonitor?.pathUpdateHandler = { [weak self] path in
+            guard let self = self else { return }
+            let wasConnected = self.hasInternetConnection
+            self.hasInternetConnection = path.status == .satisfied
+            #if DEBUG
+            print("🌐 [Network] Status: \(self.hasInternetConnection ? "Connected" : "Disconnected")")
+            #endif
+            if self.hasInternetConnection && !wasConnected {
+                #if DEBUG
+                print("🌐 [Network] Connection restored, resetting validation state")
+                #endif
+                if self.validationState == .failedTransient {
+                    self.validationState = .pending
+                    self.hasPermanentError = false
+                    self.validateSecurityModelAsync { isValid in
+                        #if DEBUG
+                        print("🔒 [Network] Revalidation result: \(isValid)")
+                        #endif
+                        if !isValid {
+                            DispatchQueue.main.async {
+                                self.onStatusChange?(false, String(localized: self.validationState == .failedPermanent ? "status_security_failed" : "status_no_internet"))
+                            }
+                        }
+                    }
+                }
+            } else if !self.hasInternetConnection && wasConnected {
+                self.validationState = .failedTransient
+                DispatchQueue.main.async {
+                    self.onStatusChange?(false, String(localized: "status_no_internet"))
+                }
+            }
+        }
+        networkMonitor?.start(queue: DispatchQueue(label: "radio.lutheran.networkmonitor"))
     }
     
     func setupAudioSession() {
@@ -449,91 +473,100 @@ class DirectStreamingPlayer: NSObject {
             try session.setCategory(.playback, mode: .default)
             try session.setActive(true)
             #if DEBUG
-            print("🔊 Audio session successfully configured")
+            print("🔊 Audio session configured")
             #endif
         } catch {
             #if DEBUG
-            print("🔊 Audio session setup failed: \(error.localizedDescription)")
+            print("🔊 Audio session failed: \(error.localizedDescription)")
             #endif
         }
     }
     
     func play(completion: @escaping (Bool) -> Void) {
-        let dnsServers = getSystemDNSServers()
-        if dnsServers.isEmpty {
+        if validationState == .pending {
             #if DEBUG
-            print("📡 Play aborted: No network connectivity (no DNS servers)")
+            print("📡 Play: Validation pending, triggering validation")
             #endif
-            DispatchQueue.main.async {
-                self.onStatusChange?(false, String(localized: "status_no_internet"))
-                completion(false)
-            }
-            return
-        }
-
-        if hasPermanentError && hasPermanentErrorDueToSecurity() {
-            #if DEBUG
-            print("📡 Play aborted: Permanent security error exists")
-            #endif
-            DispatchQueue.main.async {
-                self.onStatusChange?(false, String(localized: "status_security_failed"))
-                completion(false)
-            }
-            return
-        }
-
-        validateSecurityModel { [weak self] isValid in
-            guard let self = self else {
-                completion(false)
-                return
-            }
-
-            if !isValid {
-                completion(false)
-                return
-            }
-
-            self.hasPermanentError = false // Reset on successful validation
-            self.stop()
-            let asset = AVURLAsset(url: self.selectedStream.url)
-            asset.resourceLoader.setDelegate(self, queue: DispatchQueue(label: "radio.lutheran.resourceloader"))
-            self.playerItem = AVPlayerItem(asset: asset)
-            self.player = AVPlayer(playerItem: self.playerItem)
-            self.addObservers()
-            self.player?.play()
-
-            var tempStatusObserver: NSKeyValueObservation?
-            tempStatusObserver = self.playerItem?.observe(\.status, options: [.new]) { [weak self] item, _ in
-                guard self != nil else {
-                    tempStatusObserver?.invalidate()
+            validateSecurityModelAsync { [weak self] isValid in
+                guard let self = self else {
                     completion(false)
                     return
                 }
-                if item.status == .readyToPlay {
-                    completion(true)
-                } else if item.status == .failed {
-                    completion(false)
+                if isValid {
+                    self.play(completion: completion)
+                } else {
+                    let status = self.validationState == .failedPermanent ? String(localized: "status_security_failed") : String(localized: "status_no_internet")
+                    DispatchQueue.main.async {
+                        self.onStatusChange?(false, status)
+                        completion(false)
+                    }
                 }
-                tempStatusObserver?.invalidate()
             }
+            return
+        }
+
+        guard validationState == .success else {
+            #if DEBUG
+            print("📡 Play aborted: Validation state=\(validationState)")
+            #endif
+            let status = validationState == .failedPermanent ? String(localized: "status_security_failed") : String(localized: "status_no_internet")
+            DispatchQueue.main.async {
+                self.onStatusChange?(false, status)
+                completion(false)
+            }
+            return
+        }
+
+        stop()
+        let asset = AVURLAsset(url: selectedStream.url)
+        asset.resourceLoader.setDelegate(self, queue: DispatchQueue(label: "radio.lutheran.resourceloader"))
+        self.playerItem = AVPlayerItem(asset: asset)
+        self.player = AVPlayer(playerItem: self.playerItem)
+        self.addObservers()
+        self.player?.play()
+
+        var tempStatusObserver: NSKeyValueObservation?
+        tempStatusObserver = self.playerItem?.observe(\.status, options: [.new]) { [weak self] item, _ in
+            guard self != nil else {
+                tempStatusObserver?.invalidate()
+                completion(false)
+                return
+            }
+            if item.status == .readyToPlay {
+                completion(true)
+            } else if item.status == .failed {
+                completion(false)
+            }
+            tempStatusObserver?.invalidate()
         }
     }
     
     func setStream(to stream: Stream) {
+        guard validationState == .success else {
+            #if DEBUG
+            print("📡 Stream switch aborted: Validation state=\(validationState)")
+            #endif
+            let status = validationState == .failedPermanent ? String(localized: "status_security_failed") : String(localized: "status_no_internet")
+            DispatchQueue.main.async {
+                self.onStatusChange?(false, status)
+            }
+            return
+        }
+
         stop()
         selectedStream = stream
         play { [weak self] success in
             guard let self = self else { return }
             if success {
                 #if DEBUG
-                print("Stream switched successfully")
+                print("✅ Stream switched")
                 #endif
                 if self.delegate != nil {
                     self.onStatusChange?(true, String(localized: "status_playing"))
                 }
             } else {
                 #if DEBUG
-                print("Failed to switch stream")
+                print("❌ Stream switch failed")
                 #endif
                 if self.delegate != nil {
                     self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
@@ -555,27 +588,12 @@ class DirectStreamingPlayer: NSObject {
                 #if DEBUG
                 print("🎵 Player item status: \(item.status.rawValue)")
                 #endif
-                guard self.delegate != nil else {
-                    #if DEBUG
-                    print("🎵 Player item status: Delegate is nil, skipping callback")
-                    #endif
-                    return
-                }
+                guard self.delegate != nil else { return }
                 switch item.status {
                 case .readyToPlay:
                     self.onStatusChange?(true, String(localized: "status_playing"))
                 case .failed:
                     self.lastError = item.error
-                    if let error = item.error {
-                        let nsError = error as NSError
-                        #if DEBUG
-                        print("🎵 Player item failed with error: \(error.localizedDescription), code: \(nsError.code), domain: \(nsError.domain)")
-                        #endif
-                    } else {
-                        #if DEBUG
-                        print("🎵 Player item failed with no error details")
-                        #endif
-                    }
                     let errorType = StreamErrorType.from(error: item.error)
                     self.hasPermanentError = errorType.isPermanent
                     self.onStatusChange?(false, errorType.statusString)
@@ -597,12 +615,7 @@ class DirectStreamingPlayer: NSObject {
         
         let interval = CMTime(seconds: 1.0, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
         timeObserver = player?.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] _ in
-            guard let self = self, self.delegate != nil else {
-                #if DEBUG
-                print("🎵 timeObserver: Delegate is nil, skipping callback")
-                #endif
-                return
-            }
+            guard let self = self, self.delegate != nil else { return }
             if self.player?.rate ?? 0 > 0 {
                 self.onStatusChange?(true, String(localized: "status_playing"))
             }
@@ -613,38 +626,23 @@ class DirectStreamingPlayer: NSObject {
         playerItem?.add(metadataOutput)
     }
     
-    // Handle KVO notifications for buffering state
     override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
         guard let keyPath = keyPath, let playerItem = object as? AVPlayerItem else { return }
         
         DispatchQueue.main.async { [weak self] in
-            guard let self = self, self.delegate != nil else {
-                #if DEBUG
-                print("🎵 observeValue: Delegate is nil, skipping callback")
-                #endif
-                return
-            }
+            guard let self = self, self.delegate != nil else { return }
             
             if keyPath == "playbackBufferEmpty" {
                 if playerItem.isPlaybackBufferEmpty {
-                    #if DEBUG
-                    print("⏳ Playback buffer is empty - buffering...")
-                    #endif
                     self.onStatusChange?(false, String(localized: "status_buffering"))
                 }
             } else if keyPath == "playbackLikelyToKeepUp" {
                 if playerItem.isPlaybackLikelyToKeepUp && playerItem.status == .readyToPlay {
-                    #if DEBUG
-                    print("✅ Playback is likely to keep up - ready to play")
-                    #endif
                     self.player?.play()
                     self.onStatusChange?(true, String(localized: "status_playing"))
                 }
             } else if keyPath == "playbackBufferFull" {
                 if playerItem.isPlaybackBufferFull {
-                    #if DEBUG
-                    print("✅ Playback buffer is full")
-                    #endif
                     self.player?.play()
                     self.onStatusChange?(true, String(localized: "status_playing"))
                 }
@@ -653,35 +651,20 @@ class DirectStreamingPlayer: NSObject {
     }
     
     private func removeObservers() {
-        // Remove status observer
         statusObserver?.invalidate()
         statusObserver = nil
         
-        // Remove time observer
         if let timeObserver = timeObserver, let player = player {
             player.removeTimeObserver(timeObserver)
             self.timeObserver = nil
         }
         
-        // Only try to remove KVO observers if we added them
         if isObservingBuffer, let playerItem = playerItem {
-            // Remove observers only if we know they were added
             playerItem.removeObserver(self, forKeyPath: "playbackBufferEmpty")
             playerItem.removeObserver(self, forKeyPath: "playbackLikelyToKeepUp")
             playerItem.removeObserver(self, forKeyPath: "playbackBufferFull")
             isObservingBuffer = false
-            #if DEBUG
-            print("📊 Removed buffer observers successfully")
-            #endif
-        } else {
-            #if DEBUG
-            print("📊 No buffer observers to remove (isObservingBuffer=\(isObservingBuffer), playerItem=\(playerItem != nil ? "exists" : "nil"))")
-            #endif
         }
-    }
-    
-    func isLastErrorPermanent() -> Bool {
-        StreamErrorType.from(error: lastError).isPermanent
     }
     
     func stop() {
@@ -702,6 +685,11 @@ class DirectStreamingPlayer: NSObject {
     
     deinit {
         stop()
+        networkMonitor?.cancel()
+        networkMonitor = nil
+        #if DEBUG
+        print("🧹 Player deinit")
+        #endif
     }
 }
 
@@ -710,12 +698,7 @@ extension DirectStreamingPlayer: AVPlayerItemMetadataOutputPushDelegate {
     func metadataOutput(_ output: AVPlayerItemMetadataOutput,
                        didOutputTimedMetadataGroups groups: [AVTimedMetadataGroup],
                        from track: AVPlayerItemTrack?) {
-        guard delegate != nil else {
-            #if DEBUG
-            print("🎵 metadataOutput: Delegate is nil, skipping callback")
-            #endif
-            return
-        }
+        guard delegate != nil else { return }
         
         guard let item = groups.first?.items.first,
               let value = item.value(forKeyPath: "stringValue") as? String,
@@ -730,23 +713,15 @@ extension DirectStreamingPlayer: AVPlayerItemMetadataOutputPushDelegate {
 
 extension DirectStreamingPlayer {
     func handleNetworkInterruption() {
-        // Reset player and observers in case they're in a bad state
         stop()
-        
-        // Add a small delay before returning to ready state
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            guard let self = self, self.delegate != nil else {
-                #if DEBUG
-                print("🎵 handleNetworkInterruption: Delegate is nil, skipping callback")
-                #endif
-                return
-            }
+            guard let self = self, self.delegate != nil else { return }
             self.onStatusChange?(false, String(localized: "alert_retry"))
         }
     }
 }
 
-// MARK: - DirectStreamingPlayer Extension
+// MARK: - Resource Loader
 extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
     func resourceLoader(_ resourceLoader: AVAssetResourceLoader,
                        shouldWaitForLoadingOfRequestedResource loadingRequest: AVAssetResourceLoadingRequest) -> Bool {
@@ -759,12 +734,7 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
         let session = URLSession(configuration: .default, delegate: streamingDelegate, delegateQueue: nil)
         let task = session.dataTask(with: url)
         streamingDelegate.onError = { [weak self] error in
-            guard let self = self, self.delegate != nil else {
-                #if DEBUG
-                print("📡 resourceLoader: Delegate is nil, skipping error callback")
-                #endif
-                return
-            }
+            guard let self = self, self.delegate != nil else { return }
             DispatchQueue.main.async {
                 self.handleLoadingError(error)
             }
@@ -774,33 +744,18 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
     }
     
     private func handleLoadingError(_ error: Error) {
-        #if DEBUG
-        print("📡 Loading error: \(error.localizedDescription)")
-        #endif
         let errorType = StreamErrorType.from(error: error)
         hasPermanentError = errorType.isPermanent
         if let urlError = error as? URLError {
             switch urlError.code {
             case .serverCertificateUntrusted, .secureConnectionFailed:
-                #if DEBUG
-                print("🔒 SSL error: Connection cannot be verified")
-                #endif
                 onStatusChange?(false, String(localized: "status_security_failed"))
-            case .cannotFindHost, .fileDoesNotExist, .badServerResponse: // Include 502
-                #if DEBUG
-                print("📡 Permanent error: \(urlError.code == .cannotFindHost ? "Host not found" : urlError.code == .fileDoesNotExist ? "File not found" : "Bad server response")")
-                #endif
+            case .cannotFindHost, .fileDoesNotExist, .badServerResponse:
                 onStatusChange?(false, String(localized: "status_stream_unavailable"))
             default:
-                #if DEBUG
-                print("📡 Generic loading error: \(urlError.code)")
-                #endif
                 onStatusChange?(false, String(localized: "status_buffering"))
             }
         } else {
-            #if DEBUG
-            print("📡 Non-URL error encountered")
-            #endif
             onStatusChange?(false, String(localized: "status_buffering"))
         }
         stop()
@@ -808,9 +763,8 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
     
     func resourceLoader(_ resourceLoader: AVAssetResourceLoader,
                        didCancel loadingRequest: AVAssetResourceLoadingRequest) {
-        // Handle cancellation if needed
         #if DEBUG
-        print("Resource loading cancelled")
+        print("📡 Resource loading cancelled")
         #endif
     }
 }
@@ -828,14 +782,14 @@ extension DirectStreamingPlayer {
             }
             
             switch nsError.code {
-            case URLError.Code.secureConnectionFailed.rawValue, // -1200
-                 URLError.Code.serverCertificateUntrusted.rawValue: // -1202
+            case URLError.Code.secureConnectionFailed.rawValue,
+                 URLError.Code.serverCertificateUntrusted.rawValue:
                 return .securityFailure
-            case URLError.Code.cannotFindHost.rawValue, // -1003
-                 URLError.Code.resourceUnavailable.rawValue, // -1008
-                 URLError.Code.fileDoesNotExist.rawValue, // -1100
-                 URLError.Code.cannotConnectToHost.rawValue, // -1004
-                 URLError.Code.badServerResponse.rawValue: // -1011 (for 502)
+            case URLError.Code.cannotFindHost.rawValue,
+                 URLError.Code.resourceUnavailable.rawValue,
+                 URLError.Code.fileDoesNotExist.rawValue,
+                 URLError.Code.cannotConnectToHost.rawValue,
+                 URLError.Code.badServerResponse.rawValue:
                 return .permanentFailure
             default:
                 return .transientFailure

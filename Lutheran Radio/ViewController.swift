@@ -296,36 +296,27 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             self.updatePlayPauseButton(isPlaying: isPlaying)
             if isPlaying {
                 self.statusLabel.text = String(localized: "status_playing")
-            } else if statusText == String(localized: "status_security_failed") {
-                self.statusLabel.text = String(localized: "status_security_failed")
-                self.hasPermanentPlaybackError = true
-                self.isManualPause = true // Prevent auto-restart
-            } else if statusText == String(localized: "status_no_internet") {
-                self.updateUIForNoInternet() // Explicitly call to ensure consistency
-            } else {
-                self.statusLabel.text = statusText
-            }
-            let currentText = self.statusLabel.text ?? ""
-            let activeStatuses = [
-                String(localized: "status_playing"),
-                String(localized: "status_buffering"),
-                String(localized: "status_connecting")
-            ]
-            if activeStatuses.contains(currentText) {
                 self.statusLabel.backgroundColor = .systemGreen
                 self.statusLabel.textColor = .black
-            } else if currentText == String(localized: "status_stream_unavailable") {
-                self.statusLabel.backgroundColor = .systemOrange
-                self.statusLabel.textColor = .white
-            } else if currentText == String(localized: "status_security_failed") {
-                self.statusLabel.backgroundColor = .systemRed
-                self.statusLabel.textColor = .white
-                self.showSecurityModelAlert()
-            } else if currentText == String(localized: "alert_retry") {
-                // No background change needed
             } else {
-                self.statusLabel.backgroundColor = self.isManualPause ? .systemGray : currentText == String(localized: "status_no_internet") ? .systemGray : .systemRed
-                self.statusLabel.textColor = .white
+                self.statusLabel.text = statusText
+                if statusText == String(localized: "status_security_failed") {
+                    self.hasPermanentPlaybackError = true
+                    self.isManualPause = true
+                    self.statusLabel.backgroundColor = .systemRed
+                    self.statusLabel.textColor = .white
+                    self.showSecurityModelAlert()
+                } else if statusText == String(localized: "status_no_internet") {
+                    self.statusLabel.backgroundColor = .systemGray
+                    self.statusLabel.textColor = .white
+                    self.updateUIForNoInternet()
+                } else if statusText == String(localized: "status_stream_unavailable") {
+                    self.statusLabel.backgroundColor = .systemOrange
+                    self.statusLabel.textColor = .white
+                } else {
+                    self.statusLabel.backgroundColor = self.isManualPause ? .systemGray : .systemYellow
+                    self.statusLabel.textColor = .black
+                }
             }
             self.updateNowPlayingInfo()
         }
@@ -593,21 +584,39 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     }
     
     private func handleNetworkReconnection() {
-        if !isManualPause && !hasPermanentPlaybackError {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-                guard let self = self else {
-                    #if DEBUG
-                    print("📱 handleNetworkReconnection: ViewController is nil, skipping callback")
-                    #endif
-                    return
+        hasInternetConnection = true
+        #if DEBUG
+        print("📱 Network reconnected - checking validation state")
+        #endif
+        streamingPlayer.validationState = .pending // Reset to allow retry
+        streamingPlayer.hasPermanentError = false
+        streamingPlayer.validateSecurityModelAsync { [weak self] isValid in
+            guard let self = self else { return }
+            if isValid {
+                #if DEBUG
+                print("📱 Validation succeeded after reconnection - attempting playback")
+                #endif
+                self.streamingPlayer.play { success in
+                    if success {
+                        self.streamingPlayer.onStatusChange?(true, String(localized: "status_playing"))
+                    } else {
+                        self.streamingPlayer.onStatusChange?(false, String(localized: "status_stream_unavailable"))
+                    }
                 }
-                if self.hasInternetConnection && !self.isPlaying && !self.isManualPause {
-                    #if DEBUG
-                    print("📱 Network reconnected - resetting transient errors and attempting playback")
-                    #endif
-                    self.streamingPlayer.resetTransientErrors()
-                    self.isTuningSoundPlaying = false
-                    self.attemptPlaybackWithRetry(attempt: 1, maxAttempts: 3)
+            } else {
+                #if DEBUG
+                print("📱 Security model validation failed after reconnection")
+                #endif
+                self.streamingPlayer.onStatusChange?(false, String(localized: self.streamingPlayer.validationState == .failedPermanent ? "status_security_failed" : "status_no_internet"))
+                // Show alert only if not already presenting
+                if self.presentedViewController == nil {
+                    let alert = UIAlertController(
+                        title: String(localized: "security_model_error_title"),
+                        message: String(localized: "security_model_error_message"),
+                        preferredStyle: .alert
+                    )
+                    alert.addAction(UIAlertAction(title: String(localized: "ok"), style: .default))
+                    self.present(alert, animated: true)
                 }
             }
         }
@@ -685,33 +694,40 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             performActiveConnectivityCheck()
             return
         }
-        
+
         isManualPause = false
         statusLabel.text = String(localized: "status_connecting")
         statusLabel.backgroundColor = .systemYellow
         statusLabel.textColor = .black
-        
-        streamingPlayer.resetTransientErrors() // Reset transient errors before attempting
-        streamingPlayer.play { [weak self] success in
-            guard let self = self else {
-                #if DEBUG
-                print("📱 play (completion): ViewController is nil, skipping callback")
-                #endif
-                return
-            }
-            if success {
-                self.isPlaying = true
-                self.updatePlayPauseButton(isPlaying: true)
-                self.statusLabel.text = String(localized: "status_playing")
-                self.statusLabel.backgroundColor = .systemGreen
-            } else if self.streamingPlayer.isLastErrorPermanent() {
-                self.hasPermanentPlaybackError = true
-                self.statusLabel.text = String(localized: "status_stream_unavailable")
-                self.statusLabel.backgroundColor = .systemOrange
-                self.statusLabel.textColor = .white
+
+        // Check validation state
+        streamingPlayer.validateSecurityModelAsync { [weak self] isValid in
+            guard let self = self else { return }
+            if isValid {
+                self.streamingPlayer.resetTransientErrors()
+                self.streamingPlayer.play { success in
+                    if success {
+                        self.isPlaying = true
+                        self.updatePlayPauseButton(isPlaying: true)
+                        self.statusLabel.text = String(localized: "status_playing")
+                        self.statusLabel.backgroundColor = .systemGreen
+                    } else if self.streamingPlayer.isLastErrorPermanent() {
+                        self.hasPermanentPlaybackError = true
+                        self.statusLabel.text = String(localized: "status_stream_unavailable")
+                        self.statusLabel.backgroundColor = .systemOrange
+                        self.statusLabel.textColor = .white
+                    } else {
+                        self.attemptPlaybackWithRetry(attempt: 1, maxAttempts: 3)
+                    }
+                }
             } else {
-                // If not permanent, attempt retry
-                self.attemptPlaybackWithRetry(attempt: 1, maxAttempts: 3)
+                self.statusLabel.text = self.streamingPlayer.isLastErrorPermanent() ? String(localized: "status_security_failed") : String(localized: "status_no_internet")
+                self.statusLabel.backgroundColor = self.streamingPlayer.isLastErrorPermanent() ? .systemRed : .systemGray
+                self.statusLabel.textColor = .white
+                self.hasPermanentPlaybackError = self.streamingPlayer.isLastErrorPermanent()
+                if self.streamingPlayer.isLastErrorPermanent() {
+                    self.showSecurityModelAlert()
+                }
             }
         }
     }
@@ -1353,6 +1369,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             let generator = UIImpactFeedbackGenerator(style: .medium)
             generator.impactOccurred()
             self.playTuningSound()
+            self.streamingPlayer.resetTransientErrors() // Reset transient errors before switching
             self.streamingPlayer.setStream(to: DirectStreamingPlayer.availableStreams[index])
             self.hasPermanentPlaybackError = false
             if self.isPlaying || !self.isManualPause { self.startPlayback() }
