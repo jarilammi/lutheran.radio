@@ -148,6 +148,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         "ee": "estonia"
     ]
     private var backgroundConstraints: [NSLayoutConstraint] = []
+    private var selectedStreamIndex: Int = 0
+    private var lastRotationTime: Date? // To debounce rapid rotations
+    private let rotationDebounceInterval: TimeInterval = 0.1 // 100ms
     
     private var isInitialSetupComplete = false
     private var isInitialScrollLocked = true
@@ -223,6 +226,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         let currentLocale = Locale.current
         let languageCode = currentLocale.language.languageCode?.identifier ?? "en"
         let initialIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.languageCode == languageCode }) ?? 0
+        selectedStreamIndex = initialIndex // Set initial index
         streamingPlayer.setStream(to: DirectStreamingPlayer.availableStreams[initialIndex])
         updateBackground(for: DirectStreamingPlayer.availableStreams[initialIndex])
         
@@ -420,7 +424,12 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             return
         }
         languageCollectionView.layoutIfNeeded()
-        let layout = languageCollectionView.collectionViewLayout as! UICollectionViewFlowLayout
+        guard let layout = languageCollectionView.collectionViewLayout as? UICollectionViewFlowLayout else {
+            #if DEBUG
+            print("📱 centerCollectionViewContent: Invalid layout, aborting")
+            #endif
+            return
+        }
         let totalItems = DirectStreamingPlayer.availableStreams.count
         let cellWidth: CGFloat = 50
         let spacing: CGFloat = 10
@@ -428,9 +437,10 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         let collectionViewWidth = languageCollectionView.bounds.width
         let inset = max((collectionViewWidth - totalCellWidth) / 2, 0)
         layout.sectionInset = UIEdgeInsets(top: 0, left: inset, bottom: 0, right: inset)
-        languageCollectionView.collectionViewLayout.invalidateLayout()
+        layout.invalidateLayout()
+        
         #if DEBUG
-        print("📱 centerCollectionViewContent: totalCellWidth=\(totalCellWidth), collectionViewWidth=\(collectionViewWidth), inset=\(inset)")
+        print("📱 centerCollectionViewContent: totalCellWidth=\(totalCellWidth), collectionViewWidth=\(collectionViewWidth), inset=\(inset), bounds=\(languageCollectionView.bounds)")
         #endif
     }
     
@@ -1278,23 +1288,106 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         audioQueue.async(execute: workItem)
     }
     
+    // MARK: - languageCollectionView
+    override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
+        super.viewWillTransition(to: size, with: coordinator)
+        
+        // Debounce rapid rotations
+        let now = Date()
+        if let lastTime = lastRotationTime, now.timeIntervalSince(lastTime) < rotationDebounceInterval {
+            #if DEBUG
+            print("📱 viewWillTransition: Debouncing rotation, time since last: \(now.timeIntervalSince(lastTime))s")
+            #endif
+            return
+        }
+        lastRotationTime = now
+        
+        #if DEBUG
+        print("📱 viewWillTransition to size: \(size)")
+        #endif
+        
+        // Verify selectedStreamIndex against the player's current stream
+        if let currentStreamIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.url == streamingPlayer.selectedStream.url }) {
+            if currentStreamIndex != selectedStreamIndex {
+                #if DEBUG
+                print("📱 viewWillTransition: Correcting selectedStreamIndex from \(selectedStreamIndex) to \(currentStreamIndex)")
+                #endif
+                selectedStreamIndex = currentStreamIndex
+            }
+        }
+        
+        // Invalidate layout to prepare for new size
+        languageCollectionView.collectionViewLayout.invalidateLayout()
+        
+        // Update layout during animation
+        coordinator.animate(alongsideTransition: { [weak self] _ in
+            guard let self = self else { return }
+            self.centerCollectionViewContent()
+            let indexPath = IndexPath(item: self.selectedStreamIndex, section: 0)
+            self.languageCollectionView.scrollToItem(at: indexPath, at: .centeredHorizontally, animated: false)
+            self.updateSelectionIndicator(to: self.selectedStreamIndex, isInitial: false)
+        }, completion: { [weak self] _ in
+            guard let self = self else { return }
+            // Reload data after animation to ensure cells are up-to-date
+            self.languageCollectionView.reloadData()
+            self.languageCollectionView.layoutIfNeeded()
+            self.updateSelectionIndicator(to: self.selectedStreamIndex, isInitial: false)
+            #if DEBUG
+            print("📱 Rotation completed, selected index: \(self.selectedStreamIndex)")
+            #endif
+        })
+    }
+    
     // MARK: - Selection Indicator
     private func updateSelectionIndicator(to index: Int, isInitial: Bool = false) {
+        guard !isDeallocating else { return }
         guard index >= 0 && index < DirectStreamingPlayer.availableStreams.count else {
             #if DEBUG
             print("📱 updateSelectionIndicator: Invalid index \(index), streams count=\(DirectStreamingPlayer.availableStreams.count)")
             #endif
             return
         }
+        
+        // Ensure selectionIndicator is a subview of languageCollectionView
+        if selectionIndicator.superview != languageCollectionView {
+            #if DEBUG
+            print("📱 updateSelectionIndicator: Reparenting selectionIndicator")
+            #endif
+            languageCollectionView.addSubview(selectionIndicator)
+            selectionIndicator.translatesAutoresizingMaskIntoConstraints = false
+            NSLayoutConstraint.activate([
+                selectionIndicator.widthAnchor.constraint(equalToConstant: 4),
+                selectionIndicator.heightAnchor.constraint(equalTo: languageCollectionView.heightAnchor, multiplier: 0.8),
+                selectionIndicator.centerYAnchor.constraint(equalTo: languageCollectionView.centerYAnchor)
+            ])
+        }
+        
         let indexPath = IndexPath(item: index, section: 0)
         languageCollectionView.scrollToItem(at: indexPath, at: .centeredHorizontally, animated: !isInitial)
         languageCollectionView.layoutIfNeeded()
+        
         if let layoutAttributes = languageCollectionView.layoutAttributesForItem(at: indexPath) {
             let cellFrame = layoutAttributes.frame
-            let cellCenterX = cellFrame.midX
+            var cellCenterX = cellFrame.midX
+            
+            // Clamp cellCenterX to collection view bounds
+            let minX = languageCollectionView.bounds.minX + selectionIndicator.frame.width / 2
+            let maxX = languageCollectionView.bounds.maxX - selectionIndicator.frame.width / 2
+            cellCenterX = max(minX, min(maxX, cellCenterX))
+            
             #if DEBUG
-            print("📱 updateSelectionIndicator: Moving to index=\(index), cellCenterX=\(cellCenterX), cellFrame=\(cellFrame), isInitial=\(isInitial), caller=\(Thread.callStackSymbols[1])")
+            print("📱 updateSelectionIndicator: Moving to index=\(index), cellCenterX=\(cellCenterX), cellFrame=\(cellFrame), collectionViewBounds=\(languageCollectionView.bounds), isInitial=\(isInitial), caller=\(Thread.callStackSymbols[1])")
             #endif
+            
+            // Skip animation if collection view isn't fully laid out
+            guard languageCollectionView.bounds.width > 0 else {
+                #if DEBUG
+                print("📱 updateSelectionIndicator: Skipping animation, collection view not laid out")
+                #endif
+                selectionIndicator.center.x = cellCenterX
+                return
+            }
+            
             UIView.animate(withDuration: isInitial ? 0.0 : 0.3) {
                 self.selectionIndicator.center.x = cellCenterX
                 self.selectionIndicator.transform = isInitial ? .identity : CGAffineTransform(scaleX: 1.5, y: 1.0)
@@ -1309,9 +1402,14 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 #endif
             }
         } else {
+            // Fallback: Center in collection view
+            let fallbackCenterX = languageCollectionView.bounds.midX
             #if DEBUG
-            print("📱 updateSelectionIndicator: No layout attributes for indexPath=\(indexPath)")
+            print("📱 updateSelectionIndicator: No layout attributes for indexPath=\(indexPath), using fallback centerX=\(fallbackCenterX), bounds=\(languageCollectionView.bounds)")
             #endif
+            UIView.animate(withDuration: isInitial ? 0.0 : 0.3) {
+                self.selectionIndicator.center.x = fallbackCenterX
+            }
         }
     }
     
@@ -1369,9 +1467,10 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             let generator = UIImpactFeedbackGenerator(style: .medium)
             generator.impactOccurred()
             self.playTuningSound()
-            self.streamingPlayer.resetTransientErrors() // Reset transient errors before switching
+            self.streamingPlayer.resetTransientErrors()
             self.streamingPlayer.setStream(to: DirectStreamingPlayer.availableStreams[index])
             self.hasPermanentPlaybackError = false
+            self.selectedStreamIndex = index
             if self.isPlaying || !self.isManualPause { self.startPlayback() }
             self.updateSelectionIndicator(to: index)
             collectionView.scrollToItem(at: indexPath, at: .centeredHorizontally, animated: true)
@@ -1440,6 +1539,7 @@ extension ViewController {
             let selectedStream = DirectStreamingPlayer.availableStreams[indexPath.item]
             streamingPlayer.setStream(to: selectedStream)
             hasPermanentPlaybackError = false
+            selectedStreamIndex = indexPath.item
             if isPlaying || !isManualPause { startPlayback() }
             updateSelectionIndicator(to: indexPath.item)
             #if DEBUG
@@ -1447,7 +1547,7 @@ extension ViewController {
             #endif
         }
     }
-    
+
     func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
         guard !isInitialScrollLocked else {
             #if DEBUG
@@ -1482,6 +1582,7 @@ extension ViewController {
             let selectedStream = DirectStreamingPlayer.availableStreams[closestIndex]
             streamingPlayer.setStream(to: selectedStream)
             hasPermanentPlaybackError = false
+            selectedStreamIndex = closestIndex
             if isPlaying || !isManualPause { startPlayback() }
             #if DEBUG
             print("📱 scrollViewDidEndDecelerating: Selected closest index \(closestIndex), centerX=\(centerX)")

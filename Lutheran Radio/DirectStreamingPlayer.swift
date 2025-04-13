@@ -90,7 +90,7 @@ class DirectStreamingPlayer: NSObject {
     }
     
     // Current selected stream
-    private var selectedStream: Stream {
+    private(set) var selectedStream: Stream {
         didSet {
             // Update metadata when stream changes
             if delegate != nil {
