@@ -390,8 +390,18 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             message: String(localized: "security_model_error_message"),
             preferredStyle: .alert
         )
-        alert.addAction(UIAlertAction(title: String(localized: "ok"), style: .default, handler: nil))
-            present(alert, animated: true, completion: nil)
+        alert.addAction(UIAlertAction(title: String(localized: "alert_retry"), style: .default, handler: { [weak self] _ in
+            self?.streamingPlayer.resetTransientErrors()
+            self?.streamingPlayer.validateSecurityModelAsync { isValid in
+                if isValid {
+                    self?.startPlayback()
+                } else {
+                    self?.showSecurityModelAlert()
+                }
+            }
+        }))
+        alert.addAction(UIAlertAction(title: String(localized: "ok"), style: .cancel, handler: nil))
+        present(alert, animated: true, completion: nil)
     }
     
     private func setupControls() {
