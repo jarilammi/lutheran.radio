@@ -9,7 +9,7 @@ import Foundation
 import AVFoundation
 
 class StreamingSessionDelegate: NSObject, URLSessionDelegate, URLSessionDataDelegate {
-    private weak var loadingRequest: AVAssetResourceLoadingRequest?
+    private var loadingRequest: AVAssetResourceLoadingRequest // Removed weak to avoid nullability issues
     private var bytesReceived = 0
     private var receivedResponse = false
     var onError: ((Error) -> Void)? // Add error callback
@@ -45,7 +45,7 @@ class StreamingSessionDelegate: NSObject, URLSessionDelegate, URLSessionDataDele
                 } else {
                     onError?(error)
                 }
-                loadingRequest?.finishLoading(with: error)
+                loadingRequest.finishLoading(with: error)
             } else {
                 #if DEBUG
                 print("📡 Streaming task cancelled")
@@ -64,10 +64,9 @@ class StreamingSessionDelegate: NSObject, URLSessionDelegate, URLSessionDataDele
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask,
                     didReceive response: URLResponse,
                     completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
-        guard let loadingRequest = loadingRequest,
-              let httpResponse = response as? HTTPURLResponse else {
+        guard let httpResponse = response as? HTTPURLResponse else {
             #if DEBUG
-            print("📡 Failed to process response: invalid loading request or response type")
+            print("📡 Failed to process response: invalid response type")
             #endif
             completionHandler(.cancel)
             return
@@ -78,6 +77,16 @@ class StreamingSessionDelegate: NSObject, URLSessionDelegate, URLSessionDataDele
         #endif
         
         let statusCode = httpResponse.statusCode
+        if statusCode == 403 {
+            #if DEBUG
+            print("📡 Access denied: Invalid security model")
+            #endif
+            onError?(URLError(.userAuthenticationRequired))
+            loadingRequest.finishLoading(with: URLError(.userAuthenticationRequired))
+            completionHandler(.cancel)
+            return
+        }
+        
         if (400...599).contains(statusCode) {
             let error: URLError.Code
             switch statusCode {
@@ -86,48 +95,31 @@ class StreamingSessionDelegate: NSObject, URLSessionDelegate, URLSessionDataDele
                 #if DEBUG
                 print("📡 Detected 502 Bad Gateway - treating as permanent error")
                 #endif
-                onError?(URLError(error))
-                loadingRequest.finishLoading(with: URLError(error))
-                completionHandler(.cancel)
-                return
-            case 404: // Not Found
+            case 404:
                 error = .fileDoesNotExist
-                onError?(URLError(error))
-                loadingRequest.finishLoading(with: URLError(error))
-                completionHandler(.cancel)
-                return
-            case 403: // Forbidden
-                error = .resourceUnavailable // Using this as a reasonable proxy for permission denial
                 #if DEBUG
-                print("📡 Detected 403 Forbidden - treating as permanent error")
+                print("📡 Detected 404 Not Found - treating as permanent error")
                 #endif
-                onError?(URLError(error))
-                loadingRequest.finishLoading(with: URLError(error))
-                completionHandler(.cancel)
-                return
             case 429: // Too Many Requests
                 error = .resourceUnavailable // Treat as permanent to avoid overloading servers during rate limiting
                 #if DEBUG
                 print("📡 Detected 429 Too Many Requests - treating as permanent error to protect servers")
                 #endif
-                onError?(URLError(error))
-                loadingRequest.finishLoading(with: URLError(error))
-                completionHandler(.cancel)
-                return
-            case 503: // Service Unavailable
+            case 503:
                 error = .resourceUnavailable // Treat as permanent to avoid retries during server maintenance/overloads
                 #if DEBUG
                 print("📡 Detected 503 Service Unavailable - treating as permanent error to protect servers")
                 #endif
-                onError?(URLError(error))
-                loadingRequest.finishLoading(with: URLError(error))
-                completionHandler(.cancel)
-                return
             default:
+                error = .badServerResponse
                 #if DEBUG
                 print("📡 Unhandled HTTP status code: \(statusCode)")
                 #endif
             }
+            onError?(URLError(error))
+            loadingRequest.finishLoading(with: URLError(error))
+            completionHandler(.cancel)
+            return
         }
         
         // Process content type and length for the loading request
@@ -147,7 +139,7 @@ class StreamingSessionDelegate: NSObject, URLSessionDelegate, URLSessionDataDele
     
     // Handle incoming data chunks
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
-        guard let loadingRequest = loadingRequest, receivedResponse else {
+        guard receivedResponse else {
             return
         }
         

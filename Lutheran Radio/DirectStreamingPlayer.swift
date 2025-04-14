@@ -488,10 +488,7 @@ class DirectStreamingPlayer: NSObject {
             print("📡 Play: Validation pending, triggering validation")
             #endif
             validateSecurityModelAsync { [weak self] isValid in
-                guard let self = self else {
-                    completion(false)
-                    return
-                }
+                guard let self = self else { completion(false); return }
                 if isValid {
                     self.play(completion: completion)
                 } else {
@@ -504,7 +501,7 @@ class DirectStreamingPlayer: NSObject {
             }
             return
         }
-
+        
         guard validationState == .success else {
             #if DEBUG
             print("📡 Play aborted: Validation state=\(validationState)")
@@ -516,22 +513,33 @@ class DirectStreamingPlayer: NSObject {
             }
             return
         }
-
+        
+        // Append security model to stream URL
+        var urlComponents = URLComponents(url: selectedStream.url, resolvingAgainstBaseURL: false)
+        urlComponents?.queryItems = [URLQueryItem(name: "security_model", value: appSecurityModel)]
+        guard let streamURL = urlComponents?.url else {
+            #if DEBUG
+            print("❌ Failed to construct stream URL with security model")
+            #endif
+            self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
+            completion(false)
+            return
+        }
+        
+        #if DEBUG
+        print("📡 Playing stream with URL: \(streamURL.absoluteString)")
+        #endif
+        
         stop()
-        let asset = AVURLAsset(url: selectedStream.url)
+        let asset = AVURLAsset(url: streamURL)
         asset.resourceLoader.setDelegate(self, queue: DispatchQueue(label: "radio.lutheran.resourceloader"))
         self.playerItem = AVPlayerItem(asset: asset)
         self.player = AVPlayer(playerItem: self.playerItem)
         self.addObservers()
         self.player?.play()
-
+        
         var tempStatusObserver: NSKeyValueObservation?
-        tempStatusObserver = self.playerItem?.observe(\.status, options: [.new]) { [weak self] item, _ in
-            guard self != nil else {
-                tempStatusObserver?.invalidate()
-                completion(false)
-                return
-            }
+        tempStatusObserver = self.playerItem?.observe(\.status, options: [.new]) { item, _ in
             if item.status == .readyToPlay {
                 completion(true)
             } else if item.status == .failed {
