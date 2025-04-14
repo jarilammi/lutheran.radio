@@ -14,7 +14,20 @@ final class TestDirectStreamingPlayer: DirectStreamingPlayer, @unchecked Sendabl
     var didCallStop = false
     var playCompletion: ((Bool) -> Void)?
     var simulatedStatus: AVPlayerItem.Status?
-
+    
+    // Add validation mock
+    var simulatedValidationResult: Bool?
+    var simulatedValidationState: ValidationState = .pending
+    
+    override func validateSecurityModelAsync(completion: @escaping (Bool) -> Void) {
+        if let isValid = simulatedValidationResult {
+            validationState = simulatedValidationState
+            completion(isValid)
+        } else {
+            super.validateSecurityModelAsync(completion: completion)
+        }
+    }
+    
     override func play(completion: @escaping (Bool) -> Void) {
         didCallPlay = true
         playCompletion = completion
@@ -183,5 +196,38 @@ class DirectStreamingPlayerTests: XCTestCase {
 
         waitForExpectations(timeout: 1.0, handler: nil)
         XCTAssertTrue(errorStatusReceived, "Status should indicate stream unavailable")
+    }
+    
+    func testSecurityModelValidation() {
+        let player = TestDirectStreamingPlayer()
+        let expectation = XCTestExpectation(description: "Validation completes")
+        
+        // Simulate validation failure
+        player.simulatedValidationResult = false
+        player.simulatedValidationState = .failedTransient
+        
+        player.validateSecurityModelAsync { isValid in
+            XCTAssertFalse(isValid, "Validation should fail with mock failure")
+            XCTAssertEqual(player.validationState, .failedTransient, "Validation state should be failedTransient")
+            expectation.fulfill()
+        }
+        
+        wait(for: [expectation], timeout: 1.0)
+    }
+    
+    func testSecurityModelValidationSuccess() {
+        let player = TestDirectStreamingPlayer()
+        let expectation = XCTestExpectation(description: "Validation completes")
+        
+        player.simulatedValidationResult = true
+        player.simulatedValidationState = .success
+        
+        player.validateSecurityModelAsync { isValid in
+            XCTAssertTrue(isValid, "Validation should succeed")
+            XCTAssertEqual(player.validationState, .success, "Validation state should be validated")
+            expectation.fulfill()
+        }
+        
+        wait(for: [expectation], timeout: 1.0)
     }
 }
