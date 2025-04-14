@@ -317,6 +317,20 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 } else if statusText == String(localized: "status_stream_unavailable") {
                     self.statusLabel.backgroundColor = .systemOrange
                     self.statusLabel.textColor = .white
+                    // Show alert if not already presenting
+                    if self.presentedViewController == nil {
+                        let alert = UIAlertController(
+                            title: String(localized: "stream_unavailable_title"),
+                            message: String(localized: "stream_unavailable_message"),
+                            preferredStyle: .alert
+                        )
+                        alert.addAction(UIAlertAction(title: String(localized: "alert_retry"), style: .default) { _ in
+                            self.hasPermanentPlaybackError = false
+                            self.startPlayback()
+                        })
+                        alert.addAction(UIAlertAction(title: String(localized: "ok"), style: .cancel, handler: nil))
+                        self.present(alert, animated: true)
+                    }
                 } else {
                     self.statusLabel.backgroundColor = self.isManualPause ? .systemGray : .systemYellow
                     self.statusLabel.textColor = .black

@@ -105,6 +105,24 @@ class StreamingSessionDelegate: NSObject, URLSessionDelegate, URLSessionDataDele
                 loadingRequest.finishLoading(with: URLError(error))
                 completionHandler(.cancel)
                 return
+            case 429: // Too Many Requests
+                error = .resourceUnavailable // Treat as permanent to avoid overloading servers during rate limiting
+                #if DEBUG
+                print("📡 Detected 429 Too Many Requests - treating as permanent error to protect servers")
+                #endif
+                onError?(URLError(error))
+                loadingRequest.finishLoading(with: URLError(error))
+                completionHandler(.cancel)
+                return
+            case 503: // Service Unavailable
+                error = .resourceUnavailable // Treat as permanent to avoid retries during server maintenance/overloads
+                #if DEBUG
+                print("📡 Detected 503 Service Unavailable - treating as permanent error to protect servers")
+                #endif
+                onError?(URLError(error))
+                loadingRequest.finishLoading(with: URLError(error))
+                completionHandler(.cancel)
+                return
             default:
                 #if DEBUG
                 print("📡 Unhandled HTTP status code: \(statusCode)")
