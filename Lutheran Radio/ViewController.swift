@@ -154,6 +154,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     private var isInitialSetupComplete = false
     private var isInitialScrollLocked = true
+    private var hasShownDataUsageNotification = false
+    private let hasDismissedDataUsageNotificationKey = "hasDismissedDataUsageNotification"
     
     let speakerImageView: UIImageView = {
         let imageView = UIImageView()
@@ -483,7 +485,15 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 return
             }
             let isConnected = path.status == .satisfied
+            let isExpensive = path.isExpensive
             DispatchQueue.main.async {
+                // Mobile data notification logic
+                if isConnected && isExpensive && !self.hasShownDataUsageNotification && !UserDefaults.standard.bool(forKey: self.hasDismissedDataUsageNotificationKey) {
+                    self.showDataUsageNotification()
+                    self.hasShownDataUsageNotification = true
+                }
+
+                // Existing network status handling
                 let wasConnected = self.hasInternetConnection
                 self.hasInternetConnection = isConnected
                 #if DEBUG
@@ -518,6 +528,19 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         let monitorQueue = DispatchQueue(label: "NetworkMonitor", qos: .utility)
         networkMonitor?.start(queue: monitorQueue)
         setupConnectivityCheckTimer()
+    }
+    
+    private func showDataUsageNotification() {
+        let alert = UIAlertController(
+            title: String(localized: "mobile_data_usage_title"),
+            message: String(localized: "mobile_data_usage_message"),
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: String(localized: "ok"), style: .default, handler: nil))
+        alert.addAction(UIAlertAction(title: String(localized: "dont_show_again"), style: .default, handler: { _ in
+            UserDefaults.standard.set(true, forKey: self.hasDismissedDataUsageNotificationKey)
+        }))
+        present(alert, animated: true, completion: nil)
     }
     
     private func setupInterruptionHandling() {
