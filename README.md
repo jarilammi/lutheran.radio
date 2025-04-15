@@ -133,14 +133,22 @@ To prevent naming collisions and maintain a clear history of security models, th
 
 | Security Model Name | Valid From       | Valid Until     | App Version Introduced |
 |---------------------|------------------|-----------------|------------------------|
-| `turku`             | April 6, 2025    | (ongoing)       | 1.0.4                  |
-| `mariehamn`         | April 13, 2025   | (ongoing)       | 1.0.7                  |
+| `turku`             | April 8, 2025    | (ongoing)       | 1.0.4                  |
+| `mariehamn`         | April 15, 2025   | (ongoing)       | 1.0.7                  |
 
 **Notes:**
-- **Valid From:** The date when the security model was first introduced or became valid.
+- **Valid From:** The date when the security model was first published to the App Store.
 - **Valid Until:** The date when the security model was deprecated (or "(ongoing)" if still active).
 - **App Version Introduced:** The app version where this security model was first implemented.
+- **Valid From Dates:** Reflect the App Store publication date for the app version introducing the security model, ensuring alignment with public availability.
 - When adding a new security model, append a new row to this table and update the DNS TXT record accordingly (see "Verifying the Security Model" above).
+
+When introducing a new security model:
+
+1. Choose a unique name not listed in the table (e.g., a distinct city or codename).
+2. Update `appSecurityModel` in `DirectStreamingPlayer.swift` with the new name.
+3. Add the new name to the DNS TXT record for `securitymodels.lutheran.radio`.
+4. Append a new row to the table above with the current date, app version, and name.
   
 ### Why Track Security Model Names?
 
@@ -149,10 +157,3 @@ Security model names (e.g., ```mariehamn```) are embedded in the app and validat
 - New security model names are unique and avoid collisions with past names.
 - The history of security models is transparent for debugging and auditing.
 - Contributors can easily pick a fresh name (e.g., a unique city, codename, or identifier) when implementing a new security model.
-
-When introducing a new security model:
-
-1. Choose a unique name not listed in the table.
-2. Set the new name as the `appSecurityModel` value in `DirectStreamingPlayer.swift` (see "Verifying the Security Model" for how this is checked).
-3. Add the new name to the DNS TXT record of ```securitymodels.lutheran.radio```.
-4. Add a new row to the table in "Security Model History" with the current date and app version.
