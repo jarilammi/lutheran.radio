@@ -133,7 +133,7 @@ To prevent naming collisions and maintain a clear history of security models, th
 
 | Security Model Name | Valid From       | Valid Until     | App Version Introduced |
 |---------------------|------------------|-----------------|------------------------|
-| `turku`             | April 8, 2025    | (ongoing)       | 1.0.4                  |
+| `turku`             | April 8, 2025    | April 20, 2025  | 1.0.4                  |
 | `mariehamn`         | April 15, 2025   | (ongoing)       | 1.0.7                  |
 
 **Notes:**
