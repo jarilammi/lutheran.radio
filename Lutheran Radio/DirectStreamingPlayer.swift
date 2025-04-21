@@ -68,6 +68,54 @@ class DirectStreamingPlayer: NSObject {
                flag: "🇪🇪"),
     ]
     
+    private var lastServerSelectionTime: Date?
+    private let serverSelectionCacheDuration: TimeInterval = 7200 // two hours
+    private var serverSelectionWorkItem: DispatchWorkItem?
+    
+    // Default server in case ping fails
+    private var selectedServer: Server = servers[0] // Default to European
+    
+    // Store hostname to IP mapping for DNS override
+    private var hostnameToIP: [String: String] = [:]
+    
+    func selectOptimalServer(completion: @escaping (Server) -> Void) {
+        serverSelectionWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self = self else {
+                completion(Self.servers[0])
+                return
+            }
+            self.fetchServerIPsAndLatencies { results in
+                let validResults = results.filter { $0.latency != .infinity && $0.server.ipAddress != nil }
+                if let bestResult = validResults.min(by: { $0.latency < $1.latency }) {
+                    self.selectedServer = bestResult.server
+                    #if DEBUG
+                    print("📡 [Server Selection] Selected \(bestResult.server.name) with latency \(bestResult.latency)s, IP=\(bestResult.server.ipAddress ?? "None")")
+                    #endif
+                } else {
+                    self.selectedServer = Self.servers[0]
+                    #if DEBUG
+                    print("📡 [Server Selection] No valid ping results, falling back to \(self.selectedServer.name)")
+                    #endif
+                }
+                
+                if let ipAddress = self.selectedServer.ipAddress {
+                    let hostnames = Self.availableStreams.map { $0.url.host ?? "" }.uniqued()
+                    self.hostnameToIP = Dictionary(uniqueKeysWithValues: hostnames.map { ($0, ipAddress) })
+                    #if DEBUG
+                    print("📡 [Server Selection] Hostname to IP mapping: \(self.hostnameToIP)")
+                    #endif
+                } else {
+                    self.hostnameToIP = [:]
+                }
+                
+                completion(self.selectedServer)
+            }
+        }
+        serverSelectionWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: workItem)
+    }
+    
     public enum PlaybackState {
         case unknown
         case readyToPlay
@@ -441,18 +489,30 @@ class DirectStreamingPlayer: NSObject {
             #endif
             if self.hasInternetConnection && !wasConnected {
                 #if DEBUG
-                print("🌐 [Network] Connection restored, resetting validation state")
+                print("🌐 [Network] Connection restored, previous server: \(self.selectedServer.name)")
                 #endif
-                if self.validationState == .failedTransient {
-                    self.validationState = .pending
-                    self.hasPermanentError = false
-                    self.validateSecurityModelAsync { isValid in
-                        #if DEBUG
-                        print("🔒 [Network] Revalidation result: \(isValid)")
-                        #endif
-                        if !isValid {
-                            DispatchQueue.main.async {
-                                self.onStatusChange?(false, String(localized: self.validationState == .failedPermanent ? "status_security_failed" : "status_no_internet"))
+                self.selectOptimalServer { server in
+                    #if DEBUG
+                    print("🌐 [Network] New server selected: \(server.name), hostnameToIP: \(self.hostnameToIP)")
+                    #endif
+                    if self.validationState == .failedTransient {
+                        self.validationState = .pending
+                        self.hasPermanentError = false
+                        self.validateSecurityModelAsync { isValid in
+                            #if DEBUG
+                            print("🔒 [Network] Revalidation result: \(isValid)")
+                            #endif
+                            if !isValid {
+                                DispatchQueue.main.async {
+                                    self.onStatusChange?(false, String(localized: self.validationState == .failedPermanent ? "status_security_failed" : "status_no_internet"))
+                                }
+                            } else if self.player?.rate ?? 0 == 0, !self.hasPermanentError {
+                                // Resume playback if not already playing
+                                self.play { success in
+                                    DispatchQueue.main.async {
+                                        self.onStatusChange?(success, String(localized: success ? "status_playing" : "status_stream_unavailable"))
+                                    }
+                                }
                             }
                         }
                     }
@@ -530,6 +590,90 @@ class DirectStreamingPlayer: NSObject {
         print("📡 Playing stream with URL: \(streamURL.absoluteString)")
         #endif
         
+        let now = Date()
+        if let lastSelection = lastServerSelectionTime, now.timeIntervalSince(lastSelection) < serverSelectionCacheDuration, !hostnameToIP.isEmpty {
+            #if DEBUG
+            print("📡 Using cached server selection: \(selectedServer.name)")
+            #endif
+            startPlayback(with: streamURL, completion: completion)
+        } else {
+            selectOptimalServer { [weak self] server in
+                guard let self = self else { completion(false); return }
+                self.lastServerSelectionTime = Date()
+                #if DEBUG
+                print("📡 Selected server: \(server.name)")
+                #endif
+                self.startPlayback(with: streamURL, completion: completion)
+            }
+        }
+    }
+    
+    func setStream(to stream: Stream) {
+        guard validationState == .success else {
+            #if DEBUG
+            print("📡 Stream switch aborted: Validation state=\(validationState)")
+            #endif
+            let status = validationState == .failedPermanent ? String(localized: "status_security_failed") : String(localized: "status_no_internet")
+            DispatchQueue.main.async {
+                self.onStatusChange?(false, status)
+            }
+            return
+        }
+        
+        stop()
+        selectedStream = stream
+        let now = Date()
+        if let lastSelection = lastServerSelectionTime, now.timeIntervalSince(lastSelection) < serverSelectionCacheDuration, !hostnameToIP.isEmpty {
+            #if DEBUG
+            print("📡 Using cached server selection for stream switch: \(selectedServer.name)")
+            #endif
+            play { [weak self] success in
+                guard let self = self else { return }
+                if success {
+                    #if DEBUG
+                    print("✅ Stream switched")
+                    #endif
+                    if self.delegate != nil {
+                        self.onStatusChange?(true, String(localized: "status_playing"))
+                    }
+                } else {
+                    #if DEBUG
+                    print("❌ Stream switch failed")
+                    #endif
+                    if self.delegate != nil {
+                        self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
+                    }
+                }
+            }
+        } else {
+            selectOptimalServer { [weak self] server in
+                guard let self = self else { return }
+                self.lastServerSelectionTime = Date()
+                #if DEBUG
+                print("📡 Selected server for stream switch: \(server.name)")
+                #endif
+                self.play { success in
+                    if success {
+                        #if DEBUG
+                        print("✅ Stream switched")
+                        #endif
+                        if self.delegate != nil {
+                            self.onStatusChange?(true, String(localized: "status_playing"))
+                        }
+                    } else {
+                        #if DEBUG
+                        print("❌ Stream switch failed")
+                        #endif
+                        if self.delegate != nil {
+                            self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    private func startPlayback(with streamURL: URL, completion: @escaping (Bool) -> Void) {
         stop()
         let asset = AVURLAsset(url: streamURL)
         asset.resourceLoader.setDelegate(self, queue: DispatchQueue(label: "radio.lutheran.resourceloader"))
@@ -546,40 +690,6 @@ class DirectStreamingPlayer: NSObject {
                 completion(false)
             }
             tempStatusObserver?.invalidate()
-        }
-    }
-    
-    func setStream(to stream: Stream) {
-        guard validationState == .success else {
-            #if DEBUG
-            print("📡 Stream switch aborted: Validation state=\(validationState)")
-            #endif
-            let status = validationState == .failedPermanent ? String(localized: "status_security_failed") : String(localized: "status_no_internet")
-            DispatchQueue.main.async {
-                self.onStatusChange?(false, status)
-            }
-            return
-        }
-
-        stop()
-        selectedStream = stream
-        play { [weak self] success in
-            guard let self = self else { return }
-            if success {
-                #if DEBUG
-                print("✅ Stream switched")
-                #endif
-                if self.delegate != nil {
-                    self.onStatusChange?(true, String(localized: "status_playing"))
-                }
-            } else {
-                #if DEBUG
-                print("❌ Stream switch failed")
-                #endif
-                if self.delegate != nil {
-                    self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
-                }
-            }
         }
     }
     
@@ -693,11 +803,102 @@ class DirectStreamingPlayer: NSObject {
     
     deinit {
         stop()
+        removeObservers()
+        clearCallbacks()
         networkMonitor?.cancel()
         networkMonitor = nil
         #if DEBUG
         print("🧹 Player deinit")
         #endif
+    }
+}
+
+// MARK: - Server Configuration
+extension DirectStreamingPlayer {
+    struct Server {
+        let name: String
+        let pingURL: URL
+        var ipAddress: String? // Updated after ping response
+    }
+    
+    static var servers = [
+        Server(
+            name: "European",
+            pingURL: URL(string: "https://european.lutheran.radio/ping")!,
+            ipAddress: nil
+        ),
+        Server(
+            name: "US",
+            pingURL: URL(string: "https://livestream.lutheran.radio/ping")!,
+            ipAddress: nil
+        )
+    ]
+}
+
+// MARK: - Latency Measurement
+extension DirectStreamingPlayer {
+    struct PingResult {
+        let server: Server
+        let latency: TimeInterval // In seconds
+    }
+    
+    func fetchServerIPsAndLatencies(completion: @escaping ([PingResult]) -> Void) {
+        let group = DispatchGroup()
+        var results: [PingResult] = []
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 2.0 // 2-second timeout
+        let session = URLSession(configuration: config)
+        
+        for (index, server) in Self.servers.enumerated() {
+            group.enter()
+            let startTime = Date()
+            #if DEBUG
+            print("📡 [Ping] Pinging \(server.name) at \(server.pingURL)")
+            #endif
+            
+            let task = session.dataTask(with: server.pingURL) { [weak self] data, response, error in
+                guard self != nil else {
+                    group.leave()
+                    return
+                }
+                let latency = Date().timeIntervalSince(startTime)
+                var updatedServer = server
+                
+                if let data = data,
+                   let json = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
+                   let ipAddress = json["address"] as? String,
+                   let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
+                    updatedServer.ipAddress = ipAddress
+                    Self.servers[index] = updatedServer
+                    results.append(PingResult(server: updatedServer, latency: latency))
+                    #if DEBUG
+                    print("📡 [Ping] Success for \(server.name), IP=\(ipAddress), latency=\(latency)s")
+                    #endif
+                } else {
+                    results.append(PingResult(server: server, latency: .infinity))
+                    #if DEBUG
+                    print("📡 [Ping] Failed for \(server.name): error=\(error?.localizedDescription ?? "None"), status=\((response as? HTTPURLResponse)?.statusCode ?? -1), latency=\(latency)s")
+                    #endif
+                }
+                group.leave()
+            }
+            task.resume()
+        }
+        
+        group.notify(queue: .main) {
+            #if DEBUG
+            print("📡 [Ping] All pings completed: \(results.map { "\($0.server.name): \($0.latency)s, IP=\($0.server.ipAddress ?? "None")" })")
+            #endif
+            completion(results)
+        }
+    }
+}
+
+// Extension to get unique elements from a sequence
+extension Sequence where Element: Hashable {
+    func uniqued() -> [Element] {
+        var seen = Set<Element>()
+        return filter { seen.insert($0).inserted }
     }
 }
 
@@ -732,13 +933,13 @@ extension DirectStreamingPlayer {
 // MARK: - Resource Loader
 extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
     func resourceLoader(_ resourceLoader: AVAssetResourceLoader,
-                       shouldWaitForLoadingOfRequestedResource loadingRequest: AVAssetResourceLoadingRequest) -> Bool {
+                        shouldWaitForLoadingOfRequestedResource loadingRequest: AVAssetResourceLoadingRequest) -> Bool {
         guard let url = loadingRequest.request.url else {
             loadingRequest.finishLoading(with: NSError(domain: "radio.lutheran", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid URL"]))
             return false
         }
 
-        let streamingDelegate = StreamingSessionDelegate(loadingRequest: loadingRequest)
+        let streamingDelegate = StreamingSessionDelegate(loadingRequest: loadingRequest, hostnameToIP: hostnameToIP)
         let session = URLSession(configuration: .default, delegate: streamingDelegate, delegateQueue: nil)
         let task = session.dataTask(with: url)
         streamingDelegate.onError = { [weak self] error in
@@ -770,7 +971,7 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
     }
     
     func resourceLoader(_ resourceLoader: AVAssetResourceLoader,
-                       didCancel loadingRequest: AVAssetResourceLoadingRequest) {
+                        didCancel loadingRequest: AVAssetResourceLoadingRequest) {
         #if DEBUG
         print("📡 Resource loading cancelled")
         #endif

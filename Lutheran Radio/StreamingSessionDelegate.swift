@@ -8,31 +8,28 @@
 import Foundation
 import AVFoundation
 
-class StreamingSessionDelegate: NSObject, URLSessionDelegate, URLSessionDataDelegate {
-    private var loadingRequest: AVAssetResourceLoadingRequest // Removed weak to avoid nullability issues
+class StreamingSessionDelegate: CustomDNSURLSessionDelegate, URLSessionDataDelegate {
+    private var loadingRequest: AVAssetResourceLoadingRequest
     private var bytesReceived = 0
     private var receivedResponse = false
-    var onError: ((Error) -> Void)? // Add error callback
+    var onError: ((Error) -> Void)?
     
-    init(loadingRequest: AVAssetResourceLoadingRequest) {
+    init(loadingRequest: AVAssetResourceLoadingRequest, hostnameToIP: [String: String]) {
         self.loadingRequest = loadingRequest
-        super.init()
+        super.init(hostnameToIP: hostnameToIP)
     }
     
-    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+    override func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         if let error = error {
             if (error as NSError).domain != NSURLErrorDomain || (error as NSError).code != NSURLErrorCancelled {
                 #if DEBUG
                 print("📡 Streaming task failed: \(error.localizedDescription)")
                 #endif
-                // Add specific error handling
                 if let urlError = error as? URLError {
                     switch urlError.code {
                     case .notConnectedToInternet:
-                        // Handle no internet connection
                         onError?(URLError(.notConnectedToInternet))
                     case .cannotFindHost:
-                        // Handle host not found
                         onError?(URLError(.cannotFindHost))
                     case .serverCertificateUntrusted:
                         #if DEBUG
@@ -55,12 +52,11 @@ class StreamingSessionDelegate: NSObject, URLSessionDelegate, URLSessionDataDele
             #if DEBUG
             print("📡 Streaming task completed normally")
             #endif
-            // Do not call finishLoading() here for streaming
+            // Do not call finishLoading() for streaming
         }
         session.invalidateAndCancel()
     }
     
-    // Handle HTTP response
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask,
                     didReceive response: URLResponse,
                     completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
@@ -100,15 +96,15 @@ class StreamingSessionDelegate: NSObject, URLSessionDelegate, URLSessionDataDele
                 #if DEBUG
                 print("📡 Detected 404 Not Found - treating as permanent error")
                 #endif
-            case 429: // Too Many Requests
-                error = .resourceUnavailable // Treat as permanent to avoid overloading servers during rate limiting
+            case 429:
+                error = .resourceUnavailable
                 #if DEBUG
-                print("📡 Detected 429 Too Many Requests - treating as permanent error to protect servers")
+                print("📡 Detected 429 Too Many Requests - treating as permanent error")
                 #endif
             case 503:
-                error = .resourceUnavailable // Treat as permanent to avoid retries during server maintenance/overloads
+                error = .resourceUnavailable
                 #if DEBUG
-                print("📡 Detected 503 Service Unavailable - treating as permanent error to protect servers")
+                print("📡 Detected 503 Service Unavailable - treating as permanent error")
                 #endif
             default:
                 error = .badServerResponse
@@ -122,7 +118,6 @@ class StreamingSessionDelegate: NSObject, URLSessionDelegate, URLSessionDataDele
             return
         }
         
-        // Process content type and length for the loading request
         if let contentType = httpResponse.allHeaderFields["Content-Type"] as? String {
             #if DEBUG
             print("📡 Content-Type: \(contentType)")
@@ -137,7 +132,6 @@ class StreamingSessionDelegate: NSObject, URLSessionDelegate, URLSessionDataDele
         completionHandler(.allow)
     }
     
-    // Handle incoming data chunks
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
         guard receivedResponse else {
             return
@@ -148,10 +142,7 @@ class StreamingSessionDelegate: NSObject, URLSessionDelegate, URLSessionDataDele
         print("📡 Received chunk of \(data.count) bytes (total: \(bytesReceived))")
         #endif
         
-        // Pass the data to the loading request
         loadingRequest.dataRequest?.respond(with: data)
-        
-        // DO NOT call finishLoading() - we want to keep the connection open for streaming
     }
     
     func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
