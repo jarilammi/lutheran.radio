@@ -203,6 +203,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     private var isTuningSoundPlaying = false
     private var streamSwitchTimer: Timer?
     private var streamSwitchWorkItem: DispatchWorkItem?
+    private var lastStreamSwitchTime: Date?
+    private let streamSwitchDebounceInterval: TimeInterval = 1.0
     private var pendingStreamIndex: Int?
     private var pendingPlaybackWorkItem: DispatchWorkItem?
     private var lastPlaybackAttempt: Date?
@@ -1523,7 +1525,17 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         #if DEBUG
         print("📱 collectionView:didSelectItemAt called for index \(indexPath.item)")
         #endif
-        
+
+        // Debounce stream switch
+        let now = Date()
+        if let lastTime = lastStreamSwitchTime, now.timeIntervalSince(lastTime) < streamSwitchDebounceInterval {
+            #if DEBUG
+            print("📱 collectionView:didSelectItemAt: Debouncing stream switch, time since last: \(now.timeIntervalSince(lastTime))s")
+            #endif
+            return
+        }
+        lastStreamSwitchTime = now
+
         streamSwitchWorkItem?.cancel()
         let workItem = DispatchWorkItem { [weak self] in
             guard let self = self else { return }
