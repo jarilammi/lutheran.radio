@@ -16,6 +16,9 @@ class DirectStreamingPlayer: NSObject {
     // MARK: - Security Model
     private let appSecurityModel = "mariehamn" // Security model in use
     private var isValidating = false
+    private var lastValidationTime: Date?
+    private let validationCacheDuration: TimeInterval = 600 // 10 minutes
+    
     // Changed: Replaced isSecurityModelValid with validationState for better state tracking
     enum ValidationState {
         case pending
@@ -79,6 +82,13 @@ class DirectStreamingPlayer: NSObject {
     private var hostnameToIP: [String: String] = [:]
     
     func selectOptimalServer(completion: @escaping (Server) -> Void) {
+        guard lastServerSelectionTime == nil || Date().timeIntervalSince(lastServerSelectionTime!) > 10.0 else {
+            #if DEBUG
+            print("📡 selectOptimalServer: Throttling server selection, using cached server: \(selectedServer.name)")
+            #endif
+            completion(selectedServer)
+            return
+        }
         serverSelectionWorkItem?.cancel()
         let workItem = DispatchWorkItem { [weak self] in
             guard let self = self else {
@@ -313,7 +323,7 @@ class DirectStreamingPlayer: NSObject {
     func validateSecurityModelAsync(completion: @escaping (Bool) -> Void) {
         guard !isValidating else {
             #if DEBUG
-            print("🔒 [Validate Async] Validation in progress, retrying later")
+            print("🔒 [Validate Async] Validation in progress, checking state")
             #endif
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
                 guard let self = self else {
@@ -322,17 +332,57 @@ class DirectStreamingPlayer: NSObject {
                 }
                 switch self.validationState {
                 case .success:
+                    #if DEBUG
+                    print("🔒 [Validate Async] Reusing cached success state")
+                    #endif
                     completion(true)
                 case .failedPermanent:
+                    #if DEBUG
+                    print("🔒 [Validate Async] Reusing cached failedPermanent state")
+                    #endif
                     completion(false)
                 default:
+                    #if DEBUG
+                    print("🔒 [Validate Async] Retrying validation")
+                    #endif
                     self.validateSecurityModelAsync(completion: completion)
                 }
             }
             return
         }
 
-        // Perform an active connectivity check
+        // Check cache
+        if let lastValidation = lastValidationTime,
+           Date().timeIntervalSince(lastValidation) < validationCacheDuration {
+            switch validationState {
+            case .success:
+                #if DEBUG
+                print("🔒 [Validate Async] Using cached validation: Success, time since last: \(Date().timeIntervalSince(lastValidation))s")
+                #endif
+                DispatchQueue.main.async {
+                    self.onStatusChange?(false, String(localized: "status_connecting"))
+                    completion(true)
+                }
+                return
+            case .failedPermanent:
+                #if DEBUG
+                print("🔒 [Validate Async] Using cached validation: FailedPermanent, time since last: \(Date().timeIntervalSince(lastValidation))s")
+                #endif
+                hasPermanentError = true
+                DispatchQueue.main.async {
+                    self.onStatusChange?(false, String(localized: "status_security_failed"))
+                    completion(false)
+                }
+                return
+            case .failedTransient, .pending:
+                #if DEBUG
+                print("🔒 [Validate Async] Cache stale or transient/pending state, proceeding with validation")
+                #endif
+                // Proceed to validate
+            }
+        }
+
+        // Perform connectivity check
         performConnectivityCheck { [weak self] isConnected in
             guard let self = self else {
                 completion(false)
@@ -363,6 +413,9 @@ class DirectStreamingPlayer: NSObject {
                 guard let self = self, self.isValidating else { return }
                 self.isValidating = false
                 self.validationState = .failedTransient
+                #if DEBUG
+                print("🔒 [Validate Async] Validation timed out")
+                #endif
                 DispatchQueue.main.async {
                     self.onStatusChange?(false, String(localized: "status_no_internet"))
                     completion(false)
@@ -377,11 +430,21 @@ class DirectStreamingPlayer: NSObject {
                 }
                 timeoutWorkItem.cancel()
                 self.isValidating = false
+                self.lastValidationTime = Date() // Update cache timestamp
+                #if DEBUG
+                print("🔒 [Validate Async] Updated lastValidationTime to \(self.lastValidationTime!)")
+                #endif
                 switch result {
                 case .success(let validModels):
+                    #if DEBUG
+                    print("🔒 [Validate Async] Fetched models: \(validModels)")
+                    #endif
                     if validModels.isEmpty {
                         self.validationState = .failedPermanent
                         self.hasPermanentError = true
+                        #if DEBUG
+                        print("🔒 [Validate Async] No valid models received")
+                        #endif
                         DispatchQueue.main.async {
                             self.onStatusChange?(false, String(localized: "status_security_failed"))
                             completion(false)
@@ -390,7 +453,7 @@ class DirectStreamingPlayer: NSObject {
                         let isValid = validModels.contains(self.appSecurityModel.lowercased())
                         self.validationState = isValid ? .success : .failedPermanent
                         #if DEBUG
-                        print("🔒 [Validate Async] Result: isValid=\(isValid), models=\(validModels)")
+                        print("🔒 [Validate Async] Result: isValid=\(isValid), model=\(self.appSecurityModel), validModels=\(validModels)")
                         #endif
                         if !isValid {
                             self.hasPermanentError = true
@@ -406,8 +469,11 @@ class DirectStreamingPlayer: NSObject {
                             }
                         }
                     }
-                case .failure(_):
+                case .failure(let error):
                     self.validationState = .failedTransient
+                    #if DEBUG
+                    print("🔒 [Validate Async] Failed to fetch models: \(error.localizedDescription)")
+                    #endif
                     DispatchQueue.main.async {
                         self.onStatusChange?(false, String(localized: "status_no_internet"))
                         completion(false)
@@ -438,8 +504,9 @@ class DirectStreamingPlayer: NSObject {
     public func resetTransientErrors() {
         if validationState == .failedTransient {
             validationState = .pending
+            lastValidationTime = nil // Invalidate cache
             #if DEBUG
-            print("🔄 Reset transient errors to pending")
+            print("🔄 Reset transient errors to pending and invalidated cache")
             #endif
         }
         hasPermanentError = false
@@ -490,6 +557,12 @@ class DirectStreamingPlayer: NSObject {
             if self.hasInternetConnection && !wasConnected {
                 #if DEBUG
                 print("🌐 [Network] Connection restored, previous server: \(self.selectedServer.name)")
+                #endif
+                // Invalidate validation cache on reconnect
+                self.lastValidationTime = nil
+                self.validationState = .pending
+                #if DEBUG
+                print("🔒 [Network] Invalidated security model validation cache")
                 #endif
                 self.selectOptimalServer { server in
                     #if DEBUG

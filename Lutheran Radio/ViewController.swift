@@ -202,6 +202,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     private var isTuningSoundPlaying = false
     private var streamSwitchTimer: Timer?
     private var pendingStreamIndex: Int?
+    private var pendingPlaybackWorkItem: DispatchWorkItem?
     private var lastPlaybackAttempt: Date?
     private let minPlaybackInterval: TimeInterval = 1.0 // 1 second
     private var isDeallocating = false // Flag to prevent operations during deallocation
@@ -752,41 +753,46 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             return
         }
 
-        isManualPause = false
-        statusLabel.text = String(localized: "status_connecting")
-        statusLabel.backgroundColor = .systemYellow
-        statusLabel.textColor = .black
-
-        // Check validation state
-        streamingPlayer.validateSecurityModelAsync { [weak self] isValid in
+        // Cancel any pending playback
+        pendingPlaybackWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
             guard let self = self else { return }
-            if isValid {
-                self.streamingPlayer.resetTransientErrors()
-                self.streamingPlayer.play { success in
-                    if success {
-                        self.isPlaying = true
-                        self.updatePlayPauseButton(isPlaying: true)
-                        self.statusLabel.text = String(localized: "status_playing")
-                        self.statusLabel.backgroundColor = .systemGreen
-                    } else if self.streamingPlayer.isLastErrorPermanent() {
-                        self.hasPermanentPlaybackError = true
-                        self.statusLabel.text = String(localized: "status_stream_unavailable")
-                        self.statusLabel.backgroundColor = .systemOrange
-                        self.statusLabel.textColor = .white
-                    } else {
-                        self.attemptPlaybackWithRetry(attempt: 1, maxAttempts: 3)
+            isManualPause = false
+            statusLabel.text = String(localized: "status_connecting")
+            statusLabel.backgroundColor = .systemYellow
+            statusLabel.textColor = .black
+
+            streamingPlayer.validateSecurityModelAsync { isValid in
+                if isValid {
+                    self.streamingPlayer.resetTransientErrors()
+                    self.streamingPlayer.play { success in
+                        if success {
+                            self.isPlaying = true
+                            self.updatePlayPauseButton(isPlaying: true)
+                            self.statusLabel.text = String(localized: "status_playing")
+                            self.statusLabel.backgroundColor = .systemGreen
+                        } else if self.streamingPlayer.isLastErrorPermanent() {
+                            self.hasPermanentPlaybackError = true
+                            self.statusLabel.text = String(localized: "status_stream_unavailable")
+                            self.statusLabel.backgroundColor = .systemOrange
+                            self.statusLabel.textColor = .white
+                        } else {
+                            self.attemptPlaybackWithRetry(attempt: 1, maxAttempts: 3)
+                        }
                     }
-                }
-            } else {
-                self.statusLabel.text = self.streamingPlayer.isLastErrorPermanent() ? String(localized: "status_security_failed") : String(localized: "status_no_internet")
-                self.statusLabel.backgroundColor = self.streamingPlayer.isLastErrorPermanent() ? .systemRed : .systemGray
-                self.statusLabel.textColor = .white
-                self.hasPermanentPlaybackError = self.streamingPlayer.isLastErrorPermanent()
-                if self.streamingPlayer.isLastErrorPermanent() {
-                    self.showSecurityModelAlert()
+                } else {
+                    self.statusLabel.text = self.streamingPlayer.isLastErrorPermanent() ? String(localized: "status_security_failed") : String(localized: "status_no_internet")
+                    self.statusLabel.backgroundColor = self.streamingPlayer.isLastErrorPermanent() ? .systemRed : .systemGray
+                    self.statusLabel.textColor = .white
+                    self.hasPermanentPlaybackError = self.streamingPlayer.isLastErrorPermanent()
+                    if self.streamingPlayer.isLastErrorPermanent() {
+                        self.showSecurityModelAlert()
+                    }
                 }
             }
         }
+        pendingPlaybackWorkItem = workItem
+        DispatchQueue.main.async(execute: workItem)
     }
     
     private func attemptPlaybackWithRetry(attempt: Int, maxAttempts: Int) {
@@ -1208,6 +1214,12 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     }
     
     private func playTuningSound() {
+        guard pendingStreamIndex != nil || !isPlaying else {
+            #if DEBUG
+            print("🎵 Skipping tuning sound: No pending stream switch or already playing")
+            #endif
+            return
+        }
         #if DEBUG
         print("🎵 playTuningSound called - isTuningSoundPlaying: \(isTuningSoundPlaying), hasInternetConnection: \(hasInternetConnection), audioEngine.isRunning: \(audioEngine.isRunning)")
         #endif
@@ -1500,8 +1512,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         let stream = DirectStreamingPlayer.availableStreams[indexPath.item]
         updateBackground(for: stream)
         streamSwitchTimer?.invalidate()
+        pendingPlaybackWorkItem?.cancel() // Cancel pending playback
         pendingStreamIndex = indexPath.item
-        streamSwitchTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
+        streamSwitchTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: false) { [weak self] _ in
             guard let self = self, let index = self.pendingStreamIndex else {
                 #if DEBUG
                 print("📱 streamSwitchTimer: ViewController is nil, skipping")
