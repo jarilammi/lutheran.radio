@@ -85,7 +85,9 @@ class StreamingSessionDelegateTests: XCTestCase {
                 XCTFail("Loading request not captured")
                 return
             }
-            let delegate = StreamingSessionDelegate(loadingRequest: loadingRequest)
+            // Provide hostnameToIP dictionary
+            let hostnameToIP: [String: String] = ["test.com": "127.0.0.1"]
+            let delegate = StreamingSessionDelegate(loadingRequest: loadingRequest, hostnameToIP: hostnameToIP)
             var errorReceived: Error?
             delegate.onError = { error in
                 errorReceived = error
@@ -137,7 +139,9 @@ class StreamingSessionDelegateTests: XCTestCase {
                 XCTFail("Loading request not captured")
                 return
             }
-            let delegate = StreamingSessionDelegate(loadingRequest: loadingRequest)
+            // Provide hostnameToIP dictionary
+            let hostnameToIP: [String: String] = ["test.com": "127.0.0.1"]
+            let delegate = StreamingSessionDelegate(loadingRequest: loadingRequest, hostnameToIP: hostnameToIP)
             let testData = "test data".data(using: .utf8)!
             
             MockURLProtocol.requestHandler = { _ in
@@ -178,7 +182,9 @@ class StreamingSessionDelegateTests: XCTestCase {
                 XCTFail("Loading request not captured")
                 return
             }
-            let delegate = StreamingSessionDelegate(loadingRequest: loadingRequest)
+            // Provide hostnameToIP dictionary
+            let hostnameToIP: [String: String] = ["test.com": "127.0.0.1"]
+            let delegate = StreamingSessionDelegate(loadingRequest: loadingRequest, hostnameToIP: hostnameToIP)
             delegate.onError = { error in
                 if let urlError = error as? URLError {
                     XCTAssertEqual(urlError.code, .fileDoesNotExist)
@@ -220,7 +226,9 @@ class StreamingSessionDelegateTests: XCTestCase {
                 XCTFail("Loading request not captured")
                 return
             }
-            let delegate = StreamingSessionDelegate(loadingRequest: loadingRequest)
+            // Provide hostnameToIP dictionary
+            let hostnameToIP: [String: String] = ["test.com": "127.0.0.1"]
+            let delegate = StreamingSessionDelegate(loadingRequest: loadingRequest, hostnameToIP: hostnameToIP)
             let testError = URLError(.networkConnectionLost)
             delegate.onError = { error in
                 if let urlError = error as? URLError {
@@ -263,7 +271,9 @@ class StreamingSessionDelegateTests: XCTestCase {
                 XCTFail("Loading request not captured")
                 return
             }
-            let delegate = StreamingSessionDelegate(loadingRequest: loadingRequest)
+            // Provide hostnameToIP dictionary
+            let hostnameToIP: [String: String] = ["test.com": "127.0.0.1"]
+            let delegate = StreamingSessionDelegate(loadingRequest: loadingRequest, hostnameToIP: hostnameToIP)
             let cancelError = URLError(.cancelled)
             var errorReceived: Error?
             

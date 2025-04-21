@@ -1,5 +1,5 @@
 //
-//  URLSessionDelegate.swift
+//  CustomDNSURLSessionDelegate.swift
 //  Lutheran Radio
 //
 //  Created by Jari Lammi on 21.4.2025.
