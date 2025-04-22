@@ -749,7 +749,7 @@ class DirectStreamingPlayer: NSObject {
     private func startPlayback(with streamURL: URL, completion: @escaping (Bool) -> Void) {
         stop()
         let asset = AVURLAsset(url: streamURL)
-        asset.resourceLoader.setDelegate(self, queue: DispatchQueue(label: "radio.lutheran.resourceloader"))
+        asset.resourceLoader.setDelegate(self, queue: DispatchQueue.main) // Changed to main queue
         self.playerItem = AVPlayerItem(asset: asset)
         self.player = AVPlayer(playerItem: self.playerItem)
         self.addObservers()
@@ -1005,15 +1005,14 @@ extension DirectStreamingPlayer {
 
 // MARK: - Resource Loader
 extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
-    func resourceLoader(_ resourceLoader: AVAssetResourceLoader,
-                        shouldWaitForLoadingOfRequestedResource loadingRequest: AVAssetResourceLoadingRequest) -> Bool {
+    func resourceLoader(_ resourceLoader: AVAssetResourceLoader, shouldWaitForLoadingOfRequestedResource loadingRequest: AVAssetResourceLoadingRequest) -> Bool {
         guard let url = loadingRequest.request.url else {
             loadingRequest.finishLoading(with: NSError(domain: "radio.lutheran", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid URL"]))
             return false
         }
 
         let streamingDelegate = StreamingSessionDelegate(loadingRequest: loadingRequest, hostnameToIP: hostnameToIP)
-        let session = URLSession(configuration: .default, delegate: streamingDelegate, delegateQueue: nil)
+        let session = URLSession(configuration: .default, delegate: streamingDelegate, delegateQueue: OperationQueue.main) // Changed to main queue
         let task = session.dataTask(with: url)
         streamingDelegate.onError = { [weak self] error in
             guard let self = self, self.delegate != nil else { return }

@@ -23,26 +23,42 @@ class StreamingSessionDelegate: CustomDNSURLSessionDelegate, URLSessionDataDeleg
         if let error = error {
             if (error as NSError).domain != NSURLErrorDomain || (error as NSError).code != NSURLErrorCancelled {
                 #if DEBUG
-                print("📡 Streaming task failed: \(error.localizedDescription)")
+                print("📡 Streaming task failed with error: \(error)")
                 #endif
                 if let urlError = error as? URLError {
                     switch urlError.code {
-                    case .notConnectedToInternet:
-                        onError?(URLError(.notConnectedToInternet))
-                    case .cannotFindHost:
-                        onError?(URLError(.cannotFindHost))
-                    case .serverCertificateUntrusted:
+                    case .notConnectedToInternet, .cannotFindHost, .serverCertificateUntrusted:
                         #if DEBUG
-                        print("🔒 Pinning failure detected: Certificate untrusted")
+                        if urlError.code == .serverCertificateUntrusted {
+                            print("🔒 Pinning failure detected: Certificate untrusted")
+                        }
                         #endif
-                        onError?(URLError(.serverCertificateUntrusted))
+                        if let onError = onError {
+                            DispatchQueue.main.async {
+                                onError(urlError)
+                            }
+                        } else {
+                            onError?(urlError)
+                        }
                     default:
-                        onError?(error)
+                        if let onError = onError {
+                            DispatchQueue.main.async {
+                                onError(error)
+                            }
+                        } else {
+                            onError?(error)
+                        }
                     }
                 } else {
-                    onError?(error)
+                    if let onError = onError {
+                        DispatchQueue.main.async {
+                            onError(error)
+                        }
+                    } else {
+                        onError?(error)
+                    }
                 }
-                loadingRequest.finishLoading(with: error)
+                loadingRequest.finishLoading(with: error) // Safe on main queue
             } else {
                 #if DEBUG
                 print("📡 Streaming task cancelled")
@@ -52,14 +68,11 @@ class StreamingSessionDelegate: CustomDNSURLSessionDelegate, URLSessionDataDeleg
             #if DEBUG
             print("📡 Streaming task completed normally")
             #endif
-            // Do not call finishLoading() for streaming
         }
         session.invalidateAndCancel()
     }
     
-    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask,
-                    didReceive response: URLResponse,
-                    completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse, completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
         guard let httpResponse = response as? HTTPURLResponse else {
             #if DEBUG
             print("📡 Failed to process response: invalid response type")
@@ -133,16 +146,12 @@ class StreamingSessionDelegate: CustomDNSURLSessionDelegate, URLSessionDataDeleg
     }
     
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
-        guard receivedResponse else {
-            return
-        }
-        
+        guard receivedResponse else { return }
         bytesReceived += data.count
         #if DEBUG
         print("📡 Received chunk of \(data.count) bytes (total: \(bytesReceived))")
         #endif
-        
-        loadingRequest.dataRequest?.respond(with: data)
+        loadingRequest.dataRequest?.respond(with: data) // Safe on main queue
     }
     
     func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
