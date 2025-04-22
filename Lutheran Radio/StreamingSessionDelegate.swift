@@ -12,11 +12,23 @@ class StreamingSessionDelegate: CustomDNSURLSessionDelegate, URLSessionDataDeleg
     private var loadingRequest: AVAssetResourceLoadingRequest
     private var bytesReceived = 0
     private var receivedResponse = false
+    private var session: URLSession?
+    private var dataTask: URLSessionDataTask?
     var onError: ((Error) -> Void)?
     
     init(loadingRequest: AVAssetResourceLoadingRequest, hostnameToIP: [String: String]) {
         self.loadingRequest = loadingRequest
         super.init(hostnameToIP: hostnameToIP)
+    }
+    
+    func cancel() {
+        dataTask?.cancel()
+        session?.invalidateAndCancel()
+        session = nil
+        dataTask = nil
+        #if DEBUG
+        print("📡 StreamingSessionDelegate canceled")
+        #endif
     }
     
     override func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {

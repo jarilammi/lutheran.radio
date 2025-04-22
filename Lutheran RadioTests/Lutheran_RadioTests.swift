@@ -60,10 +60,11 @@ final class MockStreamingPlayer: DirectStreamingPlayer {
         self.onStatusChange?(true, "status_playing")
     }
     
-    override func stop() {
+    override func stop(completion: (() -> Void)? = nil) {
         stopCalled = true
         // Update the UI state
         onStatusChange?(false, "status_paused")
+        completion?()
     }
     
     override func setVolume(_ volume: Float) {
