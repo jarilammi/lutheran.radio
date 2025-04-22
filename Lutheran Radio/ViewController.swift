@@ -1260,8 +1260,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 return
             }
             
-            // Pause AVPlayer to avoid conflicts
-            self.streamingPlayer.player?.pause()
+            // Stop streaming player to avoid conflicts
+            self.streamingPlayer.stop()
             
             // Prepare audio engine
             if !audioEngine.isRunning {
@@ -1274,7 +1274,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                     #if DEBUG
                     print("🎵 Failed to start audio engine: \(error.localizedDescription)")
                     #endif
-                    self.streamingPlayer.player?.play() // Resume AVPlayer if engine fails
+                    if self.isPlaying && !self.isManualPause {
+                        self.streamingPlayer.play { _ in }
+                    }
                     return
                 }
             } else {
@@ -1298,7 +1300,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 #if DEBUG
                 print("🎵 Tuning player node is nil, aborting")
                 #endif
-                self.streamingPlayer.player?.play() // Resume AVPlayer if node is nil
+                if self.isPlaying && !self.isManualPause {
+                    self.streamingPlayer.play { _ in }
+                }
                 return
             }
             
@@ -1313,6 +1317,16 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 #if DEBUG
                 print("🎵 Tuning sound completed")
                 #endif
+                // Resume playback if stream was playing
+                if self.isPlaying && !self.isManualPause {
+                    self.streamingPlayer.play { success in
+                        if success {
+                            self.streamingPlayer.onStatusChange?(true, String(localized: "status_playing"))
+                        } else {
+                            self.streamingPlayer.onStatusChange?(false, String(localized: "status_stream_unavailable"))
+                        }
+                    }
+                }
             })
             
             playerNode.play()
@@ -1332,35 +1346,27 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 return
             }
             
-            guard isTuningSoundPlaying, let node = tuningPlayerNode else {
+            // Stop the tuning player node
+            if let playerNode = tuningPlayerNode {
+                playerNode.stop()
                 #if DEBUG
-                print("🎵 stopTuningSound: Not playing or no node, skipping cleanup")
+                print("🎵 Tuning player node stopped")
                 #endif
-                return
             }
             
-            node.stop()
-            audioEngine.disconnectNodeOutput(node)
-            audioEngine.detach(node)
-            isTuningSoundPlaying = false
-            tuningPlayerNode = nil
-            
-            #if DEBUG
-            print("🎵 Tuning sound stopped and cleaned up")
-            #endif
-            
-            // Stop audio engine if no streaming is active
-            if !isPlaying && audioEngine.isRunning {
+            // Stop the audio engine
+            if audioEngine.isRunning {
                 audioEngine.stop()
+                audioEngine.reset()
                 #if DEBUG
-                print("🎵 Audio engine stopped (no streaming active)")
+                print("🎵 Audio engine stopped and reset")
                 #endif
             }
             
-            // Resume AVPlayer if streaming is active
-            if self.isPlaying {
-                self.streamingPlayer.player?.play()
-            }
+            isTuningSoundPlaying = false
+            #if DEBUG
+            print("🎵 Tuning sound stopped, isTuningSoundPlaying set to false")
+            #endif
         }
     }
     
