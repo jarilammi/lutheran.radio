@@ -20,14 +20,20 @@ final class Lutheran_RadioUITestsLaunchTests: XCTestCase {
     @MainActor
     func testLaunch() throws {
         let app = XCUIApplication()
+        let launchExpectation = expectation(description: "App launches successfully")
+        
         app.launch()
-
-        // Insert steps here to perform after app launch but before taking a screenshot,
-        // such as logging into a test account or navigating somewhere in the app
-
-        let attachment = XCTAttachment(screenshot: app.screenshot())
-        attachment.name = "Launch Screen"
-        attachment.lifetime = .keepAlways
-        add(attachment)
+        
+        // Wait for app to be in foreground
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            XCTAssertTrue(app.state == .runningForeground, "App should be in foreground")
+            let attachment = XCTAttachment(screenshot: app.screenshot())
+            attachment.name = "Launch Screen"
+            attachment.lifetime = .keepAlways
+            self.add(attachment)
+            launchExpectation.fulfill()
+        }
+        
+        wait(for: [launchExpectation], timeout: 5.0)
     }
 }
