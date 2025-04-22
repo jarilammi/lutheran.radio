@@ -106,11 +106,11 @@ class StreamingSessionDelegateTests: XCTestCase {
             
             let config = URLSessionConfiguration.default
             config.protocolClasses = [MockURLProtocol.self]
-            let session = URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
+            let session = URLSession(configuration: config, delegate: delegate, delegateQueue: OperationQueue.main) // Changed to main queue
             let task = session.dataTask(with: url)
             task.resume()
             
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { // Reduced delay
                 XCTAssertEqual(loadingRequest.contentInformationRequest?.contentType, "audio/mpeg")
                 XCTAssertNil(errorReceived, "Should not receive an error for successful response")
                 expectation.fulfill()
@@ -118,14 +118,12 @@ class StreamingSessionDelegateTests: XCTestCase {
         }
         
         player.play()
-        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
         waitForExpectations(timeout: 2.0) { error in
             if let error = error {
                 XCTFail("Test timed out: \(error)")
             }
         }
     }
-    
     func testReceivesDataAndResponds() {
         let expectation = self.expectation(description: "Receives and processes data")
         let url = URL(string: "streaming://test.com/stream.mp3")!
