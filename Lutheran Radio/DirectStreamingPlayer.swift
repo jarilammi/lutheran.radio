@@ -16,7 +16,11 @@ class DirectStreamingPlayer: NSObject {
     // MARK: - Security Model
     private let appSecurityModel = "mariehamn"
     private var isValidating = false
+    #if DEBUG
+    var lastValidationTime: Date?
+    #else
     private var lastValidationTime: Date?
+    #endif
     private let validationCacheDuration: TimeInterval = 600 // 10 minutes
     
     enum ValidationState {
@@ -26,8 +30,13 @@ class DirectStreamingPlayer: NSObject {
         case failedPermanent
     }
     var validationState: ValidationState = .pending
+    #if DEBUG
+    var networkMonitor: NWPathMonitor?
+    var hasInternetConnection = true
+    #else
     private var networkMonitor: NWPathMonitor?
     private var hasInternetConnection = true
+    #endif
     
     struct Stream {
         let title: String
@@ -72,7 +81,11 @@ class DirectStreamingPlayer: NSObject {
     
     private var lastServerSelectionTime: Date?
     private let serverSelectionCacheDuration: TimeInterval = 7200 // two hours
+    #if DEBUG
+    var serverSelectionWorkItem: DispatchWorkItem?
+    #else
     private var serverSelectionWorkItem: DispatchWorkItem?
+    #endif
     
     private var selectedServer: Server = servers[0]
     private var hostnameToIP: [String: String] = [:]
@@ -151,8 +164,13 @@ class DirectStreamingPlayer: NSObject {
         }
     }
     
+    #if DEBUG
+    var player: AVPlayer?
+    var playerItem: AVPlayerItem?
+    #else
     private var player: AVPlayer?
     private var playerItem: AVPlayerItem?
+    #endif
     private var observers: [NSKeyValueObservation] = []
     private let playbackQueue = DispatchQueue(label: "radio.lutheran.playback", qos: .userInitiated)
     var hasPermanentError: Bool = false
@@ -175,7 +193,7 @@ class DirectStreamingPlayer: NSObject {
     
     // MARK: - Security Model Validation
     
-    private func fetchValidSecurityModels(completion: @escaping (Result<Set<String>, Error>) -> Void) {
+    private func fetchValidSecurityModelsImplementation(completion: @escaping (Result<Set<String>, Error>) -> Void) {
         let domain = "securitymodels.lutheran.radio"
         #if DEBUG
         print("🔒 [Fetch Security Models] Fetching valid security models for domain: \(domain)")
@@ -194,6 +212,16 @@ class DirectStreamingPlayer: NSObject {
             }
         }
     }
+    
+    #if DEBUG
+    open func fetchValidSecurityModels(completion: @escaping (Result<Set<String>, Error>) -> Void) {
+        fetchValidSecurityModelsImplementation(completion: completion)
+    }
+    #else
+    private func fetchValidSecurityModels(completion: @escaping (Result<Set<String>, Error>) -> Void) {
+        fetchValidSecurityModelsImplementation(completion: completion)
+    }
+    #endif
     
     private func queryTXTRecord(domain: String, completion: @escaping (Result<Set<String>, Error>) -> Void) {
         class QueryContext {
@@ -314,7 +342,7 @@ class DirectStreamingPlayer: NSObject {
         return models
     }
     
-    func validateSecurityModelAsync(completion: @escaping (Bool) -> Void) {
+    private func validateSecurityModelAsyncImplementation(completion: @escaping (Bool) -> Void) {
         guard !isValidating else {
             #if DEBUG
             print("🔒 [Validate Async] Validation in progress, checking state")
@@ -472,7 +500,17 @@ class DirectStreamingPlayer: NSObject {
             }
         }
     }
-
+    
+    #if DEBUG
+    open func validateSecurityModelAsync(completion: @escaping (Bool) -> Void) {
+        validateSecurityModelAsyncImplementation(completion: completion)
+    }
+    #else
+    private func validateSecurityModelAsync(completion: @escaping (Bool) -> Void) {
+        validateSecurityModelAsyncImplementation(completion: completion)
+    }
+    #endif
+    
     private func performConnectivityCheck(completion: @escaping (Bool) -> Void) {
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 3.0
