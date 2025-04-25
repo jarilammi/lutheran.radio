@@ -937,20 +937,50 @@ class DirectStreamingPlayer: NSObject {
             player.removeTimeObserver(timeObserver)
             self.timeObserver = nil
             self.timeObserverPlayer = nil
+            #if DEBUG
+            print("🧹 Removed time observer")
+            #endif
         }
         
         if isObservingBuffer, let playerItem = playerItem {
-            playerItem.removeObserver(self, forKeyPath: "playbackBufferEmpty")
-            playerItem.removeObserver(self, forKeyPath: "playbackLikelyToKeepUp")
-            playerItem.removeObserver(self, forKeyPath: "playbackBufferFull")
+            // Check if observationInfo indicates active observers
+            let hasObservers = playerItem.observationInfo != nil
             #if DEBUG
-            print("🧹 Removed playback buffer observers")
+            print("🧹 Inspecting observers: hasObservers=\(hasObservers), isObservingBuffer=\(isObservingBuffer)")
             #endif
+            
+            if hasObservers {
+                // Remove each observer if registered
+                let keyPaths = [
+                    #keyPath(AVPlayerItem.isPlaybackBufferEmpty),
+                    #keyPath(AVPlayerItem.isPlaybackLikelyToKeepUp),
+                    #keyPath(AVPlayerItem.isPlaybackBufferFull)
+                ]
+                
+                for keyPath in keyPaths {
+                    playerItem.removeObserver(self, forKeyPath: keyPath)
+                    #if DEBUG
+                    print("🧹 Removed observer for \(keyPath)")
+                    #endif
+                }
+            } else {
+                #if DEBUG
+                print("🧹 No observers found for playerItem, skipping removal")
+                #endif
+            }
+            
             isObservingBuffer = false
+        } else {
+            #if DEBUG
+            print("🧹 Skipping observer removal: isObservingBuffer=\(isObservingBuffer), playerItem=\(playerItem != nil ? "present" : "nil")")
+            #endif
         }
         
         if let playerItem = playerItem {
             playerItem.outputs.forEach { playerItem.remove($0) }
+            #if DEBUG
+            print("🧹 Removed playerItem outputs")
+            #endif
         }
     }
     
