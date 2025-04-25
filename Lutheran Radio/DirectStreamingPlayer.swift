@@ -602,19 +602,8 @@ class DirectStreamingPlayer: NSObject {
     }
     
     func play(completion: @escaping (Bool) -> Void) {
-        // Reset audio session to avoid conflicts
-        do {
-            try AVAudioSession.sharedInstance().setActive(false)
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [])
-            try AVAudioSession.sharedInstance().setActive(true)
-            #if DEBUG
-            print("🔊 Audio session reset for playback")
-            #endif
-        } catch {
-            #if DEBUG
-            print("🔊 Failed to reset audio session: \(error.localizedDescription)")
-            #endif
-        }
+        // Audio session is already configured in setupAudioSession() and maintained active for background audio
+        // Removed redundant reset to prevent audio system overload
         
         if validationState == .pending {
             #if DEBUG
