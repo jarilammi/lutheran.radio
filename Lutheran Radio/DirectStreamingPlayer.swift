@@ -12,6 +12,54 @@ import AVFoundation
 import dnssd
 import Network
 
+enum NetworkPathStatus: Sendable {
+    case satisfied
+    case unsatisfied
+    case requiresConnection
+}
+
+protocol NetworkPathMonitoring: AnyObject {
+    var pathUpdateHandler: (@Sendable (NetworkPathStatus) -> Void)? { get set }
+    func start(queue: DispatchQueue)
+    func cancel()
+}
+
+class NWPathMonitorAdapter: NetworkPathMonitoring {
+    private let monitor: NWPathMonitor
+    
+    var pathUpdateHandler: (@Sendable (NetworkPathStatus) -> Void)? {
+        didSet {
+            monitor.pathUpdateHandler = { [weak self] path in
+                guard let self = self else { return }
+                let status: NetworkPathStatus
+                switch path.status {
+                case .satisfied:
+                    status = .satisfied
+                case .unsatisfied:
+                    status = .unsatisfied
+                case .requiresConnection:
+                    status = .requiresConnection
+                @unknown default:
+                    status = .unsatisfied
+                }
+                self.pathUpdateHandler?(status)
+            }
+        }
+    }
+    
+    init() {
+        self.monitor = NWPathMonitor()
+    }
+    
+    func start(queue: DispatchQueue) {
+        monitor.start(queue: queue)
+    }
+    
+    func cancel() {
+        monitor.cancel()
+    }
+}
+
 class DirectStreamingPlayer: NSObject {
     // MARK: - Security Model
     private let appSecurityModel = "mariehamn"
@@ -31,10 +79,10 @@ class DirectStreamingPlayer: NSObject {
     }
     var validationState: ValidationState = .pending
     #if DEBUG
-    var networkMonitor: NWPathMonitor?
+    var networkMonitor: NetworkPathMonitoring?
     var hasInternetConnection = true
     #else
-    private var networkMonitor: NWPathMonitor?
+    private var networkMonitor: NetworkPathMonitoring?
     private var hasInternetConnection = true
     #endif
     
@@ -45,7 +93,7 @@ class DirectStreamingPlayer: NSObject {
         let languageCode: String
         let flag: String
     }
-
+        
     static let availableStreams = [
         Stream(title: NSLocalizedString("lutheran_radio_title", comment: "Title for Lutheran Radio") + " - " +
                NSLocalizedString("language_english", comment: "English language option"),
@@ -167,20 +215,23 @@ class DirectStreamingPlayer: NSObject {
     #if DEBUG
     var player: AVPlayer?
     var playerItem: AVPlayerItem?
+    var metadataOutput: AVPlayerItemMetadataOutput?
     #else
     private var player: AVPlayer?
     private var playerItem: AVPlayerItem?
+    private var metadataOutput: AVPlayerItemMetadataOutput?
     #endif
-    private var observers: [NSKeyValueObservation] = []
     private let playbackQueue = DispatchQueue(label: "radio.lutheran.playback", qos: .userInitiated)
     var hasPermanentError: Bool = false
     private var statusObserver: NSKeyValueObservation?
+    private var registeredKeyPaths: Set<String> = [] // Track registered observer key paths
+    private var removedObservers: Set<ObjectIdentifier> = []
+    private var isSwitchingStream = false // Track ongoing stream switches
     private var timeObserver: Any?
     private var timeObserverPlayer: AVPlayer? // Track the player that added the time observer
     private var isObservingBuffer = false
     private var bufferingTimer: Timer?
-    private let observerLock = NSLock() // Added for thread-safe observer management
-    private var activeResourceLoaders: [AVAssetResourceLoadingRequest: StreamingSessionDelegate] = [:] // Added to track resource loaders
+    private var activeResourceLoaders: [AVAssetResourceLoadingRequest: StreamingSessionDelegate] = [:] // Track resource loaders
     
     var onStatusChange: ((Bool, String) -> Void)?
     var onMetadataChange: ((String?) -> Void)?
@@ -570,12 +621,22 @@ class DirectStreamingPlayer: NSObject {
         }
     }
     
+    #if DEBUG
+    open func setupNetworkMonitoring() {
+        setupNetworkMonitoringImplementation()
+    }
+    #else
     private func setupNetworkMonitoring() {
-        networkMonitor = NWPathMonitor()
-        networkMonitor?.pathUpdateHandler = { [weak self] path in
+        setupNetworkMonitoringImplementation()
+    }
+    #endif
+    
+    private func setupNetworkMonitoringImplementation() {
+        networkMonitor = NWPathMonitorAdapter() // Use the adapter that conforms to NetworkPathMonitoring
+        networkMonitor?.pathUpdateHandler = { [weak self] status in
             guard let self = self else { return }
             let wasConnected = self.hasInternetConnection
-            self.hasInternetConnection = path.status == .satisfied
+            self.hasInternetConnection = status == .satisfied
             #if DEBUG
             print("🌐 [Network] Status: \(self.hasInternetConnection ? "Connected" : "Disconnected")")
             #endif
@@ -708,15 +769,37 @@ class DirectStreamingPlayer: NSObject {
     }
     
     func setStream(to stream: Stream) {
-        guard validationState == .success else {
+        guard !isSwitchingStream else {
             #if DEBUG
-            print("📡 Stream switch aborted: Validation state=\(validationState)")
+            print("📡 Stream switch skipped: already switching")
             #endif
-            if validationState == .pending {
-                validateSecurityModelAsync { [weak self] isValid in
-                    guard let self = self else { return }
+            return
+        }
+        isSwitchingStream = true
+        
+        // Stop any ongoing playback and clear state
+        stop { [weak self] in
+            guard let self = self else {
+                self?.isSwitchingStream = false
+                return
+            }
+            
+            // Update selectedStream immediately
+            self.selectedStream = stream
+            #if DEBUG
+            print("📡 Stream set to: \(stream.language), URL: \(stream.url)")
+            #endif
+            
+            // Reset validation state if needed
+            if self.validationState == .pending {
+                self.validateSecurityModelAsync { [weak self] isValid in
+                    guard let self = self else {
+                        self?.isSwitchingStream = false
+                        return
+                    }
+                    defer { self.isSwitchingStream = false } // Ensure flag is reset
                     if isValid {
-                        self.setStream(to: stream)
+                        self.playAfterStreamSwitch()
                     } else {
                         let status = self.validationState == .failedPermanent ? "status_security_failed" : "status_no_internet"
                         DispatchQueue.main.async {
@@ -724,70 +807,66 @@ class DirectStreamingPlayer: NSObject {
                         }
                     }
                 }
-                return
+            } else if self.validationState == .success {
+                defer { self.isSwitchingStream = false } // Ensure flag is reset
+                self.playAfterStreamSwitch()
+            } else {
+                defer { self.isSwitchingStream = false } // Ensure flag is reset
+                let status = self.validationState == .failedPermanent ? "status_security_failed" : "status_no_internet"
+                DispatchQueue.main.async {
+                    self.onStatusChange?(false, NSLocalizedString(status, comment: ""))
+                }
             }
-            let status = validationState == .failedPermanent ? String(localized: "status_security_failed") : String(localized: "status_no_internet")
-            DispatchQueue.main.async {
-                self.onStatusChange?(false, status)
-            }
-            return
         }
-        
-        // Call stop with a completion handler to chain the play call
-        stop { [weak self] in
-            guard let self = self else { return }
-            
-            self.selectedStream = stream
-            let now = Date()
-            if let lastSelection = self.lastServerSelectionTime, now.timeIntervalSince(lastSelection) < self.serverSelectionCacheDuration, !self.hostnameToIP.isEmpty {
+    }
+
+    // Helper method to handle playback after stream switch
+    private func playAfterStreamSwitch() {
+        let now = Date()
+        if let lastSelection = self.lastServerSelectionTime, now.timeIntervalSince(lastSelection) < self.serverSelectionCacheDuration, !self.hostnameToIP.isEmpty {
+            #if DEBUG
+            print("📡 Using cached server selection for stream switch: \(self.selectedServer.name)")
+            #endif
+            self.play { [weak self] success in
+                guard let self = self else { return }
+                self.handleStreamSwitchCompletion(success)
+            }
+        } else {
+            self.selectOptimalServer { [weak self] server in
+                guard let self = self else {
+                    self?.isSwitchingStream = false
+                    return
+                }
+                self.lastServerSelectionTime = Date()
                 #if DEBUG
-                print("📡 Using cached server selection for stream switch: \(self.selectedServer.name)")
+                print("📡 Selected server for stream switch: \(server.name)")
                 #endif
                 self.play { [weak self] success in
                     guard let self = self else { return }
-                    if success {
-                        #if DEBUG
-                        print("✅ Stream switched")
-                        #endif
-                        if self.delegate != nil {
-                            self.onStatusChange?(true, String(localized: "status_playing"))
-                        }
-                    } else {
-                        #if DEBUG
-                        print("❌ Stream switch failed")
-                        #endif
-                        if self.delegate != nil {
-                            self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
-                        }
-                    }
-                }
-            } else {
-                self.selectOptimalServer { [weak self] server in
-                    guard let self = self else { return }
-                    self.lastServerSelectionTime = Date()
-                    #if DEBUG
-                    print("📡 Selected server for stream switch: \(server.name)")
-                    #endif
-                    self.play { success in
-                        if success {
-                            #if DEBUG
-                            print("✅ Stream switched")
-                            #endif
-                            if self.delegate != nil {
-                                self.onStatusChange?(true, String(localized: "status_playing"))
-                            }
-                        } else {
-                            #if DEBUG
-                            print("❌ Stream switch failed")
-                            #endif
-                            if self.delegate != nil {
-                                self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
-                            }
-                        }
-                    }
+                    self.handleStreamSwitchCompletion(success)
                 }
             }
         }
+    }
+
+    // Helper method to handle stream switch completion
+    private func handleStreamSwitchCompletion(_ success: Bool) {
+        if success {
+            #if DEBUG
+            print("✅ Stream switched to: \(self.selectedStream.language)")
+            #endif
+            if self.delegate != nil {
+                self.onStatusChange?(true, String(localized: "status_playing"))
+            }
+        } else {
+            #if DEBUG
+            print("❌ Stream switch failed for: \(self.selectedStream.language)")
+            #endif
+            if self.delegate != nil {
+                self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
+            }
+        }
+        self.isSwitchingStream = false
     }
     
     private func startBufferingTimer() {
@@ -814,25 +893,73 @@ class DirectStreamingPlayer: NSObject {
                 return
             }
 
-            #if DEBUG
-            print("▶️ Starting playback with URL: \(streamURL)")
-            #endif
+            // Verify the stream URL matches the selected stream
+            if streamURL.absoluteString.contains(self.selectedStream.url.absoluteString) {
+                #if DEBUG
+                print("▶️ Starting playback with verified URL: \(streamURL)")
+                #endif
+            } else {
+                #if DEBUG
+                print("❌ URL mismatch: requested=\(streamURL), selectedStream=\(self.selectedStream.url)")
+                #endif
+                self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
+                completion(false)
+                return
+            }
 
-            // Ensure previous playback is stopped
             self.stop()
 
-            // Create new asset and player
             let asset = AVURLAsset(url: streamURL)
             asset.resourceLoader.setDelegate(self, queue: DispatchQueue.main)
             self.playerItem = AVPlayerItem(asset: asset)
-            self.player = AVPlayer(playerItem: self.playerItem)
 
-            // Add observers
-            self.observerLock.lock()
+            // Ensure metadataOutput is not attached to another playerItem
+            if let metadataOutput = self.metadataOutput {
+                // Check if metadataOutput is attached to the current playerItem (if it exists)
+                if let currentPlayerItem = self.playerItem, currentPlayerItem.outputs.contains(metadataOutput) {
+                    currentPlayerItem.remove(metadataOutput)
+                    #if DEBUG
+                    print("🧹 Removed metadata output from previous playerItem")
+                    #endif
+                }
+            } else {
+                // Create new metadata output if it doesn't exist
+                self.metadataOutput = AVPlayerItemMetadataOutput(identifiers: nil)
+                self.metadataOutput?.setDelegate(self, queue: .main)
+                #if DEBUG
+                print("🧹 Created new metadata output")
+                #endif
+            }
+
+            // Add metadataOutput to the new playerItem
+            if let metadataOutput = self.metadataOutput {
+                self.playerItem?.add(metadataOutput)
+                #if DEBUG
+                print("🧹 Added metadata output in startPlayback")
+                #endif
+            }
+
+            if self.player == nil {
+                self.player = AVPlayer(playerItem: self.playerItem)
+                #if DEBUG
+                print("🎵 Created new AVPlayer")
+                #endif
+            } else {
+                self.player?.replaceCurrentItem(with: self.playerItem)
+                #if DEBUG
+                print("🎵 Reused existing AVPlayer")
+                #endif
+            }
+
+            #if DEBUG
+            print("⏳ Initial playerItem status: \(self.playerItem?.status.rawValue ?? -1)")
+            if let error = self.playerItem?.error {
+                print("❌ Initial playerItem error: \(error.localizedDescription)")
+            }
+            #endif
+
             self.addObservers()
-            self.observerLock.unlock()
 
-            // Observe playerItem status to start playback
             var tempStatusObserver: NSKeyValueObservation?
             tempStatusObserver = self.playerItem?.observe(\.status, options: [.new]) { [weak self] item, _ in
                 guard let self = self else {
@@ -842,21 +969,36 @@ class DirectStreamingPlayer: NSObject {
                 switch item.status {
                 case .readyToPlay:
                     #if DEBUG
-                    print("✅ PlayerItem readyToPlay, starting playback")
+                    print("✅ PlayerItem readyToPlay, starting playback for: \(self.selectedStream.language)")
                     #endif
-                    self.player?.play()
-                    self.onStatusChange?(true, String(localized: "status_playing"))
-                    completion(true)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        self.player?.play()
+                        self.onStatusChange?(true, String(localized: "status_playing"))
+                        completion(true)
+                    }
                 case .failed:
                     #if DEBUG
                     print("❌ PlayerItem failed: \(item.error?.localizedDescription ?? "Unknown error")")
+                    if let error = item.error as NSError? {
+                        print("❌ Error details: domain=\(error.domain), code=\(error.code), userInfo=\(error.userInfo)")
+                    }
                     #endif
                     self.lastError = item.error
-                    self.hasPermanentError = StreamErrorType.from(error: item.error).isPermanent
-                    DispatchQueue.main.async {
-                        self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
-                        self.stop()
-                        completion(false)
+                    let errorType = StreamErrorType.from(error: item.error)
+                    self.hasPermanentError = errorType.isPermanent
+                    if errorType == .transientFailure {
+                        #if DEBUG
+                        print("🔄 Transient error detected, scheduling retry")
+                        #endif
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                            self.startPlayback(with: streamURL, completion: completion)
+                        }
+                    } else {
+                        DispatchQueue.main.async {
+                            self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
+                            self.stop()
+                            completion(false)
+                        }
                     }
                 case .unknown:
                     #if DEBUG
@@ -871,12 +1013,14 @@ class DirectStreamingPlayer: NSObject {
                 tempStatusObserver?.invalidate()
             }
 
-            // Timeout if playerItem doesn't become ready
-            DispatchQueue.main.asyncAfter(deadline: .now() + 10.0) { [weak self, weak tempStatusObserver] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 20.0) { [weak self, weak tempStatusObserver] in
                 guard let self = self, tempStatusObserver != nil else { return }
                 if self.playerItem?.status != .readyToPlay {
                     #if DEBUG
                     print("❌ Playback timeout, playerItem not ready")
+                    if let error = self.playerItem?.error {
+                        print("❌ PlayerItem error on timeout: \(error.localizedDescription)")
+                    }
                     #endif
                     self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
                     self.stop()
@@ -890,54 +1034,80 @@ class DirectStreamingPlayer: NSObject {
         player?.volume = volume
     }
     
-    func addObservers() {
-        removeObservers()
-        
-        statusObserver = playerItem?.observe(\.status, options: [.new, .initial]) { [weak self] item, _ in
+    private func addObservers() {
+        playbackQueue.async { [weak self] in
             guard let self = self else { return }
-            DispatchQueue.main.async {
+            
+            // Remove existing observers first
+            self.removeObservers()
+            
+            self.statusObserver = self.playerItem?.observe(\.status, options: [.new, .initial]) { [weak self] item, _ in
+                guard let self = self else { return }
+                DispatchQueue.main.async {
+                    #if DEBUG
+                    print("🎵 Player item status: \(item.status.rawValue)")
+                    #endif
+                    guard self.delegate != nil else { return }
+                    switch item.status {
+                    case .readyToPlay:
+                        self.onStatusChange?(true, String(localized: "status_playing"))
+                    case .failed:
+                        self.lastError = item.error
+                        let errorType = StreamErrorType.from(error: item.error)
+                        self.hasPermanentError = errorType.isPermanent
+                        self.onStatusChange?(false, errorType.statusString)
+                        self.stop()
+                    case .unknown:
+                        self.onStatusChange?(false, String(localized: "status_buffering"))
+                    @unknown default:
+                        break
+                    }
+                }
+            }
+            #if DEBUG
+            print("🧹 Added status observer")
+            #endif
+            
+            if let playerItem = self.playerItem {
+                let keyPaths = [
+                    "playbackBufferEmpty",
+                    "playbackLikelyToKeepUp",
+                    "playbackBufferFull"
+                ]
+                for keyPath in keyPaths {
+                    playerItem.addObserver(self, forKeyPath: keyPath, options: .new, context: nil)
+                    self.registeredKeyPaths.insert(keyPath)
+                    #if DEBUG
+                    print("🧹 Added observer for \(keyPath)")
+                    #endif
+                }
+                self.isObservingBuffer = true
                 #if DEBUG
-                print("🎵 Player item status: \(item.status.rawValue)")
+                print("🧹 Added buffer observers for playbackBufferEmpty, playbackLikelyToKeepUp, playbackBufferFull")
                 #endif
-                guard self.delegate != nil else { return }
-                switch item.status {
-                case .readyToPlay:
-                    self.onStatusChange?(true, String(localized: "status_playing"))
-                case .failed:
-                    self.lastError = item.error
-                    let errorType = StreamErrorType.from(error: item.error)
-                    self.hasPermanentError = errorType.isPermanent
-                    self.onStatusChange?(false, errorType.statusString)
-                    self.stop()
-                case .unknown:
-                    self.onStatusChange?(false, String(localized: "status_buffering"))
-                @unknown default:
-                    break
-                }
             }
-        }
-        
-        if let playerItem = playerItem {
-            playerItem.addObserver(self, forKeyPath: "playbackBufferEmpty", options: .new, context: nil)
-            playerItem.addObserver(self, forKeyPath: "playbackLikelyToKeepUp", options: .new, context: nil)
-            playerItem.addObserver(self, forKeyPath: "playbackBufferFull", options: .new, context: nil)
-            isObservingBuffer = true
-        }
-        
-        let interval = CMTime(seconds: 1.0, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
-        if let player = player {
-            timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] _ in
-                guard let self = self, self.delegate != nil else { return }
-                if self.player?.rate ?? 0 > 0 {
-                    self.onStatusChange?(true, String(localized: "status_playing"))
+            
+            let interval = CMTime(seconds: 1.0, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
+            if let player = self.player {
+                self.timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] _ in
+                    guard let self = self, self.delegate != nil else { return }
+                    if self.player?.rate ?? 0 > 0 {
+                        self.onStatusChange?(true, String(localized: "status_playing"))
+                    }
                 }
+                self.timeObserverPlayer = player // Track the player that added the observer
+                #if DEBUG
+                print("🧹 Added time observer")
+                #endif
             }
-            timeObserverPlayer = player // Track the player that added the observer
+            
+            let metadataOutput = AVPlayerItemMetadataOutput(identifiers: nil)
+            metadataOutput.setDelegate(self, queue: .main)
+            self.playerItem?.add(metadataOutput)
+            #if DEBUG
+            print("🧹 Added metadata output")
+            #endif
         }
-        
-        let metadataOutput = AVPlayerItemMetadataOutput(identifiers: nil)
-        metadataOutput.setDelegate(self, queue: .main)
-        playerItem?.add(metadataOutput)
     }
     
     override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
@@ -949,83 +1119,92 @@ class DirectStreamingPlayer: NSObject {
             if keyPath == "playbackBufferEmpty" {
                 if playerItem.isPlaybackBufferEmpty {
                     self.onStatusChange?(false, String(localized: "status_buffering"))
-                    startBufferingTimer()
+                    self.startBufferingTimer()
                 }
             } else if keyPath == "playbackLikelyToKeepUp" {
                 if playerItem.isPlaybackLikelyToKeepUp && playerItem.status == .readyToPlay {
                     self.player?.play()
                     self.onStatusChange?(true, String(localized: "status_playing"))
-                    stopBufferingTimer()
+                    self.stopBufferingTimer()
                 }
             } else if keyPath == "playbackBufferFull" {
                 if playerItem.isPlaybackBufferFull {
                     self.player?.play()
                     self.onStatusChange?(true, String(localized: "status_playing"))
-                    stopBufferingTimer()
+                    self.stopBufferingTimer()
                 }
             }
         }
     }
     
     private func removeObservers() {
-        statusObserver?.invalidate()
-        statusObserver = nil
-        
-        if let timeObserver = timeObserver, let player = timeObserverPlayer {
-            player.removeTimeObserver(timeObserver)
-            self.timeObserver = nil
-            self.timeObserverPlayer = nil
+        playbackQueue.async { [weak self] in
+            guard let self = self else { return }
+
+            // Invalidate status observer
+            self.statusObserver?.invalidate()
+            self.statusObserver = nil
             #if DEBUG
-            print("🧹 Removed time observer")
+            print("🧹 Removed status observer")
             #endif
-        }
-        
-        if isObservingBuffer, let playerItem = playerItem {
-            // Check if observationInfo indicates active observers
-            let hasObservers = playerItem.observationInfo != nil
-            #if DEBUG
-            print("🧹 Inspecting observers: hasObservers=\(hasObservers), isObservingBuffer=\(isObservingBuffer)")
-            #endif
-            
-            if hasObservers {
-                // Remove each observer if registered
-                let keyPaths = [
-                    #keyPath(AVPlayerItem.isPlaybackBufferEmpty),
-                    #keyPath(AVPlayerItem.isPlaybackLikelyToKeepUp),
-                    #keyPath(AVPlayerItem.isPlaybackBufferFull)
-                ]
-                
-                for keyPath in keyPaths {
-                    playerItem.removeObserver(self, forKeyPath: keyPath)
-                    #if DEBUG
-                    print("🧹 Removed observer for \(keyPath)")
-                    #endif
-                }
-            } else {
+
+            // Remove time observer
+            if let timeObserver = self.timeObserver, let player = self.timeObserverPlayer {
+                player.removeTimeObserver(timeObserver)
+                self.timeObserver = nil
+                self.timeObserverPlayer = nil
                 #if DEBUG
-                print("🧹 No observers found for playerItem, skipping removal")
+                print("🧹 Removed time observer")
                 #endif
             }
-            
-            isObservingBuffer = false
-        } else {
-            #if DEBUG
-            print("🧹 Skipping observer removal: isObservingBuffer=\(isObservingBuffer), playerItem=\(playerItem != nil ? "present" : "nil")")
-            #endif
-        }
-        
-        if let playerItem = playerItem {
-            playerItem.outputs.forEach { playerItem.remove($0) }
-            #if DEBUG
-            print("🧹 Removed playerItem outputs")
-            #endif
+
+            // Remove buffer observers
+            if self.isObservingBuffer, let playerItem = self.playerItem {
+                let playerItemKey = ObjectIdentifier(playerItem)
+                guard !self.removedObservers.contains(playerItemKey) else {
+                    #if DEBUG
+                    print("🧹 Skipping observer removal: already removed for playerItem \(playerItemKey)")
+                    #endif
+                    self.isObservingBuffer = false
+                    return
+                }
+
+                let keyPaths = [
+                    "playbackBufferEmpty",
+                    "playbackLikelyToKeepUp",
+                    "playbackBufferFull"
+                ]
+
+                for keyPath in keyPaths {
+                    if self.registeredKeyPaths.contains(keyPath) {
+                        playerItem.removeObserver(self, forKeyPath: keyPath)
+                        self.registeredKeyPaths.remove(keyPath)
+                        #if DEBUG
+                        print("🧹 Removed observer for \(keyPath)")
+                        #endif
+                    } else {
+                        #if DEBUG
+                        print("🧹 Skipped removing observer for \(keyPath): not registered")
+                        #endif
+                    }
+                }
+                self.isObservingBuffer = false
+                self.removedObservers.insert(playerItemKey)
+            } else {
+                #if DEBUG
+                print("🧹 Skipping observer removal: isObservingBuffer=\(self.isObservingBuffer), playerItem=\(self.playerItem != nil ? "present" : "nil")")
+                #endif
+                self.registeredKeyPaths.removeAll()
+            }
+
+            // Do not remove metadata output here; it will be reused
         }
     }
     
     func stop(completion: (() -> Void)? = nil) {
         playbackQueue.async { [weak self] in
             guard let self = self else {
-                completion?()
+                DispatchQueue.main.async { completion?() }
                 return
             }
             #if DEBUG
@@ -1036,33 +1215,34 @@ class DirectStreamingPlayer: NSObject {
             self.player?.pause()
             self.player?.rate = 0.0
 
-            // Remove metadata output
-            if let playerItem = self.playerItem {
-                playerItem.outputs.forEach { playerItem.remove($0) }
-            }
-
-            // Remove observers
-            self.observerLock.lock()
-            self.removeObservers()
-            self.observers.forEach { $0.invalidate() }
-            self.observers.removeAll()
-            self.observerLock.unlock()
-
             // Cancel active resource loader sessions
             self.activeResourceLoaders.forEach { _, delegate in
                 delegate.cancel()
             }
             self.activeResourceLoaders.removeAll()
 
-            // Clear player and playerItem
+            // Remove metadata output from current playerItem
+            if let metadataOutput = self.metadataOutput, let playerItem = self.playerItem {
+                if playerItem.outputs.contains(metadataOutput) {
+                    playerItem.remove(metadataOutput)
+                    #if DEBUG
+                    print("🧹 Removed metadata output from playerItem in stop")
+                    #endif
+                }
+            }
+
+            // Remove observers
+            self.removeObservers()
+
+            // Clear playerItem
             self.playerItem = nil
-            self.player = nil
-            
+            self.removedObservers.removeAll()
+
             DispatchQueue.main.async {
                 self.onStatusChange?(false, String(localized: "status_stopped"))
                 completion?()
             }
-            
+
             self.stopBufferingTimer()
 
             #if DEBUG
@@ -1083,6 +1263,15 @@ class DirectStreamingPlayer: NSObject {
         clearCallbacks()
         networkMonitor?.cancel()
         networkMonitor = nil
+        if let metadataOutput = metadataOutput, let playerItem = playerItem {
+            if playerItem.outputs.contains(metadataOutput) {
+                playerItem.remove(metadataOutput)
+                #if DEBUG
+                print("🧹 Removed metadata output in deinit")
+                #endif
+            }
+        }
+        metadataOutput = nil
         #if DEBUG
         print("🧹 Player deinit")
         #endif
@@ -1217,12 +1406,19 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
             loadingRequest.finishLoading(with: NSError(domain: "radio.lutheran", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid URL"]))
             return false
         }
-
+        
+        #if DEBUG
+        print("📡 Resource loader: Handling URL \(url.absoluteString)")
+        #endif
+        
         let streamingDelegate = StreamingSessionDelegate(loadingRequest: loadingRequest, hostnameToIP: hostnameToIP)
         let session = URLSession(configuration: .default, delegate: streamingDelegate, delegateQueue: OperationQueue.main)
         let task = session.dataTask(with: url)
         streamingDelegate.onError = { [weak self] error in
             guard let self = self, self.delegate != nil else { return }
+            #if DEBUG
+            print("❌ Resource loader error: \(error.localizedDescription)")
+            #endif
             DispatchQueue.main.async {
                 self.activeResourceLoaders.removeValue(forKey: loadingRequest)
                 self.handleLoadingError(error)
