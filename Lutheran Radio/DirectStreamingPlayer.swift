@@ -127,6 +127,15 @@ class DirectStreamingPlayer: NSObject {
                flag: "🇪🇪"),
     ]
     
+    private let audioSession: AVAudioSession
+    private let pathMonitor: NetworkPathMonitoring
+    
+    #if DEBUG
+    var isTesting: Bool = false
+    #else
+    private var isTesting: Bool = false
+    #endif
+    
     private var lastServerSelectionTime: Date?
     private let serverSelectionCacheDuration: TimeInterval = 7200 // two hours
     #if DEBUG
@@ -204,6 +213,15 @@ class DirectStreamingPlayer: NSObject {
         }
     }
     
+    #if DEBUG
+    var selectedStream: Stream {
+        didSet {
+            if delegate != nil {
+                onMetadataChange?(selectedStream.title)
+            }
+        }
+    }
+    #else
     private(set) var selectedStream: Stream {
         didSet {
             if delegate != nil {
@@ -211,22 +229,28 @@ class DirectStreamingPlayer: NSObject {
             }
         }
     }
+    #endif
     
     #if DEBUG
     var player: AVPlayer?
     var playerItem: AVPlayerItem?
     var metadataOutput: AVPlayerItemMetadataOutput?
+    let playbackQueue = DispatchQueue(label: "radio.lutheran.playback", qos: .userInitiated)
     #else
     private var player: AVPlayer?
     private var playerItem: AVPlayerItem?
     private var metadataOutput: AVPlayerItemMetadataOutput?
-    #endif
     private let playbackQueue = DispatchQueue(label: "radio.lutheran.playback", qos: .userInitiated)
+    #endif
     var hasPermanentError: Bool = false
     private var statusObserver: NSKeyValueObservation?
     private var registeredKeyPaths: Set<String> = [] // Track registered observer key paths
     private var removedObservers: Set<ObjectIdentifier> = []
-    private var isSwitchingStream = false // Track ongoing stream switches
+    #if DEBUG
+    var isSwitchingStream = false // Track ongoing stream switches (testing)
+    #else
+    private var isSwitchingStream = false // Track ongoing stream switches (production)
+    #endif
     private var timeObserver: Any?
     private var timeObserverPlayer: AVPlayer? // Track the player that added the time observer
     private var isObservingBuffer = false
@@ -557,7 +581,7 @@ class DirectStreamingPlayer: NSObject {
         validateSecurityModelAsyncImplementation(completion: completion)
     }
     #else
-    private func validateSecurityModelAsync(completion: @escaping (Bool) -> Void) {
+    func validateSecurityModelAsync(completion: @escaping (Bool) -> Void) {
         validateSecurityModelAsyncImplementation(completion: completion)
     }
     #endif
@@ -595,6 +619,8 @@ class DirectStreamingPlayer: NSObject {
     }
     
     override init() {
+        self.audioSession = .sharedInstance()
+        self.pathMonitor = NWPathMonitorAdapter()
         let currentLocale = Locale.current
         let languageCode = currentLocale.language.languageCode?.identifier
         if let stream = Self.availableStreams.first(where: { $0.languageCode == languageCode }) {
@@ -602,6 +628,9 @@ class DirectStreamingPlayer: NSObject {
         } else {
             selectedStream = Self.availableStreams[0]
         }
+        #if DEBUG
+        isTesting = NSClassFromString("XCTestCase") != nil
+        #endif
         super.init()
         setupAudioSession()
         setupNetworkMonitoring()
@@ -623,43 +652,27 @@ class DirectStreamingPlayer: NSObject {
     
     #if DEBUG
     open func setupNetworkMonitoring() {
-        setupNetworkMonitoringImplementation()
-    }
-    #else
-    private func setupNetworkMonitoring() {
-        setupNetworkMonitoringImplementation()
-    }
-    #endif
-    
-    private func setupNetworkMonitoringImplementation() {
-        networkMonitor = NWPathMonitorAdapter() // Use the adapter that conforms to NetworkPathMonitoring
+        networkMonitor = pathMonitor
         networkMonitor?.pathUpdateHandler = { [weak self] status in
-            guard let self = self else { return }
+            guard let self = self else {
+                print("🧹 [Network] Skipped path update: self is nil")
+                return
+            }
             let wasConnected = self.hasInternetConnection
             self.hasInternetConnection = status == .satisfied
-            #if DEBUG
             print("🌐 [Network] Status: \(self.hasInternetConnection ? "Connected" : "Disconnected")")
-            #endif
             if self.hasInternetConnection && !wasConnected {
-                #if DEBUG
                 print("🌐 [Network] Connection restored, previous server: \(self.selectedServer.name)")
-                #endif
                 self.lastValidationTime = nil
                 self.validationState = .pending
-                #if DEBUG
                 print("🔒 [Network] Invalidated security model validation cache")
-                #endif
                 self.selectOptimalServer { server in
-                    #if DEBUG
                     print("🌐 [Network] New server selected: \(server.name), hostnameToIP: \(self.hostnameToIP)")
-                    #endif
                     if self.validationState == .failedTransient {
                         self.validationState = .pending
                         self.hasPermanentError = false
                         self.validateSecurityModelAsync { isValid in
-                            #if DEBUG
                             print("🔒 [Network] Revalidation result: \(isValid)")
-                            #endif
                             if !isValid {
                                 DispatchQueue.main.async {
                                     self.onStatusChange?(false, String(localized: self.validationState == .failedPermanent ? "status_security_failed" : "status_no_internet"))
@@ -683,11 +696,86 @@ class DirectStreamingPlayer: NSObject {
         }
         networkMonitor?.start(queue: DispatchQueue(label: "radio.lutheran.networkmonitor"))
     }
+    #else
+    private func setupNetworkMonitoring() {
+        networkMonitor = pathMonitor
+        networkMonitor?.pathUpdateHandler = { [weak self] status in
+            guard let self = self else { return }
+            let wasConnected = self.hasInternetConnection
+            self.hasInternetConnection = status == .satisfied
+            if self.hasInternetConnection && !wasConnected {
+                self.lastValidationTime = nil
+                self.validationState = .pending
+                self.selectOptimalServer { server in
+                    if self.validationState == .failedTransient {
+                        self.validationState = .pending
+                        self.hasPermanentError = false
+                        self.validateSecurityModelAsync { isValid in
+                            if !isValid {
+                                DispatchQueue.main.async {
+                                    self.onStatusChange?(false, String(localized: self.validationState == .failedPermanent ? "status_security_failed" : "status_no_internet"))
+                                }
+                            } else if self.player?.rate ?? 0 == 0, !self.hasPermanentError {
+                                self.play { success in
+                                    DispatchQueue.main.async {
+                                        self.onStatusChange?(success, String(localized: success ? "status_playing" : "status_stream_unavailable"))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } else if !self.hasInternetConnection && wasConnected {
+                self.validationState = .failedTransient
+                DispatchQueue.main.async {
+                    self.onStatusChange?(false, String(localized: "status_no_internet"))
+                }
+            }
+        }
+        networkMonitor?.start(queue: DispatchQueue(label: "radio.lutheran.networkmonitor"))
+    }
+    #endif
+    
+    init(audioSession: AVAudioSession = .sharedInstance(), pathMonitor: NetworkPathMonitoring = NWPathMonitorAdapter()) {
+        self.audioSession = audioSession
+        self.pathMonitor = pathMonitor
+        let currentLocale = Locale.current
+        let languageCode = currentLocale.language.languageCode?.identifier
+        if let stream = Self.availableStreams.first(where: { $0.languageCode == languageCode }) {
+            selectedStream = stream
+        } else {
+            selectedStream = Self.availableStreams[0]
+        }
+        #if DEBUG
+        isTesting = NSClassFromString("XCTestCase") != nil
+        #endif
+        super.init()
+        setupAudioSession()
+        setupNetworkMonitoring()
+        #if DEBUG
+        print("🎵 Player initialized, starting validation")
+        #endif
+        if hasInternetConnection {
+            validateSecurityModelAsync { [weak self] isValid in
+                guard let self = self else { return }
+                #if DEBUG
+                print("🔒 Initial validation completed: \(isValid)")
+                #endif
+                if isValid {
+                    self.onStatusChange?(false, String(localized: "status_connecting"))
+                }
+            }
+        }
+    }
     
     func setupAudioSession() {
-        // Configure audio session
+        guard !isTesting else {
+            #if DEBUG
+            print("🔊 Skipped audio session setup for tests")
+            #endif
+            return
+        }
         do {
-            let audioSession = AVAudioSession.sharedInstance()
             try audioSession.setCategory(.playback, mode: .default, options: [])
             try audioSession.setActive(true)
             #if DEBUG
@@ -1100,13 +1188,6 @@ class DirectStreamingPlayer: NSObject {
                 print("🧹 Added time observer")
                 #endif
             }
-            
-            let metadataOutput = AVPlayerItemMetadataOutput(identifiers: nil)
-            metadataOutput.setDelegate(self, queue: .main)
-            self.playerItem?.add(metadataOutput)
-            #if DEBUG
-            print("🧹 Added metadata output")
-            #endif
         }
     }
     
@@ -1137,17 +1218,29 @@ class DirectStreamingPlayer: NSObject {
         }
     }
     
+    #if DEBUG
+    func removeObservers() {
+        removeObserversImplementation()
+    }
+    #else
     private func removeObservers() {
+        removeObserversImplementation()
+    }
+    #endif
+    
+    private func removeObserversImplementation() {
         playbackQueue.async { [weak self] in
             guard let self = self else { return }
-
+            
             // Invalidate status observer
-            self.statusObserver?.invalidate()
-            self.statusObserver = nil
-            #if DEBUG
-            print("🧹 Removed status observer")
-            #endif
-
+            if let statusObserver = self.statusObserver {
+                statusObserver.invalidate()
+                self.statusObserver = nil
+                #if DEBUG
+                print("🧹 Removed status observer")
+                #endif
+            }
+            
             // Remove time observer
             if let timeObserver = self.timeObserver, let player = self.timeObserverPlayer {
                 player.removeTimeObserver(timeObserver)
@@ -1157,24 +1250,24 @@ class DirectStreamingPlayer: NSObject {
                 print("🧹 Removed time observer")
                 #endif
             }
-
+            
             // Remove buffer observers
             if self.isObservingBuffer, let playerItem = self.playerItem {
                 let playerItemKey = ObjectIdentifier(playerItem)
-                guard !self.removedObservers.contains(playerItemKey) else {
+                if self.removedObservers.contains(playerItemKey) {
                     #if DEBUG
                     print("🧹 Skipping observer removal: already removed for playerItem \(playerItemKey)")
                     #endif
                     self.isObservingBuffer = false
                     return
                 }
-
+                
                 let keyPaths = [
                     "playbackBufferEmpty",
                     "playbackLikelyToKeepUp",
                     "playbackBufferFull"
                 ]
-
+                
                 for keyPath in keyPaths {
                     if self.registeredKeyPaths.contains(keyPath) {
                         playerItem.removeObserver(self, forKeyPath: keyPath)
@@ -1182,22 +1275,14 @@ class DirectStreamingPlayer: NSObject {
                         #if DEBUG
                         print("🧹 Removed observer for \(keyPath)")
                         #endif
-                    } else {
-                        #if DEBUG
-                        print("🧹 Skipped removing observer for \(keyPath): not registered")
-                        #endif
                     }
                 }
                 self.isObservingBuffer = false
                 self.removedObservers.insert(playerItemKey)
-            } else {
-                #if DEBUG
-                print("🧹 Skipping observer removal: isObservingBuffer=\(self.isObservingBuffer), playerItem=\(self.playerItem != nil ? "present" : "nil")")
-                #endif
-                self.registeredKeyPaths.removeAll()
             }
-
-            // Do not remove metadata output here; it will be reused
+            
+            // Clear registered key paths
+            self.registeredKeyPaths.removeAll()
         }
     }
     
