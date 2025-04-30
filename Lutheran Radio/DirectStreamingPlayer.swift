@@ -147,6 +147,12 @@ class DirectStreamingPlayer: NSObject {
     private var selectedServer: Server = servers[0]
     private var hostnameToIP: [String: String] = [:]
     
+    #if DEBUG
+    var retryWorkItem: DispatchWorkItem? // Added to resolve undefined property
+    #else
+    private var retryWorkItem: DispatchWorkItem? // Added to resolve undefined property
+    #endif
+    
     func selectOptimalServer(completion: @escaping (Server) -> Void) {
         guard lastServerSelectionTime == nil || Date().timeIntervalSince(lastServerSelectionTime!) > 10.0 else {
             #if DEBUG
@@ -981,12 +987,7 @@ class DirectStreamingPlayer: NSObject {
                 return
             }
 
-            // Verify the stream URL matches the selected stream
-            if streamURL.absoluteString.contains(self.selectedStream.url.absoluteString) {
-                #if DEBUG
-                print("▶️ Starting playback with verified URL: \(streamURL)")
-                #endif
-            } else {
+            if !streamURL.absoluteString.contains(self.selectedStream.url.absoluteString) {
                 #if DEBUG
                 print("❌ URL mismatch: requested=\(streamURL), selectedStream=\(self.selectedStream.url)")
                 #endif
@@ -1002,31 +1003,6 @@ class DirectStreamingPlayer: NSObject {
             self.playerItem = AVPlayerItem(asset: asset)
 
             // Ensure metadataOutput is not attached to another playerItem
-            if let metadataOutput = self.metadataOutput {
-                // Check if metadataOutput is attached to the current playerItem (if it exists)
-                if let currentPlayerItem = self.playerItem, currentPlayerItem.outputs.contains(metadataOutput) {
-                    currentPlayerItem.remove(metadataOutput)
-                    #if DEBUG
-                    print("🧹 Removed metadata output from previous playerItem")
-                    #endif
-                }
-            } else {
-                // Create new metadata output if it doesn't exist
-                self.metadataOutput = AVPlayerItemMetadataOutput(identifiers: nil)
-                self.metadataOutput?.setDelegate(self, queue: .main)
-                #if DEBUG
-                print("🧹 Created new metadata output")
-                #endif
-            }
-
-            // Add metadataOutput to the new playerItem
-            if let metadataOutput = self.metadataOutput {
-                self.playerItem?.add(metadataOutput)
-                #if DEBUG
-                print("🧹 Added metadata output in startPlayback")
-                #endif
-            }
-
             if self.player == nil {
                 self.player = AVPlayer(playerItem: self.playerItem)
                 #if DEBUG
@@ -1059,6 +1035,16 @@ class DirectStreamingPlayer: NSObject {
                     #if DEBUG
                     print("✅ PlayerItem readyToPlay, starting playback for: \(self.selectedStream.language)")
                     #endif
+                    // Initialize and add metadataOutput
+                    self.metadataOutput = AVPlayerItemMetadataOutput(identifiers: nil)
+                    self.metadataOutput?.setDelegate(self, queue: .main)
+                    if let metadataOutput = self.metadataOutput {
+                        self.playerItem?.add(metadataOutput)
+                        #if DEBUG
+                        print("🧹 Added metadata output in readyToPlay")
+                        #endif
+                    }
+                    
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                         self.player?.play()
                         self.onStatusChange?(true, String(localized: "status_playing"))
@@ -1078,9 +1064,11 @@ class DirectStreamingPlayer: NSObject {
                         #if DEBUG
                         print("🔄 Transient error detected, scheduling retry")
                         #endif
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                            self.startPlayback(with: streamURL, completion: completion)
+                        let workItem = DispatchWorkItem { [weak self] in
+                            self?.startPlayback(with: streamURL, completion: completion)
                         }
+                        self.retryWorkItem = workItem
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: workItem)
                     } else {
                         DispatchQueue.main.async {
                             self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
