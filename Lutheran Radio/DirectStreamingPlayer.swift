@@ -1227,9 +1227,15 @@ class DirectStreamingPlayer: NSObject {
     #endif
     
     private func removeObserversImplementation() {
-        playbackQueue.async { [weak self] in
-            guard let self = self else { return }
-            
+        // Perform observer removal on the main thread to avoid race conditions
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else {
+                #if DEBUG
+                print("🧹 removeObserversImplementation: self is nil, skipping")
+                #endif
+                return
+            }
+
             // Invalidate status observer
             if let statusObserver = self.statusObserver {
                 statusObserver.invalidate()
@@ -1238,7 +1244,7 @@ class DirectStreamingPlayer: NSObject {
                 print("🧹 Removed status observer")
                 #endif
             }
-            
+
             // Remove time observer
             if let timeObserver = self.timeObserver, let player = self.timeObserverPlayer {
                 player.removeTimeObserver(timeObserver)
@@ -1247,8 +1253,8 @@ class DirectStreamingPlayer: NSObject {
                 #endif
             }
             self.timeObserver = nil
-            self.timeObserverPlayer = nil // Reset both to ensure clean state
-            
+            self.timeObserverPlayer = nil
+
             // Remove buffer observers
             if self.isObservingBuffer, let playerItem = self.playerItem {
                 let playerItemKey = ObjectIdentifier(playerItem)
@@ -1259,26 +1265,24 @@ class DirectStreamingPlayer: NSObject {
                     self.isObservingBuffer = false
                     return
                 }
-                
+
                 let keyPaths = [
                     "playbackBufferEmpty",
                     "playbackLikelyToKeepUp",
                     "playbackBufferFull"
                 ]
-                
-                for keyPath in keyPaths {
-                    if self.registeredKeyPaths.contains(keyPath) {
-                        playerItem.removeObserver(self, forKeyPath: keyPath)
-                        self.registeredKeyPaths.remove(keyPath)
-                        #if DEBUG
-                        print("🧹 Removed observer for \(keyPath)")
-                        #endif
-                    }
+
+                for keyPath in keyPaths where self.registeredKeyPaths.contains(keyPath) {
+                    playerItem.removeObserver(self, forKeyPath: keyPath)
+                    self.registeredKeyPaths.remove(keyPath)
+                    #if DEBUG
+                    print("🧹 Removed observer for \(keyPath)")
+                    #endif
                 }
                 self.isObservingBuffer = false
                 self.removedObservers.insert(playerItemKey)
             }
-            
+
             // Clear registered key paths
             self.registeredKeyPaths.removeAll()
         }
@@ -1325,9 +1329,10 @@ class DirectStreamingPlayer: NSObject {
                     #endif
                 }
             }
+            self.metadataOutput = nil
 
             // Remove observers
-            self.removeObservers()
+            self.removeObserversImplementation()
 
             // Clear playerItem but keep player
             self.playerItem = nil
@@ -1354,18 +1359,10 @@ class DirectStreamingPlayer: NSObject {
     
     deinit {
         stop()
-        removeObservers()
+        removeObserversImplementation()
         clearCallbacks()
         networkMonitor?.cancel()
         networkMonitor = nil
-        if let metadataOutput = metadataOutput, let playerItem = playerItem {
-            if playerItem.outputs.contains(metadataOutput) {
-                playerItem.remove(metadataOutput)
-                #if DEBUG
-                print("🧹 Removed metadata output in deinit")
-                #endif
-            }
-        }
         metadataOutput = nil
         #if DEBUG
         print("🧹 Player deinit")

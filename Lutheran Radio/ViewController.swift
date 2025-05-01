@@ -1540,15 +1540,15 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         streamSwitchTimer?.invalidate()
         streamSwitchTimer = nil
         
-        streamingPlayer.clearCallbacks()
-        streamingPlayer.stop()
-        
-        // Stop the tuning player
+        // Stop tuning player
         tuningPlayer?.stop()
         tuningPlayer = nil
         
+        // Clear streaming player callbacks and stop
+        streamingPlayer.clearCallbacks()
+        
         #if DEBUG
-        print("🎵 Tuning player stopped and released in deinit")
+        print("🧹 ViewController deinit")
         #endif
     }
 }
