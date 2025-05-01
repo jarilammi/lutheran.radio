@@ -134,4 +134,11 @@ final class Lutheran_RadioTests: XCTestCase {
         XCTAssertEqual(viewController.volumeSlider.value, 0.8, "Volume slider should reflect the updated value.")
         XCTAssertEqual(mockPlayer.volumeSet, 0.8, "Player should have received the updated volume.")
     }
+    
+    func testViewControllerDeallocation() {
+        var viewController: ViewController? = ViewController()
+        viewController?.viewDidLoad()
+        viewController = nil
+        XCTAssertNil(viewController, "ViewController should be deallocated")
+    }
 }
