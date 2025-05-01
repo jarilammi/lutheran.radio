@@ -41,6 +41,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
+				Tools/generate_tuning_sound.py,
 			);
 			target = B7AFC6AB2CCD7D0A00BDDD83 /* Lutheran Radio */;
 		};
