@@ -419,10 +419,7 @@ class MockDirectStreamingPlayerTests: XCTestCase {
     }
     
     func testInitializationSelectsLocaleStream() async {
-        guard let player = player else {
-            XCTFail("Player is nil after setup")
-            return
-        }
+        XCTAssertNotNil(player, "Player is nil after setup")
         
         let testLocale = Locale(identifier: "fi_FI")
         let languageCode = testLocale.language.languageCode?.identifier ?? "en"
@@ -452,7 +449,7 @@ class MockDirectStreamingPlayerTests: XCTestCase {
             }
         }
         
-        await player.play { success in
+        player.play { success in
             XCTAssertTrue(success, "Completion should indicate success when ready to play")
             XCTAssertTrue(player.didCallPlay, "Play method should be called")
         }
@@ -470,7 +467,7 @@ class MockDirectStreamingPlayerTests: XCTestCase {
         let expectation = XCTestExpectation(description: "Stop completes successfully")
         player.simulatedStatus = .readyToPlay
         
-        await player.play { _ in }
+        player.play { _ in }
         
         var statusStopped = false
         player.onStatusChange = { isPlaying, statusText in
@@ -480,7 +477,7 @@ class MockDirectStreamingPlayerTests: XCTestCase {
             }
         }
         
-        await player.stop()
+        player.stop()
         
         await fulfillment(of: [expectation], timeout: 5.0)
         XCTAssertTrue(player.didCallStop, "Stop method should be called")
@@ -542,7 +539,7 @@ class MockDirectStreamingPlayerTests: XCTestCase {
             }
         }
         
-        await player.play { success in
+        player.play { success in
             XCTAssertFalse(success, "Completion should indicate failure")
         }
         
@@ -557,7 +554,7 @@ class MockDirectStreamingPlayerTests: XCTestCase {
         player.simulatedValidationResult = false
         player.simulatedSecurityModels = .failure(NSError(domain: "test", code: -1, userInfo: nil))
         
-        await player.validateSecurityModelAsync { isValid in
+        player.validateSecurityModelAsync { isValid in
             XCTAssertFalse(isValid, "Validation should fail with mock failure")
             XCTAssertEqual(player.validationState, DirectStreamingPlayer.ValidationState.failedTransient, "Validation state should be failedTransient")
             expectation.fulfill()
@@ -566,7 +563,7 @@ class MockDirectStreamingPlayerTests: XCTestCase {
         await fulfillment(of: [expectation], timeout: 5.0)
         
         let cleanupExpectation = XCTestExpectation(description: "Cleanup completes")
-        await player.stop {
+        player.stop {
             player.clearCallbacks()
             player.networkMonitor?.cancel()
             cleanupExpectation.fulfill()
@@ -581,7 +578,7 @@ class MockDirectStreamingPlayerTests: XCTestCase {
         player.simulatedValidationResult = true
         player.simulatedSecurityModels = .success(["mariehamn"])
         
-        await player.validateSecurityModelAsync { isValid in
+        player.validateSecurityModelAsync { isValid in
             XCTAssertTrue(isValid, "Validation should succeed")
             XCTAssertEqual(player.validationState, DirectStreamingPlayer.ValidationState.success, "Validation state should be success")
             expectation.fulfill()
@@ -590,7 +587,7 @@ class MockDirectStreamingPlayerTests: XCTestCase {
         await fulfillment(of: [expectation], timeout: 5.0)
         
         let cleanupExpectation = XCTestExpectation(description: "Cleanup completes")
-        await player.stop {
+        player.stop {
             player.clearCallbacks()
             player.networkMonitor?.cancel()
             cleanupExpectation.fulfill()
@@ -625,7 +622,7 @@ class MockDirectStreamingPlayerTests: XCTestCase {
             }
         }
         
-        await player.validateSecurityModelAsync { isValid in
+        player.validateSecurityModelAsync { isValid in
             XCTAssertFalse(isValid, "Validation should fail")
         }
         
@@ -634,7 +631,7 @@ class MockDirectStreamingPlayerTests: XCTestCase {
         
         // Cleanup
         let cleanupExpectation = XCTestExpectation(description: "Cleanup completes")
-        await player.stop {
+        player.stop {
             player.clearCallbacks()
             player.networkMonitor?.cancel()
             cleanupExpectation.fulfill()
