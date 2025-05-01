@@ -208,6 +208,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     private var lastPlaybackAttempt: Date?
     private let minPlaybackInterval: TimeInterval = 1.0 // 1 second
     private var isDeallocating = false // Flag to prevent operations during deallocation
+    private var hasPlayedSpecialTuningSound = false // Flag to ensure special sound plays only once
     
     // Testable accessors
     @objc var isPlayingState: Bool {
@@ -267,10 +268,13 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         isInitialSetupComplete = true
         setupBackgroundParallax()
 
-        // Defer playback until after initial validation completes
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            guard let self = self, self.hasInternetConnection && !self.isManualPause else { return }
-            self.startPlayback()
+        // Play special tuning sound immediately after setup
+        playSpecialTuningSound {
+            // Defer playback until after special tuning sound completes
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                guard let self = self, self.hasInternetConnection && !self.isManualPause else { return }
+                self.startPlayback()
+            }
         }
     }
     
@@ -435,11 +439,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         alert.addAction(UIAlertAction(title: String(localized: "alert_retry"), style: .default, handler: { [weak self] _ in
             self?.streamingPlayer.resetTransientErrors()
             self?.streamingPlayer.validateSecurityModelAsync { isValid in
-                if isValid {
-                    self?.startPlayback()
-                } else {
-                    self?.showSecurityModelAlert()
-                }
+                self?.startPlayback()
             }
         }))
         alert.addAction(UIAlertAction(title: String(localized: "ok"), style: .cancel, handler: nil))
@@ -1191,6 +1191,67 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     }
     
     // MARK: - Audio Setup
+    func playSpecialTuningSound(completion: (() -> Void)? = nil) {
+        guard !hasPlayedSpecialTuningSound else {
+            #if DEBUG
+            print("🎵 Special tuning sound already played, skipping")
+            #endif
+            completion?()
+            return
+        }
+        
+        guard let tuningURL = Bundle.main.url(forResource: "special_tuning_sound", withExtension: "wav") else {
+            #if DEBUG
+            print("❌ Error: special_tuning_sound.wav not found in bundle")
+            #endif
+            completion?()
+            return
+        }
+        
+        do {
+            // Configure and activate audio session
+            let audioSession = AVAudioSession.sharedInstance()
+            try audioSession.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+            try audioSession.setActive(true)
+            #if DEBUG
+            print("🔊 Audio session activated for special tuning sound")
+            #endif
+            
+            tuningPlayer = try AVAudioPlayer(contentsOf: tuningURL)
+            tuningPlayer?.delegate = self
+            tuningPlayer?.volume = 1.0 // Full volume for audibility
+            tuningPlayer?.numberOfLoops = 0
+            tuningPlayer?.prepareToPlay()
+            let didPlay = tuningPlayer?.play() ?? false
+            isTuningSoundPlaying = didPlay
+            hasPlayedSpecialTuningSound = true // Mark as played
+            #if DEBUG
+            if didPlay {
+                print("🎵 Special tuning sound started playing")
+            } else {
+                print("❌ Failed to start special tuning sound")
+            }
+            #endif
+            if didPlay {
+                // Call completion after sound duration (2 seconds)
+                DispatchQueue.main.asyncAfter(deadline: .now() + (tuningPlayer?.duration ?? 2.0)) {
+                    #if DEBUG
+                    print("🎵 Special tuning sound should have finished")
+                    #endif
+                    completion?()
+                }
+            } else {
+                completion?()
+            }
+        } catch {
+            #if DEBUG
+            print("❌ Error loading special tuning sound: \(error.localizedDescription)")
+            #endif
+            completion?()
+            return
+        }
+    }
+    
     func playTuningSound(completion: (() -> Void)? = nil) {
         let now = Date()
         if let lastTime = lastTuningSoundTime, now.timeIntervalSince(lastTime) < 1.0 {
