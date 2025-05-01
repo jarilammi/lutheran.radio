@@ -86,3 +86,6 @@ DerivedData/     # More comprehensive than just xcuserdata
 .DS_Store        # macOS specific
 *.swp            # Vim temporary files
 *~.nib           # Interface builder temporary files
+
+# Generated tuning sound files
+Lutheran Radio/Tools/*.wav
