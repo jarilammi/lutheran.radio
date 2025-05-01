@@ -1002,6 +1002,16 @@ class DirectStreamingPlayer: NSObject {
             asset.resourceLoader.setDelegate(self, queue: DispatchQueue.main)
             self.playerItem = AVPlayerItem(asset: asset)
 
+            // Check for invalid playerItem status
+            if self.playerItem?.status.rawValue ?? -1 < 0 {
+                #if DEBUG
+                print("❌ Invalid playerItem status on initialization, possible Core Audio component issue")
+                #endif
+                self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
+                completion(false)
+                return
+            }
+
             // Ensure metadataOutput is not attached to another playerItem
             if self.player == nil {
                 self.player = AVPlayer(playerItem: self.playerItem)
@@ -1164,7 +1174,7 @@ class DirectStreamingPlayer: NSObject {
             }
             
             let interval = CMTime(seconds: 1.0, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
-            if let player = self.player {
+            if let player = self.player, self.timeObserver == nil { // Check to avoid duplicate observers
                 self.timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] _ in
                     guard let self = self, self.delegate != nil else { return }
                     if self.player?.rate ?? 0 > 0 {
@@ -1217,9 +1227,15 @@ class DirectStreamingPlayer: NSObject {
     #endif
     
     private func removeObserversImplementation() {
-        playbackQueue.async { [weak self] in
-            guard let self = self else { return }
-            
+        // Perform observer removal on the main thread to avoid race conditions
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else {
+                #if DEBUG
+                print("🧹 removeObserversImplementation: self is nil, skipping")
+                #endif
+                return
+            }
+
             // Invalidate status observer
             if let statusObserver = self.statusObserver {
                 statusObserver.invalidate()
@@ -1228,17 +1244,17 @@ class DirectStreamingPlayer: NSObject {
                 print("🧹 Removed status observer")
                 #endif
             }
-            
+
             // Remove time observer
             if let timeObserver = self.timeObserver, let player = self.timeObserverPlayer {
                 player.removeTimeObserver(timeObserver)
-                self.timeObserver = nil
-                self.timeObserverPlayer = nil
                 #if DEBUG
                 print("🧹 Removed time observer")
                 #endif
             }
-            
+            self.timeObserver = nil
+            self.timeObserverPlayer = nil
+
             // Remove buffer observers
             if self.isObservingBuffer, let playerItem = self.playerItem {
                 let playerItemKey = ObjectIdentifier(playerItem)
@@ -1249,26 +1265,24 @@ class DirectStreamingPlayer: NSObject {
                     self.isObservingBuffer = false
                     return
                 }
-                
+
                 let keyPaths = [
                     "playbackBufferEmpty",
                     "playbackLikelyToKeepUp",
                     "playbackBufferFull"
                 ]
-                
-                for keyPath in keyPaths {
-                    if self.registeredKeyPaths.contains(keyPath) {
-                        playerItem.removeObserver(self, forKeyPath: keyPath)
-                        self.registeredKeyPaths.remove(keyPath)
-                        #if DEBUG
-                        print("🧹 Removed observer for \(keyPath)")
-                        #endif
-                    }
+
+                for keyPath in keyPaths where self.registeredKeyPaths.contains(keyPath) {
+                    playerItem.removeObserver(self, forKeyPath: keyPath)
+                    self.registeredKeyPaths.remove(keyPath)
+                    #if DEBUG
+                    print("🧹 Removed observer for \(keyPath)")
+                    #endif
                 }
                 self.isObservingBuffer = false
                 self.removedObservers.insert(playerItemKey)
             }
-            
+
             // Clear registered key paths
             self.registeredKeyPaths.removeAll()
         }
@@ -1284,6 +1298,18 @@ class DirectStreamingPlayer: NSObject {
             print("🛑 Stopping playback")
             #endif
 
+            // Only proceed if there's an active player or playerItem
+            guard self.player != nil || self.playerItem != nil else {
+                DispatchQueue.main.async {
+                    self.onStatusChange?(false, String(localized: "status_stopped"))
+                    completion?()
+                }
+                #if DEBUG
+                print("🛑 Playback already stopped, skipping cleanup")
+                #endif
+                return
+            }
+
             // Pause and reset player
             self.player?.pause()
             self.player?.rate = 0.0
@@ -1294,7 +1320,7 @@ class DirectStreamingPlayer: NSObject {
             }
             self.activeResourceLoaders.removeAll()
 
-            // Remove metadata output from current playerItem
+            // Remove metadata output
             if let metadataOutput = self.metadataOutput, let playerItem = self.playerItem {
                 if playerItem.outputs.contains(metadataOutput) {
                     playerItem.remove(metadataOutput)
@@ -1303,11 +1329,12 @@ class DirectStreamingPlayer: NSObject {
                     #endif
                 }
             }
+            self.metadataOutput = nil
 
             // Remove observers
-            self.removeObservers()
+            self.removeObserversImplementation()
 
-            // Clear playerItem
+            // Clear playerItem but keep player
             self.playerItem = nil
             self.removedObservers.removeAll()
 
@@ -1319,7 +1346,7 @@ class DirectStreamingPlayer: NSObject {
             self.stopBufferingTimer()
 
             #if DEBUG
-            print("🛑 Playback stopped, player and resource loaders cleared")
+            print("🛑 Playback stopped, playerItem and resource loaders cleared")
             #endif
         }
     }
@@ -1332,18 +1359,10 @@ class DirectStreamingPlayer: NSObject {
     
     deinit {
         stop()
-        removeObservers()
+        removeObserversImplementation()
         clearCallbacks()
         networkMonitor?.cancel()
         networkMonitor = nil
-        if let metadataOutput = metadataOutput, let playerItem = playerItem {
-            if playerItem.outputs.contains(metadataOutput) {
-                playerItem.remove(metadataOutput)
-                #if DEBUG
-                print("🧹 Removed metadata output in deinit")
-                #endif
-            }
-        }
         metadataOutput = nil
         #if DEBUG
         print("🧹 Player deinit")

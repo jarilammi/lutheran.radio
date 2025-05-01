@@ -43,7 +43,7 @@ extension UIView {
     }
 }
 
-class ViewController: UIViewController, UICollectionViewDelegate, UICollectionViewDataSource, UIScrollViewDelegate {
+class ViewController: UIViewController, UICollectionViewDelegate, UICollectionViewDataSource, UIScrollViewDelegate, AVAudioPlayerDelegate {
     let titleLabel: UILabel = {
         let label = UILabel()
         label.text = String(localized: "lutheran_radio_title")
@@ -196,11 +196,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     private var lastConnectionAttemptTime: Date?
     private var didInitialLayout = false
     private var didPositionNeedle = false
-    private let audioEngine = AVAudioEngine()
-    private var tuningPlayerNode: AVAudioPlayerNode?
-    private var tuningBuffer: AVAudioPCMBuffer?
-    private static var cachedTuningBuffer: AVAudioPCMBuffer?
     private var isTuningSoundPlaying = false
+    private var tuningPlayer: AVAudioPlayer?
+    private var lastTuningSoundTime: Date?
     private var streamSwitchTimer: Timer?
     private var streamSwitchWorkItem: DispatchWorkItem?
     private var lastStreamSwitchTime: Date?
@@ -226,6 +224,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
         
+        configureAudioSession() // Configure audio session
         setupUI()
         languageCollectionView.delegate = self
         languageCollectionView.dataSource = self
@@ -257,7 +256,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         setupInterruptionHandling()
         setupRouteChangeHandling()
         setupStreamingCallbacks()
-        setupAudioEngine()
+        
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(handleMemoryWarning),
@@ -300,6 +299,21 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         // Remove notification observers early to prevent them from firing during deallocation
         NotificationCenter.default.removeObserver(self, name: AVAudioSession.interruptionNotification, object: nil)
         NotificationCenter.default.removeObserver(self, name: AVAudioSession.routeChangeNotification, object: nil)
+    }
+    
+    private func configureAudioSession() {
+        do {
+            let audioSession = AVAudioSession.sharedInstance()
+            try audioSession.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+            try audioSession.setActive(true)
+            #if DEBUG
+            print("🔊 Audio session configured for playback")
+            #endif
+        } catch {
+            #if DEBUG
+            print("❌ Failed to configure audio session: \(error.localizedDescription)")
+            #endif
+        }
     }
     
     private func setupStreamingCallbacks() {
@@ -532,7 +546,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                     self.stopPlayback()
                     self.updateUIForNoInternet()
                     self.isManualPause = self.isManualPause && !wasPlayingBeforeDisconnect
-                    self.audioEngine.pause()
                 }
             }
         }
@@ -572,6 +585,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         switch type {
         case .began:
             if isPlaying { stopPlayback() }
+            stopTuningSound() // Stop tuning sound during interruption
         case .ended:
             guard let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt else { return }
             let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
@@ -764,6 +778,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             return
         }
 
+        // Stop tuning sound to avoid conflicts
+        stopTuningSound()
+
         // Cancel any pending playback
         pendingPlaybackWorkItem?.cancel()
         let workItem = DispatchWorkItem { [weak self] in
@@ -882,6 +899,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     }
     
     private func pausePlayback() {
+        #if DEBUG
+        print("📱 pausePlayback called from: \(Thread.callStackSymbols[1])")
+        #endif
         isManualPause = true
         streamingPlayer.stop()
         statusLabel.text = String(localized: "status_paused")
@@ -893,12 +913,18 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     }
     
     private func stopPlayback() {
+        #if DEBUG
+        print("📱 stopPlayback called from: \(Thread.callStackSymbols[1])")
+        #endif
         streamingPlayer.stop()
         isPlaying = false
         updatePlayPauseButton(isPlaying: false)
     }
     
     @objc func playPauseTapped() {
+        #if DEBUG
+        print("📱 playPauseTapped called from: \(Thread.callStackSymbols[1])")
+        #endif
         let generator = UIImpactFeedbackGenerator(style: .medium)
         generator.impactOccurred()
         UIView.animate(withDuration: 0.1, animations: {
@@ -1160,181 +1186,88 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     @objc private func handleMemoryWarning() {
         #if DEBUG
-        print("🧹 Clearing cached tuning buffer due to memory warning")
+        print("🧹 Received memory warning")
         #endif
-        Self.cachedTuningBuffer = nil
     }
     
     // MARK: - Audio Setup
-    private func setupAudioEngine() {
-        // Check for cached buffer first
-        if let cachedBuffer = Self.cachedTuningBuffer {
+    func playTuningSound(completion: (() -> Void)? = nil) {
+        let now = Date()
+        if let lastTime = lastTuningSoundTime, now.timeIntervalSince(lastTime) < 1.0 {
             #if DEBUG
-            print("🎵 Using cached tuning buffer")
+            print("🎵 Skipping tuning sound: Debouncing, time since last: \(now.timeIntervalSince(lastTime))s")
             #endif
-            tuningBuffer = cachedBuffer
+            completion?()
+            return
+        }
+        lastTuningSoundTime = now
+        
+        let soundIndex = Int.random(in: 1...3)
+        guard let tuningURL = Bundle.main.url(forResource: "tuning_sound_\(soundIndex)", withExtension: "wav") else {
+            #if DEBUG
+            print("❌ Error: tuning_sound_\(soundIndex).wav not found in bundle")
+            #endif
+            completion?()
             return
         }
         
-        #if DEBUG
-        print("🎵 Generating new tuning buffer")
-        #endif
-        
-        let mainMixer = audioEngine.mainMixerNode
-        mainMixer.volume = 1.0
-        
-        // Pre-generate tuning sound buffer with shortwave-like effect
-        let format = AVAudioFormat(standardFormatWithSampleRate: 22050, channels: 1)! // Mono, 22.05kHz
-        let duration: Float = 0.5 // 0.5 seconds total duration
-        let frameCount = AVAudioFrameCount(Double(duration) * format.sampleRate)
-        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount) else {
+        do {
+            // Configure and activate audio session
+            let audioSession = AVAudioSession.sharedInstance()
+            try audioSession.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+            try audioSession.setActive(true)
             #if DEBUG
-            print("🎵 Failed to create tuning buffer")
+            print("🔊 Audio session activated for tuning sound")
             #endif
-            return
-        }
-        buffer.frameLength = frameCount
-        
-        let sampleRate = Float(format.sampleRate)
-        let amplitude = Float(0.1)
-        guard let audioBuffer = buffer.floatChannelData?.pointee else {
-            #if DEBUG
-            print("🎵 Failed to access audio buffer data")
-            #endif
-            return
-        }
-        
-        // Divide the buffer into short segments (e.g., 0.012 seconds each) with random frequencies
-        let segmentDuration: Float = 0.012 // 12ms segments
-        let framesPerSegment = Int(segmentDuration * sampleRate)
-        let totalSegments = Int(frameCount) / framesPerSegment
-        
-        for segment in 0..<totalSegments {
-            let startFrame = segment * framesPerSegment
-            let endFrame = min(startFrame + framesPerSegment, Int(frameCount))
-            let frequency = Float.random(in: 500...1500) // Random frequency per segment
             
-            for frame in startFrame..<endFrame {
-                let time = Float(frame) / sampleRate
-                let noise = Float.random(in: -0.05...0.05)
-                let value = sinf(2.0 * .pi * frequency * time) * amplitude + noise
-                audioBuffer[frame] = value
-            }
-        }
-        
-        // Fill any remaining frames
-        let lastSegmentEnd = totalSegments * framesPerSegment
-        if lastSegmentEnd < Int(frameCount) {
-            let frequency = Float.random(in: 500...1500)
-            for frame in lastSegmentEnd..<Int(frameCount) {
-                let time = Float(frame) / sampleRate
-                let noise = Float.random(in: -0.05...0.05)
-                let value = sinf(2.0 * .pi * frequency * time) * amplitude + noise
-                audioBuffer[frame] = value
-            }
-        }
-        
-        // Cache and assign buffer
-        Self.cachedTuningBuffer = buffer
-        tuningBuffer = buffer
-        
-        #if DEBUG
-        print("🎵 Cached tuning buffer for future use")
-        print("🎵 Setting up audio engine - current state: isRunning=\(audioEngine.isRunning)")
-        #endif
-    }
-    
-    private func playTuningSound() {
-        guard let buffer = tuningBuffer, hasInternetConnection, !isTuningSoundPlaying else {
+            tuningPlayer = try AVAudioPlayer(contentsOf: tuningURL)
+            tuningPlayer?.delegate = self
+            tuningPlayer?.volume = 1.0 // Full volume for audibility
+            tuningPlayer?.numberOfLoops = 0
+            tuningPlayer?.prepareToPlay()
+            let didPlay = tuningPlayer?.play() ?? false
+            isTuningSoundPlaying = didPlay
             #if DEBUG
-            print("🎵 Skipping tuning sound: buffer=\(tuningBuffer != nil ? "present" : "nil"), hasInternetConnection=\(hasInternetConnection), isTuningSoundPlaying=\(isTuningSoundPlaying)")
-            #endif
-            return
-        }
-        
-        audioQueue.async { [weak self] in
-            guard let self = self else {
-                #if DEBUG
-                print("🎵 playTuningSound: ViewController is nil, skipping")
-                #endif
-                return
+            if didPlay {
+                print("🎵 Tuning sound \(soundIndex) started playing")
+            } else {
+                print("❌ Failed to start tuning sound \(soundIndex)")
             }
-            
-            // Stop streaming player to avoid conflicts
-            self.streamingPlayer.stop()
-            
-            // Prepare audio engine
-            if !audioEngine.isRunning {
-                do {
-                    try audioEngine.start()
+            #endif
+            if didPlay {
+                // Call completion after sound duration
+                DispatchQueue.main.asyncAfter(deadline: .now() + (tuningPlayer?.duration ?? 1.0)) {
                     #if DEBUG
-                    print("🎵 Audio engine started successfully")
+                    print("🎵 Tuning sound \(soundIndex) should have finished")
                     #endif
-                } catch {
-                    #if DEBUG
-                    print("🎵 Failed to start audio engine: \(error.localizedDescription)")
-                    #endif
-                    if self.isPlaying && !self.isManualPause {
-                        self.streamingPlayer.play { _ in }
-                    }
-                    return
+                    completion?()
                 }
             } else {
-                #if DEBUG
-                print("🎵 Audio engine already running")
-                #endif
+                completion?()
             }
-            
-            // Create or reuse player node
-            if tuningPlayerNode == nil {
-                let node = AVAudioPlayerNode()
-                audioEngine.attach(node)
-                audioEngine.connect(node, to: audioEngine.mainMixerNode, format: buffer.format)
-                tuningPlayerNode = node
-                #if DEBUG
-                print("🎵 Created and connected new tuning player node")
-                #endif
-            }
-            
-            guard let playerNode = tuningPlayerNode else {
-                #if DEBUG
-                print("🎵 Tuning player node is nil, aborting")
-                #endif
-                if self.isPlaying && !self.isManualPause {
-                    self.streamingPlayer.play { _ in }
-                }
-                return
-            }
-            
+        } catch {
             #if DEBUG
-            print("🎵 Scheduling cached tuning buffer")
+            print("❌ Error loading tuning sound \(soundIndex): \(error.localizedDescription)")
             #endif
-            
-            playerNode.volume = 0.5
-            playerNode.scheduleBuffer(buffer, completionHandler: { [weak self] in
-                guard let self = self else { return }
-                self.stopTuningSound()
-                #if DEBUG
-                print("🎵 Tuning sound completed")
-                #endif
-                // Resume playback if stream was playing
-                if self.isPlaying && !self.isManualPause {
-                    self.streamingPlayer.play { success in
-                        if success {
-                            self.streamingPlayer.onStatusChange?(true, String(localized: "status_playing"))
-                        } else {
-                            self.streamingPlayer.onStatusChange?(false, String(localized: "status_stream_unavailable"))
-                        }
-                    }
-                }
-            })
-            
-            playerNode.play()
-            isTuningSoundPlaying = true
-            #if DEBUG
-            print("🎵 Tuning sound started")
-            #endif
+            completion?()
+            return
         }
+    }
+    
+    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        #if DEBUG
+        print("🎵 Tuning sound finished playing, success: \(flag)")
+        #endif
+        isTuningSoundPlaying = false
+        tuningPlayer = nil
+    }
+    
+    func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
+        #if DEBUG
+        print("❌ Tuning sound decode error: \(error?.localizedDescription ?? "Unknown")")
+        #endif
+        isTuningSoundPlaying = false
+        tuningPlayer = nil
     }
     
     private func stopTuningSound() {
@@ -1346,26 +1279,17 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 return
             }
             
-            // Stop the tuning player node
-            if let playerNode = tuningPlayerNode {
-                playerNode.stop()
+            // Stop the AVAudioPlayer
+            if self.tuningPlayer?.isPlaying == true {
+                self.tuningPlayer?.stop()
                 #if DEBUG
-                print("🎵 Tuning player node stopped")
+                print("🎵 Tuning sound stopped via AVAudioPlayer")
                 #endif
             }
             
-            // Stop the audio engine
-            if audioEngine.isRunning {
-                audioEngine.stop()
-                audioEngine.reset()
-                #if DEBUG
-                print("🎵 Audio engine stopped and reset")
-                #endif
-            }
-            
-            isTuningSoundPlaying = false
+            self.isTuningSoundPlaying = false
             #if DEBUG
-            print("🎵 Tuning sound stopped, isTuningSoundPlaying set to false")
+            print("🎵 isTuningSoundPlaying set to false")
             #endif
         }
     }
@@ -1509,9 +1433,14 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     func pickerView(_ pickerView: UIPickerView, didSelectRow row: Int, inComponent component: Int) {
         let selectedStream = DirectStreamingPlayer.availableStreams[row]
-        streamingPlayer.setStream(to: selectedStream)
-        hasPermanentPlaybackError = false
-        if isPlaying || !isManualPause { startPlayback() }
+        streamingPlayer.stop { [weak self] in
+            guard let self = self else { return }
+            self.playTuningSound {
+                self.streamingPlayer.setStream(to: selectedStream)
+                self.hasPermanentPlaybackError = false
+                if self.isPlaying || !self.isManualPause { self.startPlayback() }
+            }
+        }
     }
     
     // MARK: - UICollectionView DataSource
@@ -1547,17 +1476,43 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             guard let self = self else { return }
             let stream = DirectStreamingPlayer.availableStreams[indexPath.item]
             updateBackground(for: stream)
-            playTuningSound() // Play tuning sound immediately
-            streamingPlayer.resetTransientErrors()
-            streamingPlayer.setStream(to: stream)
-            hasPermanentPlaybackError = false
-            selectedStreamIndex = indexPath.item
-            if isPlaying || !isManualPause { startPlayback() }
-            updateSelectionIndicator(to: indexPath.item)
-            collectionView.scrollToItem(at: indexPath, at: .centeredHorizontally, animated: true)
+            
+            // Wait for tuning sound to complete if playing
+            if self.isTuningSoundPlaying {
+                #if DEBUG
+                print("📱 collectionView:didSelectItemAt: Waiting for tuning sound to complete")
+                #endif
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+                    guard let self = self else { return }
+                    self.completeStreamSwitch(stream: stream, index: indexPath.item)
+                }
+            } else {
+                self.completeStreamSwitch(stream: stream, index: indexPath.item)
+            }
         }
         streamSwitchWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: workItem)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: workItem) // Reduced delay for responsiveness
+    }
+    
+    private func completeStreamSwitch(stream: DirectStreamingPlayer.Stream, index: Int) {
+        streamingPlayer.stop { [weak self] in
+            guard let self = self else { return }
+            self.playTuningSound { [weak self] in
+                guard let self = self else { return }
+                self.streamingPlayer.resetTransientErrors()
+                self.streamingPlayer.setStream(to: stream)
+                self.hasPermanentPlaybackError = false
+                self.selectedStreamIndex = index
+                if self.isPlaying || !self.isManualPause {
+                    self.startPlayback()
+                }
+                self.updateSelectionIndicator(to: index)
+                self.languageCollectionView.scrollToItem(at: IndexPath(item: index, section: 0), at: .centeredHorizontally, animated: true)
+                #if DEBUG
+                print("📱 completeStreamSwitch: Switched to stream \(stream.language), index=\(index)")
+                #endif
+            }
+        }
     }
     
     // MARK: - UICollectionViewDelegateFlowLayout
@@ -1585,19 +1540,16 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         streamSwitchTimer?.invalidate()
         streamSwitchTimer = nil
         
-        streamingPlayer.clearCallbacks()
-        streamingPlayer.stop()
+        // Stop tuning player
+        tuningPlayer?.stop()
+        tuningPlayer = nil
         
-        if audioEngine.isRunning {
-            audioEngine.stop()
-            #if DEBUG
-            print("🎵 Audio engine stopped in deinit")
-            #endif
-        }
-        if let node = tuningPlayerNode {
-            audioEngine.detach(node)
-            tuningPlayerNode = nil
-        }
+        // Clear streaming player callbacks and stop
+        streamingPlayer.clearCallbacks()
+        
+        #if DEBUG
+        print("🧹 ViewController deinit")
+        #endif
     }
 }
 
@@ -1617,13 +1569,17 @@ extension ViewController {
             languageCollectionView.selectItem(at: indexPath, animated: false, scrollPosition: [])
             let generator = UIImpactFeedbackGenerator(style: .light)
             generator.impactOccurred()
-            playTuningSound()
             let selectedStream = DirectStreamingPlayer.availableStreams[indexPath.item]
-            streamingPlayer.setStream(to: selectedStream)
-            hasPermanentPlaybackError = false
-            selectedStreamIndex = indexPath.item
-            if isPlaying || !isManualPause { startPlayback() }
-            updateSelectionIndicator(to: indexPath.item)
+            streamingPlayer.stop { [weak self] in
+                guard let self = self else { return }
+                self.playTuningSound {
+                    self.streamingPlayer.setStream(to: selectedStream)
+                    self.hasPermanentPlaybackError = false
+                    self.selectedStreamIndex = indexPath.item
+                    if self.isPlaying || !self.isManualPause { self.startPlayback() }
+                    self.updateSelectionIndicator(to: indexPath.item)
+                }
+            }
             #if DEBUG
             print("📱 scrollViewWillEndDragging: Scroll ended at index \(indexPath.item), centered at \(centerX)")
             #endif
@@ -1638,38 +1594,37 @@ extension ViewController {
             return
         }
         let centerX = languageCollectionView.bounds.midX + languageCollectionView.contentOffset.x
-        var closestCell: UICollectionViewCell?
-        var closestDistance: CGFloat = CGFloat.greatestFiniteMagnitude
         var closestIndex = 0
+        var closestDistance: CGFloat = CGFloat.greatestFiniteMagnitude
         for i in 0..<DirectStreamingPlayer.availableStreams.count {
             if let cell = languageCollectionView.cellForItem(at: IndexPath(item: i, section: 0)) {
                 let cellCenterX = cell.frame.midX
                 let distance = abs(centerX - cellCenterX)
                 if distance < closestDistance {
                     closestDistance = distance
-                    closestCell = cell
                     closestIndex = i
                 }
             }
         }
-        if closestCell != nil {
-            let indexPath = IndexPath(item: closestIndex, section: 0)
-            let stream = DirectStreamingPlayer.availableStreams[closestIndex]
-            updateBackground(for: stream)
-            languageCollectionView.selectItem(at: indexPath, animated: true, scrollPosition: .centeredHorizontally)
-            let generator = UIImpactFeedbackGenerator(style: .light)
-            generator.impactOccurred()
-            playTuningSound()
-            updateSelectionIndicator(to: closestIndex)
-            let selectedStream = DirectStreamingPlayer.availableStreams[closestIndex]
-            streamingPlayer.setStream(to: selectedStream)
-            hasPermanentPlaybackError = false
-            selectedStreamIndex = closestIndex
-            if isPlaying || !isManualPause { startPlayback() }
-            #if DEBUG
-            print("📱 scrollViewDidEndDecelerating: Selected closest index \(closestIndex), centerX=\(centerX)")
-            #endif
+        let indexPath = IndexPath(item: closestIndex, section: 0)
+        let stream = DirectStreamingPlayer.availableStreams[closestIndex]
+        updateBackground(for: stream)
+        languageCollectionView.selectItem(at: indexPath, animated: true, scrollPosition: .centeredHorizontally)
+        let generator = UIImpactFeedbackGenerator(style: .light)
+        generator.impactOccurred()
+        streamingPlayer.stop { [weak self] in
+            guard let self = self else { return }
+            self.playTuningSound {
+                self.streamingPlayer.setStream(to: stream)
+                self.hasPermanentPlaybackError = false
+                self.selectedStreamIndex = closestIndex
+                if self.isPlaying || !self.isManualPause { self.startPlayback() }
+                self.updateSelectionIndicator(to: closestIndex)
+            }
         }
+        #if DEBUG
+        print("📱 scrollViewDidEndDecelerating: Selected closest index \(closestIndex), centerX=\(centerX)")
+        #endif
     }
     
     func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
