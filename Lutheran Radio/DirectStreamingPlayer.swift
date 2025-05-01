@@ -1002,6 +1002,16 @@ class DirectStreamingPlayer: NSObject {
             asset.resourceLoader.setDelegate(self, queue: DispatchQueue.main)
             self.playerItem = AVPlayerItem(asset: asset)
 
+            // Check for invalid playerItem status
+            if self.playerItem?.status.rawValue ?? -1 < 0 {
+                #if DEBUG
+                print("❌ Invalid playerItem status on initialization, possible Core Audio component issue")
+                #endif
+                self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
+                completion(false)
+                return
+            }
+
             // Ensure metadataOutput is not attached to another playerItem
             if self.player == nil {
                 self.player = AVPlayer(playerItem: self.playerItem)
@@ -1164,7 +1174,7 @@ class DirectStreamingPlayer: NSObject {
             }
             
             let interval = CMTime(seconds: 1.0, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
-            if let player = self.player {
+            if let player = self.player, self.timeObserver == nil { // Check to avoid duplicate observers
                 self.timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] _ in
                     guard let self = self, self.delegate != nil else { return }
                     if self.player?.rate ?? 0 > 0 {
@@ -1232,12 +1242,12 @@ class DirectStreamingPlayer: NSObject {
             // Remove time observer
             if let timeObserver = self.timeObserver, let player = self.timeObserverPlayer {
                 player.removeTimeObserver(timeObserver)
-                self.timeObserver = nil
-                self.timeObserverPlayer = nil
                 #if DEBUG
                 print("🧹 Removed time observer")
                 #endif
             }
+            self.timeObserver = nil
+            self.timeObserverPlayer = nil // Reset both to ensure clean state
             
             // Remove buffer observers
             if self.isObservingBuffer, let playerItem = self.playerItem {
@@ -1284,6 +1294,18 @@ class DirectStreamingPlayer: NSObject {
             print("🛑 Stopping playback")
             #endif
 
+            // Only proceed if there's an active player or playerItem
+            guard self.player != nil || self.playerItem != nil else {
+                DispatchQueue.main.async {
+                    self.onStatusChange?(false, String(localized: "status_stopped"))
+                    completion?()
+                }
+                #if DEBUG
+                print("🛑 Playback already stopped, skipping cleanup")
+                #endif
+                return
+            }
+
             // Pause and reset player
             self.player?.pause()
             self.player?.rate = 0.0
@@ -1294,7 +1316,7 @@ class DirectStreamingPlayer: NSObject {
             }
             self.activeResourceLoaders.removeAll()
 
-            // Remove metadata output from current playerItem
+            // Remove metadata output
             if let metadataOutput = self.metadataOutput, let playerItem = self.playerItem {
                 if playerItem.outputs.contains(metadataOutput) {
                     playerItem.remove(metadataOutput)
@@ -1307,7 +1329,7 @@ class DirectStreamingPlayer: NSObject {
             // Remove observers
             self.removeObservers()
 
-            // Clear playerItem
+            // Clear playerItem but keep player
             self.playerItem = nil
             self.removedObservers.removeAll()
 
@@ -1319,7 +1341,7 @@ class DirectStreamingPlayer: NSObject {
             self.stopBufferingTimer()
 
             #if DEBUG
-            print("🛑 Playback stopped, player and resource loaders cleared")
+            print("🛑 Playback stopped, playerItem and resource loaders cleared")
             #endif
         }
     }
