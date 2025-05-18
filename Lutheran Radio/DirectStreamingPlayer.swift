@@ -250,7 +250,7 @@ class DirectStreamingPlayer: NSObject {
     #endif
     var hasPermanentError: Bool = false
     private var statusObserver: NSKeyValueObservation?
-    private var registeredKeyPaths: Set<String> = [] // Track registered observer key paths
+    private var registeredKeyPaths: [ObjectIdentifier: Set<String>] = [:]
     private var removedObservers: Set<ObjectIdentifier> = []
     #if DEBUG
     var isSwitchingStream = false // Track ongoing stream switches (testing)
@@ -1124,10 +1124,18 @@ class DirectStreamingPlayer: NSObject {
         playbackQueue.async { [weak self] in
             guard let self = self else { return }
             
-            // Remove existing observers first
-            self.removeObservers()
+            // Remove existing observers for the current playerItem
+            if let currentPlayerItem = self.playerItem {
+                self.removeObservers(for: currentPlayerItem)
+            }
             
-            self.statusObserver = self.playerItem?.observe(\.status, options: [.new, .initial]) { [weak self] item, _ in
+            guard let playerItem = self.playerItem else { return }
+            
+            let playerItemKey = ObjectIdentifier(playerItem)
+            var keyPathsSet = self.registeredKeyPaths[playerItemKey] ?? Set<String>()
+            
+            // Add status observer
+            self.statusObserver = playerItem.observe(\.status, options: [.new, .initial]) { [weak self] item, _ in
                 guard let self = self else { return }
                 DispatchQueue.main.async {
                     #if DEBUG
@@ -1151,27 +1159,26 @@ class DirectStreamingPlayer: NSObject {
                 }
             }
             #if DEBUG
-            print("🧹 Added status observer")
+            print("🧹 Added status observer for playerItem \(playerItemKey)")
             #endif
             
-            if let playerItem = self.playerItem {
-                let keyPaths = [
-                    "playbackBufferEmpty",
-                    "playbackLikelyToKeepUp",
-                    "playbackBufferFull"
-                ]
-                for keyPath in keyPaths {
-                    playerItem.addObserver(self, forKeyPath: keyPath, options: .new, context: nil)
-                    self.registeredKeyPaths.insert(keyPath)
-                    #if DEBUG
-                    print("🧹 Added observer for \(keyPath)")
-                    #endif
-                }
-                self.isObservingBuffer = true
+            let keyPaths = [
+                "playbackBufferEmpty",
+                "playbackLikelyToKeepUp",
+                "playbackBufferFull"
+            ]
+            for keyPath in keyPaths {
+                playerItem.addObserver(self, forKeyPath: keyPath, options: .new, context: nil)
+                keyPathsSet.insert(keyPath)
                 #if DEBUG
-                print("🧹 Added buffer observers for playbackBufferEmpty, playbackLikelyToKeepUp, playbackBufferFull")
+                print("🧹 Added observer for \(keyPath) to playerItem \(playerItemKey)")
                 #endif
             }
+            self.registeredKeyPaths[playerItemKey] = keyPathsSet
+            self.isObservingBuffer = true
+            #if DEBUG
+            print("🧹 Added buffer observers for playbackBufferEmpty, playbackLikelyToKeepUp, playbackBufferFull")
+            #endif
             
             let interval = CMTime(seconds: 1.0, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
             if let player = self.player, self.timeObserver == nil { // Check to avoid duplicate observers
@@ -1186,6 +1193,45 @@ class DirectStreamingPlayer: NSObject {
                 print("🧹 Added time observer")
                 #endif
             }
+        }
+    }
+    
+    // Add new methods for observer removal
+    func removeObservers(for playerItem: AVPlayerItem?) {
+        guard let playerItem = playerItem else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.removeObserversFrom(playerItem)
+        }
+    }
+
+    private func removeObserversFrom(_ playerItem: AVPlayerItem) {
+        let playerItemKey = ObjectIdentifier(playerItem)
+        
+        // Remove status observer if it's for this playerItem
+        if let statusObserver = self.statusObserver {
+            statusObserver.invalidate()
+            self.statusObserver = nil
+            #if DEBUG
+            print("🧹 Removed status observer for playerItem \(playerItemKey)")
+            #endif
+        }
+        
+        // Remove buffer observers
+        if let keyPathsSet = self.registeredKeyPaths[playerItemKey] {
+            for keyPath in keyPathsSet {
+                do {
+                    playerItem.removeObserver(self, forKeyPath: keyPath)
+                    #if DEBUG
+                    print("🧹 Removed observer for \(keyPath) from playerItem \(playerItemKey)")
+                    #endif
+                } catch {
+                    #if DEBUG
+                    print("🧹 Error removing observer for \(keyPath): \(error)")
+                    #endif
+                }
+            }
+            self.registeredKeyPaths.removeValue(forKey: playerItemKey)
         }
     }
     
@@ -1265,22 +1311,26 @@ class DirectStreamingPlayer: NSObject {
                     self.isObservingBuffer = false
                     return
                 }
-
+                
                 let keyPaths = [
                     "playbackBufferEmpty",
                     "playbackLikelyToKeepUp",
                     "playbackBufferFull"
                 ]
-
-                for keyPath in keyPaths where self.registeredKeyPaths.contains(keyPath) {
-                    playerItem.removeObserver(self, forKeyPath: keyPath)
-                    self.registeredKeyPaths.remove(keyPath)
-                    #if DEBUG
-                    print("🧹 Removed observer for \(keyPath)")
-                    #endif
+                
+                if var keyPathsSet = self.registeredKeyPaths[playerItemKey] {
+                    for keyPath in keyPaths where keyPathsSet.contains(keyPath) {
+                        playerItem.removeObserver(self, forKeyPath: keyPath)
+                        keyPathsSet.remove(keyPath)
+                        #if DEBUG
+                        print("🧹 Removed observer for \(keyPath)")
+                        #endif
+                    }
+                    
+                    self.registeredKeyPaths[playerItemKey] = keyPathsSet.isEmpty ? nil : keyPathsSet
+                    self.isObservingBuffer = false
+                    self.removedObservers.insert(playerItemKey)
                 }
-                self.isObservingBuffer = false
-                self.removedObservers.insert(playerItemKey)
             }
 
             // Clear registered key paths
