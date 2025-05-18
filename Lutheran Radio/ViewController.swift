@@ -269,12 +269,16 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         setupBackgroundParallax()
 
         // Play special tuning sound immediately after setup
-        playSpecialTuningSound {
-            // Defer playback until after special tuning sound completes
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-                guard let self = self, self.hasInternetConnection && !self.isManualPause else { return }
-                self.startPlayback()
+        playSpecialTuningSound { [weak self] in
+            guard let self = self, self.hasInternetConnection && !self.isManualPause else {
+                #if DEBUG
+                print("📱 Skipped auto-play: no internet or manually paused")
+                #endif
+                return
             }
+            // Ensure player is not in a stopped state before attempting playback
+            self.streamingPlayer.resetTransientErrors()
+            self.startPlayback()
         }
     }
     
