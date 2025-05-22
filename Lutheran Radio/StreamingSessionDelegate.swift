@@ -12,8 +12,9 @@ class StreamingSessionDelegate: CustomDNSURLSessionDelegate, URLSessionDataDeleg
     private var loadingRequest: AVAssetResourceLoadingRequest
     private var bytesReceived = 0
     private var receivedResponse = false
-    private var session: URLSession?
-    private var dataTask: URLSessionDataTask?
+    // Make these internal so DirectStreamingPlayer can access them
+    var session: URLSession?
+    var dataTask: URLSessionDataTask?
     var onError: ((Error) -> Void)?
     
     init(loadingRequest: AVAssetResourceLoadingRequest, hostnameToIP: [String: String]) {
@@ -168,5 +169,25 @@ class StreamingSessionDelegate: CustomDNSURLSessionDelegate, URLSessionDataDeleg
     
     func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
         completionHandler(.performDefaultHandling, nil)
+    }
+    
+    // Handle redirects with DNS override
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
+        // Apply DNS override to redirects as well
+        if let url = request.url, let host = url.host, let ipAddress = hostnameToIP[host] {
+            var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+            components?.host = ipAddress
+            if let newURL = components?.url {
+                var modifiedRequest = request
+                modifiedRequest.url = newURL
+                modifiedRequest.setValue(host, forHTTPHeaderField: "Host")
+                #if DEBUG
+                print("📡 [Redirect] Overriding DNS for \(host) to \(ipAddress)")
+                #endif
+                completionHandler(modifiedRequest)
+                return
+            }
+        }
+        completionHandler(request)
     }
 }

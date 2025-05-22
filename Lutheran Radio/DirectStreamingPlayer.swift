@@ -1220,16 +1220,10 @@ class DirectStreamingPlayer: NSObject {
         // Remove buffer observers
         if let keyPathsSet = self.registeredKeyPaths[playerItemKey] {
             for keyPath in keyPathsSet {
-                do {
-                    playerItem.removeObserver(self, forKeyPath: keyPath)
-                    #if DEBUG
-                    print("🧹 Removed observer for \(keyPath) from playerItem \(playerItemKey)")
-                    #endif
-                } catch {
-                    #if DEBUG
-                    print("🧹 Error removing observer for \(keyPath): \(error)")
-                    #endif
-                }
+                playerItem.removeObserver(self, forKeyPath: keyPath)
+                #if DEBUG
+                print("🧹 Removed observer for \(keyPath) from playerItem \(playerItemKey)")
+                #endif
             }
             self.registeredKeyPaths.removeValue(forKey: playerItemKey)
         }
@@ -1540,7 +1534,7 @@ extension DirectStreamingPlayer {
 // MARK: - Resource Loader
 extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
     func resourceLoader(_ resourceLoader: AVAssetResourceLoader, shouldWaitForLoadingOfRequestedResource loadingRequest: AVAssetResourceLoadingRequest) -> Bool {
-        guard let url = loadingRequest.request.url else {
+        guard var url = loadingRequest.request.url else {
             #if DEBUG
             print("❌ Resource loader: Invalid URL")
             #endif
@@ -1549,13 +1543,35 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
             return false
         }
         
+        // Apply DNS override before creating the request
+        var modifiedRequest = loadingRequest.request
+        if let host = url.host, let ipAddress = hostnameToIP[host] {
+            var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+            components?.host = ipAddress
+            if let newURL = components?.url {
+                modifiedRequest = URLRequest(url: newURL)
+                modifiedRequest.setValue(host, forHTTPHeaderField: "Host")
+                // Copy other important headers
+                if let headers = loadingRequest.request.allHTTPHeaderFields {
+                    for (key, value) in headers where key != "Host" {
+                        modifiedRequest.setValue(value, forHTTPHeaderField: key)
+                    }
+                }
+                url = newURL
+                #if DEBUG
+                print("📡 Resource loader: Overriding DNS for \(host) to \(ipAddress), new URL: \(newURL)")
+                #endif
+            }
+        }
+        
         #if DEBUG
         print("📡 Resource loader: Handling URL \(url.absoluteString)")
         #endif
         
         let streamingDelegate = StreamingSessionDelegate(loadingRequest: loadingRequest, hostnameToIP: hostnameToIP)
-        let session = URLSession(configuration: .default, delegate: streamingDelegate, delegateQueue: OperationQueue.main)
-        let task = session.dataTask(with: url)
+        streamingDelegate.session = URLSession(configuration: .default, delegate: streamingDelegate, delegateQueue: OperationQueue.main)
+        streamingDelegate.dataTask = streamingDelegate.session?.dataTask(with: modifiedRequest)
+        
         streamingDelegate.onError = { [weak self] error in
             guard let self = self, self.delegate != nil else { return }
             #if DEBUG
@@ -1567,7 +1583,7 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
             }
         }
         activeResourceLoaders[loadingRequest] = streamingDelegate
-        task.resume()
+        streamingDelegate.dataTask?.resume()
         return true
     }
     
