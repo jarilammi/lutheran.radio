@@ -5,21 +5,29 @@
 //  Created by Jari Lammi on 21.4.2025.
 //
 
+/// - Article: Custom DNS URL Session Delegate Guide
+///
+/// This class provides custom DNS resolution for URL session tasks in Lutheran Radio.
 import Foundation
 
 // MARK: - Custom URLSessionDelegate for DNS Override
 class CustomDNSURLSessionDelegate: NSObject, URLSessionTaskDelegate {
+    /// A dictionary mapping hostnames to their corresponding IP addresses for DNS overriding.
     let hostnameToIP: [String: String]
     
+    /// Initializes the delegate with a hostname-to-IP mapping.
+    /// - Parameter hostnameToIP: A dictionary of hostnames and their IP addresses.
     init(hostnameToIP: [String: String]) {
         self.hostnameToIP = hostnameToIP
         super.init()
     }
     
+    /// Handles HTTP redirection by allowing the default request.
     func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection redirectResponse: HTTPURLResponse, newRequest: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
         completionHandler(newRequest)
     }
     
+    /// Logs completion with an error if present.
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         if let error = error {
             #if DEBUG
@@ -28,6 +36,7 @@ class CustomDNSURLSessionDelegate: NSObject, URLSessionTaskDelegate {
         }
     }
     
+    /// Overrides DNS for delayed requests by replacing the host with an IP address.
     func urlSession(_ session: URLSession, task: URLSessionTask, willBeginDelayedRequest request: URLRequest, completionHandler: @escaping (URLSession.DelayedRequestDisposition, URLRequest?) -> Void) {
         guard let url = request.url, let host = url.host, let ipAddress = hostnameToIP[host] else {
             completionHandler(.continueLoading, nil)

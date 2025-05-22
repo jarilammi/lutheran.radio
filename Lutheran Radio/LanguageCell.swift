@@ -5,9 +5,13 @@
 //  Created by Jari Lammi on 11.3.2025.
 //
 
+/// - Article: Language Cell Overview
+///
+/// A custom collection view cell for displaying language options with flag emojis in Lutheran Radio.
 import UIKit
 
 class LanguageCell: UICollectionViewCell {
+    /// The label displaying the flag emoji for a language.
     let flagLabel: UILabel = {
         let label = UILabel()
         label.textAlignment = .center
@@ -39,7 +43,9 @@ class LanguageCell: UICollectionViewCell {
             setNeedsLayout()
         }
     }
-
+    
+    /// Configures the cell with a streaming language option.
+    /// - Parameter stream: The stream object containing the flag and language information.
     func configure(with stream: DirectStreamingPlayer.Stream) {
         flagLabel.text = stream.flag
         isAccessibilityElement = true
