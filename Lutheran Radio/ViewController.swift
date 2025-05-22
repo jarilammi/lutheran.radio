@@ -5,6 +5,9 @@
 //  Created by Jari Lammi on 26.10.2024.
 //
 
+/// - Article: Lutheran Radio View Controller Guide
+///
+/// Manages the main UI and streaming playback for the Lutheran Radio app, including language selection and background effects.
 import UIKit
 import AVFoundation
 import MediaPlayer
@@ -14,6 +17,8 @@ import CoreImage
 
 // MARK: - Parallax Effect Extension
 extension UIView {
+    /// Adds a parallax effect to the view based on device motion.
+    /// - Parameter intensity: The intensity of the parallax effect (e.g., 10.0).
     func addParallaxEffect(intensity: CGFloat) {
         // Remove any existing motion effects to avoid conflicts
         motionEffects.forEach { removeMotionEffect($0) }
@@ -43,7 +48,9 @@ extension UIView {
     }
 }
 
+/// The main view controller for the Lutheran Radio app.
 class ViewController: UIViewController, UICollectionViewDelegate, UICollectionViewDataSource, UIScrollViewDelegate, AVAudioPlayerDelegate {
+    /// Label displaying the app title.
     let titleLabel: UILabel = {
         let label = UILabel()
         label.text = String(localized: "lutheran_radio_title")

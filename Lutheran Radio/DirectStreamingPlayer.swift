@@ -5,6 +5,9 @@
 //  Created by Jari Lammi on 25.2.2025.
 //
 
+/// - Article: Direct Streaming Player Guide
+///
+/// Manages audio streaming, security validation, and network monitoring for the Lutheran Radio app.
 import Foundation
 import Security
 import CommonCrypto
@@ -12,18 +15,24 @@ import AVFoundation
 import dnssd
 import Network
 
+/// Represents the network path status for connectivity monitoring.
 enum NetworkPathStatus: Sendable {
     case satisfied
     case unsatisfied
     case requiresConnection
 }
 
+/// Protocol for monitoring network path changes.
 protocol NetworkPathMonitoring: AnyObject {
+    /// Handler for network path updates.
     var pathUpdateHandler: (@Sendable (NetworkPathStatus) -> Void)? { get set }
+    /// Starts monitoring on a specified queue.
     func start(queue: DispatchQueue)
+    /// Cancels monitoring.
     func cancel()
 }
 
+/// Adapts `NWPathMonitor` to the `NetworkPathMonitoring` protocol.
 class NWPathMonitorAdapter: NetworkPathMonitoring {
     private let monitor: NWPathMonitor
     
@@ -60,17 +69,20 @@ class NWPathMonitorAdapter: NetworkPathMonitoring {
     }
 }
 
+/// Manages direct streaming playback, including network monitoring and security validation.
 class DirectStreamingPlayer: NSObject {
     // MARK: - Security Model
     private let appSecurityModel = "mariehamn"
     private var isValidating = false
     #if DEBUG
+    /// The last time security validation was performed (exposed for debugging).
     var lastValidationTime: Date?
     #else
     private var lastValidationTime: Date?
     #endif
     private let validationCacheDuration: TimeInterval = 600 // 10 minutes
     
+    /// Represents the state of security model validation.
     enum ValidationState {
         case pending
         case success
