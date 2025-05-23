@@ -100,8 +100,8 @@ Match the output against the ```SPKI-SHA256-BASE64``` value in ```Info.plist```.
 The app enforces security model validation to ensure only versions with an approved security implementation can stream content. This protects against compromised or obsolete app versions.
 
 1. **Domain:** ```securitymodels.lutheran.radio```
-2. **Mechanism:** Queries a DNS TXT record for a comma-separated list of valid security models (e.g., `"mariehamn,turku"`)
-3. **Pinned Value:** Fixed security model string embedded in the app (currently `"mariehamn"`)
+2. **Mechanism:** Queries a DNS TXT record for a comma-separated list of valid security models (e.g., `"mariehamn,visby"`)
+3. **Pinned Value:** Fixed security model string embedded in the app (currently `"visby"`)
 4. **Location:** Defined in `DirectStreamingPlayer.swift` as `appSecurityModel`
 5. **Behavior:** If the app’s security model isn’t in the TXT record, playback is permanently disabled with a user-facing error message
 
@@ -122,7 +122,7 @@ dig +short TXT securitymodels.lutheran.radio
 Example output:
 
 ```
-"mariehamn,turku"
+"mariehamn,visby"
 ```
 
 Compare this output to the security model defined in the app (found in ```DirectStreamingPlayer.swift``` as ```appSecurityModel```). If the app’s model (e.g., "mariehamn") isn’t listed, it will fail validation. To update the list, modify the TXT record for ```securitymodels.lutheran.radio``` through the DNS management interface for the ```lutheran.radio``` domain.
@@ -135,6 +135,7 @@ To prevent naming collisions and maintain a clear history of security models, th
 |---------------------|------------------|-----------------|------------------------|
 | `turku`             | April 8, 2025    | April 20, 2025  | 1.0.4                  |
 | `mariehamn`         | April 15, 2025   | (ongoing)       | 1.0.7                  |
+| ``             | (pending)        | (pending)       | (pending)              |
 
 **Notes:**
 - **Valid From:** The date when the security model was first published to the App Store.
@@ -152,7 +153,7 @@ When introducing a new security model:
   
 ### Why Track Security Model Names?
 
-Security model names (e.g., ```mariehamn```) are embedded in the app and validated against the DNS TXT record. Once a name is used, it becomes part of the app's history and may still exist in older versions. Reusing a name could inadvertently allow a deprecated or compromised version to pass validation, undermining security. By maintaining this table, we ensure that:
+Security model names (e.g., ``````) are embedded in the app and validated against the DNS TXT record. Once a name is used, it becomes part of the app's history and may still exist in older versions. Reusing a name could inadvertently allow a deprecated or compromised version to pass validation, undermining security. By maintaining this table, we ensure that:
 
 - New security model names are unique and avoid collisions with past names.
 - The history of security models is transparent for debugging and auditing.
