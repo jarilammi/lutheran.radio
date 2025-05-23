@@ -125,7 +125,7 @@ Example output:
 "mariehamn,visby"
 ```
 
-Compare this output to the security model defined in the app (found in ```DirectStreamingPlayer.swift``` as ```appSecurityModel```). If the app’s model (e.g., "mariehamn") isn’t listed, it will fail validation. To update the list, modify the TXT record for ```securitymodels.lutheran.radio``` through the DNS management interface for the ```lutheran.radio``` domain.
+Compare this output to the security model defined in the app (found in ```DirectStreamingPlayer.swift``` as ```appSecurityModel```). If the app’s model (e.g., "visby") isn’t listed, it will fail validation. To update the list, modify the TXT record for ```securitymodels.lutheran.radio``` through the DNS management interface for the ```lutheran.radio``` domain.
 
 ### Security Model History
 
@@ -135,7 +135,7 @@ To prevent naming collisions and maintain a clear history of security models, th
 |---------------------|------------------|-----------------|------------------------|
 | `turku`             | April 8, 2025    | April 20, 2025  | 1.0.4                  |
 | `mariehamn`         | April 15, 2025   | (ongoing)       | 1.0.7                  |
-| `visby`             | (pending)        | (pending)       | (pending)              |
+| `visby`             | (pending)        | (pending)       | 1.1.1                  |
 
 **Notes:**
 - **Valid From:** The date when the security model was first published to the App Store.
