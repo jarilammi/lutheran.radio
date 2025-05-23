@@ -135,7 +135,7 @@ To prevent naming collisions and maintain a clear history of security models, th
 |---------------------|------------------|-----------------|------------------------|
 | `turku`             | April 8, 2025    | April 20, 2025  | 1.0.4                  |
 | `mariehamn`         | April 15, 2025   | (ongoing)       | 1.0.7                  |
-| ``             | (pending)        | (pending)       | (pending)              |
+| `visby`             | (pending)        | (pending)       | (pending)              |
 
 **Notes:**
 - **Valid From:** The date when the security model was first published to the App Store.
@@ -153,7 +153,7 @@ When introducing a new security model:
   
 ### Why Track Security Model Names?
 
-Security model names (e.g., ``````) are embedded in the app and validated against the DNS TXT record. Once a name is used, it becomes part of the app's history and may still exist in older versions. Reusing a name could inadvertently allow a deprecated or compromised version to pass validation, undermining security. By maintaining this table, we ensure that:
+Security model names (e.g., ```visby```) are embedded in the app and validated against the DNS TXT record. Once a name is used, it becomes part of the app's history and may still exist in older versions. Reusing a name could inadvertently allow a deprecated or compromised version to pass validation, undermining security. By maintaining this table, we ensure that:
 
 - New security model names are unique and avoid collisions with past names.
 - The history of security models is transparent for debugging and auditing.
