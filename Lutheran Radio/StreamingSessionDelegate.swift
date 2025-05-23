@@ -5,17 +5,27 @@
 //  Created by Jari Lammi on 4.3.2025.
 //
 
+/// - Article: Streaming Session Delegate Overview
+///
+/// This class handles streaming session delegation for Lutheran Radio, managing URL sessions and data tasks.
 import Foundation
 import AVFoundation
 
 class StreamingSessionDelegate: CustomDNSURLSessionDelegate, URLSessionDataDelegate {
+    /// The loading request for the AV asset resource.
     private var loadingRequest: AVAssetResourceLoadingRequest
+    /// Tracks the total bytes received during the streaming session.
     private var bytesReceived = 0
+    /// Indicates whether a response has been received.
     private var receivedResponse = false
-    // Make these internal so DirectStreamingPlayer can access them
+    /// The URL session for managing streaming tasks.
     var session: URLSession?
+    /// The data task for the streaming session.
     var dataTask: URLSessionDataTask?
+    /// A closure to handle errors during the streaming session.
     var onError: ((Error) -> Void)?
+    /// The original hostname before DNS override (for SSL validation)
+    var originalHostname: String?
     
     init(loadingRequest: AVAssetResourceLoadingRequest, hostnameToIP: [String: String]) {
         self.loadingRequest = loadingRequest
@@ -168,7 +178,63 @@ class StreamingSessionDelegate: CustomDNSURLSessionDelegate, URLSessionDataDeleg
     }
     
     func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
-        completionHandler(.performDefaultHandling, nil)
+        // Check if this is a server trust challenge
+        if challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust {
+            guard let serverTrust = challenge.protectionSpace.serverTrust else {
+                #if DEBUG
+                print("🔒 No server trust available, cancelling challenge")
+                #endif
+                completionHandler(.cancelAuthenticationChallenge, nil)
+                return
+            }
+            
+            // Use the stored original hostname if available
+            if let originalHost = self.originalHostname {
+                // Create an SSL policy using the original hostname
+                let policy = SecPolicyCreateSSL(true, originalHost as CFString)
+                SecTrustSetPolicies(serverTrust, [policy] as CFArray)
+                
+                // Evaluate the trust
+                var error: CFError?
+                if SecTrustEvaluateWithError(serverTrust, &error) {
+                    #if DEBUG
+                    print("🔒 Certificate validation succeeded for host: \(originalHost)")
+                    #endif
+                    let credential = URLCredential(trust: serverTrust)
+                    completionHandler(.useCredential, credential)
+                } else {
+                    #if DEBUG
+                    print("🔒 Certificate validation failed for host \(originalHost): \(error?.localizedDescription ?? "Unknown error")")
+                    #endif
+                    completionHandler(.cancelAuthenticationChallenge, nil)
+                }
+            } else if let originalHost = loadingRequest.request.allHTTPHeaderFields?["Host"] {
+                // Fallback: Extract from Host header
+                #if DEBUG
+                print("🔒 Using Host header for validation: \(originalHost)")
+                #endif
+                let policy = SecPolicyCreateSSL(true, originalHost as CFString)
+                SecTrustSetPolicies(serverTrust, [policy] as CFArray)
+                
+                var error: CFError?
+                if SecTrustEvaluateWithError(serverTrust, &error) {
+                    let credential = URLCredential(trust: serverTrust)
+                    completionHandler(.useCredential, credential)
+                } else {
+                    completionHandler(.cancelAuthenticationChallenge, nil)
+                }
+            } else {
+                #if DEBUG
+                print("🔒 No hostname available for SSL validation, using default handling")
+                #endif
+                completionHandler(.performDefaultHandling, nil)
+            }
+        } else {
+            #if DEBUG
+            print("🔒 Non-server trust challenge received, using default handling")
+            #endif
+            completionHandler(.performDefaultHandling, nil)
+        }
     }
     
     // Handle redirects with DNS override

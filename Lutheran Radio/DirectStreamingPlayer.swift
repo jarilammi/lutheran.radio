@@ -681,6 +681,13 @@ class DirectStreamingPlayer: NSObject {
             print("🌐 [Network] Status: \(self.hasInternetConnection ? "Connected" : "Disconnected")")
             if self.hasInternetConnection && !wasConnected {
                 print("🌐 [Network] Connection restored, previous server: \(self.selectedServer.name)")
+                
+                // Clear DNS overrides to force new server selection
+                self.hostnameToIP = [:]
+                self.lastServerSelectionTime = nil
+                self.selectedServer = Self.servers[0] // Reset to default
+                print("🌐 [Network] Cleared DNS overrides for fresh server selection")
+                
                 self.lastValidationTime = nil
                 self.validationState = .pending
                 print("🔒 [Network] Invalidated security model validation cache")
@@ -722,6 +729,11 @@ class DirectStreamingPlayer: NSObject {
             let wasConnected = self.hasInternetConnection
             self.hasInternetConnection = status == .satisfied
             if self.hasInternetConnection && !wasConnected {
+                // Clear DNS overrides to force new server selection
+                self.hostnameToIP = [:]
+                self.lastServerSelectionTime = nil
+                self.selectedServer = Self.servers[0] // Reset to default
+                
                 self.lastValidationTime = nil
                 self.validationState = .pending
                 self.selectOptimalServer { server in
@@ -1010,7 +1022,20 @@ class DirectStreamingPlayer: NSObject {
 
             self.stop()
 
-            let asset = AVURLAsset(url: streamURL)
+            // Use custom scheme to force resource loader when we have DNS overrides
+            var assetURL = streamURL
+            if !self.hostnameToIP.isEmpty, let host = streamURL.host, self.hostnameToIP[host] != nil {
+                // Replace https with custom scheme to force resource loader
+                let customURLString = streamURL.absoluteString.replacingOccurrences(of: "https://", with: "lutheranradio://")
+                if let customURL = URL(string: customURLString) {
+                    assetURL = customURL
+                    #if DEBUG
+                    print("📡 Using custom scheme to force resource loader: \(assetURL)")
+                    #endif
+                }
+            }
+
+            let asset = AVURLAsset(url: assetURL)
             asset.resourceLoader.setDelegate(self, queue: DispatchQueue.main)
             self.playerItem = AVPlayerItem(asset: asset)
 
@@ -1550,52 +1575,100 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
             #if DEBUG
             print("❌ Resource loader: Invalid URL")
             #endif
-            self.handleLoadingError(NSError(domain: NSURLErrorDomain, code: NSURLErrorBadURL, userInfo: [NSLocalizedDescriptionKey: "Invalid URL"]))
             loadingRequest.finishLoading(with: NSError(domain: "radio.lutheran", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid URL"]))
             return false
         }
         
-        // Apply DNS override before creating the request
-        var modifiedRequest = loadingRequest.request
-        if let host = url.host, let ipAddress = hostnameToIP[host] {
+        // Store the original hostname before any modifications
+        var originalHostname: String? = nil
+        
+        // Convert custom scheme back to https
+        if url.scheme == "lutheranradio" {
+            let httpsString = url.absoluteString.replacingOccurrences(of: "lutheranradio://", with: "https://")
+            guard let httpsURL = URL(string: httpsString) else {
+                loadingRequest.finishLoading(with: NSError(domain: "radio.lutheran", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid URL conversion"]))
+                return false
+            }
+            originalHostname = httpsURL.host  // Store original hostname
+            url = httpsURL
+            #if DEBUG
+            print("📡 Converted custom scheme to HTTPS: \(url)")
+            print("📡 Original hostname: \(originalHostname ?? "nil")")
+            #endif
+        } else {
+            originalHostname = url.host
+        }
+        
+        // Create the request with DNS override
+        var modifiedRequest = URLRequest(url: url)
+        
+        // CRITICAL: Set all headers before DNS override
+        modifiedRequest.setValue("audio/mpeg", forHTTPHeaderField: "Accept")
+        modifiedRequest.setValue("1", forHTTPHeaderField: "Icy-MetaData")
+        modifiedRequest.timeoutInterval = 30.0
+        
+        // Apply DNS override if needed
+        if let host = originalHostname, let ipAddress = hostnameToIP[host] {
             var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
             components?.host = ipAddress
-            if let newURL = components?.url {
-                modifiedRequest = URLRequest(url: newURL)
+            if let ipURL = components?.url {
+                modifiedRequest.url = ipURL
+                // CRITICAL: Set the Host header to the original hostname
                 modifiedRequest.setValue(host, forHTTPHeaderField: "Host")
-                // Copy other important headers
-                if let headers = loadingRequest.request.allHTTPHeaderFields {
-                    for (key, value) in headers where key != "Host" {
-                        modifiedRequest.setValue(value, forHTTPHeaderField: key)
-                    }
-                }
-                url = newURL
                 #if DEBUG
-                print("📡 Resource loader: Overriding DNS for \(host) to \(ipAddress), new URL: \(newURL)")
+                print("📡 Applied DNS override: \(host) -> \(ipAddress)")
+                print("📡 Host header set to: \(host)")
+                print("📡 Final URL: \(ipURL)")
                 #endif
+            }
+        } else if let host = originalHostname {
+            // Even without DNS override, ensure Host header is set
+            modifiedRequest.setValue(host, forHTTPHeaderField: "Host")
+        }
+        
+        // Copy any additional headers from the original request
+        if let headers = loadingRequest.request.allHTTPHeaderFields {
+            for (key, value) in headers where !["Host", "Accept", "Icy-MetaData"].contains(key) {
+                modifiedRequest.setValue(value, forHTTPHeaderField: key)
             }
         }
         
+        // Create streaming delegate with the original hostname for SSL validation
+        let streamingDelegate = StreamingSessionDelegate(loadingRequest: loadingRequest, hostnameToIP: hostnameToIP)
+        
+        // CRITICAL: Store the original hostname in the delegate for SSL validation
+        streamingDelegate.originalHostname = originalHostname
+        
         #if DEBUG
-        print("📡 Resource loader: Handling URL \(url.absoluteString)")
+        print("📡 StreamingSessionDelegate created with originalHostname: \(originalHostname ?? "nil")")
         #endif
         
-        let streamingDelegate = StreamingSessionDelegate(loadingRequest: loadingRequest, hostnameToIP: hostnameToIP)
-        streamingDelegate.session = URLSession(configuration: .default, delegate: streamingDelegate, delegateQueue: OperationQueue.main)
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 30.0
+        config.timeoutIntervalForResource = 30.0
+        
+        streamingDelegate.session = URLSession(configuration: config, delegate: streamingDelegate, delegateQueue: .main)
         streamingDelegate.dataTask = streamingDelegate.session?.dataTask(with: modifiedRequest)
         
         streamingDelegate.onError = { [weak self] error in
-            guard let self = self, self.delegate != nil else { return }
+            guard let self = self else { return }
             #if DEBUG
-            print("❌ Resource loader error: \(error.localizedDescription)")
+            print("❌ Streaming error: \(error)")
             #endif
             DispatchQueue.main.async {
                 self.activeResourceLoaders.removeValue(forKey: loadingRequest)
                 self.handleLoadingError(error)
             }
         }
+        
         activeResourceLoaders[loadingRequest] = streamingDelegate
         streamingDelegate.dataTask?.resume()
+        
+        #if DEBUG
+        print("📡 Resource loader started for: \(modifiedRequest.url?.absoluteString ?? "nil")")
+        print("📡 Request headers: \(modifiedRequest.allHTTPHeaderFields ?? [:])")
+        #endif
+        
         return true
     }
     
