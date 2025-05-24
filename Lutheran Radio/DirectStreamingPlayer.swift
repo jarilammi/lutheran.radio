@@ -109,31 +109,31 @@ class DirectStreamingPlayer: NSObject {
     static let availableStreams = [
         Stream(title: NSLocalizedString("lutheran_radio_title", comment: "Title for Lutheran Radio") + " - " +
                NSLocalizedString("language_english", comment: "English language option"),
-               url: URL(string: "https://english-us.lutheran.radio:8443/lutheranradio.mp3")!,
+               url: URL(string: "https://english.lutheran.radio:8443/lutheranradio.mp3")!,
                language: NSLocalizedString("language_english", comment: "English language option"),
                languageCode: "en",
                flag: "🇺🇸"),
         Stream(title: NSLocalizedString("lutheran_radio_title", comment: "Title for Lutheran Radio") + " - " +
                NSLocalizedString("language_german", comment: "German language option"),
-               url: URL(string: "https://german-us.lutheran.radio:8443/lutheranradio.mp3")!,
+               url: URL(string: "https://german.lutheran.radio:8443/lutheranradio.mp3")!,
                language: NSLocalizedString("language_german", comment: "German language option"),
                languageCode: "de",
                flag: "🇩🇪"),
         Stream(title: NSLocalizedString("lutheran_radio_title", comment: "Title for Lutheran Radio") + " - " +
                NSLocalizedString("language_finnish", comment: "Finnish language option"),
-               url: URL(string: "https://finnish-us.lutheran.radio:8443/lutheranradio.mp3")!,
+               url: URL(string: "https://finnish.lutheran.radio:8443/lutheranradio.mp3")!,
                language: NSLocalizedString("language_finnish", comment: "Finnish language option"),
                languageCode: "fi",
                flag: "🇫🇮"),
         Stream(title: NSLocalizedString("lutheran_radio_title", comment: "Title for Lutheran Radio") + " - " +
                NSLocalizedString("language_swedish", comment: "Swedish language option"),
-               url: URL(string: "https://swedish-us.lutheran.radio:8443/lutheranradio.mp3")!,
+               url: URL(string: "https://swedish.lutheran.radio:8443/lutheranradio.mp3")!,
                language: NSLocalizedString("language_swedish", comment: "Swedish language option"),
                languageCode: "sv",
                flag: "🇸🇪"),
         Stream(title: NSLocalizedString("lutheran_radio_title", comment: "Title for Lutheran Radio") + " - " +
                NSLocalizedString("language_estonian", comment: "Estonian language option"),
-               url: URL(string: "https://estonian-us.lutheran.radio:8443/lutheranradio.mp3")!,
+               url: URL(string: "https://estonian.lutheran.radio:8443/lutheranradio.mp3")!,
                language: NSLocalizedString("language_estonian", comment: "Estonian language option"),
                languageCode: "ee",
                flag: "🇪🇪"),
@@ -808,9 +808,9 @@ class DirectStreamingPlayer: NSObject {
     }
     
     // Helper to construct stream URL with selected baseHostname
-    private func getStreamURL(for stream: Stream, with baseHostname: String) -> URL? {
-        let subdomain = stream.url.host?.components(separatedBy: ".")[0] ?? ""
-        let newHostname = subdomain + "." + baseHostname
+    private func getStreamURL(for stream: Stream, with server: Server) -> URL? {
+        let languagePrefix = stream.url.host?.components(separatedBy: ".")[0] ?? ""
+        let newHostname = "\(languagePrefix)-\(server.subdomain).\(server.baseHostname)"
         var components = URLComponents(url: stream.url, resolvingAgainstBaseURL: false)
         components?.host = newHostname
         return components?.url
@@ -849,7 +849,7 @@ class DirectStreamingPlayer: NSObject {
             print("📡 Selected server: \(server.name) with baseHostname: \(server.baseHostname)")
             #endif
             
-            guard let streamURL = self.getStreamURL(for: self.selectedStream, with: server.baseHostname) else {
+            guard let streamURL = self.getStreamURL(for: self.selectedStream, with: server) else {
                 #if DEBUG
                 print("❌ Failed to construct stream URL with baseHostname")
                 #endif
@@ -1386,18 +1386,21 @@ extension DirectStreamingPlayer {
         let name: String
         let pingURL: URL
         let baseHostname: String
+        let subdomain: String
     }
     
     static var servers = [
         Server(
             name: "EU",
             pingURL: URL(string: "https://european.lutheran.radio/ping")!,
-            baseHostname: "lutheran.radio"
+            baseHostname: "lutheran.radio",
+            subdomain: "eu"
         ),
         Server(
             name: "US",
             pingURL: URL(string: "https://livestream.lutheran.radio/ping")!,
-            baseHostname: "lutheran.radio"
+            baseHostname: "lutheran.radio",
+            subdomain: "us"
         )
     ]
 }
