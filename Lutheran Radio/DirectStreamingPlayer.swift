@@ -109,31 +109,31 @@ class DirectStreamingPlayer: NSObject {
     static let availableStreams = [
         Stream(title: NSLocalizedString("lutheran_radio_title", comment: "Title for Lutheran Radio") + " - " +
                NSLocalizedString("language_english", comment: "English language option"),
-               url: URL(string: "https://liveenglish.lutheran.radio:8443/lutheranradio.mp3")!,
+               url: URL(string: "https://english-us.lutheran.radio:8443/lutheranradio.mp3")!,
                language: NSLocalizedString("language_english", comment: "English language option"),
                languageCode: "en",
                flag: "🇺🇸"),
         Stream(title: NSLocalizedString("lutheran_radio_title", comment: "Title for Lutheran Radio") + " - " +
                NSLocalizedString("language_german", comment: "German language option"),
-               url: URL(string: "https://livedeutsch.lutheran.radio:8443/lutheranradio.mp3")!,
+               url: URL(string: "https://german-us.lutheran.radio:8443/lutheranradio.mp3")!,
                language: NSLocalizedString("language_german", comment: "German language option"),
                languageCode: "de",
                flag: "🇩🇪"),
         Stream(title: NSLocalizedString("lutheran_radio_title", comment: "Title for Lutheran Radio") + " - " +
                NSLocalizedString("language_finnish", comment: "Finnish language option"),
-               url: URL(string: "https://livefinnish.lutheran.radio:8443/lutheranradio.mp3")!,
+               url: URL(string: "https://finnish-us.lutheran.radio:8443/lutheranradio.mp3")!,
                language: NSLocalizedString("language_finnish", comment: "Finnish language option"),
                languageCode: "fi",
                flag: "🇫🇮"),
         Stream(title: NSLocalizedString("lutheran_radio_title", comment: "Title for Lutheran Radio") + " - " +
                NSLocalizedString("language_swedish", comment: "Swedish language option"),
-               url: URL(string: "https://liveswedish.lutheran.radio:8443/lutheranradio.mp3")!,
+               url: URL(string: "https://swedish-us.lutheran.radio:8443/lutheranradio.mp3")!,
                language: NSLocalizedString("language_swedish", comment: "Swedish language option"),
                languageCode: "sv",
                flag: "🇸🇪"),
         Stream(title: NSLocalizedString("lutheran_radio_title", comment: "Title for Lutheran Radio") + " - " +
                NSLocalizedString("language_estonian", comment: "Estonian language option"),
-               url: URL(string: "https://liveestonian.lutheran.radio:8443/lutheranradio.mp3")!,
+               url: URL(string: "https://estonian-us.lutheran.radio:8443/lutheranradio.mp3")!,
                language: NSLocalizedString("language_estonian", comment: "Estonian language option"),
                languageCode: "ee",
                flag: "🇪🇪"),
@@ -160,9 +160,9 @@ class DirectStreamingPlayer: NSObject {
     private var hostnameToIP: [String: String] = [:]
     
     #if DEBUG
-    var retryWorkItem: DispatchWorkItem? // Added to resolve undefined property
+    var retryWorkItem: DispatchWorkItem?
     #else
-    private var retryWorkItem: DispatchWorkItem? // Added to resolve undefined property
+    private var retryWorkItem: DispatchWorkItem?
     #endif
     
     func selectOptimalServer(completion: @escaping (Server) -> Void) {
@@ -180,11 +180,11 @@ class DirectStreamingPlayer: NSObject {
                 return
             }
             self.fetchServerIPsAndLatencies { results in
-                let validResults = results.filter { $0.latency != .infinity && $0.server.ipAddress != nil }
+                let validResults = results.filter { $0.latency != .infinity }
                 if let bestResult = validResults.min(by: { $0.latency < $1.latency }) {
                     self.selectedServer = bestResult.server
                     #if DEBUG
-                    print("📡 [Server Selection] Selected \(bestResult.server.name) with latency \(bestResult.latency)s, IP=\(bestResult.server.ipAddress ?? "None")")
+                    print("📡 [Server Selection] Selected \(bestResult.server.name) with latency \(bestResult.latency)s")
                     #endif
                 } else {
                     self.selectedServer = Self.servers[0]
@@ -192,17 +192,6 @@ class DirectStreamingPlayer: NSObject {
                     print("📡 [Server Selection] No valid ping results, falling back to \(self.selectedServer.name)")
                     #endif
                 }
-                
-                if let ipAddress = self.selectedServer.ipAddress {
-                    let hostnames = Self.availableStreams.map { $0.url.host ?? "" }.uniqued()
-                    self.hostnameToIP = Dictionary(uniqueKeysWithValues: hostnames.map { ($0, ipAddress) })
-                    #if DEBUG
-                    print("📡 [Server Selection] Hostname to IP mapping: \(self.hostnameToIP)")
-                    #endif
-                } else {
-                    self.hostnameToIP = [:]
-                }
-                
                 completion(self.selectedServer)
             }
         }
@@ -818,14 +807,17 @@ class DirectStreamingPlayer: NSObject {
         }
     }
     
+    // Helper to construct stream URL with selected baseHostname
+    private func getStreamURL(for stream: Stream, with baseHostname: String) -> URL? {
+        let subdomain = stream.url.host?.components(separatedBy: ".")[0] ?? ""
+        let newHostname = subdomain + "." + baseHostname
+        var components = URLComponents(url: stream.url, resolvingAgainstBaseURL: false)
+        components?.host = newHostname
+        return components?.url
+    }
+
     func play(completion: @escaping (Bool) -> Void) {
-        // Audio session is already configured in setupAudioSession() and maintained active for background audio
-        // Removed redundant reset to prevent audio system overload
-        
         if validationState == .pending {
-            #if DEBUG
-            print("📡 Play: Validation pending, triggering validation")
-            #endif
             validateSecurityModelAsync { [weak self] isValid in
                 guard let self = self else { completion(false); return }
                 if isValid {
@@ -842,9 +834,6 @@ class DirectStreamingPlayer: NSObject {
         }
         
         guard validationState == .success else {
-            #if DEBUG
-            print("📡 Play aborted: Validation state=\(validationState)")
-            #endif
             let status = validationState == .failedPermanent ? String(localized: "status_security_failed") : String(localized: "status_no_internet")
             DispatchQueue.main.async {
                 self.onStatusChange?(false, status)
@@ -853,36 +842,38 @@ class DirectStreamingPlayer: NSObject {
             return
         }
         
-        var urlComponents = URLComponents(url: selectedStream.url, resolvingAgainstBaseURL: false)
-        urlComponents?.queryItems = [URLQueryItem(name: "security_model", value: appSecurityModel)]
-        guard let streamURL = urlComponents?.url else {
+        selectOptimalServer { [weak self] server in
+            guard let self = self else { completion(false); return }
+            self.lastServerSelectionTime = Date()
             #if DEBUG
-            print("❌ Failed to construct stream URL with security model")
+            print("📡 Selected server: \(server.name) with baseHostname: \(server.baseHostname)")
             #endif
-            self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
-            completion(false)
-            return
-        }
-        
-        #if DEBUG
-        print("📡 Playing stream with URL: \(streamURL.absoluteString)")
-        #endif
-        
-        let now = Date()
-        if let lastSelection = lastServerSelectionTime, now.timeIntervalSince(lastSelection) < serverSelectionCacheDuration, !hostnameToIP.isEmpty {
-            #if DEBUG
-            print("📡 Using cached server selection: \(selectedServer.name)")
-            #endif
-            startPlayback(with: streamURL, completion: completion)
-        } else {
-            selectOptimalServer { [weak self] server in
-                guard let self = self else { completion(false); return }
-                self.lastServerSelectionTime = Date()
+            
+            guard let streamURL = self.getStreamURL(for: self.selectedStream, with: server.baseHostname) else {
                 #if DEBUG
-                print("📡 Selected server: \(server.name)")
+                print("❌ Failed to construct stream URL with baseHostname")
                 #endif
-                self.startPlayback(with: streamURL, completion: completion)
+                self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
+                completion(false)
+                return
             }
+            
+            var urlComponents = URLComponents(url: streamURL, resolvingAgainstBaseURL: false)
+            urlComponents?.queryItems = [URLQueryItem(name: "security_model", value: self.appSecurityModel)]
+            guard let finalURL = urlComponents?.url else {
+                #if DEBUG
+                print("❌ Failed to construct final stream URL with security model")
+                #endif
+                self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
+                completion(false)
+                return
+            }
+            
+            #if DEBUG
+            print("📡 Playing stream with URL: \(finalURL.absoluteString)")
+            #endif
+            
+            self.startPlayback(with: finalURL, completion: completion)
         }
     }
     
@@ -895,27 +886,24 @@ class DirectStreamingPlayer: NSObject {
         }
         isSwitchingStream = true
         
-        // Stop any ongoing playback and clear state
         stop { [weak self] in
             guard let self = self else {
                 self?.isSwitchingStream = false
                 return
             }
             
-            // Update selectedStream immediately
             self.selectedStream = stream
             #if DEBUG
             print("📡 Stream set to: \(stream.language), URL: \(stream.url)")
             #endif
             
-            // Reset validation state if needed
             if self.validationState == .pending {
                 self.validateSecurityModelAsync { [weak self] isValid in
                     guard let self = self else {
                         self?.isSwitchingStream = false
                         return
                     }
-                    defer { self.isSwitchingStream = false } // Ensure flag is reset
+                    defer { self.isSwitchingStream = false }
                     if isValid {
                         self.playAfterStreamSwitch()
                     } else {
@@ -926,10 +914,10 @@ class DirectStreamingPlayer: NSObject {
                     }
                 }
             } else if self.validationState == .success {
-                defer { self.isSwitchingStream = false } // Ensure flag is reset
+                defer { self.isSwitchingStream = false }
                 self.playAfterStreamSwitch()
             } else {
-                defer { self.isSwitchingStream = false } // Ensure flag is reset
+                defer { self.isSwitchingStream = false }
                 let status = self.validationState == .failedPermanent ? "status_security_failed" : "status_no_internet"
                 DispatchQueue.main.async {
                     self.onStatusChange?(false, NSLocalizedString(status, comment: ""))
@@ -940,29 +928,33 @@ class DirectStreamingPlayer: NSObject {
 
     // Helper method to handle playback after stream switch
     private func playAfterStreamSwitch() {
-        let now = Date()
-        if let lastSelection = self.lastServerSelectionTime, now.timeIntervalSince(lastSelection) < self.serverSelectionCacheDuration, !self.hostnameToIP.isEmpty {
+        selectOptimalServer { [weak self] server in
+            guard let self = self else {
+                self?.isSwitchingStream = false
+                return
+            }
+            self.lastServerSelectionTime = Date()
             #if DEBUG
-            print("📡 Using cached server selection for stream switch: \(self.selectedServer.name)")
+            print("📡 Selected server for stream switch: \(server.name)")
             #endif
             self.play { [weak self] success in
                 guard let self = self else { return }
-                self.handleStreamSwitchCompletion(success)
-            }
-        } else {
-            self.selectOptimalServer { [weak self] server in
-                guard let self = self else {
-                    self?.isSwitchingStream = false
-                    return
+                if success {
+                    #if DEBUG
+                    print("✅ Stream switched to: \(self.selectedStream.language)")
+                    #endif
+                    if self.delegate != nil {
+                        self.onStatusChange?(true, String(localized: "status_playing"))
+                    }
+                } else {
+                    #if DEBUG
+                    print("❌ Stream switch failed for: \(self.selectedStream.language)")
+                    #endif
+                    if self.delegate != nil {
+                        self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
+                    }
                 }
-                self.lastServerSelectionTime = Date()
-                #if DEBUG
-                print("📡 Selected server for stream switch: \(server.name)")
-                #endif
-                self.play { [weak self] success in
-                    guard let self = self else { return }
-                    self.handleStreamSwitchCompletion(success)
-                }
+                self.isSwitchingStream = false
             }
         }
     }
@@ -1010,46 +1002,12 @@ class DirectStreamingPlayer: NSObject {
                 completion(false)
                 return
             }
-
-            if !streamURL.absoluteString.contains(self.selectedStream.url.absoluteString) {
-                #if DEBUG
-                print("❌ URL mismatch: requested=\(streamURL), selectedStream=\(self.selectedStream.url)")
-                #endif
-                self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
-                completion(false)
-                return
-            }
-
+            
             self.stop()
-
-            // Use custom scheme to force resource loader when we have DNS overrides
-            var assetURL = streamURL
-            if !self.hostnameToIP.isEmpty, let host = streamURL.host, self.hostnameToIP[host] != nil {
-                // Replace https with custom scheme to force resource loader
-                let customURLString = streamURL.absoluteString.replacingOccurrences(of: "https://", with: "lutheranradio://")
-                if let customURL = URL(string: customURLString) {
-                    assetURL = customURL
-                    #if DEBUG
-                    print("📡 Using custom scheme to force resource loader: \(assetURL)")
-                    #endif
-                }
-            }
-
-            let asset = AVURLAsset(url: assetURL)
-            asset.resourceLoader.setDelegate(self, queue: DispatchQueue.main)
+            
+            let asset = AVURLAsset(url: streamURL)
             self.playerItem = AVPlayerItem(asset: asset)
-
-            // Check for invalid playerItem status
-            if self.playerItem?.status.rawValue ?? -1 < 0 {
-                #if DEBUG
-                print("❌ Invalid playerItem status on initialization, possible Core Audio component issue")
-                #endif
-                self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
-                completion(false)
-                return
-            }
-
-            // Ensure metadataOutput is not attached to another playerItem
+            
             if self.player == nil {
                 self.player = AVPlayer(playerItem: self.playerItem)
                 #if DEBUG
@@ -1061,16 +1019,9 @@ class DirectStreamingPlayer: NSObject {
                 print("🎵 Reused existing AVPlayer")
                 #endif
             }
-
-            #if DEBUG
-            print("⏳ Initial playerItem status: \(self.playerItem?.status.rawValue ?? -1)")
-            if let error = self.playerItem?.error {
-                print("❌ Initial playerItem error: \(error.localizedDescription)")
-            }
-            #endif
-
+            
             self.addObservers()
-
+            
             var tempStatusObserver: NSKeyValueObservation?
             tempStatusObserver = self.playerItem?.observe(\.status, options: [.new]) { [weak self] item, _ in
                 guard let self = self else {
@@ -1079,19 +1030,11 @@ class DirectStreamingPlayer: NSObject {
                 }
                 switch item.status {
                 case .readyToPlay:
-                    #if DEBUG
-                    print("✅ PlayerItem readyToPlay, starting playback for: \(self.selectedStream.language)")
-                    #endif
-                    // Initialize and add metadataOutput
                     self.metadataOutput = AVPlayerItemMetadataOutput(identifiers: nil)
                     self.metadataOutput?.setDelegate(self, queue: .main)
                     if let metadataOutput = self.metadataOutput {
                         self.playerItem?.add(metadataOutput)
-                        #if DEBUG
-                        print("🧹 Added metadata output in readyToPlay")
-                        #endif
                     }
-                    
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                         self.player?.play()
                         self.onStatusChange?(true, String(localized: "status_playing"))
@@ -1100,17 +1043,11 @@ class DirectStreamingPlayer: NSObject {
                 case .failed:
                     #if DEBUG
                     print("❌ PlayerItem failed: \(item.error?.localizedDescription ?? "Unknown error")")
-                    if let error = item.error as NSError? {
-                        print("❌ Error details: domain=\(error.domain), code=\(error.code), userInfo=\(error.userInfo)")
-                    }
                     #endif
                     self.lastError = item.error
                     let errorType = StreamErrorType.from(error: item.error)
                     self.hasPermanentError = errorType.isPermanent
                     if errorType == .transientFailure {
-                        #if DEBUG
-                        print("🔄 Transient error detected, scheduling retry")
-                        #endif
                         let workItem = DispatchWorkItem { [weak self] in
                             self?.startPlayback(with: streamURL, completion: completion)
                         }
@@ -1128,27 +1065,19 @@ class DirectStreamingPlayer: NSObject {
                     print("⏳ PlayerItem status unknown, waiting...")
                     #endif
                 @unknown default:
-                    #if DEBUG
-                    print("⚠️ Unknown player item status")
-                    #endif
                     break
                 }
                 tempStatusObserver?.invalidate()
             }
-
-            DispatchQueue.main.asyncAfter(deadline: .now() + 20.0) { [weak self, weak tempStatusObserver] in
-                guard let self = self, tempStatusObserver != nil else { return }
-                if self.playerItem?.status != .readyToPlay {
-                    #if DEBUG
-                    print("❌ Playback timeout, playerItem not ready")
-                    if let error = self.playerItem?.error {
-                        print("❌ PlayerItem error on timeout: \(error.localizedDescription)")
-                    }
-                    #endif
-                    self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
-                    self.stop()
-                    completion(false)
-                }
+            
+            DispatchQueue.main.asyncAfter(deadline: .now() + 20.0) { [weak self] in
+                guard let self = self, self.playerItem?.status != .readyToPlay else { return }
+                #if DEBUG
+                print("❌ Playback timeout, playerItem not ready")
+                #endif
+                self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
+                self.stop()
+                completion(false)
             }
         }
     }
@@ -1456,19 +1385,19 @@ extension DirectStreamingPlayer {
     struct Server {
         let name: String
         let pingURL: URL
-        var ipAddress: String?
+        let baseHostname: String
     }
     
     static var servers = [
         Server(
-            name: "European",
+            name: "EU",
             pingURL: URL(string: "https://european.lutheran.radio/ping")!,
-            ipAddress: nil
+            baseHostname: "lutheran.radio"
         ),
         Server(
             name: "US",
             pingURL: URL(string: "https://livestream.lutheran.radio/ping")!,
-            ipAddress: nil
+            baseHostname: "lutheran.radio"
         )
     ]
 }
@@ -1487,7 +1416,7 @@ extension DirectStreamingPlayer {
         config.timeoutIntervalForRequest = 2.0
         let session = URLSession(configuration: config)
         
-        for (index, server) in Self.servers.enumerated() {
+        for server in Self.servers {
             group.enter()
             let startTime = Date()
             #if DEBUG
@@ -1500,22 +1429,15 @@ extension DirectStreamingPlayer {
                     return
                 }
                 let latency = Date().timeIntervalSince(startTime)
-                var updatedServer = server
-                
-                if let data = data,
-                   let json = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
-                   let ipAddress = json["address"] as? String,
-                   let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
-                    updatedServer.ipAddress = ipAddress
-                    Self.servers[index] = updatedServer
-                    results.append(PingResult(server: updatedServer, latency: latency))
+                if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200, error == nil {
+                    results.append(PingResult(server: server, latency: latency))
                     #if DEBUG
-                    print("📡 [Ping] Success for \(server.name), IP=\(ipAddress), latency=\(latency)s")
+                    print("📡 [Ping] Success for \(server.name), latency=\(latency)s")
                     #endif
                 } else {
                     results.append(PingResult(server: server, latency: .infinity))
                     #if DEBUG
-                    print("📡 [Ping] Failed for \(server.name): error=\(error?.localizedDescription ?? "None"), status=\((response as? HTTPURLResponse)?.statusCode ?? -1), latency=\(latency)s")
+                    print("📡 [Ping] Failed for \(server.name): error=\(error?.localizedDescription ?? "None"), status=\((response as? HTTPURLResponse)?.statusCode ?? -1)")
                     #endif
                 }
                 group.leave()
@@ -1525,7 +1447,7 @@ extension DirectStreamingPlayer {
         
         group.notify(queue: .main) {
             #if DEBUG
-            print("📡 [Ping] All pings completed: \(results.map { "\($0.server.name): \($0.latency)s, IP=\($0.server.ipAddress ?? "None")" })")
+            print("📡 [Ping] All pings completed: \(results.map { "\($0.server.name): \($0.latency)s" })")
             #endif
             completion(results)
         }
@@ -1572,71 +1494,58 @@ extension DirectStreamingPlayer {
 extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
     func resourceLoader(_ resourceLoader: AVAssetResourceLoader, shouldWaitForLoadingOfRequestedResource loadingRequest: AVAssetResourceLoadingRequest) -> Bool {
         guard var url = loadingRequest.request.url else {
-            #if DEBUG
-            print("❌ Resource loader: Invalid URL")
-            #endif
             loadingRequest.finishLoading(with: NSError(domain: "radio.lutheran", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid URL"]))
             return false
         }
         
-        // Store the original hostname before any modifications
-        var originalHostname: String? = nil
-        
-        // Convert custom scheme back to https
+        // Convert custom scheme back to HTTPS
         if url.scheme == "lutheranradio" {
-            let httpsString = url.absoluteString.replacingOccurrences(of: "lutheranradio://", with: "https://")
-            guard let httpsURL = URL(string: httpsString) else {
-                loadingRequest.finishLoading(with: NSError(domain: "radio.lutheran", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid URL conversion"]))
+            let httpsURLString = url.absoluteString.replacingOccurrences(of: "lutheranradio://", with: "https://")
+            guard let httpsURL = URL(string: httpsURLString) else {
+                loadingRequest.finishLoading(with: NSError(domain: "radio.lutheran", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid HTTPS URL conversion"]))
                 return false
             }
-            originalHostname = httpsURL.host  // Store original hostname
             url = httpsURL
             #if DEBUG
-            print("📡 Converted custom scheme to HTTPS: \(url)")
-            print("📡 Original hostname: \(originalHostname ?? "nil")")
+            print("📡 [Resource Loader] Converted custom scheme to HTTPS: \(url)")
             #endif
-        } else {
-            originalHostname = url.host
         }
         
-        // Create the request with DNS override
+        // Store the original hostname for SSL validation
+        let originalHostname = url.host
+
+        // Apply DNS override if available
+        if let host = url.host, let ipAddress = hostnameToIP[host] {
+            var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+            components?.host = ipAddress
+            if let newURL = components?.url {
+                url = newURL
+                #if DEBUG
+                print("📡 [Resource Loader] Applied DNS override: \(host) -> \(ipAddress)")
+                #endif
+            }
+        }
+
+        // Create request with the modified URL (with IP)
         var modifiedRequest = URLRequest(url: url)
         
-        // CRITICAL: Set all headers before DNS override
+        // Set the Host header to the original hostname for SSL
+        if let originalHost = originalHostname {
+            modifiedRequest.setValue(originalHost, forHTTPHeaderField: "Host")
+            #if DEBUG
+            print("📡 [Resource Loader] Set Host header: \(originalHost)")
+            #endif
+        }
+        
+        // Set headers
         modifiedRequest.setValue("audio/mpeg", forHTTPHeaderField: "Accept")
         modifiedRequest.setValue("1", forHTTPHeaderField: "Icy-MetaData")
         modifiedRequest.timeoutInterval = 30.0
         
-        // Apply DNS override if needed
-        if let host = originalHostname, let ipAddress = hostnameToIP[host] {
-            var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
-            components?.host = ipAddress
-            if let ipURL = components?.url {
-                modifiedRequest.url = ipURL
-                // CRITICAL: Set the Host header to the original hostname
-                modifiedRequest.setValue(host, forHTTPHeaderField: "Host")
-                #if DEBUG
-                print("📡 Applied DNS override: \(host) -> \(ipAddress)")
-                print("📡 Host header set to: \(host)")
-                print("📡 Final URL: \(ipURL)")
-                #endif
-            }
-        } else if let host = originalHostname {
-            // Even without DNS override, ensure Host header is set
-            modifiedRequest.setValue(host, forHTTPHeaderField: "Host")
-        }
-        
-        // Copy any additional headers from the original request
-        if let headers = loadingRequest.request.allHTTPHeaderFields {
-            for (key, value) in headers where !["Host", "Accept", "Icy-MetaData"].contains(key) {
-                modifiedRequest.setValue(value, forHTTPHeaderField: key)
-            }
-        }
-        
-        // Create streaming delegate with the original hostname for SSL validation
+        // Create streaming delegate
         let streamingDelegate = StreamingSessionDelegate(loadingRequest: loadingRequest, hostnameToIP: hostnameToIP)
         
-        // CRITICAL: Store the original hostname in the delegate for SSL validation
+        // Store the original hostname for SSL validation
         streamingDelegate.originalHostname = originalHostname
         
         #if DEBUG

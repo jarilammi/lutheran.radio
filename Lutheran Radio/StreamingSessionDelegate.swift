@@ -29,6 +29,7 @@ class StreamingSessionDelegate: CustomDNSURLSessionDelegate, URLSessionDataDeleg
     
     init(loadingRequest: AVAssetResourceLoadingRequest, hostnameToIP: [String: String]) {
         self.loadingRequest = loadingRequest
+        self.originalHostname = loadingRequest.request.url?.host
         super.init(hostnameToIP: hostnameToIP)
     }
     
@@ -40,59 +41,6 @@ class StreamingSessionDelegate: CustomDNSURLSessionDelegate, URLSessionDataDeleg
         #if DEBUG
         print("📡 StreamingSessionDelegate canceled")
         #endif
-    }
-    
-    override func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        if let error = error {
-            if (error as NSError).domain != NSURLErrorDomain || (error as NSError).code != NSURLErrorCancelled {
-                #if DEBUG
-                print("📡 Streaming task failed with error: \(error)")
-                #endif
-                if let urlError = error as? URLError {
-                    switch urlError.code {
-                    case .notConnectedToInternet, .cannotFindHost, .serverCertificateUntrusted:
-                        #if DEBUG
-                        if urlError.code == .serverCertificateUntrusted {
-                            print("🔒 Pinning failure detected: Certificate untrusted")
-                        }
-                        #endif
-                        if let onError = onError {
-                            DispatchQueue.main.async {
-                                onError(urlError)
-                            }
-                        } else {
-                            onError?(urlError)
-                        }
-                    default:
-                        if let onError = onError {
-                            DispatchQueue.main.async {
-                                onError(error)
-                            }
-                        } else {
-                            onError?(error)
-                        }
-                    }
-                } else {
-                    if let onError = onError {
-                        DispatchQueue.main.async {
-                            onError(error)
-                        }
-                    } else {
-                        onError?(error)
-                    }
-                }
-                loadingRequest.finishLoading(with: error) // Safe on main queue
-            } else {
-                #if DEBUG
-                print("📡 Streaming task cancelled")
-                #endif
-            }
-        } else {
-            #if DEBUG
-            print("📡 Streaming task completed normally")
-            #endif
-        }
-        session.invalidateAndCancel()
     }
     
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse, completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
@@ -178,23 +126,17 @@ class StreamingSessionDelegate: CustomDNSURLSessionDelegate, URLSessionDataDeleg
     }
     
     func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
-        // Check if this is a server trust challenge
         if challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust {
             guard let serverTrust = challenge.protectionSpace.serverTrust else {
-                #if DEBUG
-                print("🔒 No server trust available, cancelling challenge")
-                #endif
                 completionHandler(.cancelAuthenticationChallenge, nil)
                 return
             }
             
-            // Use the stored original hostname if available
+            // Use the stored original hostname for validation
             if let originalHost = self.originalHostname {
-                // Create an SSL policy using the original hostname
                 let policy = SecPolicyCreateSSL(true, originalHost as CFString)
                 SecTrustSetPolicies(serverTrust, [policy] as CFArray)
                 
-                // Evaluate the trust
                 var error: CFError?
                 if SecTrustEvaluateWithError(serverTrust, &error) {
                     #if DEBUG
@@ -208,31 +150,11 @@ class StreamingSessionDelegate: CustomDNSURLSessionDelegate, URLSessionDataDeleg
                     #endif
                     completionHandler(.cancelAuthenticationChallenge, nil)
                 }
-            } else if let originalHost = loadingRequest.request.allHTTPHeaderFields?["Host"] {
-                // Fallback: Extract from Host header
-                #if DEBUG
-                print("🔒 Using Host header for validation: \(originalHost)")
-                #endif
-                let policy = SecPolicyCreateSSL(true, originalHost as CFString)
-                SecTrustSetPolicies(serverTrust, [policy] as CFArray)
-                
-                var error: CFError?
-                if SecTrustEvaluateWithError(serverTrust, &error) {
-                    let credential = URLCredential(trust: serverTrust)
-                    completionHandler(.useCredential, credential)
-                } else {
-                    completionHandler(.cancelAuthenticationChallenge, nil)
-                }
             } else {
-                #if DEBUG
-                print("🔒 No hostname available for SSL validation, using default handling")
-                #endif
+                // Fallback to default handling
                 completionHandler(.performDefaultHandling, nil)
             }
         } else {
-            #if DEBUG
-            print("🔒 Non-server trust challenge received, using default handling")
-            #endif
             completionHandler(.performDefaultHandling, nil)
         }
     }
