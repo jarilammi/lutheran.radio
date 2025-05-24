@@ -844,37 +844,47 @@ class DirectStreamingPlayer: NSObject {
         
         selectOptimalServer { [weak self] server in
             guard let self = self else { completion(false); return }
-            self.lastServerSelectionTime = Date()
-            #if DEBUG
-            print("📡 Selected server: \(server.name) with baseHostname: \(server.baseHostname)")
-            #endif
-            
-            guard let streamURL = self.getStreamURL(for: self.selectedStream, with: server) else {
-                #if DEBUG
-                print("❌ Failed to construct stream URL with baseHostname")
-                #endif
-                self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
-                completion(false)
-                return
-            }
-            
-            var urlComponents = URLComponents(url: streamURL, resolvingAgainstBaseURL: false)
-            urlComponents?.queryItems = [URLQueryItem(name: "security_model", value: self.appSecurityModel)]
-            guard let finalURL = urlComponents?.url else {
-                #if DEBUG
-                print("❌ Failed to construct final stream URL with security model")
-                #endif
-                self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
-                completion(false)
-                return
-            }
-            
-            #if DEBUG
-            print("📡 Playing stream with URL: \(finalURL.absoluteString)")
-            #endif
-            
-            self.startPlayback(with: finalURL, completion: completion)
+            self.playWithServer(server, fallbackServers: Self.servers.filter { $0.name != server.name }, completion: completion)
         }
+    }
+    
+    private func playWithServer(_ server: Server, fallbackServers: [Server], completion: @escaping (Bool) -> Void) {
+        self.lastServerSelectionTime = Date()
+        #if DEBUG
+        print("📡 Attempting playback with server: \(server.name)")
+        #endif
+        
+        guard let streamURL = self.getStreamURL(for: self.selectedStream, with: server) else {
+            tryNextServer(fallbackServers: fallbackServers, completion: completion)
+            return
+        }
+        
+        var urlComponents = URLComponents(url: streamURL, resolvingAgainstBaseURL: false)
+        urlComponents?.queryItems = [URLQueryItem(name: "security_model", value: self.appSecurityModel)]
+        guard let finalURL = urlComponents?.url else {
+            tryNextServer(fallbackServers: fallbackServers, completion: completion)
+            return
+        }
+        
+        #if DEBUG
+        print("📡 Playing stream with URL: \(finalURL.absoluteString)")
+        #endif
+        
+        self.startPlaybackWithFallback(with: finalURL, server: server, fallbackServers: fallbackServers, completion: completion)
+    }
+
+    private func tryNextServer(fallbackServers: [Server], completion: @escaping (Bool) -> Void) {
+        guard let nextServer = fallbackServers.first else {
+            #if DEBUG
+            print("📡 No more servers to try")
+            #endif
+            self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
+            completion(false)
+            return
+        }
+        
+        let remainingServers = Array(fallbackServers.dropFirst())
+        playWithServer(nextServer, fallbackServers: remainingServers, completion: completion)
     }
     
     func setStream(to stream: Stream) {
@@ -996,7 +1006,7 @@ class DirectStreamingPlayer: NSObject {
         bufferingTimer = nil
     }
     
-    private func startPlayback(with streamURL: URL, completion: @escaping (Bool) -> Void) {
+    private func startPlaybackWithFallback(with streamURL: URL, server: Server, fallbackServers: [Server], completion: @escaping (Bool) -> Void) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else {
                 completion(false)
@@ -1042,18 +1052,19 @@ class DirectStreamingPlayer: NSObject {
                     }
                 case .failed:
                     #if DEBUG
-                    print("❌ PlayerItem failed: \(item.error?.localizedDescription ?? "Unknown error")")
+                    print("❌ PlayerItem failed with server \(server.name): \(item.error?.localizedDescription ?? "Unknown error")")
                     #endif
                     self.lastError = item.error
                     let errorType = StreamErrorType.from(error: item.error)
-                    self.hasPermanentError = errorType.isPermanent
-                    if errorType == .transientFailure {
-                        let workItem = DispatchWorkItem { [weak self] in
-                            self?.startPlayback(with: streamURL, completion: completion)
-                        }
-                        self.retryWorkItem = workItem
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: workItem)
+                    
+                    // Try fallback server instead of retry with same server
+                    if !fallbackServers.isEmpty {
+                        #if DEBUG
+                        print("📡 Trying fallback server...")
+                        #endif
+                        self.tryNextServer(fallbackServers: fallbackServers, completion: completion)
                     } else {
+                        self.hasPermanentError = errorType.isPermanent
                         DispatchQueue.main.async {
                             self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
                             self.stop()
@@ -1073,11 +1084,15 @@ class DirectStreamingPlayer: NSObject {
             DispatchQueue.main.asyncAfter(deadline: .now() + 20.0) { [weak self] in
                 guard let self = self, self.playerItem?.status != .readyToPlay else { return }
                 #if DEBUG
-                print("❌ Playback timeout, playerItem not ready")
+                print("❌ Playback timeout with server \(server.name), trying fallback")
                 #endif
-                self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
-                self.stop()
-                completion(false)
+                if !fallbackServers.isEmpty {
+                    self.tryNextServer(fallbackServers: fallbackServers, completion: completion)
+                } else {
+                    self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
+                    self.stop()
+                    completion(false)
+                }
             }
         }
     }
