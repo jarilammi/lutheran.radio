@@ -5,20 +5,31 @@
 //  Created by Jari Lammi on 4.3.2025.
 //
 
+/// - Article: Streaming Session Delegate Overview
+///
+/// This class handles streaming session delegation for Lutheran Radio, managing URL sessions and data tasks.
 import Foundation
 import AVFoundation
 
 class StreamingSessionDelegate: CustomDNSURLSessionDelegate, URLSessionDataDelegate {
+    /// The loading request for the AV asset resource.
     private var loadingRequest: AVAssetResourceLoadingRequest
+    /// Tracks the total bytes received during the streaming session.
     private var bytesReceived = 0
+    /// Indicates whether a response has been received.
     private var receivedResponse = false
-    // Make these internal so DirectStreamingPlayer can access them
+    /// The URL session for managing streaming tasks.
     var session: URLSession?
+    /// The data task for the streaming session.
     var dataTask: URLSessionDataTask?
+    /// A closure to handle errors during the streaming session.
     var onError: ((Error) -> Void)?
+    /// The original hostname before DNS override (for SSL validation)
+    var originalHostname: String?
     
     init(loadingRequest: AVAssetResourceLoadingRequest, hostnameToIP: [String: String]) {
         self.loadingRequest = loadingRequest
+        self.originalHostname = loadingRequest.request.url?.host
         super.init(hostnameToIP: hostnameToIP)
     }
     
@@ -30,59 +41,6 @@ class StreamingSessionDelegate: CustomDNSURLSessionDelegate, URLSessionDataDeleg
         #if DEBUG
         print("📡 StreamingSessionDelegate canceled")
         #endif
-    }
-    
-    override func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        if let error = error {
-            if (error as NSError).domain != NSURLErrorDomain || (error as NSError).code != NSURLErrorCancelled {
-                #if DEBUG
-                print("📡 Streaming task failed with error: \(error)")
-                #endif
-                if let urlError = error as? URLError {
-                    switch urlError.code {
-                    case .notConnectedToInternet, .cannotFindHost, .serverCertificateUntrusted:
-                        #if DEBUG
-                        if urlError.code == .serverCertificateUntrusted {
-                            print("🔒 Pinning failure detected: Certificate untrusted")
-                        }
-                        #endif
-                        if let onError = onError {
-                            DispatchQueue.main.async {
-                                onError(urlError)
-                            }
-                        } else {
-                            onError?(urlError)
-                        }
-                    default:
-                        if let onError = onError {
-                            DispatchQueue.main.async {
-                                onError(error)
-                            }
-                        } else {
-                            onError?(error)
-                        }
-                    }
-                } else {
-                    if let onError = onError {
-                        DispatchQueue.main.async {
-                            onError(error)
-                        }
-                    } else {
-                        onError?(error)
-                    }
-                }
-                loadingRequest.finishLoading(with: error) // Safe on main queue
-            } else {
-                #if DEBUG
-                print("📡 Streaming task cancelled")
-                #endif
-            }
-        } else {
-            #if DEBUG
-            print("📡 Streaming task completed normally")
-            #endif
-        }
-        session.invalidateAndCancel()
     }
     
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse, completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
@@ -168,7 +126,37 @@ class StreamingSessionDelegate: CustomDNSURLSessionDelegate, URLSessionDataDeleg
     }
     
     func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
-        completionHandler(.performDefaultHandling, nil)
+        if challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust {
+            guard let serverTrust = challenge.protectionSpace.serverTrust else {
+                completionHandler(.cancelAuthenticationChallenge, nil)
+                return
+            }
+            
+            // Use the stored original hostname for validation
+            if let originalHost = self.originalHostname {
+                let policy = SecPolicyCreateSSL(true, originalHost as CFString)
+                SecTrustSetPolicies(serverTrust, [policy] as CFArray)
+                
+                var error: CFError?
+                if SecTrustEvaluateWithError(serverTrust, &error) {
+                    #if DEBUG
+                    print("🔒 Certificate validation succeeded for host: \(originalHost)")
+                    #endif
+                    let credential = URLCredential(trust: serverTrust)
+                    completionHandler(.useCredential, credential)
+                } else {
+                    #if DEBUG
+                    print("🔒 Certificate validation failed for host \(originalHost): \(error?.localizedDescription ?? "Unknown error")")
+                    #endif
+                    completionHandler(.cancelAuthenticationChallenge, nil)
+                }
+            } else {
+                // Fallback to default handling
+                completionHandler(.performDefaultHandling, nil)
+            }
+        } else {
+            completionHandler(.performDefaultHandling, nil)
+        }
     }
     
     // Handle redirects with DNS override
