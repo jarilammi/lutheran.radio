@@ -97,6 +97,13 @@ class DirectStreamingPlayer: NSObject {
     private var networkMonitor: NetworkPathMonitoring?
     private var hasInternetConnection = true
     #endif
+    private var serverFailureCount: [String: Int] = [:]
+    private var lastFailedServerName: String?
+    private var currentSelectedServer: Server = servers[0]
+
+    // Public accessors for ViewController
+    var lastFailedServer: String? { return lastFailedServerName }
+    var selectedServerInfo: Server { return currentSelectedServer }
     
     struct Stream {
         let title: String
@@ -166,13 +173,35 @@ class DirectStreamingPlayer: NSObject {
     #endif
     
     func selectOptimalServer(completion: @escaping (Server) -> Void) {
+        // If we have a server that failed recently, try the other one first
+        if let lastFailed = lastFailedServerName,
+           let failureCount = serverFailureCount[lastFailed],
+           failureCount > 0 {
+            
+            let workingServers = Self.servers.filter { server in
+                let failCount = serverFailureCount[server.name, default: 0]
+                return failCount == 0 || failCount < failureCount
+            }
+            
+            if let betterServer = workingServers.first {
+                #if DEBUG
+                print("📡 Avoiding recently failed server \(lastFailed), using \(betterServer.name)")
+                #endif
+                currentSelectedServer = betterServer
+                completion(betterServer)
+                return
+            }
+        }
+        
+        // Existing throttling logic
         guard lastServerSelectionTime == nil || Date().timeIntervalSince(lastServerSelectionTime!) > 10.0 else {
             #if DEBUG
-            print("📡 selectOptimalServer: Throttling server selection, using cached server: \(selectedServer.name)")
+            print("📡 selectOptimalServer: Throttling server selection, using cached server: \(currentSelectedServer.name)")
             #endif
-            completion(selectedServer)
+            completion(currentSelectedServer)
             return
         }
+        
         serverSelectionWorkItem?.cancel()
         let workItem = DispatchWorkItem { [weak self] in
             guard let self = self else {
@@ -182,17 +211,17 @@ class DirectStreamingPlayer: NSObject {
             self.fetchServerIPsAndLatencies { results in
                 let validResults = results.filter { $0.latency != .infinity }
                 if let bestResult = validResults.min(by: { $0.latency < $1.latency }) {
-                    self.selectedServer = bestResult.server
+                    self.currentSelectedServer = bestResult.server
                     #if DEBUG
                     print("📡 [Server Selection] Selected \(bestResult.server.name) with latency \(bestResult.latency)s")
                     #endif
                 } else {
-                    self.selectedServer = Self.servers[0]
+                    self.currentSelectedServer = Self.servers[0]
                     #if DEBUG
-                    print("📡 [Server Selection] No valid ping results, falling back to \(self.selectedServer.name)")
+                    print("📡 [Server Selection] No valid ping results, falling back to \(self.currentSelectedServer.name)")
                     #endif
                 }
-                completion(self.selectedServer)
+                completion(self.currentSelectedServer)
             }
         }
         serverSelectionWorkItem = workItem
@@ -874,6 +903,14 @@ class DirectStreamingPlayer: NSObject {
     }
 
     private func tryNextServer(fallbackServers: [Server], completion: @escaping (Bool) -> Void) {
+        // Mark the current server as failed
+        lastFailedServerName = currentSelectedServer.name
+        serverFailureCount[currentSelectedServer.name, default: 0] += 1
+        
+        #if DEBUG
+        print("📡 Server \(currentSelectedServer.name) failed (count: \(serverFailureCount[currentSelectedServer.name] ?? 0))")
+        #endif
+        
         guard let nextServer = fallbackServers.first else {
             #if DEBUG
             print("📡 No more servers to try")
@@ -883,6 +920,17 @@ class DirectStreamingPlayer: NSObject {
             return
         }
         
+        #if DEBUG
+        print("📡 Trying fallback server: \(nextServer.name)")
+        #endif
+        
+        // Clear any cached DNS for the failed server
+        let failedHostname = getStreamURL(for: selectedStream, with: currentSelectedServer)?.host
+        if let hostname = failedHostname {
+            hostnameToIP.removeValue(forKey: hostname)
+        }
+        
+        currentSelectedServer = nextServer
         let remainingServers = Array(fallbackServers.dropFirst())
         playWithServer(nextServer, fallbackServers: remainingServers, completion: completion)
     }
@@ -1040,6 +1088,8 @@ class DirectStreamingPlayer: NSObject {
                 }
                 switch item.status {
                 case .readyToPlay:
+                    self.serverFailureCount[server.name] = 0
+                    self.lastFailedServerName = nil
                     self.metadataOutput = AVPlayerItemMetadataOutput(identifiers: nil)
                     self.metadataOutput?.setDelegate(self, queue: .main)
                     if let metadataOutput = self.metadataOutput {

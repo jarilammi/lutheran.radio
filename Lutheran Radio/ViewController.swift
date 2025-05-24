@@ -788,6 +788,20 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             performActiveConnectivityCheck()
             return
         }
+        
+        // Smart debounce - only prevent rapid attempts to the same failing server
+        let now = Date()
+        if let lastAttempt = lastPlaybackAttempt, now.timeIntervalSince(lastAttempt) < 0.5 {
+            // Only debounce if we're trying the same server that just failed
+            if let lastFailedServer = streamingPlayer.lastFailedServer,
+               lastFailedServer == streamingPlayer.selectedServerInfo.name {
+                #if DEBUG
+                print("📱 Debouncing failed server \(lastFailedServer), time since last: \(now.timeIntervalSince(lastAttempt))s")
+                #endif
+                return
+            }
+        }
+        lastPlaybackAttempt = now
 
         // Stop tuning sound to avoid conflicts
         stopTuningSound()
