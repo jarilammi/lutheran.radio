@@ -319,7 +319,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     private func configureAudioSession() {
         do {
             let audioSession = AVAudioSession.sharedInstance()
-            try audioSession.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+            try audioSession.setCategory(.playback, mode: .default, options: [])
             try audioSession.setActive(true)
             #if DEBUG
             print("🔊 Audio session configured for playback")
@@ -1236,7 +1236,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         do {
             // Configure and activate audio session
             let audioSession = AVAudioSession.sharedInstance()
-            try audioSession.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+            try audioSession.setCategory(.playback, mode: .default, options: [])
             try audioSession.setActive(true)
             #if DEBUG
             print("🔊 Audio session activated for special tuning sound")
@@ -1300,7 +1300,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         do {
             // Configure and activate audio session
             let audioSession = AVAudioSession.sharedInstance()
-            try audioSession.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+            try audioSession.setCategory(.playback, mode: .default, options: [])
             try audioSession.setActive(true)
             #if DEBUG
             print("🔊 Audio session activated for tuning sound")
