@@ -745,8 +745,7 @@ class DirectStreamingPlayer: NSObject {
             let wasConnected = self.hasInternetConnection
             self.hasInternetConnection = status == .satisfied
             if self.hasInternetConnection && !wasConnected {
-                // Clear DNS overrides to force new server selection
-                self.hostnameToIP = [:]
+                // Reset server selection to force new selection
                 self.lastServerSelectionTime = nil
                 self.selectedServer = Self.servers[0] // Reset to default
                 
