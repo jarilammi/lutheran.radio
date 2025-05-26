@@ -164,7 +164,6 @@ class DirectStreamingPlayer: NSObject {
     #endif
     
     private var selectedServer: Server = servers[0]
-    private var hostnameToIP: [String: String] = [:]
     
     #if DEBUG
     var retryWorkItem: DispatchWorkItem?
@@ -701,7 +700,6 @@ class DirectStreamingPlayer: NSObject {
                 print("🌐 [Network] Connection restored, previous server: \(self.selectedServer.name)")
                 
                 // Clear DNS overrides to force new server selection
-                self.hostnameToIP = [:]
                 self.lastServerSelectionTime = nil
                 self.selectedServer = Self.servers[0] // Reset to default
                 print("🌐 [Network] Cleared DNS overrides for fresh server selection")
@@ -710,7 +708,7 @@ class DirectStreamingPlayer: NSObject {
                 self.validationState = .pending
                 print("🔒 [Network] Invalidated security model validation cache")
                 self.selectOptimalServer { server in
-                    print("🌐 [Network] New server selected: \(server.name), hostnameToIP: \(self.hostnameToIP)")
+                    print("🌐 [Network] New server selected: \(server.name)")
                     if self.validationState == .failedTransient {
                         self.validationState = .pending
                         self.hasPermanentError = false
@@ -747,8 +745,7 @@ class DirectStreamingPlayer: NSObject {
             let wasConnected = self.hasInternetConnection
             self.hasInternetConnection = status == .satisfied
             if self.hasInternetConnection && !wasConnected {
-                // Clear DNS overrides to force new server selection
-                self.hostnameToIP = [:]
+                // Reset server selection to force new selection
                 self.lastServerSelectionTime = nil
                 self.selectedServer = Self.servers[0] // Reset to default
                 
@@ -923,13 +920,7 @@ class DirectStreamingPlayer: NSObject {
         #if DEBUG
         print("📡 Trying fallback server: \(nextServer.name)")
         #endif
-        
-        // Clear any cached DNS for the failed server
-        let failedHostname = getStreamURL(for: selectedStream, with: currentSelectedServer)?.host
-        if let hostname = failedHostname {
-            hostnameToIP.removeValue(forKey: hostname)
-        }
-        
+                
         currentSelectedServer = nextServer
         let remainingServers = Array(fallbackServers.dropFirst())
         playWithServer(nextServer, fallbackServers: remainingServers, completion: completion)
@@ -1581,19 +1572,7 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
         
         // Store the original hostname for SSL validation
         let originalHostname = url.host
-
-        // Apply DNS override if available
-        if let host = url.host, let ipAddress = hostnameToIP[host] {
-            var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
-            components?.host = ipAddress
-            if let newURL = components?.url {
-                url = newURL
-                #if DEBUG
-                print("📡 [Resource Loader] Applied DNS override: \(host) -> \(ipAddress)")
-                #endif
-            }
-        }
-
+        
         // Create request with the modified URL (with IP)
         var modifiedRequest = URLRequest(url: url)
         
@@ -1611,7 +1590,7 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
         modifiedRequest.timeoutInterval = 30.0
         
         // Create streaming delegate
-        let streamingDelegate = StreamingSessionDelegate(loadingRequest: loadingRequest, hostnameToIP: hostnameToIP)
+        let streamingDelegate = StreamingSessionDelegate(loadingRequest: loadingRequest)
         
         // Store the original hostname for SSL validation
         streamingDelegate.originalHostname = originalHostname

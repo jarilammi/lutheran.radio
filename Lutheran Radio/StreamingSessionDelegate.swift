@@ -11,7 +11,7 @@
 import Foundation
 import AVFoundation
 
-class StreamingSessionDelegate: CustomDNSURLSessionDelegate, URLSessionDataDelegate {
+class StreamingSessionDelegate: NSObject, URLSessionDataDelegate {
     /// The loading request for the AV asset resource.
     private var loadingRequest: AVAssetResourceLoadingRequest
     /// Tracks the total bytes received during the streaming session.
@@ -27,10 +27,9 @@ class StreamingSessionDelegate: CustomDNSURLSessionDelegate, URLSessionDataDeleg
     /// The original hostname before DNS override (for SSL validation)
     var originalHostname: String?
     
-    init(loadingRequest: AVAssetResourceLoadingRequest, hostnameToIP: [String: String]) {
+    init(loadingRequest: AVAssetResourceLoadingRequest) {
         self.loadingRequest = loadingRequest
-        self.originalHostname = loadingRequest.request.url?.host
-        super.init(hostnameToIP: hostnameToIP)
+        super.init() // Call NSObject.init instead
     }
     
     func cancel() {
@@ -157,25 +156,5 @@ class StreamingSessionDelegate: CustomDNSURLSessionDelegate, URLSessionDataDeleg
         } else {
             completionHandler(.performDefaultHandling, nil)
         }
-    }
-    
-    // Handle redirects with DNS override
-    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
-        // Apply DNS override to redirects as well
-        if let url = request.url, let host = url.host, let ipAddress = hostnameToIP[host] {
-            var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
-            components?.host = ipAddress
-            if let newURL = components?.url {
-                var modifiedRequest = request
-                modifiedRequest.url = newURL
-                modifiedRequest.setValue(host, forHTTPHeaderField: "Host")
-                #if DEBUG
-                print("📡 [Redirect] Overriding DNS for \(host) to \(ipAddress)")
-                #endif
-                completionHandler(modifiedRequest)
-                return
-            }
-        }
-        completionHandler(request)
     }
 }
