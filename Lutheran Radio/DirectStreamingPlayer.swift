@@ -72,7 +72,7 @@ class NWPathMonitorAdapter: NetworkPathMonitoring {
 /// Manages direct streaming playback, including network monitoring and security validation.
 class DirectStreamingPlayer: NSObject {
     // MARK: - Security Model
-    private let appSecurityModel = "visby"
+    private let appSecurityModel = "landvetter"
     private var isValidating = false
     #if DEBUG
     /// The last time security validation was performed (exposed for debugging).
@@ -434,6 +434,7 @@ class DirectStreamingPlayer: NSObject {
         var index = 0
         while index < data.count {
             let length = Int(data[index])
+            guard length > 0 && length <= 255 else { break } // Stop parsing on invalid length
             index += 1
             if index + length <= data.count {
                 let strData = data.subdata(in: index..<index + length)
