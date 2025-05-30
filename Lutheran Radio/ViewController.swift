@@ -50,6 +50,10 @@ extension UIView {
 
 /// The main view controller for the Lutheran Radio app.
 class ViewController: UIViewController, UICollectionViewDelegate, UICollectionViewDataSource, UIScrollViewDelegate, AVAudioPlayerDelegate {
+    private enum UserDefaultsKeys {
+        static let hasDismissedDataUsageNotification = "hasDismissedDataUsageNotification"
+    }
+    
     /// Label displaying the app title.
     let titleLabel: UILabel = {
         let label = UILabel()
@@ -162,7 +166,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     private var isInitialSetupComplete = false
     private var isInitialScrollLocked = true
     private var hasShownDataUsageNotification = false
-    private let hasDismissedDataUsageNotificationKey = "hasDismissedDataUsageNotification"
     
     let speakerImageView: UIImageView = {
         let imageView = UIImageView()
@@ -525,7 +528,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             let isExpensive = path.isExpensive
             DispatchQueue.main.async {
                 // Mobile data notification logic
-                if isConnected && isExpensive && !self.hasShownDataUsageNotification && !UserDefaults.standard.bool(forKey: self.hasDismissedDataUsageNotificationKey) {
+                if isConnected && isExpensive && !self.hasShownDataUsageNotification && !UserDefaults.standard.bool(forKey: UserDefaultsKeys.hasDismissedDataUsageNotification) {
                     self.showDataUsageNotification()
                     self.hasShownDataUsageNotification = true
                 }
@@ -574,7 +577,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         )
         alert.addAction(UIAlertAction(title: String(localized: "ok"), style: .default, handler: nil))
         alert.addAction(UIAlertAction(title: String(localized: "dont_show_again"), style: .default, handler: { _ in
-            UserDefaults.standard.set(true, forKey: self.hasDismissedDataUsageNotificationKey)
+            UserDefaults.standard.set(true, forKey: UserDefaultsKeys.hasDismissedDataUsageNotification)
         }))
         present(alert, animated: true, completion: nil)
     }
