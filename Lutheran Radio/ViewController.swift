@@ -223,6 +223,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     // Testable accessors
     @objc var isPlayingState: Bool {
         get { isPlaying }
+        set { isPlaying = newValue } // Add setter for testing
     }
     
     @objc var hasInternet: Bool {
