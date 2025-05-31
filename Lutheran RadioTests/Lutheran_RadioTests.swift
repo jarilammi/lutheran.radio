@@ -254,7 +254,7 @@ final class TestViewController: UIViewController {
     }
     
     private func startPlayback() {
-        mockPlayer.play { [weak self] success in
+        mockPlayer.play { success in
             // The mock will trigger onStatusChange callback
         }
     }
@@ -298,7 +298,7 @@ final class Lutheran_RadioTests: XCTestCase {
         // Setup
         mockPlayer.reset()
         mockPlayer.simulateSuccessfulPlayback()
-
+        
         // Test playing
         let playExpectation = XCTestExpectation(description: "Play should complete successfully")
         
@@ -308,23 +308,23 @@ final class Lutheran_RadioTests: XCTestCase {
         
         // Wait for async completion
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-            guard let self = self else {
+            guard let strongSelf = self else {
                 XCTFail("Self was deallocated")
                 return
             }
             
-            XCTAssertTrue(self.mockPlayer.playCalled, "Play should have been called")
-            XCTAssertTrue(self.testViewController.isPlaying, "Should be in playing state after successful playback")
+            XCTAssertTrue(strongSelf.mockPlayer.playCalled, "Play should have been called")
+            XCTAssertTrue(strongSelf.testViewController.isPlaying, "Should be in playing state after successful playback")
             
             // Now test pausing
-            self.mockPlayer.reset()
+            strongSelf.mockPlayer.reset()
             
-            self.testViewController.playPauseTapped() // This should pause since we're currently playing
+            strongSelf.testViewController.playPauseTapped() // This should pause since we're currently playing
             
             // Wait for stop to complete
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                XCTAssertTrue(self.mockPlayer.stopCalled, "Stop should have been called")
-                XCTAssertFalse(self.testViewController.isPlaying, "Should not be in playing state after pause")
+                XCTAssertTrue(strongSelf.mockPlayer.stopCalled, "Stop should have been called")
+                XCTAssertFalse(strongSelf.testViewController.isPlaying, "Should not be in playing state after pause")
                 
                 playExpectation.fulfill()
             }
