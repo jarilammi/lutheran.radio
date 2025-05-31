@@ -8,71 +8,132 @@
 import XCTest
 @testable import Lutheran_Radio
 
-// Make the class final to satisfy Swift 6 sendable requirements
-final class MockStreamingPlayer: DirectStreamingPlayer {
-    private let lock = NSLock()
+/// Mock implementation of DirectStreamingPlayer for testing
+final class MockStreamingPlayer: DirectStreamingPlayer, @unchecked Sendable {
+    // Use thread-safe storage for mutable properties
+    private let _playCalled = MainTestThreadSafeBox<Bool>(false)
+    private let _stopCalled = MainTestThreadSafeBox<Bool>(false)
+    private let _setStreamCalled = MainTestThreadSafeBox<Bool>(false)
+    private let _forcePlayCalled = MainTestThreadSafeBox<Bool>(false)
+    private let _volume = MainTestThreadSafeBox<Float>(0.5)
+    private let _volumeSet = MainTestThreadSafeBox<Float?>(nil)
+    private let _playCompletion = MainTestThreadSafeBox<((Bool) -> Void)?>(nil)
+    private let _stopCompletion = MainTestThreadSafeBox<(() -> Void)?>(nil)
+    private let _shouldSimulateSuccess = MainTestThreadSafeBox<Bool>(true)
     
-    // Use actor-isolated properties with thread-safe access
-    private var _playCalled = false
     var playCalled: Bool {
-        get { lock.withLock { _playCalled } }
-        set { lock.withLock { _playCalled = newValue } }
+        get { _playCalled.value }
+        set { _playCalled.value = newValue }
     }
     
-    private var _stopCalled = false
     var stopCalled: Bool {
-        get { lock.withLock { _stopCalled } }
-        set { lock.withLock { _stopCalled = newValue } }
+        get { _stopCalled.value }
+        set { _stopCalled.value = newValue }
     }
     
-    private var _volumeSet: Float?
+    var setStreamCalled: Bool {
+        get { _setStreamCalled.value }
+        set { _setStreamCalled.value = newValue }
+    }
+    
+    var forcePlayCalled: Bool {
+        get { _forcePlayCalled.value }
+        set { _forcePlayCalled.value = newValue }
+    }
+    
+    var currentVolume: Float {
+        get { _volume.value }
+        set { _volume.value = newValue }
+    }
+    
     var volumeSet: Float? {
-        get { lock.withLock { _volumeSet } }
-        set { lock.withLock { _volumeSet = newValue } }
+        get { _volumeSet.value }
+        set { _volumeSet.value = newValue }
     }
     
-    private var _savedCompletion: ((Bool) -> Void)?
-    var savedCompletion: ((Bool) -> Void)? {
-        get { lock.withLock { _savedCompletion } }
-        set { lock.withLock { _savedCompletion = newValue } }
+    var playCompletion: ((Bool) -> Void)? {
+        get { _playCompletion.value }
+        set { _playCompletion.value = newValue }
+    }
+    
+    var stopCompletion: (() -> Void)? {
+        get { _stopCompletion.value }
+        set { _stopCompletion.value = newValue }
     }
     
     override func play(completion: @escaping (Bool) -> Void) {
         playCalled = true
-        // Save the completion handler
-        savedCompletion = completion
-    }
-    
-    // Add a method to force the play called status for testing
-    func forcePlayCalled() {
-        playCalled = true
-        // We don't need to actually save a completion handler as we'll call simulate directly
-    }
-    
-    // Add a method to simulate successful playback (to be called from the test)
-    func simulateSuccessfulPlayback() {
-        // If there's a saved completion, use it
-        if let completion = savedCompletion {
-            completion(true)
+        playCompletion = completion
+        // Simulate async behavior
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            completion(self._shouldSimulateSuccess.value)
         }
-        
-        // Directly update the UI state through the callback
-        self.onStatusChange?(true, "status_playing")
     }
     
     override func stop(completion: (() -> Void)? = nil) {
         stopCalled = true
-        // Update the UI state
-        onStatusChange?(false, "status_paused")
+        stopCompletion = completion
         completion?()
     }
     
+    override func setStream(to stream: Stream) {
+        setStreamCalled = true
+        selectedStream = stream
+    }
+    
     override func setVolume(_ volume: Float) {
+        currentVolume = volume
         volumeSet = volume
     }
     
-    override func isLastErrorPermanent() -> Bool {
-        return false
+    // Additional mock methods for testing
+    func simulateSuccessfulPlayback() {
+        _shouldSimulateSuccess.value = true
+    }
+    
+    func simulateFailedPlayback() {
+        _shouldSimulateSuccess.value = false
+    }
+    
+    // Method to trigger force play (not a property call)
+    func triggerForcePlay() {
+        forcePlayCalled = true
+    }
+    
+    // Reset method for test cleanup
+    func reset() {
+        playCalled = false
+        stopCalled = false
+        setStreamCalled = false
+        forcePlayCalled = false
+        currentVolume = 0.5
+        volumeSet = nil
+        playCompletion = nil
+        stopCompletion = nil
+        _shouldSimulateSuccess.value = true
+    }
+}
+
+/// Thread-safe wrapper for mutable properties in Sendable classes (Main Tests)
+final class MainTestThreadSafeBox<T>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _value: T
+    
+    var value: T {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return _value
+        }
+        set {
+            lock.lock()
+            defer { lock.unlock() }
+            _value = newValue
+        }
+    }
+    
+    init(_ value: T) {
+        self._value = value
     }
 }
 
@@ -102,8 +163,8 @@ final class Lutheran_RadioTests: XCTestCase {
         // Bypass the async code and directly trigger play in the mock
         viewController.playPauseTapped()
         
-        // Force the playback attempt to happen immediately
-        mockPlayer.forcePlayCalled()
+        // Trigger force play method instead of calling as function
+        mockPlayer.triggerForcePlay()
         
         // Verify play was called
         XCTAssertTrue(mockPlayer.playCalled, "Play should have been called")
