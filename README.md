@@ -127,6 +127,10 @@ Example output:
 
 Compare this output to the security model defined in the app (found in ```DirectStreamingPlayer.swift``` as ```appSecurityModel```). If the app’s model (e.g., "landvetter") isn’t listed, it will fail validation. To update the list, modify the TXT record for ```securitymodels.lutheran.radio``` through the DNS management interface for the ```lutheran.radio``` domain.
 
+### Security Model TXT Record Usage
+
+Lutheran Radio's security system uses a DNS TXT record to ensure only trusted app versions can stream content. The longest practical TXT record length for this purpose is about 450 bytes, which fits within standard DNS limits and supports up to 40-50 security model names (like "mariehamn" or "landvetter"). This is more than enough for the current 27-byte record. If you need to use more names in the future, check that your DNS supports larger messages (EDNS0) and test the app to confirm it can handle them. Keep an eye on how your DNS behaves to ensure everything works smoothly, keeping the app secure and reliable for all users.
+
 ### Security Model History
 
 To prevent naming collisions and maintain a clear history of security models, the table below lists all used security model names along with their validity periods. When selecting a new security model name, ensure it does not match any previously used name to avoid conflicts with older app versions or DNS TXT records.
@@ -136,7 +140,7 @@ To prevent naming collisions and maintain a clear history of security models, th
 | `turku`             | April 8, 2025    | April 20, 2025  | 1.0.4                  |
 | `mariehamn`         | April 15, 2025   | (ongoing)       | 1.0.7                  |
 | `visby`             | May 26, 2025     | (ongoing)       | 1.1.1                  |
-| `landvetter`        | (pending)        | (pending)       | 1.1.2                  |
+| `landvetter`        | June 1, 2025     | (ongoing)       | 1.1.2                  |
 
 **Notes:**
 - **Valid From:** The date when the security model was first published to the App Store.
