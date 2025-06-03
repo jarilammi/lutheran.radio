@@ -7,82 +7,114 @@
 
 import WidgetKit
 import SwiftUI
-
-struct Provider: AppIntentTimelineProvider {
-    func placeholder(in context: Context) -> SimpleEntry {
-        SimpleEntry(date: Date(), configuration: ConfigurationAppIntent())
-    }
-
-    func snapshot(for configuration: ConfigurationAppIntent, in context: Context) async -> SimpleEntry {
-        SimpleEntry(date: Date(), configuration: configuration)
-    }
-    
-    func timeline(for configuration: ConfigurationAppIntent, in context: Context) async -> Timeline<SimpleEntry> {
-        var entries: [SimpleEntry] = []
-
-        // Generate a timeline consisting of five entries an hour apart, starting from the current date.
-        let currentDate = Date()
-        for hourOffset in 0 ..< 5 {
-            let entryDate = Calendar.current.date(byAdding: .hour, value: hourOffset, to: currentDate)!
-            let entry = SimpleEntry(date: entryDate, configuration: configuration)
-            entries.append(entry)
-        }
-
-        return Timeline(entries: entries, policy: .atEnd)
-    }
-
-//    func relevances() async -> WidgetRelevances<ConfigurationAppIntent> {
-//        // Generate a list containing the contexts this widget is relevant in.
-//    }
-}
-
-struct SimpleEntry: TimelineEntry {
-    let date: Date
-    let configuration: ConfigurationAppIntent
-}
-
-struct LutheranRadioWidgetEntryView : View {
-    var entry: Provider.Entry
-
-    var body: some View {
-        VStack {
-            Text("Time:")
-            Text(entry.date, style: .time)
-
-            Text("Favorite Emoji:")
-            Text(entry.configuration.favoriteEmoji)
-        }
-    }
-}
+import AppIntents
 
 struct LutheranRadioWidget: Widget {
     let kind: String = "LutheranRadioWidget"
 
     var body: some WidgetConfiguration {
-        AppIntentConfiguration(kind: kind, intent: ConfigurationAppIntent.self, provider: Provider()) { entry in
+        AppIntentConfiguration(kind: kind, intent: RadioWidgetConfiguration.self, provider: Provider()) { entry in
             LutheranRadioWidgetEntryView(entry: entry)
-                .containerBackground(.fill.tertiary, for: .widget)
         }
+        .configurationDisplayName("Lutheran Radio")
+        .description("Control and monitor Lutheran Radio playback.")
+        .supportedFamilies([.systemSmall, .systemMedium])
     }
 }
 
-extension ConfigurationAppIntent {
-    fileprivate static var smiley: ConfigurationAppIntent {
-        let intent = ConfigurationAppIntent()
-        intent.favoriteEmoji = "😀"
-        return intent
+struct Provider: AppIntentTimelineProvider {
+    func placeholder(in context: Context) -> SimpleEntry {
+        SimpleEntry(
+            date: Date(),
+            isPlaying: false,
+            currentStation: "🇺🇸 English",
+            configuration: RadioWidgetConfiguration()
+        )
+    }
+
+    func snapshot(for configuration: RadioWidgetConfiguration, in context: Context) async -> SimpleEntry {
+        SimpleEntry(
+            date: Date(),
+            isPlaying: false,
+            currentStation: "🇺🇸 English",
+            configuration: configuration
+        )
     }
     
-    fileprivate static var starEyes: ConfigurationAppIntent {
-        let intent = ConfigurationAppIntent()
-        intent.favoriteEmoji = "🤩"
-        return intent
+    func timeline(for configuration: RadioWidgetConfiguration, in context: Context) async -> Timeline<SimpleEntry> {
+        var entries: [SimpleEntry] = []
+        
+        // Get current state from DirectStreamingPlayer
+        let isPlaying = DirectStreamingPlayer.shared.player?.rate ?? 0 > 0
+        let currentStation = DirectStreamingPlayer.shared.selectedStream.flag + " " + DirectStreamingPlayer.shared.selectedStream.language
+        
+        let currentDate = Date()
+        let entry = SimpleEntry(
+            date: currentDate,
+            isPlaying: isPlaying,
+            currentStation: currentStation,
+            configuration: configuration
+        )
+        entries.append(entry)
+
+        // Update every 30 seconds
+        let nextUpdate = Calendar.current.date(byAdding: .second, value: 30, to: currentDate)!
+        return Timeline(entries: entries, policy: .after(nextUpdate))
     }
 }
 
-#Preview(as: .systemSmall) {
-    LutheranRadioWidget()
-} timeline: {
-    SimpleEntry(date: .now, configuration: .smiley)
-    SimpleEntry(date: .now, configuration: .starEyes)
+struct SimpleEntry: TimelineEntry {
+    let date: Date
+    let isPlaying: Bool
+    let currentStation: String
+    let configuration: RadioWidgetConfiguration
+}
+
+struct LutheranRadioWidgetEntryView: View {
+    var entry: Provider.Entry
+
+    var body: some View {
+        VStack(spacing: 8) {
+            // Station info
+            HStack {
+                Text(entry.currentStation)
+                    .font(.headline)
+                    .foregroundColor(.primary)
+                Spacer()
+            }
+            
+            // Status
+            HStack {
+                Image(systemName: entry.isPlaying ? "play.fill" : "pause.fill")
+                    .foregroundColor(entry.isPlaying ? .green : .gray)
+                Text(entry.isPlaying ? "Playing" : "Stopped")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Spacer()
+            }
+            
+            Spacer()
+            
+            // Play/Pause button
+            Button(intent: ToggleRadioIntent()) {
+                HStack {
+                    Image(systemName: entry.isPlaying ? "pause.fill" : "play.fill")
+                    Text(entry.isPlaying ? "Pause" : "Play")
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(Color.blue)
+                .cornerRadius(8)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding()
+        .background(Color(.systemBackground))
+    }
+}
+
+struct RadioWidgetConfiguration: WidgetConfigurationIntent {
+    static var title: LocalizedStringResource = "Widget Configuration"
+    static var description = IntentDescription("Configuration for Lutheran Radio widget.")
 }

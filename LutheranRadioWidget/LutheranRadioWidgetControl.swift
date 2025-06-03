@@ -18,60 +18,73 @@ struct LutheranRadioWidgetControl: ControlWidget {
             provider: Provider()
         ) { value in
             ControlWidgetToggle(
-                "Start Timer",
-                isOn: value.isRunning,
-                action: StartTimerIntent(value.name)
-            ) { isRunning in
-                Label(isRunning ? "On" : "Off", systemImage: "timer")
+                "Lutheran Radio",
+                isOn: value.isPlaying,
+                action: ToggleRadioIntent()
+            ) { isPlaying in
+                Label(
+                    isPlaying ? "Playing" : "Stopped",
+                    systemImage: isPlaying ? "pause.fill" : "play.fill"
+                )
             }
         }
-        .displayName("Timer")
-        .description("A an example control that runs a timer.")
+        .displayName("Lutheran Radio")
+        .description("Control Lutheran Radio playback.")
     }
 }
 
 extension LutheranRadioWidgetControl {
     struct Value {
-        var isRunning: Bool
-        var name: String
+        var isPlaying: Bool
+        var currentStation: String
     }
 
     struct Provider: AppIntentControlValueProvider {
-        func previewValue(configuration: TimerConfiguration) -> Value {
-            LutheranRadioWidgetControl.Value(isRunning: false, name: configuration.timerName)
+        func previewValue(configuration: ControlConfigurationAppIntent) -> Value {
+            LutheranRadioWidgetControl.Value(
+                isPlaying: false,
+                currentStation: "🇺🇸 English"
+            )
         }
 
-        func currentValue(configuration: TimerConfiguration) async throws -> Value {
-            let isRunning = true // Check if the timer is running
-            return LutheranRadioWidgetControl.Value(isRunning: isRunning, name: configuration.timerName)
+        func currentValue(configuration: ControlConfigurationAppIntent) async throws -> Value {
+            // Check current playback state from your player
+            let isPlaying = DirectStreamingPlayer.shared.player?.rate ?? 0 > 0
+            let currentStation = DirectStreamingPlayer.shared.selectedStream.flag + " " + DirectStreamingPlayer.shared.selectedStream.language
+            
+            return LutheranRadioWidgetControl.Value(
+                isPlaying: isPlaying,
+                currentStation: currentStation
+            )
         }
     }
 }
 
-struct TimerConfiguration: ControlConfigurationIntent {
-    static let title: LocalizedStringResource = "Timer Name Configuration"
-
-    @Parameter(title: "Timer Name", default: "Timer")
-    var timerName: String
+struct ControlConfigurationAppIntent: ControlConfigurationIntent {
+    static let title: LocalizedStringResource = "Control Configuration"
 }
 
-struct StartTimerIntent: SetValueIntent {
-    static let title: LocalizedStringResource = "Start a timer"
+struct ToggleRadioIntent: SetValueIntent {
+    static let title: LocalizedStringResource = "Toggle Lutheran Radio"
 
-    @Parameter(title: "Timer Name")
-    var name: String
-
-    @Parameter(title: "Timer is running")
+    @Parameter(title: "Is Playing")
     var value: Bool
 
     init() {}
 
-    init(_ name: String) {
-        self.name = name
-    }
-
     func perform() async throws -> some IntentResult {
-        // Start the timer…
+        let player = DirectStreamingPlayer.shared
+        
+        if value {
+            // Start playing
+            player.play { success in
+                print("Widget play result: \(success)")
+            }
+        } else {
+            // Stop playing
+            player.stop()
+        }
+        
         return .result()
     }
 }
