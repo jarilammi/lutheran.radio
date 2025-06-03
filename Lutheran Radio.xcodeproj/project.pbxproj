@@ -75,6 +75,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				DirectStreamingPlayer.swift,
+				Localizable.xcstrings,
 				StreamingSessionDelegate.swift,
 			);
 			target = B757A77B2DEF7B5C00FF90FC /* LutheranRadioWidgetExtension */;
