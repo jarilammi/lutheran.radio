@@ -15,6 +15,11 @@ import AVFoundation
 import dnssd
 import Network
 
+/// Share functionality to the LutheranRadioWidget
+extension DirectStreamingPlayer {
+    static let shared = DirectStreamingPlayer()
+}
+
 /// Represents the network path status for connectivity monitoring.
 enum NetworkPathStatus: Sendable {
     case satisfied

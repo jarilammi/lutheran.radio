@@ -425,6 +425,21 @@
         }
       }
     },
+    "Bottom %@" : {
+
+    },
+    "Configuration for Lutheran Radio widget." : {
+
+    },
+    "Control and monitor Lutheran Radio playback." : {
+
+    },
+    "Control Configuration" : {
+
+    },
+    "Control Lutheran Radio playback." : {
+
+    },
     "dont_show_again" : {
       "localizations" : {
         "da" : {
@@ -530,6 +545,15 @@
           }
         }
       }
+    },
+    "Hello %@" : {
+
+    },
+    "Is Playing" : {
+
+    },
+    "L" : {
+
     },
     "language_english" : {
       "comment" : "English language option",
@@ -1066,6 +1090,12 @@
         }
       }
     },
+    "Leading" : {
+
+    },
+    "Lutheran Radio" : {
+
+    },
     "lutheran_radio_title" : {
       "comment" : "Title for Lutheran Radio",
       "localizations" : {
@@ -1596,6 +1626,15 @@
           }
         }
       }
+    },
+    "Pause" : {
+
+    },
+    "Play" : {
+
+    },
+    "Playing" : {
+
     },
     "security_model_error_message" : {
       "localizations" : {
@@ -2764,6 +2803,9 @@
         }
       }
     },
+    "Stopped" : {
+
+    },
     "stream_unavailable_message" : {
       "localizations" : {
         "da" : {
@@ -2975,6 +3017,18 @@
           }
         }
       }
+    },
+    "T %@" : {
+
+    },
+    "Toggle Lutheran Radio" : {
+
+    },
+    "Trailing" : {
+
+    },
+    "Widget Configuration" : {
+
     }
   },
   "version" : "1.0"
