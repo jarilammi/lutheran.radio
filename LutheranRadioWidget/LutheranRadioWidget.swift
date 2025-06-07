@@ -48,7 +48,7 @@ struct Provider: AppIntentTimelineProvider {
     
     func timeline(for configuration: RadioWidgetConfiguration, in context: Context) async -> Timeline<SimpleEntry> {
         let player = DirectStreamingPlayer.shared
-        let isPlaying = player.player?.rate ?? 0 > 0
+        let isPlaying = player.isPlaying
         let currentStream = player.selectedStream
         let currentStation = currentStream.flag + " " + currentStream.language
         
@@ -293,7 +293,7 @@ struct WidgetToggleRadioIntent: AppIntent {
 
     func perform() async throws -> some IntentResult {
         let player = DirectStreamingPlayer.shared
-        let isCurrentlyPlaying = player.player?.rate ?? 0 > 0
+        let isCurrentlyPlaying = player.isPlaying
         
         if isCurrentlyPlaying {
             player.stop()

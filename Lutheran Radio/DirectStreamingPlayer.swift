@@ -253,6 +253,10 @@ class DirectStreamingPlayer: NSObject {
         }
     }
     
+    var isPlaying: Bool {
+        return player?.rate ?? 0 > 0
+    }
+    
     #if DEBUG
     var selectedStream: Stream {
         didSet {

@@ -59,7 +59,7 @@ extension LutheranRadioWidgetControl {
 
         func currentValue(configuration: ControlConfigurationAppIntent) async throws -> Value {
             let player = DirectStreamingPlayer.shared
-            let isPlaying = player.player?.rate ?? 0 > 0
+            let isPlaying = player.isPlaying
             let currentStream = player.selectedStream
             let currentStation = currentStream.flag + " " + currentStream.language
             
