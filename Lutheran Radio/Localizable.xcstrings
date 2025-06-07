@@ -1,6 +1,86 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "🇩🇪 German" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "🇩🇪 German"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "🇩🇪 Saksa"
+          }
+        }
+      }
+    },
+    "🇪🇪 Estonian" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "🇪🇪 Estonian"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "🇪🇪 Viro"
+          }
+        }
+      }
+    },
+    "🇫🇮 Finnish" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "🇫🇮 Finnish"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "🇫🇮 Suomi"
+          }
+        }
+      }
+    },
+    "🇸🇪 Swedish" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "🇸🇪 Swedish"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "🇸🇪 Ruotsi"
+          }
+        }
+      }
+    },
+    "🇺🇸 English" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "🇺🇸 English"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "🇺🇸 Englanti"
+          }
+        }
+      }
+    },
     "accessibility_hint_play_pause" : {
       "localizations" : {
         "da" : {
@@ -30,7 +110,7 @@
         "fi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Vaihtaa lähetyksen toiston päälle ja pois"
+            "value" : "Käynnistää tai pysäyttää radion toiston"
           }
         },
         "fit" : {
@@ -242,7 +322,7 @@
         "fi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Epäonnistui"
+            "value" : "Yhteysongelma"
           }
         },
         "fit" : {
@@ -426,19 +506,136 @@
       }
     },
     "Bottom %@" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bottom %@"
+          }
+        }
+      }
     },
     "Configuration for Lutheran Radio widget." : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configuration for Lutheran Radio widget."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio -widgetin määritykset."
+          }
+        }
+      }
     },
-    "Control and monitor Lutheran Radio playback." : {
-
+    "Configure Lutheran Radio control widget." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configure Lutheran Radio control widget."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Määritä Lutheran Radio -ohjauswidget."
+          }
+        }
+      }
+    },
+    "Configure Lutheran Radio for ${preferredLanguage}" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configure Lutheran Radio for ${preferredLanguage}"
+          }
+        }
+      }
+    },
+    "Connection error" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connection error"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yhteysvirhe"
+          }
+        }
+      }
     },
     "Control Configuration" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Control Configuration"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ohjausmääritykset"
+          }
+        }
+      }
     },
-    "Control Lutheran Radio playback." : {
-
+    "Control Lutheran Radio playback and see current station." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Control Lutheran Radio playback and see current station."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ohjaa Lutheran Radio -toistoa ja näe nykyinen kanava."
+          }
+        }
+      }
+    },
+    "Control playback and switch between language streams." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Control playback and switch between language streams."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ohjaa toistoa ja vaihda kielikanavien välillä."
+          }
+        }
+      }
+    },
+    "Default language stream to use" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Default language stream to use"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oletuskielikanava"
+          }
+        }
+      }
     },
     "dont_show_again" : {
       "localizations" : {
@@ -547,13 +744,76 @@
       }
     },
     "Hello %@" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hello %@"
+          }
+        }
+      }
     },
     "Is Playing" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Is Playing"
+          }
+        }
+      }
     },
     "L" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L"
+          }
+        }
+      }
+    },
+    "Language" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Language"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kieli"
+          }
+        }
+      }
+    },
+    "Language Code" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Language Code"
+          }
+        }
+      }
+    },
+    "Language stream to switch to" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Language stream to switch to"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vaihdettava kielikanava"
+          }
+        }
+      }
     },
     "language_english" : {
       "comment" : "English language option",
@@ -1091,10 +1351,24 @@
       }
     },
     "Leading" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leading"
+          }
+        }
+      }
     },
     "Lutheran Radio" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        }
+      }
     },
     "lutheran_radio_title" : {
       "comment" : "Title for Lutheran Radio",
@@ -1627,14 +1901,85 @@
         }
       }
     },
-    "Pause" : {
-
+    "Play or pause Lutheran Radio." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Play or pause Lutheran Radio."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toista tai keskeytä Lutheran Radio."
+          }
+        }
+      }
     },
-    "Play" : {
-
+    "Preferred Language" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Preferred Language"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ensisijainen kieli"
+          }
+        }
+      }
     },
-    "Playing" : {
-
+    "Quickly switch to a different language stream." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quickly switch to a different language stream."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vaihda nopeasti toiseen kielivirtaan."
+          }
+        }
+      }
+    },
+    "Ready" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ready"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Valmis"
+          }
+        }
+      }
+    },
+    "Ready to play" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ready to play"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Valmis toistoon"
+          }
+        }
+      }
     },
     "security_model_error_message" : {
       "localizations" : {
@@ -1848,6 +2193,70 @@
         }
       }
     },
+    "Service unavailable" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Service unavailable"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Palvelu ei ole käytettävissä"
+          }
+        }
+      }
+    },
+    "Start or stop Lutheran Radio playback." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start or stop Lutheran Radio playback."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Käynnistä tai pysäytä Lutheran Radio -toisto."
+          }
+        }
+      }
+    },
+    "Start Playing" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start Playing"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aloita toisto"
+          }
+        }
+      }
+    },
+    "Start playing after switching" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start playing after switching"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aloita toisto vaihtamisen jälkeen"
+          }
+        }
+      }
+    },
     "status_buffering" : {
       "localizations" : {
         "da" : {
@@ -1877,7 +2286,7 @@
         "fi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Puskuri"
+            "value" : "Lataa"
           }
         },
         "fit" : {
@@ -1983,7 +2392,7 @@
         "fi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Yhdistä"
+            "value" : "Yhdistää"
           }
         },
         "fit" : {
@@ -2408,7 +2817,7 @@
         "fi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Toista"
+            "value" : "Toistaa"
           }
         },
         "fit" : {
@@ -2620,7 +3029,7 @@
         "fi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pysäytys"
+            "value" : "Pysäytetty"
           }
         },
         "fit" : {
@@ -2726,7 +3135,7 @@
         "fi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pois"
+            "value" : "Ei saatavilla"
           }
         },
         "fit" : {
@@ -2802,9 +3211,6 @@
           }
         }
       }
-    },
-    "Stopped" : {
-
     },
     "stream_unavailable_message" : {
       "localizations" : {
@@ -3018,17 +3424,125 @@
         }
       }
     },
+    "Switch Lutheran Radio Language" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch Lutheran Radio Language"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vaihda Lutheran Radio -kieli"
+          }
+        }
+      }
+    },
+    "Switch Stream" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch Stream"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vaihda kanavaa"
+          }
+        }
+      }
+    },
+    "Switch to ${language}" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch to ${language}"
+          }
+        }
+      }
+    },
+    "Switch to ${language} and start playing" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch to ${language} and start playing"
+          }
+        }
+      }
+    },
+    "Switch to a different language stream." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch to a different language stream."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vaihda toiseen kielivirtaan."
+          }
+        }
+      }
+    },
     "T %@" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "T %@"
+          }
+        }
+      }
     },
     "Toggle Lutheran Radio" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toggle Lutheran Radio"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vaihda Lutheran Radio"
+          }
+        }
+      }
     },
     "Trailing" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trailing"
+          }
+        }
+      }
     },
     "Widget Configuration" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Widget Configuration"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Widget-määritykset"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"
