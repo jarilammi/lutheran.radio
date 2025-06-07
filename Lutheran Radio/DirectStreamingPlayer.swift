@@ -176,6 +176,9 @@ class DirectStreamingPlayer: NSObject {
     private var retryWorkItem: DispatchWorkItem?
     #endif
     
+    /// Track deallocation state
+    private var isDeallocating = false
+    
     func selectOptimalServer(completion: @escaping (Server) -> Void) {
         // If we have a server that failed recently, try the other one first
         if let lastFailed = lastFailedServerName,
@@ -1299,81 +1302,36 @@ class DirectStreamingPlayer: NSObject {
     #endif
     
     private func removeObserversImplementation() {
-        // Perform observer removal on the main thread to avoid race conditions
+        if isDeallocating {
+            removeObserversSynchronously()
+            return
+        }
+        
         DispatchQueue.main.async { [weak self] in
-            guard let self = self else {
-                #if DEBUG
-                print("🧹 removeObserversImplementation: self is nil, skipping")
-                #endif
+            guard let self = self, !self.isDeallocating else {
                 return
             }
-
-            // Invalidate status observer
-            if let statusObserver = self.statusObserver {
-                statusObserver.invalidate()
-                self.statusObserver = nil
-                #if DEBUG
-                print("🧹 Removed status observer")
-                #endif
-            }
-
-            // Remove time observer
-            if let timeObserver = self.timeObserver, let player = self.timeObserverPlayer {
-                player.removeTimeObserver(timeObserver)
-                #if DEBUG
-                print("🧹 Removed time observer")
-                #endif
-            }
-            self.timeObserver = nil
-            self.timeObserverPlayer = nil
-
-            // Remove buffer observers
-            if self.isObservingBuffer, let playerItem = self.playerItem {
-                let playerItemKey = ObjectIdentifier(playerItem)
-                if self.removedObservers.contains(playerItemKey) {
-                    #if DEBUG
-                    print("🧹 Skipping observer removal: already removed for playerItem \(playerItemKey)")
-                    #endif
-                    self.isObservingBuffer = false
-                    return
-                }
-                
-                let keyPaths = [
-                    "playbackBufferEmpty",
-                    "playbackLikelyToKeepUp",
-                    "playbackBufferFull"
-                ]
-                
-                if var keyPathsSet = self.registeredKeyPaths[playerItemKey] {
-                    for keyPath in keyPaths where keyPathsSet.contains(keyPath) {
-                        playerItem.removeObserver(self, forKeyPath: keyPath)
-                        keyPathsSet.remove(keyPath)
-                        #if DEBUG
-                        print("🧹 Removed observer for \(keyPath)")
-                        #endif
-                    }
-                    
-                    self.registeredKeyPaths[playerItemKey] = keyPathsSet.isEmpty ? nil : keyPathsSet
-                    self.isObservingBuffer = false
-                    self.removedObservers.insert(playerItemKey)
-                }
-            }
-
-            // Clear registered key paths
-            self.registeredKeyPaths.removeAll()
+            self.removeObserversSynchronously()
         }
     }
     
     func stop(completion: (() -> Void)? = nil) {
+        // If we're deallocating, perform cleanup synchronously
+        if isDeallocating {
+            stopSynchronously()
+            completion?()
+            return
+        }
+        
         playbackQueue.async { [weak self] in
-            guard let self = self else {
+            guard let self = self, !self.isDeallocating else {
                 DispatchQueue.main.async { completion?() }
                 return
             }
             #if DEBUG
             print("🛑 Stopping playback")
             #endif
-
+            
             // Only proceed if there's an active player or playerItem
             guard self.player != nil || self.playerItem != nil else {
                 DispatchQueue.main.async {
@@ -1385,17 +1343,17 @@ class DirectStreamingPlayer: NSObject {
                 #endif
                 return
             }
-
+            
             // Pause and reset player
             self.player?.pause()
             self.player?.rate = 0.0
-
+            
             // Cancel active resource loader sessions
             self.activeResourceLoaders.forEach { _, delegate in
                 delegate.cancel()
             }
             self.activeResourceLoaders.removeAll()
-
+            
             // Remove metadata output
             if let metadataOutput = self.metadataOutput, let playerItem = self.playerItem {
                 if playerItem.outputs.contains(metadataOutput) {
@@ -1406,25 +1364,113 @@ class DirectStreamingPlayer: NSObject {
                 }
             }
             self.metadataOutput = nil
-
+            
             // Remove observers
             self.removeObserversImplementation()
-
+            
             // Clear playerItem but keep player
             self.playerItem = nil
             self.removedObservers.removeAll()
-
+            
             DispatchQueue.main.async {
                 self.onStatusChange?(false, String(localized: "status_stopped"))
                 completion?()
             }
-
+            
             self.stopBufferingTimer()
-
+            
             #if DEBUG
             print("🛑 Playback stopped, playerItem and resource loaders cleared")
             #endif
         }
+    }
+    
+    private func stopSynchronously() {
+        // Perform all cleanup synchronously without weak references
+        player?.pause()
+        player?.rate = 0.0
+        
+        // Cancel active resource loaders
+        activeResourceLoaders.forEach { _, delegate in
+            delegate.cancel()
+        }
+        activeResourceLoaders.removeAll()
+        
+        // Remove metadata output
+        if let metadataOutput = self.metadataOutput, let playerItem = self.playerItem {
+            if playerItem.outputs.contains(metadataOutput) {
+                playerItem.remove(metadataOutput)
+            }
+        }
+        self.metadataOutput = nil
+        
+        // Remove observers synchronously
+        removeObserversSynchronously()
+        
+        // Clear playerItem
+        playerItem = nil
+        removedObservers.removeAll()
+        
+        // Stop buffering timer
+        bufferingTimer?.invalidate()
+        bufferingTimer = nil
+    }
+    
+    private func performStopCleanup() {
+        // Original stop logic without weak references
+        guard player != nil || playerItem != nil else {
+            return
+        }
+        
+        player?.pause()
+        player?.rate = 0.0
+        
+        activeResourceLoaders.forEach { _, delegate in
+            delegate.cancel()
+        }
+        activeResourceLoaders.removeAll()
+        
+        if let metadataOutput = self.metadataOutput, let playerItem = self.playerItem {
+            if playerItem.outputs.contains(metadataOutput) {
+                playerItem.remove(metadataOutput)
+            }
+        }
+        self.metadataOutput = nil
+        
+        removeObserversImplementation()
+        playerItem = nil
+        removedObservers.removeAll()
+        stopBufferingTimer()
+    }
+    
+    private func removeObserversSynchronously() {
+        // Remove observers without async dispatch
+        if let statusObserver = self.statusObserver {
+            statusObserver.invalidate()
+            self.statusObserver = nil
+        }
+        
+        if let timeObserver = self.timeObserver, let player = self.timeObserverPlayer {
+            player.removeTimeObserver(timeObserver)
+        }
+        self.timeObserver = nil
+        self.timeObserverPlayer = nil
+        
+        if isObservingBuffer, let playerItem = self.playerItem {
+            let playerItemKey = ObjectIdentifier(playerItem)
+            if !removedObservers.contains(playerItemKey) {
+                let keyPaths = ["playbackBufferEmpty", "playbackLikelyToKeepUp", "playbackBufferFull"]
+                if let keyPathsSet = registeredKeyPaths[playerItemKey] {
+                    for keyPath in keyPaths where keyPathsSet.contains(keyPath) {
+                        playerItem.removeObserver(self, forKeyPath: keyPath)
+                    }
+                }
+                registeredKeyPaths.removeValue(forKey: playerItemKey)
+                removedObservers.insert(playerItemKey)
+            }
+        }
+        isObservingBuffer = false
+        registeredKeyPaths.removeAll()
     }
     
     func clearCallbacks() {
@@ -1434,15 +1480,12 @@ class DirectStreamingPlayer: NSObject {
     }
     
     deinit {
-        stop()
-        removeObserversImplementation()
+        isDeallocating = true
+        stopSynchronously()
         clearCallbacks()
         networkMonitor?.cancel()
         networkMonitor = nil
         metadataOutput = nil
-        #if DEBUG
-        print("🧹 Player deinit")
-        #endif
     }
 }
 

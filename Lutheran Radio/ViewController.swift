@@ -1721,3 +1721,116 @@ extension ViewController {
         scrollViewDidEndDecelerating(scrollView)
     }
 }
+
+// MARK: - Public Methods for URL Scheme Handling
+extension ViewController {
+    
+    /// Public method to start playback (callable from SceneDelegate)
+    public func handlePlayAction() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            hasPermanentPlaybackError = false
+            startPlayback()
+        }
+    }
+    
+    /// Public method to pause playback (callable from SceneDelegate)
+    public func handlePauseAction() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            pausePlayback()
+        }
+    }
+    
+    /// Public method to switch to a specific language stream
+    /// - Parameter languageCode: The language code to switch to (e.g., "en", "de", "fi", "sv", "ee")
+    public func handleSwitchToLanguage(_ languageCode: String) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            
+            // Find the stream with the matching language code
+            guard let targetStream = DirectStreamingPlayer.availableStreams.first(where: { $0.languageCode == languageCode }) else {
+                return
+            }
+            
+            // Find the index and switch
+            guard let targetIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.languageCode == languageCode }) else {
+                return
+            }
+            
+            selectedStreamIndex = targetIndex
+            updateBackground(for: targetStream)
+            
+            streamingPlayer.stop { [weak self] in
+                guard let self = self else { return }
+                self.playTuningSound { [weak self] in
+                    guard let self = self else { return }
+                    self.streamingPlayer.resetTransientErrors()
+                    self.streamingPlayer.setStream(to: targetStream)
+                    self.hasPermanentPlaybackError = false
+                    
+                    DispatchQueue.main.async {
+                        let indexPath = IndexPath(item: targetIndex, section: 0)
+                        self.languageCollectionView.selectItem(at: indexPath, animated: true, scrollPosition: .centeredHorizontally)
+                        self.updateSelectionIndicator(to: targetIndex)
+                        
+                        if !self.isManualPause {
+                            self.startPlayback()
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    /// Public method to toggle play/pause state
+    public func handleTogglePlayback() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            if isPlaying {
+                handlePauseAction()
+            } else {
+                handlePlayAction()
+            }
+        }
+    }
+    
+    /// Checks for and handles pending actions from widgets
+    public func checkForPendingWidgetActions() {
+        guard let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
+            return
+        }
+        
+        guard let pendingAction = sharedDefaults.string(forKey: "pendingAction") else {
+            return
+        }
+        
+        let pendingTime = sharedDefaults.double(forKey: "pendingActionTime")
+        let now = Date().timeIntervalSince1970
+        let actionAge = now - pendingTime
+        
+        guard actionAge < 30.0 else {
+            sharedDefaults.removeObject(forKey: "pendingAction")
+            sharedDefaults.removeObject(forKey: "pendingActionTime")
+            sharedDefaults.removeObject(forKey: "pendingLanguage")
+            return
+        }
+        
+        switch pendingAction {
+        case "play":
+            handlePlayAction()
+        case "pause":
+            handlePauseAction()
+        case "switch":
+            if let languageCode = sharedDefaults.string(forKey: "pendingLanguage") {
+                handleSwitchToLanguage(languageCode)
+            }
+        default:
+            break
+        }
+        
+        sharedDefaults.removeObject(forKey: "pendingAction")
+        sharedDefaults.removeObject(forKey: "pendingActionTime")
+        sharedDefaults.removeObject(forKey: "pendingLanguage")
+    }
+}
