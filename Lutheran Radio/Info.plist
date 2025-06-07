@@ -45,5 +45,9 @@
 	<array>
 		<string>audio</string>
 	</array>
+	<key>NSAppGroups</key>
+	<array>
+    		<string>group.radio.lutheran.shared</string>
+	</array>
 </dict>
 </plist>
