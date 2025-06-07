@@ -11,7 +11,7 @@ import SwiftUI
 import WidgetKit
 
 struct LutheranRadioWidgetControl: ControlWidget {
-    static let kind: String = "radio.lutheran.Lutheran-Radio.LutheranRadioWidget"
+    static let kind: String = "radio.lutheran.LutheranRadio.LutheranRadioWidget"
 
     var body: some ControlWidgetConfiguration {
         AppIntentControlConfiguration(
@@ -58,13 +58,13 @@ extension LutheranRadioWidgetControl {
         }
 
         func currentValue(configuration: ControlConfigurationAppIntent) async throws -> Value {
-            let player = DirectStreamingPlayer.shared
-            let isPlaying = player.isPlaying
-            let currentStream = player.selectedStream
+            let manager = SharedPlayerManager.shared
+            let isPlaying = manager.isPlaying
+            let currentStream = manager.currentStream
             let currentStation = currentStream.flag + " " + currentStream.language
             
             // Check for errors
-            let hasError = player.hasPermanentError || player.isLastErrorPermanent()
+            let hasError = manager.hasError
             
             return LutheranRadioWidgetControl.Value(
                 isPlaying: isPlaying,
@@ -106,7 +106,7 @@ enum StreamLanguageOption: String, AppEnum {
     ]
 }
 
-// Enhanced toggle intent with better error handling
+// Enhanced toggle intent with better error handling - FIXED
 struct ToggleRadioIntent: SetValueIntent {
     static let title: LocalizedStringResource = "Toggle Lutheran Radio"
     static let description = IntentDescription("Start or stop Lutheran Radio playback.")
@@ -117,34 +117,30 @@ struct ToggleRadioIntent: SetValueIntent {
     init() {}
 
     func perform() async throws -> some IntentResult {
-        let player = DirectStreamingPlayer.shared
+        let manager = SharedPlayerManager.shared
         
         if value {
-            // Start playing - use async/await pattern for better reliability
+            // Start playing - use async/await pattern safely
             let success = await withCheckedContinuation { continuation in
-                player.play { success in
-                    continuation.resume(returning: success)
+                manager.play { success in
+                    continuation.resume(returning: success) // Return the boolean, not IntentResult
                 }
             }
             
             if !success {
-                // Provide feedback about the failure
-                if player.isLastErrorPermanent() {
-                    throw AppIntentError.general("Service temporarily unavailable")
-                } else {
-                    throw AppIntentError.general("Connection error - please try again")
-                }
+                throw AppIntentError.general("Failed to start playback")
             }
+            
+            return .result() // Return IntentResult at function level
         } else {
             // Stop playing
             await withCheckedContinuation { continuation in
-                player.stop {
-                    continuation.resume()
+                manager.stop {
+                    continuation.resume() // No return value needed for stop
                 }
             }
+            return .result() // Return IntentResult at function level
         }
-        
-        return .result()
     }
 }
 
@@ -168,20 +164,20 @@ struct QuickSwitchStreamIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult {
-        let player = DirectStreamingPlayer.shared
+        let manager = SharedPlayerManager.shared
         
-        guard let targetStream = DirectStreamingPlayer.availableStreams.first(where: { $0.languageCode == language.rawValue }) else {
+        guard let targetStream = manager.availableStreams.first(where: { $0.languageCode == language.rawValue }) else {
             throw AppIntentError.general("Language stream not available")
         }
         
-        // Switch stream
-        player.setStream(to: targetStream)
+        // Switch stream (this is synchronous)
+        manager.switchToStream(targetStream)
         
         // Start playing if requested
         if startPlaying {
             let success = await withCheckedContinuation { continuation in
-                player.play { success in
-                    continuation.resume(returning: success)
+                manager.play { success in
+                    continuation.resume(returning: success) // Return the boolean
                 }
             }
             

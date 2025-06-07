@@ -30,7 +30,7 @@ struct Provider: AppIntentTimelineProvider {
             isPlaying: false,
             currentStation: "🇺🇸 " + String(localized: "language_english"),
             statusMessage: String(localized: "Ready to play"),
-            availableStreams: DirectStreamingPlayer.availableStreams,
+            availableStreams: SharedPlayerManager.shared.availableStreams,
             configuration: RadioWidgetConfiguration()
         )
     }
@@ -41,30 +41,25 @@ struct Provider: AppIntentTimelineProvider {
             isPlaying: false,
             currentStation: "🇺🇸 " + String(localized: "language_english"),
             statusMessage: String(localized: "Ready to play"),
-            availableStreams: DirectStreamingPlayer.availableStreams,
+            availableStreams: SharedPlayerManager.shared.availableStreams,
             configuration: configuration
         )
     }
     
     func timeline(for configuration: RadioWidgetConfiguration, in context: Context) async -> Timeline<SimpleEntry> {
-        let player = DirectStreamingPlayer.shared
-        let isPlaying = player.isPlaying
-        let currentStream = player.selectedStream
+        let manager = SharedPlayerManager.shared
+        let isPlaying = manager.isPlaying
+        let currentStream = manager.currentStream
         let currentStation = currentStream.flag + " " + currentStream.language
         
         // Get status message based on player state
         let statusMessage: String
-        switch player.getPlaybackState() {
-        case .readyToPlay:
-            statusMessage = isPlaying ? String(localized: "status_playing") : String(localized: "Ready")
-        case .failed(_):
-            if player.isLastErrorPermanent() {
-                statusMessage = String(localized: "Service unavailable")
-            } else {
-                statusMessage = String(localized: "Connection error")
-            }
-        case .unknown:
-            statusMessage = String(localized: "status_buffering") + "..."
+        if manager.hasError {
+            statusMessage = String(localized: "Connection error")
+        } else if isPlaying {
+            statusMessage = String(localized: "status_playing")
+        } else {
+            statusMessage = String(localized: "Ready")
         }
         
         let entry = SimpleEntry(
@@ -72,7 +67,7 @@ struct Provider: AppIntentTimelineProvider {
             isPlaying: isPlaying,
             currentStation: currentStation,
             statusMessage: statusMessage,
-            availableStreams: DirectStreamingPlayer.availableStreams,
+            availableStreams: manager.availableStreams,
             configuration: configuration
         )
 
@@ -286,21 +281,25 @@ struct LargeWidgetView: View {
     }
 }
 
-// MARK: - App Intents
+// MARK: - App Intents - FIXED
 struct WidgetToggleRadioIntent: AppIntent {
     static var title: LocalizedStringResource = "Toggle Lutheran Radio"
     static var description = IntentDescription("Play or pause Lutheran Radio.")
 
     func perform() async throws -> some IntentResult {
-        let player = DirectStreamingPlayer.shared
-        let isCurrentlyPlaying = player.isPlaying
+        let manager = SharedPlayerManager.shared
+        let isCurrentlyPlaying = manager.isPlaying
         
         if isCurrentlyPlaying {
-            player.stop()
+            await withCheckedContinuation { continuation in
+                manager.stop {
+                    continuation.resume() // No return value for stop
+                }
+            }
         } else {
             await withCheckedContinuation { continuation in
-                player.play { success in
-                    continuation.resume()
+                manager.play { success in
+                    continuation.resume() // Don't return success, just complete
                 }
             }
         }
@@ -323,14 +322,14 @@ struct SwitchStreamIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult {
-        let player = DirectStreamingPlayer.shared
+        let manager = SharedPlayerManager.shared
         
-        guard let targetStream = DirectStreamingPlayer.availableStreams.first(where: { $0.languageCode == streamLanguageCode }) else {
+        guard let targetStream = manager.availableStreams.first(where: { $0.languageCode == streamLanguageCode }) else {
             return .result()
         }
         
-        // Switch to the new stream
-        player.setStream(to: targetStream)
+        // Switch to the new stream (synchronous)
+        manager.switchToStream(targetStream)
         
         return .result()
     }
