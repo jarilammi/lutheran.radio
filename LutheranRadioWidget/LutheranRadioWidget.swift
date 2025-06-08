@@ -310,7 +310,7 @@ struct MediumWidgetView: View {
                             Image(systemName: entry.isPlaying ? "pause.circle.fill" : "play.circle.fill")
                                 .font(.title)
                                 .foregroundColor(entry.isPlaying ? .orange : .blue)
-                            Text(entry.isPlaying ? String(localized: "Pause") : String(localized: "Play"))
+                            Text(entry.isPlaying ? String(localized: "status_paused") : String(localized: "status_playing"))
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
                         }
