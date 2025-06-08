@@ -6,9 +6,10 @@
 //
 //  Enhanced version with stream selection and better state management
 
-import WidgetKit
-import SwiftUI
 import AppIntents
+import SwiftUI
+import WidgetKit
+import Foundation
 
 struct LutheranRadioWidget: Widget {
     let kind: String = "LutheranRadioWidget"
@@ -282,32 +283,41 @@ struct LargeWidgetView: View {
 }
 
 // MARK: - App Intents - FIXED
+
+// Widget-specific toggle intent - CONNECTION SAFE
 struct WidgetToggleRadioIntent: AppIntent {
     static var title: LocalizedStringResource = "Toggle Lutheran Radio"
     static var description = IntentDescription("Play or pause Lutheran Radio.")
 
     func perform() async throws -> some IntentResult {
+        #if DEBUG
+        print("🔗 WidgetToggleRadioIntent.perform called")
+        #endif
+        
+        // Use simple, direct communication without any async patterns
         let manager = SharedPlayerManager.shared
         let isCurrentlyPlaying = manager.isPlaying
         
         if isCurrentlyPlaying {
-            await withCheckedContinuation { continuation in
-                manager.stop {
-                    continuation.resume() // No return value for stop
-                }
-            }
+            // Use simple synchronous method call - no continuations
+            manager.stop()
         } else {
-            await withCheckedContinuation { continuation in
-                manager.play { success in
-                    continuation.resume() // Don't return success, just complete
-                }
+            // Use simple synchronous method call - no continuations
+            manager.play { _ in
+                // Empty completion handler to satisfy the API
+                // Widget doesn't need to wait for the result
             }
         }
+        
+        #if DEBUG
+        print("🔗 WidgetToggleRadioIntent completed successfully")
+        #endif
         
         return .result()
     }
 }
 
+// Stream switching intent - CONNECTION SAFE
 struct SwitchStreamIntent: AppIntent {
     static var title: LocalizedStringResource = "Switch Stream"
     static var description = IntentDescription("Switch to a different language stream.")
@@ -322,19 +332,31 @@ struct SwitchStreamIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult {
+        #if DEBUG
+        print("🔗 SwitchStreamIntent.perform called for language: \(streamLanguageCode)")
+        #endif
+        
         let manager = SharedPlayerManager.shared
         
         guard let targetStream = manager.availableStreams.first(where: { $0.languageCode == streamLanguageCode }) else {
+            #if DEBUG
+            print("🔗 SwitchStreamIntent: Language stream not found")
+            #endif
             return .result()
         }
         
-        // Switch to the new stream (synchronous)
+        // Use simple synchronous call - no async/await or continuations
         manager.switchToStream(targetStream)
+        
+        #if DEBUG
+        print("🔗 SwitchStreamIntent completed for \(targetStream.language)")
+        #endif
         
         return .result()
     }
 }
 
+// MARK: - Configuration Intent - FIXED
 struct RadioWidgetConfiguration: WidgetConfigurationIntent {
     static var title: LocalizedStringResource = "Widget Configuration"
     static var description = IntentDescription("Configuration for Lutheran Radio widget.")

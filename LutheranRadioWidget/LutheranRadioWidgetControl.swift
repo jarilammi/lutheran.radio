@@ -9,6 +9,7 @@
 import AppIntents
 import SwiftUI
 import WidgetKit
+import Foundation
 
 struct LutheranRadioWidgetControl: ControlWidget {
     static let kind: String = "radio.lutheran.LutheranRadio.LutheranRadioWidget"
@@ -106,7 +107,7 @@ enum StreamLanguageOption: String, AppEnum {
     ]
 }
 
-// Enhanced toggle intent with better error handling - FIXED
+// Enhanced toggle intent - CONNECTION SAFE
 struct ToggleRadioIntent: SetValueIntent {
     static let title: LocalizedStringResource = "Toggle Lutheran Radio"
     static let description = IntentDescription("Start or stop Lutheran Radio playback.")
@@ -117,34 +118,31 @@ struct ToggleRadioIntent: SetValueIntent {
     init() {}
 
     func perform() async throws -> some IntentResult {
+        #if DEBUG
+        print("🔗 ToggleRadioIntent.perform called with value: \(value)")
+        #endif
+        
         let manager = SharedPlayerManager.shared
         
         if value {
-            // Start playing - use async/await pattern safely
-            let success = await withCheckedContinuation { continuation in
-                manager.play { success in
-                    continuation.resume(returning: success) // Return the boolean, not IntentResult
-                }
+            // Use simple synchronous method call
+            manager.play { _ in
+                // Empty completion handler - widget doesn't wait for result
             }
-            
-            if !success {
-                throw AppIntentError.general("Failed to start playback")
-            }
-            
-            return .result() // Return IntentResult at function level
         } else {
-            // Stop playing
-            await withCheckedContinuation { continuation in
-                manager.stop {
-                    continuation.resume() // No return value needed for stop
-                }
-            }
-            return .result() // Return IntentResult at function level
+            // Use simple synchronous method call
+            manager.stop()
         }
+        
+        #if DEBUG
+        print("🔗 ToggleRadioIntent completed successfully")
+        #endif
+        
+        return .result()
     }
 }
 
-// Quick stream switching intent for Shortcuts
+// Quick stream switching intent - CONNECTION SAFE
 struct QuickSwitchStreamIntent: AppIntent {
     static var title: LocalizedStringResource = "Switch Lutheran Radio Language"
     static var description = IntentDescription("Quickly switch to a different language stream.")
@@ -164,34 +162,51 @@ struct QuickSwitchStreamIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult {
+        #if DEBUG
+        print("🔗 QuickSwitchStreamIntent.perform called for language: \(language.rawValue)")
+        #endif
+        
         let manager = SharedPlayerManager.shared
         
         guard let targetStream = manager.availableStreams.first(where: { $0.languageCode == language.rawValue }) else {
-            throw AppIntentError.general("Language stream not available")
+            #if DEBUG
+            print("🔗 QuickSwitchStreamIntent: Language stream not available")
+            #endif
+            return .result()
         }
         
-        // Switch stream (this is synchronous)
+        // Use simple synchronous call to avoid connection issues
         manager.switchToStream(targetStream)
         
-        // Start playing if requested
         if startPlaying {
-            let success = await withCheckedContinuation { continuation in
-                manager.play { success in
-                    continuation.resume(returning: success) // Return the boolean
-                }
-            }
-            
-            if !success {
-                throw AppIntentError.general("Failed to start playback")
+            // Use simple synchronous method call
+            manager.play { _ in
+                // Empty completion handler - widget doesn't wait for result
             }
         }
         
-        return .result(value: "Switched to \(targetStream.language)")
+        #if DEBUG
+        print("🔗 QuickSwitchStreamIntent completed")
+        #endif
+        
+        return .result()
     }
 }
 
-// Enhanced error handling
+// MARK: - Configuration Intent - CONNECTION SAFE
+
+
+
+
+// MARK: - Enhanced Error Handling
 extension AppIntentError {
+    static func widgetSafe(_ message: String) -> Error {
+        #if DEBUG
+        print("🔗 Widget-safe error: \(message)")
+        #endif
+        return NSError(domain: "LutheranRadioWidget", code: 0, userInfo: [NSLocalizedDescriptionKey: message])
+    }
+    
     static func general(_ message: String) -> Error {
         return NSError(domain: "LutheranRadioWidget", code: -1, userInfo: [NSLocalizedDescriptionKey: message])
     }
