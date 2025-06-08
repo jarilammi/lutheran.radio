@@ -119,23 +119,23 @@ struct ToggleRadioIntent: SetValueIntent {
 
     func perform() async throws -> some IntentResult {
         #if DEBUG
-        print("🔗 ToggleRadioIntent.perform called with value: \(value)")
+        print("🔗 WidgetToggleRadioIntent.perform called")
         #endif
         
         let manager = SharedPlayerManager.shared
+        let isCurrentlyPlaying = manager.isPlaying
         
-        if value {
-            // Use simple synchronous method call
-            manager.play { _ in
-                // Empty completion handler - widget doesn't wait for result
-            }
-        } else {
-            // Use simple synchronous method call
+        if isCurrentlyPlaying {
             manager.stop()
+        } else {
+            manager.play { _ in }
         }
         
+        // Force immediate widget refresh
+        WidgetCenter.shared.reloadTimelines(ofKind: "LutheranRadioWidget")
+        
         #if DEBUG
-        print("🔗 ToggleRadioIntent completed successfully")
+        print("🔗 WidgetToggleRadioIntent completed successfully")
         #endif
         
         return .result()
@@ -170,23 +170,18 @@ struct QuickSwitchStreamIntent: AppIntent {
         
         guard let targetStream = manager.availableStreams.first(where: { $0.languageCode == language.rawValue }) else {
             #if DEBUG
-            print("🔗 QuickSwitchStreamIntent: Language stream not available")
+            print("🔗 QuickSwitchStreamIntent: Language stream not found")
             #endif
             return .result()
         }
         
-        // Use simple synchronous call to avoid connection issues
         manager.switchToStream(targetStream)
         
-        if startPlaying {
-            // Use simple synchronous method call
-            manager.play { _ in
-                // Empty completion handler - widget doesn't wait for result
-            }
-        }
+        // Force immediate widget refresh
+        WidgetCenter.shared.reloadTimelines(ofKind: "LutheranRadioWidget")
         
         #if DEBUG
-        print("🔗 QuickSwitchStreamIntent completed")
+        print("🔗 QuickSwitchStreamIntent completed for \(targetStream.language)")
         #endif
         
         return .result()

@@ -7,6 +7,7 @@
 
 import Foundation
 import AVFoundation
+import WidgetKit
 
 class SharedPlayerManager {
     static let shared = SharedPlayerManager()
@@ -199,8 +200,12 @@ extension SharedPlayerManager {
         sharedDefaults?.set(hasError, forKey: "hasError")
         sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "lastUpdateTime")
         
+        // Force widget refresh immediately
+        WidgetCenter.shared.reloadTimelines(ofKind: "LutheranRadioWidget")
+        
         #if DEBUG
         print("🔗 Saved state: playing=\(isPlaying), language=\(currentLanguage), error=\(hasError)")
+        print("🔗 Triggered widget timeline reload")
         #endif
     }
     

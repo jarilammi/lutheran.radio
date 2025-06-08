@@ -72,10 +72,8 @@ struct Provider: AppIntentTimelineProvider {
             configuration: configuration
         )
 
-        // Update more frequently when playing, less when stopped
-        let updateInterval = isPlaying ? 15 : 60
-        let nextUpdate = Calendar.current.date(byAdding: .second, value: updateInterval, to: Date())!
-        return Timeline(entries: [entry], policy: .after(nextUpdate))
+        // Use .atEnd policy to allow manual refreshes to override the timeline
+        return Timeline(entries: [entry], policy: .atEnd)
     }
 }
 
@@ -309,6 +307,9 @@ struct WidgetToggleRadioIntent: AppIntent {
             }
         }
         
+        // Force immediate widget refresh
+        WidgetCenter.shared.reloadTimelines(ofKind: "LutheranRadioWidget")
+        
         #if DEBUG
         print("🔗 WidgetToggleRadioIntent completed successfully")
         #endif
@@ -347,6 +348,9 @@ struct SwitchStreamIntent: AppIntent {
         
         // Use simple synchronous call - no async/await or continuations
         manager.switchToStream(targetStream)
+        
+        // Force immediate widget refresh
+        WidgetCenter.shared.reloadTimelines(ofKind: "LutheranRadioWidget")
         
         #if DEBUG
         print("🔗 SwitchStreamIntent completed for \(targetStream.language)")

@@ -14,6 +14,7 @@ import MediaPlayer
 import AVKit
 import Network
 import CoreImage
+import WidgetKit
 
 // MARK: - Parallax Effect Extension
 extension UIView {
@@ -378,6 +379,13 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     private func saveStateForWidget() {
         // Save current state for widget access
         SharedPlayerManager.shared.saveCurrentState()
+        
+        // Force widget refresh
+        WidgetCenter.shared.reloadTimelines(ofKind: "LutheranRadioWidget")
+        
+        #if DEBUG
+        print("🔗 Widget timelines reloaded")
+        #endif
     }
     
     private func setupStreamingCallbacks() {
