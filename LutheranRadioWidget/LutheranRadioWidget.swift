@@ -198,17 +198,16 @@ struct SmallWidgetView: View {
             // Show localized "Open App" UI when app isn't active
             VStack(spacing: 8) {
                 Image(systemName: "radio")
-                    .font(.largeTitle)
+                    .font(.title2) // Slightly smaller for more text space
                     .foregroundColor(.secondary)
                 
                 Text(String(localized: "tap_to_open"))
                     .font(.caption)
                     .fontWeight(.medium)
                     .foregroundColor(.primary)
-                
-                Text(String(localized: "open_app_first"))
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2) // Allow up to 2 lines
+                    .minimumScaleFactor(0.8) // Scale down if needed
             }
             .padding()
             .widgetURL(URL(string: "lutheranradio://open"))
@@ -258,60 +257,93 @@ struct MediumWidgetView: View {
     let entry: SimpleEntry
     
     var body: some View {
-        HStack(spacing: 12) {
-            // Left side - Current station info
-            VStack(alignment: .leading, spacing: 4) {
-                Text(String(localized: "lutheran_radio_title"))
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.secondary)
-                
-                Text(entry.currentStation)
-                    .font(.headline)
-                    .foregroundColor(.primary)
-                    .lineLimit(2)
-                
-                Text(entry.statusMessage)
-                    .font(.caption)
-                    .foregroundColor(entry.isPlaying ? .green : .secondary)
+        if !isAppRunning() {
+            // Show localized "Open App" UI when app isn't active
+            HStack {
+                VStack(spacing: 8) {
+                    Image(systemName: "radio")
+                        .font(.largeTitle)
+                        .foregroundColor(.secondary)
+                    
+                    Text(String(localized: "tap_to_open"))
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundColor(.primary)
+                    
+                    Text(String(localized: "open_app_first"))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .padding()
+            .widgetURL(URL(string: "lutheranradio://open"))
+        } else {
+            // Your existing medium widget UI
+            HStack(spacing: 12) {
+                // Left side - Current station info
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(String(localized: "lutheran_radio_title"))
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.secondary)
+                    
+                    Text(entry.currentStation)
+                        .font(.headline)
+                        .foregroundColor(.primary)
+                        .lineLimit(2)
+                    
+                    Text(entry.statusMessage)
+                        .font(.caption)
+                        .foregroundColor(entry.isPlaying ? .green : .secondary)
+                    
+                    Spacer()
+                }
                 
                 Spacer()
-            }
-            
-            Spacer()
-            
-            // Right side - Controls
-            VStack(spacing: 8) {
-                // Play/Pause button
-                Button(intent: WidgetToggleRadioIntent()) {
-                    VStack(spacing: 2) {
-                        Image(systemName: entry.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                            .font(.title)
-                            .foregroundColor(entry.isPlaying ? .orange : .blue)
-                        Text(entry.isPlaying ? String(localized: "Pause") : String(localized: "Play"))
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                }
-                .buttonStyle(.plain)
                 
-                // Quick language switch (first 2 alternatives)
-                if entry.availableStreams.count > 1 {
-                    let currentStreamCode = getCurrentStreamCode(from: entry.currentStation)
-                    let alternativeStreams = entry.availableStreams.filter { $0.languageCode != currentStreamCode }.prefix(2)
-                    
-                    ForEach(Array(alternativeStreams), id: \.languageCode) { stream in
-                        Button(intent: SwitchStreamIntent(streamLanguageCode: stream.languageCode)) {
-                            Text(stream.flag)
-                                .font(.caption)
+                // Right side - Controls
+                VStack(spacing: 8) {
+                    // Play/Pause button
+                    Button(intent: ToggleRadioIntent()) {
+                        VStack(spacing: 2) {
+                            Image(systemName: entry.isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                                .font(.title)
+                                .foregroundColor(entry.isPlaying ? .orange : .blue)
+                            Text(entry.isPlaying ? String(localized: "Pause") : String(localized: "Play"))
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
                         }
-                        .buttonStyle(.plain)
+                    }
+                    .buttonStyle(.plain)
+                    
+                    // Quick language switch (first 2 alternatives)
+                    if entry.availableStreams.count > 1 {
+                        let currentStreamCode = getCurrentStreamCode(from: entry.currentStation)
+                        let alternativeStreams = entry.availableStreams.filter { $0.languageCode != currentStreamCode }.prefix(2)
+                        
+                        ForEach(Array(alternativeStreams), id: \.languageCode) { stream in
+                            Button(intent: SwitchStreamIntent(streamLanguageCode: stream.languageCode)) {
+                                Text(stream.flag)
+                                    .font(.caption)
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                 }
             }
+            .padding()
+            .background(Color(.systemBackground))
         }
-        .padding()
-        .background(Color(.systemBackground))
+    }
+    
+    private func isAppRunning() -> Bool {
+        // Check if we have recent state updates (within last 60 seconds)
+        if let lastUpdate = UserDefaults(suiteName: "group.radio.lutheran.shared")?
+            .object(forKey: "lastUpdateTime") as? Double {
+            return Date().timeIntervalSince1970 - lastUpdate < 60
+        }
+        return false
     }
     
     private func getCurrentStreamCode(from stationName: String) -> String {
@@ -330,68 +362,102 @@ struct LargeWidgetView: View {
     let entry: SimpleEntry
     
     var body: some View {
-        VStack(spacing: 12) {
-            // Header
-            HStack {
-                Text(String(localized: "lutheran_radio_title"))
-                    .font(.headline)
-                    .fontWeight(.bold)
+        if !isAppRunning() {
+            // Show localized "Open App" UI when app isn't active
+            VStack(spacing: 16) {
                 Spacer()
-                Button(intent: WidgetToggleRadioIntent()) {
-                    Image(systemName: entry.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                        .font(.title2)
-                        .foregroundColor(entry.isPlaying ? .orange : .blue)
-                }
-                .buttonStyle(.plain)
-            }
-            
-            // Current station and status
-            VStack(spacing: 4) {
-                Text(entry.currentStation)
-                    .font(.title2)
-                    .fontWeight(.semibold)
+                
+                Image(systemName: "radio")
+                    .font(.system(size: 60))
+                    .foregroundColor(.secondary)
+                
+                Text(String(localized: "tap_to_open"))
+                    .font(.title3)
+                    .fontWeight(.medium)
                     .foregroundColor(.primary)
                 
-                Text(entry.statusMessage)
+                Text(String(localized: "open_app_first"))
                     .font(.subheadline)
-                    .foregroundColor(entry.isPlaying ? .green : .secondary)
+                    .foregroundColor(.secondary)
+                
+                Spacer()
             }
-            
-            Divider()
-            
-            // All available streams
-            LazyVGrid(columns: [
-                GridItem(.flexible()),
-                GridItem(.flexible())
-            ], spacing: 8) {
-                ForEach(entry.availableStreams, id: \.languageCode) { stream in
-                    let isSelected = entry.currentStation.contains(stream.language)
-                    
-                    Button(intent: SwitchStreamIntent(streamLanguageCode: stream.languageCode)) {
-                        HStack(spacing: 4) {
-                            Text(stream.flag)
-                                .font(.caption)
-                            Text(stream.language)
-                                .font(.caption)
-                                .fontWeight(isSelected ? .semibold : .regular)
-                        }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(isSelected ? Color.blue.opacity(0.2) : Color.gray.opacity(0.1))
-                        .cornerRadius(6)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 6)
-                                .stroke(isSelected ? Color.blue : Color.clear, lineWidth: 1)
-                        )
+            .padding()
+            .widgetURL(URL(string: "lutheranradio://open"))
+        } else {
+            // Your existing large widget UI
+            VStack(spacing: 12) {
+                // Header
+                HStack {
+                    Text(String(localized: "lutheran_radio_title"))
+                        .font(.headline)
+                        .fontWeight(.bold)
+                    Spacer()
+                    Button(intent: ToggleRadioIntent()) {
+                        Image(systemName: entry.isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                            .font(.title2)
+                            .foregroundColor(entry.isPlaying ? .orange : .blue)
                     }
                     .buttonStyle(.plain)
                 }
+                
+                // Current station and status
+                VStack(spacing: 4) {
+                    Text(entry.currentStation)
+                        .font(.title2)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                    
+                    Text(entry.statusMessage)
+                        .font(.subheadline)
+                        .foregroundColor(entry.isPlaying ? .green : .secondary)
+                }
+                
+                Divider()
+                
+                // All available streams
+                LazyVGrid(columns: [
+                    GridItem(.flexible()),
+                    GridItem(.flexible())
+                ], spacing: 8) {
+                    ForEach(entry.availableStreams, id: \.languageCode) { stream in
+                        let isSelected = entry.currentStation.contains(stream.language)
+                        
+                        Button(intent: SwitchStreamIntent(streamLanguageCode: stream.languageCode)) {
+                            HStack(spacing: 4) {
+                                Text(stream.flag)
+                                    .font(.caption)
+                                Text(stream.language)
+                                    .font(.caption)
+                                    .fontWeight(isSelected ? .semibold : .regular)
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(isSelected ? Color.blue.opacity(0.2) : Color.gray.opacity(0.1))
+                            .cornerRadius(6)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .stroke(isSelected ? Color.blue : Color.clear, lineWidth: 1)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                
+                Spacer()
             }
-            
-            Spacer()
+            .padding()
+            .background(Color(.systemBackground))
         }
-        .padding()
-        .background(Color(.systemBackground))
+    }
+    
+    private func isAppRunning() -> Bool {
+        // Check if we have recent state updates (within last 60 seconds)
+        if let lastUpdate = UserDefaults(suiteName: "group.radio.lutheran.shared")?
+            .object(forKey: "lastUpdateTime") as? Double {
+            return Date().timeIntervalSince1970 - lastUpdate < 60
+        }
+        return false
     }
 }
 
