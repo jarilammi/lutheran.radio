@@ -377,14 +377,11 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     }
     
     private func saveStateForWidget() {
-        // Save current state for widget access
+        // Save current state for widget access (this also reloads widgets)
         SharedPlayerManager.shared.saveCurrentState()
         
-        // Force widget refresh
-        WidgetCenter.shared.reloadTimelines(ofKind: "LutheranRadioWidget")
-        
         #if DEBUG
-        print("🔗 Widget timelines reloaded")
+        print("🔗 Widget timelines reloaded via SharedPlayerManager")
         #endif
     }
     

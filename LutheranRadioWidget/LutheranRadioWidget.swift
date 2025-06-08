@@ -307,8 +307,9 @@ struct WidgetToggleRadioIntent: AppIntent {
             }
         }
         
-        // Force immediate widget refresh
+        // Force immediate widget refresh for both widget types
         WidgetCenter.shared.reloadTimelines(ofKind: "LutheranRadioWidget")
+        WidgetCenter.shared.reloadTimelines(ofKind: "radio.lutheran.LutheranRadio.LutheranRadioWidget")
         
         #if DEBUG
         print("🔗 WidgetToggleRadioIntent completed successfully")

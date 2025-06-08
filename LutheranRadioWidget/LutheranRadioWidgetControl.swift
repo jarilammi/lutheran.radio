@@ -177,8 +177,9 @@ struct QuickSwitchStreamIntent: AppIntent {
         
         manager.switchToStream(targetStream)
         
-        // Force immediate widget refresh
+        // Force immediate widget refresh for both widget types
         WidgetCenter.shared.reloadTimelines(ofKind: "LutheranRadioWidget")
+        WidgetCenter.shared.reloadTimelines(ofKind: "radio.lutheran.LutheranRadio.LutheranRadioWidget")
         
         #if DEBUG
         print("🔗 QuickSwitchStreamIntent completed for \(targetStream.language)")

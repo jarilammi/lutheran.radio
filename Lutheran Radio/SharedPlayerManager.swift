@@ -174,6 +174,15 @@ class SharedPlayerManager {
         print("🔗 Posted Darwin notification for action: \(action)")
         #endif
     }
+    
+    private func reloadAllWidgets() {
+        WidgetCenter.shared.reloadTimelines(ofKind: "LutheranRadioWidget")
+        WidgetCenter.shared.reloadTimelines(ofKind: "radio.lutheran.LutheranRadio.LutheranRadioWidget")
+        
+        #if DEBUG
+        print("🔗 Reloaded both widget timelines")
+        #endif
+    }
 }
 
 // MARK: - UserDefaults Communication
@@ -187,7 +196,6 @@ extension SharedPlayerManager {
         guard !isRunningInWidget() else { return }
         
         guard let player = self.player else {
-            // Fallback to current known state
             return
         }
         
@@ -201,11 +209,10 @@ extension SharedPlayerManager {
         sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "lastUpdateTime")
         
         // Force widget refresh immediately
-        WidgetCenter.shared.reloadTimelines(ofKind: "LutheranRadioWidget")
+        reloadAllWidgets()
         
         #if DEBUG
         print("🔗 Saved state: playing=\(isPlaying), language=\(currentLanguage), error=\(hasError)")
-        print("🔗 Triggered widget timeline reload")
         #endif
     }
     
