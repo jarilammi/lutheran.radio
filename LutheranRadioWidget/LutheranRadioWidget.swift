@@ -194,32 +194,62 @@ struct SmallWidgetView: View {
     let entry: SimpleEntry
     
     var body: some View {
-        VStack(spacing: 4) {
-            // Current station
-            Text(entry.currentStation)
-                .font(.caption)
-                .fontWeight(.medium)
-                .foregroundColor(.primary)
-                .lineLimit(1)
-            
-            // Status
-            Text(entry.statusMessage)
-                .font(.caption2)
-                .foregroundColor(.secondary)
-                .lineLimit(1)
-            
-            Spacer()
-            
-            // Play/Pause button
-            Button(intent: WidgetToggleRadioIntent()) {
-                Image(systemName: entry.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                    .font(.title2)
-                    .foregroundColor(entry.isPlaying ? .orange : .blue)
+        if !isAppRunning() {
+            // Show localized "Open App" UI when app isn't active
+            VStack(spacing: 8) {
+                Image(systemName: "radio")
+                    .font(.largeTitle)
+                    .foregroundColor(.secondary)
+                
+                Text(String(localized: "tap_to_open"))
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .foregroundColor(.primary)
+                
+                Text(String(localized: "open_app_first"))
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
             }
-            .buttonStyle(.plain)
+            .padding()
+            .widgetURL(URL(string: "lutheranradio://open"))
+        } else {
+            // Your existing widget UI
+            VStack(spacing: 4) {
+                // Current station
+                Text(entry.currentStation)
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+                
+                // Status
+                Text(entry.statusMessage)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                
+                Spacer()
+                
+                // Play/Pause button
+                Button(intent: ToggleRadioIntent()) {
+                    Image(systemName: entry.isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                        .font(.title2)
+                        .foregroundColor(entry.isPlaying ? .orange : .blue)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(8)
+            .background(Color(.systemBackground))
         }
-        .padding(8)
-        .background(Color(.systemBackground))
+    }
+    
+    private func isAppRunning() -> Bool {
+        // Check if we have recent state updates (within last 60 seconds)
+        if let lastUpdate = UserDefaults(suiteName: "group.radio.lutheran.shared")?
+            .object(forKey: "lastUpdateTime") as? Double {
+            return Date().timeIntervalSince1970 - lastUpdate < 60
+        }
+        return false
     }
 }
 
