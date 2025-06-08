@@ -10,17 +10,36 @@ import AVFoundation
 
 class SharedPlayerManager {
     static let shared = SharedPlayerManager()
-    private let player = DirectStreamingPlayer.shared
+    
+    // Use lazy initialization and check widget context
+    private lazy var _player: DirectStreamingPlayer? = {
+        // Never create player in widget context
+        guard !isRunningInWidget() else {
+            #if DEBUG
+            print("🔗 Prevented DirectStreamingPlayer creation in widget context")
+            #endif
+            return nil
+        }
+        return DirectStreamingPlayer.shared
+    }()
+    
+    private var player: DirectStreamingPlayer? {
+        return _player
+    }
     
     private init() {}
     
     // Widget-safe methods that won't crash
     var isPlaying: Bool {
-        return player.isPlaying
+        // Always read from UserDefaults for consistency
+        let sharedState = loadSharedState()
+        return sharedState.isPlaying
     }
     
     var currentStream: DirectStreamingPlayer.Stream {
-        return player.selectedStream
+        // Always reconstruct from UserDefaults
+        let languageCode = sharedDefaults?.string(forKey: "currentLanguage") ?? "en"
+        return availableStreams.first { $0.languageCode == languageCode } ?? availableStreams[0]
     }
     
     var availableStreams: [DirectStreamingPlayer.Stream] {
@@ -28,26 +47,41 @@ class SharedPlayerManager {
     }
     
     var hasError: Bool {
-        return player.hasPermanentError || player.isLastErrorPermanent()
+        // Always read from UserDefaults
+        let sharedState = loadSharedState()
+        return sharedState.hasError
     }
     
-    // Widget-safe play method
+    // Widget-safe play method with improved error handling
     func play(completion: @escaping (Bool) -> Void) {
-        // Ensure we're not in a widget context for complex operations
-        guard !isRunningInWidget() else {
-            // For widgets, use URL scheme to communicate with main app
-            openMainApp(action: "play")
+        if isRunningInWidget() {
+            // For widgets, use App Group notification instead of direct scheduling
+            scheduleWidgetAction(action: "play")
+            notifyMainApp(action: "play")
             completion(true)
+            return
+        }
+        
+        // Main app context - use player directly
+        guard let player = self.player else {
+            completion(false)
             return
         }
         
         player.play(completion: completion)
     }
     
-    // Widget-safe stop method
+    // Widget-safe stop method with improved error handling
     func stop(completion: @escaping () -> Void = {}) {
-        guard !isRunningInWidget() else {
-            openMainApp(action: "pause")
+        if isRunningInWidget() {
+            scheduleWidgetAction(action: "pause")
+            notifyMainApp(action: "pause")
+            completion()
+            return
+        }
+        
+        // Main app context
+        guard let player = self.player else {
             completion()
             return
         }
@@ -55,50 +89,119 @@ class SharedPlayerManager {
         player.stop(completion: completion)
     }
     
-    // Switch stream method
+    // Simplified switch stream method for widgets
     func switchToStream(_ stream: DirectStreamingPlayer.Stream) {
-        guard !isRunningInWidget() else {
-            openMainApp(action: "switch", parameter: stream.languageCode)
+        if isRunningInWidget() {
+            scheduleWidgetAction(action: "switch", parameter: stream.languageCode)
+            notifyMainApp(action: "switch", parameter: stream.languageCode)
             return
         }
         
-        player.setStream(to: stream)
+        // Main app context
+        guard let player = self.player else { return }
+        
+        player.stop { [weak self] in
+            guard let self = self else { return }
+            player.resetTransientErrors()
+            player.setStream(to: stream)
+            
+            // Only auto-play if not manually paused
+            if !self.loadSharedState().isPlaying {
+                return
+            }
+            
+            player.play { success in
+                #if DEBUG
+                print("📱 Direct stream switch \(success ? "succeeded" : "failed") for \(stream.language)")
+                #endif
+            }
+        }
     }
     
-    // Check if running in widget context
+    // Check if running in widget context with additional checks
     private func isRunningInWidget() -> Bool {
-        return Bundle.main.bundlePath.contains("PlugIns")
+        let bundlePath = Bundle.main.bundlePath
+        let bundleId = Bundle.main.bundleIdentifier ?? ""
+        
+        let isWidget = bundlePath.contains("PlugIns") ||
+                      bundlePath.contains("SystemExtensions") ||
+                      bundleId.contains("LutheranRadioWidget") ||
+                      bundleId.hasSuffix(".LutheranRadioWidget")
+        
+        #if DEBUG
+        if isWidget {
+            print("🔗 Running in widget context: bundlePath=\(bundlePath), bundleId=\(bundleId)")
+        }
+        #endif
+        
+        return isWidget
     }
     
-    // Open main app with action - Fixed for iOS
-    private func openMainApp(action: String, parameter: String? = nil) {
-        var urlString = "lutheranradio://\(action)"
-        if let param = parameter {
-            urlString += "?param=\(param)"
+    // Schedule widget action for main app to handle
+    private func scheduleWidgetAction(action: String, parameter: String? = nil) {
+        guard let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
+            #if DEBUG
+            print("🔗 ERROR: Failed to access shared UserDefaults in scheduleWidgetAction")
+            #endif
+            return
         }
         
-        if let url = URL(string: urlString) {
-            // For iOS widgets, we need to use the extensionContext
-            // This will be handled in the actual widget implementation
-            #if DEBUG
-            print("Widget would open URL: \(url)")
-            #endif
-            // Note: Actual URL opening should be handled in the widget's perform() method
-            // using extensionContext?.open(url, completionHandler: nil)
+        let actionId = UUID().uuidString
+        sharedDefaults.set(action, forKey: "pendingAction")
+        sharedDefaults.set(actionId, forKey: "pendingActionId")
+        sharedDefaults.set(Date().timeIntervalSince1970, forKey: "pendingActionTime")
+        if let param = parameter {
+            sharedDefaults.set(param, forKey: "pendingLanguage")
         }
+        
+        // Force synchronization
+        sharedDefaults.synchronize()
+        
+        #if DEBUG
+        print("🔗 Scheduled widget action: \(action) \(parameter ?? "") [ID: \(actionId)]")
+        print("🔗 UserDefaults synchronized for App Group")
+        #endif
+    }
+    
+    // Notify main app using Darwin notifications
+    private func notifyMainApp(action: String, parameter: String? = nil) {
+        let notificationName = "radio.lutheran.widget.action"
+        let center = CFNotificationCenterGetDarwinNotifyCenter()
+        CFNotificationCenterPostNotification(center, CFNotificationName(notificationName as CFString), nil, nil, false)
+        
+        #if DEBUG
+        print("🔗 Posted Darwin notification for action: \(action)")
+        #endif
     }
 }
 
-// Use UserDefaults for simple state sharing:
+// MARK: - UserDefaults Communication
 extension SharedPlayerManager {
     private var sharedDefaults: UserDefaults? {
         return UserDefaults(suiteName: "group.radio.lutheran.shared")
     }
     
     func saveCurrentState() {
+        // Only save if we're in the main app, not widget
+        guard !isRunningInWidget() else { return }
+        
+        guard let player = self.player else {
+            // Fallback to current known state
+            return
+        }
+        
+        let isPlaying = player.isPlaying
+        let currentLanguage = player.selectedStream.languageCode
+        let hasError = player.hasPermanentError || player.isLastErrorPermanent()
+        
         sharedDefaults?.set(isPlaying, forKey: "isPlaying")
-        sharedDefaults?.set(currentStream.languageCode, forKey: "currentLanguage")
+        sharedDefaults?.set(currentLanguage, forKey: "currentLanguage")
         sharedDefaults?.set(hasError, forKey: "hasError")
+        sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "lastUpdateTime")
+        
+        #if DEBUG
+        print("🔗 Saved state: playing=\(isPlaying), language=\(currentLanguage), error=\(hasError)")
+        #endif
     }
     
     func loadSharedState() -> (isPlaying: Bool, currentLanguage: String, hasError: Bool) {
@@ -106,5 +209,32 @@ extension SharedPlayerManager {
         let currentLanguage = sharedDefaults?.string(forKey: "currentLanguage") ?? "en"
         let hasError = sharedDefaults?.bool(forKey: "hasError") ?? false
         return (isPlaying, currentLanguage, hasError)
+    }
+    
+    // Get pending actions safely
+    func getPendingAction() -> (action: String, parameter: String?, actionId: String)? {
+        guard let action = sharedDefaults?.string(forKey: "pendingAction"),
+              let actionId = sharedDefaults?.string(forKey: "pendingActionId") else {
+            return nil
+        }
+        
+        let parameter = sharedDefaults?.string(forKey: "pendingLanguage")
+        return (action, parameter, actionId)
+    }
+    
+    // Clear processed actions
+    func clearPendingAction(actionId: String) {
+        // Only clear if the action ID matches to prevent race conditions
+        if let currentActionId = sharedDefaults?.string(forKey: "pendingActionId"),
+           currentActionId == actionId {
+            sharedDefaults?.removeObject(forKey: "pendingAction")
+            sharedDefaults?.removeObject(forKey: "pendingActionId")
+            sharedDefaults?.removeObject(forKey: "pendingActionTime")
+            sharedDefaults?.removeObject(forKey: "pendingLanguage")
+            
+            #if DEBUG
+            print("🔗 Cleared pending action with ID: \(actionId)")
+            #endif
+        }
     }
 }

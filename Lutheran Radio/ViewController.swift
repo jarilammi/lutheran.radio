@@ -237,6 +237,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         view.backgroundColor = .systemBackground
         
         configureAudioSession() // Configure audio session
+        setupDarwinNotificationListener()
         setupUI()
         languageCollectionView.delegate = self
         languageCollectionView.dataSource = self
@@ -276,6 +277,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             object: nil
         )
         
+        setupWidgetActionPolling()
         isInitialSetupComplete = true
         setupBackgroundParallax()
 
@@ -290,6 +292,44 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             // Ensure player is not in a stopped state before attempting playback
             self.streamingPlayer.resetTransientErrors()
             self.startPlayback()
+        }
+    }
+    
+    private func setupDarwinNotificationListener() {
+        let notificationName = "radio.lutheran.widget.action"
+        let center = CFNotificationCenterGetDarwinNotifyCenter()
+        
+        // Use a simpler approach without context pointer
+        CFNotificationCenterAddObserver(
+            center,
+            Unmanaged.passUnretained(self).toOpaque(),
+            { (center, observer, name, object, userInfo) in
+                DispatchQueue.main.async {
+                    #if DEBUG
+                    print("🔗 Received Darwin notification for widget action")
+                    #endif
+                    // Get the main app's view controller and check for actions
+                    if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                       let window = windowScene.windows.first,
+                       let viewController = window.rootViewController as? ViewController {
+                        viewController.checkForPendingWidgetActions()
+                    }
+                }
+            },
+            notificationName as CFString,
+            nil,
+            .deliverImmediately
+        )
+        
+        #if DEBUG
+        print("🔗 Darwin notification listener setup complete")
+        #endif
+    }
+    
+    private func setupWidgetActionPolling() {
+        // Check for widget actions every 2 seconds as fallback
+        Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+            self?.checkForPendingWidgetActions()
         }
     }
     
@@ -335,6 +375,11 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         }
     }
     
+    private func saveStateForWidget() {
+        // Save current state for widget access
+        SharedPlayerManager.shared.saveCurrentState()
+    }
+    
     private func setupStreamingCallbacks() {
         streamingPlayer.onStatusChange = { [weak self] isPlaying, statusText in
             guard let self = self else {
@@ -345,6 +390,10 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             }
             self.isPlaying = isPlaying
             self.updatePlayPauseButton(isPlaying: isPlaying)
+            
+            // Save state for widget after any status change
+            self.saveStateForWidget()
+            
             if isPlaying {
                 self.statusLabel.text = String(localized: "status_playing")
                 self.statusLabel.backgroundColor = .systemGreen
@@ -441,6 +490,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                     self.updateNowPlayingInfo()
                     self.speakerImageView.isHidden = true
                 }
+                self.saveStateForWidget()
             }
         }
     }
@@ -850,6 +900,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         }
         pendingPlaybackWorkItem = workItem
         DispatchQueue.main.async(execute: workItem)
+        saveStateForWidget()
     }
     
     private func attemptPlaybackWithRetry(attempt: Int, maxAttempts: Int) {
@@ -939,6 +990,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         isPlaying = false
         updatePlayPauseButton(isPlaying: false)
         updateNowPlayingInfo()
+        saveStateForWidget()
     }
     
     private func stopPlayback() {
@@ -948,6 +1000,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         streamingPlayer.stop()
         isPlaying = false
         updatePlayPauseButton(isPlaying: false)
+        saveStateForWidget()
     }
     
     @objc func playPauseTapped() {
@@ -1598,6 +1651,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 }
                 self.updateSelectionIndicator(to: index)
                 self.languageCollectionView.scrollToItem(at: IndexPath(item: index, section: 0), at: .centeredHorizontally, animated: true)
+                self.saveStateForWidget()
                 #if DEBUG
                 print("📱 completeStreamSwitch: Switched to stream \(stream.language), index=\(index)")
                 #endif
@@ -1619,6 +1673,10 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     }
     
     deinit {
+        // Remove Darwin notification observer
+        let center = CFNotificationCenterGetDarwinNotifyCenter()
+        CFNotificationCenterRemoveObserver(center, Unmanaged.passUnretained(self).toOpaque(), nil, nil)
+        
         isDeallocating = true
         networkMonitor?.pathUpdateHandler = nil
         networkMonitorHandler = nil
@@ -1640,6 +1698,151 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         #if DEBUG
         print("🧹 ViewController deinit")
         #endif
+    }
+    
+    // MARK: - Widget Action Handlers (No Tuning Sounds)
+
+    /// Handle widget play action without tuning sounds
+    private func handleWidgetPlayAction() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            hasPermanentPlaybackError = false
+            
+            // Direct playback without tuning sounds
+            startPlaybackDirect()
+        }
+    }
+
+    /// Handle widget pause action
+    private func handleWidgetPauseAction() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            pausePlayback()
+        }
+    }
+
+    /// Handle widget stream switch without tuning sounds
+    private func handleWidgetSwitchToLanguage(_ languageCode: String) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            
+            #if DEBUG
+            print("🔗 handleWidgetSwitchToLanguage called for: \(languageCode)")
+            print("🔗 Current selected stream: \(self.streamingPlayer.selectedStream.languageCode)")
+            #endif
+            
+            // Check if we're already on this stream
+            if self.streamingPlayer.selectedStream.languageCode == languageCode {
+                #if DEBUG
+                print("🔗 Already on requested stream \(languageCode), no switch needed")
+                #endif
+                self.saveStateForWidget()
+                return
+            }
+            
+            // Find the target stream
+            guard let targetStream = DirectStreamingPlayer.availableStreams.first(where: { $0.languageCode == languageCode }) else {
+                #if DEBUG
+                print("🔗 Target stream not found for language: \(languageCode)")
+                #endif
+                return
+            }
+            
+            guard let targetIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.languageCode == languageCode }) else {
+                #if DEBUG
+                print("🔗 Target stream index not found for language: \(languageCode)")
+                #endif
+                return
+            }
+            
+            #if DEBUG
+            print("🔗 Switching from \(self.streamingPlayer.selectedStream.language) to \(targetStream.language)")
+            #endif
+            
+            selectedStreamIndex = targetIndex
+            updateBackground(for: targetStream)
+            
+            // Direct stream switch without tuning sounds
+            streamingPlayer.stop { [weak self] in
+                guard let self = self else { return }
+                
+                #if DEBUG
+                print("🔗 Previous stream stopped, setting new stream")
+                #endif
+                
+                self.streamingPlayer.resetTransientErrors()
+                self.streamingPlayer.setStream(to: targetStream)
+                self.hasPermanentPlaybackError = false
+                
+                DispatchQueue.main.async {
+                    let indexPath = IndexPath(item: targetIndex, section: 0)
+                    self.languageCollectionView.selectItem(at: indexPath, animated: true, scrollPosition: .centeredHorizontally)
+                    self.updateSelectionIndicator(to: targetIndex)
+                    
+                    #if DEBUG
+                    print("🔗 UI updated for stream switch, isManualPause: \(self.isManualPause)")
+                    #endif
+                    
+                    if !self.isManualPause {
+                        #if DEBUG
+                        print("🔗 Starting playback after stream switch")
+                        #endif
+                        self.startPlaybackDirect()
+                    } else {
+                        #if DEBUG
+                        print("🔗 Not starting playback (manual pause)")
+                        #endif
+                    }
+                    
+                    self.saveStateForWidget()
+                }
+            }
+        }
+    }
+
+    /// Direct playback without tuning sounds (for widget actions)
+    private func startPlaybackDirect() {
+        if !hasInternetConnection {
+            updateUIForNoInternet()
+            performActiveConnectivityCheck()
+            return
+        }
+        
+        isManualPause = false
+        statusLabel.text = String(localized: "status_connecting")
+        statusLabel.backgroundColor = .systemYellow
+        statusLabel.textColor = .black
+
+        streamingPlayer.validateSecurityModelAsync { [weak self] isValid in
+            guard let self = self else { return }
+            if isValid {
+                self.streamingPlayer.resetTransientErrors()
+                self.streamingPlayer.play { success in
+                    if success {
+                        self.isPlaying = true
+                        self.updatePlayPauseButton(isPlaying: true)
+                        self.statusLabel.text = String(localized: "status_playing")
+                        self.statusLabel.backgroundColor = .systemGreen
+                        self.saveStateForWidget()
+                    } else if self.streamingPlayer.isLastErrorPermanent() {
+                        self.hasPermanentPlaybackError = true
+                        self.statusLabel.text = String(localized: "status_stream_unavailable")
+                        self.statusLabel.backgroundColor = .systemOrange
+                        self.statusLabel.textColor = .white
+                    } else {
+                        // Simple retry without complex logic
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                            self.startPlaybackDirect()
+                        }
+                    }
+                }
+            } else {
+                self.statusLabel.text = self.streamingPlayer.isLastErrorPermanent() ? String(localized: "status_security_failed") : String(localized: "status_no_internet")
+                self.statusLabel.backgroundColor = self.streamingPlayer.isLastErrorPermanent() ? .systemRed : .systemGray
+                self.statusLabel.textColor = .white
+                self.hasPermanentPlaybackError = self.streamingPlayer.isLastErrorPermanent()
+            }
+        }
     }
 }
 
@@ -1797,40 +2000,94 @@ extension ViewController {
     
     /// Checks for and handles pending actions from widgets
     public func checkForPendingWidgetActions() {
+        #if DEBUG
+        print("🔗 checkForPendingWidgetActions called")
+        #endif
+        
         guard let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
+            #if DEBUG
+            print("🔗 ERROR: Failed to access shared UserDefaults in checkForPendingWidgetActions")
+            #endif
             return
         }
         
+        // Debug: List all keys in shared defaults
+        #if DEBUG
+        let allKeys = sharedDefaults.dictionaryRepresentation().keys
+        print("🔗 Available keys in shared UserDefaults: \(Array(allKeys))")
+        #endif
+        
         guard let pendingAction = sharedDefaults.string(forKey: "pendingAction") else {
+            #if DEBUG
+            print("🔗 No pending actions found")
+            #endif
             return
         }
         
         let pendingTime = sharedDefaults.double(forKey: "pendingActionTime")
+        let actionId = sharedDefaults.string(forKey: "pendingActionId") ?? "unknown"
         let now = Date().timeIntervalSince1970
         let actionAge = now - pendingTime
         
+        #if DEBUG
+        print("🔗 Found pending action: \(pendingAction), age: \(actionAge)s, ID: \(actionId)")
+        #endif
+        
+        // Expire actions after 30 seconds
         guard actionAge < 30.0 else {
+            #if DEBUG
+            print("🔗 Action expired (age: \(actionAge)s), clearing")
+            #endif
             sharedDefaults.removeObject(forKey: "pendingAction")
             sharedDefaults.removeObject(forKey: "pendingActionTime")
             sharedDefaults.removeObject(forKey: "pendingLanguage")
+            sharedDefaults.removeObject(forKey: "pendingActionId")
             return
         }
         
+        #if DEBUG
+        print("🔗 Processing pending widget action: \(pendingAction)")
+        #endif
+        
         switch pendingAction {
         case "play":
-            handlePlayAction()
+            #if DEBUG
+            print("🔗 Executing widget play action")
+            #endif
+            handleWidgetPlayAction()
         case "pause":
-            handlePauseAction()
+            #if DEBUG
+            print("🔗 Executing widget pause action")
+            #endif
+            handleWidgetPauseAction()
         case "switch":
             if let languageCode = sharedDefaults.string(forKey: "pendingLanguage") {
-                handleSwitchToLanguage(languageCode)
+                #if DEBUG
+                print("🔗 Executing widget switch action to language: \(languageCode)")
+                #endif
+                handleWidgetSwitchToLanguage(languageCode)
+            } else {
+                #if DEBUG
+                print("🔗 Switch action missing language code")
+                #endif
             }
         default:
-            break
+            #if DEBUG
+            print("🔗 Unknown pending action: \(pendingAction)")
+            #endif
         }
         
+        // Clear processed actions immediately
         sharedDefaults.removeObject(forKey: "pendingAction")
         sharedDefaults.removeObject(forKey: "pendingActionTime")
         sharedDefaults.removeObject(forKey: "pendingLanguage")
+        sharedDefaults.removeObject(forKey: "pendingActionId")
+        
+        #if DEBUG
+        print("🔗 Cleared processed action: \(pendingAction)")
+        #endif
+        
+        // Save updated state after processing action
+        saveStateForWidget()
     }
 }

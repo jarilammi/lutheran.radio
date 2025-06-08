@@ -48,6 +48,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         if let viewController = window?.rootViewController as? ViewController {
             viewController.checkForPendingWidgetActions()
         }
+        
+        // Save current state when becoming active (in case widget needs fresh data)
+        SharedPlayerManager.shared.saveCurrentState()
     }
 
     /// Called when the scene will resign active state.
@@ -73,6 +76,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         
         // Save current state for widget sharing
         SharedPlayerManager.shared.saveCurrentState()
+        
+        #if DEBUG
+        print("🔗 Saved state for widget on background")
+        #endif
     }
 
     /// Called when the app is opened via URL scheme
