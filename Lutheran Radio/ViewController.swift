@@ -279,6 +279,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         )
         
         setupWidgetActionPolling()
+        setupFastWidgetActionChecking()
         isInitialSetupComplete = true
         setupBackgroundParallax()
 
@@ -383,6 +384,29 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         #if DEBUG
         print("🔗 Widget timelines reloaded via SharedPlayerManager")
         #endif
+    }
+    
+    private func setupFastWidgetActionChecking() {
+        // Check for widget actions every 0.5 seconds for the first 10 seconds after app starts
+        // This ensures fast processing of widget actions when app becomes active
+        var checksRemaining = 20 // 20 checks × 0.5s = 10 seconds
+        
+        Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] timer in
+            guard let self = self else {
+                timer.invalidate()
+                return
+            }
+            
+            self.checkForPendingWidgetActions()
+            
+            checksRemaining -= 1
+            if checksRemaining <= 0 {
+                timer.invalidate()
+                #if DEBUG
+                print("🔗 Fast widget action checking completed")
+                #endif
+            }
+        }
     }
     
     private func setupStreamingCallbacks() {
@@ -1715,6 +1739,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             
             // Direct playback without tuning sounds
             startPlaybackDirect()
+            
+            // Immediately save state for widget feedback
+            saveStateForWidget()
         }
     }
 
@@ -1723,6 +1750,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             pausePlayback()
+            
+            // Immediately save state for widget feedback
+            saveStateForWidget()
         }
     }
 
@@ -1741,6 +1771,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 #if DEBUG
                 print("🔗 Already on requested stream \(languageCode), no switch needed")
                 #endif
+                // Still save state to ensure widget is up to date
                 self.saveStateForWidget()
                 return
             }
@@ -1766,6 +1797,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             
             selectedStreamIndex = targetIndex
             updateBackground(for: targetStream)
+            
+            // FIXED: Don't save state immediately - let the stream switch complete first
             
             // Direct stream switch without tuning sounds
             streamingPlayer.stop { [weak self] in
@@ -1797,9 +1830,12 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                         #if DEBUG
                         print("🔗 Not starting playback (manual pause)")
                         #endif
+                        // FIXED: Only save state after the stream is fully switched
+                        // Add a delay to ensure the stream switch is complete
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                            self.saveStateForWidget()
+                        }
                     }
-                    
-                    self.saveStateForWidget()
                 }
             }
         }
@@ -1828,12 +1864,19 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                         self.updatePlayPauseButton(isPlaying: true)
                         self.statusLabel.text = String(localized: "status_playing")
                         self.statusLabel.backgroundColor = .systemGreen
-                        self.saveStateForWidget()
+                        
+                        // FIXED: Only save state after successful playback with the new stream
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                            self.saveStateForWidget()
+                        }
                     } else if self.streamingPlayer.isLastErrorPermanent() {
                         self.hasPermanentPlaybackError = true
                         self.statusLabel.text = String(localized: "status_stream_unavailable")
                         self.statusLabel.backgroundColor = .systemOrange
                         self.statusLabel.textColor = .white
+                        
+                        // Save error state
+                        self.saveStateForWidget()
                     } else {
                         // Simple retry without complex logic
                         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
@@ -1846,164 +1889,14 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 self.statusLabel.backgroundColor = self.streamingPlayer.isLastErrorPermanent() ? .systemRed : .systemGray
                 self.statusLabel.textColor = .white
                 self.hasPermanentPlaybackError = self.streamingPlayer.isLastErrorPermanent()
+                
+                // Save error state
+                self.saveStateForWidget()
             }
-        }
-    }
-}
-
-extension ViewController {
-    // MARK: - ScrollView Delegate
-    func scrollViewWillEndDragging(_ scrollView: UIScrollView, withVelocity velocity: CGPoint, targetContentOffset: UnsafeMutablePointer<CGPoint>) {
-        guard !isInitialScrollLocked else {
-            #if DEBUG
-            print("📱 scrollViewWillEndDragging: Scroll locked during initial setup")
-            #endif
-            return
-        }
-        let centerX = languageCollectionView.bounds.midX
-        let centerPoint = CGPoint(x: centerX, y: languageCollectionView.bounds.midY)
-        if let indexPath = languageCollectionView.indexPathForItem(at: centerPoint) {
-            targetContentOffset.pointee = CGPoint(x: centerX - languageCollectionView.contentInset.left, y: 0)
-            languageCollectionView.selectItem(at: indexPath, animated: false, scrollPosition: [])
-            let generator = UIImpactFeedbackGenerator(style: .light)
-            generator.impactOccurred()
-            let selectedStream = DirectStreamingPlayer.availableStreams[indexPath.item]
-            streamingPlayer.stop { [weak self] in
-                guard let self = self else { return }
-                self.playTuningSound {
-                    self.streamingPlayer.setStream(to: selectedStream)
-                    self.hasPermanentPlaybackError = false
-                    self.selectedStreamIndex = indexPath.item
-                    if self.isPlaying || !self.isManualPause { self.startPlayback() }
-                    self.updateSelectionIndicator(to: indexPath.item)
-                }
-            }
-            #if DEBUG
-            print("📱 scrollViewWillEndDragging: Scroll ended at index \(indexPath.item), centered at \(centerX)")
-            #endif
         }
     }
 
-    func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
-        guard !isInitialScrollLocked else {
-            #if DEBUG
-            print("📱 scrollViewDidEndDecelerating: Scroll locked during initial setup")
-            #endif
-            return
-        }
-        let centerX = languageCollectionView.bounds.midX + languageCollectionView.contentOffset.x
-        var closestIndex = 0
-        var closestDistance: CGFloat = CGFloat.greatestFiniteMagnitude
-        for i in 0..<DirectStreamingPlayer.availableStreams.count {
-            if let cell = languageCollectionView.cellForItem(at: IndexPath(item: i, section: 0)) {
-                let cellCenterX = cell.frame.midX
-                let distance = abs(centerX - cellCenterX)
-                if distance < closestDistance {
-                    closestDistance = distance
-                    closestIndex = i
-                }
-            }
-        }
-        let indexPath = IndexPath(item: closestIndex, section: 0)
-        let stream = DirectStreamingPlayer.availableStreams[closestIndex]
-        updateBackground(for: stream)
-        languageCollectionView.selectItem(at: indexPath, animated: true, scrollPosition: .centeredHorizontally)
-        let generator = UIImpactFeedbackGenerator(style: .light)
-        generator.impactOccurred()
-        streamingPlayer.stop { [weak self] in
-            guard let self = self else { return }
-            self.playTuningSound {
-                self.streamingPlayer.setStream(to: stream)
-                self.hasPermanentPlaybackError = false
-                self.selectedStreamIndex = closestIndex
-                if self.isPlaying || !self.isManualPause { self.startPlayback() }
-                self.updateSelectionIndicator(to: closestIndex)
-            }
-        }
-        #if DEBUG
-        print("📱 scrollViewDidEndDecelerating: Selected closest index \(closestIndex), centerX=\(centerX)")
-        #endif
-    }
-    
-    func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
-        scrollViewDidEndDecelerating(scrollView)
-    }
-}
-
-// MARK: - Public Methods for URL Scheme Handling
-extension ViewController {
-    
-    /// Public method to start playback (callable from SceneDelegate)
-    public func handlePlayAction() {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            hasPermanentPlaybackError = false
-            startPlayback()
-        }
-    }
-    
-    /// Public method to pause playback (callable from SceneDelegate)
-    public func handlePauseAction() {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            pausePlayback()
-        }
-    }
-    
-    /// Public method to switch to a specific language stream
-    /// - Parameter languageCode: The language code to switch to (e.g., "en", "de", "fi", "sv", "ee")
-    public func handleSwitchToLanguage(_ languageCode: String) {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            
-            // Find the stream with the matching language code
-            guard let targetStream = DirectStreamingPlayer.availableStreams.first(where: { $0.languageCode == languageCode }) else {
-                return
-            }
-            
-            // Find the index and switch
-            guard let targetIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.languageCode == languageCode }) else {
-                return
-            }
-            
-            selectedStreamIndex = targetIndex
-            updateBackground(for: targetStream)
-            
-            streamingPlayer.stop { [weak self] in
-                guard let self = self else { return }
-                self.playTuningSound { [weak self] in
-                    guard let self = self else { return }
-                    self.streamingPlayer.resetTransientErrors()
-                    self.streamingPlayer.setStream(to: targetStream)
-                    self.hasPermanentPlaybackError = false
-                    
-                    DispatchQueue.main.async {
-                        let indexPath = IndexPath(item: targetIndex, section: 0)
-                        self.languageCollectionView.selectItem(at: indexPath, animated: true, scrollPosition: .centeredHorizontally)
-                        self.updateSelectionIndicator(to: targetIndex)
-                        
-                        if !self.isManualPause {
-                            self.startPlayback()
-                        }
-                    }
-                }
-            }
-        }
-    }
-    
-    /// Public method to toggle play/pause state
-    public func handleTogglePlayback() {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            if isPlaying {
-                handlePauseAction()
-            } else {
-                handlePlayAction()
-            }
-        }
-    }
-    
-    /// Checks for and handles pending actions from widgets
+    /// Checks for and handles pending actions from widgets (Updated)
     public func checkForPendingWidgetActions() {
         #if DEBUG
         print("🔗 checkForPendingWidgetActions called")
@@ -2092,7 +1985,83 @@ extension ViewController {
         print("🔗 Cleared processed action: \(pendingAction)")
         #endif
         
-        // Save updated state after processing action
-        saveStateForWidget()
+        // Save updated state after processing action with a small delay to ensure UI is updated
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            self.saveStateForWidget()
+        }
+    }
+}
+
+// MARK: - Public Methods for URL Scheme Handling
+extension ViewController {
+    
+    /// Public method to start playback (callable from SceneDelegate)
+    public func handlePlayAction() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.hasPermanentPlaybackError = false
+            self.startPlayback()
+        }
+    }
+    
+    /// Public method to pause playback (callable from SceneDelegate)
+    public func handlePauseAction() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.pausePlayback()
+        }
+    }
+    
+    /// Public method to switch to a specific language stream
+    /// - Parameter languageCode: The language code to switch to (e.g., "en", "de", "fi", "sv", "ee")
+    public func handleSwitchToLanguage(_ languageCode: String) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            
+            // Find the stream with the matching language code
+            guard let targetStream = DirectStreamingPlayer.availableStreams.first(where: { $0.languageCode == languageCode }) else {
+                return
+            }
+            
+            // Find the index and switch
+            guard let targetIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.languageCode == languageCode }) else {
+                return
+            }
+            
+            self.selectedStreamIndex = targetIndex
+            self.updateBackground(for: targetStream)
+            
+            self.streamingPlayer.stop { [weak self] in
+                guard let self = self else { return }
+                self.playTuningSound { [weak self] in
+                    guard let self = self else { return }
+                    self.streamingPlayer.resetTransientErrors()
+                    self.streamingPlayer.setStream(to: targetStream)
+                    self.hasPermanentPlaybackError = false
+                    
+                    DispatchQueue.main.async {
+                        let indexPath = IndexPath(item: targetIndex, section: 0)
+                        self.languageCollectionView.selectItem(at: indexPath, animated: true, scrollPosition: .centeredHorizontally)
+                        self.updateSelectionIndicator(to: targetIndex)
+                        
+                        if !self.isManualPause {
+                            self.startPlayback()
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    /// Public method to toggle play/pause state
+    public func handleTogglePlayback() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            if self.isPlaying {
+                self.handlePauseAction()
+            } else {
+                self.handlePlayAction()
+            }
+        }
     }
 }

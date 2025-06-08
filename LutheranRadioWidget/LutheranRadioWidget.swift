@@ -37,25 +37,44 @@ struct Provider: AppIntentTimelineProvider {
     }
 
     func snapshot(for configuration: RadioWidgetConfiguration, in context: Context) async -> SimpleEntry {
-        SimpleEntry(
-            date: Date(),
-            isPlaying: false,
-            currentStation: "🇺🇸 " + String(localized: "language_english"),
-            statusMessage: String(localized: "Ready to play"),
-            availableStreams: SharedPlayerManager.shared.availableStreams,
-            configuration: configuration
-        )
+        return createEntry(with: configuration)
     }
     
     func timeline(for configuration: RadioWidgetConfiguration, in context: Context) async -> Timeline<SimpleEntry> {
+        let entry = createEntry(with: configuration)
+        
+        // Create multiple entries to ensure regular updates
+        let now = Date()
+        let entries = [
+            entry,
+            // Add future entries to ensure timeline doesn't go stale
+            SimpleEntry(
+                date: now.addingTimeInterval(30),
+                isPlaying: entry.isPlaying,
+                currentStation: entry.currentStation,
+                statusMessage: entry.statusMessage,
+                availableStreams: entry.availableStreams,
+                configuration: configuration
+            )
+        ]
+        
+        // Use shorter refresh policy to catch state changes faster
+        return Timeline(entries: entries, policy: .after(now.addingTimeInterval(15)))
+    }
+    
+    private func createEntry(with configuration: RadioWidgetConfiguration) -> SimpleEntry {
         let manager = SharedPlayerManager.shared
-        let isPlaying = manager.isPlaying
-        let currentStream = manager.currentStream
+        
+        // Check for pending widget actions first (for instant feedback)
+        let (isPlaying, currentLanguage, hasError) = getPendingOrCurrentState(manager: manager)
+        
+        // Get the stream info based on the resolved language
+        let currentStream = manager.availableStreams.first { $0.languageCode == currentLanguage } ?? manager.availableStreams[0]
         let currentStation = currentStream.flag + " " + currentStream.language
         
         // Get status message based on player state
         let statusMessage: String
-        if manager.hasError {
+        if hasError {
             statusMessage = String(localized: "Connection error")
         } else if isPlaying {
             statusMessage = String(localized: "status_playing")
@@ -63,7 +82,11 @@ struct Provider: AppIntentTimelineProvider {
             statusMessage = String(localized: "Ready")
         }
         
-        let entry = SimpleEntry(
+        #if DEBUG
+        print("🔗 Widget creating entry: playing=\(isPlaying), station=\(currentStation), status=\(statusMessage), language=\(currentLanguage)")
+        #endif
+        
+        return SimpleEntry(
             date: Date(),
             isPlaying: isPlaying,
             currentStation: currentStation,
@@ -71,9 +94,71 @@ struct Provider: AppIntentTimelineProvider {
             availableStreams: manager.availableStreams,
             configuration: configuration
         )
-
-        // Use .atEnd policy to allow manual refreshes to override the timeline
-        return Timeline(entries: [entry], policy: .atEnd)
+    }
+    
+    // Helper method to check for pending actions and provide instant feedback
+    private func getPendingOrCurrentState(manager: SharedPlayerManager) -> (isPlaying: Bool, currentLanguage: String, hasError: Bool) {
+        guard let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
+            let state = manager.loadSharedState()
+            return (state.isPlaying, state.currentLanguage, state.hasError)
+        }
+        
+        // FIXED: Check for instant feedback first (highest priority)
+        if let instantFeedbackTime = sharedDefaults.object(forKey: "instantFeedbackTime") as? Double,
+           let instantFeedbackLanguage = sharedDefaults.string(forKey: "instantFeedbackLanguage"),
+           sharedDefaults.bool(forKey: "isInstantFeedback") == true {
+            
+            let age = Date().timeIntervalSince1970 - instantFeedbackTime
+            
+            // Use instant feedback for 15 seconds
+            if age < 15.0 {
+                let state = manager.loadSharedState()
+                
+                #if DEBUG
+                print("🔗 Using instant feedback state: \(instantFeedbackLanguage), age: \(age)s")
+                #endif
+                
+                return (state.isPlaying, instantFeedbackLanguage, state.hasError)
+            }
+        }
+        
+        // Check for pending switch action (second priority)
+        if let pendingAction = sharedDefaults.string(forKey: "pendingAction"),
+           pendingAction == "switch",
+           let pendingLanguage = sharedDefaults.string(forKey: "pendingLanguage"),
+           let pendingTime = sharedDefaults.object(forKey: "pendingActionTime") as? Double {
+            
+            let actionAge = Date().timeIntervalSince1970 - pendingTime
+            
+            // If action is fresh (less than 3 seconds), use pending language for instant feedback
+            if actionAge < 3.0 {
+                #if DEBUG
+                print("🔗 Using pending language for instant feedback: \(pendingLanguage), age: \(actionAge)s")
+                #endif
+                let state = manager.loadSharedState()
+                return (state.isPlaying, pendingLanguage, state.hasError)
+            }
+        }
+        
+        // Check for recent cache update (third priority)
+        let lastUpdateTime = sharedDefaults.double(forKey: "lastUpdateTime")
+        let timeSinceUpdate = Date().timeIntervalSince1970 - lastUpdateTime
+        
+        // If very recent update (less than 2 seconds), prioritize cached state
+        if timeSinceUpdate < 2.0 {
+            let cachedLanguage = sharedDefaults.string(forKey: "currentLanguage") ?? "en"
+            let state = manager.loadSharedState()
+            
+            #if DEBUG
+            print("🔗 Using cached state (recent update): \(cachedLanguage), age: \(timeSinceUpdate)s")
+            #endif
+            
+            return (state.isPlaying, cachedLanguage, state.hasError)
+        }
+        
+        // Fall back to normal state
+        let state = manager.loadSharedState()
+        return (state.isPlaying, state.currentLanguage, state.hasError)
     }
 }
 
@@ -173,7 +258,7 @@ struct MediumWidgetView: View {
                         Image(systemName: entry.isPlaying ? "pause.circle.fill" : "play.circle.fill")
                             .font(.title)
                             .foregroundColor(entry.isPlaying ? .orange : .blue)
-                        Text(entry.isPlaying ? String(localized: "status_paused") : String(localized: "status_playing"))
+                        Text(entry.isPlaying ? String(localized: "Pause") : String(localized: "Play"))
                             .font(.caption2)
                             .foregroundColor(.secondary)
                     }
@@ -292,24 +377,14 @@ struct WidgetToggleRadioIntent: AppIntent {
         print("🔗 WidgetToggleRadioIntent.perform called")
         #endif
         
-        // Use simple, direct communication without any async patterns
         let manager = SharedPlayerManager.shared
         let isCurrentlyPlaying = manager.isPlaying
         
         if isCurrentlyPlaying {
-            // Use simple synchronous method call - no continuations
             manager.stop()
         } else {
-            // Use simple synchronous method call - no continuations
-            manager.play { _ in
-                // Empty completion handler to satisfy the API
-                // Widget doesn't need to wait for the result
-            }
+            manager.play { _ in }
         }
-        
-        // Force immediate widget refresh for both widget types
-        WidgetCenter.shared.reloadTimelines(ofKind: "LutheranRadioWidget")
-        WidgetCenter.shared.reloadTimelines(ofKind: "radio.lutheran.LutheranRadio.LutheranRadioWidget")
         
         #if DEBUG
         print("🔗 WidgetToggleRadioIntent completed successfully")
@@ -347,11 +422,8 @@ struct SwitchStreamIntent: AppIntent {
             return .result()
         }
         
-        // Use simple synchronous call - no async/await or continuations
+        // Use the fixed switchToStream method
         manager.switchToStream(targetStream)
-        
-        // Force immediate widget refresh
-        WidgetCenter.shared.reloadTimelines(ofKind: "LutheranRadioWidget")
         
         #if DEBUG
         print("🔗 SwitchStreamIntent completed for \(targetStream.language)")

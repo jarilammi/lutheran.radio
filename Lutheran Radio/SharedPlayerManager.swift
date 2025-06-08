@@ -59,7 +59,12 @@ class SharedPlayerManager {
             // For widgets, use App Group notification instead of direct scheduling
             scheduleWidgetAction(action: "play")
             notifyMainApp(action: "play")
-            completion(true)
+            
+            // Delay the completion and widget refresh to allow main app to process
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                completion(true)
+                self.reloadAllWidgets()
+            }
             return
         }
         
@@ -77,7 +82,12 @@ class SharedPlayerManager {
         if isRunningInWidget() {
             scheduleWidgetAction(action: "pause")
             notifyMainApp(action: "pause")
-            completion()
+            
+            // Delay the completion and widget refresh to allow main app to process
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                completion()
+                self.reloadAllWidgets()
+            }
             return
         }
         
@@ -95,6 +105,15 @@ class SharedPlayerManager {
         if isRunningInWidget() {
             scheduleWidgetAction(action: "switch", parameter: stream.languageCode)
             notifyMainApp(action: "switch", parameter: stream.languageCode)
+            
+            // Immediately update the cached state for instant UI feedback
+            updateCachedStateForInstantFeedback(languageCode: stream.languageCode)
+            
+            // Then reload widgets and schedule a delayed reload for after main app processes
+            reloadAllWidgets()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                self.reloadAllWidgets()
+            }
             return
         }
         
@@ -106,6 +125,9 @@ class SharedPlayerManager {
             player.resetTransientErrors()
             player.setStream(to: stream)
             
+            // Update state immediately
+            self.saveCurrentState()
+            
             // Only auto-play if not manually paused
             if !self.loadSharedState().isPlaying {
                 return
@@ -115,8 +137,27 @@ class SharedPlayerManager {
                 #if DEBUG
                 print("📱 Direct stream switch \(success ? "succeeded" : "failed") for \(stream.language)")
                 #endif
+                // Save state again after play attempt
+                self.saveCurrentState()
             }
         }
+    }
+    
+    // FIXED: Helper method to immediately update cached state for instant UI feedback
+    private func updateCachedStateForInstantFeedback(languageCode: String) {
+        sharedDefaults?.set(languageCode, forKey: "currentLanguage")
+        sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "lastUpdateTime")
+        
+        // FIXED: Set stronger instant feedback flags with longer duration
+        sharedDefaults?.set(true, forKey: "isInstantFeedback")
+        sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "instantFeedbackTime")
+        sharedDefaults?.set(languageCode, forKey: "instantFeedbackLanguage") // Store the language explicitly
+        
+        sharedDefaults?.synchronize()
+        
+        #if DEBUG
+        print("🔗 Updated cached state for instant UI feedback: \(languageCode)")
+        #endif
     }
     
     // Check if running in widget context with additional checks
@@ -191,6 +232,7 @@ extension SharedPlayerManager {
         return UserDefaults(suiteName: "group.radio.lutheran.shared")
     }
     
+    // FIXED: Enhanced saveCurrentState to respect instant feedback
     func saveCurrentState() {
         // Only save if we're in the main app, not widget
         guard !isRunningInWidget() else { return }
@@ -203,20 +245,79 @@ extension SharedPlayerManager {
         let currentLanguage = player.selectedStream.languageCode
         let hasError = player.hasPermanentError || player.isLastErrorPermanent()
         
+        // FIXED: Check if instant feedback is active and for the same language
+        if let instantFeedbackTime = sharedDefaults?.object(forKey: "instantFeedbackTime") as? Double,
+           let instantFeedbackLanguage = sharedDefaults?.string(forKey: "instantFeedbackLanguage"),
+           sharedDefaults?.bool(forKey: "isInstantFeedback") == true {
+            
+            let feedbackAge = Date().timeIntervalSince1970 - instantFeedbackTime
+            
+            // FIXED: Only override instant feedback if:
+            // 1. It's older than 10 seconds, OR
+            // 2. The main app has actually switched to the instant feedback language
+            if feedbackAge < 10.0 && currentLanguage != instantFeedbackLanguage {
+                #if DEBUG
+                print("🔗 Preserving instant feedback: main app language=\(currentLanguage), instant feedback=\(instantFeedbackLanguage), age=\(feedbackAge)s")
+                #endif
+                // Don't save state yet - preserve instant feedback
+                return
+            }
+            
+            #if DEBUG
+            print("🔗 Main app caught up to instant feedback: \(currentLanguage)")
+            #endif
+        }
+        
         sharedDefaults?.set(isPlaying, forKey: "isPlaying")
         sharedDefaults?.set(currentLanguage, forKey: "currentLanguage")
         sharedDefaults?.set(hasError, forKey: "hasError")
         sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "lastUpdateTime")
         
+        // Clear instant feedback flags since we now have real state
+        sharedDefaults?.removeObject(forKey: "isInstantFeedback")
+        sharedDefaults?.removeObject(forKey: "instantFeedbackTime")
+        sharedDefaults?.removeObject(forKey: "instantFeedbackLanguage")
+        
         // Force widget refresh immediately
         reloadAllWidgets()
         
         #if DEBUG
-        print("🔗 Saved state: playing=\(isPlaying), language=\(currentLanguage), error=\(hasError)")
+        print("🔗 Saved state: playing=\(isPlaying), language=\(currentLanguage), error=\(hasError) [cleared instant feedback]")
         #endif
     }
     
+    // FIXED: Enhanced loadSharedState with better instant feedback handling
     func loadSharedState() -> (isPlaying: Bool, currentLanguage: String, hasError: Bool) {
+        // Check for instant feedback state first
+        if let instantFeedbackTime = sharedDefaults?.object(forKey: "instantFeedbackTime") as? Double,
+           let instantFeedbackLanguage = sharedDefaults?.string(forKey: "instantFeedbackLanguage"),
+           sharedDefaults?.bool(forKey: "isInstantFeedback") == true {
+            
+            let age = Date().timeIntervalSince1970 - instantFeedbackTime
+            
+            // FIXED: Use instant feedback for 15 seconds (increased from 10)
+            if age < 15.0 {
+                let isPlaying = sharedDefaults?.bool(forKey: "isPlaying") ?? false
+                let hasError = sharedDefaults?.bool(forKey: "hasError") ?? false
+                
+                #if DEBUG
+                print("🔗 Using instant feedback state: \(instantFeedbackLanguage), age: \(age)s")
+                #endif
+                
+                return (isPlaying, instantFeedbackLanguage, hasError)
+            } else {
+                // Clear expired instant feedback
+                sharedDefaults?.removeObject(forKey: "isInstantFeedback")
+                sharedDefaults?.removeObject(forKey: "instantFeedbackTime")
+                sharedDefaults?.removeObject(forKey: "instantFeedbackLanguage")
+                
+                #if DEBUG
+                print("🔗 Cleared expired instant feedback (age: \(age)s)")
+                #endif
+            }
+        }
+        
+        // Normal state loading
         let isPlaying = sharedDefaults?.bool(forKey: "isPlaying") ?? false
         let currentLanguage = sharedDefaults?.string(forKey: "currentLanguage") ?? "en"
         let hasError = sharedDefaults?.bool(forKey: "hasError") ?? false
