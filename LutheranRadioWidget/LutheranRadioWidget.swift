@@ -4,6 +4,26 @@
 //
 //  Created by Jari Lammi on 3.6.2025.
 //
+//  DOCUMENTATION FOR APPLE REVIEW:
+//  ================================
+//  This file implements Home Screen Widgets for Lutheran Radio - a religious radio streaming app.
+//
+//  APP PURPOSE:
+//  - Provides access to Lutheran religious content (sermons and educational programming)
+//  - Educational and spiritual content delivery through audio streaming
+//
+//  WIDGET FUNCTIONALITY:
+//  - Small Widget (2x2): Quick play/pause with current station display
+//  - Medium Widget (4x2): Play controls plus quick language switching
+//  - Large Widget (4x4): Full control panel with all available language streams
+//
+//  USER PRIVACY:
+//  - No personal data collection or user tracking
+//
+//  NETWORK USAGE:
+//  - Respects iOS background refresh policies
+//  - Graceful handling of network connectivity issues
+//
 //  Enhanced version with stream selection and better state management
 
 import AppIntents
@@ -11,9 +31,22 @@ import SwiftUI
 import WidgetKit
 import Foundation
 
+/**
+ * MAIN HOME SCREEN WIDGET
+ * ========================
+ * Primary widget implementation supporting all iOS Home Screen widget sizes.
+ * Provides Lutheran radio control functionality directly from the Home Screen.
+ *
+ * Supported Sizes:
+ * - Small (2x2): Essential controls and status
+ * - Medium (4x2): Controls plus quick language switching
+ * - Large (4x4): Full control panel with all language options
+ */
 struct LutheranRadioWidget: Widget {
+    /// Unique identifier for this widget type
     let kind: String = "LutheranRadioWidget"
 
+    /// Widget configuration defining supported sizes and functionality
     var body: some WidgetConfiguration {
         AppIntentConfiguration(kind: kind, intent: RadioWidgetConfiguration.self, provider: Provider()) { entry in
             LutheranRadioWidgetEntryView(entry: entry)
@@ -24,7 +57,18 @@ struct LutheranRadioWidget: Widget {
     }
 }
 
+/**
+ * WIDGET DATA PROVIDER
+ * =====================
+ * Manages data flow and timeline updates for the Home Screen widget.
+ * Implements intelligent refresh strategies to balance responsiveness with battery life.
+ */
 struct Provider: AppIntentTimelineProvider {
+    
+    /**
+     * Provides placeholder content for widget gallery and initial display
+     * Shows representative content when actual data isn't available
+     */
     func placeholder(in context: Context) -> SimpleEntry {
         SimpleEntry(
             date: Date(),
@@ -36,10 +80,23 @@ struct Provider: AppIntentTimelineProvider {
         )
     }
 
+    /**
+     * Provides snapshot for widget configuration UI
+     * Used when user is selecting and configuring widgets
+     */
     func snapshot(for configuration: RadioWidgetConfiguration, in context: Context) async -> SimpleEntry {
         return createEntry(with: configuration)
     }
     
+    /**
+     * Creates widget timeline with multiple entries for smooth updates
+     * Implements aggressive refresh strategy to catch rapid state changes
+     *
+     * Strategy:
+     * - Immediate entry with current state
+     * - Future entry to prevent timeline staleness
+     * - 15-second refresh interval for responsive updates
+     */
     func timeline(for configuration: RadioWidgetConfiguration, in context: Context) async -> Timeline<SimpleEntry> {
         let entry = createEntry(with: configuration)
         
@@ -62,6 +119,16 @@ struct Provider: AppIntentTimelineProvider {
         return Timeline(entries: entries, policy: .after(now.addingTimeInterval(15)))
     }
     
+    /**
+     * Creates widget entry with current radio state
+     * Implements sophisticated state detection for instant user feedback
+     *
+     * Priority order for state detection:
+     * 1. Instant feedback (for immediate user response)
+     * 2. Pending actions (for predicted state changes)
+     * 3. Recent cached state (for efficiency)
+     * 4. Live player state (fallback)
+     */
     private func createEntry(with configuration: RadioWidgetConfiguration) -> SimpleEntry {
         let manager = SharedPlayerManager.shared
         
@@ -96,14 +163,26 @@ struct Provider: AppIntentTimelineProvider {
         )
     }
     
-    // Helper method to check for pending actions and provide instant feedback
+    /**
+     * Intelligent state detection with instant feedback capabilities
+     * Provides immediate visual feedback for user actions before network confirmation
+     *
+     * Implementation Details:
+     * - Instant feedback: 15-second window for immediate user response
+     * - Pending actions: 3-second window for predicted state changes
+     * - Recent cache: 2-second window for efficiency
+     * - Live state: Real-time fallback
+     *
+     * - Parameter manager: The shared player manager instance
+     * - Returns: Tuple of (isPlaying, currentLanguage, hasError)
+     */
     private func getPendingOrCurrentState(manager: SharedPlayerManager) -> (isPlaying: Bool, currentLanguage: String, hasError: Bool) {
         guard let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
             let state = manager.loadSharedState()
             return (state.isPlaying, state.currentLanguage, state.hasError)
         }
         
-        // FIXED: Check for instant feedback first (highest priority)
+        // PRIORITY 1: Check for instant feedback (highest priority)
         if let instantFeedbackTime = sharedDefaults.object(forKey: "instantFeedbackTime") as? Double,
            let instantFeedbackLanguage = sharedDefaults.string(forKey: "instantFeedbackLanguage"),
            sharedDefaults.bool(forKey: "isInstantFeedback") == true {
@@ -122,7 +201,7 @@ struct Provider: AppIntentTimelineProvider {
             }
         }
         
-        // Check for pending switch action (second priority)
+        // PRIORITY 2: Check for pending switch action
         if let pendingAction = sharedDefaults.string(forKey: "pendingAction"),
            pendingAction == "switch",
            let pendingLanguage = sharedDefaults.string(forKey: "pendingLanguage"),
@@ -140,7 +219,7 @@ struct Provider: AppIntentTimelineProvider {
             }
         }
         
-        // Check for recent cache update (third priority)
+        // PRIORITY 3: Check for recent cache update
         let lastUpdateTime = sharedDefaults.double(forKey: "lastUpdateTime")
         let timeSinceUpdate = Date().timeIntervalSince1970 - lastUpdateTime
         
@@ -156,21 +235,33 @@ struct Provider: AppIntentTimelineProvider {
             return (state.isPlaying, cachedLanguage, state.hasError)
         }
         
-        // Fall back to normal state
+        // PRIORITY 4: Fall back to normal state
         let state = manager.loadSharedState()
         return (state.isPlaying, state.currentLanguage, state.hasError)
     }
 }
 
+/**
+ * WIDGET TIMELINE ENTRY
+ * ======================
+ * Data structure representing a single point in the widget's timeline.
+ * Contains all information needed to render the widget at a specific time.
+ */
 struct SimpleEntry: TimelineEntry {
-    let date: Date
-    let isPlaying: Bool
-    let currentStation: String
-    let statusMessage: String
-    let availableStreams: [DirectStreamingPlayer.Stream]
-    let configuration: RadioWidgetConfiguration
+    let date: Date                                          // Timeline timestamp
+    let isPlaying: Bool                                     // Current playback state
+    let currentStation: String                             // Display name of current stream
+    let statusMessage: String                              // User-friendly status text
+    let availableStreams: [DirectStreamingPlayer.Stream]   // All available language streams
+    let configuration: RadioWidgetConfiguration           // User's widget configuration
 }
 
+/**
+ * WIDGET VIEW ROUTER
+ * ==================
+ * Routes to appropriate widget view based on widget family size.
+ * Ensures optimal layout and functionality for each widget size.
+ */
 struct LutheranRadioWidgetEntryView: View {
     var entry: Provider.Entry
     @Environment(\.widgetFamily) var family
@@ -190,15 +281,32 @@ struct LutheranRadioWidgetEntryView: View {
 }
 
 // MARK: - Small Widget (2x2)
+
+/**
+ * SMALL WIDGET VIEW
+ * =================
+ * Compact 2x2 widget providing essential Lutheran radio controls.
+ *
+ * Features:
+ * - Current station display with flag emoji
+ * - Playback status indicator
+ * - Single-tap play/pause control
+ * - App launch prompt when app isn't active
+ *
+ * Design Philosophy:
+ * - Minimal but informative
+ * - Large, easily tappable controls
+ * - Clear visual state indicators
+ */
 struct SmallWidgetView: View {
     let entry: SimpleEntry
     
     var body: some View {
         if !isAppRunning() {
-            // Show localized "Open App" UI when app isn't active
+            // ONBOARDING STATE: Show when app isn't actively running
             VStack(spacing: 8) {
                 Image(systemName: "radio")
-                    .font(.title2) // Slightly smaller for more text space
+                    .font(.title2) // Optimized size for small widget
                     .foregroundColor(.secondary)
                 
                 Text(String(localized: "tap_to_open"))
@@ -206,22 +314,22 @@ struct SmallWidgetView: View {
                     .fontWeight(.medium)
                     .foregroundColor(.primary)
                     .multilineTextAlignment(.center)
-                    .lineLimit(2) // Allow up to 2 lines
-                    .minimumScaleFactor(0.8) // Scale down if needed
+                    .lineLimit(2) // Allow text wrapping for localization
+                    .minimumScaleFactor(0.8) // Scale down if needed for long text
             }
             .padding()
             .widgetURL(URL(string: "lutheranradio://open"))
         } else {
-            // Your existing widget UI
+            // ACTIVE STATE: Full functionality when app is running
             VStack(spacing: 4) {
-                // Current station
+                // Current station with flag emoji for visual recognition
                 Text(entry.currentStation)
                     .font(.caption)
                     .fontWeight(.medium)
                     .foregroundColor(.primary)
                     .lineLimit(1)
                 
-                // Status
+                // Status indicator (Playing, Stopped, Error)
                 Text(entry.statusMessage)
                     .font(.caption2)
                     .foregroundColor(.secondary)
@@ -229,7 +337,7 @@ struct SmallWidgetView: View {
                 
                 Spacer()
                 
-                // Play/Pause button
+                // Large, accessible play/pause button
                 Button(intent: ToggleRadioIntent()) {
                     Image(systemName: entry.isPlaying ? "pause.circle.fill" : "play.circle.fill")
                         .font(.title2)
@@ -242,8 +350,13 @@ struct SmallWidgetView: View {
         }
     }
     
+    /**
+     * Determines if the main app is actively running
+     * Based on recent state updates from the shared manager
+     *
+     * - Returns: True if app has provided state updates within last 60 seconds
+     */
     private func isAppRunning() -> Bool {
-        // Check if we have recent state updates (within last 60 seconds)
         if let lastUpdate = UserDefaults(suiteName: "group.radio.lutheran.shared")?
             .object(forKey: "lastUpdateTime") as? Double {
             return Date().timeIntervalSince1970 - lastUpdate < 60
@@ -253,12 +366,28 @@ struct SmallWidgetView: View {
 }
 
 // MARK: - Medium Widget (4x2)
+
+/**
+ * MEDIUM WIDGET VIEW
+ * ==================
+ * Expanded 4x2 widget with additional language switching capabilities.
+ *
+ * Features:
+ * - Detailed station information display
+ * - Play/pause control with visual feedback
+ * - Quick access to 2 alternative language streams
+ * - App launch prompt with additional context
+ *
+ * Layout:
+ * - Left side: Station info and status
+ * - Right side: Controls and quick switches
+ */
 struct MediumWidgetView: View {
     let entry: SimpleEntry
     
     var body: some View {
         if !isAppRunning() {
-            // Show localized "Open App" UI when app isn't active
+            // ONBOARDING STATE: Informative app launch prompt
             HStack {
                 VStack(spacing: 8) {
                     Image(systemName: "radio")
@@ -279,9 +408,9 @@ struct MediumWidgetView: View {
             .padding()
             .widgetURL(URL(string: "lutheranradio://open"))
         } else {
-            // Your existing medium widget UI
+            // ACTIVE STATE: Full medium widget functionality
             HStack(spacing: 12) {
-                // Left side - Current station info
+                // LEFT SIDE: Station information
                 VStack(alignment: .leading, spacing: 4) {
                     Text(String(localized: "lutheran_radio_title"))
                         .font(.caption)
@@ -302,9 +431,9 @@ struct MediumWidgetView: View {
                 
                 Spacer()
                 
-                // Right side - Controls
+                // RIGHT SIDE: Control panel
                 VStack(spacing: 8) {
-                    // Play/Pause button
+                    // Primary play/pause button
                     Button(intent: ToggleRadioIntent()) {
                         VStack(spacing: 2) {
                             Image(systemName: entry.isPlaying ? "pause.circle.fill" : "play.circle.fill")
@@ -317,7 +446,7 @@ struct MediumWidgetView: View {
                     }
                     .buttonStyle(.plain)
                     
-                    // Quick language switch (first 2 alternatives)
+                    // Quick language switching (first 2 alternatives)
                     if entry.availableStreams.count > 1 {
                         let currentStreamCode = getCurrentStreamCode(from: entry.currentStation)
                         let alternativeStreams = entry.availableStreams.filter { $0.languageCode != currentStreamCode }.prefix(2)
@@ -337,8 +466,11 @@ struct MediumWidgetView: View {
         }
     }
     
+    /**
+     * Determines if the main app is actively running
+     * Identical implementation to SmallWidgetView for consistency
+     */
     private func isAppRunning() -> Bool {
-        // Check if we have recent state updates (within last 60 seconds)
         if let lastUpdate = UserDefaults(suiteName: "group.radio.lutheran.shared")?
             .object(forKey: "lastUpdateTime") as? Double {
             return Date().timeIntervalSince1970 - lastUpdate < 60
@@ -346,24 +478,48 @@ struct MediumWidgetView: View {
         return false
     }
     
+    /**
+     * Extracts language code from formatted station name
+     * Used to determine which alternative streams to show
+     *
+     * - Parameter stationName: Formatted station name (e.g., "🇺🇸 English")
+     * - Returns: Language code (e.g., "en") or "en" as fallback
+     */
     private func getCurrentStreamCode(from stationName: String) -> String {
-        // Extract language code from current station display
         for stream in entry.availableStreams {
             if stationName.contains(stream.language) {
                 return stream.languageCode
             }
         }
-        return "en" // Default fallback
+        return "en" // Default fallback to English
     }
 }
 
 // MARK: - Large Widget (4x4)
+
+/**
+ * LARGE WIDGET VIEW
+ * =================
+ * Full-featured 4x4 widget providing complete Lutheran radio control.
+ *
+ * Features:
+ * - Comprehensive station information
+ * - All available language streams in grid layout
+ * - Visual indicators for currently selected stream
+ * - App launch prompt with detailed instructions
+ *
+ * Design:
+ * - Header with title and play control
+ * - Current station prominently displayed
+ * - Grid of all available language options
+ * - Clear visual selection indicators
+ */
 struct LargeWidgetView: View {
     let entry: SimpleEntry
     
     var body: some View {
         if !isAppRunning() {
-            // Show localized "Open App" UI when app isn't active
+            // ONBOARDING STATE: Comprehensive app launch guidance
             VStack(spacing: 16) {
                 Spacer()
                 
@@ -385,9 +541,9 @@ struct LargeWidgetView: View {
             .padding()
             .widgetURL(URL(string: "lutheranradio://open"))
         } else {
-            // Your existing large widget UI
+            // ACTIVE STATE: Complete large widget interface
             VStack(spacing: 12) {
-                // Header
+                // HEADER: Title and main control
                 HStack {
                     Text(String(localized: "lutheran_radio_title"))
                         .font(.headline)
@@ -401,7 +557,7 @@ struct LargeWidgetView: View {
                     .buttonStyle(.plain)
                 }
                 
-                // Current station and status
+                // CURRENT STATION: Prominent display of active stream
                 VStack(spacing: 4) {
                     Text(entry.currentStation)
                         .font(.title2)
@@ -415,7 +571,7 @@ struct LargeWidgetView: View {
                 
                 Divider()
                 
-                // All available streams
+                // LANGUAGE GRID: All available Lutheran radio streams
                 LazyVGrid(columns: [
                     GridItem(.flexible()),
                     GridItem(.flexible())
@@ -451,8 +607,11 @@ struct LargeWidgetView: View {
         }
     }
     
+    /**
+     * Determines if the main app is actively running
+     * Consistent with other widget sizes for uniform behavior
+     */
     private func isAppRunning() -> Bool {
-        // Check if we have recent state updates (within last 60 seconds)
         if let lastUpdate = UserDefaults(suiteName: "group.radio.lutheran.shared")?
             .object(forKey: "lastUpdateTime") as? Double {
             return Date().timeIntervalSince1970 - lastUpdate < 60
@@ -461,13 +620,27 @@ struct LargeWidgetView: View {
     }
 }
 
-// MARK: - App Intents - FIXED
+// MARK: - App Intents
 
-// Widget-specific toggle intent - CONNECTION SAFE
+/**
+ * WIDGET-SPECIFIC TOGGLE INTENT
+ * ==============================
+ * Handles play/pause functionality specifically from Home Screen widgets.
+ * Identical to Control Widget toggle but optimized for Home Screen interaction.
+ *
+ * SAFETY FEATURES:
+ * - Connection-safe implementation
+ * - Graceful error handling
+ * - Immediate user feedback
+ */
 struct WidgetToggleRadioIntent: AppIntent {
     static var title: LocalizedStringResource = "Toggle Lutheran Radio"
     static var description = IntentDescription("Play or pause Lutheran Radio.")
 
+    /**
+     * Executes play/pause toggle from Home Screen widget
+     * Provides immediate feedback to user through debug logging
+     */
     func perform() async throws -> some IntentResult {
         #if DEBUG
         print("🔗 WidgetToggleRadioIntent.perform called")
@@ -476,6 +649,7 @@ struct WidgetToggleRadioIntent: AppIntent {
         let manager = SharedPlayerManager.shared
         let isCurrentlyPlaying = manager.isPlaying
         
+        // Toggle between playing and stopped states
         if isCurrentlyPlaying {
             manager.stop()
         } else {
@@ -490,11 +664,22 @@ struct WidgetToggleRadioIntent: AppIntent {
     }
 }
 
-// Stream switching intent - CONNECTION SAFE
+/**
+ * STREAM SWITCHING INTENT
+ * ========================
+ * Handles language stream switching from Home Screen widgets.
+ * Allows users to quickly change between different Lutheran content languages.
+ *
+ * FEATURES:
+ * - Direct language code targeting
+ * - Automatic stream discovery
+ * - Safe error handling for missing streams
+ */
 struct SwitchStreamIntent: AppIntent {
     static var title: LocalizedStringResource = "Switch Stream"
     static var description = IntentDescription("Switch to a different language stream.")
     
+    /// Target language code for the switch
     @Parameter(title: "Language Code")
     var streamLanguageCode: String
     
@@ -504,6 +689,16 @@ struct SwitchStreamIntent: AppIntent {
         self.streamLanguageCode = streamLanguageCode
     }
 
+    /**
+     * Executes language stream change
+     *
+     * Process:
+     * 1. Validate target language exists in available streams
+     * 2. Execute stream switch through player manager
+     * 3. Provide debug feedback for development
+     *
+     * - Throws: No errors thrown - gracefully handles missing streams
+     */
     func perform() async throws -> some IntentResult {
         #if DEBUG
         print("🔗 SwitchStreamIntent.perform called for language: \(streamLanguageCode)")
@@ -511,6 +706,7 @@ struct SwitchStreamIntent: AppIntent {
         
         let manager = SharedPlayerManager.shared
         
+        // Find target stream in available options
         guard let targetStream = manager.availableStreams.first(where: { $0.languageCode == streamLanguageCode }) else {
             #if DEBUG
             print("🔗 SwitchStreamIntent: Language stream not found")
@@ -518,7 +714,7 @@ struct SwitchStreamIntent: AppIntent {
             return .result()
         }
         
-        // Use the fixed switchToStream method
+        // Execute the stream switch
         manager.switchToStream(targetStream)
         
         #if DEBUG
@@ -529,7 +725,17 @@ struct SwitchStreamIntent: AppIntent {
     }
 }
 
-// MARK: - Configuration Intent - FIXED
+/**
+ * WIDGET CONFIGURATION INTENT
+ * ============================
+ * Defines configuration options for the Lutheran Radio widget.
+ * Currently serves as a placeholder for future configuration features.
+ *
+ * Future enhancements could include:
+ * - Default language selection
+ * - Auto-start preferences
+ * - Display customization options
+ */
 struct RadioWidgetConfiguration: WidgetConfigurationIntent {
     static var title: LocalizedStringResource = "Widget Configuration"
     static var description = IntentDescription("Configuration for Lutheran Radio widget.")
