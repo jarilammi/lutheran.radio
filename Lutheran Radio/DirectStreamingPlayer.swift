@@ -5,15 +5,87 @@
 //  Created by Jari Lammi on 25.2.2025.
 //
 
-/// - Article: Direct Streaming Player Guide
-///
-/// Manages audio streaming, security validation, and network monitoring for the Lutheran Radio app.
 import Foundation
 import Security
 import CommonCrypto
 import AVFoundation
 import dnssd
 import Network
+
+/// `DirectStreamingPlayer` manages audio streaming, security validation, and network monitoring for the Lutheran Radio app.
+///
+/// The Lutheran Radio app prioritizes user privacy and security to protect individuals, particularly in regions where religious content consumption may be monitored or restricted. This design ensures safe, anonymous access to Lutheran content without compromising personal data.
+///
+/// ## Intentionally Excluded Features
+/// To safeguard user privacy, the following features are deliberately excluded:
+/// - **Microphone Access**:
+///   - Never requests microphone permissions.
+///   - Prevents potential audio surveillance.
+///   - Ensures conversations remain private.
+/// - **Camera Access**:
+///   - Never requests camera permissions.
+///   - Protects visual environment privacy.
+///   - Prevents facial recognition or environment scanning.
+/// - **Push Notifications**:
+///   - No remote notifications sent to devices.
+///   - Prevents tracking of user engagement patterns.
+///   - Eliminates visibility into listening habits.
+/// - **Location Services**:
+///   - Never requests location permissions.
+///   - Prevents tracking of listening locations.
+///   - Protects geographical privacy.
+/// - **User Accounts/Profiles**:
+///   - No registration required.
+///   - No personal information collected.
+///   - Enables fully anonymous usage.
+/// - **Analytics/Tracking**:
+///   - No usage statistics collected.
+///   - No behavioral analysis performed.
+///   - No data shared with third parties.
+/// - **User Tracking Data Storage**:
+///   - No user-identifiable data stored.
+///   - No listening history maintained.
+///   - No behavioral tracking or usage patterns recorded.
+///
+/// ## Security Features Implemented
+/// The app incorporates the following security measures to ensure safe operation:
+/// - **Encrypted Connections**:
+///   - All streaming uses `HTTPS`/`TLS` encryption.
+///   - `DNS` validation ensures server authenticity.
+///   - Certificate pinning enhances connection security.
+/// - **Privacy-Safe Data Management**:
+///   - Streaming state stored only in memory during use.
+///   - No persistent traces of listening activity.
+///   - Only stores an anonymous preference (mobile data notification dismissed).
+/// - **Minimal Network Footprint**:
+///   - Connects only to streaming servers.
+///   - No telemetry or reporting endpoints.
+///   - No unnecessary background network activity.
+/// - **Minimal Anonymous Preferences**:
+///   - Stores only a boolean for mobile data usage notification preference.
+///   - Cannot be used for user identification or tracking.
+///   - Enhances user experience without compromising privacy.
+///   - Fully deleted when the app is removed.
+///
+/// ## Why This Matters
+/// Religious freedom includes the right to private worship and study. This design ensures users worldwide can access Lutheran content safely, especially in regions where:
+/// - Religious content consumption is monitored.
+/// - Government surveillance targets faith communities.
+/// - Internet activity is logged and analyzed.
+/// - Device permissions may be exploited for tracking.
+///
+/// > **Important:** This is not just about compliance—it’s about protecting user safety and religious freedom globally.
+///
+/// ## Developer Notes
+/// To maintain the app's privacy-first principles, adhere to the following guidelines:
+/// - Never implement push notification capabilities.
+/// - Never request microphone or camera permissions.
+/// - Never integrate analytics or tracking SDKs.
+/// - Always use `HTTPS` for network communication.
+/// - Never store user-identifiable information.
+/// - Evaluate the privacy implications of any new features.
+///
+/// > **Note:** These restrictions are critical to ensuring user trust and safety in sensitive regions.
 
 /// Share functionality to the LutheranRadioWidget
 extension DirectStreamingPlayer {
