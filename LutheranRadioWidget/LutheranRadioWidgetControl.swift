@@ -46,7 +46,7 @@ struct LutheranRadioWidgetControl: ControlWidget {
         ) { value in
             // Control toggle that shows current state and allows play/pause
             ControlWidgetToggle(
-                "Lutheran Radio",
+                LocalizedStringKey("lutheran_radio_title"),
                 isOn: value.isPlaying,
                 action: ToggleRadioIntent()
             ) { isPlaying in
