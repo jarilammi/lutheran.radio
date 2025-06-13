@@ -39,7 +39,7 @@ struct LiveActivityTogglePlaybackIntent: AppIntent {
 
 struct LutheranRadioLiveActivityTogglePlaybackIntent: AppIntent {
     static var title: LocalizedStringResource = "Toggle Lutheran Radio Playback"
-    static var description = IntentDescription("Toggle play/pause from Live Activity expanded view.")
+        static var description = IntentDescription("Toggle play/pause from Live Activity.")
 
     func perform() async throws -> some IntentResult {
         #if DEBUG
@@ -125,7 +125,7 @@ struct LutheranRadioLiveActivityWidget: Widget {
                         }
                         
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Lutheran Radio")
+                            Text(LocalizedStringKey("lutheran_radio_title"))
                                 .font(.caption)
                                 .fontWeight(.semibold)
                                 .foregroundColor(.primary)
@@ -395,7 +395,7 @@ struct LockScreenLiveActivityView: View {
             HStack {
                 Image(systemName: "radio")
                     .foregroundColor(.white)
-                Text("Lutheran Radio")
+                Text(LocalizedStringKey("lutheran_radio_title"))
                     .font(.headline)
                     .fontWeight(.semibold)
                 Spacer()
@@ -441,7 +441,7 @@ struct LockScreenLiveActivityView: View {
                         Image(systemName: context.state.isPlaying ? "pause.circle.fill" : "play.circle.fill")
                             .font(.largeTitle)
                             .foregroundColor(context.state.isPlaying ? .orange : .green)
-                        Text(context.state.isPlaying ? "Pause" : "Play")
+                        Text(context.state.isPlaying ? LocalizedStringKey("status_paused") : "Play")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
