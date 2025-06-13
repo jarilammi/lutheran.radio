@@ -48,11 +48,15 @@ import Network
 ///   - No behavioral tracking or usage patterns recorded.
 ///
 /// ## Security Features Implemented
-/// The app incorporates the following security measures to ensure safe operation:
+/// The app implements the following security measures to ensure safe operation:
 /// - **Encrypted Connections**:
-///   - All streaming uses `HTTPS`/`TLS` encryption.
-///   - `DNS` validation ensures server authenticity.
-///   - Certificate pinning enhances connection security.
+///   - All streaming uses HTTPS/TLS encryption.
+///   - App Transport Security (ATS) enforces pinned public keys for certificate validation.
+///   - Runtime SSL certificate validation with hostname verification in `StreamingSessionDelegate`.
+/// - **Dynamic Access Control**:
+///   - Queries `securitymodels.lutheran.radio` TXT record to validate app authorization.
+///   - Supports remote access control without requiring app updates.
+///   - Requires the app security model (`landvetter`) to be in the authorized list.
 /// - **Privacy-Safe Data Management**:
 ///   - Streaming state stored only in memory during use.
 ///   - No persistent traces of listening activity.
