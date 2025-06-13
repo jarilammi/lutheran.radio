@@ -48,11 +48,10 @@ import Network
 ///   - No behavioral tracking or usage patterns recorded.
 ///
 /// ## Security Features Implemented
-/// The app implements the following security measures to ensure safe operation:
 /// - **Encrypted Connections**:
 ///   - All streaming uses HTTPS/TLS encryption.
-///   - App Transport Security (ATS) enforces pinned public keys for certificate validation.
-///   - Runtime SSL certificate validation with hostname verification in `StreamingSessionDelegate`.
+///   - App Transport Security (ATS) enforces pinned public keys via `Info.plist` (`NSAppTransportSecurity`).
+///   - Runtime SSL certificate validation with hostname verification is handled in `StreamingSessionDelegate`.
 /// - **Dynamic Access Control**:
 ///   - Queries `securitymodels.lutheran.radio` TXT record to validate app authorization.
 ///   - Supports remote access control without requiring app updates.
