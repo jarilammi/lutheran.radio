@@ -8,12 +8,103 @@
 import ActivityKit
 import WidgetKit
 import SwiftUI
+import AppIntents
+
+// MARK: - Live Activity Intents
+struct LiveActivityTogglePlaybackIntent: AppIntent {
+    static var title: LocalizedStringResource = "Toggle Lutheran Radio Playback"
+    static var description = IntentDescription("Toggle play/pause from Live Activity.")
+
+    func perform() async throws -> some IntentResult {
+        #if DEBUG
+        print("🔗 LiveActivityTogglePlaybackIntent.perform called")
+        #endif
+        
+        let manager = SharedPlayerManager.shared
+        let isCurrentlyPlaying = manager.isPlaying
+        
+        if isCurrentlyPlaying {
+            manager.stop()
+        } else {
+            manager.play { _ in }
+        }
+        
+        #if DEBUG
+        print("🔗 LiveActivityTogglePlaybackIntent completed")
+        #endif
+        
+        return .result()
+    }
+}
+
+struct LutheranRadioLiveActivityTogglePlaybackIntent: AppIntent {
+    static var title: LocalizedStringResource = "Toggle Lutheran Radio Playback"
+    static var description = IntentDescription("Toggle play/pause from Live Activity expanded view.")
+
+    func perform() async throws -> some IntentResult {
+        #if DEBUG
+        print("🔗 LutheranRadioLiveActivityTogglePlaybackIntent.perform called")
+        #endif
+        
+        let manager = SharedPlayerManager.shared
+        let isCurrentlyPlaying = manager.isPlaying
+        
+        if isCurrentlyPlaying {
+            manager.stop()
+        } else {
+            manager.play { _ in }
+        }
+        
+        #if DEBUG
+        print("🔗 LutheranRadioLiveActivityTogglePlaybackIntent completed")
+        #endif
+        
+        return .result()
+    }
+}
+
+struct LiveActivitySwitchStreamIntent: AppIntent {
+    static var title: LocalizedStringResource = "Switch Stream"
+    static var description = IntentDescription("Switch to a different language stream from Live Activity.")
+    
+    @Parameter(title: "Language Code")
+    var languageCode: String
+    
+    init() {}
+    
+    init(languageCode: String) {
+        self.languageCode = languageCode
+    }
+
+    func perform() async throws -> some IntentResult {
+        #if DEBUG
+        print("🔗 LiveActivitySwitchStreamIntent.perform called for language: \(languageCode)")
+        #endif
+        
+        let manager = SharedPlayerManager.shared
+        
+        guard let targetStream = manager.availableStreams.first(where: { $0.languageCode == languageCode }) else {
+            #if DEBUG
+            print("🔗 LiveActivitySwitchStreamIntent: Language stream not found")
+            #endif
+            return .result()
+        }
+        
+        manager.switchToStream(targetStream)
+        
+        #if DEBUG
+        print("🔗 LiveActivitySwitchStreamIntent completed for \(targetStream.language)")
+        #endif
+        
+        return .result()
+    }
+}
 
 struct LutheranRadioLiveActivityWidget: Widget {
     let kind: String = "LutheranRadioLiveActivity"
 
     var body: some WidgetConfiguration {
-        ActivityConfiguration(for: RadioActivityAttributes.self) { context in
+        ActivityConfiguration(for: LutheranRadioLiveActivityAttributes.self) { context in
             // Lock Screen view
             LockScreenLiveActivityView(context: context)
         } dynamicIsland: { context in
@@ -66,7 +157,7 @@ struct LutheranRadioLiveActivityWidget: Widget {
                 DynamicIslandExpandedRegion(.trailing) {
                     VStack(spacing: 8) {
                         // Main play/pause with enhanced visual feedback
-                        Button(intent: LiveActivityTogglePlaybackIntent()) {
+                        Button(intent: LutheranRadioLiveActivityTogglePlaybackIntent()) {
                             ZStack {
                                 Circle()
                                     .fill(context.state.isPlaying ? Color.orange.opacity(0.2) : Color.blue.opacity(0.2))
@@ -83,7 +174,7 @@ struct LutheranRadioLiveActivityWidget: Widget {
                         // Audio visualization when playing
                         if context.state.isPlaying {
                             HStack(spacing: 2) {
-                                ForEach(0..<3) { index in
+                                ForEach(0..<3, id: \.self) { index in
                                     RoundedRectangle(cornerRadius: 1)
                                         .fill(Color.green)
                                         .frame(width: 2, height: CGFloat.random(in: 4...12))
@@ -166,7 +257,7 @@ struct LutheranRadioLiveActivityWidget: Widget {
                         // Enhanced audio visualization
                         if context.state.isPlaying {
                             HStack(spacing: 1) {
-                                ForEach(0..<5) { index in
+                                ForEach(0..<5, id: \.self) { index in
                                     RoundedRectangle(cornerRadius: 0.5)
                                         .fill(LinearGradient(
                                             gradient: Gradient(colors: [.green, .blue]),
@@ -211,7 +302,7 @@ struct LutheranRadioLiveActivityWidget: Widget {
                     if context.state.isPlaying {
                         // Mini audio bars
                         HStack(spacing: 1) {
-                            ForEach(0..<2) { index in
+                            ForEach(0..<2, id: \.self) { index in
                                 RoundedRectangle(cornerRadius: 0.5)
                                     .fill(Color.green)
                                     .frame(width: 1, height: CGFloat.random(in: 2...6))
@@ -283,7 +374,7 @@ struct LutheranRadioLiveActivityWidget: Widget {
         return Array(allStreams.filter { $0 != current }.prefix(3))
     }
     
-    private func getStatusColor(_ state: RadioActivityAttributes.ContentState) -> Color {
+    private func getStatusColor(_ state: LutheranRadioLiveActivityAttributes.ContentState) -> Color {
         if state.streamStatus.contains("Error") {
             return .red
         } else if state.isPlaying {
@@ -296,7 +387,7 @@ struct LutheranRadioLiveActivityWidget: Widget {
 
 // MARK: - Lock Screen View
 struct LockScreenLiveActivityView: View {
-    let context: ActivityViewContext<RadioActivityAttributes>
+    let context: ActivityViewContext<LutheranRadioLiveActivityAttributes>
     
     var body: some View {
         VStack(spacing: 12) {
@@ -369,7 +460,7 @@ struct LockScreenLiveActivityView: View {
                 Spacer()
                 if context.state.isPlaying {
                     HStack(spacing: 1) {
-                        ForEach(0..<4) { index in
+                        ForEach(0..<4, id: \.self) { index in
                             Rectangle()
                                 .fill(Color.green)
                                 .frame(width: 2, height: 6)
