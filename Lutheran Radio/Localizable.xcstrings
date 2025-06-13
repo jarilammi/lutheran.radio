@@ -1,6 +1,34 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "%@ %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ %2$@"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@"
+          }
+        },
+        "fit" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@"
+          }
+        }
+      }
+    },
     "🇩🇪 German" : {
       "localizations" : {
         "da" : {
@@ -2868,108 +2896,74 @@
         }
       }
     },
-    "Lutheran Radio" : {
+    "LIVE" : {
       "localizations" : {
-        "da" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lutheran Radio"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lutheran Radio"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lutheran Radio"
-          }
-        },
-        "et" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lutheran Radio"
+            "value" : "LIVE"
           }
         },
         "fi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lutheran Radio"
+            "value" : "LIVE"
           }
         },
         "fit" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lutheran Radio"
-          }
-        },
-        "fo" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lutheran Radio"
-          }
-        },
-        "is" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lutheran Radio"
-          }
-        },
-        "kl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lutheran Radio"
-          }
-        },
-        "lt" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lutheran Radio"
-          }
-        },
-        "lv" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lutheran Radio"
-          }
-        },
-        "nb" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lutheran Radio"
-          }
-        },
-        "nn" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lutheran Radio"
-          }
-        },
-        "pl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lutheran Radio"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lutheran Radio"
-          }
-        },
-        "se" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lutheran Radio"
+            "value" : "LIVE"
           }
         },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lutheran Radio"
+            "value" : "LIVE"
+          }
+        }
+      }
+    },
+    "Local Only" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Local Only"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ei striimiä"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lokal läge"
+          }
+        }
+      }
+    },
+    "Lutheran Radio Live Stream" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio Live Stream"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Livestriimi"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Live Stream"
           }
         }
       }
@@ -3399,6 +3393,34 @@
         }
       }
     },
+    "Now Playing" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Now Playing"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nyt soi"
+          }
+        },
+        "fit" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nytten soi"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spelas nu"
+          }
+        }
+      }
+    },
     "ok" : {
       "localizations" : {
         "da" : {
@@ -3607,6 +3629,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Öppna appen först"
+          }
+        }
+      }
+    },
+    "Play" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Play"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toista"
+          }
+        },
+        "fit" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Soita"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spela"
           }
         }
       }
@@ -6262,6 +6312,28 @@
         }
       }
     },
+    "Switch to a different language stream from Live Activity." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch to a different language stream from Live Activity."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vaihda toiseen kielivirtaan Live-toiminnosta."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Växla till en annan språkström från Live-aktivitet."
+          }
+        }
+      }
+    },
     "Switch to a different language stream." : {
       "localizations" : {
         "da" : {
@@ -6576,6 +6648,50 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Växla Lutheran Radio"
+          }
+        }
+      }
+    },
+    "Toggle Lutheran Radio Playback" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toggle Lutheran Radio Playback"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vaihda Lutheran Radio -kanavaa"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Växla Lutheran Radio kanal"
+          }
+        }
+      }
+    },
+    "Toggle play/pause from Live Activity." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toggle play/pause from Live Activity."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vaihda toisto/tauko Live-toiminnosta."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Växla spela/paus från Live-aktivitet."
           }
         }
       }
