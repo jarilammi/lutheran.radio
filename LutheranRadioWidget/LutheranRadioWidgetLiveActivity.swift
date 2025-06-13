@@ -39,7 +39,7 @@ struct LiveActivityTogglePlaybackIntent: AppIntent {
 
 struct LutheranRadioLiveActivityTogglePlaybackIntent: AppIntent {
     static var title: LocalizedStringResource = "Toggle Lutheran Radio Playback"
-        static var description = IntentDescription("Toggle play/pause from Live Activity.")
+    static var description = IntentDescription("Toggle play/pause from Live Activity.")
 
     func perform() async throws -> some IntentResult {
         #if DEBUG
@@ -189,7 +189,7 @@ struct LutheranRadioLiveActivityWidget: Widget {
                         // Current content display
                         if let metadata = context.state.currentMetadata, !metadata.isEmpty {
                             VStack(spacing: 2) {
-                                Text("Now Playing")
+                                Text(LocalizedStringKey("Now Playing"))
                                     .font(.system(size: 9, weight: .medium))
                                     .foregroundColor(.secondary)
                                     .textCase(.uppercase)
@@ -209,7 +209,7 @@ struct LutheranRadioLiveActivityWidget: Widget {
                                     .foregroundColor(context.state.isPlaying ? .green : .secondary)
                                 
                                 if context.state.isPlaying {
-                                    Text("Lutheran Radio Live Stream")
+                                    Text(LocalizedStringKey("Lutheran Radio Live Stream"))
                                         .font(.system(size: 10))
                                         .foregroundColor(.secondary)
                                 }
@@ -279,7 +279,7 @@ struct LutheranRadioLiveActivityWidget: Widget {
                                 Image(systemName: "lock.fill")
                                     .font(.system(size: 8))
                                     .foregroundColor(.green)
-                                Text("Local Only")
+                                Text(LocalizedStringKey("Local Only"))
                                     .font(.system(size: 8, weight: .medium))
                                     .foregroundColor(.green)
                             }
@@ -441,7 +441,7 @@ struct LockScreenLiveActivityView: View {
                         Image(systemName: context.state.isPlaying ? "pause.circle.fill" : "play.circle.fill")
                             .font(.largeTitle)
                             .foregroundColor(context.state.isPlaying ? .orange : .green)
-                        Text(context.state.isPlaying ? LocalizedStringKey("status_paused") : "Play")
+                        Text(context.state.isPlaying ? LocalizedStringKey("status_paused") : LocalizedStringKey("Play"))
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
@@ -478,11 +478,11 @@ struct LockScreenLiveActivityView: View {
     
     private func getLanguageName(_ code: String) -> String {
         switch code {
-        case "en": return "English"
-        case "de": return "German"
-        case "fi": return "Finnish"
-        case "sv": return "Swedish"
-        case "ee": return "Estonian"
+        case "en": return String(localized: "language_english")
+        case "de": return String(localized: "language_german")
+        case "fi": return String(localized: "language_finnish")
+        case "sv": return String(localized: "language_swedish")
+        case "ee": return String(localized: "language_estonian")
         default: return "Unknown"
         }
     }
