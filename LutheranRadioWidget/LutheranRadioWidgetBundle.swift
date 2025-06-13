@@ -13,6 +13,6 @@ struct LutheranRadioWidgetBundle: WidgetBundle {
     var body: some Widget {
         LutheranRadioWidget()
         LutheranRadioWidgetControl()
-        // LutheranRadioWidgetLiveActivity()
+        LutheranRadioLiveActivityWidget()
     }
 }
