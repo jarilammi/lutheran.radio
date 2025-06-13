@@ -76,6 +76,7 @@
 			membershipExceptions = (
 				DirectStreamingPlayer.swift,
 				Localizable.xcstrings,
+				LutheranRadioLiveActivityAttributes.swift,
 				SharedPlayerManager.swift,
 				StreamingSessionDelegate.swift,
 			);
