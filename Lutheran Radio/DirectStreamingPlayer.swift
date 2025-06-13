@@ -378,6 +378,7 @@ class DirectStreamingPlayer: NSObject {
     
     var onStatusChange: ((Bool, String) -> Void)?
     var onMetadataChange: ((String?) -> Void)?
+    internal var currentMetadata: String?
     
     private weak var delegate: AnyObject?
     
@@ -1223,6 +1224,10 @@ class DirectStreamingPlayer: NSObject {
         }
     }
     
+    func getCurrentMetadataForLiveActivity() -> String? {
+        return currentMetadata
+    }
+    
     func setVolume(_ volume: Float) {
         player?.volume = volume
     }
@@ -1657,10 +1662,13 @@ extension DirectStreamingPlayer: AVPlayerItemMetadataOutputPushDelegate {
               let value = item.value(forKeyPath: "stringValue") as? String,
               !value.isEmpty else { return }
         
-        let songTitle = (item.identifier == AVMetadataIdentifier("icy/StreamTitle") ||
+        let streamTitle = (item.identifier == AVMetadataIdentifier("icy/StreamTitle") ||
                        (item.key as? String) == "StreamTitle") ? value : nil
         
-        onMetadataChange?(songTitle)
+        // Store metadata locally for Live Activities
+        self.currentMetadata = streamTitle
+        
+        onMetadataChange?(streamTitle)
     }
 }
 

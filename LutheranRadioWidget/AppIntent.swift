@@ -8,4 +8,8 @@
 import AppIntents
 import Foundation
 
-// Empty for now - the control widget handles the intents
+// This file serves as the main AppIntents entry point for the widget extension.
+// All specific intents are defined in their respective widget implementation files:
+// - Control Widget intents: LutheranRadioWidgetControl.swift
+// - Home Screen Widget intents: LutheranRadioWidget.swift
+// - Live Activity intents: LutheranRadioWidgetLiveActivity.swift
