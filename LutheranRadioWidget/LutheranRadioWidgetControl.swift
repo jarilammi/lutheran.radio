@@ -224,8 +224,13 @@ struct ToggleRadioIntent: SetValueIntent {
             manager.play { _ in }  // Start streaming religious content
         }
         
-        // Force immediate widget refresh for responsive user experience
-        WidgetCenter.shared.reloadTimelines(ofKind: "LutheranRadioWidget")
+        // NEW: Use optimized refresh for immediate user feedback
+        let newState = WidgetState(
+            isPlaying: !isCurrentlyPlaying,
+            currentLanguage: manager.currentStream.languageCode,
+            hasError: manager.hasError
+        )
+        WidgetRefreshManager.shared.refreshIfNeeded(for: newState, immediate: true)
         
         #if DEBUG
         print("🔗 WidgetToggleRadioIntent completed successfully")
