@@ -649,12 +649,19 @@ struct WidgetToggleRadioIntent: AppIntent {
         let manager = SharedPlayerManager.shared
         let isCurrentlyPlaying = manager.isPlaying
         
-        // Toggle between playing and stopped states
         if isCurrentlyPlaying {
             manager.stop()
         } else {
             manager.play { _ in }
         }
+        
+        // NEW: Immediate refresh for user action
+        let newState = WidgetState(
+            isPlaying: !isCurrentlyPlaying,
+            currentLanguage: manager.currentStream.languageCode,
+            hasError: manager.hasError
+        )
+        WidgetRefreshManager.shared.refreshIfNeeded(for: newState, immediate: true)
         
         #if DEBUG
         print("🔗 WidgetToggleRadioIntent completed successfully")

@@ -148,12 +148,21 @@ class SharedPlayerManager {
         sharedDefaults?.set(languageCode, forKey: "currentLanguage")
         sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "lastUpdateTime")
         
-        // FIXED: Set stronger instant feedback flags with longer duration
+        // FIXED: Set instant feedback flags
         sharedDefaults?.set(true, forKey: "isInstantFeedback")
         sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "instantFeedbackTime")
-        sharedDefaults?.set(languageCode, forKey: "instantFeedbackLanguage") // Store the language explicitly
+        sharedDefaults?.set(languageCode, forKey: "instantFeedbackLanguage")
         
         sharedDefaults?.synchronize()
+        
+        // NEW: Immediate refresh for language switch
+        let newState = WidgetState(
+            isPlaying: loadSharedState().isPlaying,
+            currentLanguage: languageCode,
+            hasError: loadSharedState().hasError,
+            isTransitioning: true
+        )
+        WidgetRefreshManager.shared.refreshIfNeeded(for: newState, immediate: true)
         
         #if DEBUG
         print("🔗 Updated cached state for instant UI feedback: \(languageCode)")
@@ -217,11 +226,9 @@ class SharedPlayerManager {
     }
     
     private func reloadAllWidgets() {
-        WidgetCenter.shared.reloadTimelines(ofKind: "LutheranRadioWidget")
-        WidgetCenter.shared.reloadTimelines(ofKind: "radio.lutheran.LutheranRadio.LutheranRadioWidget")
-        
+        // DEPRECATED: Use WidgetRefreshManager.shared.refreshIfNeeded() instead
         #if DEBUG
-        print("🔗 Reloaded both widget timelines")
+        print("🔗 DEPRECATED: Direct widget reload called - use WidgetRefreshManager instead")
         #endif
     }
 }
@@ -278,8 +285,13 @@ extension SharedPlayerManager {
         sharedDefaults?.removeObject(forKey: "instantFeedbackTime")
         sharedDefaults?.removeObject(forKey: "instantFeedbackLanguage")
         
-        // Force widget refresh immediately
-        reloadAllWidgets()
+        // NEW: Use optimized refresh manager
+        let newState = WidgetState(
+            isPlaying: isPlaying,
+            currentLanguage: currentLanguage,
+            hasError: hasError
+        )
+        WidgetRefreshManager.shared.refreshIfNeeded(for: newState)
         
         #if DEBUG
         print("🔗 Saved state: playing=\(isPlaying), language=\(currentLanguage), error=\(hasError) [cleared instant feedback]")

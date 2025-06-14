@@ -389,11 +389,11 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     }
     
     private func saveStateForWidget() {
-        // Save current state for widget access (this also reloads widgets)
+        // Save current state for widget access
         SharedPlayerManager.shared.saveCurrentState()
         
         #if DEBUG
-        print("🔗 Widget timelines reloaded via SharedPlayerManager")
+        print("🔗 State saved for widgets")
         #endif
     }
     
