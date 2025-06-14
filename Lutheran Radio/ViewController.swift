@@ -291,9 +291,20 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 #endif
                 return
             }
-            // Ensure player is not in a stopped state before attempting playback
-            self.streamingPlayer.resetTransientErrors()
-            self.startPlayback()
+            
+            // FIXED: Cancel any pending delayed stops before starting playback
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+                guard let self = self else { return }
+                
+                #if DEBUG
+                print("📱 Starting auto-playback after tuning sound - cancelling any pending stops")
+                #endif
+                
+                // FIXED: Cancel any pending delayed stops before starting playback
+                self.streamingPlayer.cancelPendingSSLProtection()
+                self.streamingPlayer.resetTransientErrors()
+                self.startPlayback()
+            }
         }
     }
     
@@ -1702,30 +1713,51 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     }
     
     deinit {
-        // Remove Darwin notification observer
+        isDeallocating = true
+        
+        #if DEBUG
+        print("🧹 ViewController deinit starting...")
+        #endif
+        
+        // Remove Darwin notification observer FIRST to prevent crashes
         let center = CFNotificationCenterGetDarwinNotifyCenter()
         CFNotificationCenterRemoveObserver(center, Unmanaged.passUnretained(self).toOpaque(), nil, nil)
         
-        isDeallocating = true
-        networkMonitor?.pathUpdateHandler = nil
-        networkMonitorHandler = nil
-        networkMonitor?.cancel()
-        networkMonitor = nil
-        
+        // Cancel existing timers
         connectivityCheckTimer?.invalidate()
         connectivityCheckTimer = nil
         streamSwitchTimer?.invalidate()
         streamSwitchTimer = nil
         
-        // Stop tuning player
-        tuningPlayer?.stop()
-        tuningPlayer = nil
-        
-        // Clear streaming player callbacks and stop
-        streamingPlayer.clearCallbacks()
+        // Cancel existing work items
+        streamSwitchWorkItem?.cancel()
+        streamSwitchWorkItem = nil
         
         #if DEBUG
-        print("🧹 ViewController deinit")
+        print("🧹 [Deinit] Cancelled all timers and work items")
+        #endif
+        
+        // Stop audio players
+        tuningPlayer?.stop()
+        tuningPlayer = nil
+        isTuningSoundPlaying = false
+        
+        // Clean up streaming player
+        streamingPlayer.clearCallbacks()
+        
+        // Remove notification observers early to prevent firing during deallocation
+        NotificationCenter.default.removeObserver(self, name: AVAudioSession.interruptionNotification, object: nil)
+        NotificationCenter.default.removeObserver(self, name: AVAudioSession.routeChangeNotification, object: nil)
+        NotificationCenter.default.removeObserver(self, name: UIApplication.didReceiveMemoryWarningNotification, object: nil)
+        
+        // Cancel network monitoring
+        networkMonitor?.pathUpdateHandler = nil
+        networkMonitorHandler = nil
+        networkMonitor?.cancel()
+        networkMonitor = nil
+        
+        #if DEBUG
+        print("🧹 ViewController deinit completed")
         #endif
     }
     

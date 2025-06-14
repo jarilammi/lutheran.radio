@@ -1201,9 +1201,12 @@ class DirectStreamingPlayer: NSObject {
                 
                 switch item.status {
                 case .readyToPlay:
+                    tempStatusObserver?.invalidate()
+                    
                     #if DEBUG
                     print("🔒 [SSL Timing] Ready to play after \(connectionAge)s")
                     #endif
+                    
                     self.clearSSLProtectionTimer()
                     self.serverFailureCount[server.name] = 0
                     self.lastFailedServerName = nil
@@ -1212,12 +1215,18 @@ class DirectStreamingPlayer: NSObject {
                     if let metadataOutput = self.metadataOutput {
                         self.playerItem?.add(metadataOutput)
                     }
+                    
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        #if DEBUG
+                        print("🎵 [Auto Play] Actually calling player.play() for \(self.selectedStream.language)")
+                        #endif
                         self.player?.play()
                         self.onStatusChange?(true, String(localized: "status_playing"))
                         completion(true)
                     }
+                    
                 case .failed:
+                    tempStatusObserver?.invalidate()
                     #if DEBUG
                     print("❌ PlayerItem failed with server \(server.name) after \(connectionAge)s: \(item.error?.localizedDescription ?? "Unknown error")")
                     #endif
@@ -1256,7 +1265,7 @@ class DirectStreamingPlayer: NSObject {
                 @unknown default:
                     break
                 }
-                tempStatusObserver?.invalidate()
+                // Remove the invalidate() call that was here originally
             }
             
             // Extended timeout for SSL handshake completion
@@ -1276,6 +1285,14 @@ class DirectStreamingPlayer: NSObject {
                 }
             }
         }
+    }
+    
+    func cancelPendingSSLProtection() {
+        clearSSLProtectionTimer()
+        connectionStartTime = nil
+        #if DEBUG
+        print("🔒 [Manual Cancel] Cancelled pending SSL protection and delayed stops")
+        #endif
     }
     
     // SSL Protection Timer - prevents premature cancellation during SSL handshake
