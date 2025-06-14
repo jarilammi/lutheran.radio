@@ -15,14 +15,21 @@ import Security
 import CommonCrypto
 
 class StreamingSessionDelegate: NSObject, URLSessionDataDelegate {
-    // lutheran.radio pinned certificate SPKI hash (same as in Info.plist)
+    
+    // openssl s_client -connect livestream.lutheran.radio:8443 -servername livestream.lutheran.radio < /dev/null 2>/dev/null | openssl x509 -pubkey -noout | openssl pkey -pubin -outform DER | openssl dgst -sha256 -binary | base64
     private static let pinnedSPKIHash = "mm31qgyBr2aXX8NzxmX/OeKzrUeOtxim4foWmxL4TZY="
-    private static let enableCustomPinning = true
     
-    // Add throttling properties
-    private static var lastPinningCheck: Date?
-    private static let pinningCheckInterval: TimeInterval = 300 // 5 minutes
+    // FALLBACK: Add the other certificate hashes for redundancy
+    private static let fallbackSPKIHashes = [
+        "mm31qgyBr2aXX8NzxmX/OeKzrUeOtxim4foWmxL4TZY="
+    ]
     
+    // CERTIFICATE HASH FALLBACK: Use full certificate hashes as backup
+    private static let pinnedCertificateHashes = [
+        "fKLbUQeMgiD3tYfzBXll4nQsbL5yR2lRtP5+cuLThsw=" // openssl s_client -connect livestream.lutheran.radio:8443 -servername livestream.lutheran.radio < /dev/null 2>/dev/null | openssl x509 -outform DER | openssl dgst -sha256 -binary | base64
+    ]
+    
+    private static let enableCustomPinning = true // Enable SSL pinning
     static var hasSuccessfulPinningCheck = false
     
     /// The loading request for the AV asset resource.
@@ -40,62 +47,65 @@ class StreamingSessionDelegate: NSObject, URLSessionDataDelegate {
     /// The original hostname before DNS override (for SSL validation)
     var originalHostname: String?
     
+    private let connectionStartTime = Date()
+    private var sslChallengeReceived = false
+    private var firstDataReceived = false
+    
     init(loadingRequest: AVAssetResourceLoadingRequest) {
         self.loadingRequest = loadingRequest
         super.init() // Call NSObject.init instead
+        #if DEBUG
+        print("🔒 [SSL Debug] StreamingSessionDelegate initialized")
+        print("🔒 [Lifecycle] Connection created at: \(connectionStartTime)")
+        #endif
     }
     
     func cancel() {
+        let connectionAge = Date().timeIntervalSince(connectionStartTime)
+        #if DEBUG
+        print("🔒 [SSL Debug] StreamingSessionDelegate cancelling after \(connectionAge)s...")
+        #endif
         dataTask?.cancel()
         session?.invalidateAndCancel()
         session = nil
         dataTask = nil
-        #if DEBUG
-        print("📡 StreamingSessionDelegate canceled")
-        #endif
     }
     
+    // MARK: - SSL Challenge Handling with Updated Hashes
     func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
         
-        // DON'T throttle SSL pinning during app startup or initial connections
-        let now = Date()
-        let shouldThrottle = if let lastCheck = Self.lastPinningCheck {
-            now.timeIntervalSince(lastCheck) < Self.pinningCheckInterval
-        } else {
-            false // Never throttle the very first check
-        }
+        sslChallengeReceived = true
+        let connectionAge = Date().timeIntervalSince(connectionStartTime)
         
-        // Only throttle if we've successfully validated recently AND this isn't a fresh app launch
-        if shouldThrottle && Self.hasSuccessfulPinningCheck {
-            #if DEBUG
-            print("🔒 SSL pinning throttled (last check: \(Int(now.timeIntervalSince(Self.lastPinningCheck!)))s ago)")
-            #endif
-            completionHandler(.performDefaultHandling, nil)
-            return
-        }
-        
-        Self.lastPinningCheck = now
         #if DEBUG
-        print("🔒 SSL CHALLENGE TRIGGERED! (performing full validation)")
+        print("🔒 ============ SSL CHALLENGE RECEIVED! ============")
+        print("🔒 Connection age: \(connectionAge)s")
+        print("🔒 Challenge host: \(challenge.protectionSpace.host)")
+        print("🔒 Original hostname: \(originalHostname ?? "nil")")
+        print("🔒 Primary SPKI hash: \(Self.pinnedSPKIHash)")
+        print("🔒 ============================================")
         #endif
         
+        // Verify it's a server trust challenge
         guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust else {
+            #if DEBUG
+            print("🔒 ❌ Not a server trust challenge")
+            #endif
             completionHandler(.performDefaultHandling, nil)
             return
         }
         
         guard let serverTrust = challenge.protectionSpace.serverTrust else {
             #if DEBUG
-            print("🔒 No server trust available")
+            print("🔒 ❌ No server trust available")
             #endif
             completionHandler(.cancelAuthenticationChallenge, nil)
             return
         }
         
-        // Use the stored original hostname for validation
         guard let originalHost = self.originalHostname else {
             #if DEBUG
-            print("🔒 No original hostname available")
+            print("🔒 ❌ No original hostname available")
             #endif
             completionHandler(.performDefaultHandling, nil)
             return
@@ -104,182 +114,213 @@ class StreamingSessionDelegate: NSObject, URLSessionDataDelegate {
         // Only validate lutheran.radio domains
         guard originalHost.hasSuffix("lutheran.radio") else {
             #if DEBUG
-            print("🔒 Host \(originalHost) not in lutheran.radio domain")
+            print("🔒 ⚠️ Host \(originalHost) not in lutheran.radio domain")
             #endif
             completionHandler(.performDefaultHandling, nil)
             return
         }
         
-        // Set policy for hostname verification
-        let policy = SecPolicyCreateSSL(true, originalHost as CFString)
-        SecTrustSetPolicies(serverTrust, [policy] as CFArray)
+        // Basic certificate validation first
+        let cfHostname: CFString = originalHost as CFString
+        let policy = SecPolicyCreateSSL(true, cfHostname)
+        SecTrustSetPolicies(serverTrust, policy)
         
-        // First, validate basic certificate chain
         var error: CFError?
-        guard SecTrustEvaluateWithError(serverTrust, &error) else {
+        let basicValidationResult = SecTrustEvaluateWithError(serverTrust, &error)
+        
+        #if DEBUG
+        print("🔒 📋 Basic certificate validation: \(basicValidationResult)")
+        #endif
+        
+        guard basicValidationResult else {
             #if DEBUG
-            print("🔒 Basic certificate validation failed for \(originalHost): \(error?.localizedDescription ?? "Unknown error")")
+            print("🔒 ❌ BASIC CERTIFICATE VALIDATION FAILED")
             #endif
             completionHandler(.cancelAuthenticationChallenge, nil)
             return
         }
         
-        // Now perform SPKI pinning validation
-        if validateCertificatePinning(serverTrust: serverTrust, pinnedHash: Self.pinnedSPKIHash) {
+        // Now perform enhanced certificate pinning
+        if validateEnhancedCertificatePinning(serverTrust: serverTrust) {
             #if DEBUG
-            print("🔒 Certificate pinning validation succeeded for \(originalHost)")
+            print("🔒 ✅ ✅ ✅ CERTIFICATE PINNING VALIDATION SUCCEEDED")
             #endif
-            
-            // Mark that we've had a successful pinning check
             Self.hasSuccessfulPinningCheck = true
-            
             let credential = URLCredential(trust: serverTrust)
             completionHandler(.useCredential, credential)
         } else {
             #if DEBUG
-            print("🔒 Certificate pinning validation failed for \(originalHost)")
+            print("🔒 ❌ ❌ ❌ CERTIFICATE PINNING VALIDATION FAILED")
             #endif
             onError?(URLError(.serverCertificateUntrusted))
             completionHandler(.cancelAuthenticationChallenge, nil)
         }
     }
     
-    private func validateCertificatePinning(serverTrust: SecTrust, pinnedHash: String) -> Bool {
-        // Get certificate chain using modern API
+    // MARK: - Enhanced Certificate Pinning with Multiple Validation Methods
+    private func validateEnhancedCertificatePinning(serverTrust: SecTrust) -> Bool {
+        #if DEBUG
+        print("🔒 [SPKI] Starting enhanced certificate pinning validation")
+        #endif
+        
         guard let certificateChain = SecTrustCopyCertificateChain(serverTrust) else {
             #if DEBUG
-            print("🔒 Failed to get certificate chain")
+            print("🔒 [SPKI] ❌ Failed to get certificate chain")
             #endif
             return false
         }
         
         let certificateCount = CFArrayGetCount(certificateChain)
+        #if DEBUG
+        print("🔒 [SPKI] Certificate chain contains \(certificateCount) certificates")
+        #endif
+        
+        let allAcceptableSPKIHashes = [Self.pinnedSPKIHash] + Self.fallbackSPKIHashes
         
         // Check each certificate in the chain
         for i in 0..<certificateCount {
-            guard let certificate = CFArrayGetValueAtIndex(certificateChain, i) else {
-                continue
-            }
-            
+            guard let certificate = CFArrayGetValueAtIndex(certificateChain, i) else { continue }
             let secCertificate = Unmanaged<SecCertificate>.fromOpaque(certificate).takeUnretainedValue()
             
-            // Try multiple validation approaches for robustness
-            if validateSPKIHash(for: secCertificate, againstPinnedHash: pinnedHash) ||
-               validateCertificateHash(for: secCertificate, againstPinnedHash: pinnedHash) {
+            #if DEBUG
+            print("🔒 [SPKI] Checking certificate \(i)")
+            #endif
+            
+            // Method 1: Try multiple SPKI hash computation methods
+            let spkiMethods = [
+                computeECSPKIHash(for: secCertificate),
+                computeRSASPKIHash(for: secCertificate),
+                computeRawSPKIHash(for: secCertificate)
+            ]
+            
+            for (methodIndex, spkiHash) in spkiMethods.enumerated() {
+                guard let hash = spkiHash else { continue }
+                
                 #if DEBUG
-                print("🔒 Found matching pinned certificate at index \(i)")
+                print("🔒 [SPKI] Method \(methodIndex) hash: \(hash)")
+                #endif
+                
+                if allAcceptableSPKIHashes.contains(hash) {
+                    #if DEBUG
+                    print("🔒 [SPKI] ✅ Found matching SPKI hash (method \(methodIndex), cert \(i))")
+                    #endif
+                    return true
+                }
+            }
+            
+            // Method 2: Certificate hash fallback
+            let certificateData = SecCertificateCopyData(secCertificate)
+            let data = CFDataGetBytePtr(certificateData)!
+            let length = CFDataGetLength(certificateData)
+            
+            var hash = Data(count: Int(CC_SHA256_DIGEST_LENGTH))
+            _ = hash.withUnsafeMutableBytes { hashBytes in
+                CC_SHA256(data, CC_LONG(length), hashBytes.bindMemory(to: UInt8.self).baseAddress)
+            }
+            
+            let certHash = hash.base64EncodedString()
+            #if DEBUG
+            print("🔒 [SPKI] Certificate \(i) hash: \(certHash)")
+            #endif
+            
+            if Self.pinnedCertificateHashes.contains(certHash) {
+                #if DEBUG
+                print("🔒 [SPKI] ✅ Found matching certificate hash (cert \(i))")
                 #endif
                 return true
             }
         }
         
         #if DEBUG
-        print("🔒 No matching pinned certificate found in chain")
+        print("🔒 [SPKI] ❌ No matching pinned certificate found")
+        print("🔒 [SPKI] Expected SPKI hashes: \(allAcceptableSPKIHashes)")
+        print("🔒 [SPKI] Expected cert hashes: \(Self.pinnedCertificateHashes)")
         #endif
         return false
     }
     
-    // Primary method: SPKI hash validation (matches Info.plist)
-    private func validateSPKIHash(for certificate: SecCertificate, againstPinnedHash pinnedHash: String) -> Bool {
-        guard let computedHash = computeSPKIHash(for: certificate) else {
-            return false
+    // MARK: - Multiple SPKI Hash Computation Methods
+    private func computeECSPKIHash(for certificate: SecCertificate) -> String? {
+        guard let publicKey = SecCertificateCopyKey(certificate),
+              let publicKeyData = SecKeyCopyExternalRepresentation(publicKey, nil) else {
+            return nil
         }
-        return computedHash == pinnedHash
+        
+        // EC P-256 SPKI format
+        let ecHeader: [UInt8] = [
+            0x30, 0x59, 0x30, 0x13, 0x06, 0x07, 0x2a, 0x86,
+            0x48, 0xce, 0x3d, 0x02, 0x01, 0x06, 0x08, 0x2a,
+            0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07, 0x03,
+            0x42, 0x00
+        ]
+        
+        var spkiData = Data(ecHeader)
+        spkiData.append(publicKeyData as Data)
+        
+        return computeSHA256Hash(data: spkiData)
     }
     
-    // Fallback method: Certificate hash validation
-    private func validateCertificateHash(for certificate: SecCertificate, againstPinnedHash pinnedHash: String) -> Bool {
-        let certificateData = SecCertificateCopyData(certificate)
-        let data = CFDataGetBytePtr(certificateData)!
-        let length = CFDataGetLength(certificateData)
-        
-        var hash = Data(count: Int(CC_SHA256_DIGEST_LENGTH))
-        _ = hash.withUnsafeMutableBytes { hashBytes in
-            CC_SHA256(data, CC_LONG(length), hashBytes.bindMemory(to: UInt8.self).baseAddress)
+    private func computeRSASPKIHash(for certificate: SecCertificate) -> String? {
+        guard let publicKey = SecCertificateCopyKey(certificate),
+              let publicKeyData = SecKeyCopyExternalRepresentation(publicKey, nil) else {
+            return nil
         }
         
-        let certHash = hash.base64EncodedString()
-        #if DEBUG
-        print("🔒 Certificate hash: \(certHash)")
-        #endif
+        // RSA SPKI format
+        let rsaHeader: [UInt8] = [
+            0x30, 0x82, 0x01, 0x22, 0x30, 0x0d, 0x06, 0x09,
+            0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01,
+            0x01, 0x05, 0x00, 0x03, 0x82, 0x01, 0x0f, 0x00
+        ]
         
-        return certHash == pinnedHash
+        var spkiData = Data(rsaHeader)
+        spkiData.append(publicKeyData as Data)
+        
+        return computeSHA256Hash(data: spkiData)
     }
     
-    private func computeSPKIHash(for certificate: SecCertificate) -> String? {
-        guard let publicKey = SecCertificateCopyKey(certificate) else {
+    private func computeRawSPKIHash(for certificate: SecCertificate) -> String? {
+        guard let publicKey = SecCertificateCopyKey(certificate),
+              let publicKeyData = SecKeyCopyExternalRepresentation(publicKey, nil) else {
             return nil
         }
         
-        guard let publicKeyData = SecKeyCopyExternalRepresentation(publicKey, nil) else {
-            return nil
-        }
-        
-        // Get key attributes to determine key type
-        guard let attributes = SecKeyCopyAttributes(publicKey) as? [String: Any],
-              let keyType = attributes[kSecAttrKeyType as String] as? String else {
-            return nil
-        }
-        
-        // Create appropriate ASN.1 DER header based on key type
-        let spkiData: Data
-        
-        if keyType == kSecAttrKeyTypeRSA as String {
-            // RSA public key header
-            let rsaHeader: [UInt8] = [
-                0x30, 0x82, 0x01, 0x22, 0x30, 0x0d, 0x06, 0x09,
-                0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01,
-                0x01, 0x05, 0x00, 0x03, 0x82, 0x01, 0x0f, 0x00
-            ]
-            var data = Data(rsaHeader)
-            data.append(publicKeyData as Data)
-            spkiData = data
-        } else if keyType == kSecAttrKeyTypeECSECPrimeRandom as String {
-            // EC public key header (P-256)
-            let ecHeader: [UInt8] = [
-                0x30, 0x59, 0x30, 0x13, 0x06, 0x07, 0x2a, 0x86,
-                0x48, 0xce, 0x3d, 0x02, 0x01, 0x06, 0x08, 0x2a,
-                0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07, 0x03,
-                0x42, 0x00
-            ]
-            var data = Data(ecHeader)
-            data.append(publicKeyData as Data)
-            spkiData = data
-        } else {
-            // Fallback: use raw public key data (less standard but may work)
-            spkiData = publicKeyData as Data
-        }
-        
-        // Compute SHA-256 hash
+        return computeSHA256Hash(data: publicKeyData as Data)
+    }
+    
+    private func computeSHA256Hash(data: Data) -> String {
         var hash = Data(count: Int(CC_SHA256_DIGEST_LENGTH))
         _ = hash.withUnsafeMutableBytes { hashBytes in
-            spkiData.withUnsafeBytes { spkiBytes in
-                CC_SHA256(spkiBytes.bindMemory(to: UInt8.self).baseAddress,
-                         CC_LONG(spkiData.count),
+            data.withUnsafeBytes { dataBytes in
+                CC_SHA256(dataBytes.bindMemory(to: UInt8.self).baseAddress,
+                         CC_LONG(data.count),
                          hashBytes.bindMemory(to: UInt8.self).baseAddress)
             }
         }
-        
         return hash.base64EncodedString()
     }
     
+    // MARK: - Keep all your existing response handling methods unchanged
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse, completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+        let connectionAge = Date().timeIntervalSince(connectionStartTime)
+        
+        #if DEBUG
+        print("📡 [SSL Debug] Received response after \(connectionAge)s")
+        #endif
+        
         guard let httpResponse = response as? HTTPURLResponse else {
-            #if DEBUG
-            print("📡 Failed to process response: invalid response type")
-            #endif
             completionHandler(.cancel)
             return
         }
         
+        let statusCode = httpResponse.statusCode
         #if DEBUG
-        print("📡 Received HTTP response with status code: \(httpResponse.statusCode)")
+        print("📡 ✅ HTTP Status: \(statusCode)")
         #endif
         
-        let statusCode = httpResponse.statusCode
         if statusCode == 403 {
             #if DEBUG
-            print("📡 Access denied: Invalid security model")
+            print("📡 ❌ Access denied (403): Invalid security model")
             #endif
             onError?(URLError(.userAuthenticationRequired))
             loadingRequest.finishLoading(with: URLError(.userAuthenticationRequired))
@@ -288,34 +329,7 @@ class StreamingSessionDelegate: NSObject, URLSessionDataDelegate {
         }
         
         if (400...599).contains(statusCode) {
-            let error: URLError.Code
-            switch statusCode {
-            case 502:
-                error = .badServerResponse
-                #if DEBUG
-                print("📡 Detected 502 Bad Gateway - treating as permanent error")
-                #endif
-            case 404:
-                error = .fileDoesNotExist
-                #if DEBUG
-                print("📡 Detected 404 Not Found - treating as permanent error")
-                #endif
-            case 429:
-                error = .resourceUnavailable
-                #if DEBUG
-                print("📡 Detected 429 Too Many Requests - treating as permanent error")
-                #endif
-            case 503:
-                error = .resourceUnavailable
-                #if DEBUG
-                print("📡 Detected 503 Service Unavailable - treating as permanent error")
-                #endif
-            default:
-                error = .badServerResponse
-                #if DEBUG
-                print("📡 Unhandled HTTP status code: \(statusCode)")
-                #endif
-            }
+            let error: URLError.Code = statusCode == 404 ? .fileDoesNotExist : .badServerResponse
             onError?(URLError(error))
             loadingRequest.finishLoading(with: URLError(error))
             completionHandler(.cancel)
@@ -323,9 +337,6 @@ class StreamingSessionDelegate: NSObject, URLSessionDataDelegate {
         }
         
         if let contentType = httpResponse.allHeaderFields["Content-Type"] as? String {
-            #if DEBUG
-            print("📡 Content-Type: \(contentType)")
-            #endif
             loadingRequest.contentInformationRequest?.contentType = contentType
         }
         
@@ -339,9 +350,49 @@ class StreamingSessionDelegate: NSObject, URLSessionDataDelegate {
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
         guard receivedResponse else { return }
         bytesReceived += data.count
-        #if DEBUG
-        print("📡 Received chunk of \(data.count) bytes (total: \(bytesReceived))")
-        #endif
         loadingRequest.dataRequest?.respond(with: data)
+        
+        if !firstDataReceived {
+            firstDataReceived = true
+            #if DEBUG
+            print("📡 ✅ FIRST DATA RECEIVED - Streaming started successfully!")
+            #endif
+        }
+    }
+    
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        let connectionAge = Date().timeIntervalSince(connectionStartTime)
+        
+        if let error = error {
+            #if DEBUG
+            print("📡 ❌ Session completed with error after \(connectionAge)s: \(error.localizedDescription)")
+            #endif
+            onError?(error)
+        } else {
+            #if DEBUG
+            print("📡 ✅ Session completed successfully after \(connectionAge)s")
+            #endif
+        }
+    }
+    
+    deinit {
+        #if DEBUG
+        let connectionAge = Date().timeIntervalSince(connectionStartTime)
+        print("🧹 [Deinit] StreamingSessionDelegate deallocating after \(connectionAge)s")
+        #endif
+        
+        // Cancel and clean up session
+        dataTask?.cancel()
+        session?.invalidateAndCancel()
+        
+        // Clear references
+        session = nil
+        dataTask = nil
+        onError = nil
+        originalHostname = nil
+        
+        #if DEBUG
+        print("🧹 StreamingSessionDelegate deinit completed")
+        #endif
     }
 }

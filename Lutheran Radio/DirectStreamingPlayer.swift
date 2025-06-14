@@ -161,6 +161,9 @@ class DirectStreamingPlayer: NSObject {
     private var lastValidationTime: Date?
     #endif
     private let validationCacheDuration: TimeInterval = 600 // 10 minutes
+    private var sslConnectionTimeout: Timer?
+    private var minimumConnectionTime: TimeInterval = 5.0 // Give SSL handshake 5 seconds minimum
+    private var connectionStartTime: Date?
     
     /// Represents the state of security model validation.
     enum ValidationState {
@@ -1151,7 +1154,23 @@ class DirectStreamingPlayer: NSObject {
             
             self.stop()
             
-            let asset = AVURLAsset(url: streamURL)
+            // Record connection start time for SSL persistence
+            self.connectionStartTime = Date()
+            
+            // FIXED: Use direct HTTPS URL instead of custom scheme
+            // The resource loader will still handle SSL pinning through shouldWaitForLoadingOfRequestedResource
+            let finalURL = streamURL
+            
+            #if DEBUG
+            print("📡 [SSL Fix] Using direct HTTPS URL: \(finalURL)")
+            print("🔒 [SSL Timing] Connection started at: \(self.connectionStartTime!)")
+            #endif
+            
+            let asset = AVURLAsset(url: finalURL)
+            asset.resourceLoader.setDelegate(self, queue: DispatchQueue(label: "radio.lutheran.resourceloader"))
+            #if DEBUG
+            print("📡 [DEBUG] Resource loader delegate set for HTTPS URL: \(finalURL)")
+            #endif
             self.playerItem = AVPlayerItem(asset: asset)
             
             if self.player == nil {
@@ -1168,14 +1187,24 @@ class DirectStreamingPlayer: NSObject {
             
             self.addObservers()
             
+            // Set up SSL connection protection timer
+            self.setupSSLProtectionTimer()
+            
             var tempStatusObserver: NSKeyValueObservation?
             tempStatusObserver = self.playerItem?.observe(\.status, options: [.new]) { [weak self] item, _ in
                 guard let self = self else {
                     completion(false)
                     return
                 }
+                
+                let connectionAge = self.connectionStartTime.map { Date().timeIntervalSince($0) } ?? 0
+                
                 switch item.status {
                 case .readyToPlay:
+                    #if DEBUG
+                    print("🔒 [SSL Timing] Ready to play after \(connectionAge)s")
+                    #endif
+                    self.clearSSLProtectionTimer()
                     self.serverFailureCount[server.name] = 0
                     self.lastFailedServerName = nil
                     self.metadataOutput = AVPlayerItemMetadataOutput(identifiers: nil)
@@ -1190,15 +1219,26 @@ class DirectStreamingPlayer: NSObject {
                     }
                 case .failed:
                     #if DEBUG
-                    print("❌ PlayerItem failed with server \(server.name): \(item.error?.localizedDescription ?? "Unknown error")")
+                    print("❌ PlayerItem failed with server \(server.name) after \(connectionAge)s: \(item.error?.localizedDescription ?? "Unknown error")")
                     #endif
+                    
+                    // Only try fallback if connection had enough time for SSL handshake
+                    if connectionAge < self.minimumConnectionTime {
+                        #if DEBUG
+                        print("🔒 [SSL Timing] Connection failed too quickly (\(connectionAge)s), allowing more time...")
+                        #endif
+                        // Don't immediately fail - let SSL protection timer handle it
+                        return
+                    }
+                    
+                    self.clearSSLProtectionTimer()
                     self.lastError = item.error
                     let errorType = StreamErrorType.from(error: item.error)
                     
                     // Try fallback server instead of retry with same server
                     if !fallbackServers.isEmpty {
                         #if DEBUG
-                        print("📡 Trying fallback server...")
+                        print("📡 Trying fallback server after SSL timing...")
                         #endif
                         self.tryNextServer(fallbackServers: fallbackServers, completion: completion)
                     } else {
@@ -1211,7 +1251,7 @@ class DirectStreamingPlayer: NSObject {
                     }
                 case .unknown:
                     #if DEBUG
-                    print("⏳ PlayerItem status unknown, waiting...")
+                    print("⏳ PlayerItem status unknown after \(connectionAge)s, waiting...")
                     #endif
                 @unknown default:
                     break
@@ -1219,11 +1259,14 @@ class DirectStreamingPlayer: NSObject {
                 tempStatusObserver?.invalidate()
             }
             
-            DispatchQueue.main.asyncAfter(deadline: .now() + 20.0) { [weak self] in
+            // Extended timeout for SSL handshake completion
+            DispatchQueue.main.asyncAfter(deadline: .now() + 30.0) { [weak self] in
                 guard let self = self, self.playerItem?.status != .readyToPlay else { return }
+                let connectionAge = self.connectionStartTime.map { Date().timeIntervalSince($0) } ?? 0
                 #if DEBUG
-                print("❌ Playback timeout with server \(server.name), trying fallback")
+                print("❌ Extended timeout reached after \(connectionAge)s with server \(server.name)")
                 #endif
+                self.clearSSLProtectionTimer()
                 if !fallbackServers.isEmpty {
                     self.tryNextServer(fallbackServers: fallbackServers, completion: completion)
                 } else {
@@ -1233,6 +1276,61 @@ class DirectStreamingPlayer: NSObject {
                 }
             }
         }
+    }
+    
+    // SSL Protection Timer - prevents premature cancellation during SSL handshake
+    private func setupSSLProtectionTimer() {
+        clearSSLProtectionTimer()
+        
+        #if DEBUG
+        print("🔒 [SSL Protection] Starting \(minimumConnectionTime)s protection timer")
+        #endif
+        
+        sslConnectionTimeout = Timer.scheduledTimer(withTimeInterval: minimumConnectionTime, repeats: false) { [weak self] _ in
+            guard let self = self else { return }
+            let connectionAge = self.connectionStartTime.map { Date().timeIntervalSince($0) } ?? 0
+            
+            #if DEBUG
+            print("🔒 [SSL Protection] Timer expired after \(connectionAge)s")
+            print("🔒 [SSL Protection] Player item status: \(self.playerItem?.status.rawValue ?? -1)")
+            #endif
+            
+            // If still not ready after minimum time, check if we should continue waiting
+            if self.playerItem?.status == .unknown {
+                #if DEBUG
+                print("🔒 [SSL Protection] Still connecting after \(connectionAge)s - extending wait")
+                #endif
+                // Extend protection for another 10 seconds for slow SSL handshakes
+                self.sslConnectionTimeout = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: false) { [weak self] _ in
+                    guard let self = self else { return }
+                    if self.playerItem?.status == .unknown {
+                        #if DEBUG
+                        print("🔒 [SSL Protection] Final timeout - connection still not ready")
+                        #endif
+                        self.handleSSLTimeout()
+                    }
+                }
+            }
+        }
+    }
+
+    private func clearSSLProtectionTimer() {
+        sslConnectionTimeout?.invalidate()
+        sslConnectionTimeout = nil
+        #if DEBUG
+        if connectionStartTime != nil {
+            let connectionAge = Date().timeIntervalSince(connectionStartTime!)
+            print("🔒 [SSL Protection] Timer cleared after \(connectionAge)s")
+        }
+        #endif
+    }
+
+    private func handleSSLTimeout() {
+        #if DEBUG
+        print("🔒 [SSL Timeout] Handling SSL connection timeout")
+        #endif
+        // Don't immediately stop - this gives SSL handshake more time
+        onStatusChange?(false, String(localized: "status_buffering"))
     }
     
     func getCurrentMetadataForLiveActivity() -> String? {
@@ -1404,6 +1502,27 @@ class DirectStreamingPlayer: NSObject {
     }
     
     func stop(completion: (() -> Void)? = nil) {
+        // Check if we should protect ongoing SSL handshake
+        if let startTime = connectionStartTime {
+            let connectionAge = Date().timeIntervalSince(startTime)
+            if connectionAge < minimumConnectionTime {
+                #if DEBUG
+                print("🔒 [SSL Protection] Delaying stop for \(minimumConnectionTime - connectionAge)s to protect SSL handshake")
+                #endif
+                DispatchQueue.main.asyncAfter(deadline: .now() + (minimumConnectionTime - connectionAge)) { [weak self] in
+                    self?.performActualStop(completion: completion)
+                }
+                return
+            }
+        }
+        
+        performActualStop(completion: completion)
+    }
+
+    private func performActualStop(completion: (() -> Void)? = nil) {
+        clearSSLProtectionTimer()
+        connectionStartTime = nil
+        
         // If we're deallocating, perform cleanup synchronously
         if isDeallocating {
             stopSynchronously()
@@ -1569,11 +1688,72 @@ class DirectStreamingPlayer: NSObject {
     
     deinit {
         isDeallocating = true
+        
+        // Cancel pending work items that exist
+        serverSelectionWorkItem?.cancel()
+        retryWorkItem?.cancel()
+        
+        #if DEBUG
+        print("🧹 [Deinit] Cancelled pending work items")
+        #endif
+        
+        // Stop synchronously to avoid async cleanup during deallocation
         stopSynchronously()
+        
+        // Clear all callbacks to prevent retention cycles
         clearCallbacks()
+        
+        // Cancel network monitoring
         networkMonitor?.cancel()
         networkMonitor = nil
+        
+        // Clear metadata output
         metadataOutput = nil
+        
+        // Clear server failure tracking
+        serverFailureCount.removeAll()
+        lastFailedServerName = nil
+        
+        #if DEBUG
+        print("🧹 DirectStreamingPlayer deinit completed")
+        #endif
+    }
+    
+    private func handleLoadingError(_ error: Error) {
+        let errorType = StreamErrorType.from(error: error)
+        hasPermanentError = errorType.isPermanent
+        
+        #if DEBUG
+        print("🔒 [Loading Error] Type: \(errorType), isPermanent: \(errorType.isPermanent)")
+        print("🔒 [Loading Error] Error: \(error.localizedDescription)")
+        #endif
+        
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .serverCertificateUntrusted, .secureConnectionFailed:
+                #if DEBUG
+                print("🔒 [Loading Error] SSL/Certificate error detected")
+                #endif
+                onStatusChange?(false, String(localized: "status_security_failed"))
+            case .cannotFindHost, .fileDoesNotExist, .badServerResponse:
+                #if DEBUG
+                print("🔒 [Loading Error] Permanent network/server error detected")
+                #endif
+                onStatusChange?(false, String(localized: "status_stream_unavailable"))
+            default:
+                #if DEBUG
+                print("🔒 [Loading Error] Transient error detected")
+                #endif
+                onStatusChange?(false, String(localized: "status_buffering"))
+            }
+        } else {
+            #if DEBUG
+            print("🔒 [Loading Error] Non-URLError detected")
+            #endif
+            onStatusChange?(false, String(localized: "status_buffering"))
+        }
+        
+        stop()
     }
 }
 
@@ -1696,80 +1876,82 @@ extension DirectStreamingPlayer {
 // MARK: - Resource Loader
 extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
     func resourceLoader(_ resourceLoader: AVAssetResourceLoader, shouldWaitForLoadingOfRequestedResource loadingRequest: AVAssetResourceLoadingRequest) -> Bool {
-        guard var url = loadingRequest.request.url else {
+        guard let url = loadingRequest.request.url else {
+            #if DEBUG
+            print("❌ [Resource Loader] No URL in loading request")
+            #endif
             loadingRequest.finishLoading(with: NSError(domain: "radio.lutheran", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid URL"]))
             return false
         }
         
-        // Convert custom scheme back to HTTPS
-        if url.scheme == "lutheranradio" {
-            let httpsURLString = url.absoluteString.replacingOccurrences(of: "lutheranradio://", with: "https://")
-            guard let httpsURL = URL(string: httpsURLString) else {
-                loadingRequest.finishLoading(with: NSError(domain: "radio.lutheran", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid HTTPS URL conversion"]))
-                return false
-            }
-            url = httpsURL
+        #if DEBUG
+        print("📡 [Resource Loader] ===== NEW REQUEST =====")
+        print("📡 [Resource Loader] Received URL: \(url)")
+        print("📡 [Resource Loader] URL scheme: \(url.scheme ?? "nil")")
+        print("📡 [Resource Loader] URL host: \(url.host ?? "nil")")
+        #endif
+        
+        // FIXED: Only handle HTTPS URLs for lutheran.radio domains
+        guard url.scheme == "https",
+              let host = url.host,
+              host.hasSuffix("lutheran.radio") else {
             #if DEBUG
-            print("📡 [Resource Loader] Converted custom scheme to HTTPS: \(url)")
+            print("📡 [Resource Loader] ❌ Not a lutheran.radio HTTPS URL, letting system handle it")
             #endif
+            return false  // Let the system handle non-lutheran.radio URLs
         }
         
         // Store the original hostname for SSL validation
-        let originalHostname = url.host
+        let originalHostname = host
+        #if DEBUG
+        print("📡 [Resource Loader] ✅ Handling lutheran.radio HTTPS URL: \(url)")
+        print("📡 [Resource Loader] Original hostname for SSL: \(originalHostname)")
+        #endif
         
-        // Create request with the modified URL (with IP)
+        // Create clean request with the HTTPS URL (no conversion needed)
         var modifiedRequest = URLRequest(url: url)
         
-        // Set the Host header to the original hostname for SSL
-        if let originalHost = originalHostname {
-            modifiedRequest.setValue(originalHost, forHTTPHeaderField: "Host")
-            #if DEBUG
-            print("📡 [Resource Loader] Set Host header: \(originalHost)")
-            #endif
-        }
-        
-        // Set headers
+        // Set standard streaming headers
         modifiedRequest.setValue("audio/mpeg", forHTTPHeaderField: "Accept")
         modifiedRequest.setValue("1", forHTTPHeaderField: "Icy-MetaData")
-        modifiedRequest.timeoutInterval = 30.0
+        modifiedRequest.timeoutInterval = 60.0
+        
+        #if DEBUG
+        print("📡 [Resource Loader] Request headers: \(modifiedRequest.allHTTPHeaderFields ?? [:])")
+        #endif
         
         // Create streaming delegate
         let streamingDelegate = StreamingSessionDelegate(loadingRequest: loadingRequest)
-
-        // Store the original hostname for SSL validation
         streamingDelegate.originalHostname = originalHostname
 
         #if DEBUG
-        print("📡 StreamingSessionDelegate created with originalHostname: \(originalHostname ?? "nil")")
+        print("🔒 [Resource Loader] StreamingSessionDelegate created for hostname: \(originalHostname)")
         #endif
 
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 30.0
-        config.timeoutIntervalForResource = 30.0
-
-        // FIXED: Don't disable URL cache completely - this was breaking SSL session reuse
-        // Only disable for initial connection attempts, allow normal caching after that
-        if StreamingSessionDelegate.hasSuccessfulPinningCheck {
-            // Allow normal SSL session reuse after first successful connection
-            config.urlCache = URLCache.shared
-            #if DEBUG
-            print("📡 Using standard URL cache (SSL session established)")
-            #endif
-        } else {
-            // Force fresh SSL challenge for first connection only
-            config.urlCache = nil
-            #if DEBUG
-            print("📡 Disabled URL cache for initial SSL validation")
-            #endif
-        }
+        // Enhanced configuration for SSL pinning
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 60.0
+        config.timeoutIntervalForResource = 120.0
         
-        streamingDelegate.session = URLSession(configuration: config, delegate: streamingDelegate, delegateQueue: .main)
+        // Force fresh SSL connections for proper pinning validation
+        config.urlCache = nil
+        config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        config.urlCredentialStorage = nil
+        config.waitsForConnectivity = false
+        config.httpMaximumConnectionsPerHost = 1
+        
+        #if DEBUG
+        print("🔒 [Resource Loader] Creating URLSession with SSL-forcing config")
+        #endif
+        
+        streamingDelegate.session = URLSession(configuration: config, delegate: streamingDelegate, delegateQueue: nil)
         streamingDelegate.dataTask = streamingDelegate.session?.dataTask(with: modifiedRequest)
         
         streamingDelegate.onError = { [weak self] error in
             guard let self = self else { return }
             #if DEBUG
-            print("❌ Streaming error: \(error)")
+            print("❌ [Resource Loader] Streaming error occurred")
+            print("❌ [Resource Loader] Error: \(error.localizedDescription)")
             #endif
             DispatchQueue.main.async {
                 self.activeResourceLoaders.removeValue(forKey: loadingRequest)
@@ -1778,39 +1960,27 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
         }
         
         activeResourceLoaders[loadingRequest] = streamingDelegate
+        
+        #if DEBUG
+        print("🔒 [Resource Loader] Starting data task for SSL validation...")
+        #endif
         streamingDelegate.dataTask?.resume()
         
         #if DEBUG
-        print("📡 Resource loader started for: \(modifiedRequest.url?.absoluteString ?? "nil")")
-        print("📡 Request headers: \(modifiedRequest.allHTTPHeaderFields ?? [:])")
+        print("📡 [Resource Loader] ✅ Resource loader setup complete")
+        print("📡 [Resource Loader] ===== END REQUEST SETUP =====")
         #endif
         
         return true
     }
     
-    private func handleLoadingError(_ error: Error) {
-        let errorType = StreamErrorType.from(error: error)
-        hasPermanentError = errorType.isPermanent
-        if let urlError = error as? URLError {
-            switch urlError.code {
-            case .serverCertificateUntrusted, .secureConnectionFailed:
-                onStatusChange?(false, String(localized: "status_security_failed"))
-            case .cannotFindHost, .fileDoesNotExist, .badServerResponse:
-                onStatusChange?(false, String(localized: "status_stream_unavailable"))
-            default:
-                onStatusChange?(false, String(localized: "status_buffering"))
-            }
-        } else {
-            onStatusChange?(false, String(localized: "status_buffering"))
-        }
-        stop()
-    }
-    
     func resourceLoader(_ resourceLoader: AVAssetResourceLoader, didCancel loadingRequest: AVAssetResourceLoadingRequest) {
         #if DEBUG
-        print("📡 Resource loading cancelled")
+        print("📡 [SSL Debug] Resource loading cancelled for request")
         #endif
-        activeResourceLoaders.removeValue(forKey: loadingRequest)
+        if let delegate = activeResourceLoaders.removeValue(forKey: loadingRequest) {
+            delegate.cancel()
+        }
     }
 }
 
