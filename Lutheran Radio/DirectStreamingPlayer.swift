@@ -162,8 +162,9 @@ class DirectStreamingPlayer: NSObject {
     #endif
     private let validationCacheDuration: TimeInterval = 600 // 10 minutes
     private var sslConnectionTimeout: Timer?
-    private var minimumConnectionTime: TimeInterval = 5.0 // Give SSL handshake 5 seconds minimum
-    private var connectionStartTime: Date?
+    private var minimumConnectionTime: TimeInterval = 3.0
+    private var isSSLHandshakeComplete = false
+    private var hasStartedPlaying = false
     
     /// Represents the state of security model validation.
     enum ValidationState {
@@ -1145,6 +1146,7 @@ class DirectStreamingPlayer: NSObject {
         bufferingTimer = nil
     }
     
+    // FIXED: Reset SSL tracking when starting new playback
     private func startPlaybackWithFallback(with streamURL: URL, server: Server, fallbackServers: [Server], completion: @escaping (Bool) -> Void) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else {
@@ -1154,23 +1156,22 @@ class DirectStreamingPlayer: NSObject {
             
             self.stop()
             
-            // Record connection start time for SSL persistence
-            self.connectionStartTime = Date()
+            // Create a unique connection start time for THIS attempt
+            let thisConnectionStartTime = Date()
             
-            // FIXED: Use direct HTTPS URL instead of custom scheme
-            // The resource loader will still handle SSL pinning through shouldWaitForLoadingOfRequestedResource
+            // Reset SSL tracking for new connection
+            self.isSSLHandshakeComplete = false
+            self.hasStartedPlaying = false
+            
             let finalURL = streamURL
             
             #if DEBUG
             print("📡 [SSL Fix] Using direct HTTPS URL: \(finalURL)")
-            print("🔒 [SSL Timing] Connection started at: \(self.connectionStartTime!)")
+            print("🔒 [SSL Timing] Connection started at: \(thisConnectionStartTime)")
             #endif
             
             let asset = AVURLAsset(url: finalURL)
             asset.resourceLoader.setDelegate(self, queue: DispatchQueue(label: "radio.lutheran.resourceloader"))
-            #if DEBUG
-            print("📡 [DEBUG] Resource loader delegate set for HTTPS URL: \(finalURL)")
-            #endif
             self.playerItem = AVPlayerItem(asset: asset)
             
             if self.player == nil {
@@ -1187,9 +1188,10 @@ class DirectStreamingPlayer: NSObject {
             
             self.addObservers()
             
-            // Set up SSL connection protection timer
-            self.setupSSLProtectionTimer()
+            // FIXED: Pass the specific connection time to SSL protection setup
+            self.setupSSLProtectionTimer(for: thisConnectionStartTime)
             
+            // FIXED: Temp observer with connection-specific time reference
             var tempStatusObserver: NSKeyValueObservation?
             tempStatusObserver = self.playerItem?.observe(\.status, options: [.new]) { [weak self] item, _ in
                 guard let self = self else {
@@ -1197,7 +1199,8 @@ class DirectStreamingPlayer: NSObject {
                     return
                 }
                 
-                let connectionAge = self.connectionStartTime.map { Date().timeIntervalSince($0) } ?? 0
+                // Use THIS connection's start time, not a shared mutable property
+                let connectionAge = Date().timeIntervalSince(thisConnectionStartTime)
                 
                 switch item.status {
                 case .readyToPlay:
@@ -1210,6 +1213,8 @@ class DirectStreamingPlayer: NSObject {
                     self.clearSSLProtectionTimer()
                     self.serverFailureCount[server.name] = 0
                     self.lastFailedServerName = nil
+                    
+                    // Set up metadata
                     self.metadataOutput = AVPlayerItemMetadataOutput(identifiers: nil)
                     self.metadataOutput?.setDelegate(self, queue: .main)
                     if let metadataOutput = self.metadataOutput {
@@ -1221,50 +1226,33 @@ class DirectStreamingPlayer: NSObject {
                         print("🎵 [Auto Play] Actually calling player.play() for \(self.selectedStream.language)")
                         #endif
                         self.player?.play()
+                        self.hasStartedPlaying = true
                         
-                        // FIXED: Immediately update status to ensure state tracking works
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                             if self.player?.rate ?? 0 > 0 {
                                 self.onStatusChange?(true, String(localized: "status_playing"))
                             }
                         }
-                        
                         completion(true)
                     }
                     
                 case .failed:
-                    tempStatusObserver?.invalidate()
-                    #if DEBUG
-                    print("❌ PlayerItem failed with server \(server.name) after \(connectionAge)s: \(item.error?.localizedDescription ?? "Unknown error")")
-                    #endif
-                    
-                    // Only try fallback if connection had enough time for SSL handshake
-                    if connectionAge < self.minimumConnectionTime {
+                    // Only handle failure immediately if we're past SSL protection time
+                    if self.isSSLHandshakeComplete || connectionAge >= self.minimumConnectionTime {
+                        tempStatusObserver?.invalidate()
                         #if DEBUG
-                        print("🔒 [SSL Timing] Connection failed too quickly (\(connectionAge)s), allowing more time...")
+                        print("❌ PlayerItem failed with server \(server.name) after \(connectionAge)s")
                         #endif
-                        // Don't immediately fail - let SSL protection timer handle it
-                        return
-                    }
-                    
-                    self.clearSSLProtectionTimer()
-                    self.lastError = item.error
-                    let errorType = StreamErrorType.from(error: item.error)
-                    
-                    // Try fallback server instead of retry with same server
-                    if !fallbackServers.isEmpty {
-                        #if DEBUG
-                        print("📡 Trying fallback server after SSL timing...")
-                        #endif
-                        self.tryNextServer(fallbackServers: fallbackServers, completion: completion)
-                    } else {
-                        self.hasPermanentError = errorType.isPermanent
-                        DispatchQueue.main.async {
+                        
+                        self.clearSSLProtectionTimer()
+                        if !fallbackServers.isEmpty {
+                            self.tryNextServer(fallbackServers: fallbackServers, completion: completion)
+                        } else {
                             self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
-                            self.stop()
                             completion(false)
                         }
                     }
+                    
                 case .unknown:
                     #if DEBUG
                     print("⏳ PlayerItem status unknown after \(connectionAge)s, waiting...")
@@ -1272,89 +1260,75 @@ class DirectStreamingPlayer: NSObject {
                 @unknown default:
                     break
                 }
-                // Remove the invalidate() call that was here originally
             }
             
-            // Extended timeout for SSL handshake completion
-            DispatchQueue.main.asyncAfter(deadline: .now() + 30.0) { [weak self] in
+            // FIXED: Timeout with connection-specific time reference
+            DispatchQueue.main.asyncAfter(deadline: .now() + 20.0) { [weak self] in
                 guard let self = self, self.playerItem?.status != .readyToPlay else { return }
-                let connectionAge = self.connectionStartTime.map { Date().timeIntervalSince($0) } ?? 0
+                tempStatusObserver?.invalidate()
+                let connectionAge = Date().timeIntervalSince(thisConnectionStartTime)
                 #if DEBUG
-                print("❌ Extended timeout reached after \(connectionAge)s with server \(server.name)")
+                print("❌ Timeout reached after \(connectionAge)s with server \(server.name)")
                 #endif
                 self.clearSSLProtectionTimer()
                 if !fallbackServers.isEmpty {
                     self.tryNextServer(fallbackServers: fallbackServers, completion: completion)
                 } else {
                     self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
-                    self.stop()
                     completion(false)
                 }
             }
         }
     }
     
-    func cancelPendingSSLProtection() {
+    // FIXED: SSL Protection Timer with connection-specific time tracking
+    private func setupSSLProtectionTimer(for connectionStartTime: Date) {
         clearSSLProtectionTimer()
-        connectionStartTime = nil
-        #if DEBUG
-        print("🔒 [Manual Cancel] Cancelled pending SSL protection and delayed stops")
-        #endif
-    }
-    
-    // SSL Protection Timer - prevents premature cancellation during SSL handshake
-    private func setupSSLProtectionTimer() {
-        clearSSLProtectionTimer()
+        isSSLHandshakeComplete = false
         
         #if DEBUG
-        print("🔒 [SSL Protection] Starting \(minimumConnectionTime)s protection timer")
+        print("🔒 [SSL Protection] Starting \(minimumConnectionTime)s protection timer for connection at \(connectionStartTime)")
         #endif
         
         sslConnectionTimeout = Timer.scheduledTimer(withTimeInterval: minimumConnectionTime, repeats: false) { [weak self] _ in
             guard let self = self else { return }
-            let connectionAge = self.connectionStartTime.map { Date().timeIntervalSince($0) } ?? 0
+            
+            // Use the specific connection start time, not a shared mutable property
+            let connectionAge = Date().timeIntervalSince(connectionStartTime)
             
             #if DEBUG
-            print("🔒 [SSL Protection] Timer expired after \(connectionAge)s")
-            print("🔒 [SSL Protection] Player item status: \(self.playerItem?.status.rawValue ?? -1)")
+            print("🔒 [SSL Protection] Timer expired after \(connectionAge)s for connection at \(connectionStartTime)")
             #endif
             
-            // If still not ready after minimum time, check if we should continue waiting
+            // Mark SSL handshake as complete after timeout
+            self.isSSLHandshakeComplete = true
+            
+            // If still not ready after minimum time, allow normal error handling
             if self.playerItem?.status == .unknown {
                 #if DEBUG
-                print("🔒 [SSL Protection] Still connecting after \(connectionAge)s - extending wait")
+                print("🔒 [SSL Protection] Still connecting after \(connectionAge)s - allowing normal error handling")
                 #endif
-                // Extend protection for another 10 seconds for slow SSL handshakes
-                self.sslConnectionTimeout = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: false) { [weak self] _ in
-                    guard let self = self else { return }
-                    if self.playerItem?.status == .unknown {
-                        #if DEBUG
-                        print("🔒 [SSL Protection] Final timeout - connection still not ready")
-                        #endif
-                        self.handleSSLTimeout()
-                    }
-                }
             }
         }
     }
-
+    
+    // FIXED: Remove the cancelPendingSSLProtection method that relied on shared connectionStartTime
+    func cancelPendingSSLProtection() {
+        clearSSLProtectionTimer()
+        #if DEBUG
+        print("🔒 [Manual Cancel] Cancelled pending SSL protection")
+        #endif
+    }
+    
+    // FIXED: Update clearSSLProtectionTimer to remove debug reference
     private func clearSSLProtectionTimer() {
         sslConnectionTimeout?.invalidate()
         sslConnectionTimeout = nil
+        isSSLHandshakeComplete = true // Mark as complete when cleared
+        
         #if DEBUG
-        if connectionStartTime != nil {
-            let connectionAge = Date().timeIntervalSince(connectionStartTime!)
-            print("🔒 [SSL Protection] Timer cleared after \(connectionAge)s")
-        }
+        print("🔒 [SSL Protection] Timer cleared")
         #endif
-    }
-
-    private func handleSSLTimeout() {
-        #if DEBUG
-        print("🔒 [SSL Timeout] Handling SSL connection timeout")
-        #endif
-        // Don't immediately stop - this gives SSL handshake more time
-        onStatusChange?(false, String(localized: "status_buffering"))
     }
     
     func getCurrentMetadataForLiveActivity() -> String? {
@@ -1365,6 +1339,7 @@ class DirectStreamingPlayer: NSObject {
         player?.volume = volume
     }
     
+    // FIXED: Simplified status observer that doesn't conflict with SSL protection
     private func addObservers() {
         playbackQueue.async { [weak self] in
             guard let self = self else { return }
@@ -1379,7 +1354,7 @@ class DirectStreamingPlayer: NSObject {
             let playerItemKey = ObjectIdentifier(playerItem)
             var keyPathsSet = self.registeredKeyPaths[playerItemKey] ?? Set<String>()
             
-            // Add status observer
+            // FIXED: Simplified status observer that works with SSL protection
             self.statusObserver = playerItem.observe(\.status, options: [.new, .initial]) { [weak self] item, _ in
                 guard let self = self else { return }
                 DispatchQueue.main.async {
@@ -1387,15 +1362,29 @@ class DirectStreamingPlayer: NSObject {
                     print("🎵 Player item status: \(item.status.rawValue)")
                     #endif
                     guard self.delegate != nil else { return }
+                    
                     switch item.status {
                     case .readyToPlay:
+                        // Mark SSL as complete and playback as started
+                        self.isSSLHandshakeComplete = true
+                        self.hasStartedPlaying = true
                         self.onStatusChange?(true, String(localized: "status_playing"))
+                        
                     case .failed:
-                        self.lastError = item.error
-                        let errorType = StreamErrorType.from(error: item.error)
-                        self.hasPermanentError = errorType.isPermanent
-                        self.onStatusChange?(false, errorType.statusString)
-                        self.stop()
+                        // Only stop immediately if SSL handshake is complete or we've been playing
+                        if self.isSSLHandshakeComplete || self.hasStartedPlaying {
+                            self.lastError = item.error
+                            let errorType = StreamErrorType.from(error: item.error)
+                            self.hasPermanentError = errorType.isPermanent
+                            self.onStatusChange?(false, errorType.statusString)
+                            self.stop()
+                        } else {
+                            #if DEBUG
+                            print("🔒 [SSL Protection] Deferring stop due to ongoing SSL handshake")
+                            #endif
+                            // Let the SSL protection timer handle this
+                        }
+                        
                     case .unknown:
                         self.onStatusChange?(false, String(localized: "status_buffering"))
                     @unknown default:
@@ -1525,27 +1514,19 @@ class DirectStreamingPlayer: NSObject {
         }
     }
     
+    // FIXED: Update the stop() method to remove connectionStartTime references
     func stop(completion: (() -> Void)? = nil) {
-        // Check if we should protect ongoing SSL handshake
-        if let startTime = connectionStartTime {
-            let connectionAge = Date().timeIntervalSince(startTime)
-            if connectionAge < minimumConnectionTime {
-                #if DEBUG
-                print("🔒 [SSL Protection] Delaying stop for \(minimumConnectionTime - connectionAge)s to protect SSL handshake")
-                #endif
-                DispatchQueue.main.asyncAfter(deadline: .now() + (minimumConnectionTime - connectionAge)) { [weak self] in
-                    self?.performActualStop(completion: completion)
-                }
-                return
-            }
-        }
-        
+        // FIXED: Remove SSL protection logic since we now handle it per-connection
+        // The new per-connection approach doesn't need global stop protection
         performActualStop(completion: completion)
     }
 
+    // FIXED: Update performActualStop to remove connectionStartTime references
     private func performActualStop(completion: (() -> Void)? = nil) {
         clearSSLProtectionTimer()
-        connectionStartTime = nil
+        // REMOVED: connectionStartTime = nil  // ❌ This property no longer exists
+        isSSLHandshakeComplete = true
+        hasStartedPlaying = false
         
         // If we're deallocating, perform cleanup synchronously
         if isDeallocating {
@@ -1559,11 +1540,11 @@ class DirectStreamingPlayer: NSObject {
                 DispatchQueue.main.async { completion?() }
                 return
             }
+            
             #if DEBUG
             print("🛑 Stopping playback")
             #endif
             
-            // Only proceed if there's an active player or playerItem
             guard self.player != nil || self.playerItem != nil else {
                 DispatchQueue.main.async {
                     self.onStatusChange?(false, String(localized: "status_stopped"))
@@ -1579,13 +1560,11 @@ class DirectStreamingPlayer: NSObject {
             self.player?.pause()
             self.player?.rate = 0.0
             
-            // Cancel active resource loader sessions
             self.activeResourceLoaders.forEach { _, delegate in
                 delegate.cancel()
             }
             self.activeResourceLoaders.removeAll()
             
-            // Remove metadata output
             if let metadataOutput = self.metadataOutput, let playerItem = self.playerItem {
                 if playerItem.outputs.contains(metadataOutput) {
                     playerItem.remove(metadataOutput)
@@ -1596,10 +1575,7 @@ class DirectStreamingPlayer: NSObject {
             }
             self.metadataOutput = nil
             
-            // Remove observers
             self.removeObserversImplementation()
-            
-            // Clear playerItem but keep player
             self.playerItem = nil
             self.removedObservers.removeAll()
             
