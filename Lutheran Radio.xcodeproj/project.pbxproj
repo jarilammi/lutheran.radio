@@ -79,6 +79,7 @@
 				LutheranRadioLiveActivityAttributes.swift,
 				SharedPlayerManager.swift,
 				StreamingSessionDelegate.swift,
+				WidgetRefreshManager.swift,
 			);
 			target = B757A77B2DEF7B5C00FF90FC /* LutheranRadioWidgetExtension */;
 		};
