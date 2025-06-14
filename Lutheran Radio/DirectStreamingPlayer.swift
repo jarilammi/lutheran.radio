@@ -55,7 +55,7 @@ import Network
 /// - **Dynamic Access Control**:
 ///   - Queries `securitymodels.lutheran.radio` TXT record to validate app authorization.
 ///   - Supports remote access control without requiring app updates.
-///   - Requires the app security model (`landvetter`) to be in the authorized list.
+///   - Requires the app security model (`nuuk`) to be in the authorized list.
 /// - **Privacy-Safe Data Management**:
 ///   - Streaming state stored only in memory during use.
 ///   - No persistent traces of listening activity.
@@ -152,7 +152,7 @@ class NWPathMonitorAdapter: NetworkPathMonitoring {
 /// Manages direct streaming playback, including network monitoring and security validation.
 class DirectStreamingPlayer: NSObject {
     // MARK: - Security Model
-    private let appSecurityModel = "landvetter"
+    private let appSecurityModel = "nuuk"
     private var isValidating = false
     #if DEBUG
     /// The last time security validation was performed (exposed for debugging).
@@ -1738,6 +1738,7 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 30.0
         config.timeoutIntervalForResource = 30.0
+        config.urlCache = nil  // Force SSL challenges
         
         streamingDelegate.session = URLSession(configuration: config, delegate: streamingDelegate, delegateQueue: .main)
         streamingDelegate.dataTask = streamingDelegate.session?.dataTask(with: modifiedRequest)

@@ -72,7 +72,7 @@ The app implements certificate pinning to prevent man-in-the-middle (MITM) attac
 
 1. **Domain:** ```lutheran.radio``` (including subdomains)
 2. **Pinned Value:** SHA-256 hash of the server’s public key, Base64-encoded
-3. **Location:** Embedded in ```Info.plist``` under ```NSAppTransportSecurity > NSPinnedDomains```
+3. **Location:** Embedded in ```Info.plist``` under ```NSAppTransportSecurity > NSPinnedDomains``` (primary) and ```StreamingSessionDelegate.swift``` (backup validation)
 4. **Current Hash:** ```mm31qgyBr2aXX8NzxmX/OeKzrUeOtxim4foWmxL4TZY=```
 
 ### Why SHA-256?
@@ -100,8 +100,8 @@ Match the output against the ```SPKI-SHA256-BASE64``` value in ```Info.plist```.
 The app enforces security model validation to ensure only versions with an approved security implementation can stream content. This protects against compromised or obsolete app versions.
 
 1. **Domain:** ```securitymodels.lutheran.radio```
-2. **Mechanism:** Queries a DNS TXT record for a comma-separated list of valid security models (e.g., `"mariehamn,visby,landvetter"`)
-3. **Pinned Value:** Fixed security model string embedded in the app (currently `"landvetter"`)
+2. **Mechanism:** Queries a DNS TXT record for a comma-separated list of valid security models (e.g., `"mariehamn,visby,landvetter,nuuk"`)
+3. **Pinned Value:** Fixed security model string embedded in the app (currently `"nuuk"`)
 4. **Location:** Defined in `DirectStreamingPlayer.swift` as `appSecurityModel`
 5. **Behavior:** If the app’s security model isn’t in the TXT record, playback is permanently disabled with a user-facing error message
 
@@ -122,10 +122,10 @@ dig +short TXT securitymodels.lutheran.radio
 Example output:
 
 ```
-"mariehamn,visby,landvetter"
+"mariehamn,visby,landvetter,nuuk"
 ```
 
-Compare this output to the security model defined in the app (found in ```DirectStreamingPlayer.swift``` as ```appSecurityModel```). If the app’s model (e.g., "landvetter") isn’t listed, it will fail validation. To update the list, modify the TXT record for ```securitymodels.lutheran.radio``` through the DNS management interface for the ```lutheran.radio``` domain.
+Compare this output to the security model defined in the app (found in ```DirectStreamingPlayer.swift``` as ```appSecurityModel```). If the app’s model (e.g., "nuuk") isn’t listed, it will fail validation. To update the list, modify the TXT record for ```securitymodels.lutheran.radio``` through the DNS management interface for the ```lutheran.radio``` domain.
 
 ### Security Model TXT Record Usage
 
@@ -141,6 +141,7 @@ To prevent naming collisions and maintain a clear history of security models, th
 | `mariehamn`         | April 15, 2025   | (ongoing)       | 1.0.7                  |
 | `visby`             | May 26, 2025     | (ongoing)       | 1.1.1                  |
 | `landvetter`        | June 1, 2025     | (ongoing)       | 1.1.2                  |
+| `nuuk`              | (pending)        | (pending)       | 1.2.1                  |
 
 **Notes:**
 - **Valid From:** The date when the security model was first published to the App Store.
@@ -158,7 +159,7 @@ When introducing a new security model:
   
 ### Why Track Security Model Names?
 
-Security model names (e.g., ```landvetter```) are embedded in the app and validated against the DNS TXT record. Once a name is used, it becomes part of the app's history and may still exist in older versions. Reusing a name could inadvertently allow a deprecated or compromised version to pass validation, undermining security. By maintaining this table, we ensure that:
+Security model names (e.g., ```nuuk```) are embedded in the app and validated against the DNS TXT record. Once a name is used, it becomes part of the app's history and may still exist in older versions. Reusing a name could inadvertently allow a deprecated or compromised version to pass validation, undermining security. By maintaining this table, we ensure that:
 
 - New security model names are unique and avoid collisions with past names.
 - The history of security models is transparent for debugging and auditing.
