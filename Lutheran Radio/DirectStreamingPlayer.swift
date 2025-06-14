@@ -1221,7 +1221,14 @@ class DirectStreamingPlayer: NSObject {
                         print("🎵 [Auto Play] Actually calling player.play() for \(self.selectedStream.language)")
                         #endif
                         self.player?.play()
-                        self.onStatusChange?(true, String(localized: "status_playing"))
+                        
+                        // FIXED: Immediately update status to ensure state tracking works
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            if self.player?.rate ?? 0 > 0 {
+                                self.onStatusChange?(true, String(localized: "status_playing"))
+                            }
+                        }
+                        
                         completion(true)
                     }
                     
