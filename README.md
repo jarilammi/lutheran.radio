@@ -72,7 +72,7 @@ The app implements certificate pinning to prevent man-in-the-middle (MITM) attac
 
 1. **Domain:** ```lutheran.radio``` (including subdomains)
 2. **Pinned Value:** SHA-256 hash of the server’s public key, Base64-encoded
-3. **Location:** Embedded in ```Info.plist``` under ```NSAppTransportSecurity > NSPinnedDomains```
+3. **Location:** Embedded in ```Info.plist``` under ```NSAppTransportSecurity > NSPinnedDomains``` (primary) and ```StreamingSessionDelegate.swift``` (backup validation)
 4. **Current Hash:** ```mm31qgyBr2aXX8NzxmX/OeKzrUeOtxim4foWmxL4TZY=```
 
 ### Why SHA-256?
