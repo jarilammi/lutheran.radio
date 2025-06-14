@@ -1738,6 +1738,7 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 30.0
         config.timeoutIntervalForResource = 30.0
+        config.urlCache = nil  // Force SSL challenges
         
         streamingDelegate.session = URLSession(configuration: config, delegate: streamingDelegate, delegateQueue: .main)
         streamingDelegate.dataTask = streamingDelegate.session?.dataTask(with: modifiedRequest)

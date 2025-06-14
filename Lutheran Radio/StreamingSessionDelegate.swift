@@ -17,6 +17,11 @@ import CommonCrypto
 class StreamingSessionDelegate: NSObject, URLSessionDataDelegate {
     // lutheran.radio pinned certificate SPKI hash (same as in Info.plist)
     private static let pinnedSPKIHash = "mm31qgyBr2aXX8NzxmX/OeKzrUeOtxim4foWmxL4TZY="
+    private static let enableCustomPinning = true
+    
+    // Add throttling properties
+    private static var lastPinningCheck: Date?
+    private static let pinningCheckInterval: TimeInterval = 300 // 5 minutes
     
     /// The loading request for the AV asset resource.
     private var loadingRequest: AVAssetResourceLoadingRequest
@@ -49,6 +54,22 @@ class StreamingSessionDelegate: NSObject, URLSessionDataDelegate {
     }
     
     func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        
+        // Throttling logic
+        let now = Date()
+        if let lastCheck = Self.lastPinningCheck,
+           now.timeIntervalSince(lastCheck) < Self.pinningCheckInterval {
+            #if DEBUG
+            print("🔒 SSL pinning throttled (last check: \(Int(now.timeIntervalSince(lastCheck)))s ago)")
+            #endif
+            completionHandler(.performDefaultHandling, nil)
+            return
+        }
+        
+        Self.lastPinningCheck = now
+        #if DEBUG
+        print("🔒 SSL CHALLENGE TRIGGERED! (performing full validation)")
+        #endif
         
         guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust else {
             completionHandler(.performDefaultHandling, nil)
