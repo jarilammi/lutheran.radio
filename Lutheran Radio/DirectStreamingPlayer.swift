@@ -756,6 +756,14 @@ class DirectStreamingPlayer: NSObject {
         isTesting = NSClassFromString("XCTestCase") != nil
         #endif
         super.init()
+        
+        // FIXED: Reset SSL pinning state for fresh app launch
+        // This ensures the first connection gets proper SSL validation
+        StreamingSessionDelegate.hasSuccessfulPinningCheck = false
+        #if DEBUG
+        print("🔒 Reset SSL pinning state for fresh app launch")
+        #endif
+        
         setupAudioSession()
         setupNetworkMonitoring()
         #if DEBUG
@@ -1727,18 +1735,33 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
         
         // Create streaming delegate
         let streamingDelegate = StreamingSessionDelegate(loadingRequest: loadingRequest)
-        
+
         // Store the original hostname for SSL validation
         streamingDelegate.originalHostname = originalHostname
-        
+
         #if DEBUG
         print("📡 StreamingSessionDelegate created with originalHostname: \(originalHostname ?? "nil")")
         #endif
-        
+
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 30.0
         config.timeoutIntervalForResource = 30.0
-        config.urlCache = nil  // Force SSL challenges
+
+        // FIXED: Don't disable URL cache completely - this was breaking SSL session reuse
+        // Only disable for initial connection attempts, allow normal caching after that
+        if StreamingSessionDelegate.hasSuccessfulPinningCheck {
+            // Allow normal SSL session reuse after first successful connection
+            config.urlCache = URLCache.shared
+            #if DEBUG
+            print("📡 Using standard URL cache (SSL session established)")
+            #endif
+        } else {
+            // Force fresh SSL challenge for first connection only
+            config.urlCache = nil
+            #if DEBUG
+            print("📡 Disabled URL cache for initial SSL validation")
+            #endif
+        }
         
         streamingDelegate.session = URLSession(configuration: config, delegate: streamingDelegate, delegateQueue: .main)
         streamingDelegate.dataTask = streamingDelegate.session?.dataTask(with: modifiedRequest)

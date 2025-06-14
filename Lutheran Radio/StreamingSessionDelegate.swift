@@ -23,6 +23,8 @@ class StreamingSessionDelegate: NSObject, URLSessionDataDelegate {
     private static var lastPinningCheck: Date?
     private static let pinningCheckInterval: TimeInterval = 300 // 5 minutes
     
+    static var hasSuccessfulPinningCheck = false
+    
     /// The loading request for the AV asset resource.
     private var loadingRequest: AVAssetResourceLoadingRequest
     /// Tracks the total bytes received during the streaming session.
@@ -55,12 +57,18 @@ class StreamingSessionDelegate: NSObject, URLSessionDataDelegate {
     
     func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
         
-        // Throttling logic
+        // DON'T throttle SSL pinning during app startup or initial connections
         let now = Date()
-        if let lastCheck = Self.lastPinningCheck,
-           now.timeIntervalSince(lastCheck) < Self.pinningCheckInterval {
+        let shouldThrottle = if let lastCheck = Self.lastPinningCheck {
+            now.timeIntervalSince(lastCheck) < Self.pinningCheckInterval
+        } else {
+            false // Never throttle the very first check
+        }
+        
+        // Only throttle if we've successfully validated recently AND this isn't a fresh app launch
+        if shouldThrottle && Self.hasSuccessfulPinningCheck {
             #if DEBUG
-            print("🔒 SSL pinning throttled (last check: \(Int(now.timeIntervalSince(lastCheck)))s ago)")
+            print("🔒 SSL pinning throttled (last check: \(Int(now.timeIntervalSince(Self.lastPinningCheck!)))s ago)")
             #endif
             completionHandler(.performDefaultHandling, nil)
             return
@@ -121,6 +129,10 @@ class StreamingSessionDelegate: NSObject, URLSessionDataDelegate {
             #if DEBUG
             print("🔒 Certificate pinning validation succeeded for \(originalHost)")
             #endif
+            
+            // Mark that we've had a successful pinning check
+            Self.hasSuccessfulPinningCheck = true
+            
             let credential = URLCredential(trust: serverTrust)
             completionHandler(.useCredential, credential)
         } else {
