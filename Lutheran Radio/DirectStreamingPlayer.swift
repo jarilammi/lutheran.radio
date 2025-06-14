@@ -162,7 +162,6 @@ class DirectStreamingPlayer: NSObject {
     #endif
     private let validationCacheDuration: TimeInterval = 600 // 10 minutes
     private var sslConnectionTimeout: Timer?
-    private var minimumConnectionTime: TimeInterval = 3.0
     private var isSSLHandshakeComplete = false
     private var hasStartedPlaying = false
     
@@ -1159,6 +1158,9 @@ class DirectStreamingPlayer: NSObject {
             // Create a unique connection start time for THIS attempt
             let thisConnectionStartTime = Date()
             
+            // Calculate adaptive timeout for this connection
+            let adaptiveTimeout = self.getSSLTimeout()
+            
             // Reset SSL tracking for new connection
             self.isSSLHandshakeComplete = false
             self.hasStartedPlaying = false
@@ -1168,6 +1170,7 @@ class DirectStreamingPlayer: NSObject {
             #if DEBUG
             print("📡 [SSL Fix] Using direct HTTPS URL: \(finalURL)")
             print("🔒 [SSL Timing] Connection started at: \(thisConnectionStartTime)")
+            print("🔒 [SSL Timing] Using adaptive timeout: \(adaptiveTimeout)s")
             #endif
             
             let asset = AVURLAsset(url: finalURL)
@@ -1238,10 +1241,10 @@ class DirectStreamingPlayer: NSObject {
                     
                 case .failed:
                     // Only handle failure immediately if we're past SSL protection time
-                    if self.isSSLHandshakeComplete || connectionAge >= self.minimumConnectionTime {
+                    if self.isSSLHandshakeComplete || connectionAge >= adaptiveTimeout {
                         tempStatusObserver?.invalidate()
                         #if DEBUG
-                        print("❌ PlayerItem failed with server \(server.name) after \(connectionAge)s")
+                        print("❌ PlayerItem failed with server \(server.name) after \(connectionAge)s (timeout: \(adaptiveTimeout)s)")
                         #endif
                         
                         self.clearSSLProtectionTimer()
@@ -1262,13 +1265,13 @@ class DirectStreamingPlayer: NSObject {
                 }
             }
             
-            // FIXED: Timeout with connection-specific time reference
-            DispatchQueue.main.asyncAfter(deadline: .now() + 20.0) { [weak self] in
+            // FIXED: Use adaptive timeout for overall connection timeout too
+            DispatchQueue.main.asyncAfter(deadline: .now() + max(adaptiveTimeout + 2.0, 20.0)) { [weak self] in
                 guard let self = self, self.playerItem?.status != .readyToPlay else { return }
                 tempStatusObserver?.invalidate()
                 let connectionAge = Date().timeIntervalSince(thisConnectionStartTime)
                 #if DEBUG
-                print("❌ Timeout reached after \(connectionAge)s with server \(server.name)")
+                print("❌ Adaptive timeout reached after \(connectionAge)s with server \(server.name) (timeout: \(adaptiveTimeout + 2.0)s)")
                 #endif
                 self.clearSSLProtectionTimer()
                 if !fallbackServers.isEmpty {
@@ -1277,37 +1280,6 @@ class DirectStreamingPlayer: NSObject {
                     self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
                     completion(false)
                 }
-            }
-        }
-    }
-    
-    // FIXED: SSL Protection Timer with connection-specific time tracking
-    private func setupSSLProtectionTimer(for connectionStartTime: Date) {
-        clearSSLProtectionTimer()
-        isSSLHandshakeComplete = false
-        
-        #if DEBUG
-        print("🔒 [SSL Protection] Starting \(minimumConnectionTime)s protection timer for connection at \(connectionStartTime)")
-        #endif
-        
-        sslConnectionTimeout = Timer.scheduledTimer(withTimeInterval: minimumConnectionTime, repeats: false) { [weak self] _ in
-            guard let self = self else { return }
-            
-            // Use the specific connection start time, not a shared mutable property
-            let connectionAge = Date().timeIntervalSince(connectionStartTime)
-            
-            #if DEBUG
-            print("🔒 [SSL Protection] Timer expired after \(connectionAge)s for connection at \(connectionStartTime)")
-            #endif
-            
-            // Mark SSL handshake as complete after timeout
-            self.isSSLHandshakeComplete = true
-            
-            // If still not ready after minimum time, allow normal error handling
-            if self.playerItem?.status == .unknown {
-                #if DEBUG
-                print("🔒 [SSL Protection] Still connecting after \(connectionAge)s - allowing normal error handling")
-                #endif
             }
         }
     }
@@ -2032,5 +2004,169 @@ extension DirectStreamingPlayer {
                 return false
             }
         }
+    }
+}
+
+// MARK: - Adaptive SSL Timeout Implementation
+extension DirectStreamingPlayer {
+    
+    /// Calculates adaptive SSL timeout based on network conditions and server location
+    private func getSSLTimeout() -> TimeInterval {
+        // Base timeout - conservative starting point
+        var timeout: TimeInterval = 4.0
+        
+        // Add extra time for cellular connections
+        if isOnCellular() {
+            timeout += 2.0
+            #if DEBUG
+            print("🔒 [SSL Timeout] Added 2s for cellular connection")
+            #endif
+        }
+        
+        // Add extra time for cross-continental connections
+        if selectedServer.name == "EU" && !isInEurope() {
+            timeout += 1.5
+            #if DEBUG
+            print("🔒 [SSL Timeout] Added 1.5s for EU server from non-Europe location")
+            #endif
+        } else if selectedServer.name == "US" && !isInNorthAmerica() {
+            timeout += 1.5
+            #if DEBUG
+            print("🔒 [SSL Timeout] Added 1.5s for US server from non-North America location")
+            #endif
+        }
+        
+        // Add extra time if we have recent server failures (indicates network issues)
+        if hasRecentServerFailures() {
+            timeout += 1.0
+            #if DEBUG
+            print("🔒 [SSL Timeout] Added 1s for recent server failures")
+            #endif
+        }
+        
+        // Cap at reasonable maximum
+        let finalTimeout = min(timeout, 8.0)
+        
+        #if DEBUG
+        print("🔒 [SSL Timeout] Calculated timeout: \(finalTimeout)s (base: 4.0s)")
+        #endif
+        
+        return finalTimeout
+    }
+    
+    /// Detects if the device is on a cellular connection
+    private func isOnCellular() -> Bool {
+        // Use your existing network monitor or create a quick check
+        let networkMonitor = NWPathMonitor()
+        var isCellular = false
+        
+        let semaphore = DispatchSemaphore(value: 0)
+        networkMonitor.pathUpdateHandler = { path in
+            isCellular = path.usesInterfaceType(.cellular)
+            semaphore.signal()
+        }
+        
+        let queue = DispatchQueue(label: "cellularCheck", qos: .utility)
+        networkMonitor.start(queue: queue)
+        
+        // Wait briefly for result
+        _ = semaphore.wait(timeout: .now() + 0.1)
+        networkMonitor.cancel()
+        
+        return isCellular
+    }
+    
+    /// Detects if the device is likely in Europe based on timezone
+    private func isInEurope() -> Bool {
+        let timezone = TimeZone.current
+        let europeanTimezones = [
+            "Europe/", "GMT", "UTC", "WET", "CET", "EET",
+            "Atlantic/Reykjavik", "Atlantic/Faroe"
+        ]
+        
+        return europeanTimezones.contains { timezone.identifier.hasPrefix($0) }
+    }
+    
+    /// Detects if the device is likely in North America based on timezone
+    private func isInNorthAmerica() -> Bool {
+        let timezone = TimeZone.current
+        let northAmericanTimezones = [
+            "America/", "US/", "Canada/", "EST", "CST", "MST", "PST"
+        ]
+        
+        return northAmericanTimezones.contains { timezone.identifier.hasPrefix($0) }
+    }
+    
+    /// Checks if we've had recent server failures indicating network issues
+    private func hasRecentServerFailures() -> Bool {
+        let totalFailures = serverFailureCount.values.reduce(0, +)
+        return totalFailures > 0
+    }
+}
+
+// MARK: - Update SSL Protection Timer Setup
+extension DirectStreamingPlayer {
+    
+    /// Updated SSL protection timer setup using adaptive timeout
+    private func setupSSLProtectionTimer(for connectionStartTime: Date) {
+        clearSSLProtectionTimer()
+        isSSLHandshakeComplete = false
+        
+        // Use adaptive timeout instead of fixed value
+        let adaptiveTimeout = getSSLTimeout()
+        
+        #if DEBUG
+        print("🔒 [SSL Protection] Starting \(adaptiveTimeout)s adaptive protection timer for connection at \(connectionStartTime)")
+        #endif
+        
+        sslConnectionTimeout = Timer.scheduledTimer(withTimeInterval: adaptiveTimeout, repeats: false) { [weak self] _ in
+            guard let self = self else { return }
+            
+            let connectionAge = Date().timeIntervalSince(connectionStartTime)
+            
+            #if DEBUG
+            print("🔒 [SSL Protection] Adaptive timer expired after \(connectionAge)s for connection at \(connectionStartTime)")
+            #endif
+            
+            // Mark SSL handshake as complete after timeout
+            self.isSSLHandshakeComplete = true
+            
+            // If still not ready after adaptive timeout, allow normal error handling
+            if self.playerItem?.status == .unknown {
+                #if DEBUG
+                print("🔒 [SSL Protection] Still connecting after \(connectionAge)s - allowing normal error handling")
+                #endif
+            }
+        }
+    }
+}
+
+// MARK: - Enhanced Server Selection with Network Awareness
+extension DirectStreamingPlayer {
+    
+    /// Enhanced server selection considering network conditions
+    private func selectOptimalServerWithNetworkAwareness(completion: @escaping (Server) -> Void) {
+        // If on cellular, prefer geographically closer server
+        if isOnCellular() {
+            let preferredServer: Server
+            if isInNorthAmerica() {
+                preferredServer = Self.servers.first { $0.name == "US" } ?? Self.servers[0]
+                #if DEBUG
+                print("📡 [Cellular] Preferring US server for North America")
+                #endif
+            } else {
+                preferredServer = Self.servers.first { $0.name == "EU" } ?? Self.servers[0]
+                #if DEBUG
+                print("📡 [Cellular] Preferring EU server for non-North America")
+                #endif
+            }
+            
+            currentSelectedServer = preferredServer
+            completion(preferredServer)
+            return
+        }
+        
+        // Otherwise use existing server selection logic
+        selectOptimalServer(completion: completion)
     }
 }
