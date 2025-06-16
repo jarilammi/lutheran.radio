@@ -220,6 +220,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     private let minPlaybackInterval: TimeInterval = 1.0 // 1 second
     private var isDeallocating = false // Flag to prevent operations during deallocation
     private var hasPlayedSpecialTuningSound = false // Flag to ensure special sound plays only once
+    private var isInTransitionMode = false // Track SSL certificate transition state
     
     // Testable accessors
     @objc var isPlayingState: Bool {
@@ -420,6 +421,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         }
     }
     
+    // MARK: - Enhanced Status Change Handling
     private func setupStreamingCallbacks() {
         streamingPlayer.onStatusChange = { [weak self] isPlaying, statusText in
             guard let self = self else {
@@ -438,18 +440,29 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 self.statusLabel.text = String(localized: "status_playing")
                 self.statusLabel.backgroundColor = .systemGreen
                 self.statusLabel.textColor = .black
+                self.isInTransitionMode = false // Clear transition mode when playing successfully
             } else {
                 self.statusLabel.text = statusText
+                
+                // Handle different status types with appropriate colors and actions
                 if statusText == String(localized: "status_security_failed") {
                     self.hasPermanentPlaybackError = true
                     self.isManualPause = true
                     self.statusLabel.backgroundColor = .systemRed
                     self.statusLabel.textColor = .white
                     self.showSecurityModelAlert()
+                    
+                } else if statusText == String(localized: "status_ssl_transition") {
+                    // NEW: Handle SSL transition state
+                    self.statusLabel.backgroundColor = .systemOrange
+                    self.statusLabel.textColor = .white
+                    self.showSSLTransitionAlert()
+                    
                 } else if statusText == String(localized: "status_no_internet") {
                     self.statusLabel.backgroundColor = .systemGray
                     self.statusLabel.textColor = .white
                     self.updateUIForNoInternet()
+                    
                 } else if statusText == String(localized: "status_stream_unavailable") {
                     self.statusLabel.backgroundColor = .systemOrange
                     self.statusLabel.textColor = .white
@@ -499,19 +512,19 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                     let matchedSpeaker = potentialNames?.first(where: { specificSpeakers.contains($0) })
                     
                     if let speaker = matchedSpeaker, let image = UIImage(named: speaker.lowercased().replacingOccurrences(of: " ", with: "_") + "_photo") {
-                            UIView.transition(with: self.speakerImageView, duration: 0.3, options: .transitionCrossDissolve, animations: {
-                                self.speakerImageView.image = image
-                                self.speakerImageView.isHidden = false
-                                self.speakerImageHeightConstraint.constant = 100
-                                self.speakerImageView.accessibilityLabel = "Photo of \(speaker)"
-                            }, completion: { _ in
-                                #if DEBUG
-                                print("Speaker image frame: \(self.speakerImageView.frame)")
-                                print("Language collection view frame: \(self.languageCollectionView.frame)")
-                                #endif
-                            })
-                        } else if potentialNames?.contains("Lutheran Radio") == true, let image = UIImage(named: "radio-placeholder") {
-                            UIView.transition(with: self.speakerImageView, duration: 0.3, options: .transitionCrossDissolve, animations: {
+                        UIView.transition(with: self.speakerImageView, duration: 0.3, options: .transitionCrossDissolve, animations: {
+                            self.speakerImageView.image = image
+                            self.speakerImageView.isHidden = false
+                            self.speakerImageHeightConstraint.constant = 100
+                            self.speakerImageView.accessibilityLabel = "Photo of \(speaker)"
+                        }, completion: { _ in
+                            #if DEBUG
+                            print("Speaker image frame: \(self.speakerImageView.frame)")
+                            print("Language collection view frame: \(self.languageCollectionView.frame)")
+                            #endif
+                        })
+                    } else if potentialNames?.contains("Lutheran Radio") == true, let image = UIImage(named: "radio-placeholder") {
+                        UIView.transition(with: self.speakerImageView, duration: 0.3, options: .transitionCrossDissolve, animations: {
                             self.speakerImageView.image = image
                             self.speakerImageView.isHidden = false
                             self.speakerImageHeightConstraint.constant = 100
@@ -548,6 +561,29 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             }
         }))
         alert.addAction(UIAlertAction(title: String(localized: "ok"), style: .cancel, handler: nil))
+        present(alert, animated: true, completion: nil)
+    }
+    
+    // MARK: - SSL Transition Alert
+    
+    private func showSSLTransitionAlert() {
+        // Prevent multiple alerts
+        guard presentedViewController == nil else { return }
+        
+        let alert = UIAlertController(
+            title: String(localized: "ssl_transition_title"),
+            message: String(localized: "ssl_transition_message"),
+            preferredStyle: .alert
+        )
+        
+        alert.addAction(UIAlertAction(title: String(localized: "alert_continue"), style: .default, handler: { [weak self] _ in
+            // Continue with current connection during transition
+            self?.isInTransitionMode = true
+            self?.startPlayback()
+        }))
+        
+        alert.addAction(UIAlertAction(title: String(localized: "ok"), style: .cancel, handler: nil))
+        
         present(alert, animated: true, completion: nil)
     }
     

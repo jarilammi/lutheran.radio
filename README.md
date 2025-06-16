@@ -75,6 +75,17 @@ The app implements certificate pinning to prevent man-in-the-middle (MITM) attac
 3. **Location:** Embedded in ```Info.plist``` under ```NSAppTransportSecurity > NSPinnedDomains``` (primary) and ```StreamingSessionDelegate.swift``` (backup validation)
 4. **Current Hash:** ```mm31qgyBr2aXX8NzxmX/OeKzrUeOtxim4foWmxL4TZY=```
 
+### Certificate Renewal Strategy
+
+To ensure uninterrupted service during SSL certificate renewals, the app includes a strategic transition system:
+
+- **Transition Period:** July 20 - August 20, 2025 (30 days before certificate expiry)
+- **User Experience:** During certificate renewal, users see "SSL certificate renewed - update app soon" with continued streaming functionality
+- **Security Protection:** Transition support is disabled by default and protected against date manipulation attacks
+- **Implementation:** Controlled via shielding variable in `StreamingSessionDelegate.swift` that requires deliberate code changes to enable
+
+This approach prevents service disruption during certificate updates while maintaining security through continued ATS enforcement and time-bounded operation.
+
 ### Why SHA-256?
 
 - Strong collision resistance
@@ -142,6 +153,7 @@ To prevent naming collisions and maintain a clear history of security models, th
 | `visby`             | May 26, 2025     | (ongoing)       | 1.1.1                  |
 | `landvetter`        | June 1, 2025     | (ongoing)       | 1.1.2                  |
 | `nuuk`              | June 15, 2025    | (ongoing)       | 1.2.1                  |
+| `stjohns`           | (pending)        | August 20, 2025 | (pending)              |
 
 **Notes:**
 - **Valid From:** The date when the security model was first published to the App Store.

@@ -1727,6 +1727,31 @@ class DirectStreamingPlayer: NSObject {
         
         stop()
     }
+    
+    // MARK: - SSL Certificate Transition State Handling
+
+    /// Indicates if we're currently in SSL certificate transition mode
+    private var isInTransitionMode = false
+
+    /// Sets up transition state handling for SSL certificate changes
+    private func setupTransitionHandling(for streamingDelegate: StreamingSessionDelegate) {
+        streamingDelegate.onTransitionDetected = { [weak self] in
+            guard let self = self else { return }
+            
+            #if DEBUG
+            print("🔄 [Transition] SSL certificate transition detected")
+            print("🔄 [Transition] \(StreamingSessionDelegate.transitionPeriodInfo)")
+            #endif
+            
+            self.isInTransitionMode = true
+            
+            // Show transition message to user
+            DispatchQueue.main.async {
+                let transitionMessage = String(localized: "status_ssl_transition")
+                self.onStatusChange?(false, transitionMessage)
+            }
+        }
+    }
 }
 
 // MARK: - Server Configuration
@@ -1845,7 +1870,7 @@ extension DirectStreamingPlayer {
     }
 }
 
-// MARK: - Resource Loader
+// MARK: - Enhanced Resource Loader with Transition Support
 extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
     func resourceLoader(_ resourceLoader: AVAssetResourceLoader, shouldWaitForLoadingOfRequestedResource loadingRequest: AVAssetResourceLoadingRequest) -> Bool {
         guard let url = loadingRequest.request.url else {
@@ -1861,6 +1886,8 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
         print("📡 [Resource Loader] Received URL: \(url)")
         print("📡 [Resource Loader] URL scheme: \(url.scheme ?? "nil")")
         print("📡 [Resource Loader] URL host: \(url.host ?? "nil")")
+        print("📡 [Transition] Support enabled: \(StreamingSessionDelegate.isTransitionSupportEnabled)")
+        print("📡 [Transition] In period: \(StreamingSessionDelegate.isInTransitionPeriod)")
         #endif
         
         // FIXED: Only handle HTTPS URLs for lutheran.radio domains
@@ -1900,6 +1927,9 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
         print("🔒 [Resource Loader] StreamingSessionDelegate created for hostname: \(originalHostname)")
         #endif
 
+        // NEW: Setup transition handling
+        setupTransitionHandling(for: streamingDelegate)
+
         // Enhanced configuration for SSL pinning
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 60.0
@@ -1927,7 +1957,24 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
             #endif
             DispatchQueue.main.async {
                 self.activeResourceLoaders.removeValue(forKey: loadingRequest)
-                self.handleLoadingError(error)
+                
+                // Check if we're in transition mode and this is an SSL error
+                if self.isInTransitionMode,
+                   let urlError = error as? URLError,
+                   urlError.code == .serverCertificateUntrusted {
+                    
+                    #if DEBUG
+                    print("🔄 [Transition] SSL error during transition - connection may still work")
+                    #endif
+                    
+                    // Don't treat as permanent error during transition
+                    let transitionMessage = String(localized: "status_ssl_transition")
+                    self.onStatusChange?(false, transitionMessage)
+                    
+                } else {
+                    // Normal error handling
+                    self.handleLoadingError(error)
+                }
             }
         }
         

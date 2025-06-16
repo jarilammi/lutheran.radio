@@ -955,6 +955,112 @@
         }
       }
     },
+    "alert_continue" : {
+      "localizations" : {
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fortsæt"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fortfahren"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Continue"
+          }
+        },
+        "et" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jätka"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jatka"
+          }
+        },
+        "fit" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jatka"
+          }
+        },
+        "fo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Halt áfram"
+          }
+        },
+        "is" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Halda áfram"
+          }
+        },
+        "kl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Atorlugu"
+          }
+        },
+        "lt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tęsti"
+          }
+        },
+        "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turpināt"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fortsett"
+          }
+        },
+        "nn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hald fram"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kontynuuj"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Продолжить"
+          }
+        },
+        "se" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Joatkke"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fortsätt"
+          }
+        }
+      }
+    },
     "alert_retry" : {
       "localizations" : {
         "da" : {
@@ -4883,6 +4989,218 @@
         }
       }
     },
+    "ssl_transition_message" : {
+      "localizations" : {
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Streaming-serverne har fornyet deres SSL-certifikater. Appen kører i kompatibilitetstilstand. Opdater venligst til den nyeste version, når den er tilgængelig, for optimal sikkerhed."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Streaming-Server haben ihre SSL-Zertifikate erneuert. Die App läuft im Kompatibilitätsmodus. Bitte aktualisieren Sie auf die neueste Version, wenn verfügbar, für optimale Sicherheit."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The streaming servers have renewed their SSL certificates. The app is working in compatibility mode. Please update to the latest version when available for optimal security."
+          }
+        },
+        "et" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Voogesitusserverid on uuendanud oma SSL-sertifikaate. Rakendus töötab ühilduvusrežiimis. Palun värskendage uusimale versioonile, kui see on saadaval optimaalse turvalisuse tagamiseks."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Suoratoistopalvelimet ovat uusineet SSL-sertifikaattinsa. Sovellus toimii yhteensopivuustilassa. Päivitä uusimpaan versioon kun saatavilla optimaalisen turvallisuuden takaamiseksi."
+          }
+        },
+        "fit" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Suoratoisto-palvelimet ovat uusinheet SSL-varmentensa. Sovellus toimii yhteensopivuus-tilassa. Päivitä uusimphan versioonhin ko se on saatavilla parhaan turvallisuuen takia."
+          }
+        },
+        "fo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Streaming-tænarar hava endurnýtt síni SSL-váttanarbræv. Appið virkar í sambæriligheitsstøðu. Vinarliga dagfør til nýggjastu útgávuna, tá hon er tøk, fyri besta trygd."
+          }
+        },
+        "is" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Streymisþjónarnir hafa endurnýjað SSL vottorð sín. Forritið keyrir í samhæfnisstillingu. Vinsamlegast uppfærðu í nýjustu útgáfu þegar hún er tiltæk fyrir besta öryggi."
+          }
+        },
+        "kl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Streaming-servit SSL nalunaasuutinnik nutaallatippaat. App-ip ataatsimoorsinnaasumik suliarpoq. Immikkoortoq piqqusivippat nutaallatitse immikkoortoormut."
+          }
+        },
+        "lt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Srautų perdavimo serveriai atnaujino savo SSL sertifikatus. Programa veikia suderinamumo režimu. Prašome atnaujinti į naujausią versiją, kai ji bus prieinama, kad užtikrintumėte optimalų saugumą."
+          }
+        },
+        "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Straumēšanas serveri ir atjaunojuši savus SSL sertifikātus. Lietotne darbojas saderības režīmā. Lūdzu, atjauniniet uz jaunāko versiju, kad tā būs pieejama, lai nodrošinātu optimālu drošību."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Streaming-serverne har fornyet sine SSL-sertifikater. Appen kjører i kompatibilitetsmodus. Vennligst oppdater til nyeste versjon når den er tilgjengelig for optimal sikkerhet."
+          }
+        },
+        "nn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Streaming-tenarane har fornyet SSL-sertifikata sine. Appen køyrer i kompatibilitetsmodus. Ver snill og oppdater til nyaste versjon når ho er tilgjengeleg for optimal tryggleik."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Serwery streamingowe odnowiły swoje certyfikaty SSL. Aplikacja działa w trybie kompatybilności. Prosimy o aktualizację do najnowszej wersji, gdy będzie dostępna, dla optymalnego bezpieczeństwa."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Потоковые серверы обновили свои SSL-сертификаты. Приложение работает в режиме совместимости. Пожалуйста, обновитесь до последней версии, когда она будет доступна, для оптимальной безопасности."
+          }
+        },
+        "se" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Streaming-serverat leat ođasmahttán iežaset SSL-duođaštusat. App doaibmá ovttaoaivvildanvuogis. Ođasmahte ođasmosá verošuvdnii go lea oažžumis, buoremus sihkkarvuođa dihtii."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Streamingservrarna har förnyat sina SSL-certifikat. Appen körs i kompatibilitetsläge. Vänligen uppdatera till senaste versionen när tillgänglig för optimal säkerhet."
+          }
+        }
+      }
+    },
+    "ssl_transition_title" : {
+      "localizations" : {
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Certifikat opdateret"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zertifikat aktualisiert"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Certificate Updated"
+          }
+        },
+        "et" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sertifikaat uuendatud"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sertifikaatti päivitetty"
+          }
+        },
+        "fit" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Varmente päivitetty"
+          }
+        },
+        "fo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Váttanarbræv dagfært"
+          }
+        },
+        "is" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vottorð uppfært"
+          }
+        },
+        "kl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nalunaasuut nutaallatipput"
+          }
+        },
+        "lt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sertifikatas atnaujintas"
+          }
+        },
+        "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sertifikāts atjaunots"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sertifikat oppdatert"
+          }
+        },
+        "nn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sertifikat oppdatert"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Certyfikat zaktualizowany"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сертификат обновлён"
+          }
+        },
+        "se" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Duođaštus ođasmahttojuvvon"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Certifikat uppdaterat"
+          }
+        }
+      }
+    },
     "Start or stop Lutheran Radio playback." : {
       "localizations" : {
         "da" : {
@@ -5940,6 +6258,112 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Säkerhet"
+          }
+        }
+      }
+    },
+    "status_ssl_transition" : {
+      "localizations" : {
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SSL-certifikat fornyet - opdater app snart"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SSL-Zertifikat erneuert - App bald aktualisieren"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SSL certificate renewed - update app soon"
+          }
+        },
+        "et" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SSL-sertifikaat uuendatud - värskenda rakendust varsti"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SSL-sertifikaatti uusittu - päivitä sovellus pian"
+          }
+        },
+        "fit" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SSL-varmente uusittu - päivitä sovellus piakkoin"
+          }
+        },
+        "fo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SSL-váttanarbræv endurnýtt - dagfør app skjótt"
+          }
+        },
+        "is" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SSL vottorð endurnýjað - uppfærðu forrit bráðum"
+          }
+        },
+        "kl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SSL nalunaasuut nutaallatipput - app-imik nutaallatsuk"
+          }
+        },
+        "lt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SSL sertifikatas atnaujintas - netrukus atnaujinkite programą"
+          }
+        },
+        "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SSL sertifikāts atjaunots - drīz atjauniniet lietotni"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SSL-sertifikat fornyet - oppdater app snart"
+          }
+        },
+        "nn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SSL-sertifikat fornyet - oppdater app snart"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Certyfikat SSL odnowiony - zaktualizuj aplikację wkrótce"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SSL-сертификат обновлён - обновите приложение вскоре"
+          }
+        },
+        "se" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SSL duođaštus ođasmahttojuvvon - ođasmahte app-a farggamusat"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SSL-certifikat förnyat - uppdatera app snart"
           }
         }
       }
