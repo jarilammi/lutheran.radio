@@ -6633,19 +6633,19 @@
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Killilerit uunaa"
+            "value" : "Uunaa"
           }
         },
         "lt" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Įrenginys karštas"
+            "value" : "Karšta"
           }
         },
         "lv" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ierīce karsta"
+            "value" : "Karsts"
           }
         },
         "nb" : {
@@ -6675,7 +6675,7 @@
         "se" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ovttadat báras"
+            "value" : "Báras"
           }
         },
         "sv" : {

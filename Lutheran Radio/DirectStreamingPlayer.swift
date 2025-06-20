@@ -960,8 +960,10 @@ class DirectStreamingPlayer: NSObject {
                         self.onStatusChange?(false, String(localized: "status_thermal_paused"))
                     }
                 }
-            } else if self.wasPlayingBeforeThermal && ProcessInfo.processInfo.thermalState != .critical {
-                // Resume when no longer critical
+            } else if self.wasPlayingBeforeThermal &&
+                        (ProcessInfo.processInfo.thermalState == .nominal ||
+                         ProcessInfo.processInfo.thermalState == .fair) {
+                // Resume when the device has actually cooled down to a safe temperature
                 self.wasPlayingBeforeThermal = false
                 self.play { _ in }
             }
