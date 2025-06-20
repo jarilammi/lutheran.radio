@@ -249,71 +249,69 @@ extension SharedPlayerManager {
         guard let player = self.player else { return }
         
         let now = Date()
+        
+        // FIXED: Use the correct public properties from DirectStreamingPlayer
+        let playerRate = player.currentPlayerRate
+        let itemStatus = player.currentItemStatus
+        let hasCurrentItem = player.hasPlayerItem
+        
+        // More comprehensive playing detection using the actualPlaybackState property
+        let actuallyPlaying = player.actualPlaybackState
+        
         let currentState = (
-            isPlaying: player.isPlaying,
+            isPlaying: actuallyPlaying,
             currentLanguage: player.selectedStream.languageCode,
             hasError: player.hasPermanentError || player.isLastErrorPermanent()
         )
         
-        // Check if state actually changed
+        #if DEBUG
+        print("🔗 Detailed state: rate=\(playerRate), itemStatus=\(itemStatus.rawValue), hasItem=\(hasCurrentItem), result=\(actuallyPlaying)")
+        #endif
+        
+        // FIXED: Only throttle rapid identical saves, not state changes
         if let lastState = lastSavedState,
            lastState.isPlaying == currentState.isPlaying,
            lastState.currentLanguage == currentState.currentLanguage,
            lastState.hasError == currentState.hasError {
-            #if DEBUG
-            print("🔗 State unchanged, skipping save")
-            #endif
-            return
-        }
-        
-        // Throttle saves to prevent excessive updates
-        if let lastSave = lastSaveTime,
-           now.timeIntervalSince(lastSave) < minSaveInterval {
-            #if DEBUG
-            print("🔗 Save throttled, too recent")
-            #endif
-            return
-        }
-        
-        // [Keep existing instant feedback logic here...]
-        if let instantFeedbackTime = sharedDefaults?.object(forKey: "instantFeedbackTime") as? Double,
-           let instantFeedbackLanguage = sharedDefaults?.string(forKey: "instantFeedbackLanguage"),
-           sharedDefaults?.bool(forKey: "isInstantFeedback") == true {
             
-            let feedbackAge = Date().timeIntervalSince1970 - instantFeedbackTime
-            if feedbackAge < 10.0 && currentState.currentLanguage != instantFeedbackLanguage {
+            // Only throttle if trying to save identical state rapidly
+            if let lastSave = lastSaveTime,
+               now.timeIntervalSince(lastSave) < 1.0 {
                 #if DEBUG
-                print("🔗 Preserving instant feedback")
+                print("🔗 Throttling identical state save")
                 #endif
                 return
             }
         }
         
-        // Save the state
-        sharedDefaults?.set(currentState.isPlaying, forKey: "isPlaying")
-        sharedDefaults?.set(currentState.currentLanguage, forKey: "currentLanguage")
-        sharedDefaults?.set(currentState.hasError, forKey: "hasError")
-        sharedDefaults?.set(now.timeIntervalSince1970, forKey: "lastUpdateTime")
+        // Always save state changes immediately
+        performActualSave(currentState, at: now)
+    }
+
+    private func performActualSave(_ state: (isPlaying: Bool, currentLanguage: String, hasError: Bool), at time: Date) {
+        sharedDefaults?.set(state.isPlaying, forKey: "isPlaying")
+        sharedDefaults?.set(state.currentLanguage, forKey: "currentLanguage")
+        sharedDefaults?.set(state.hasError, forKey: "hasError")
+        sharedDefaults?.set(time.timeIntervalSince1970, forKey: "lastUpdateTime")
         
-        // Clear instant feedback flags
+        // Clear instant feedback flags when saving real state
         sharedDefaults?.removeObject(forKey: "isInstantFeedback")
         sharedDefaults?.removeObject(forKey: "instantFeedbackTime")
         sharedDefaults?.removeObject(forKey: "instantFeedbackLanguage")
         
-        // Update widget with smart refresh
+        // Update widget immediately
         let newWidgetState = WidgetState(
-            isPlaying: currentState.isPlaying,
-            currentLanguage: currentState.currentLanguage,
-            hasError: currentState.hasError
+            isPlaying: state.isPlaying,
+            currentLanguage: state.currentLanguage,
+            hasError: state.hasError
         )
         WidgetRefreshManager.shared.refreshIfNeeded(for: newWidgetState)
         
-        // Update tracking
-        lastSavedState = currentState
-        lastSaveTime = now
+        lastSavedState = state
+        lastSaveTime = time
         
         #if DEBUG
-        print("🔗 State saved: playing=\(currentState.isPlaying), language=\(currentState.currentLanguage)")
+        print("🔗 State saved: playing=\(state.isPlaying), language=\(state.currentLanguage)")
         #endif
     }
     

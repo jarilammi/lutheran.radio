@@ -371,6 +371,26 @@ class DirectStreamingPlayer: NSObject {
     }
     #endif
     
+    // MARK: - Public State Accessors
+    var currentPlayerRate: Float {
+        return player?.rate ?? 0.0
+    }
+
+    var currentItemStatus: AVPlayerItem.Status {
+        return playerItem?.status ?? .unknown
+    }
+
+    var hasPlayerItem: Bool {
+        return playerItem != nil
+    }
+
+    var actualPlaybackState: Bool {
+        return currentPlayerRate > 0.1 &&
+               currentItemStatus == .readyToPlay &&
+               hasPlayerItem &&
+               !hasPermanentError
+    }
+    
     #if DEBUG
     var player: AVPlayer?
     var playerItem: AVPlayerItem?
@@ -1032,16 +1052,20 @@ class DirectStreamingPlayer: NSObject {
             #endif
             return
         }
-        do {
-            try audioSession.setCategory(.playback, mode: .default, options: [])
-            try audioSession.setActive(true)
-            #if DEBUG
-            print("🔊 Audio session configured")
-            #endif
-        } catch {
-            #if DEBUG
-            print("🔊 Failed to configure audio session: \(error.localizedDescription)")
-            #endif
+        
+        let session = AVAudioSession.sharedInstance()
+        if session.category != .playback {
+            do {
+                try audioSession.setCategory(.playback, mode: .default, options: [])
+                try audioSession.setActive(true)
+                #if DEBUG
+                print("🔊 Audio session configured")
+                #endif
+            } catch {
+                #if DEBUG
+                print("🔊 Failed to configure audio session: \(error.localizedDescription)")
+                #endif
+            }
         }
     }
     
@@ -1556,6 +1580,19 @@ class DirectStreamingPlayer: NSObject {
             
             if keyPath == "playbackBufferEmpty" {
                 if playerItem.isPlaybackBufferEmpty {
+                    // FIXED: Add retry logic for decoder errors
+                    if let error = playerItem.error as NSError?,
+                       error.domain == "AVFoundationErrorDomain" {
+                        #if DEBUG
+                        print("🎵 Audio decoder error detected, attempting recovery")
+                        #endif
+                        // Brief pause before retry
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                            self.player?.play()
+                        }
+                        return
+                    }
+                    
                     self.onStatusChange?(false, String(localized: "status_buffering"))
                     self.startBufferingTimer()
                 }
