@@ -28,6 +28,10 @@ class SharedPlayerManager {
         return _player
     }
     
+    private var lastSavedState: (isPlaying: Bool, currentLanguage: String, hasError: Bool)?
+    private var lastSaveTime: Date?
+    private let minSaveInterval: TimeInterval = 1.0
+    
     private init() {}
     
     // Widget-safe methods that won't crash
@@ -241,60 +245,75 @@ extension SharedPlayerManager {
     
     // FIXED: Enhanced saveCurrentState to respect instant feedback
     func saveCurrentState() {
-        // Only save if we're in the main app, not widget
         guard !isRunningInWidget() else { return }
+        guard let player = self.player else { return }
         
-        guard let player = self.player else {
+        let now = Date()
+        let currentState = (
+            isPlaying: player.isPlaying,
+            currentLanguage: player.selectedStream.languageCode,
+            hasError: player.hasPermanentError || player.isLastErrorPermanent()
+        )
+        
+        // Check if state actually changed
+        if let lastState = lastSavedState,
+           lastState.isPlaying == currentState.isPlaying,
+           lastState.currentLanguage == currentState.currentLanguage,
+           lastState.hasError == currentState.hasError {
+            #if DEBUG
+            print("🔗 State unchanged, skipping save")
+            #endif
             return
         }
         
-        let isPlaying = player.isPlaying
-        let currentLanguage = player.selectedStream.languageCode
-        let hasError = player.hasPermanentError || player.isLastErrorPermanent()
+        // Throttle saves to prevent excessive updates
+        if let lastSave = lastSaveTime,
+           now.timeIntervalSince(lastSave) < minSaveInterval {
+            #if DEBUG
+            print("🔗 Save throttled, too recent")
+            #endif
+            return
+        }
         
-        // FIXED: Check if instant feedback is active and for the same language
+        // [Keep existing instant feedback logic here...]
         if let instantFeedbackTime = sharedDefaults?.object(forKey: "instantFeedbackTime") as? Double,
            let instantFeedbackLanguage = sharedDefaults?.string(forKey: "instantFeedbackLanguage"),
            sharedDefaults?.bool(forKey: "isInstantFeedback") == true {
             
             let feedbackAge = Date().timeIntervalSince1970 - instantFeedbackTime
-            
-            // FIXED: Only override instant feedback if:
-            // 1. It's older than 10 seconds, OR
-            // 2. The main app has actually switched to the instant feedback language
-            if feedbackAge < 10.0 && currentLanguage != instantFeedbackLanguage {
+            if feedbackAge < 10.0 && currentState.currentLanguage != instantFeedbackLanguage {
                 #if DEBUG
-                print("🔗 Preserving instant feedback: main app language=\(currentLanguage), instant feedback=\(instantFeedbackLanguage), age=\(feedbackAge)s")
+                print("🔗 Preserving instant feedback")
                 #endif
-                // Don't save state yet - preserve instant feedback
                 return
             }
-            
-            #if DEBUG
-            print("🔗 Main app caught up to instant feedback: \(currentLanguage)")
-            #endif
         }
         
-        sharedDefaults?.set(isPlaying, forKey: "isPlaying")
-        sharedDefaults?.set(currentLanguage, forKey: "currentLanguage")
-        sharedDefaults?.set(hasError, forKey: "hasError")
-        sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "lastUpdateTime")
+        // Save the state
+        sharedDefaults?.set(currentState.isPlaying, forKey: "isPlaying")
+        sharedDefaults?.set(currentState.currentLanguage, forKey: "currentLanguage")
+        sharedDefaults?.set(currentState.hasError, forKey: "hasError")
+        sharedDefaults?.set(now.timeIntervalSince1970, forKey: "lastUpdateTime")
         
-        // Clear instant feedback flags since we now have real state
+        // Clear instant feedback flags
         sharedDefaults?.removeObject(forKey: "isInstantFeedback")
         sharedDefaults?.removeObject(forKey: "instantFeedbackTime")
         sharedDefaults?.removeObject(forKey: "instantFeedbackLanguage")
         
-        // NEW: Use optimized refresh manager
-        let newState = WidgetState(
-            isPlaying: isPlaying,
-            currentLanguage: currentLanguage,
-            hasError: hasError
+        // Update widget with smart refresh
+        let newWidgetState = WidgetState(
+            isPlaying: currentState.isPlaying,
+            currentLanguage: currentState.currentLanguage,
+            hasError: currentState.hasError
         )
-        WidgetRefreshManager.shared.refreshIfNeeded(for: newState)
+        WidgetRefreshManager.shared.refreshIfNeeded(for: newWidgetState)
+        
+        // Update tracking
+        lastSavedState = currentState
+        lastSaveTime = now
         
         #if DEBUG
-        print("🔗 Saved state: playing=\(isPlaying), language=\(currentLanguage), error=\(hasError) [cleared instant feedback]")
+        print("🔗 State saved: playing=\(currentState.isPlaying), language=\(currentState.currentLanguage)")
         #endif
     }
     

@@ -55,6 +55,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         static let hasDismissedDataUsageNotification = "hasDismissedDataUsageNotification"
     }
     
+    private var lastWidgetUpdate: Date?
+    
     /// Label displaying the app title.
     let titleLabel: UILabel = {
         let label = UILabel()
@@ -203,6 +205,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         self.streamingPlayer.setDelegate(self)
     }
     
+    private let appLaunchTime = Date()
     private var isPlaying = false
     private var isManualPause = false
     private var hasPermanentPlaybackError = false
@@ -395,21 +398,39 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         }
     }
     
-    private func saveStateForWidget() {
+    func saveStateForWidget() {
+        // CRITICAL: Throttle widget updates during audio operations
+        let now = Date()
+        if let lastUpdate = lastWidgetUpdate,
+           now.timeIntervalSince(lastUpdate) < 2.0 {  // 2-second minimum interval
+            return
+        }
+        
+        let stateBeforeSave = SharedPlayerManager.shared.loadSharedState()
+        
         // Save current state for widget access
         SharedPlayerManager.shared.saveCurrentState()
         
-        #if DEBUG
-        print("🔗 State saved for widgets")
-        #endif
+        let stateAfterSave = SharedPlayerManager.shared.loadSharedState()
+        
+        // Only update timestamp and log if state actually changed
+        if stateBeforeSave.isPlaying != stateAfterSave.isPlaying ||
+           stateBeforeSave.currentLanguage != stateAfterSave.currentLanguage ||
+           stateBeforeSave.hasError != stateAfterSave.hasError {
+            lastWidgetUpdate = now
+            
+            #if DEBUG
+            print("🔗 State saved for widgets")
+            #endif
+        }
     }
     
     private func setupFastWidgetActionChecking() {
-        // Check for widget actions every 0.5 seconds for the first 10 seconds after app starts
+        // Check for widget actions every second for the first 5 seconds after app starts
         // This ensures fast processing of widget actions when app becomes active
-        var checksRemaining = 20 // 20 checks × 0.5s = 10 seconds
+        var checksRemaining = 5 // 5 checks × 1.0s = 5 seconds
         
-        Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] timer in
+        Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] timer in
             guard let self = self else {
                 timer.invalidate()
                 return
@@ -418,6 +439,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             self.checkForPendingWidgetActions()
             
             checksRemaining -= 1
+            
             if checksRemaining <= 0 {
                 timer.invalidate()
                 #if DEBUG
@@ -2018,30 +2040,26 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
 
     /// Checks for and handles pending actions from widgets (Updated)
     public func checkForPendingWidgetActions() {
-        #if DEBUG
-        print("🔗 checkForPendingWidgetActions called")
-        #endif
-        
         guard let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
             #if DEBUG
-            print("🔗 ERROR: Failed to access shared UserDefaults in checkForPendingWidgetActions")
+            print("🔗 ERROR: Failed to access shared UserDefaults")
             #endif
             return
         }
         
-        // Debug: List all keys in shared defaults
-        #if DEBUG
-        let allKeys = sharedDefaults.dictionaryRepresentation().keys
-        print("🔗 Available keys in shared UserDefaults: \(Array(allKeys))")
-        #endif
-        
-        guard let pendingAction = sharedDefaults.string(forKey: "pendingAction") else {
+        // Just check for existence without binding the value
+        guard sharedDefaults.string(forKey: "pendingAction") != nil else {
+            // Only log if we're in the first 10 seconds after launch
             #if DEBUG
-            print("🔗 No pending actions found")
+            if Date().timeIntervalSince(appLaunchTime) < 10.0 {
+                print("🔗 No pending actions found")
+            }
             #endif
             return
         }
         
+        // Now get the actual values when we need them
+        let pendingAction = sharedDefaults.string(forKey: "pendingAction")!
         let pendingTime = sharedDefaults.double(forKey: "pendingActionTime")
         let actionId = sharedDefaults.string(forKey: "pendingActionId") ?? "unknown"
         let now = Date().timeIntervalSince1970

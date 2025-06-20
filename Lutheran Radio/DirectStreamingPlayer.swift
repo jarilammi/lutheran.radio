@@ -420,6 +420,15 @@ class DirectStreamingPlayer: NSObject {
         }
     }
     
+    // CRITICAL: All AVPlayer operations must be on main thread
+    private func executeAudioOperation<T>(_ operation: @escaping () -> T, completion: @escaping (T) -> Void) {
+        // Always execute AVPlayer operations on main thread
+        DispatchQueue.main.async {
+            let result = operation()
+            completion(result)
+        }
+    }
+    
     #if DEBUG
     private func logQueueHierarchy() {
         print("🔧 [QoS] Audio Queue: .userInteractive")
@@ -618,7 +627,7 @@ class DirectStreamingPlayer: NSObject {
             #if DEBUG
             print("🔒 [Validate Async] Validation in progress, checking state")
             #endif
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
                 guard let self = self else {
                     completion(false)
                     return
@@ -672,6 +681,8 @@ class DirectStreamingPlayer: NSObject {
                 #endif
             }
         }
+        
+        isValidating = true
 
         performConnectivityCheck { [weak self] isConnected in
             guard let self = self else {
@@ -683,6 +694,7 @@ class DirectStreamingPlayer: NSObject {
                 #if DEBUG
                 print("🔒 [Validate Async] No internet, transient failure")
                 #endif
+                self.isValidating = false
                 self.validationState = .failedTransient
                 self.hasInternetConnection = false
                 DispatchQueue.main.async {
@@ -692,7 +704,6 @@ class DirectStreamingPlayer: NSObject {
                 return
             }
 
-            self.isValidating = true
             self.hasInternetConnection = true
             #if DEBUG
             print("🔒 [Validate Async] Starting validation for model: \(self.appSecurityModel)")

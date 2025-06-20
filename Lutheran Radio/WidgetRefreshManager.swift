@@ -16,6 +16,9 @@ class WidgetRefreshManager {
     private var pendingRefresh: DispatchWorkItem?
     private var lastKnownState: WidgetState?
     
+    private var refreshCount = 0
+    private var adaptiveInterval: TimeInterval = 0.5
+    
     private init() {}
     
     // Main refresh method with debouncing and change detection
@@ -28,24 +31,40 @@ class WidgetRefreshManager {
             return
         }
         
-        // Debouncing - prevent rapid refreshes
-        if !immediate, let lastRefresh = lastRefreshTime,
-           Date().timeIntervalSince(lastRefresh) < 0.5 {
-            scheduleDelayedRefresh(for: newState)
-            return
+        // Adaptive debouncing - increase interval with frequency
+        if !immediate {
+            let now = Date()
+            if let lastRefresh = lastRefreshTime {
+                let timeSinceLastRefresh = now.timeIntervalSince(lastRefresh)
+                
+                // If refreshing frequently, increase the interval
+                if timeSinceLastRefresh < adaptiveInterval {
+                    refreshCount += 1
+                    adaptiveInterval = min(adaptiveInterval * 1.5, 3.0) // Cap at 3 seconds
+                    
+                    scheduleDelayedRefresh(for: newState, delay: adaptiveInterval)
+                    return
+                } else if timeSinceLastRefresh > 5.0 {
+                    // Reset if we haven't refreshed in a while
+                    refreshCount = 0
+                    adaptiveInterval = 0.5
+                }
+            }
         }
         
         performRefresh(for: newState, immediate: immediate)
     }
     
-    private func scheduleDelayedRefresh(for state: WidgetState) {
+    private func scheduleDelayedRefresh(for state: WidgetState, delay: TimeInterval) {
         pendingRefresh?.cancel()
         
         pendingRefresh = DispatchWorkItem { [weak self] in
             self?.performRefresh(for: state, immediate: false)
+            // Gradually decrease interval after successful refresh
+            self?.adaptiveInterval = max((self?.adaptiveInterval ?? 0.5) * 0.8, 0.5)
         }
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: pendingRefresh!)
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: pendingRefresh!)
     }
     
     private func performRefresh(for state: WidgetState, immediate: Bool) {
