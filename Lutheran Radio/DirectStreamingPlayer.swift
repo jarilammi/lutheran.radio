@@ -183,7 +183,10 @@ class DirectStreamingPlayer: NSObject {
     private var serverFailureCount: [String: Int] = [:]
     private var lastFailedServerName: String?
     private var currentSelectedServer: Server = servers[0]
-
+    
+    private var thermalObserver: NSObjectProtocol?
+    private var wasPlayingBeforeThermal = false
+    
     // Public accessors for ViewController
     var lastFailedServer: String? { return lastFailedServerName }
     var selectedServerInfo: Server { return currentSelectedServer }
@@ -840,6 +843,8 @@ class DirectStreamingPlayer: NSObject {
         #if DEBUG
         logQueueHierarchy()
         #endif
+        
+        setupThermalProtection()
     }
     
     #if DEBUG
@@ -937,6 +942,31 @@ class DirectStreamingPlayer: NSObject {
         networkMonitor?.start(queue: networkQueue)
     }
     #endif
+    
+    private func setupThermalProtection() {
+        thermalObserver = NotificationCenter.default.addObserver(
+            forName: ProcessInfo.thermalStateDidChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self = self else { return }
+            
+            if ProcessInfo.processInfo.thermalState == .critical ||
+               ProcessInfo.processInfo.thermalState == .serious {
+                // Pause if device temperature critical or serious
+                if self.isPlaying {
+                    self.wasPlayingBeforeThermal = true
+                    self.stop {
+                        self.onStatusChange?(false, String(localized: "status_thermal_paused"))
+                    }
+                }
+            } else if self.wasPlayingBeforeThermal && ProcessInfo.processInfo.thermalState != .critical {
+                // Resume when no longer critical
+                self.wasPlayingBeforeThermal = false
+                self.play { _ in }
+            }
+        }
+    }
     
     init(audioSession: AVAudioSession = .sharedInstance(), pathMonitor: NetworkPathMonitoring = NWPathMonitorAdapter()) {
         self.audioSession = audioSession
@@ -1742,6 +1772,11 @@ class DirectStreamingPlayer: NSObject {
         // Clear server failure tracking
         serverFailureCount.removeAll()
         lastFailedServerName = nil
+        
+        // Cleanup thermal observer
+        if let observer = thermalObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
         
         #if DEBUG
         print("🧹 DirectStreamingPlayer deinit completed")
