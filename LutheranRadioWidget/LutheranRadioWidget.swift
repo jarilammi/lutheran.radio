@@ -115,8 +115,7 @@ struct Provider: AppIntentTimelineProvider {
             )
         ]
         
-        // Use shorter refresh policy to catch state changes faster
-        return Timeline(entries: entries, policy: .after(now.addingTimeInterval(15)))
+        return Timeline(entries: entries, policy: .after(now.addingTimeInterval(30)))
     }
     
     /**

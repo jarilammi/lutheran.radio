@@ -347,8 +347,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     }
     
     private func setupWidgetActionPolling() {
-        // Check for widget actions every 2 seconds as fallback
-        Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+        // Check for widget actions every 30 seconds as fallback
+        Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
             self?.checkForPendingWidgetActions()
         }
     }
