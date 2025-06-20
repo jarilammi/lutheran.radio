@@ -235,6 +235,18 @@ class DirectStreamingPlayer: NSObject {
     private let audioSession: AVAudioSession
     private let pathMonitor: NetworkPathMonitoring
     
+    // MARK: - Enhanced SSL Protection with Connection Tracking
+    private struct ConnectionInfo {
+        let id: UUID
+        let startTime: Date
+        let timer: Timer
+        var isHandshakeComplete: Bool = false
+    }
+
+    // Dictionary to track multiple connections
+    private var activeConnections: [UUID: ConnectionInfo] = [:]
+    private let connectionQueue = DispatchQueue(label: "ssl.connections", qos: .userInitiated)
+    
     #if DEBUG
     var isTesting: Bool = false
     #else
@@ -1244,11 +1256,9 @@ class DirectStreamingPlayer: NSObject {
             
             self.stop()
             
-            // Create a unique connection start time for THIS attempt
-            let thisConnectionStartTime = Date()
-            
-            // Calculate adaptive timeout for this connection
-            let adaptiveTimeout = self.getSSLTimeout()
+            // Create connection with tracking
+            let connectionStartTime = Date()
+            let connectionId = self.setupSSLProtectionTimer(for: connectionStartTime)
             
             // Reset SSL tracking for new connection
             self.isSSLHandshakeComplete = false
@@ -1257,9 +1267,8 @@ class DirectStreamingPlayer: NSObject {
             let finalURL = streamURL
             
             #if DEBUG
-            print("📡 [SSL Fix] Using direct HTTPS URL: \(finalURL)")
-            print("🔒 [SSL Timing] Connection started at: \(thisConnectionStartTime)")
-            print("🔒 [SSL Timing] Using adaptive timeout: \(adaptiveTimeout)s")
+            print("📡 [SSL Fix] Starting connection \(connectionId) with URL: \(finalURL)")
+            print("🔒 [SSL Timing] Connection started at: \(connectionStartTime)")
             #endif
             
             let asset = AVURLAsset(url: finalURL)
@@ -1269,21 +1278,18 @@ class DirectStreamingPlayer: NSObject {
             if self.player == nil {
                 self.player = AVPlayer(playerItem: self.playerItem)
                 #if DEBUG
-                print("🎵 Created new AVPlayer")
+                print("🎵 Created new AVPlayer for connection \(connectionId)")
                 #endif
             } else {
                 self.player?.replaceCurrentItem(with: self.playerItem)
                 #if DEBUG
-                print("🎵 Reused existing AVPlayer")
+                print("🎵 Reused existing AVPlayer for connection \(connectionId)")
                 #endif
             }
             
             self.addObservers()
             
-            // FIXED: Pass the specific connection time to SSL protection setup
-            self.setupSSLProtectionTimer(for: thisConnectionStartTime)
-            
-            // FIXED: Temp observer with connection-specific time reference
+            // Updated observer with connection tracking
             var tempStatusObserver: NSKeyValueObservation?
             tempStatusObserver = self.playerItem?.observe(\.status, options: [.new]) { [weak self] item, _ in
                 guard let self = self else {
@@ -1291,18 +1297,19 @@ class DirectStreamingPlayer: NSObject {
                     return
                 }
                 
-                // Use THIS connection's start time, not a shared mutable property
-                let connectionAge = Date().timeIntervalSince(thisConnectionStartTime)
+                let connectionAge = Date().timeIntervalSince(connectionStartTime)
                 
                 switch item.status {
                 case .readyToPlay:
                     tempStatusObserver?.invalidate()
                     
+                    // Mark handshake complete for this specific connection
+                    self.markSSLHandshakeComplete(for: connectionId)
+                    
                     #if DEBUG
-                    print("🔒 [SSL Timing] Ready to play after \(connectionAge)s")
+                    print("🔒 [SSL Timing] Ready to play after \(connectionAge)s for connection \(connectionId)")
                     #endif
                     
-                    self.clearSSLProtectionTimer()
                     self.serverFailureCount[server.name] = 0
                     self.lastFailedServerName = nil
                     
@@ -1329,14 +1336,15 @@ class DirectStreamingPlayer: NSObject {
                     }
                     
                 case .failed:
-                    // Only handle failure immediately if we're past SSL protection time
-                    if self.isSSLHandshakeComplete || connectionAge >= adaptiveTimeout {
+                    // Only handle failure if handshake is complete or timeout reached
+                    if self.isSSLHandshakeComplete(for: connectionId) {
                         tempStatusObserver?.invalidate()
+                        self.clearSSLProtectionTimer(for: connectionId)
+                        
                         #if DEBUG
-                        print("❌ PlayerItem failed with server \(server.name) after \(connectionAge)s (timeout: \(adaptiveTimeout)s)")
+                        print("❌ PlayerItem failed with server \(server.name) after \(connectionAge)s")
                         #endif
                         
-                        self.clearSSLProtectionTimer()
                         if !fallbackServers.isEmpty {
                             self.tryNextServer(fallbackServers: fallbackServers, completion: completion)
                         } else {
@@ -1354,15 +1362,16 @@ class DirectStreamingPlayer: NSObject {
                 }
             }
             
-            // FIXED: Use adaptive timeout for overall connection timeout too
+            // Timeout fallback using connection ID
+            let adaptiveTimeout = self.getSSLTimeout()
             DispatchQueue.main.asyncAfter(deadline: .now() + max(adaptiveTimeout + 2.0, 20.0)) { [weak self] in
                 guard let self = self, self.playerItem?.status != .readyToPlay else { return }
                 tempStatusObserver?.invalidate()
-                let connectionAge = Date().timeIntervalSince(thisConnectionStartTime)
+                let connectionAge = Date().timeIntervalSince(connectionStartTime)
                 #if DEBUG
                 print("❌ Adaptive timeout reached after \(connectionAge)s with server \(server.name) (timeout: \(adaptiveTimeout + 2.0)s)")
                 #endif
-                self.clearSSLProtectionTimer()
+                self.clearSSLProtectionTimer(for: connectionId)
                 if !fallbackServers.isEmpty {
                     self.tryNextServer(fallbackServers: fallbackServers, completion: completion)
                 } else {
@@ -1575,10 +1584,12 @@ class DirectStreamingPlayer: NSObject {
         }
     }
     
-    // FIXED: Update the stop() method to remove connectionStartTime references
+    // FIXED: Update the stop() method to include connection cleanup
     func stop(completion: (() -> Void)? = nil) {
-        // FIXED: Remove SSL protection logic since we now handle it per-connection
-        // The new per-connection approach doesn't need global stop protection
+        // Clear all active SSL timers
+        clearAllSSLProtectionTimers()
+        
+        // Continue with existing stop logic
         performActualStop(completion: completion)
     }
 
@@ -2252,32 +2263,34 @@ extension DirectStreamingPlayer {
     }
 }
 
-// MARK: - Update SSL Protection Timer Setup
+// MARK: - Enhanced SSL Protection Timer Methods
 extension DirectStreamingPlayer {
     
-    /// Updated SSL protection timer setup using adaptive timeout
-    private func setupSSLProtectionTimer(for connectionStartTime: Date) {
-        clearSSLProtectionTimer()
-        isSSLHandshakeComplete = false
-        
-        // Use adaptive timeout instead of fixed value
+    /// Sets up SSL protection timer for a specific connection and returns connection ID
+    private func setupSSLProtectionTimer(for connectionStartTime: Date) -> UUID {
+        let connectionId = UUID()
         let adaptiveTimeout = getSSLTimeout()
         
         #if DEBUG
-        print("🔒 [SSL Protection] Starting \(adaptiveTimeout)s adaptive protection timer for connection at \(connectionStartTime)")
+        print("🔒 [SSL Protection] Starting \(adaptiveTimeout)s adaptive protection timer for connection \(connectionId)")
         #endif
         
-        sslConnectionTimeout = Timer.scheduledTimer(withTimeInterval: adaptiveTimeout, repeats: false) { [weak self] _ in
+        let timer = Timer.scheduledTimer(withTimeInterval: adaptiveTimeout, repeats: false) { [weak self] _ in
             guard let self = self else { return }
             
             let connectionAge = Date().timeIntervalSince(connectionStartTime)
             
             #if DEBUG
-            print("🔒 [SSL Protection] Adaptive timer expired after \(connectionAge)s for connection at \(connectionStartTime)")
+            print("🔒 [SSL Protection] Adaptive timer expired after \(connectionAge)s for connection \(connectionId)")
             #endif
             
-            // Mark SSL handshake as complete after timeout
-            self.isSSLHandshakeComplete = true
+            // Mark SSL handshake as complete after timeout for this specific connection
+            self.connectionQueue.async {
+                if var connectionInfo = self.activeConnections[connectionId] {
+                    connectionInfo.isHandshakeComplete = true
+                    self.activeConnections[connectionId] = connectionInfo
+                }
+            }
             
             // If still not ready after adaptive timeout, allow normal error handling
             if self.playerItem?.status == .unknown {
@@ -2286,35 +2299,73 @@ extension DirectStreamingPlayer {
                 #endif
             }
         }
-    }
-}
-
-// MARK: - Enhanced Server Selection with Network Awareness
-extension DirectStreamingPlayer {
-    
-    /// Enhanced server selection considering network conditions
-    private func selectOptimalServerWithNetworkAwareness(completion: @escaping (Server) -> Void) {
-        // If on cellular, prefer geographically closer server
-        if isOnCellular() {
-            let preferredServer: Server
-            if isInNorthAmerica() {
-                preferredServer = Self.servers.first { $0.name == "US" } ?? Self.servers[0]
-                #if DEBUG
-                print("📡 [Cellular] Preferring US server for North America")
-                #endif
-            } else {
-                preferredServer = Self.servers.first { $0.name == "EU" } ?? Self.servers[0]
-                #if DEBUG
-                print("📡 [Cellular] Preferring EU server for non-North America")
-                #endif
-            }
-            
-            currentSelectedServer = preferredServer
-            completion(preferredServer)
-            return
+        
+        // Store connection info
+        let connectionInfo = ConnectionInfo(
+            id: connectionId,
+            startTime: connectionStartTime,
+            timer: timer,
+            isHandshakeComplete: false
+        )
+        
+        connectionQueue.async {
+            self.activeConnections[connectionId] = connectionInfo
         }
         
-        // Otherwise use existing server selection logic
-        selectOptimalServer(completion: completion)
+        return connectionId
+    }
+    
+    /// Marks SSL handshake as complete for a specific connection
+    private func markSSLHandshakeComplete(for connectionId: UUID) {
+        connectionQueue.async {
+            if var connectionInfo = self.activeConnections[connectionId] {
+                connectionInfo.isHandshakeComplete = true
+                self.activeConnections[connectionId] = connectionInfo
+                
+                #if DEBUG
+                print("🔒 [SSL Protection] Marked handshake complete for connection \(connectionId)")
+                #endif
+            }
+        }
+    }
+    
+    /// Checks if SSL handshake is complete for a specific connection
+    private func isSSLHandshakeComplete(for connectionId: UUID) -> Bool {
+        var isComplete = false
+        connectionQueue.sync {
+            isComplete = activeConnections[connectionId]?.isHandshakeComplete ?? true
+        }
+        return isComplete
+    }
+    
+    /// Clears SSL protection timer for a specific connection
+    private func clearSSLProtectionTimer(for connectionId: UUID) {
+        connectionQueue.async {
+            if let connectionInfo = self.activeConnections.removeValue(forKey: connectionId) {
+                connectionInfo.timer.invalidate()
+                
+                #if DEBUG
+                print("🔒 [SSL Protection] Cleared timer for connection \(connectionId)")
+                #endif
+            }
+        }
+    }
+    
+    /// Clears all active SSL protection timers
+    private func clearAllSSLProtectionTimers() {
+        connectionQueue.async {
+            for (connectionId, connectionInfo) in self.activeConnections {
+                connectionInfo.timer.invalidate()
+                
+                #if DEBUG
+                print("🔒 [SSL Protection] Cleared timer for connection \(connectionId)")
+                #endif
+            }
+            self.activeConnections.removeAll()
+            
+            #if DEBUG
+            print("🔒 [SSL Protection] Cleared all SSL protection timers")
+            #endif
+        }
     }
 }
