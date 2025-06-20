@@ -1286,6 +1286,7 @@ class DirectStreamingPlayer: NSObject {
             asset.resourceLoader.setDelegate(self, queue: DispatchQueue(label: "radio.lutheran.resourceloader"))
             self.playerItem = AVPlayerItem(asset: asset)
             
+            // This is already on main thread, but make it explicit
             if self.player == nil {
                 self.player = AVPlayer(playerItem: self.playerItem)
                 #if DEBUG
@@ -1417,7 +1418,10 @@ class DirectStreamingPlayer: NSObject {
     }
     
     func setVolume(_ volume: Float) {
-        player?.volume = volume
+        executeAudioOperation({
+            self.player?.volume = volume
+            return ()
+        }, completion: { _ in })
     }
     
     // FIXED: Simplified status observer that doesn't conflict with SSL protection
@@ -1607,7 +1611,6 @@ class DirectStreamingPlayer: NSObject {
     // FIXED: Update performActualStop to remove connectionStartTime references
     private func performActualStop(completion: (() -> Void)? = nil) {
         clearSSLProtectionTimer()
-        // REMOVED: connectionStartTime = nil  // ❌ This property no longer exists
         isSSLHandshakeComplete = true
         hasStartedPlaying = false
         
@@ -1639,10 +1642,14 @@ class DirectStreamingPlayer: NSObject {
                 return
             }
             
-            // Pause and reset player
-            self.player?.pause()
-            self.player?.rate = 0.0
+            // ONLY pause/rate operations use executeAudioOperation
+            self.executeAudioOperation({
+                self.player?.pause()
+                self.player?.rate = 0.0
+                return ()
+            }, completion: { _ in })
             
+            // Cleanup continues immediately, not waiting for audio operation
             self.activeResourceLoaders.forEach { _, delegate in
                 delegate.cancel()
             }
@@ -1676,9 +1683,16 @@ class DirectStreamingPlayer: NSObject {
     }
     
     private func stopSynchronously() {
-        // Perform all cleanup synchronously without weak references
-        player?.pause()
-        player?.rate = 0.0
+        // Perform all cleanup on main thread
+        if Thread.isMainThread {
+            player?.pause()
+            player?.rate = 0.0
+        } else {
+            DispatchQueue.main.sync {
+                player?.pause()
+                player?.rate = 0.0
+            }
+        }
         
         // Cancel active resource loaders
         activeResourceLoaders.forEach { _, delegate in
