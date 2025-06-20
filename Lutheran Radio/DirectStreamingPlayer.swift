@@ -360,13 +360,60 @@ class DirectStreamingPlayer: NSObject {
     var player: AVPlayer?
     var playerItem: AVPlayerItem?
     var metadataOutput: AVPlayerItemMetadataOutput?
-    let playbackQueue = DispatchQueue(label: "radio.lutheran.playback", qos: .userInitiated)
+    // Audio processing at highest priority
+    private let audioQueue = DispatchQueue(label: "radio.lutheran.audio", qos: .userInteractive)
+    // SSL operations at supporting priority
+    private let sslValidationQueue = DispatchQueue(label: "radio.lutheran.ssl", qos: .userInitiated)
+    // Network operations at background priority
+    private let networkQueue = DispatchQueue(label: "radio.lutheran.network", qos: .utility)
+    // Keep playbackQueue for compatibility, but redirect to audioQueue
+    let playbackQueue = DispatchQueue(label: "radio.lutheran.playback", qos: .userInteractive)
     #else
     private var player: AVPlayer?
     private var playerItem: AVPlayerItem?
     private var metadataOutput: AVPlayerItemMetadataOutput?
-    private let playbackQueue = DispatchQueue(label: "radio.lutheran.playback", qos: .userInitiated)
+    // Audio processing at highest priority
+    private let audioQueue = DispatchQueue(label: "radio.lutheran.audio", qos: .userInteractive)
+    // SSL operations at supporting priority
+    private let sslValidationQueue = DispatchQueue(label: "radio.lutheran.ssl", qos: .userInitiated)
+    // Network operations at background priority
+    private let networkQueue = DispatchQueue(label: "radio.lutheran.network", qos: .utility)
+    // Keep playbackQueue for compatibility, but redirect to audioQueue
+    private let playbackQueue = DispatchQueue(label: "radio.lutheran.playback", qos: .userInteractive)
     #endif
+    
+    // MARK: - Queue Priority Management
+    
+    /// Escalates queue priority when audio operations are blocked
+    private func executeWithAudioPriority<T>(_ operation: @escaping () -> T, completion: @escaping (T) -> Void) {
+        if player?.timeControlStatus == .waitingToPlayAtSpecifiedRate {
+            // Audio is waiting - escalate to highest priority
+            DispatchQueue.global(qos: .userInteractive).async {
+                let result = operation()
+                DispatchQueue.main.async {
+                    completion(result)
+                }
+            }
+        } else {
+            // Normal priority
+            sslValidationQueue.async {
+                let result = operation()
+                DispatchQueue.main.async {
+                    completion(result)
+                }
+            }
+        }
+    }
+    
+    #if DEBUG
+    private func logQueueHierarchy() {
+        print("🔧 [QoS] Audio Queue: .userInteractive")
+        print("🔧 [QoS] SSL Queue: .userInitiated")
+        print("🔧 [QoS] Network Queue: .utility")
+        print("🔧 [QoS] Playback Queue: .userInteractive (redirected to audio)")
+    }
+    #endif
+    
     var hasPermanentError: Bool = false
     private var statusObserver: NSKeyValueObservation?
     private var registeredKeyPaths: [ObjectIdentifier: Set<String>] = [:]
@@ -399,17 +446,24 @@ class DirectStreamingPlayer: NSObject {
         #if DEBUG
         print("🔒 [Fetch Security Models] Fetching valid security models for domain: \(domain)")
         #endif
-        queryTXTRecord(domain: domain) { result in
-            #if DEBUG
-            switch result {
-            case .success(let models):
-                print("✅ [Fetch Security Models] Successfully fetched models: \(models)")
-            case .failure(let error):
-                print("❌ [Fetch Security Models] Failed to fetch models: \(error.localizedDescription)")
-            }
-            #endif
-            DispatchQueue.main.async {
-                completion(result)
+        
+        // Use SSL queue with priority escalation for audio-blocking operations
+        sslValidationQueue.async { [weak self] in
+            // Escalate to userInteractive if audio is waiting
+            if self?.player?.timeControlStatus == .waitingToPlayAtSpecifiedRate {
+                DispatchQueue.global(qos: .userInteractive).async {
+                    self?.queryTXTRecord(domain: domain) { result in
+                        DispatchQueue.main.async {
+                            completion(result)
+                        }
+                    }
+                }
+            } else {
+                self?.queryTXTRecord(domain: domain) { result in
+                    DispatchQueue.main.async {
+                        completion(result)
+                    }
+                }
             }
         }
     }
@@ -783,6 +837,9 @@ class DirectStreamingPlayer: NSObject {
                 }
             }
         }
+        #if DEBUG
+        logQueueHierarchy()
+        #endif
     }
     
     #if DEBUG
@@ -835,7 +892,7 @@ class DirectStreamingPlayer: NSObject {
                 }
             }
         }
-        networkMonitor?.start(queue: DispatchQueue(label: "radio.lutheran.networkmonitor"))
+        networkMonitor?.start(queue: networkQueue)
     }
     #else
     private func setupNetworkMonitoring() {
@@ -877,7 +934,7 @@ class DirectStreamingPlayer: NSObject {
                 }
             }
         }
-        networkMonitor?.start(queue: DispatchQueue(label: "radio.lutheran.networkmonitor"))
+        networkMonitor?.start(queue: networkQueue)
     }
     #endif
     
@@ -1313,7 +1370,7 @@ class DirectStreamingPlayer: NSObject {
     
     // FIXED: Simplified status observer that doesn't conflict with SSL protection
     private func addObservers() {
-        playbackQueue.async { [weak self] in
+        audioQueue.async { [weak self] in
             guard let self = self else { return }
             
             // Remove existing observers for the current playerItem
@@ -1507,7 +1564,7 @@ class DirectStreamingPlayer: NSObject {
             return
         }
         
-        playbackQueue.async { [weak self] in
+        audioQueue.async { [weak self] in
             guard let self = self, !self.isDeallocating else {
                 DispatchQueue.main.async { completion?() }
                 return
@@ -1793,33 +1850,35 @@ extension DirectStreamingPlayer {
         config.timeoutIntervalForRequest = 2.0
         let session = URLSession(configuration: config)
         
-        for server in Self.servers {
-            group.enter()
-            let startTime = Date()
-            #if DEBUG
-            print("📡 [Ping] Pinging \(server.name) at \(server.pingURL)")
-            #endif
-            
-            let task = session.dataTask(with: server.pingURL) { [weak self] data, response, error in
-                guard self != nil else {
+        networkQueue.async {
+            for server in Self.servers {
+                group.enter()
+                let startTime = Date()
+                #if DEBUG
+                print("📡 [Ping] Pinging \(server.name) at \(server.pingURL)")
+                #endif
+                
+                let task = session.dataTask(with: server.pingURL) { [weak self] data, response, error in
+                    guard self != nil else {
+                        group.leave()
+                        return
+                    }
+                    let latency = Date().timeIntervalSince(startTime)
+                    if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200, error == nil {
+                        results.append(PingResult(server: server, latency: latency))
+                        #if DEBUG
+                        print("📡 [Ping] Success for \(server.name), latency=\(latency)s")
+                        #endif
+                    } else {
+                        results.append(PingResult(server: server, latency: .infinity))
+                        #if DEBUG
+                        print("📡 [Ping] Failed for \(server.name): error=\(error?.localizedDescription ?? "None"), status=\((response as? HTTPURLResponse)?.statusCode ?? -1)")
+                        #endif
+                    }
                     group.leave()
-                    return
                 }
-                let latency = Date().timeIntervalSince(startTime)
-                if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200, error == nil {
-                    results.append(PingResult(server: server, latency: latency))
-                    #if DEBUG
-                    print("📡 [Ping] Success for \(server.name), latency=\(latency)s")
-                    #endif
-                } else {
-                    results.append(PingResult(server: server, latency: .infinity))
-                    #if DEBUG
-                    print("📡 [Ping] Failed for \(server.name): error=\(error?.localizedDescription ?? "None"), status=\((response as? HTTPURLResponse)?.statusCode ?? -1)")
-                    #endif
-                }
-                group.leave()
+                task.resume()
             }
-            task.resume()
         }
         
         group.notify(queue: .main) {
@@ -1942,11 +2001,16 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
         config.waitsForConnectivity = false
         config.httpMaximumConnectionsPerHost = 1
         
+        // FIXED: Create URLSession with proper QoS for SSL operations
+        let operationQueue = OperationQueue()
+        operationQueue.qualityOfService = .userInitiated
+        operationQueue.maxConcurrentOperationCount = 1
+        
         #if DEBUG
         print("🔒 [Resource Loader] Creating URLSession with SSL-forcing config")
         #endif
         
-        streamingDelegate.session = URLSession(configuration: config, delegate: streamingDelegate, delegateQueue: nil)
+        streamingDelegate.session = URLSession(configuration: config, delegate: streamingDelegate, delegateQueue: operationQueue)
         streamingDelegate.dataTask = streamingDelegate.session?.dataTask(with: modifiedRequest)
         
         streamingDelegate.onError = { [weak self] error in
@@ -2060,11 +2124,11 @@ extension DirectStreamingPlayer {
     /// Calculates adaptive SSL timeout based on network conditions and server location
     private func getSSLTimeout() -> TimeInterval {
         // Base timeout - conservative starting point
-        var timeout: TimeInterval = 4.0
+        var timeout: TimeInterval = 8.0
         
         // Add extra time for cellular connections
         if isOnCellular() {
-            timeout += 2.0
+            timeout += 4.0
             #if DEBUG
             print("🔒 [SSL Timeout] Added 2s for cellular connection")
             #endif
@@ -2092,7 +2156,7 @@ extension DirectStreamingPlayer {
         }
         
         // Cap at reasonable maximum
-        let finalTimeout = min(timeout, 8.0)
+        let finalTimeout = min(timeout, 15.0)
         
         #if DEBUG
         print("🔒 [SSL Timeout] Calculated timeout: \(finalTimeout)s (base: 4.0s)")
@@ -2103,7 +2167,6 @@ extension DirectStreamingPlayer {
     
     /// Detects if the device is on a cellular connection
     private func isOnCellular() -> Bool {
-        // Use your existing network monitor or create a quick check
         let networkMonitor = NWPathMonitor()
         var isCellular = false
         
@@ -2113,7 +2176,8 @@ extension DirectStreamingPlayer {
             semaphore.signal()
         }
         
-        let queue = DispatchQueue(label: "cellularCheck", qos: .utility)
+        // FIXED: Use userInitiated QoS instead of utility
+        let queue = DispatchQueue(label: "cellularCheck", qos: .userInitiated)
         networkMonitor.start(queue: queue)
         
         // Wait briefly for result

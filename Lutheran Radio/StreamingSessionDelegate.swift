@@ -144,39 +144,42 @@ class StreamingSessionDelegate: NSObject, URLSessionDataDelegate {
             return
         }
         
-        // Basic certificate validation first
-        let cfHostname: CFString = originalHost as CFString
-        let policy = SecPolicyCreateSSL(true, cfHostname)
-        SecTrustSetPolicies(serverTrust, policy)
-        
-        var error: CFError?
-        let basicValidationResult = SecTrustEvaluateWithError(serverTrust, &error)
-        
-        #if DEBUG
-        print("🔒 📋 Basic certificate validation: \(basicValidationResult)")
-        #endif
-        
-        guard basicValidationResult else {
+        // OPTIMIZED: Use autoreleasepool for memory efficiency during validation
+        autoreleasepool {
+            // Basic certificate validation first
+            let cfHostname: CFString = originalHost as CFString
+            let policy = SecPolicyCreateSSL(true, cfHostname)
+            SecTrustSetPolicies(serverTrust, policy)
+            
+            var error: CFError?
+            let basicValidationResult = SecTrustEvaluateWithError(serverTrust, &error)
+            
             #if DEBUG
-            print("🔒 ❌ BASIC CERTIFICATE VALIDATION FAILED")
+            print("🔒 📋 Basic certificate validation: \(basicValidationResult)")
             #endif
-            handleValidationFailure(serverTrust: serverTrust, completionHandler: completionHandler)
-            return
-        }
-        
-        // Enhanced certificate pinning validation
-        if validateCurrentCertificatePinning(serverTrust: serverTrust) {
-            #if DEBUG
-            print("🔒 ✅ ✅ ✅ CURRENT CERTIFICATE VALIDATION SUCCEEDED")
-            #endif
-            Self.hasSuccessfulPinningCheck = true
-            let credential = URLCredential(trust: serverTrust)
-            completionHandler(.useCredential, credential)
-        } else {
-            #if DEBUG
-            print("🔒 ❌ ❌ ❌ CURRENT CERTIFICATE VALIDATION FAILED")
-            #endif
-            handleValidationFailure(serverTrust: serverTrust, completionHandler: completionHandler)
+            
+            guard basicValidationResult else {
+                #if DEBUG
+                print("🔒 ❌ BASIC CERTIFICATE VALIDATION FAILED")
+                #endif
+                handleValidationFailure(serverTrust: serverTrust, completionHandler: completionHandler)
+                return
+            }
+            
+            // OPTIMIZED: Quick certificate pinning validation
+            if validateCurrentCertificatePinning(serverTrust: serverTrust) {
+                #if DEBUG
+                print("🔒 ✅ ✅ ✅ CURRENT CERTIFICATE VALIDATION SUCCEEDED")
+                #endif
+                Self.hasSuccessfulPinningCheck = true
+                let credential = URLCredential(trust: serverTrust)
+                completionHandler(.useCredential, credential)
+            } else {
+                #if DEBUG
+                print("🔒 ❌ ❌ ❌ CURRENT CERTIFICATE VALIDATION FAILED")
+                #endif
+                handleValidationFailure(serverTrust: serverTrust, completionHandler: completionHandler)
+            }
         }
     }
     
