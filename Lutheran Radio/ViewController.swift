@@ -150,8 +150,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         return imageView
     }()
     
-    private static let imageProcessingContext = CIContext(options: nil)
-    
     private let backgroundImages: [String: String] = [
         "en": "north_america",
         "de": "germany",
@@ -159,6 +157,14 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         "sv": "sweden",
         "ee": "estonia"
     ]
+    
+    // MARK: - Image Processing
+    private let imageProcessingQueue = DispatchQueue(label: "radio.lutheran.imageProcessing", qos: .utility)
+    private let imageProcessingContext = CIContext(options: [.useSoftwareRenderer: false])
+    // Cache processed images to avoid repeated work
+    private var processedImageCache: [String: UIImage] = [:]
+    private let cacheQueue = DispatchQueue(label: "radio.lutheran.imageCache", qos: .utility)
+    
     private var backgroundConstraints: [NSLayoutConstraint] = []
     private var selectedStreamIndex: Int = 0
     private var lastRotationTime: Date? // To debounce rapid rotations
@@ -1115,155 +1121,193 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     }
     
     private func updateBackground(for stream: DirectStreamingPlayer.Stream) {
-        guard let imageName = backgroundImages[stream.languageCode],
-              let baseImage = UIImage(named: imageName) else {
-            print("Error: Background image not found for \(stream.languageCode)")
-            backgroundImageView.image = nil
+        guard let imageName = backgroundImages[stream.languageCode] else {
+            DispatchQueue.main.async {
+                self.backgroundImageView.image = nil
+            }
             return
         }
-
-        var finalImage: UIImage = baseImage
-
-        if let ciImage = CIImage(image: baseImage) {
-            var processedImage = ciImage
-            let context = Self.imageProcessingContext
-
-            #if DEBUG
-            print("Processing image for \(stream.languageCode), mode: \(traitCollection.userInterfaceStyle == .dark ? "dark" : "light")")
-            #endif
-
-            if traitCollection.userInterfaceStyle == .dark {
-                // Dark mode: Invert colors, then adjust brightness and contrast
-                if let invertFilter = CIFilter(name: "CIColorInvert") {
-                    invertFilter.setValue(processedImage, forKey: kCIInputImageKey)
-                    if let outputImage = invertFilter.outputImage {
-                        processedImage = outputImage
-                        #if DEBUG
-                        print("Dark mode: Applied CIColorInvert - extent: \(processedImage.extent)")
-                        #endif
-                    } else {
-                        #if DEBUG
-                        print("Dark mode: Failed to apply CIColorInvert")
-                        #endif
-                    }
+        
+        let cacheKey = "\(imageName)_\(traitCollection.userInterfaceStyle.rawValue)"
+        let isDarkMode = traitCollection.userInterfaceStyle == .dark  // ✅ Capture on main thread
+        
+        // Check cache first on background queue
+        cacheQueue.async { [weak self] in
+            guard let self = self else { return }
+            
+            if let cachedImage = self.processedImageCache[cacheKey] {
+                DispatchQueue.main.async {
+                    self.applyProcessedImage(cachedImage, for: stream)
                 }
-
-                if let controlsFilter = CIFilter(name: "CIColorControls") {
-                    controlsFilter.setValue(processedImage, forKey: kCIInputImageKey)
-                    controlsFilter.setValue(1.3, forKey: kCIInputContrastKey) // Increase contrast
-                    controlsFilter.setValue(0.2, forKey: kCIInputBrightnessKey) // Boost brightness
-                    if let outputImage = controlsFilter.outputImage {
-                        processedImage = outputImage
-                        #if DEBUG
-                        print("Dark mode: Applied CIColorControls - extent: \(processedImage.extent)")
-                        #endif
-                    } else {
-                        #if DEBUG
-                        print("Dark mode: Failed to apply CIColorControls")
-                        #endif
-                    }
-                }
-
-                if let dilateFilter = CIFilter(name: "CIMorphologyMaximum") {
-                    dilateFilter.setValue(processedImage, forKey: kCIInputImageKey)
-                    dilateFilter.setValue(4.0, forKey: kCIInputRadiusKey)
-                    if let outputImage = dilateFilter.outputImage {
-                        processedImage = outputImage
-                        #if DEBUG
-                        print("Dark mode: Applied CIMorphologyMaximum - extent: \(processedImage.extent)")
-                        #endif
-                    } else {
-                        #if DEBUG
-                        print("Dark mode: Failed to apply CIMorphologyMaximum")
-                        #endif
-                    }
-                }
-            } else {
-                if let controlsFilter = CIFilter(name: "CIColorControls") {
-                    controlsFilter.setValue(processedImage, forKey: kCIInputImageKey)
-                    controlsFilter.setValue(1.3, forKey: kCIInputContrastKey) // Increase contrast
-                    controlsFilter.setValue(-0.2, forKey: kCIInputBrightnessKey) // Reduce brightness
-                    if let outputImage = controlsFilter.outputImage {
-                        processedImage = outputImage
-                        #if DEBUG
-                        print("Light mode: Applied CIColorControls - extent: \(processedImage.extent)")
-                        #endif
-                    } else {
-                        #if DEBUG
-                        print("Light mode: Failed to apply CIColorControls")
-                        #endif
-                    }
-                }
-
-                if let dilateFilter = CIFilter(name: "CIMorphologyMaximum") {
-                    dilateFilter.setValue(processedImage, forKey: kCIInputImageKey)
-                    dilateFilter.setValue(5.0, forKey: kCIInputRadiusKey) // Increased radius for more thickening
-                    if let outputImage = dilateFilter.outputImage {
-                        processedImage = outputImage
-                        #if DEBUG
-                        print("Light mode: Applied CIMorphologyMaximum - extent: \(processedImage.extent)")
-                        #endif
-                    } else {
-                        #if DEBUG
-                        print("Light mode: Failed to apply CIMorphologyMaximum")
-                        #endif
-                    }
-                }
-
-                if let erodeFilter = CIFilter(name: "CIMorphologyMinimum") {
-                    erodeFilter.setValue(processedImage, forKey: kCIInputImageKey)
-                    erodeFilter.setValue(1.0, forKey: kCIInputRadiusKey) // Light refinement
-                    if let outputImage = erodeFilter.outputImage {
-                        processedImage = outputImage
-                        #if DEBUG
-                        print("Light mode: Applied CIMorphologyMinimum - extent: \(processedImage.extent)")
-                        #endif
-                    } else {
-                        #if DEBUG
-                        print("Light mode: Failed to apply CIMorphologyMinimum")
-                        #endif
-                    }
-                }
+                return
             }
-
-            // Convert back to UIImage
-            if let cgImage = context.createCGImage(processedImage, from: processedImage.extent) {
-                finalImage = UIImage(cgImage: cgImage)
-                #if DEBUG
-                print("Successfully converted processed image to UIImage - size: \(finalImage.size)")
-                #endif
-            } else {
-                #if DEBUG
-                print("Failed to convert CIImage to CGImage - using base image as fallback")
-                #endif
-                finalImage = baseImage // Fallback to base image
-            }
-        } else {
-            #if DEBUG
-            print("Failed to create CIImage from baseImage - using base image as fallback")
-            #endif
+            
+            // Process image on background queue
+            self.processImageAsync(imageName: imageName, cacheKey: cacheKey, stream: stream, isDarkMode: isDarkMode)  // ✅ Pass the captured value
         }
+    }
+    
+    private func processImageAsync(imageName: String, cacheKey: String, stream: DirectStreamingPlayer.Stream, isDarkMode: Bool) {
+        guard let baseImage = UIImage(named: imageName) else {
+            DispatchQueue.main.async {
+                self.backgroundImageView.image = nil
+            }
+            return
+        }
+        
+        imageProcessingQueue.async { [weak self] in
+            guard let self = self else { return }
+            
+            let finalImage = autoreleasepool { () -> UIImage in
+                guard let ciImage = CIImage(image: baseImage) else {
+                    return baseImage
+                }
+                
+                var processedImage = ciImage
+                
+                #if DEBUG
+                print("Processing image for \(stream.languageCode), mode: \(isDarkMode ? "dark" : "light")")
+                #endif
+                
+                // Apply filters based on interface style
+                if isDarkMode {
+                    processedImage = self.applyDarkModeFilters(to: processedImage)
+                } else {
+                    processedImage = self.applyLightModeFilters(to: processedImage)
+                }
+                
+                // Convert back to UIImage
+                guard let cgImage = self.imageProcessingContext.createCGImage(processedImage, from: processedImage.extent) else {
+                    #if DEBUG
+                    print("Failed to convert CIImage to CGImage - using base image as fallback")
+                    #endif
+                    return baseImage
+                }
+                
+                let result = UIImage(cgImage: cgImage)
+                #if DEBUG
+                print("Successfully converted processed image to UIImage - size: \(result.size)")
+                #endif
+                return result
+            }
+            
+            // Cache the result
+            self.cacheQueue.async {
+                self.processedImageCache[cacheKey] = finalImage
+            }
+            
+            // Apply to UI on main thread
+            DispatchQueue.main.async {
+                self.applyProcessedImage(finalImage, for: stream)
+            }
+        }
+    }
+    
+    private func applyDarkModeFilters(to image: CIImage) -> CIImage {
+        var processedImage = image
+        
+        // Invert colors
+        if let invertFilter = CIFilter(name: "CIColorInvert") {
+            invertFilter.setValue(processedImage, forKey: kCIInputImageKey)
+            if let outputImage = invertFilter.outputImage {
+                processedImage = outputImage
+                #if DEBUG
+                print("Dark mode: Applied CIColorInvert - extent: \(processedImage.extent)")
+                #endif
+            }
+        }
+        
+        // Adjust contrast and brightness
+        if let controlsFilter = CIFilter(name: "CIColorControls") {
+            controlsFilter.setValue(processedImage, forKey: kCIInputImageKey)
+            controlsFilter.setValue(1.3, forKey: kCIInputContrastKey)
+            controlsFilter.setValue(0.2, forKey: kCIInputBrightnessKey)
+            if let outputImage = controlsFilter.outputImage {
+                processedImage = outputImage
+                #if DEBUG
+                print("Dark mode: Applied CIColorControls - extent: \(processedImage.extent)")
+                #endif
+            }
+        }
+        
+        // Morphology
+        if let dilateFilter = CIFilter(name: "CIMorphologyMaximum") {
+            dilateFilter.setValue(processedImage, forKey: kCIInputImageKey)
+            dilateFilter.setValue(4.0, forKey: kCIInputRadiusKey)
+            if let outputImage = dilateFilter.outputImage {
+                processedImage = outputImage
+                #if DEBUG
+                print("Dark mode: Applied CIMorphologyMaximum - extent: \(processedImage.extent)")
+                #endif
+            }
+        }
+        
+        return processedImage
+    }
 
-        // Adjust for smaller screens
+    private func applyLightModeFilters(to image: CIImage) -> CIImage {
+        var processedImage = image
+        
+        // Color controls
+        if let controlsFilter = CIFilter(name: "CIColorControls") {
+            controlsFilter.setValue(processedImage, forKey: kCIInputImageKey)
+            controlsFilter.setValue(1.3, forKey: kCIInputContrastKey)
+            controlsFilter.setValue(-0.2, forKey: kCIInputBrightnessKey)
+            if let outputImage = controlsFilter.outputImage {
+                processedImage = outputImage
+                #if DEBUG
+                print("Light mode: Applied CIColorControls - extent: \(processedImage.extent)")
+                #endif
+            }
+        }
+        
+        // Morphology operations
+        if let dilateFilter = CIFilter(name: "CIMorphologyMaximum") {
+            dilateFilter.setValue(processedImage, forKey: kCIInputImageKey)
+            dilateFilter.setValue(5.0, forKey: kCIInputRadiusKey)
+            if let outputImage = dilateFilter.outputImage {
+                processedImage = outputImage
+                #if DEBUG
+                print("Light mode: Applied CIMorphologyMaximum - extent: \(processedImage.extent)")
+                #endif
+            }
+        }
+        
+        if let erodeFilter = CIFilter(name: "CIMorphologyMinimum") {
+            erodeFilter.setValue(processedImage, forKey: kCIInputImageKey)
+            erodeFilter.setValue(1.0, forKey: kCIInputRadiusKey)
+            if let outputImage = erodeFilter.outputImage {
+                processedImage = outputImage
+                #if DEBUG
+                print("Light mode: Applied CIMorphologyMinimum - extent: \(processedImage.extent)")
+                #endif
+            }
+        }
+        
+        return processedImage
+    }
+    
+    private func applyProcessedImage(_ image: UIImage, for stream: DirectStreamingPlayer.Stream) {
+        // This runs on main thread
         let screenSize = UIScreen.main.bounds.size
         let isSmallScreen = screenSize.height < 1600
-        backgroundImageView.contentMode = .scaleAspectFill
-        backgroundImageView.image = finalImage
+        
+        backgroundImageView.image = image
         
         if isSmallScreen {
-            let imageSize = baseImage.size
+            let imageSize = image.size
             let screenAspect = screenSize.width / screenSize.height
             let imageAspect = imageSize.width / imageSize.height
-            let scaleFactor = min(0.85, screenAspect / imageAspect) // Cap at 85% to avoid over-thinning
+            let scaleFactor = min(0.85, screenAspect / imageAspect)
             backgroundImageView.transform = CGAffineTransform(scaleX: scaleFactor, y: scaleFactor)
         } else {
             backgroundImageView.transform = .identity
         }
         
-        // Reapply parallax effect after updating the image
+        // Reapply parallax effect
         backgroundImageView.addParallaxEffect(intensity: 10.0)
-
-        // Adjust alpha based on mode for better visibility
+        
+        // Animate alpha change
         UIView.transition(with: backgroundImageView, duration: 0.5, options: .transitionCrossDissolve, animations: {
             self.backgroundImageView.alpha = self.traitCollection.userInterfaceStyle == .dark ? 0.3 : 0.15
         }, completion: { _ in
@@ -1346,6 +1390,14 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         #if DEBUG
         print("🧹 Received memory warning")
         #endif
+        
+        // Clear image cache to free memory
+        cacheQueue.async {
+            self.processedImageCache.removeAll()
+            #if DEBUG
+            print("🧹 Cleared processed image cache")
+            #endif
+        }
     }
     
     // MARK: - Audio Setup
