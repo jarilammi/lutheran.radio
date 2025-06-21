@@ -138,8 +138,6 @@ class SharedPlayerManager {
         }
         
         // Main app context - ensure immediate update
-        player?.selectedStream = stream
-        
         // CRITICAL FIX: Update UserDefaults BEFORE stopping player
         sharedDefaults?.set(stream.languageCode, forKey: "currentLanguage")
         sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "lastUpdateTime")
