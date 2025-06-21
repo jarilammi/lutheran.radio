@@ -56,6 +56,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     }
     
     private var lastWidgetUpdate: Date?
+    private var lastWidgetSwitchTime: Date?
+    private var pendingWidgetSwitchWorkItem: DispatchWorkItem?
+    private var processedActionIds: Set<String> = []
     
     /// Label displaying the app title.
     let titleLabel: UILabel = {
@@ -259,6 +262,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         let initialIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.languageCode == languageCode }) ?? 0
         selectedStreamIndex = initialIndex // Set initial index
         streamingPlayer.setStream(to: DirectStreamingPlayer.availableStreams[initialIndex])
+        updateUserDefaultsLanguage(DirectStreamingPlayer.availableStreams[initialIndex].languageCode)
         updateBackground(for: DirectStreamingPlayer.availableStreams[initialIndex])
         
         languageCollectionView.reloadData()
@@ -399,10 +403,20 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     }
     
     func saveStateForWidget() {
-        // CRITICAL: Throttle widget updates during audio operations
         let now = Date()
+        let timeSinceAppLaunch = now.timeIntervalSince(appLaunchTime)
+        let isInInitializationPeriod = timeSinceAppLaunch < 5.0  // Match SharedPlayerManager
+        
+        // Enhanced throttling during initialization
+        let throttleInterval: TimeInterval = isInInitializationPeriod ? 4.0 : 2.0
+        
         if let lastUpdate = lastWidgetUpdate,
-           now.timeIntervalSince(lastUpdate) < 2.0 {  // 2-second minimum interval
+           now.timeIntervalSince(lastUpdate) < throttleInterval {
+            #if DEBUG
+            if isInInitializationPeriod {
+                print("🔗 ViewController: Throttling widget update during initialization")
+            }
+            #endif
             return
         }
         
@@ -420,7 +434,11 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             lastWidgetUpdate = now
             
             #if DEBUG
-            print("🔗 State saved for widgets")
+            print("🔗 State saved for widgets (meaningful change detected)")
+            #endif
+        } else {
+            #if DEBUG
+            print("🔗 No meaningful state change, skipping widget timestamp update")
             #endif
         }
     }
@@ -1787,21 +1805,52 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: workItem) // Reduced delay for responsiveness
     }
     
+    private func updateUserDefaultsLanguage(_ languageCode: String) {
+        let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared")
+        sharedDefaults?.set(languageCode, forKey: "currentLanguage")
+        sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "lastUpdateTime")
+        sharedDefaults?.synchronize()
+        
+        #if DEBUG
+        print("🔗 MAIN APP: Updated UserDefaults language to: \(languageCode)")
+        #endif
+    }
+    
     private func completeStreamSwitch(stream: DirectStreamingPlayer.Stream, index: Int) {
+        // CRITICAL FIX: Update UserDefaults IMMEDIATELY at the start
+        // This ensures widgets show correct language during the entire transition
+        updateUserDefaultsLanguage(stream.languageCode)
+        self.selectedStreamIndex = index
+        
+        // Immediate widget state update for instant visual feedback
+        saveStateForWidget()
+        
         streamingPlayer.stop { [weak self] in
             guard let self = self else { return }
             self.playTuningSound { [weak self] in
                 guard let self = self else { return }
                 self.streamingPlayer.resetTransientErrors()
                 self.streamingPlayer.setStream(to: stream)
+                
+                // Confirm UserDefaults is still correct (redundant but safe)
+                self.updateUserDefaultsLanguage(stream.languageCode)
+                
                 self.hasPermanentPlaybackError = false
-                self.selectedStreamIndex = index
+                
+                // Save state after stream is actually set
+                self.saveStateForWidget()
+                
                 if self.isPlaying || !self.isManualPause {
                     self.startPlayback()
                 }
                 self.updateSelectionIndicator(to: index)
                 self.languageCollectionView.scrollToItem(at: IndexPath(item: index, section: 0), at: .centeredHorizontally, animated: true)
-                self.saveStateForWidget()
+                
+                // Force another save after UI updates - keep this for safety
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    self.saveStateForWidget()
+                }
+                
                 #if DEBUG
                 print("📱 completeStreamSwitch: Switched to stream \(stream.language), index=\(index)")
                 #endif
@@ -1900,87 +1949,75 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
 
     /// Handle widget stream switch without tuning sounds
     private func handleWidgetSwitchToLanguage(_ languageCode: String) {
-        DispatchQueue.main.async { [weak self] in
+        // CRITICAL: Debounce rapid widget switches
+        let now = Date()
+        if let lastSwitch = lastWidgetSwitchTime, now.timeIntervalSince(lastSwitch) < 2.0 {
+            #if DEBUG
+            print("🔗 Debouncing rapid widget switch: \(languageCode), time since last: \(now.timeIntervalSince(lastSwitch))s")
+            #endif
+            return
+        }
+        lastWidgetSwitchTime = now
+        
+        // Cancel any pending widget switches
+        pendingWidgetSwitchWorkItem?.cancel()
+        
+        let workItem = DispatchWorkItem { [weak self] in
             guard let self = self else { return }
             
-            #if DEBUG
-            print("🔗 handleWidgetSwitchToLanguage called for: \(languageCode)")
-            print("🔗 Current selected stream: \(self.streamingPlayer.selectedStream.languageCode)")
-            #endif
-            
-            // Check if we're already on this stream
-            if self.streamingPlayer.selectedStream.languageCode == languageCode {
+            DispatchQueue.main.async {
                 #if DEBUG
-                print("🔗 Already on requested stream \(languageCode), no switch needed")
-                #endif
-                // Still save state to ensure widget is up to date
-                self.saveStateForWidget()
-                return
-            }
-            
-            // Find the target stream
-            guard let targetStream = DirectStreamingPlayer.availableStreams.first(where: { $0.languageCode == languageCode }) else {
-                #if DEBUG
-                print("🔗 Target stream not found for language: \(languageCode)")
-                #endif
-                return
-            }
-            
-            guard let targetIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.languageCode == languageCode }) else {
-                #if DEBUG
-                print("🔗 Target stream index not found for language: \(languageCode)")
-                #endif
-                return
-            }
-            
-            #if DEBUG
-            print("🔗 Switching from \(self.streamingPlayer.selectedStream.language) to \(targetStream.language)")
-            #endif
-            
-            selectedStreamIndex = targetIndex
-            updateBackground(for: targetStream)
-            
-            // FIXED: Don't save state immediately - let the stream switch complete first
-            
-            // Direct stream switch without tuning sounds
-            streamingPlayer.stop { [weak self] in
-                guard let self = self else { return }
-                
-                #if DEBUG
-                print("🔗 Previous stream stopped, setting new stream")
+                print("🔗 handleWidgetSwitchToLanguage called for: \(languageCode)")
+                print("🔗 Current selected stream: \(self.streamingPlayer.selectedStream.languageCode)")
                 #endif
                 
-                self.streamingPlayer.resetTransientErrors()
-                self.streamingPlayer.setStream(to: targetStream)
-                self.hasPermanentPlaybackError = false
-                
-                DispatchQueue.main.async {
-                    let indexPath = IndexPath(item: targetIndex, section: 0)
-                    self.languageCollectionView.selectItem(at: indexPath, animated: true, scrollPosition: .centeredHorizontally)
-                    self.updateSelectionIndicator(to: targetIndex)
+                // CRITICAL: Always stop current playback first, regardless of stream
+                self.streamingPlayer.stop { [weak self] in
+                    guard let self = self else { return }
+                    
+                    // Find target stream
+                    guard let targetStream = DirectStreamingPlayer.availableStreams.first(where: { $0.languageCode == languageCode }),
+                          let targetIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.languageCode == languageCode }) else {
+                        return
+                    }
                     
                     #if DEBUG
-                    print("🔗 UI updated for stream switch, isManualPause: \(self.isManualPause)")
+                    print("🔗 FORCED STOP COMPLETED - Switching from \(self.streamingPlayer.selectedStream.language) to \(targetStream.language)")
                     #endif
                     
-                    if !self.isManualPause {
-                        #if DEBUG
-                        print("🔗 Starting playback after stream switch")
-                        #endif
-                        self.startPlaybackDirect()
-                    } else {
-                        #if DEBUG
-                        print("🔗 Not starting playback (manual pause)")
-                        #endif
-                        // FIXED: Only save state after the stream is fully switched
-                        // Add a delay to ensure the stream switch is complete
+                    // Update state immediately
+                    self.selectedStreamIndex = targetIndex
+                    self.updateBackground(for: targetStream)
+                    
+                    // Use setStream which handles stopping internally
+                    self.streamingPlayer.setStream(to: targetStream)
+                    updateUserDefaultsForStream(targetStream)
+                    
+                    // Update UI immediately
+                    DispatchQueue.main.async {
+                        let indexPath = IndexPath(item: targetIndex, section: 0)
+                        self.languageCollectionView.selectItem(at: indexPath, animated: true, scrollPosition: .centeredHorizontally)
+                        self.updateSelectionIndicator(to: targetIndex)
+                        
+                        // Force widget refresh with delay to ensure state is persisted
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                             self.saveStateForWidget()
+                            WidgetCenter.shared.reloadAllTimelines()
                         }
                     }
                 }
             }
         }
+        
+        pendingWidgetSwitchWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: workItem)
+    }
+    
+    private func updateUserDefaultsForStream(_ stream: DirectStreamingPlayer.Stream) {
+        let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared")
+        sharedDefaults?.set(stream.languageCode, forKey: "currentLanguage")
+        sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "lastUpdateTime")
+        sharedDefaults?.synchronize()
     }
 
     /// Direct playback without tuning sounds (for widget actions)
@@ -2047,26 +2084,19 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             return
         }
         
-        // Just check for existence without binding the value
-        guard sharedDefaults.string(forKey: "pendingAction") != nil else {
-            // Only log if we're in the first 10 seconds after launch
-            #if DEBUG
-            if Date().timeIntervalSince(appLaunchTime) < 10.0 {
-                print("🔗 No pending actions found")
-            }
-            #endif
+        guard let pendingAction = sharedDefaults.string(forKey: "pendingAction"),
+              let actionId = sharedDefaults.string(forKey: "pendingActionId") else {
             return
         }
         
-        // Now get the actual values when we need them
-        let pendingAction = sharedDefaults.string(forKey: "pendingAction")!
         let pendingTime = sharedDefaults.double(forKey: "pendingActionTime")
-        let actionId = sharedDefaults.string(forKey: "pendingActionId") ?? "unknown"
+        let pendingLanguage = sharedDefaults.string(forKey: "pendingLanguage")
         let now = Date().timeIntervalSince1970
         let actionAge = now - pendingTime
         
         #if DEBUG
         print("🔗 Found pending action: \(pendingAction), age: \(actionAge)s, ID: \(actionId)")
+        print("🔗 Pending language: \(pendingLanguage ?? "nil")")
         #endif
         
         // Expire actions after 30 seconds
@@ -2074,18 +2104,25 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             #if DEBUG
             print("🔗 Action expired (age: \(actionAge)s), clearing")
             #endif
-            sharedDefaults.removeObject(forKey: "pendingAction")
-            sharedDefaults.removeObject(forKey: "pendingActionTime")
-            sharedDefaults.removeObject(forKey: "pendingLanguage")
-            sharedDefaults.removeObject(forKey: "pendingActionId")
+            clearWidgetAction(actionId: actionId)
             return
         }
         
-        #if DEBUG
-        print("🔗 Processing pending widget action: \(pendingAction)")
-        #endif
+        // Clear action immediately to prevent re-processing
+        clearWidgetAction(actionId: actionId)
         
         switch pendingAction {
+        case "switch":
+            if let languageCode = pendingLanguage {  // Use the already retrieved value
+                #if DEBUG
+                print("🔗 Executing widget switch action to language: \(languageCode)")
+                #endif
+                handleWidgetSwitchToLanguage(languageCode)
+            } else {
+                #if DEBUG
+                print("🔗 Switch action missing language code - pendingLanguage was nil")
+                #endif
+            }
         case "play":
             #if DEBUG
             print("🔗 Executing widget play action")
@@ -2096,36 +2133,33 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             print("🔗 Executing widget pause action")
             #endif
             handleWidgetPauseAction()
-        case "switch":
-            if let languageCode = sharedDefaults.string(forKey: "pendingLanguage") {
-                #if DEBUG
-                print("🔗 Executing widget switch action to language: \(languageCode)")
-                #endif
-                handleWidgetSwitchToLanguage(languageCode)
-            } else {
-                #if DEBUG
-                print("🔗 Switch action missing language code")
-                #endif
-            }
         default:
             #if DEBUG
             print("🔗 Unknown pending action: \(pendingAction)")
             #endif
         }
         
-        // Clear processed actions immediately
-        sharedDefaults.removeObject(forKey: "pendingAction")
-        sharedDefaults.removeObject(forKey: "pendingActionTime")
-        sharedDefaults.removeObject(forKey: "pendingLanguage")
-        sharedDefaults.removeObject(forKey: "pendingActionId")
+        // Clean up old processed action IDs (keep only last 10)
+        if processedActionIds.count > 10 {
+            let sortedIds = Array(processedActionIds).suffix(10)
+            processedActionIds = Set(sortedIds)
+        }
+    }
+    
+    private func clearWidgetAction(actionId: String) {
+        guard let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return }
         
-        #if DEBUG
-        print("🔗 Cleared processed action: \(pendingAction)")
-        #endif
-        
-        // Save updated state after processing action with a small delay to ensure UI is updated
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            self.saveStateForWidget()
+        // Only clear if the action ID matches to prevent race conditions
+        if let currentActionId = sharedDefaults.string(forKey: "pendingActionId"),
+           currentActionId == actionId {
+            sharedDefaults.removeObject(forKey: "pendingAction")
+            sharedDefaults.removeObject(forKey: "pendingActionId")
+            sharedDefaults.removeObject(forKey: "pendingActionTime")
+            sharedDefaults.removeObject(forKey: "pendingLanguage")
+            
+            #if DEBUG
+            print("🔗 Cleared processed action: \(actionId)")
+            #endif
         }
     }
 }
@@ -2175,6 +2209,7 @@ extension ViewController {
                     guard let self = self else { return }
                     self.streamingPlayer.resetTransientErrors()
                     self.streamingPlayer.setStream(to: targetStream)
+                    updateUserDefaultsForStream(targetStream)
                     self.hasPermanentPlaybackError = false
                     
                     DispatchQueue.main.async {

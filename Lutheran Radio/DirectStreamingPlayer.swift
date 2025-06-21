@@ -269,6 +269,9 @@ class DirectStreamingPlayer: NSObject {
     private var retryWorkItem: DispatchWorkItem?
     #endif
     
+    /// Work item for pending playback operations that can be cancelled
+    private var pendingPlaybackWorkItem: DispatchWorkItem?
+    
     /// Track deallocation state
     private var isDeallocating = false
     
@@ -377,11 +380,11 @@ class DirectStreamingPlayer: NSObject {
     }
 
     var currentItemStatus: AVPlayerItem.Status {
-        return playerItem?.status ?? .unknown
+        return player?.currentItem?.status ?? .unknown
     }
 
     var hasPlayerItem: Bool {
-        return playerItem != nil
+        return playerItem != nil && player?.currentItem != nil
     }
 
     var actualPlaybackState: Bool {
@@ -1163,13 +1166,24 @@ class DirectStreamingPlayer: NSObject {
     }
     
     func setStream(to stream: Stream) {
+        // CRITICAL: Prevent concurrent stream switches
         guard !isSwitchingStream else {
             #if DEBUG
-            print("📡 Stream switch skipped: already switching")
+            print("🔗 Stream switch already in progress, ignoring request for \(stream.languageCode)")
             #endif
             return
         }
         isSwitchingStream = true
+        
+        #if DEBUG
+        print("🔗 ATOMIC STREAM SWITCH: \(selectedStream.languageCode) -> \(stream.languageCode)")
+        #endif
+        
+        // CRITICAL: Update selectedStream immediately and atomically
+        selectedStream = stream
+        
+        // Force immediate state save to prevent race conditions
+        SharedPlayerManager.shared.saveCurrentState()
         
         stop { [weak self] in
             guard let self = self else {
@@ -1177,10 +1191,16 @@ class DirectStreamingPlayer: NSObject {
                 return
             }
             
+            // Ensure selectedStream is still set after stop
             self.selectedStream = stream
+            
             #if DEBUG
             print("📡 Stream set to: \(stream.language), URL: \(stream.url)")
+            print("🔍 DEBUG: selectedStream.languageCode = \(self.selectedStream.languageCode)")
             #endif
+            
+            // Force another state save after stop completes
+            SharedPlayerManager.shared.saveCurrentState()
             
             if self.validationState == .pending {
                 self.validateSecurityModelAsync { [weak self] isValid in
@@ -1189,6 +1209,7 @@ class DirectStreamingPlayer: NSObject {
                         return
                     }
                     defer { self.isSwitchingStream = false }
+                    
                     if isValid {
                         self.playAfterStreamSwitch()
                     } else {
@@ -1310,7 +1331,6 @@ class DirectStreamingPlayer: NSObject {
             asset.resourceLoader.setDelegate(self, queue: DispatchQueue(label: "radio.lutheran.resourceloader"))
             self.playerItem = AVPlayerItem(asset: asset)
             
-            // This is already on main thread, but make it explicit
             if self.player == nil {
                 self.player = AVPlayer(playerItem: self.playerItem)
                 #if DEBUG
@@ -1325,7 +1345,7 @@ class DirectStreamingPlayer: NSObject {
             
             self.addObservers()
             
-            // Updated observer with connection tracking
+            // FIXED: Single observer that properly handles SSL timer cleanup
             var tempStatusObserver: NSKeyValueObservation?
             tempStatusObserver = self.playerItem?.observe(\.status, options: [.new]) { [weak self] item, _ in
                 guard let self = self else {
@@ -1339,11 +1359,16 @@ class DirectStreamingPlayer: NSObject {
                 case .readyToPlay:
                     tempStatusObserver?.invalidate()
                     
-                    // Mark handshake complete for this specific connection
+                    // CRITICAL FIX: Clear the SSL timer immediately when ready to play
+                    self.clearSSLProtectionTimer(for: connectionId)
+                    
+                    // Mark handshake complete for both systems
                     self.markSSLHandshakeComplete(for: connectionId)
+                    self.isSSLHandshakeComplete = true
                     
                     #if DEBUG
                     print("🔒 [SSL Timing] Ready to play after \(connectionAge)s for connection \(connectionId)")
+                    print("🔒 [SSL Protection] Timer cleared for successful connection")
                     #endif
                     
                     self.serverFailureCount[server.name] = 0
@@ -1356,37 +1381,42 @@ class DirectStreamingPlayer: NSObject {
                         self.playerItem?.add(metadataOutput)
                     }
                     
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                        #if DEBUG
-                        print("🎵 [Auto Play] Actually calling player.play() for \(self.selectedStream.language)")
-                        #endif
-                        self.player?.play()
-                        self.hasStartedPlaying = true
-                        
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                            if self.player?.rate ?? 0 > 0 {
-                                self.onStatusChange?(true, String(localized: "status_playing"))
+                    // FIXED: Start playback immediately without delay
+                    #if DEBUG
+                    print("🎵 [Auto Play] Actually calling player.play() for \(self.selectedStream.language)")
+                    #endif
+                    self.player?.play()
+                    self.hasStartedPlaying = true
+                    
+                    // Check playback status after a brief moment
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        if self.player?.rate ?? 0 > 0 {
+                            self.onStatusChange?(true, String(localized: "status_playing"))
+                            completion(true)
+                        } else {
+                            // If still not playing, try again
+                            self.player?.play()
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                let isPlaying = self.player?.rate ?? 0 > 0
+                                self.onStatusChange?(isPlaying, String(localized: isPlaying ? "status_playing" : "status_buffering"))
+                                completion(isPlaying)
                             }
                         }
-                        completion(true)
                     }
                     
                 case .failed:
-                    // Only handle failure if handshake is complete or timeout reached
-                    if self.isSSLHandshakeComplete(for: connectionId) {
-                        tempStatusObserver?.invalidate()
-                        self.clearSSLProtectionTimer(for: connectionId)
-                        
-                        #if DEBUG
-                        print("❌ PlayerItem failed with server \(server.name) after \(connectionAge)s")
-                        #endif
-                        
-                        if !fallbackServers.isEmpty {
-                            self.tryNextServer(fallbackServers: fallbackServers, completion: completion)
-                        } else {
-                            self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
-                            completion(false)
-                        }
+                    tempStatusObserver?.invalidate()
+                    self.clearSSLProtectionTimer(for: connectionId)
+                    
+                    #if DEBUG
+                    print("❌ PlayerItem failed with server \(server.name) after \(connectionAge)s")
+                    #endif
+                    
+                    if !fallbackServers.isEmpty {
+                        self.tryNextServer(fallbackServers: fallbackServers, completion: completion)
+                    } else {
+                        self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
+                        completion(false)
                     }
                     
                 case .unknown:
@@ -1398,14 +1428,14 @@ class DirectStreamingPlayer: NSObject {
                 }
             }
             
-            // Timeout fallback using connection ID
+            // FIXED: Reduce timeout fallback since we clear timer on readyToPlay
             let adaptiveTimeout = self.getSSLTimeout()
-            DispatchQueue.main.asyncAfter(deadline: .now() + max(adaptiveTimeout + 2.0, 20.0)) { [weak self] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + max(adaptiveTimeout + 5.0, 15.0)) { [weak self] in
                 guard let self = self, self.playerItem?.status != .readyToPlay else { return }
                 tempStatusObserver?.invalidate()
                 let connectionAge = Date().timeIntervalSince(connectionStartTime)
                 #if DEBUG
-                print("❌ Adaptive timeout reached after \(connectionAge)s with server \(server.name) (timeout: \(adaptiveTimeout + 2.0)s)")
+                print("❌ Fallback timeout reached after \(connectionAge)s with server \(server.name)")
                 #endif
                 self.clearSSLProtectionTimer(for: connectionId)
                 if !fallbackServers.isEmpty {
@@ -1430,10 +1460,10 @@ class DirectStreamingPlayer: NSObject {
     private func clearSSLProtectionTimer() {
         sslConnectionTimeout?.invalidate()
         sslConnectionTimeout = nil
-        isSSLHandshakeComplete = true // Mark as complete when cleared
+        isSSLHandshakeComplete = true
         
         #if DEBUG
-        print("🔒 [SSL Protection] Timer cleared")
+        print("🔒 [SSL Protection] Legacy timer cleared")
         #endif
     }
     
@@ -1463,7 +1493,7 @@ class DirectStreamingPlayer: NSObject {
             let playerItemKey = ObjectIdentifier(playerItem)
             var keyPathsSet = self.registeredKeyPaths[playerItemKey] ?? Set<String>()
             
-            // FIXED: Simplified status observer that works with SSL protection
+            // FIXED: Simplified status observer without SSL conflicts
             self.statusObserver = playerItem.observe(\.status, options: [.new, .initial]) { [weak self] item, _ in
                 guard let self = self else { return }
                 DispatchQueue.main.async {
@@ -1474,28 +1504,23 @@ class DirectStreamingPlayer: NSObject {
                     
                     switch item.status {
                     case .readyToPlay:
-                        // Mark SSL as complete and playback as started
-                        self.isSSLHandshakeComplete = true
-                        self.hasStartedPlaying = true
-                        self.onStatusChange?(true, String(localized: "status_playing"))
+                        // Don't interfere with SSL protection - let startPlaybackWithFallback handle it
+                        break
                         
                     case .failed:
-                        // Only stop immediately if SSL handshake is complete or we've been playing
-                        if self.isSSLHandshakeComplete || self.hasStartedPlaying {
+                        // Only handle if this isn't managed by startPlaybackWithFallback
+                        if self.hasStartedPlaying {
                             self.lastError = item.error
                             let errorType = StreamErrorType.from(error: item.error)
                             self.hasPermanentError = errorType.isPermanent
                             self.onStatusChange?(false, errorType.statusString)
                             self.stop()
-                        } else {
-                            #if DEBUG
-                            print("🔒 [SSL Protection] Deferring stop due to ongoing SSL handshake")
-                            #endif
-                            // Let the SSL protection timer handle this
                         }
                         
                     case .unknown:
-                        self.onStatusChange?(false, String(localized: "status_buffering"))
+                        if self.hasStartedPlaying {
+                            self.onStatusChange?(false, String(localized: "status_buffering"))
+                        }
                     @unknown default:
                         break
                     }
@@ -1505,6 +1530,7 @@ class DirectStreamingPlayer: NSObject {
             print("🧹 Added status observer for playerItem \(playerItemKey)")
             #endif
             
+            // Add buffer observers (unchanged)
             let keyPaths = [
                 "playbackBufferEmpty",
                 "playbackLikelyToKeepUp",
@@ -1519,19 +1545,17 @@ class DirectStreamingPlayer: NSObject {
             }
             self.registeredKeyPaths[playerItemKey] = keyPathsSet
             self.isObservingBuffer = true
-            #if DEBUG
-            print("🧹 Added buffer observers for playbackBufferEmpty, playbackLikelyToKeepUp, playbackBufferFull")
-            #endif
             
+            // Add time observer (unchanged)
             let interval = CMTime(seconds: 1.0, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
-            if let player = self.player, self.timeObserver == nil { // Check to avoid duplicate observers
+            if let player = self.player, self.timeObserver == nil {
                 self.timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] _ in
                     guard let self = self, self.delegate != nil else { return }
                     if self.player?.rate ?? 0 > 0 {
                         self.onStatusChange?(true, String(localized: "status_playing"))
                     }
                 }
-                self.timeObserverPlayer = player // Track the player that added the observer
+                self.timeObserverPlayer = player
                 #if DEBUG
                 print("🧹 Added time observer")
                 #endif
@@ -1638,8 +1662,16 @@ class DirectStreamingPlayer: NSObject {
     
     // FIXED: Update the stop() method to include connection cleanup
     func stop(completion: (() -> Void)? = nil) {
+        #if DEBUG
+        print("🛑 FORCE STOPPING ALL PLAYBACK - isSwitchingStream: \(isSwitchingStream)")
+        #endif
+        
         // Clear all active SSL timers
         clearAllSSLProtectionTimers()
+        
+        // CRITICAL: Cancel any pending audio operations
+        pendingPlaybackWorkItem?.cancel()
+        pendingPlaybackWorkItem = nil
         
         // Continue with existing stop logic
         performActualStop(completion: completion)
@@ -2411,6 +2443,10 @@ extension DirectStreamingPlayer {
                 #endif
             }
         }
+        
+        // Also clear the legacy timer if it exists
+        sslConnectionTimeout?.invalidate()
+        sslConnectionTimeout = nil
     }
     
     /// Clears all active SSL protection timers

@@ -98,24 +98,41 @@ struct Provider: AppIntentTimelineProvider {
      * - 15-second refresh interval for responsive updates
      */
     func timeline(for configuration: RadioWidgetConfiguration, in context: Context) async -> Timeline<SimpleEntry> {
-        let entry = createEntry(with: configuration)
+        // RESEARCHER RECOMMENDATION: Add state validation
+        let currentState = getValidatedStreamState()
         
-        // Create multiple entries to ensure regular updates
-        let now = Date()
-        let entries = [
-            entry,
-            // Add future entries to ensure timeline doesn't go stale
-            SimpleEntry(
-                date: now.addingTimeInterval(30),
-                isPlaying: entry.isPlaying,
-                currentStation: entry.currentStation,
-                statusMessage: entry.statusMessage,
-                availableStreams: entry.availableStreams,
-                configuration: configuration
-            )
-        ]
+        let entry = SimpleEntry(
+            date: Date(),
+            isPlaying: currentState.isPlaying,
+            currentStation: currentState.currentStation,
+            statusMessage: currentState.statusMessage,
+            availableStreams: SharedPlayerManager.shared.availableStreams,
+            configuration: configuration
+        )
         
-        return Timeline(entries: entries, policy: .after(now.addingTimeInterval(30)))
+        // RESEARCHER RECOMMENDATION: Longer refresh intervals for iOS 18 stability
+        let nextUpdate = Calendar.current.date(byAdding: .minute, value: 15, to: Date())!
+        return Timeline(entries: [entry], policy: .after(nextUpdate))
+    }
+    
+    // helper method to the Provider struct
+    private func getValidatedStreamState() -> (isPlaying: Bool, currentStation: String, statusMessage: String) {
+        let manager = SharedPlayerManager.shared
+        let isPlaying = manager.isPlaying
+        let currentStream = manager.currentStream
+        let currentStation = currentStream.flag + " " + currentStream.language
+        let hasError = manager.hasError
+        
+        let statusMessage: String
+        if hasError {
+            statusMessage = String(localized: "Connection error")
+        } else if isPlaying {
+            statusMessage = String(localized: "status_playing")
+        } else {
+            statusMessage = String(localized: "Ready")
+        }
+        
+        return (isPlaying: isPlaying, currentStation: currentStation, statusMessage: statusMessage)
     }
     
     /**
@@ -181,26 +198,7 @@ struct Provider: AppIntentTimelineProvider {
             return (state.isPlaying, state.currentLanguage, state.hasError)
         }
         
-        // PRIORITY 1: Check for instant feedback (highest priority)
-        if let instantFeedbackTime = sharedDefaults.object(forKey: "instantFeedbackTime") as? Double,
-           let instantFeedbackLanguage = sharedDefaults.string(forKey: "instantFeedbackLanguage"),
-           sharedDefaults.bool(forKey: "isInstantFeedback") == true {
-            
-            let age = Date().timeIntervalSince1970 - instantFeedbackTime
-            
-            // Use instant feedback for 15 seconds
-            if age < 15.0 {
-                let state = manager.loadSharedState()
-                
-                #if DEBUG
-                print("🔗 Using instant feedback state: \(instantFeedbackLanguage), age: \(age)s")
-                #endif
-                
-                return (state.isPlaying, instantFeedbackLanguage, state.hasError)
-            }
-        }
-        
-        // PRIORITY 2: Check for pending switch action
+        // PRIORITY 1: Always check for pending switch actions first
         if let pendingAction = sharedDefaults.string(forKey: "pendingAction"),
            pendingAction == "switch",
            let pendingLanguage = sharedDefaults.string(forKey: "pendingLanguage"),
@@ -208,33 +206,33 @@ struct Provider: AppIntentTimelineProvider {
             
             let actionAge = Date().timeIntervalSince1970 - pendingTime
             
-            // If action is fresh (less than 3 seconds), use pending language for instant feedback
-            if actionAge < 3.0 {
+            // Use pending language for 5 seconds (increased from 3)
+            if actionAge < 5.0 {
                 #if DEBUG
-                print("🔗 Using pending language for instant feedback: \(pendingLanguage), age: \(actionAge)s")
+                print("🔗 Widget using pending language: \(pendingLanguage), age: \(actionAge)s")
                 #endif
                 let state = manager.loadSharedState()
                 return (state.isPlaying, pendingLanguage, state.hasError)
             }
         }
         
-        // PRIORITY 3: Check for recent cache update
-        let lastUpdateTime = sharedDefaults.double(forKey: "lastUpdateTime")
-        let timeSinceUpdate = Date().timeIntervalSince1970 - lastUpdateTime
-        
-        // If very recent update (less than 2 seconds), prioritize cached state
-        if timeSinceUpdate < 2.0 {
-            let cachedLanguage = sharedDefaults.string(forKey: "currentLanguage") ?? "en"
-            let state = manager.loadSharedState()
+        // PRIORITY 2: Check instant feedback
+        if let instantFeedbackTime = sharedDefaults.object(forKey: "instantFeedbackTime") as? Double,
+           let instantFeedbackLanguage = sharedDefaults.string(forKey: "instantFeedbackLanguage"),
+           sharedDefaults.bool(forKey: "isInstantFeedback") == true {
             
-            #if DEBUG
-            print("🔗 Using cached state (recent update): \(cachedLanguage), age: \(timeSinceUpdate)s")
-            #endif
+            let age = Date().timeIntervalSince1970 - instantFeedbackTime
             
-            return (state.isPlaying, cachedLanguage, state.hasError)
+            if age < 15.0 {
+                let state = manager.loadSharedState()
+                #if DEBUG
+                print("🔗 Widget using instant feedback: \(instantFeedbackLanguage), age: \(age)s")
+                #endif
+                return (state.isPlaying, instantFeedbackLanguage, state.hasError)
+            }
         }
         
-        // PRIORITY 4: Fall back to normal state
+        // PRIORITY 3: Use normal state
         let state = manager.loadSharedState()
         return (state.isPlaying, state.currentLanguage, state.hasError)
     }
@@ -695,16 +693,6 @@ struct SwitchStreamIntent: AppIntent {
         self.streamLanguageCode = streamLanguageCode
     }
 
-    /**
-     * Executes language stream change
-     *
-     * Process:
-     * 1. Validate target language exists in available streams
-     * 2. Execute stream switch through player manager
-     * 3. Provide debug feedback for development
-     *
-     * - Throws: No errors thrown - gracefully handles missing streams
-     */
     func perform() async throws -> some IntentResult {
         #if DEBUG
         print("🔗 SwitchStreamIntent.perform called for language: \(streamLanguageCode)")
@@ -715,12 +703,12 @@ struct SwitchStreamIntent: AppIntent {
         // Find target stream in available options
         guard let targetStream = manager.availableStreams.first(where: { $0.languageCode == streamLanguageCode }) else {
             #if DEBUG
-            print("🔗 SwitchStreamIntent: Language stream not found")
+            print("🔗 SwitchStreamIntent: Language stream not found for \(streamLanguageCode)")
             #endif
             return .result()
         }
         
-        // Execute the stream switch
+        // CRITICAL FIX: Execute the stream switch with proper language parameter
         manager.switchToStream(targetStream)
         
         #if DEBUG

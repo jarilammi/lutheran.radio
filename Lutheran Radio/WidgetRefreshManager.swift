@@ -23,11 +23,10 @@ class WidgetRefreshManager {
     
     // Main refresh method with debouncing and change detection
     func refreshIfNeeded(for newState: WidgetState, immediate: Bool = false) {
-        // Skip if state hasn't actually changed
-        if let lastState = lastKnownState, !stateChanged(from: lastState, to: newState) {
-            #if DEBUG
-            print("🔗 Skipping refresh - no state change")
-            #endif
+        // ALWAYS refresh on language changes, regardless of throttling
+        if let lastState = lastKnownState,
+           lastState.currentLanguage != newState.currentLanguage {
+            performRefresh(for: newState, immediate: true)
             return
         }
         

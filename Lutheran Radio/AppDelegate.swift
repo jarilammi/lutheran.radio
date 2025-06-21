@@ -9,6 +9,7 @@
 ///
 /// Handles application lifecycle and scene session configuration for the Lutheran Radio app.
 import UIKit
+import WidgetKit
 
 @main
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -37,4 +38,13 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     ///   - application: The application instance.
     ///   - sceneSessions: The set of discarded scene sessions.
     func application(_ application: UIApplication, didDiscardSceneSessions sceneSessions: Set<UISceneSession>) {}
+    
+    // NEW: Add foreground refresh
+    func applicationWillEnterForeground(_ application: UIApplication) {
+        WidgetCenter.shared.reloadAllTimelines()
+        
+        #if DEBUG
+        print("🔗 [AppDelegate] Force widget refresh on foreground")
+        #endif
+    }
 }
