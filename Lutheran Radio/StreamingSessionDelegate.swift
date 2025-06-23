@@ -6,9 +6,14 @@
 //
 //  Enhanced with SSL Certificate Pinning and Strategic Transition Support
 
-/// - Article: Streaming Session Delegate Overview
+/// StreamingSessionDelegate
 ///
-/// This class handles streaming session delegation for Lutheran Radio, managing URL sessions and data tasks.
+/// A delegate class for managing URL sessions and data tasks in Lutheran Radio's audio streaming, with enhanced SSL certificate pinning and certificate transition support.
+/// This class handles HTTPS requests for AVFoundation's `AVAssetResourceLoadingRequest`, ensuring secure connections by validating server certificates against pinned public key and certificate hashes.
+/// It supports a transition period for certificate renewals, allowing graceful handling of new certificates during updates.
+///
+/// - Note: Designed for use with `AVAssetResourceLoaderDelegate` to secure audio streaming.
+/// - SeeAlso: `SSL_Certificate_Pinning_Challenges_iOS_AVFoundation.md` for detailed context on AVFoundation limitations and SSL pinning strategies.
 import Foundation
 import AVFoundation
 import Security
@@ -18,20 +23,24 @@ class StreamingSessionDelegate: NSObject, URLSessionDataDelegate {
     
     // MARK: - Certificate Configuration
     
-    // CURRENT CERTIFICATE (valid until Aug 20, 2025)
+    /// The pinned SPKI (Subject Public Key Info) hash for the current certificate, valid until August 20, 2025.
     private static let currentSPKIHash = "mm31qgyBr2aXX8NzxmX/OeKzrUeOtxim4foWmxL4TZY=" // openssl s_client -connect livestream.lutheran.radio:8443 -servername livestream.lutheran.radio < /dev/null 2>/dev/null | openssl x509 -pubkey -noout | openssl pkey -pubin -outform DER | openssl dgst -sha256 -binary | base64
+    
+    /// The pinned certificate hash for the current certificate, valid until August 20, 2025.
     private static let currentCertHash = "fKLbUQeMgiD3tYfzBXll4nQsbL5yR2lRtP5+cuLThsw=" // openssl s_client -connect livestream.lutheran.radio:8443 -servername livestream.lutheran.radio < /dev/null 2>/dev/null | openssl x509 -outform DER | openssl dgst -sha256 -binary | base64
     
-    // TRANSITION CONFIGURATION
-    static let transitionStartDate = Date(timeIntervalSince1970: 1753055999) // July 20, 2025 (1 month before expiry)
-    static let certificateExpiryDate = Date(timeIntervalSince1970: 1755734399) // Aug 20, 2025 23:59:59
+    /// The start date for the certificate transition period (July 20, 2025, one month before expiry).
+    static let transitionStartDate = Date(timeIntervalSince1970: 1753055999)
     
-    // SHIELDING VARIABLE - Enable only during actual certificate transitions
-    // CRITICAL SECURITY: Set to true ONLY during certificate renewal periods to prevent date manipulation attacks
-    // During stable production period (Aug 2025 - July 2026), this MUST remain false
+    /// The expiry date of the current certificate (August 20, 2025, 23:59:59).
+    static let certificateExpiryDate = Date(timeIntervalSince1970: 1755734399)
+    
+    /// A security flag to enable certificate transition support only during renewal periods.
+    /// - Warning: Set to `true` only during certificate renewal to prevent date manipulation attacks. Must remain `false` in stable production.
     static let isTransitionSupportEnabled = false // ⚠️ CHANGE TO TRUE ONLY DURING RENEWAL PERIOD
     
-    /// Determines if we're currently in the certificate transition period
+    /// Indicates whether the current date is within the certificate transition period.
+    /// - Returns: `true` if transition support is enabled and the current date is between `transitionStartDate` and `certificateExpiryDate`, otherwise `false`.
     static var isInTransitionPeriod: Bool {
         guard isTransitionSupportEnabled else {
             #if DEBUG
@@ -47,40 +56,57 @@ class StreamingSessionDelegate: NSObject, URLSessionDataDelegate {
         return inPeriod
     }
     
+    /// A flag to enable or disable custom SSL pinning. Set to `true` to enforce pinning.
     private static let enableCustomPinning = true
+    
+    /// Tracks whether a successful pinning check has occurred for the current session.
     static var hasSuccessfulPinningCheck = false
     
-    /// Callback for transition state notifications
+    /// A callback invoked when a certificate transition is detected, allowing UI updates or logging.
     var onTransitionDetected: (() -> Void)?
     
-    /// The loading request for the AV asset resource.
+    /// The AVAssetResourceLoadingRequest associated with the streaming session.
     private var loadingRequest: AVAssetResourceLoadingRequest
-    /// Tracks the total bytes received during the streaming session.
+    
+    /// The total bytes received during the streaming session.
     private var bytesReceived = 0
-    /// Indicates whether a response has been received.
+    
+    /// Indicates whether a response has been received from the server.
     private var receivedResponse = false
-    /// The URL session for managing streaming tasks.
+    
+    /// The URLSession managing the streaming tasks.
     var session: URLSession?
-    /// The data task for the streaming session.
+    
+    /// The URLSessionDataTask for the streaming session.
     var dataTask: URLSessionDataTask?
+    
     /// A closure to handle errors during the streaming session.
     var onError: ((Error) -> Void)?
-    /// The original hostname before DNS override (for SSL validation)
+    
+    /// The original hostname for SSL validation, used to verify `lutheran.radio` domains.
     var originalHostname: String?
     
+    /// The timestamp when the connection was initiated, used for debugging connection duration.
     private let connectionStartTime = Date()
+    
+    /// Tracks whether an SSL challenge has been received.
     private var sslChallengeReceived = false
+    
+    /// Tracks whether the first data chunk has been received, indicating streaming has started.
     private var firstDataReceived = false
     
+    /// Initializes the delegate with an AVAssetResourceLoadingRequest.
+    /// - Parameter loadingRequest: The resource loading request for the streaming session.
     init(loadingRequest: AVAssetResourceLoadingRequest) {
         self.loadingRequest = loadingRequest
-        super.init() // Call NSObject.init instead
+        super.init()
         #if DEBUG
         print("🔒 [SSL Debug] StreamingSessionDelegate initialized")
         print("🔒 [Lifecycle] Connection created at: \(connectionStartTime)")
         #endif
     }
     
+    /// Cancels the streaming session, cleaning up tasks and sessions.
     func cancel() {
         let connectionAge = Date().timeIntervalSince(connectionStartTime)
         #if DEBUG
@@ -92,7 +118,13 @@ class StreamingSessionDelegate: NSObject, URLSessionDataDelegate {
         dataTask = nil
     }
     
-    // MARK: - Enhanced SSL Challenge Handling with Transition Support
+    // MARK: - SSL Challenge Handling
+    
+    /// Handles SSL authentication challenges, performing certificate pinning validation.
+    /// - Parameters:
+    ///   - session: The URLSession receiving the challenge.
+    ///   - challenge: The authentication challenge.
+    ///   - completionHandler: A closure to specify the challenge disposition and credential.
     func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
         
         sslChallengeReceived = true
@@ -110,7 +142,7 @@ class StreamingSessionDelegate: NSObject, URLSessionDataDelegate {
         print("🔒 ============================================")
         #endif
         
-        // Verify it's a server trust challenge
+        // Ensure it's a server trust challenge
         guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust else {
             #if DEBUG
             print("🔒 ❌ Not a server trust challenge")
@@ -135,7 +167,7 @@ class StreamingSessionDelegate: NSObject, URLSessionDataDelegate {
             return
         }
         
-        // Only validate lutheran.radio domains
+        // Restrict pinning to lutheran.radio domains
         guard originalHost.hasSuffix("lutheran.radio") else {
             #if DEBUG
             print("🔒 ⚠️ Host \(originalHost) not in lutheran.radio domain")
@@ -144,9 +176,9 @@ class StreamingSessionDelegate: NSObject, URLSessionDataDelegate {
             return
         }
         
-        // OPTIMIZED: Use autoreleasepool for memory efficiency during validation
+        // Perform validation within an autoreleasepool for memory efficiency
         autoreleasepool {
-            // Basic certificate validation first
+            // Basic certificate validation
             let cfHostname: CFString = originalHost as CFString
             let policy = SecPolicyCreateSSL(true, cfHostname)
             SecTrustSetPolicies(serverTrust, policy)
@@ -166,7 +198,7 @@ class StreamingSessionDelegate: NSObject, URLSessionDataDelegate {
                 return
             }
             
-            // OPTIMIZED: Quick certificate pinning validation
+            // Perform pinning validation
             if validateCurrentCertificatePinning(serverTrust: serverTrust) {
                 #if DEBUG
                 print("🔒 ✅ ✅ ✅ CURRENT CERTIFICATE VALIDATION SUCCEEDED")
@@ -183,22 +215,26 @@ class StreamingSessionDelegate: NSObject, URLSessionDataDelegate {
         }
     }
     
-    // MARK: - Validation Failure Handling with Transition Support
+    // MARK: - Validation Failure Handling
+    
+    /// Handles validation failures, allowing connections during transition periods if enabled.
+    /// - Parameters:
+    ///   - serverTrust: The server trust object.
+    ///   - completionHandler: A closure to specify the challenge disposition and credential.
     private func handleValidationFailure(serverTrust: SecTrust, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
         
-        // Check if we're in transition period and can gracefully handle the failure
         if Self.isInTransitionPeriod {
             #if DEBUG
             print("🔒 🔄 TRANSITION PERIOD DETECTED - Allowing connection despite validation failure")
             print("🔒 🔄 Certificate likely renewed on servers - user should update app")
             #endif
             
-            // Notify about transition state for UI updates
+            // Notify UI of transition
             DispatchQueue.main.async { [weak self] in
                 self?.onTransitionDetected?()
             }
             
-            // Allow connection to proceed during transition
+            // Allow connection during transition
             let credential = URLCredential(trust: serverTrust)
             completionHandler(.useCredential, credential)
             
@@ -207,13 +243,17 @@ class StreamingSessionDelegate: NSObject, URLSessionDataDelegate {
             print("🔒 ❌ OUTSIDE TRANSITION PERIOD - Denying connection")
             #endif
             
-            // Normal security failure - deny connection
+            // Deny connection for security
             onError?(URLError(.serverCertificateUntrusted))
             completionHandler(.cancelAuthenticationChallenge, nil)
         }
     }
     
-    // MARK: - Current Certificate Validation (Strategic Single-Point Validation)
+    // MARK: - Certificate Pinning Validation
+    
+    /// Validates the server trust against the pinned SPKI or certificate hash.
+    /// - Parameter serverTrust: The server trust object to validate.
+    /// - Returns: `true` if the server trust matches the pinned hashes, otherwise `false`.
     private func validateCurrentCertificatePinning(serverTrust: SecTrust) -> Bool {
         #if DEBUG
         print("🔒 [Current Cert] Starting strategic certificate validation")
@@ -231,7 +271,7 @@ class StreamingSessionDelegate: NSObject, URLSessionDataDelegate {
         print("🔒 [Current Cert] Certificate chain contains \(certificateCount) certificates")
         #endif
         
-        // Check each certificate in the chain for current hashes
+        // Iterate through the certificate chain
         for i in 0..<certificateCount {
             guard let certificate = CFArrayGetValueAtIndex(certificateChain, i) else { continue }
             let secCertificate = Unmanaged<SecCertificate>.fromOpaque(certificate).takeUnretainedValue()
@@ -240,7 +280,7 @@ class StreamingSessionDelegate: NSObject, URLSessionDataDelegate {
             print("🔒 [Current Cert] Checking certificate \(i)")
             #endif
             
-            // Method 1: Check SPKI hash
+            // Validate SPKI hash
             if let spkiHash = computeOptimizedSPKIHash(for: secCertificate) {
                 #if DEBUG
                 print("🔒 [Current Cert] SPKI hash: \(spkiHash)")
@@ -254,7 +294,7 @@ class StreamingSessionDelegate: NSObject, URLSessionDataDelegate {
                 }
             }
             
-            // Method 2: Check certificate hash
+            // Validate certificate hash
             let certificateData = SecCertificateCopyData(secCertificate)
             let data = CFDataGetBytePtr(certificateData)!
             let length = CFDataGetLength(certificateData)
@@ -285,14 +325,18 @@ class StreamingSessionDelegate: NSObject, URLSessionDataDelegate {
         return false
     }
     
-    // MARK: - Optimized SPKI Hash Computation
+    // MARK: - SPKI Hash Computation
+    
+    /// Computes the SPKI hash for a certificate, supporting both EC and RSA formats.
+    /// - Parameter certificate: The certificate to compute the hash for.
+    /// - Returns: The base64-encoded SHA256 hash of the SPKI, or `nil` if computation fails.
     private func computeOptimizedSPKIHash(for certificate: SecCertificate) -> String? {
         guard let publicKey = SecCertificateCopyKey(certificate),
               let publicKeyData = SecKeyCopyExternalRepresentation(publicKey, nil) else {
             return nil
         }
         
-        // Try EC P-256 SPKI format first (most common)
+        // Try EC P-256 SPKI format
         let ecHeader: [UInt8] = [
             0x30, 0x59, 0x30, 0x13, 0x06, 0x07, 0x2a, 0x86,
             0x48, 0xce, 0x3d, 0x02, 0x01, 0x06, 0x08, 0x2a,
@@ -308,7 +352,7 @@ class StreamingSessionDelegate: NSObject, URLSessionDataDelegate {
             return ecHash
         }
         
-        // Try RSA SPKI format if EC didn't match
+        // Try RSA SPKI format
         let rsaHeader: [UInt8] = [
             0x30, 0x82, 0x01, 0x22, 0x30, 0x0d, 0x06, 0x09,
             0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01,
@@ -321,6 +365,9 @@ class StreamingSessionDelegate: NSObject, URLSessionDataDelegate {
         return computeSHA256Hash(data: rsaSpkiData)
     }
     
+    /// Computes a SHA256 hash for the provided data.
+    /// - Parameter data: The data to hash.
+    /// - Returns: The base64-encoded SHA256 hash.
     private func computeSHA256Hash(data: Data) -> String {
         var hash = Data(count: Int(CC_SHA256_DIGEST_LENGTH))
         _ = hash.withUnsafeMutableBytes { hashBytes in
@@ -335,7 +382,8 @@ class StreamingSessionDelegate: NSObject, URLSessionDataDelegate {
     
     // MARK: - Transition Period Utilities
     
-    /// Returns human-readable transition period information for debugging
+    /// Provides human-readable information about the certificate transition period for debugging.
+    /// - Returns: A string describing the transition period, support status, and whether the current date is within the period.
     static var transitionPeriodInfo: String {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
@@ -351,7 +399,14 @@ class StreamingSessionDelegate: NSObject, URLSessionDataDelegate {
         """
     }
     
-    // MARK: - Keep all existing response handling methods unchanged
+    // MARK: - Response Handling
+    
+    /// Handles HTTP responses for the streaming session.
+    /// - Parameters:
+    ///   - session: The URLSession receiving the response.
+    ///   - dataTask: The data task that received the response.
+    ///   - response: The URLResponse from the server.
+    ///   - completionHandler: A closure to specify the response disposition.
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse, completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
         let connectionAge = Date().timeIntervalSince(connectionStartTime)
         
@@ -398,6 +453,11 @@ class StreamingSessionDelegate: NSObject, URLSessionDataDelegate {
         completionHandler(.allow)
     }
     
+    /// Handles incoming data for the streaming session.
+    /// - Parameters:
+    ///   - session: The URLSession receiving the data.
+    ///   - dataTask: The data task that received the data.
+    ///   - data: The received data.
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
         guard receivedResponse else { return }
         bytesReceived += data.count
@@ -411,6 +471,11 @@ class StreamingSessionDelegate: NSObject, URLSessionDataDelegate {
         }
     }
     
+    /// Handles task completion, including any errors.
+    /// - Parameters:
+    ///   - session: The URLSession for the task.
+    ///   - task: The completed task.
+    ///   - error: The error, if any, that occurred.
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         let connectionAge = Date().timeIntervalSince(connectionStartTime)
         
@@ -426,13 +491,15 @@ class StreamingSessionDelegate: NSObject, URLSessionDataDelegate {
         }
     }
     
+    // MARK: - Deinitialization
+    
     deinit {
         #if DEBUG
         let connectionAge = Date().timeIntervalSince(connectionStartTime)
         print("🧹 [Deinit] StreamingSessionDelegate deallocating after \(connectionAge)s")
         #endif
         
-        // Cancel and clean up session
+        // Clean up resources
         dataTask?.cancel()
         session?.invalidateAndCancel()
         
