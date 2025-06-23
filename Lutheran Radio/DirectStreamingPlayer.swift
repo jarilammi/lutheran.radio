@@ -1602,17 +1602,50 @@ class DirectStreamingPlayer: NSObject {
         DispatchQueue.main.async { [weak self] in
             guard let self = self, self.delegate != nil else { return }
             
-            if keyPath == "playbackBufferEmpty" {
+            // NEW: Add status monitoring for failed player items
+            if keyPath == "status" {
+                if playerItem.status == .failed {
+                    #if DEBUG
+                    print("🎵 Player item failed with error: \(playerItem.error?.localizedDescription ?? "Unknown")")
+                    if let error = playerItem.error as NSError? {
+                        print("🎵 Error domain: \(error.domain), code: \(error.code)")
+                    }
+                    #endif
+                    
+                    // Check for decoder-related failures (expanded error codes)
+                    if let error = playerItem.error as NSError? {
+                        let isDecoderError = error.domain == "AVFoundationErrorDomain" &&
+                                           (error.code == -11819 ||  // Media services reset
+                                            error.code == -11839 ||  // Cannot decode
+                                            error.code == -12913)    // Decoder busy
+                        
+                        if isDecoderError {
+                            #if DEBUG
+                            print("🔄 AVFoundation decoder error detected, initiating recovery")
+                            #endif
+                            
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                self.recreatePlayerItem()
+                            }
+                            return
+                        }
+                    }
+                    
+                    // Handle other types of failures
+                    self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
+                }
+                
+            } else if keyPath == "playbackBufferEmpty" {
                 if playerItem.isPlaybackBufferEmpty {
-                    // FIXED: Add retry logic for decoder errors
+                    // ENHANCED: Expand your existing decoder error detection
                     if let error = playerItem.error as NSError?,
                        error.domain == "AVFoundationErrorDomain" {
                         #if DEBUG
-                        print("🎵 Audio decoder error detected, attempting recovery")
+                        print("🎵 Buffer empty with AVFoundation error detected, attempting recovery")
                         #endif
-                        // Brief pause before retry
+                        
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                            self.player?.play()
+                            self.recreatePlayerItem()
                         }
                         return
                     }
@@ -1620,12 +1653,29 @@ class DirectStreamingPlayer: NSObject {
                     self.onStatusChange?(false, String(localized: "status_buffering"))
                     self.startBufferingTimer()
                 }
+                
             } else if keyPath == "playbackLikelyToKeepUp" {
                 if playerItem.isPlaybackLikelyToKeepUp && playerItem.status == .readyToPlay {
                     self.player?.play()
                     self.onStatusChange?(true, String(localized: "status_playing"))
                     self.stopBufferingTimer()
+                } else if !playerItem.isPlaybackLikelyToKeepUp && self.player?.rate == 0 {
+                    // NEW: Add stalled playback detection
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 10.0) { [weak self] in
+                        guard let self = self,
+                              let currentItem = self.playerItem,
+                              currentItem == playerItem,
+                              !currentItem.isPlaybackLikelyToKeepUp,
+                              self.player?.rate == 0 else { return }
+                        
+                        #if DEBUG
+                        print("🔄 Stalled playback detected, attempting recovery")
+                        #endif
+                        
+                        self.recreatePlayerItem()
+                    }
                 }
+                
             } else if keyPath == "playbackBufferFull" {
                 if playerItem.isPlaybackBufferFull {
                     self.player?.play()
@@ -1636,15 +1686,43 @@ class DirectStreamingPlayer: NSObject {
         }
     }
     
-    #if DEBUG
-    func removeObservers() {
-        removeObserversImplementation()
+    private func recreatePlayerItem() {
+        #if DEBUG
+        print("🔄 Recreating player item due to decoder error")
+        #endif
+        
+        guard let urlAsset = playerItem?.asset as? AVURLAsset else {
+            #if DEBUG
+            print("❌ Cannot recreate: no valid URL asset")
+            #endif
+            return
+        }
+        
+        let currentURL = urlAsset.url
+        
+        // Remove existing observers first - FIXED: Add the required 'for' parameter
+        removeObservers(for: playerItem)
+        
+        // Create new asset and player item
+        let newAsset = AVURLAsset(url: currentURL)
+        let newItem = AVPlayerItem(asset: newAsset)
+        
+        // Replace the item
+        player?.replaceCurrentItem(with: newItem)
+        
+        // Update playerItem reference to the new item
+        playerItem = newItem
+        
+        // Re-add observers to the new item
+        addObservers()
+        
+        // Restart playback
+        player?.play()
+        
+        #if DEBUG
+        print("✅ Player item recreated and playback resumed")
+        #endif
     }
-    #else
-    private func removeObservers() {
-        removeObserversImplementation()
-    }
-    #endif
     
     private func removeObserversImplementation() {
         if isDeallocating {
