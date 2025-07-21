@@ -71,18 +71,18 @@ After cleaning, retry the build and test steps above.
 The app implements certificate pinning to prevent man-in-the-middle (MITM) attacks. Key details:
 
 1. **Domain:** ```lutheran.radio``` (including subdomains)
-2. **Pinned Value:** SHA-256 hash of the server’s public key, Base64-encoded
-3. **Location:** Embedded in ```Info.plist``` under ```NSAppTransportSecurity > NSPinnedDomains``` (primary) and ```StreamingSessionDelegate.swift``` (backup validation)
-4. **Current Hash:** ```mm31qgyBr2aXX8NzxmX/OeKzrUeOtxim4foWmxL4TZY=```
+2. **Pinned Value:** SHA-256 hash of the server’s leaf certificate, hex-encoded (uppercase, colon-separated)
+3. **Location:** Embedded in ```Info.plist``` under ```NSAppTransportSecurity > NSPinnedDomains``` (primary) and ```CertificateValidator.swift``` (runtime validation)
+4. **Current Hash:** ```7C:A2:DB:51:07:8C:82:20:F7:B5:87:F3:05:79:65:E2:74:2C:6C:BE:72:47:69:51:B4:FE:7E:72:E2:D3:86:CC```
 
 ### Certificate Renewal Strategy
 
 To ensure uninterrupted service during SSL certificate renewals, the app includes a strategic transition system:
 
-- **Transition Period:** July 20 - August 20, 2025 (30 days before certificate expiry)
-- **User Experience:** During certificate renewal, users see "SSL certificate renewed - update app soon" with continued streaming functionality
-- **Security Protection:** Transition support is disabled by default and protected against date manipulation attacks
-- **Implementation:** Controlled via shielding variable in `StreamingSessionDelegate.swift` that requires deliberate code changes to enable
+- **Transition Period:** One month before certificate expiry
+- **User Experience:** During the transition period, the app trusts ATS validation if the pinned hash fails, allowing streaming to continue with a debug warning (visible in DEBUG builds)
+- **Security Protection:** Transition support is automatically enabled during the defined period, with strict enforcement of the pinned hash outside this window
+- **Implementation:** Controlled via `CertificateValidator.swift` with predefined transition start and expiry dates
 
 This approach prevents service disruption during certificate updates while maintaining security through continued ATS enforcement and time-bounded operation.
 
@@ -111,8 +111,8 @@ Match the output against the ```SPKI-SHA256-BASE64``` value in ```Info.plist```.
 The app enforces security model validation to ensure only versions with an approved security implementation can stream content. This protects against compromised or obsolete app versions.
 
 1. **Domain:** ```securitymodels.lutheran.radio```
-2. **Mechanism:** Queries a DNS TXT record for a comma-separated list of valid security models (e.g., `"mariehamn,visby,landvetter,nuuk"`)
-3. **Pinned Value:** Fixed security model string embedded in the app (currently `"nuuk"`)
+2. **Mechanism:** Queries a DNS TXT record for a comma-separated list of valid security models (e.g., `"mariehamn,visby,landvetter,nuuk,stjohns"`)
+3. **Pinned Value:** Fixed security model string embedded in the app (currently `"stjohns"`)
 4. **Location:** Defined in `DirectStreamingPlayer.swift` as `appSecurityModel`
 5. **Behavior:** If the app’s security model isn’t in the TXT record, playback is permanently disabled with a user-facing error message
 
@@ -133,14 +133,14 @@ dig +short TXT securitymodels.lutheran.radio
 Example output:
 
 ```
-"mariehamn,visby,landvetter,nuuk"
+"mariehamn,visby,landvetter,nuuk,stjohns"
 ```
 
 Compare this output to the security model defined in the app (found in ```DirectStreamingPlayer.swift``` as ```appSecurityModel```). If the app’s model (e.g., "nuuk") isn’t listed, it will fail validation. To update the list, modify the TXT record for ```securitymodels.lutheran.radio``` through the DNS management interface for the ```lutheran.radio``` domain.
 
 ### Security Model TXT Record Usage
 
-Lutheran Radio's security system uses a DNS TXT record to ensure only trusted app versions can stream content. The longest practical TXT record length for this purpose is about 450 bytes, which fits within standard DNS limits and supports up to 40-50 security model names (like "landvetter" or "nuuk"). This is more than enough for the current 32-byte record. If you need to use more names in the future, check that your DNS supports larger messages (EDNS0) and test the app to confirm it can handle them. Keep an eye on how your DNS behaves to ensure everything works smoothly, keeping the app secure and reliable for all users.
+Lutheran Radio's security system uses a DNS TXT record to ensure only trusted app versions can stream content. The longest practical TXT record length for this purpose is about 450 bytes, which fits within standard DNS limits and supports up to 40-50 security model names (like "landvetter" or "nuuk"). This is more than enough for the current 40-byte record. If you need to use more names in the future, check that your DNS supports larger messages (EDNS0) and test the app to confirm it can handle them. Keep an eye on how your DNS behaves to ensure everything works smoothly, keeping the app secure and reliable for all users.
 
 ### Security Model History
 
