@@ -2189,7 +2189,7 @@ extension DirectStreamingPlayer: AVPlayerItemMetadataOutputPushDelegate {
         // Store metadata locally for Live Activities
         self.currentMetadata = streamTitle
         
-        onMetadataChange?(streamTitle)
+        safeOnMetadataChange(metadata: streamTitle)
     }
 }
 
