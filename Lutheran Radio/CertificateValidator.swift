@@ -14,7 +14,7 @@ class CertificateValidator: NSObject, URLSessionDelegate {
     static let shared = CertificateValidator()
     
     /// The pinned certificate SHA-256 hash (hex, uppercase, colon-separated).
-    private let pinnedCertHash = "7C:A2:DB:51:07:8C:82:20:F7:B5:87:F3:05:79:65:E2:74:2C:6C:BE:72:47:69:51:B4:FE:7E:72:E2:D3:86:CC"
+    private let pinnedCertHash = "7C:A2:DB:51:07:8C:82:20:F7:B5:87:F3:05:79:65:E2:74:2C:6C:BE:72:47:69:51:B4:FE:7E:72:E2:D3:86:CC" // openssl s_client -connect livestream.lutheran.radio:8443 | openssl x509 -fingerprint -sha256 -noout
     
     /// The start date for the certificate transition period (July 20, 2025).
     static let transitionStartDate = Date(timeIntervalSince1970: 1753055999)
