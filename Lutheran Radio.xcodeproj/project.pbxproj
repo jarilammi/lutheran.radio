@@ -74,6 +74,7 @@
 		B777FE962DEF8307000007DA /* Exceptions for "Lutheran Radio" folder in "LutheranRadioWidgetExtension" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				CertificateValidator.swift,
 				DirectStreamingPlayer.swift,
 				Localizable.xcstrings,
 				LutheranRadioLiveActivityAttributes.swift,
