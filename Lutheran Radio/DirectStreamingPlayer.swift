@@ -361,7 +361,7 @@ class DirectStreamingPlayer: NSObject {
     var selectedStream: Stream {
         didSet {
             if delegate != nil {
-                onMetadataChange?(selectedStream.title)
+                safeOnMetadataChange(metadata: selectedStream.title)
             }
         }
     }
@@ -369,7 +369,7 @@ class DirectStreamingPlayer: NSObject {
     private(set) var selectedStream: Stream {
         didSet {
             if delegate != nil {
-                onMetadataChange?(selectedStream.title)
+                safeOnMetadataChange(metadata: selectedStream.title)
             }
         }
     }
@@ -480,6 +480,19 @@ class DirectStreamingPlayer: NSObject {
     var onStatusChange: ((Bool, String) -> Void)?
     var onMetadataChange: ((String?) -> Void)?
     internal var currentMetadata: String?
+    
+    // Safe wrappers to ensure callbacks are always on main thread
+    private func safeOnStatusChange(isPlaying: Bool, status: String) {
+        DispatchQueue.main.async { [weak self] in
+            self?.onStatusChange?(isPlaying, status)
+        }
+    }
+    
+    private func safeOnMetadataChange(metadata: String?) {
+        DispatchQueue.main.async { [weak self] in
+            self?.onMetadataChange?(metadata)
+        }
+    }
     
     private weak var delegate: AnyObject?
     
@@ -685,7 +698,7 @@ class DirectStreamingPlayer: NSObject {
                 print("🔒 [Validate Async] Using cached validation: Success, time since last: \(Date().timeIntervalSince(lastValidation))s")
                 #endif
                 DispatchQueue.main.async {
-                    self.onStatusChange?(false, String(localized: "status_connecting"))
+                    self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_connecting"))
                     completion(true)
                 }
                 return
@@ -695,7 +708,7 @@ class DirectStreamingPlayer: NSObject {
                 #endif
                 hasPermanentError = true
                 DispatchQueue.main.async {
-                    self.onStatusChange?(false, String(localized: "status_security_failed"))
+                    self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_security_failed"))
                     completion(false)
                 }
                 return
@@ -722,7 +735,7 @@ class DirectStreamingPlayer: NSObject {
                 self.validationState = .failedTransient
                 self.hasInternetConnection = false
                 DispatchQueue.main.async {
-                    self.onStatusChange?(false, String(localized: "status_no_internet"))
+                    self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_no_internet"))
                     completion(false)
                 }
                 return
@@ -741,7 +754,7 @@ class DirectStreamingPlayer: NSObject {
                 print("🔒 [Validate Async] Validation timed out")
                 #endif
                 DispatchQueue.main.async {
-                    self.onStatusChange?(false, String(localized: "status_no_internet"))
+                    self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_no_internet"))
                     completion(false)
                 }
             }
@@ -770,7 +783,7 @@ class DirectStreamingPlayer: NSObject {
                         print("🔒 [Validate Async] No valid models received")
                         #endif
                         DispatchQueue.main.async {
-                            self.onStatusChange?(false, String(localized: "status_security_failed"))
+                            self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_security_failed"))
                             completion(false)
                         }
                     } else {
@@ -782,13 +795,13 @@ class DirectStreamingPlayer: NSObject {
                         if !isValid {
                             self.hasPermanentError = true
                             DispatchQueue.main.async {
-                                self.onStatusChange?(false, String(localized: "status_security_failed"))
+                                self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_security_failed"))
                                 completion(false)
                             }
                         } else {
                             self.hasPermanentError = false
                             DispatchQueue.main.async {
-                                self.onStatusChange?(false, String(localized: "status_connecting"))
+                                self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_connecting"))
                                 completion(true)
                             }
                         }
@@ -799,7 +812,7 @@ class DirectStreamingPlayer: NSObject {
                     print("🔒 [Validate Async] Failed to fetch models: \(error.localizedDescription)")
                     #endif
                     DispatchQueue.main.async {
-                        self.onStatusChange?(false, String(localized: "status_no_internet"))
+                        self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_no_internet"))
                         completion(false)
                     }
                 }
@@ -876,7 +889,7 @@ class DirectStreamingPlayer: NSObject {
                 print("🔒 Initial validation completed: \(isValid)")
                 #endif
                 if isValid {
-                    self.onStatusChange?(false, String(localized: "status_connecting"))
+                    self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_connecting"))
                 }
             }
         }
@@ -918,7 +931,7 @@ class DirectStreamingPlayer: NSObject {
                             print("🔒 [Network] Revalidation result: \(isValid)")
                             if !isValid {
                                 DispatchQueue.main.async {
-                                    self.onStatusChange?(false, String(localized: self.validationState == .failedPermanent ? "status_security_failed" : "status_no_internet"))
+                                    self.safeOnStatusChange(isPlaying: false, status: String(localized: self.validationState == .failedPermanent ? "status_security_failed" : "status_no_internet"))
                                 }
                             } else if self.player?.rate ?? 0 == 0, !self.hasPermanentError {
                                 self.play { success in
@@ -933,7 +946,7 @@ class DirectStreamingPlayer: NSObject {
             } else if !self.hasInternetConnection && wasConnected {
                 self.validationState = .failedTransient
                 DispatchQueue.main.async {
-                    self.onStatusChange?(false, String(localized: "status_no_internet"))
+                    self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_no_internet"))
                 }
             }
         }
@@ -960,7 +973,7 @@ class DirectStreamingPlayer: NSObject {
                         self.validateSecurityModelAsync { isValid in
                             if !isValid {
                                 DispatchQueue.main.async {
-                                    self.onStatusChange?(false, String(localized: self.validationState == .failedPermanent ? "status_security_failed" : "status_no_internet"))
+                                    self.safeOnStatusChange(isPlaying: false, status: String(localized: self.validationState == .failedPermanent ? "status_security_failed" : "status_no_internet"))
                                 }
                             } else if self.player?.rate ?? 0 == 0, !self.hasPermanentError {
                                 self.play { success in
@@ -975,7 +988,7 @@ class DirectStreamingPlayer: NSObject {
             } else if !self.hasInternetConnection && wasConnected {
                 self.validationState = .failedTransient
                 DispatchQueue.main.async {
-                    self.onStatusChange?(false, String(localized: "status_no_internet"))
+                    self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_no_internet"))
                 }
             }
         }
@@ -997,7 +1010,7 @@ class DirectStreamingPlayer: NSObject {
                 if self.isPlaying {
                     self.wasPlayingBeforeThermal = true
                     self.stop {
-                        self.onStatusChange?(false, String(localized: "status_thermal_paused"))
+                        self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_thermal_paused"))
                     }
                 }
             } else if self.wasPlayingBeforeThermal &&
@@ -1036,7 +1049,7 @@ class DirectStreamingPlayer: NSObject {
                 print("🔒 Initial validation completed: \(isValid)")
                 #endif
                 if isValid {
-                    self.onStatusChange?(false, String(localized: "status_connecting"))
+                    self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_connecting"))
                 }
             }
         }
@@ -1083,7 +1096,7 @@ class DirectStreamingPlayer: NSObject {
             guard let streamURL = self.getStreamURL(for: self.selectedStream, with: self.selectedServer) else {
                 self.stop()
                 DispatchQueue.main.async {
-                    self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
+                    self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_stream_unavailable"))
                 }
                 #if DEBUG
                 print("🔒 [Periodic Validation] Invalid stream URL, stopping stream")
@@ -1094,7 +1107,7 @@ class DirectStreamingPlayer: NSObject {
                 if !isValid {
                     self.stop()
                     DispatchQueue.main.async {
-                        self.onStatusChange?(false, String(localized: "status_security_failed"))
+                        self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_security_failed"))
                     }
                     #if DEBUG
                     print("🔒 [Periodic Validation] Failed, stopping stream")
@@ -1113,7 +1126,7 @@ class DirectStreamingPlayer: NSObject {
                 } else {
                     let status = self.validationState == .failedPermanent ? String(localized: "status_security_failed") : String(localized: "status_no_internet")
                     DispatchQueue.main.async {
-                        self.onStatusChange?(false, status)
+                        self.safeOnStatusChange(isPlaying: false, status: status)
                         completion(false)
                     }
                 }
@@ -1124,7 +1137,7 @@ class DirectStreamingPlayer: NSObject {
         guard validationState == .success else {
             let status = validationState == .failedPermanent ? String(localized: "status_security_failed") : String(localized: "status_no_internet")
             DispatchQueue.main.async {
-                self.onStatusChange?(false, status)
+                self.safeOnStatusChange(isPlaying: false, status: status)
                 completion(false)
             }
             return
@@ -1133,7 +1146,7 @@ class DirectStreamingPlayer: NSObject {
         selectOptimalServer { [weak self] server in
             guard let self = self else { completion(false); return }
             guard let streamURL = self.getStreamURL(for: self.selectedStream, with: server) else {
-                self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
+                self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_stream_unavailable"))
                 completion(false)
                 return
             }
@@ -1144,7 +1157,7 @@ class DirectStreamingPlayer: NSObject {
                         completion(success)
                     }
                 } else {
-                    self.onStatusChange?(false, String(localized: "status_security_failed"))
+                    self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_security_failed"))
                     completion(false)
                 }
             }
@@ -1175,7 +1188,7 @@ class DirectStreamingPlayer: NSObject {
                 #if DEBUG
                 print("🔒 Certificate validation failed for server: \(server.name)")
                 #endif
-                self.onStatusChange?(false, String(localized: "status_security_failed"))
+                self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_security_failed"))
                 self.tryNextServer(fallbackServers: fallbackServers, completion: completion)
                 return
             }
@@ -1212,7 +1225,7 @@ class DirectStreamingPlayer: NSObject {
             #if DEBUG
             print("📡 No more servers to try")
             #endif
-            self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
+            self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_stream_unavailable"))
             completion(false)
             return
         }
@@ -1276,7 +1289,7 @@ class DirectStreamingPlayer: NSObject {
                     } else {
                         let status = self.validationState == .failedPermanent ? "status_security_failed" : "status_no_internet"
                         DispatchQueue.main.async {
-                            self.onStatusChange?(false, NSLocalizedString(status, comment: ""))
+                            self.safeOnStatusChange(isPlaying: false, status: NSLocalizedString(status, comment: ""))
                         }
                     }
                 }
@@ -1287,7 +1300,7 @@ class DirectStreamingPlayer: NSObject {
                 defer { self.isSwitchingStream = false }
                 let status = self.validationState == .failedPermanent ? "status_security_failed" : "status_no_internet"
                 DispatchQueue.main.async {
-                    self.onStatusChange?(false, NSLocalizedString(status, comment: ""))
+                    self.safeOnStatusChange(isPlaying: false, status: NSLocalizedString(status, comment: ""))
                 }
             }
         }
@@ -1311,14 +1324,14 @@ class DirectStreamingPlayer: NSObject {
                     print("✅ Stream switched to: \(self.selectedStream.language)")
                     #endif
                     if self.delegate != nil {
-                        self.onStatusChange?(true, String(localized: "status_playing"))
+                        self.safeOnStatusChange(isPlaying: true, status: String(localized: "status_playing"))
                     }
                 } else {
                     #if DEBUG
                     print("❌ Stream switch failed for: \(self.selectedStream.language)")
                     #endif
                     if self.delegate != nil {
-                        self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
+                        self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_stream_unavailable"))
                     }
                 }
                 self.isSwitchingStream = false
@@ -1333,14 +1346,14 @@ class DirectStreamingPlayer: NSObject {
             print("✅ Stream switched to: \(self.selectedStream.language)")
             #endif
             if self.delegate != nil {
-                self.onStatusChange?(true, String(localized: "status_playing"))
+                self.safeOnStatusChange(isPlaying: true, status: String(localized: "status_playing"))
             }
         } else {
             #if DEBUG
             print("❌ Stream switch failed for: \(self.selectedStream.language)")
             #endif
             if self.delegate != nil {
-                self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
+                self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_stream_unavailable"))
             }
         }
         self.isSwitchingStream = false
@@ -1354,7 +1367,7 @@ class DirectStreamingPlayer: NSObject {
             #if DEBUG
             print("⏰ Buffering timeout triggered")
             #endif
-            self.onStatusChange?(false, String(localized: "status_stopped"))
+            self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_stopped"))
         }
     }
 
@@ -1452,7 +1465,7 @@ class DirectStreamingPlayer: NSObject {
                     // Check playback status after a brief moment
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                         if self.player?.rate ?? 0 > 0 {
-                            self.onStatusChange?(true, String(localized: "status_playing"))
+                            self.safeOnStatusChange(isPlaying: true, status: String(localized: "status_playing"))
                             completion(true)
                         } else {
                             // If still not playing, try again
@@ -1476,7 +1489,7 @@ class DirectStreamingPlayer: NSObject {
                     if !fallbackServers.isEmpty {
                         self.tryNextServer(fallbackServers: fallbackServers, completion: completion)
                     } else {
-                        self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
+                        self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_stream_unavailable"))
                         completion(false)
                     }
                     
@@ -1502,7 +1515,7 @@ class DirectStreamingPlayer: NSObject {
                 if !fallbackServers.isEmpty {
                     self.tryNextServer(fallbackServers: fallbackServers, completion: completion)
                 } else {
-                    self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
+                    self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_stream_unavailable"))
                     completion(false)
                 }
             }
@@ -1574,13 +1587,13 @@ class DirectStreamingPlayer: NSObject {
                             self.lastError = item.error
                             let errorType = StreamErrorType.from(error: item.error)
                             self.hasPermanentError = errorType.isPermanent
-                            self.onStatusChange?(false, errorType.statusString)
+                            self.safeOnStatusChange(isPlaying: false, status: errorType.statusString)
                             self.stop()
                         }
                         
                     case .unknown:
                         if self.hasStartedPlaying {
-                            self.onStatusChange?(false, String(localized: "status_buffering"))
+                            self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_buffering"))
                         }
                     @unknown default:
                         break
@@ -1613,7 +1626,7 @@ class DirectStreamingPlayer: NSObject {
                 self.timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] _ in
                     guard let self = self, self.delegate != nil else { return }
                     if self.player?.rate ?? 0 > 0 {
-                        self.onStatusChange?(true, String(localized: "status_playing"))
+                        self.safeOnStatusChange(isPlaying: true, status: String(localized: "status_playing"))
                     }
                 }
                 self.timeObserverPlayer = player
@@ -1693,7 +1706,7 @@ class DirectStreamingPlayer: NSObject {
                     }
                     
                     // Handle other types of failures
-                    self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
+                    self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_stream_unavailable"))
                 }
                 
             } else if keyPath == "playbackBufferEmpty" {
@@ -1711,14 +1724,14 @@ class DirectStreamingPlayer: NSObject {
                         return
                     }
                     
-                    self.onStatusChange?(false, String(localized: "status_buffering"))
+                    self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_buffering"))
                     self.startBufferingTimer()
                 }
                 
             } else if keyPath == "playbackLikelyToKeepUp" {
                 if playerItem.isPlaybackLikelyToKeepUp && playerItem.status == .readyToPlay {
                     self.player?.play()
-                    self.onStatusChange?(true, String(localized: "status_playing"))
+                    self.safeOnStatusChange(isPlaying: true, status: String(localized: "status_playing"))
                     self.stopBufferingTimer()
                 } else if !playerItem.isPlaybackLikelyToKeepUp && self.player?.rate == 0 {
                     // NEW: Add stalled playback detection
@@ -1740,7 +1753,7 @@ class DirectStreamingPlayer: NSObject {
             } else if keyPath == "playbackBufferFull" {
                 if playerItem.isPlaybackBufferFull {
                     self.player?.play()
-                    self.onStatusChange?(true, String(localized: "status_playing"))
+                    self.safeOnStatusChange(isPlaying: true, status: String(localized: "status_playing"))
                     self.stopBufferingTimer()
                 }
             }
@@ -1846,7 +1859,7 @@ class DirectStreamingPlayer: NSObject {
             
             guard self.player != nil || self.playerItem != nil else {
                 DispatchQueue.main.async {
-                    self.onStatusChange?(false, String(localized: "status_stopped"))
+                    self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_stopped"))
                     completion?()
                 }
                 #if DEBUG
@@ -1883,7 +1896,7 @@ class DirectStreamingPlayer: NSObject {
             self.removedObservers.removeAll()
             
             DispatchQueue.main.async {
-                self.onStatusChange?(false, String(localized: "status_stopped"))
+                self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_stopped"))
                 completion?()
             }
             
@@ -2185,7 +2198,7 @@ extension DirectStreamingPlayer {
         stop()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             guard let self = self, self.delegate != nil else { return }
-            self.onStatusChange?(false, String(localized: "alert_retry"))
+            self.safeOnStatusChange(isPlaying: false, status: String(localized: "alert_retry"))
         }
     }
 }
