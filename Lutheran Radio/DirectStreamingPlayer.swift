@@ -156,9 +156,9 @@ class DirectStreamingPlayer: NSObject {
     private var isValidating = false
     #if DEBUG
     /// The last time security validation was performed (exposed for debugging).
-    var lastValidationTime: Date?
+    var validationTimer: Timer?
     #else
-    private var lastValidationTime: Date?
+    private var validationTimer: Timer?
     #endif
     private let validationCacheDuration: TimeInterval = 600 // 10 minutes
     private var sslConnectionTimeout: Timer?
@@ -173,6 +173,7 @@ class DirectStreamingPlayer: NSObject {
         case failedPermanent
     }
     var validationState: ValidationState = .pending
+    private var lastValidationTime: Date?
     #if DEBUG
     var networkMonitor: NetworkPathMonitoring?
     var hasInternetConnection = true
@@ -863,13 +864,6 @@ class DirectStreamingPlayer: NSObject {
         #endif
         super.init()
         
-        // FIXED: Reset SSL pinning state for fresh app launch
-        // This ensures the first connection gets proper SSL validation
-        StreamingSessionDelegate.hasSuccessfulPinningCheck = false
-        #if DEBUG
-        print("🔒 Reset SSL pinning state for fresh app launch")
-        #endif
-        
         setupAudioSession()
         setupNetworkMonitoring()
         #if DEBUG
@@ -1078,7 +1072,36 @@ class DirectStreamingPlayer: NSObject {
         let newHostname = "\(languagePrefix)-\(server.subdomain).\(server.baseHostname)"
         var components = URLComponents(url: stream.url, resolvingAgainstBaseURL: false)
         components?.host = newHostname
-        return components?.url
+        return components?.url  // Direct https:// URL
+    }
+    
+    /// Starts periodic certificate validation
+    private func startPeriodicValidation() {
+        validationTimer?.invalidate()
+        validationTimer = Timer.scheduledTimer(withTimeInterval: 600, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            guard let streamURL = self.getStreamURL(for: self.selectedStream, with: self.selectedServer) else {
+                self.stop()
+                DispatchQueue.main.async {
+                    self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
+                }
+                #if DEBUG
+                print("🔒 [Periodic Validation] Invalid stream URL, stopping stream")
+                #endif
+                return
+            }
+            CertificateValidator.shared.validateServerCertificate(for: streamURL) { isValid in
+                if !isValid {
+                    self.stop()
+                    DispatchQueue.main.async {
+                        self.onStatusChange?(false, String(localized: "status_security_failed"))
+                    }
+                    #if DEBUG
+                    print("🔒 [Periodic Validation] Failed, stopping stream")
+                    #endif
+                }
+            }
+        }
     }
 
     func play(completion: @escaping (Bool) -> Void) {
@@ -1109,7 +1132,22 @@ class DirectStreamingPlayer: NSObject {
         
         selectOptimalServer { [weak self] server in
             guard let self = self else { completion(false); return }
-            self.playWithServer(server, fallbackServers: Self.servers.filter { $0.name != server.name }, completion: completion)
+            guard let streamURL = self.getStreamURL(for: self.selectedStream, with: server) else {
+                self.onStatusChange?(false, String(localized: "status_stream_unavailable"))
+                completion(false)
+                return
+            }
+            CertificateValidator.shared.validateServerCertificate(for: streamURL) { isValid in
+                if isValid {
+                    self.playWithServer(server, fallbackServers: Self.servers.filter { $0.name != server.name }) { success in
+                        if success { self.startPeriodicValidation() }
+                        completion(success)
+                    }
+                } else {
+                    self.onStatusChange?(false, String(localized: "status_security_failed"))
+                    completion(false)
+                }
+            }
         }
     }
     
@@ -1120,22 +1158,45 @@ class DirectStreamingPlayer: NSObject {
         #endif
         
         guard let streamURL = self.getStreamURL(for: self.selectedStream, with: server) else {
+            #if DEBUG
+            print("❌ Failed to construct stream URL for server: \(server.name)")
+            #endif
             tryNextServer(fallbackServers: fallbackServers, completion: completion)
             return
         }
         
-        var urlComponents = URLComponents(url: streamURL, resolvingAgainstBaseURL: false)
-        urlComponents?.queryItems = [URLQueryItem(name: "security_model", value: self.appSecurityModel)]
-        guard let finalURL = urlComponents?.url else {
-            tryNextServer(fallbackServers: fallbackServers, completion: completion)
-            return
+        CertificateValidator.shared.validateServerCertificate(for: streamURL) { [weak self] isValid in
+            guard let self = self else {
+                completion(false)
+                return
+            }
+            
+            if !isValid {
+                #if DEBUG
+                print("🔒 Certificate validation failed for server: \(server.name)")
+                #endif
+                self.onStatusChange?(false, String(localized: "status_security_failed"))
+                self.tryNextServer(fallbackServers: fallbackServers, completion: completion)
+                return
+            }
+            
+            var urlComponents = URLComponents(url: streamURL, resolvingAgainstBaseURL: false)
+            urlComponents?.queryItems = [URLQueryItem(name: "security_model", value: self.appSecurityModel)]
+            
+            guard let finalURL = urlComponents?.url else {
+                #if DEBUG
+                print("❌ Failed to construct final URL with security model for server: \(server.name)")
+                #endif
+                self.tryNextServer(fallbackServers: fallbackServers, completion: completion)
+                return
+            }
+            
+            #if DEBUG
+            print("📡 Playing stream with URL: \(finalURL.absoluteString)")
+            #endif
+            
+            self.startPlaybackWithFallback(with: finalURL, server: server, fallbackServers: fallbackServers, completion: completion)
         }
-        
-        #if DEBUG
-        print("📡 Playing stream with URL: \(finalURL.absoluteString)")
-        #endif
-        
-        self.startPlaybackWithFallback(with: finalURL, server: server, fallbackServers: fallbackServers, completion: completion)
     }
 
     private func tryNextServer(fallbackServers: [Server], completion: @escaping (Bool) -> Void) {
@@ -1751,6 +1812,9 @@ class DirectStreamingPlayer: NSObject {
         pendingPlaybackWorkItem?.cancel()
         pendingPlaybackWorkItem = nil
         
+        validationTimer?.invalidate()
+        validationTimer = nil
+        
         // Continue with existing stop logic
         performActualStop(completion: completion)
     }
@@ -1760,6 +1824,8 @@ class DirectStreamingPlayer: NSObject {
         clearSSLProtectionTimer()
         isSSLHandshakeComplete = true
         hasStartedPlaying = false
+        validationTimer?.invalidate()
+        validationTimer = nil
         
         // If we're deallocating, perform cleanup synchronously
         if isDeallocating {
@@ -2004,31 +2070,6 @@ class DirectStreamingPlayer: NSObject {
         
         stop()
     }
-    
-    // MARK: - SSL Certificate Transition State Handling
-
-    /// Indicates if we're currently in SSL certificate transition mode
-    private var isInTransitionMode = false
-
-    /// Sets up transition state handling for SSL certificate changes
-    private func setupTransitionHandling(for streamingDelegate: StreamingSessionDelegate) {
-        streamingDelegate.onTransitionDetected = { [weak self] in
-            guard let self = self else { return }
-            
-            #if DEBUG
-            print("🔄 [Transition] SSL certificate transition detected")
-            print("🔄 [Transition] \(StreamingSessionDelegate.transitionPeriodInfo)")
-            #endif
-            
-            self.isInTransitionMode = true
-            
-            // Show transition message to user
-            DispatchQueue.main.async {
-                let transitionMessage = String(localized: "status_ssl_transition")
-                self.onStatusChange?(false, transitionMessage)
-            }
-        }
-    }
 }
 
 // MARK: - Server Configuration
@@ -2165,8 +2206,6 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
         print("📡 [Resource Loader] Received URL: \(url)")
         print("📡 [Resource Loader] URL scheme: \(url.scheme ?? "nil")")
         print("📡 [Resource Loader] URL host: \(url.host ?? "nil")")
-        print("📡 [Transition] Support enabled: \(StreamingSessionDelegate.isTransitionSupportEnabled)")
-        print("📡 [Transition] In period: \(StreamingSessionDelegate.isInTransitionPeriod)")
         #endif
         
         // FIXED: Only handle HTTPS URLs for lutheran.radio domains
@@ -2205,10 +2244,7 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
         #if DEBUG
         print("🔒 [Resource Loader] StreamingSessionDelegate created for hostname: \(originalHostname)")
         #endif
-
-        // NEW: Setup transition handling
-        setupTransitionHandling(for: streamingDelegate)
-
+        
         // Enhanced configuration for SSL pinning
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 60.0
@@ -2241,24 +2277,7 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
             #endif
             DispatchQueue.main.async {
                 self.activeResourceLoaders.removeValue(forKey: loadingRequest)
-                
-                // Check if we're in transition mode and this is an SSL error
-                if self.isInTransitionMode,
-                   let urlError = error as? URLError,
-                   urlError.code == .serverCertificateUntrusted {
-                    
-                    #if DEBUG
-                    print("🔄 [Transition] SSL error during transition - connection may still work")
-                    #endif
-                    
-                    // Don't treat as permanent error during transition
-                    let transitionMessage = String(localized: "status_ssl_transition")
-                    self.onStatusChange?(false, transitionMessage)
-                    
-                } else {
-                    // Normal error handling
-                    self.handleLoadingError(error)
-                }
+                self.handleLoadingError(error)
             }
         }
         
