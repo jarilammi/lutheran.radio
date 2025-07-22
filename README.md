@@ -133,14 +133,14 @@ dig +short TXT securitymodels.lutheran.radio
 Example output:
 
 ```
-"mariehamn,visby,landvetter,nuuk,stjohns"
+"mariehamn,visby,landvetter,nuuk,stjohns,dc"
 ```
 
-Compare this output to the security model defined in the app (found in ```DirectStreamingPlayer.swift``` as ```appSecurityModel```). If the app’s model (e.g., "nuuk") isn’t listed, it will fail validation. To update the list, modify the TXT record for ```securitymodels.lutheran.radio``` through the DNS management interface for the ```lutheran.radio``` domain.
+Compare this output to the security model defined in the app (found in ```DirectStreamingPlayer.swift``` as ```appSecurityModel```). If the app’s model (e.g., "stjohns") isn’t listed, it will fail validation. To update the list, modify the TXT record for ```securitymodels.lutheran.radio``` through the DNS management interface for the ```lutheran.radio``` domain.
 
 ### Security Model TXT Record Usage
 
-Lutheran Radio's security system uses a DNS TXT record to ensure only trusted app versions can stream content. The longest practical TXT record length for this purpose is about 450 bytes, which fits within standard DNS limits and supports up to 40-50 security model names (like "landvetter" or "nuuk"). This is more than enough for the current 40-byte record. If you need to use more names in the future, check that your DNS supports larger messages (EDNS0) and test the app to confirm it can handle them. Keep an eye on how your DNS behaves to ensure everything works smoothly, keeping the app secure and reliable for all users.
+Lutheran Radio's security system uses a DNS TXT record to ensure only trusted app versions can stream content. The longest practical TXT record length for this purpose is about 450 bytes, which fits within standard DNS limits and supports up to 40-50 security model names (like "landvetter" or "nuuk"). This is more than enough for the current 43-byte record. If you need to use more names in the future, check that your DNS supports larger messages (EDNS0) and test the app to confirm it can handle them. Keep an eye on how your DNS behaves to ensure everything works smoothly, keeping the app secure and reliable for all users.
 
 ### Security Model History
 
@@ -153,7 +153,7 @@ To prevent naming collisions and maintain a clear history of security models, th
 | `visby`             | May 26, 2025     | (ongoing)       | 1.1.1                  |
 | `landvetter`        | June 1, 2025     | (ongoing)       | 1.1.2                  |
 | `nuuk`              | June 15, 2025    | (ongoing)       | 1.2.1                  |
-| `stjohns`           | (pending)        | August 20, 2025 | (pending)              |
+| `stjohns`           | July 22, 2025    | August 20, 2025 | 1.2.3                  |
 
 **Notes:**
 - **Valid From:** The date when the security model was first published to the App Store.
@@ -171,7 +171,7 @@ When introducing a new security model:
   
 ### Why Track Security Model Names?
 
-Security model names (e.g., ```nuuk```) are embedded in the app and validated against the DNS TXT record. Once a name is used, it becomes part of the app's history and may still exist in older versions. Reusing a name could inadvertently allow a deprecated or compromised version to pass validation, undermining security. By maintaining this table, we ensure that:
+Security model names (e.g., ```stjohns```) are embedded in the app and validated against the DNS TXT record. Once a name is used, it becomes part of the app's history and may still exist in older versions. Reusing a name could inadvertently allow a deprecated or compromised version to pass validation, undermining security. By maintaining this table, we ensure that:
 
 - New security model names are unique and avoid collisions with past names.
 - The history of security models is transparent for debugging and auditing.
