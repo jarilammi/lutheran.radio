@@ -33,7 +33,9 @@ class CertificateValidator: NSObject, URLSessionDelegate {
     ///
     /// Generated via: `openssl s_client -connect livestream.lutheran.radio:8443 | openssl x509 -fingerprint -sha256 -noout`.
     /// Update this value post-certificate expiry/rotation via app release.
-    private let pinnedCertHash = "7C:A2:DB:51:07:8C:82:20:F7:B5:87:F3:05:79:65:E2:74:2C:6C:BE:72:47:69:51:B4:FE:7E:72:E2:D3:86:CC" // openssl s_client -connect livestream.lutheran.radio:8443 | openssl x509 -fingerprint -sha256 -noout
+    internal var pinnedCertHash: String {
+        "7C:A2:DB:51:07:8C:82:20:F7:B5:87:F3:05:79:65:E2:74:2C:6C:BE:72:47:69:51:B4:FE:7E:72:E2:D3:86:CC" // openssl s_client -connect livestream.lutheran.radio:8443 | openssl x509 -fingerprint -sha256 -noout
+    }
     
     /// The start date for the certificate transition period (July 20, 2025).
     static let transitionStartDate = Date(timeIntervalSince1970: 1753055999)
@@ -50,8 +52,8 @@ class CertificateValidator: NSObject, URLSessionDelegate {
     /// Cached result of the last validation.
     private var lastValidationResult: Bool = false
     
-    /// Private initializer to enforce singleton pattern.
-    private override init() {
+    /// Internal initializer to enforce singleton pattern.
+    internal override init() {
         super.init()
     }
     
@@ -186,7 +188,7 @@ class CertificateValidator: NSObject, URLSessionDelegate {
         }
     }
     
-    // MARK: - Private Methods
+    // MARK: - Internal Methods
     
     /// Validates the certificate chain by checking the leaf certificate's hash.
     ///
@@ -195,7 +197,7 @@ class CertificateValidator: NSObject, URLSessionDelegate {
     ///
     /// - Parameter serverTrust: The `SecTrust` chain to validate.
     /// - Returns: True if the computed hash matches the pinned hash.
-    private func validateCertificateChain(serverTrust: SecTrust) -> Bool {
+    internal func validateCertificateChain(serverTrust: SecTrust) -> Bool {
         // Focus on leaf certificate (index 0) as per SSL pinning document
         guard let certificateChain = SecTrustCopyCertificateChain(serverTrust) as? [SecCertificate],
               !certificateChain.isEmpty,
@@ -222,7 +224,7 @@ class CertificateValidator: NSObject, URLSessionDelegate {
     ///
     /// - Parameter certificate: The `SecCertificate` to hash.
     /// - Returns: The hex-formatted hash (uppercase, colon-separated), or nil on failure.
-    private func computeCertificateHash(for certificate: SecCertificate) -> String? {
+    internal func computeCertificateHash(for certificate: SecCertificate) -> String? {
         guard let certData = SecCertificateCopyData(certificate) as Data? else {
             #if DEBUG
             print("🔒 [CertificateValidator] Failed to get certificate data")
