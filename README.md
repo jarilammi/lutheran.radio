@@ -75,6 +75,25 @@ The app implements certificate pinning to prevent man-in-the-middle (MITM) attac
 3. **Location:** Embedded in ```Info.plist``` under ```NSAppTransportSecurity > NSPinnedDomains``` (primary) and ```CertificateValidator.swift``` (runtime validation)
 4. **Current Hash:** ```7C:A2:DB:51:07:8C:82:20:F7:B5:87:F3:05:79:65:E2:74:2C:6C:BE:72:47:69:51:B4:FE:7E:72:E2:D3:86:CC```
 
+### Dual Pinning Methods
+For enhanced security, the app uses two complementary pinning approaches:
+
+1. **SPKI Pinning (via Info.plist - Primary ATS Enforcement)**:
+   - Pins the SHA-256 hash of the certificate's public key (SPKI) in Base64 format.
+   - Enforced by App Transport Security (ATS) for all connections to `lutheran.radio` (including subdomains).
+   - Allows certificate rotations without app updates, as long as the public key remains consistent.
+   - Current Pinned SPKI Hashes (from `Info.plist` under `NSAppTransportSecurity > NSPinnedDomains > lutheran.radio > NSPinnedLeafIdentities`):
+     - `mm31qgyBr2aXX8NzxmX/OeKzrUeOtxim4foWmxL4TZY=`
+     - `XuAdGZ5Hy28pa2OHHMOry/fzpW8XyA5AV5bEDwSX2Ys=`
+   - Verification: Use `openssl s_client -connect livestream.lutheran.radio:8443 -servername livestream.lutheran.radio < /dev/null | openssl x509 -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | base64` and match against these values.
+
+2. **Full Certificate Hash Pinning (via CertificateValidator.swift - Runtime Validation)**:
+   - Pins the SHA-256 hash of the full certificate's DER representation (hex, uppercase, colon-separated).
+   - Performed at runtime for stricter validation, with caching (10 minutes) and transition support.
+   - Complements SPKI by ensuring exact certificate matches, with fallback to ATS during the transition period.
+
+This dual approach provides defense-in-depth: SPKI handles baseline TLS security and rotations, while full hashing adds runtime enforcement. During the transition period (July 20–August 20, 2025), runtime validation allows hash mismatches (trusting ATS/SPKI) to prevent disruptions from certificate updates.
+
 ### Certificate Renewal Strategy
 
 To ensure uninterrupted service during SSL certificate renewals, the app includes a strategic transition system:

@@ -10,8 +10,8 @@ This document outlines the implementation of SSL certificate validation for an i
 ## Current Approach: Periodic Full Certificate Validation with Transition Period
 - **Method**: Centralized validation in `CertificateValidator` class, pinning the full certificate hash (`currentCertHash`). Used by `StreamingSessionDelegate` (per-request) and `DirectStreamingPlayer` (initial and periodic checks every 10 minutes).
 - **Transition Period**:
-  - **Dates**: July 20, 2025, to August 20, 2025 (certificate expiry).
-  - **Behavior**: If `currentCertHash` validation fails during this period, log a warning but trust ATS's evaluation, allowing new certificates to be accepted.
+  - **Dates**: July 20, 2025, to August 20, 2025 (certificate expiry). Review and update post-expiry via app release.
+  - **Behavior**: If `currentCertHash` validation fails during this period, log a warning but trust ATS's evaluation, allowing new certificates to be accepted. Transient connection issues (e.g., server reboots) should be handled as non-security errors with fallbacks to alternate servers.
   - **Outside Transition**: Strictly enforce `currentCertHash` before transition; fail after expiry if hash doesn't match.
 - **Implementation**:
   - `CertificateValidator` validates the SHA-256 hash of the certificate's DER representation, caching results for 10 minutes.
@@ -19,7 +19,7 @@ This document outlines the implementation of SSL certificate validation for an i
   - `DirectStreamingPlayer` performs initial validation and schedules periodic HEAD requests.
 - **Stream Control**:
   - Initial validation before playback.
-  - Periodic checks stop the stream on failure (outside transition period), notifying via `onStatusChange`.
+  - Periodic checks stop the stream on failure (outside transition period), notifying via `onStatusChange`. For improved resilience, add fallback to alternate servers on transient failures before stopping.
 - **ATS Compliance**: Enforced via `Info.plist` with no exceptions, handling SPKI and TLS requirements.
 - **Benefits**:
   - Strong security with full certificate pinning.
