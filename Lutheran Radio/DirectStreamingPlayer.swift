@@ -2333,14 +2333,15 @@ extension DirectStreamingPlayer {
             
             switch nsError.code {
             case URLError.Code.secureConnectionFailed.rawValue,
-                 URLError.Code.serverCertificateUntrusted.rawValue:
+                URLError.Code.serverCertificateUntrusted.rawValue:
                 return .securityFailure
             case URLError.Code.cannotFindHost.rawValue,
-                 URLError.Code.resourceUnavailable.rawValue,
-                 URLError.Code.fileDoesNotExist.rawValue,
-                 URLError.Code.cannotConnectToHost.rawValue,
-                 URLError.Code.badServerResponse.rawValue:
+                URLError.Code.resourceUnavailable.rawValue,
+                URLError.Code.fileDoesNotExist.rawValue,
+                URLError.Code.cannotConnectToHost.rawValue:
                 return .permanentFailure
+            case URLError.Code.badServerResponse.rawValue:    // Treat as transient to enable fallback for temporary HTTP 5xx errors (e.g., server reboots)
+                return .transientFailure
             default:
                 return .transientFailure
             }
