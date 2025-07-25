@@ -173,6 +173,7 @@ To prevent naming collisions and maintain a clear history of security models, th
 | `landvetter`        | June 1, 2025     | (ongoing)       | 1.1.2                  |
 | `nuuk`              | June 15, 2025    | (ongoing)       | 1.2.1                  |
 | `stjohns`           | July 22, 2025    | August 20, 2025 | 1.2.3                  |
+| `dc`                | (pending)        | (pending)       | 1.2.4                  |
 
 **Notes:**
 - **Valid From:** The date when the security model was first published to the App Store.
