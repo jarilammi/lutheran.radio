@@ -795,8 +795,8 @@ class DirectStreamingPlayerTests: XCTestCase {
         // Test other permanent errors
         let badServerError = URLError(.badServerResponse)
         let badServerType = DirectStreamingPlayer.StreamErrorType.from(error: badServerError)
-        XCTAssertEqual(badServerType, .permanentFailure)
-        XCTAssertTrue(badServerType.isPermanent)
+        XCTAssertEqual(badServerType, .transientFailure)  // Updated to match new classification treating .badServerResponse as transient for fallback support
+        XCTAssertFalse(badServerType.isPermanent)  // Updated to match new classification
         
         let cannotConnectError = URLError(.cannotConnectToHost)
         let cannotConnectType = DirectStreamingPlayer.StreamErrorType.from(error: cannotConnectError)
