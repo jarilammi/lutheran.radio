@@ -10,7 +10,7 @@ This document outlines the implementation of SSL certificate validation for an i
 ## Current Approach: Periodic Full Certificate Validation with Transition Period
 - **Method**: Centralized validation in `CertificateValidator` class, pinning the full certificate hash (`currentCertHash`). Used by `StreamingSessionDelegate` (per-request) and `DirectStreamingPlayer` (initial and periodic checks every 10 minutes).
 - **Transition Period**:
-  - **Dates**: July 20, 2025, to August 20, 2025 (certificate expiry). Review and update post-expiry via app release.
+  - **Dates**: July 27, 2026, to August 26, 2026 (certificate expiry). Review and update post-expiry via app release.
   - **Behavior**: If `currentCertHash` validation fails during this period, log a warning but trust ATS's evaluation, allowing new certificates to be accepted. Transient connection issues (e.g., server reboots) should be handled as non-security errors with fallbacks to alternate servers.
   - **Outside Transition**: Strictly enforce `currentCertHash` before transition; fail after expiry if hash doesn't match.
 - **Implementation**:

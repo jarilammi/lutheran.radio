@@ -38,10 +38,10 @@ class CertificateValidator: NSObject, URLSessionDelegate {
     }
     
     /// The start date for the certificate transition period (July 27, 2026).
-    static let transitionStartDate = Date(timeIntervalSince1970: 1753574400)
+    static let transitionStartDate = Date(timeIntervalSince1970: 1785110400)
     
     /// The expiry date of the current certificate (August 26, 2026, 23:59:59).
-    static let certificateExpiryDate = Date(timeIntervalSince1970: 1756252799)
+    static let certificateExpiryDate = Date(timeIntervalSince1970: 1787788799)
     
     /// Timestamp of the last validation attempt.
     private var lastValidationTime: Date?
@@ -57,9 +57,18 @@ class CertificateValidator: NSObject, URLSessionDelegate {
         super.init()
     }
     
+    /// Injectable closure for the current date, used for testing time-dependent logic (e.g., transition periods).
+    ///
+    /// Defaults to system date. In tests, override to mock dates:
+    /// ```
+    /// validator.currentDate = { Date(timeIntervalSince1970: someTimestamp) }
+    /// ```
+    /// - Important: Do not change in production.
+    internal var currentDate: () -> Date = { Date() }
+    
     /// Determines if the current date falls within the defined transition period.
     private var isInTransitionPeriod: Bool {
-        let now = Date()
+        let now = currentDate()
         return now >= Self.transitionStartDate && now <= Self.certificateExpiryDate
     }
     
