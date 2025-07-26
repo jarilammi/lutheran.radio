@@ -73,7 +73,7 @@ The app implements certificate pinning to prevent man-in-the-middle (MITM) attac
 1. **Domain:** ```lutheran.radio``` (including subdomains)
 2. **Pinned Value:** SHA-256 hash of the server’s leaf certificate, hex-encoded (uppercase, colon-separated)
 3. **Location:** Embedded in ```Info.plist``` under ```NSAppTransportSecurity > NSPinnedDomains``` (primary) and ```CertificateValidator.swift``` (runtime validation)
-4. **Current Hash:** ```7C:A2:DB:51:07:8C:82:20:F7:B5:87:F3:05:79:65:E2:74:2C:6C:BE:72:47:69:51:B4:FE:7E:72:E2:D3:86:CC```
+4. **Current Hash:** ```CC:F7:8E:09:EF:F3:3D:9A:5D:8B:B0:5C:74:28:0D:F6:BE:14:1C:C4:47:F9:69:C2:90:2C:43:97:66:8B:3D:CC```
 
 ### Dual Pinning Methods
 For enhanced security, the app uses two complementary pinning approaches:
@@ -83,7 +83,7 @@ For enhanced security, the app uses two complementary pinning approaches:
    - Enforced by App Transport Security (ATS) for all connections to `lutheran.radio` (including subdomains).
    - Allows certificate rotations without app updates, as long as the public key remains consistent.
    - Current Pinned SPKI Hashes (from `Info.plist` under `NSAppTransportSecurity > NSPinnedDomains > lutheran.radio > NSPinnedLeafIdentities`):
-     - `mm31qgyBr2aXX8NzxmX/OeKzrUeOtxim4foWmxL4TZY=`
+     - `fwp4KADDyKqDa3qN5vy6UUJlffXBnjzrei3QTuYofYY=`
      - `XuAdGZ5Hy28pa2OHHMOry/fzpW8XyA5AV5bEDwSX2Ys=`
    - Verification: Use `openssl s_client -connect livestream.lutheran.radio:8443 -servername livestream.lutheran.radio < /dev/null | openssl x509 -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | base64` and match against these values.
 
@@ -92,7 +92,7 @@ For enhanced security, the app uses two complementary pinning approaches:
    - Performed at runtime for stricter validation, with caching (10 minutes) and transition support.
    - Complements SPKI by ensuring exact certificate matches, with fallback to ATS during the transition period.
 
-This dual approach provides defense-in-depth: SPKI handles baseline TLS security and rotations, while full hashing adds runtime enforcement. During the transition period (July 20–August 20, 2025), runtime validation allows hash mismatches (trusting ATS/SPKI) to prevent disruptions from certificate updates.
+This dual approach provides defense-in-depth: SPKI handles baseline TLS security and rotations, while full hashing adds runtime enforcement. During the transition period (July 27–August 26, 2026), runtime validation allows hash mismatches (trusting ATS/SPKI) to prevent disruptions from certificate updates.
 
 ### Certificate Renewal Strategy
 
@@ -130,8 +130,8 @@ Match the output against the ```SPKI-SHA256-BASE64``` value in ```Info.plist```.
 The app enforces security model validation to ensure only versions with an approved security implementation can stream content. This protects against compromised or obsolete app versions.
 
 1. **Domain:** ```securitymodels.lutheran.radio```
-2. **Mechanism:** Queries a DNS TXT record for a comma-separated list of valid security models (e.g., `"mariehamn,visby,landvetter,nuuk,stjohns"`)
-3. **Pinned Value:** Fixed security model string embedded in the app (currently `"stjohns"`)
+2. **Mechanism:** Queries a DNS TXT record for a comma-separated list of valid security models (e.g., `"stjohns,dc"`)
+3. **Pinned Value:** Fixed security model string embedded in the app (currently `"dc"`)
 4. **Location:** Defined in `DirectStreamingPlayer.swift` as `appSecurityModel`
 5. **Behavior:** If the app’s security model isn’t in the TXT record, playback is permanently disabled with a user-facing error message
 
@@ -152,14 +152,14 @@ dig +short TXT securitymodels.lutheran.radio
 Example output:
 
 ```
-"mariehamn,visby,landvetter,nuuk,stjohns,dc"
+"stjohns,dc"
 ```
 
-Compare this output to the security model defined in the app (found in ```DirectStreamingPlayer.swift``` as ```appSecurityModel```). If the app’s model (e.g., "stjohns") isn’t listed, it will fail validation. To update the list, modify the TXT record for ```securitymodels.lutheran.radio``` through the DNS management interface for the ```lutheran.radio``` domain.
+Compare this output to the security model defined in the app (found in ```DirectStreamingPlayer.swift``` as ```appSecurityModel```). If the app’s model (e.g., "dc") isn’t listed, it will fail validation. To update the list, modify the TXT record for ```securitymodels.lutheran.radio``` through the DNS management interface for the ```lutheran.radio``` domain.
 
 ### Security Model TXT Record Usage
 
-Lutheran Radio's security system uses a DNS TXT record to ensure only trusted app versions can stream content. The longest practical TXT record length for this purpose is about 450 bytes, which fits within standard DNS limits and supports up to 40-50 security model names (like "landvetter" or "nuuk"). This is more than enough for the current 43-byte record. If you need to use more names in the future, check that your DNS supports larger messages (EDNS0) and test the app to confirm it can handle them. Keep an eye on how your DNS behaves to ensure everything works smoothly, keeping the app secure and reliable for all users.
+Lutheran Radio's security system uses a DNS TXT record to ensure only trusted app versions can stream content. The longest practical TXT record length for this purpose is about 450 bytes, which fits within standard DNS limits and supports up to 40-50 security model names (like "landvetter" or "nuuk"). This is more than enough for the current 11-byte record. If you need to use more names in the future, check that your DNS supports larger messages (EDNS0) and test the app to confirm it can handle them. Keep an eye on how your DNS behaves to ensure everything works smoothly, keeping the app secure and reliable for all users.
 
 ### Security Model History
 
@@ -168,11 +168,12 @@ To prevent naming collisions and maintain a clear history of security models, th
 | Security Model Name | Valid From       | Valid Until     | App Version Introduced |
 |---------------------|------------------|-----------------|------------------------|
 | `turku`             | April 8, 2025    | April 20, 2025  | 1.0.4                  |
-| `mariehamn`         | April 15, 2025   | (ongoing)       | 1.0.7                  |
-| `visby`             | May 26, 2025     | (ongoing)       | 1.1.1                  |
-| `landvetter`        | June 1, 2025     | (ongoing)       | 1.1.2                  |
-| `nuuk`              | June 15, 2025    | (ongoing)       | 1.2.1                  |
+| `mariehamn`         | April 15, 2025   | July 26, 2025   | 1.0.7                  |
+| `visby`             | May 26, 2025     | July 26, 2025   | 1.1.1                  |
+| `landvetter`        | June 1, 2025     | July 26, 2025   | 1.1.2                  |
+| `nuuk`              | June 15, 2025    | July 26, 2025   | 1.2.1                  |
 | `stjohns`           | July 22, 2025    | August 20, 2025 | 1.2.3                  |
+| `dc`                | July 27, 2025    | (ongoing)       | 1.2.4                  |
 
 **Notes:**
 - **Valid From:** The date when the security model was first published to the App Store.
@@ -190,7 +191,7 @@ When introducing a new security model:
   
 ### Why Track Security Model Names?
 
-Security model names (e.g., ```stjohns```) are embedded in the app and validated against the DNS TXT record. Once a name is used, it becomes part of the app's history and may still exist in older versions. Reusing a name could inadvertently allow a deprecated or compromised version to pass validation, undermining security. By maintaining this table, we ensure that:
+Security model names (e.g., ```dc```) are embedded in the app and validated against the DNS TXT record. Once a name is used, it becomes part of the app's history and may still exist in older versions. Reusing a name could inadvertently allow a deprecated or compromised version to pass validation, undermining security. By maintaining this table, we ensure that:
 
 - New security model names are unique and avoid collisions with past names.
 - The history of security models is transparent for debugging and auditing.

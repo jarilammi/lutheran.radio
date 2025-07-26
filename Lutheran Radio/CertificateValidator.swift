@@ -34,14 +34,14 @@ class CertificateValidator: NSObject, URLSessionDelegate {
     /// Generated via: `openssl s_client -connect livestream.lutheran.radio:8443 | openssl x509 -fingerprint -sha256 -noout`.
     /// Update this value post-certificate expiry/rotation via app release.
     internal var pinnedCertHash: String {
-        "7C:A2:DB:51:07:8C:82:20:F7:B5:87:F3:05:79:65:E2:74:2C:6C:BE:72:47:69:51:B4:FE:7E:72:E2:D3:86:CC" // openssl s_client -connect livestream.lutheran.radio:8443 | openssl x509 -fingerprint -sha256 -noout
+        "CC:F7:8E:09:EF:F3:3D:9A:5D:8B:B0:5C:74:28:0D:F6:BE:14:1C:C4:47:F9:69:C2:90:2C:43:97:66:8B:3D:CC" // openssl s_client -connect livestream.lutheran.radio:8443 | openssl x509 -fingerprint -sha256 -noout
     }
     
-    /// The start date for the certificate transition period (July 20, 2025).
-    static let transitionStartDate = Date(timeIntervalSince1970: 1753055999)
+    /// The start date for the certificate transition period (July 27, 2026).
+    static let transitionStartDate = Date(timeIntervalSince1970: 1753574400)
     
-    /// The expiry date of the current certificate (August 20, 2025, 23:59:59).
-    static let certificateExpiryDate = Date(timeIntervalSince1970: 1755734399)
+    /// The expiry date of the current certificate (August 26, 2026, 23:59:59).
+    static let certificateExpiryDate = Date(timeIntervalSince1970: 1756252799)
     
     /// Timestamp of the last validation attempt.
     private var lastValidationTime: Date?
