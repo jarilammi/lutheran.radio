@@ -486,9 +486,11 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 self.statusLabel.text = String(localized: "status_playing")
                 self.statusLabel.backgroundColor = .systemGreen
                 self.statusLabel.textColor = .black
+                playPauseButton.accessibilityLabel = String(localized: "accessibility_label_play_pause")  // e.g., "Pause"
                 self.isInTransitionMode = false // Clear transition mode when playing successfully
             } else {
                 self.statusLabel.text = statusText
+                playPauseButton.accessibilityLabel = String(localized: "accessibility_label_play")  // e.g., "Play"
                 
                 // Handle different status types with appropriate colors and actions
                 if statusText == String(localized: "status_security_failed") {
@@ -637,14 +639,22 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         playPauseButton.addTarget(self, action: #selector(playPauseTapped), for: .touchUpInside)
         playPauseButton.accessibilityIdentifier = "playPauseButton"
         playPauseButton.accessibilityHint = String(localized: "accessibility_hint_play_pause")
+        playPauseButton.accessibilityLabel = String(localized: "accessibility_label_play")  // e.g., "Play" in Localizable.strings
+        playPauseButton.accessibilityTraits = [.button, .playsSound]  // Hints that it triggers sound
+        
         volumeSlider.addTarget(self, action: #selector(volumeChanged(_:)), for: .valueChanged)
         volumeSlider.accessibilityIdentifier = "volumeSlider"
         volumeSlider.accessibilityHint = String(localized: "accessibility_hint_volume")
+        volumeSlider.accessibilityLabel = String(localized: "accessibility_label_volume")  // e.g., "Volume"
+        volumeSlider.accessibilityTraits = .adjustable  // Default, but explicit for clarity
+        volumeSlider.accessibilityValue = String(format: String(localized: "accessibility_value_volume"), Int(volumeSlider.value * 100))  // e.g., "50 percent"
         
         // Add AirPlay button tap feedback
         airplayButton.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(airplayTapped)))
+        airplayButton.accessibilityLabel = String(localized: "accessibility_label_airplay")  // e.g., "AirPlay picker"
+        airplayButton.accessibilityHint = String(localized: "accessibility_hint_airplay")  // e.g., "Double tap to select audio output"
     }
-
+    
     @objc private func airplayTapped() {
         UIView.animate(withDuration: 0.1, animations: {
             self.airplayButton.transform = CGAffineTransform(scaleX: 0.9, y: 0.9)
@@ -1148,6 +1158,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     @objc private func volumeChanged(_ sender: UISlider) {
         streamingPlayer.setVolume(sender.value)
+        sender.accessibilityValue = String(format: String(localized: "accessibility_value_volume"), Int(sender.value * 100))  // e.g., "75 percent"
     }
     
     private func updatePlayPauseButton(isPlaying: Bool) {
