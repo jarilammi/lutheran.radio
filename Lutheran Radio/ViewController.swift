@@ -152,6 +152,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         imageView.translatesAutoresizingMaskIntoConstraints = false
         imageView.tintColor = UIColor.gray
         imageView.alpha = 0.1
+        imageView.isAccessibilityElement = false
         return imageView
     }()
     
@@ -186,6 +187,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         imageView.isHidden = true // Hidden by default
         imageView.layer.cornerRadius = 10
         imageView.clipsToBounds = true
+        imageView.isAccessibilityElement = false
         return imageView
     }()
     
