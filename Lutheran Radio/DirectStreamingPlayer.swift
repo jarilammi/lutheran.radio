@@ -1821,6 +1821,9 @@ class DirectStreamingPlayer: NSObject {
         // Clear all active SSL timers
         clearAllSSLProtectionTimers()
         
+        // Prevent auto-restart after manual pause by canceling retry attempts
+        self.retryWorkItem?.cancel()
+        
         // CRITICAL: Cancel any pending audio operations
         pendingPlaybackWorkItem?.cancel()
         pendingPlaybackWorkItem = nil
