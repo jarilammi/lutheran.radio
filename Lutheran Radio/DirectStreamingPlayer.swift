@@ -264,12 +264,13 @@ class DirectStreamingPlayer: NSObject {
     
     private var selectedServer: Server = servers[0]
     
+    // MARK: - Playback and Retry Management
     #if DEBUG
     var retryWorkItem: DispatchWorkItem?
     #else
     private var retryWorkItem: DispatchWorkItem?
     #endif
-    
+    private var fallbackWorkItem: DispatchWorkItem?
     /// Work item for pending playback operations that can be cancelled
     private var pendingPlaybackWorkItem: DispatchWorkItem?
     
@@ -1435,6 +1436,8 @@ class DirectStreamingPlayer: NSObject {
                     
                     // CRITICAL FIX: Clear the SSL timer immediately when ready to play
                     self.clearSSLProtectionTimer(for: connectionId)
+                    self.fallbackWorkItem?.cancel()
+                    self.fallbackWorkItem = nil
                     
                     // Mark handshake complete for both systems
                     self.markSSLHandshakeComplete(for: connectionId)
@@ -1481,6 +1484,8 @@ class DirectStreamingPlayer: NSObject {
                 case .failed:
                     tempStatusObserver?.invalidate()
                     self.clearSSLProtectionTimer(for: connectionId)
+                    self.fallbackWorkItem?.cancel()
+                    self.fallbackWorkItem = nil
                     
                     #if DEBUG
                     print("❌ PlayerItem failed with server \(server.name) after \(connectionAge)s")
@@ -1502,9 +1507,8 @@ class DirectStreamingPlayer: NSObject {
                 }
             }
             
-            // FIXED: Reduce timeout fallback since we clear timer on readyToPlay
-            let adaptiveTimeout = self.getSSLTimeout()
-            DispatchQueue.main.asyncAfter(deadline: .now() + max(adaptiveTimeout + 5.0, 15.0)) { [weak self] in
+            // FIXED: Store the fallback work item to allow cancellation
+            let workItem = DispatchWorkItem { [weak self] in
                 guard let self = self, self.playerItem?.status != .readyToPlay else { return }
                 tempStatusObserver?.invalidate()
                 let connectionAge = Date().timeIntervalSince(connectionStartTime)
@@ -1512,6 +1516,7 @@ class DirectStreamingPlayer: NSObject {
                 print("❌ Fallback timeout reached after \(connectionAge)s with server \(server.name)")
                 #endif
                 self.clearSSLProtectionTimer(for: connectionId)
+                self.fallbackWorkItem = nil
                 if !fallbackServers.isEmpty {
                     self.tryNextServer(fallbackServers: fallbackServers, completion: completion)
                 } else {
@@ -1519,6 +1524,7 @@ class DirectStreamingPlayer: NSObject {
                     completion(false)
                 }
             }
+            self.fallbackWorkItem = workItem
         }
     }
     
@@ -1823,6 +1829,10 @@ class DirectStreamingPlayer: NSObject {
         
         // Prevent auto-restart after manual pause by canceling retry attempts
         self.retryWorkItem?.cancel()
+        
+        // Cancel fallback timeout to prevent server switches
+        fallbackWorkItem?.cancel()
+        fallbackWorkItem = nil
         
         // CRITICAL: Cancel any pending audio operations
         pendingPlaybackWorkItem?.cancel()
