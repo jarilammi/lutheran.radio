@@ -2282,8 +2282,10 @@ extension ViewController {
         statusLabel.textColor = textColor
         statusLabel.accessibilityLabel = text
         
-        // Announce status changes to VoiceOver
-        UIAccessibility.post(notification: .announcement, argument: text)
+        // Announce status changes to VoiceOver only for play/pause states
+        if text == String(localized: "status_playing") || text == String(localized: "status_paused") {
+            UIAccessibility.post(notification: .announcement, argument: text)
+        }
     }
     
     func updateMetadataLabel(text: String) {
