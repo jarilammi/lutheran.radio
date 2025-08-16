@@ -1184,7 +1184,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         let config = UIImage.SymbolConfiguration(weight: .bold)
         let symbolName = isPlaying ? "pause.fill" : "play.fill"
         playPauseButton.setImage(UIImage(systemName: symbolName, withConfiguration: config), for: .normal)
-        playPauseButton.accessibilityLabel = isPlaying ? String(localized: "accessibility_label_pause") : String(localized: "accessibility_label_play")
+        playPauseButton.accessibilityLabel = isPlaying ? String(localized: "status_paused") : String(localized: "accessibility_label_play")
     }
     
     private func setupBackgroundParallax() {
