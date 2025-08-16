@@ -743,6 +743,112 @@
         }
       }
     },
+    "accessibility_hint_metadata" : {
+      "localizations" : {
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Viser information om det aktuelle radioprogram"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zeigt Informationen zum aktuellen Radioprogramm"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Displays information about the current radio program"
+          }
+        },
+        "et" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kuvab teavet praeguse raadioprogrammi kohta"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Näyttää tietoja nykyisestä radio-ohjelmasta"
+          }
+        },
+        "fit" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Näyttää tietoja nykyisestä raatio-ohjelmasta"
+          }
+        },
+        "fo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vísir upplýsingar um núverandi útvarpsskrá"
+          }
+        },
+        "is" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sýnir upplýsingar um núverandi útvarpsþátt"
+          }
+        },
+        "kl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Paasissutissat tusarnaarniaraluarneq massakkut erinarsuutip ilaatigut"
+          }
+        },
+        "lt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rodo informaciją apie dabartinę radijo programą"
+          }
+        },
+        "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parāda informāciju par pašreizējo radio programmu"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Viser informasjon om gjeldende radioprogram"
+          }
+        },
+        "nn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Viser informasjon om gjeldande radioprogram"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wyświetla informacje o bieżącym programie radiowym"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Отображает информацию о текущей радиопрограмме"
+          }
+        },
+        "se" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Čájeha dieđuid dálá radio prográmma birra"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Visar information om det aktuella radioprogrammet"
+          }
+        }
+      }
+    },
     "accessibility_hint_play_pause" : {
       "localizations" : {
         "da" : {

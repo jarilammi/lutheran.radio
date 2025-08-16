@@ -69,6 +69,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         label.adjustsFontForContentSizeCategory = true
         label.textColor = .label
         label.translatesAutoresizingMaskIntoConstraints = false
+        label.isAccessibilityElement = true
+        label.accessibilityLabel = String(localized: "lutheran_radio_title")
         return label
     }()
     
@@ -80,6 +82,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         cv.translatesAutoresizingMaskIntoConstraints = false
         cv.showsHorizontalScrollIndicator = false
         cv.backgroundColor = .systemBackground
+        cv.isAccessibilityElement = false // Prevent the collection view itself from being focused; cells are accessible
+        cv.accessibilityTraits = .none
         return cv
     }()
     
@@ -87,6 +91,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         let view = UIView()
         view.backgroundColor = .systemRed.withAlphaComponent(0.7)
         view.translatesAutoresizingMaskIntoConstraints = false
+        view.isAccessibilityElement = false
         return view
     }()
     
@@ -96,6 +101,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         button.setImage(UIImage(systemName: "play.fill", withConfiguration: config), for: .normal)
         button.tintColor = .tintColor
         button.translatesAutoresizingMaskIntoConstraints = false
+        button.isAccessibilityElement = true
+        button.accessibilityTraits = .button
+        button.accessibilityHint = String(localized: "accessibility_hint_play_pause")
         return button
     }()
     
@@ -113,6 +121,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         label.adjustsFontSizeToFitWidth = true
         label.minimumScaleFactor = 0.75
         label.lineBreakMode = .byTruncatingTail
+        label.isAccessibilityElement = true
         return label
     }()
     
@@ -124,6 +133,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         slider.minimumTrackTintColor = .tintColor
         slider.maximumTrackTintColor = .tertiaryLabel
         slider.translatesAutoresizingMaskIntoConstraints = false
+        slider.isAccessibilityElement = true
+        slider.accessibilityLabel = String(localized: "accessibility_label_volume")
+        slider.accessibilityHint = String(localized: "accessibility_hint_volume")
         return slider
     }()
     
@@ -136,6 +148,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         label.textColor = .secondaryLabel
         label.numberOfLines = 0
         label.translatesAutoresizingMaskIntoConstraints = false
+        label.isAccessibilityElement = true
+        label.accessibilityHint = String(localized: "accessibility_hint_metadata")
         return label
     }()
     
@@ -143,6 +157,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         let view = AVRoutePickerView(frame: CGRect(x: 0, y: 0, width: 44, height: 44))
         view.tintColor = .tintColor
         view.translatesAutoresizingMaskIntoConstraints = false
+        view.isAccessibilityElement = true
+        view.accessibilityLabel = String(localized: "accessibility_label_airplay")
+        view.accessibilityHint = String(localized: "accessibility_hint_airplay")
         return view
     }()
     
@@ -1167,6 +1184,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         let config = UIImage.SymbolConfiguration(weight: .bold)
         let symbolName = isPlaying ? "pause.fill" : "play.fill"
         playPauseButton.setImage(UIImage(systemName: symbolName, withConfiguration: config), for: .normal)
+        playPauseButton.accessibilityLabel = isPlaying ? String(localized: "status_paused") : String(localized: "accessibility_label_play")
     }
     
     private func setupBackgroundParallax() {
@@ -2248,6 +2266,28 @@ extension ViewController {
             } else {
                 self.handlePlayAction()
             }
+        }
+    }
+}
+
+extension ViewController {
+    func updateStatusLabel(text: String, backgroundColor: UIColor, textColor: UIColor) {
+        statusLabel.text = text
+        statusLabel.backgroundColor = backgroundColor
+        statusLabel.textColor = textColor
+        statusLabel.accessibilityLabel = text
+        
+        // Announce status changes to VoiceOver
+        UIAccessibility.post(notification: .announcement, argument: text)
+    }
+    
+    func updateMetadataLabel(text: String) {
+        metadataLabel.text = text
+        metadataLabel.accessibilityLabel = text
+        
+        // Announce metadata changes if significant
+        if text != String(localized: "no_track_info") {
+            UIAccessibility.post(notification: .announcement, argument: text)
         }
     }
 }
