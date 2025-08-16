@@ -1133,15 +1133,20 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         #if DEBUG
         print("📱 pausePlayback called from: \(Thread.callStackSymbols[1])")
         #endif
+        
+        // Cancel any pending stream switch timer to prevent auto-restart
+        streamSwitchTimer?.invalidate()
+        streamSwitchTimer = nil
+        
         isManualPause = true
-        streamingPlayer.stop()
-        statusLabel.text = String(localized: "status_paused")
-        statusLabel.backgroundColor = .systemGray
-        statusLabel.textColor = .white
-        isPlaying = false
-        updatePlayPauseButton(isPlaying: false)
-        updateNowPlayingInfo()
-        saveStateForWidget()
+        streamingPlayer.stop { [weak self] in
+            guard let self = self else { return }
+            self.isPlaying = false
+            self.updatePlayPauseButton(isPlaying: false)
+            self.updateStatusLabel(text: String(localized: "status_paused"), backgroundColor: .systemGray, textColor: .white)
+            self.updateNowPlayingInfo()
+            self.saveStateForWidget()
+        }
     }
     
     private func stopPlayback() {
