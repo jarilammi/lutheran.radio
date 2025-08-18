@@ -936,9 +936,7 @@ class DirectStreamingPlayer: NSObject {
                                 }
                             } else if self.player?.rate ?? 0 == 0, !self.hasPermanentError {
                                 self.play { success in
-                                    DispatchQueue.main.async {
-                                        self.onStatusChange?(success, String(localized: success ? "status_playing" : "status_stream_unavailable"))
-                                    }
+                                    self.safeOnStatusChange(isPlaying: success, status: String(localized: success ? "status_playing" : "status_stream_unavailable"))
                                 }
                             }
                         }
@@ -978,9 +976,7 @@ class DirectStreamingPlayer: NSObject {
                                 }
                             } else if self.player?.rate ?? 0 == 0, !self.hasPermanentError {
                                 self.play { success in
-                                    DispatchQueue.main.async {
-                                        self.onStatusChange?(success, String(localized: success ? "status_playing" : "status_stream_unavailable"))
-                                    }
+                                    self.safeOnStatusChange(isPlaying: success, status: String(localized: success ? "status_playing" : "status_stream_unavailable"))
                                 }
                             }
                         }
@@ -1475,7 +1471,7 @@ class DirectStreamingPlayer: NSObject {
                             self.player?.play()
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                                 let isPlaying = self.player?.rate ?? 0 > 0
-                                self.onStatusChange?(isPlaying, String(localized: isPlaying ? "status_playing" : "status_buffering"))
+                                self.safeOnStatusChange(isPlaying: isPlaying, status: String(localized: isPlaying ? "status_playing" : "status_buffering"))
                                 completion(isPlaying)
                             }
                         }
@@ -2075,7 +2071,7 @@ class DirectStreamingPlayer: NSObject {
                 #if DEBUG
                 print("🔒 [Loading Error] SSL/Certificate error detected")
                 #endif
-                onStatusChange?(false, String(localized: "status_security_failed"))
+                safeOnStatusChange(isPlaying: false, status: String(localized: "status_security_failed"))
             case .cannotFindHost, .fileDoesNotExist, .badServerResponse:
                 #if DEBUG
                 print("🔒 [Loading Error] Permanent network/server error detected")
@@ -2085,13 +2081,13 @@ class DirectStreamingPlayer: NSObject {
                 #if DEBUG
                 print("🔒 [Loading Error] Transient error detected")
                 #endif
-                onStatusChange?(false, String(localized: "status_buffering"))
+                safeOnStatusChange(isPlaying: false, status: String(localized: "status_buffering"))
             }
         } else {
             #if DEBUG
             print("🔒 [Loading Error] Non-URLError detected")
             #endif
-            onStatusChange?(false, String(localized: "status_buffering"))
+            safeOnStatusChange(isPlaying: false, status: String(localized: "status_buffering"))
         }
         
         stop()
