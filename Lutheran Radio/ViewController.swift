@@ -977,9 +977,12 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     }
     
     private func updateUIForNoInternet() {
-        statusLabel.text = String(localized: "status_no_internet")
-        statusLabel.backgroundColor = .systemGray
-        statusLabel.textColor = .white
+        safeUpdateStatusLabel(
+            text: String(localized: "status_no_internet"),
+            backgroundColor: .systemGray,
+            textColor: .white,
+            isPermanentError: false
+        )
         metadataLabel.text = String(localized: "no_track_info")
         updatePlayPauseButton(isPlaying: false)
     }
@@ -2065,9 +2068,12 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         }
         
         isManualPause = false
-        statusLabel.text = String(localized: "status_connecting")
-        statusLabel.backgroundColor = .systemYellow
-        statusLabel.textColor = .black
+        safeUpdateStatusLabel(
+            text: String(localized: "status_connecting"),
+            backgroundColor: .systemYellow,
+            textColor: .black,
+            isPermanentError: false
+        )
 
         streamingPlayer.validateSecurityModelAsync { [weak self] isValid in
             guard let self = self else { return }
@@ -2077,21 +2083,24 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                     if success {
                         self.isPlaying = true
                         self.updatePlayPauseButton(isPlaying: true)
-                        self.statusLabel.text = String(localized: "status_playing")
-                        self.statusLabel.backgroundColor = .systemGreen
+                        self.safeUpdateStatusLabel(
+                            text: String(localized: "status_playing"),
+                            backgroundColor: .systemGreen,
+                            textColor: .black,
+                            isPermanentError: false
+                        )
                         
                         // FIXED: Only save state after successful playback with the new stream
                         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                             self.saveStateForWidget()
                         }
                     } else if self.streamingPlayer.isLastErrorPermanent() {
-                        self.hasPermanentPlaybackError = true
-                        self.statusLabel.text = String(localized: "status_stream_unavailable")
-                        self.statusLabel.backgroundColor = .systemOrange
-                        self.statusLabel.textColor = .white
-                        
-                        // Save error state
-                        self.saveStateForWidget()
+                        self.safeUpdateStatusLabel(
+                            text: String(localized: "status_stream_unavailable"),
+                            backgroundColor: .systemOrange,
+                            textColor: .white,
+                            isPermanentError: true
+                        )
                     } else {
                         // Simple retry without complex logic
                         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
@@ -2100,13 +2109,12 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                     }
                 }
             } else {
-                self.statusLabel.text = self.streamingPlayer.isLastErrorPermanent() ? String(localized: "status_security_failed") : String(localized: "status_no_internet")
-                self.statusLabel.backgroundColor = self.streamingPlayer.isLastErrorPermanent() ? .systemRed : .systemGray
-                self.statusLabel.textColor = .white
-                self.hasPermanentPlaybackError = self.streamingPlayer.isLastErrorPermanent()
-                
-                // Save error state
-                self.saveStateForWidget()
+                self.safeUpdateStatusLabel(
+                    text: self.streamingPlayer.isLastErrorPermanent() ? String(localized: "status_security_failed") : String(localized: "status_no_internet"),
+                    backgroundColor: self.streamingPlayer.isLastErrorPermanent() ? .systemRed : .systemGray,
+                    textColor: .white,
+                    isPermanentError: self.streamingPlayer.isLastErrorPermanent()
+                )
             }
         }
     }
@@ -2295,6 +2303,22 @@ extension ViewController {
         // Announce metadata changes if significant
         if text != String(localized: "no_track_info") {
             UIAccessibility.post(notification: .announcement, argument: text)
+        }
+    }
+    
+    private func safeUpdateStatusLabel(text: String, backgroundColor: UIColor, textColor: UIColor, isPermanentError: Bool) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.statusLabel.text = text
+            self.statusLabel.backgroundColor = backgroundColor
+            self.statusLabel.textColor = textColor
+            self.hasPermanentPlaybackError = isPermanentError
+            if text != String(localized: "status_playing") {
+                self.saveStateForWidget()
+            }
+            if text == String(localized: "status_playing") || text == String(localized: "status_paused") {
+                UIAccessibility.post(notification: .announcement, argument: text)
+            }
         }
     }
 }
