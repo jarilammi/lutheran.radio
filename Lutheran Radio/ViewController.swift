@@ -2285,6 +2285,8 @@ extension ViewController {
 
 extension ViewController {
     func updateStatusLabel(text: String, backgroundColor: UIColor, textColor: UIColor) {
+        if statusLabel.text == text { return }
+        
         statusLabel.text = text
         statusLabel.backgroundColor = backgroundColor
         statusLabel.textColor = textColor
@@ -2297,6 +2299,8 @@ extension ViewController {
     }
     
     func updateMetadataLabel(text: String) {
+        if metadataLabel.text == text { return }
+        
         metadataLabel.text = text
         metadataLabel.accessibilityLabel = text
         
@@ -2309,6 +2313,8 @@ extension ViewController {
     private func safeUpdateStatusLabel(text: String, backgroundColor: UIColor, textColor: UIColor, isPermanentError: Bool) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
+            if self.statusLabel.text == text { return } // Skip redundant updates
+            
             self.statusLabel.text = text
             self.statusLabel.backgroundColor = backgroundColor
             self.statusLabel.textColor = textColor
