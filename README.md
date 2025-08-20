@@ -130,7 +130,7 @@ Match the output against the ```SPKI-SHA256-BASE64``` value in ```Info.plist```.
 The app enforces security model validation to ensure only versions with an approved security implementation can stream content. This protects against compromised or obsolete app versions.
 
 1. **Domain:** ```securitymodels.lutheran.radio```
-2. **Mechanism:** Queries a DNS TXT record for a comma-separated list of valid security models (e.g., `"stjohns,dc"`)
+2. **Mechanism:** Queries a DNS TXT record for a comma-separated list of valid security models (e.g., `"dc"`)
 3. **Pinned Value:** Fixed security model string embedded in the app (currently `"dc"`)
 4. **Location:** Defined in `DirectStreamingPlayer.swift` as `appSecurityModel`
 5. **Behavior:** If the app’s security model isn’t in the TXT record, playback is permanently disabled with a user-facing error message
@@ -152,14 +152,14 @@ dig +short TXT securitymodels.lutheran.radio
 Example output:
 
 ```
-"stjohns,dc"
+"dc"
 ```
 
 Compare this output to the security model defined in the app (found in ```DirectStreamingPlayer.swift``` as ```appSecurityModel```). If the app’s model (e.g., "dc") isn’t listed, it will fail validation. To update the list, modify the TXT record for ```securitymodels.lutheran.radio``` through the DNS management interface for the ```lutheran.radio``` domain.
 
 ### Security Model TXT Record Usage
 
-Lutheran Radio's security system uses a DNS TXT record to ensure only trusted app versions can stream content. The longest practical TXT record length for this purpose is about 450 bytes, which fits within standard DNS limits and supports up to 40-50 security model names (like "landvetter" or "nuuk"). This is more than enough for the current 11-byte record. If you need to use more names in the future, check that your DNS supports larger messages (EDNS0) and test the app to confirm it can handle them. Keep an eye on how your DNS behaves to ensure everything works smoothly, keeping the app secure and reliable for all users.
+Lutheran Radio's security system uses a DNS TXT record to ensure only trusted app versions can stream content. The longest practical TXT record length for this purpose is about 450 bytes, which fits within standard DNS limits and supports up to 40-50 security model names (like "landvetter" or "nuuk"). This is more than enough for the current 3-byte record. If you need to use more names in the future, check that your DNS supports larger messages (EDNS0) and test the app to confirm it can handle them. Keep an eye on how your DNS behaves to ensure everything works smoothly, keeping the app secure and reliable for all users.
 
 ### Security Model History
 
