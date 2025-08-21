@@ -1189,10 +1189,13 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     }
     
     private func updatePlayPauseButton(isPlaying: Bool) {
+        if self.isPlaying == isPlaying {
+            return
+        }
         let config = UIImage.SymbolConfiguration(weight: .bold)
-        let symbolName = isPlaying ? "pause.fill" : "play.fill"
-        playPauseButton.setImage(UIImage(systemName: symbolName, withConfiguration: config), for: .normal)
-        playPauseButton.accessibilityLabel = isPlaying ? String(localized: "status_paused") : String(localized: "accessibility_label_play")
+        let imageName = isPlaying ? "pause.fill" : "play.fill"
+        playPauseButton.setImage(UIImage(systemName: imageName, withConfiguration: config), for: .normal)
+        playPauseButton.accessibilityLabel = String(localized: isPlaying ? "accessibility_label_pause" : "accessibility_label_play")
     }
     
     private func setupBackgroundParallax() {
