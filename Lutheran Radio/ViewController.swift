@@ -355,6 +355,18 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         }
     }
     
+    private func preferredVolume() -> Float {
+        guard let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
+            return 0.5
+        }
+        let savedVolume = sharedDefaults.float(forKey: "preferredVolume")
+        let volumeToUse = savedVolume > 0 ? savedVolume : 0.5
+        // Persist default if none exists (for consistency with restoreVolume)
+        sharedDefaults.set(volumeToUse, forKey: "preferredVolume")
+        sharedDefaults.synchronize()
+        return volumeToUse
+    }
+    
     private func restoreVolume() {
         // Restore volume after player initialization
         if let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared") {
@@ -366,7 +378,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             sharedDefaults.synchronize()
         }
     }
-
     
     private func setupDarwinNotificationListener() {
         let notificationName = "radio.lutheran.widget.action"
@@ -1541,7 +1552,10 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             
             tuningPlayer = try AVAudioPlayer(contentsOf: tuningURL)
             tuningPlayer?.delegate = self
-            tuningPlayer?.volume = 1.0 // Full volume for audibility
+            tuningPlayer?.volume = preferredVolume()  // Set persistent volume
+            #if DEBUG
+            print("🎵 Set special tuning sound volume to \(tuningPlayer?.volume ?? -1.0)")
+            #endif
             tuningPlayer?.numberOfLoops = 0
             tuningPlayer?.prepareToPlay()
             let didPlay = tuningPlayer?.play() ?? false
