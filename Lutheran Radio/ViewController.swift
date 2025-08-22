@@ -293,6 +293,19 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         languageCollectionView.scrollToItem(at: indexPath, at: .centeredHorizontally, animated: false)
         updateSelectionIndicator(to: initialIndex, isInitial: true)
         
+        // Set initial volume slider position (UI only)
+        if let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared") {
+            let savedVolume = sharedDefaults.float(forKey: "preferredVolume")
+            let volumeToUse = savedVolume > 0 ? savedVolume : 0.5
+            volumeSlider.value = volumeToUse
+            volumeSlider.accessibilityValue = String(format: String(localized: "accessibility_value_volume"), Int(volumeToUse * 100))
+            sharedDefaults.set(volumeToUse, forKey: "preferredVolume")
+            sharedDefaults.synchronize()
+            #if DEBUG
+            print("📱 Set initial volumeSlider to \(volumeToUse)")
+            #endif
+        }
+        
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
             self?.isInitialScrollLocked = false
         }
@@ -337,9 +350,23 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 self.streamingPlayer.cancelPendingSSLProtection()
                 self.streamingPlayer.resetTransientErrors()
                 self.startPlayback()
+                self.restoreVolume() // Apply audio volume after playback starts
             }
         }
     }
+    
+    private func restoreVolume() {
+        // Restore volume after player initialization
+        if let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared") {
+            let savedVolume = sharedDefaults.float(forKey: "preferredVolume")
+            let volumeToUse = savedVolume > 0 ? savedVolume : 0.5 // Use saved volume or default to 0.5
+            volumeSlider.value = volumeToUse
+            streamingPlayer.setVolume(volumeToUse)
+            sharedDefaults.set(volumeToUse, forKey: "preferredVolume") // Persist the default if none exists
+            sharedDefaults.synchronize()
+        }
+    }
+
     
     private func setupDarwinNotificationListener() {
         let notificationName = "radio.lutheran.widget.action"
@@ -1186,6 +1213,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     @objc private func volumeChanged(_ sender: UISlider) {
         streamingPlayer.setVolume(sender.value)
         sender.accessibilityValue = String(format: String(localized: "accessibility_value_volume"), Int(sender.value * 100))  // e.g., "75 percent"
+        let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared")
+        sharedDefaults?.set(sender.value, forKey: "preferredVolume")
+        sharedDefaults?.synchronize()
     }
     
     private func updatePlayPauseButton(isPlaying: Bool) {
