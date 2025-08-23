@@ -56,6 +56,15 @@ class CertificateValidator: NSObject, URLSessionDelegate {
     /// Cached result of the last validation.
     private var lastValidationResult: Bool = false
     
+    /// Formatter for parsing HTTP Date headers (RFC 7231 format: "EEE, dd MMM yyyy HH:mm:ss zzz").
+    private lazy var httpDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+        return formatter
+    }()
+    
     /// Internal initializer to enforce singleton pattern.
     internal override init() {
         super.init()
@@ -113,7 +122,7 @@ class CertificateValidator: NSObject, URLSessionDelegate {
         }
         
         let isPinnedValid = validateCertificateChain(serverTrust: serverTrust)
-        let now = currentDate()  // CHANGED: Use currentDate() for consistency and testability (was Date())
+        let now = currentDate()
         let isValid: Bool
         
         if now > Self.certificateExpiryDate {
@@ -164,9 +173,45 @@ class CertificateValidator: NSObject, URLSessionDelegate {
         let session = URLSession(configuration: .ephemeral, delegate: self, delegateQueue: nil)
         var request = URLRequest(url: url)
         request.httpMethod = "HEAD"
-        let task = session.dataTask(with: request) { [weak self] _, _, error in
+        let task = session.dataTask(with: request) { [weak self] _, response, error in
             guard let self = self else { completion(false); return }
             let isValid = error == nil && self.lastValidationResult
+            
+            // Manipulation detection on success
+            if isValid, let httpResponse = response as? HTTPURLResponse,
+               let dateStr = httpResponse.value(forHTTPHeaderField: "Date"),
+               let serverDate = self.httpDateFormatter.date(from: dateStr) {
+                
+                self.allowTransitionLeniency = true  // Reset to true at start
+                
+                let deviceDate = self.currentDate()
+                let tolerance: TimeInterval = 300  // 5 minutes for skew
+                
+                // Check for significant discrepancy indicating manipulation
+                let timeDiff = abs(deviceDate.timeIntervalSince(serverDate))
+                if timeDiff > tolerance {
+                    #if DEBUG
+                    print("⚠️ [CertificateValidator] Device time manipulation suspected: Device \(deviceDate), Server \(serverDate), Diff \(timeDiff)s")
+                    #endif
+                    self.allowTransitionLeniency = false
+                } else {
+                    // Specific transition mismatch check
+                    let deviceInTransition = deviceDate >= Self.transitionStartDate && deviceDate <= Self.certificateExpiryDate
+                    let serverInTransition = serverDate >= Self.transitionStartDate && serverDate <= Self.certificateExpiryDate
+                    if deviceInTransition && !serverInTransition {
+                        #if DEBUG
+                        print("⚠️ [CertificateValidator] Transition mismatch detected: Device in transition but server not. Disabling leniency.")
+                        #endif
+                        self.allowTransitionLeniency = false
+                    }
+                }
+            } else if isValid {
+                #if DEBUG
+                print("⚠️ [CertificateValidator] Skipping manipulation check: No valid Date header in response.")
+                #endif
+                // Optionally: Fallback to true or handle as potential issue
+            }
+            
             #if DEBUG
             print("🔒 [CertificateValidator] HEAD request completed for \(url). Valid: \(isValid), Error: \(error?.localizedDescription ?? "None")")
             #endif
