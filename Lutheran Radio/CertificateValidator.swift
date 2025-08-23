@@ -11,9 +11,9 @@ import CommonCrypto
 
 /// Singleton class responsible for managing periodic SSL certificate validation with support for a transition period during certificate rotations.
 ///
-/// This class performs runtime certificate pinning by validating the full SHA-256 hash of the server's leaf certificate against a pinned value.
+/// This class performs runtime certificate pinning by validating the full SHA-256 fingerprint of the server's leaf certificate against a pinned value.
 /// It integrates with App Transport Security (ATS) for baseline trust evaluation and includes caching to optimize performance.
-/// During the defined transition period, hash mismatches are allowed (falling back to ATS trust) to enable smooth certificate updates without disrupting service.
+/// During the defined transition period, fingerprint mismatches are allowed (falling back to ATS trust) to enable smooth certificate updates without disrupting service.
 ///
 /// Key Features:
 /// - Centralized validation logic used by both per-request (e.g., StreamingSessionDelegate) and periodic checks (e.g., DirectStreamingPlayer).
@@ -29,11 +29,11 @@ class CertificateValidator: NSObject, URLSessionDelegate {
     /// Shared singleton instance for global access.
     static let shared = CertificateValidator()
     
-    /// The pinned SHA-256 hash of the full certificate (DER representation), formatted as hex (uppercase, colon-separated).
+    /// The pinned SHA-256 fingerprint of the full certificate (DER representation), formatted as hex (uppercase, colon-separated).
     ///
     /// Generated via: `openssl s_client -connect livestream.lutheran.radio:8443 | openssl x509 -fingerprint -sha256 -noout`.
     /// Update this value post-certificate expiry/rotation via app release.
-    internal var pinnedCertHash: String {
+    internal var pinnedCertFingerprint: String {
         "CC:F7:8E:09:EF:F3:3D:9A:5D:8B:B0:5C:74:28:0D:F6:BE:14:1C:C4:47:F9:69:C2:90:2C:43:97:66:8B:3D:CC" // openssl s_client -connect livestream.lutheran.radio:8443 | openssl x509 -fingerprint -sha256 -noout
     }
     
@@ -42,6 +42,10 @@ class CertificateValidator: NSObject, URLSessionDelegate {
     
     /// The expiry date of the current certificate (August 26, 2026, 23:59:59).
     static let certificateExpiryDate = Date(timeIntervalSince1970: 1787788799)
+    
+    /// Barrier flag to allow leniency during transition, mitigating date manipulation risks.
+    /// Defaults to true (lenient, trusting ATS on mismatch); set to false if manipulation detected (e.g., via server time check).
+    var allowTransitionLeniency: Bool = true
     
     /// Timestamp of the last validation attempt.
     private var lastValidationTime: Date?
@@ -77,11 +81,11 @@ class CertificateValidator: NSObject, URLSessionDelegate {
     /// Process:
     /// 1. Checks cache: Returns cached result if valid and recent.
     /// 2. Performs system trust evaluation via `SecTrustEvaluateWithError` (includes ATS pinning and chain validation).
-    /// 3. If system trust passes, validates the leaf certificate's full hash.
+    /// 3. If system trust passes, validates the leaf certificate's full fingerprint.
     /// 4. Applies transition logic:
-    ///    - After expiry: Strictly enforce hash.
-    ///    - During transition: Warn on hash failure but trust ATS (return true).
-    ///    - Before transition: Enforce hash.
+    ///    - After expiry: Strictly enforce fingerprint.
+    ///    - During transition: Warn on fingerprint failure but trust ATS (return true).
+    ///    - Before transition: Enforce fingerprint.
     /// 5. Caches the final result and calls completion.
     ///
     /// - Parameters:
@@ -109,31 +113,33 @@ class CertificateValidator: NSObject, URLSessionDelegate {
         }
         
         let isPinnedValid = validateCertificateChain(serverTrust: serverTrust)
-        let now = Date()
+        let now = currentDate()  // CHANGED: Use currentDate() for consistency and testability (was Date())
         let isValid: Bool
         
         if now > Self.certificateExpiryDate {
-            // After expiry, strictly enforce pinned hash
+            // After expiry, strictly enforce pinned fingerprint
             isValid = isPinnedValid
             if !isValid {
                 #if DEBUG
-                print("🔒 [CertificateValidator] Certificate hash validation failed after expiry at \(now). Expected: \(pinnedCertHash)")
+                print("🔒 [CertificateValidator] Certificate fingerprint validation failed after expiry at \(now). Expected: \(pinnedCertFingerprint)")
                 #endif
             }
         } else if isInTransitionPeriod {
-            // During transition, warn on hash failure but trust ATS
+            // During transition, apply barrier on fingerprint failure
             if !isPinnedValid {
                 #if DEBUG
-                print("⚠️ [CertificateValidator] Warning: Certificate hash validation failed during transition period at \(now). Trusting ATS. Expected: \(pinnedCertHash)")
+                print("⚠️ [CertificateValidator] Warning: Certificate fingerprint validation failed during transition period at \(now). Trusting ATS only if leniency allowed. Expected: \(pinnedCertFingerprint)")
                 #endif
+                isValid = allowTransitionLeniency  // Barrier controls leniency (defaults to false, enforcing strict fingerprint)
+            } else {
+                isValid = true  // Fingerprint matches, no issue
             }
-            isValid = true // Trust ATS during transition
         } else {
-            // Before transition, enforce pinned hash
+            // Before transition, enforce pinned fingerprint
             isValid = isPinnedValid
             if !isValid {
                 #if DEBUG
-                print("🔒 [CertificateValidator] Certificate hash validation failed before transition at \(now). Expected: \(pinnedCertHash)")
+                print("🔒 [CertificateValidator] Certificate fingerprint validation failed before transition at \(now). Expected: \(pinnedCertFingerprint)")
                 #endif
             }
         }
@@ -199,13 +205,13 @@ class CertificateValidator: NSObject, URLSessionDelegate {
     
     // MARK: - Internal Methods
     
-    /// Validates the certificate chain by checking the leaf certificate's hash.
+    /// Validates the certificate chain by checking the leaf certificate's fingerprint.
     ///
     /// Focuses on the leaf (server) certificate at index 0.
-    /// Computes the SHA-256 hash of its DER data and compares to the pinned value.
+    /// Computes the SHA-256 fingerprint of its DER data and compares to the pinned value.
     ///
     /// - Parameter serverTrust: The `SecTrust` chain to validate.
-    /// - Returns: True if the computed hash matches the pinned hash.
+    /// - Returns: True if the computed fingerprint matches the pinned fingerprint.
     internal func validateCertificateChain(serverTrust: SecTrust) -> Bool {
         // Focus on leaf certificate (index 0) as per SSL pinning document
         guard let certificateChain = SecTrustCopyCertificateChain(serverTrust) as? [SecCertificate],
@@ -217,11 +223,11 @@ class CertificateValidator: NSObject, URLSessionDelegate {
             return false
         }
         
-        if let certHash = computeCertificateHash(for: leafCertificate) {
-            let isValid = certHash == pinnedCertHash
+        if let certFingerprint = computeCertificateFingerprint(for: leafCertificate) {
+            let isValid = certFingerprint == pinnedCertFingerprint
             #if DEBUG
             if !isValid {
-                print("🔒 [CertificateValidator] Hash mismatch. Computed: \(certHash), Expected: \(pinnedCertHash)")
+                print("🔒 [CertificateValidator] Fingerprint mismatch. Computed: \(certFingerprint), Expected: \(pinnedCertFingerprint)")
             }
             #endif
             return isValid
@@ -229,22 +235,22 @@ class CertificateValidator: NSObject, URLSessionDelegate {
         return false
     }
     
-    /// Computes the SHA-256 hash of a certificate's DER representation.
+    /// Computes the SHA-256 fingerprint of a certificate's DER representation.
     ///
-    /// - Parameter certificate: The `SecCertificate` to hash.
-    /// - Returns: The hex-formatted hash (uppercase, colon-separated), or nil on failure.
-    internal func computeCertificateHash(for certificate: SecCertificate) -> String? {
+    /// - Parameter certificate: The `SecCertificate` to fingerprint.
+    /// - Returns: The hex-formatted fingerprint (uppercase, colon-separated), or nil on failure.
+    internal func computeCertificateFingerprint(for certificate: SecCertificate) -> String? {
         guard let certData = SecCertificateCopyData(certificate) as Data? else {
             #if DEBUG
             print("🔒 [CertificateValidator] Failed to get certificate data")
             #endif
             return nil
         }
-        var hash = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
+        var fingerprint = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
         certData.withUnsafeBytes { dataBytes in
-            _ = CC_SHA256(dataBytes.baseAddress, CC_LONG(certData.count), &hash)
+            _ = CC_SHA256(dataBytes.baseAddress, CC_LONG(certData.count), &fingerprint)
         }
         // Convert to hex, uppercase, colon-separated to match OpenSSL format
-        return hash.map { String(format: "%02X", $0) }.joined(separator: ":")
+        return fingerprint.map { String(format: "%02X", $0) }.joined(separator: ":")
     }
 }

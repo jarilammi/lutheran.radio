@@ -71,36 +71,36 @@ After cleaning, retry the build and test steps above.
 The app implements certificate pinning to prevent man-in-the-middle (MITM) attacks. Key details:
 
 1. **Domain:** ```lutheran.radio``` (including subdomains)
-2. **Pinned Value:** SHA-256 hash of the server’s leaf certificate, hex-encoded (uppercase, colon-separated)
+2. **Pinned Value:** SHA-256 fingerprint of the server’s leaf certificate, hex-encoded (uppercase, colon-separated)
 3. **Location:** Embedded in ```Info.plist``` under ```NSAppTransportSecurity > NSPinnedDomains``` (primary) and ```CertificateValidator.swift``` (runtime validation)
-4. **Current Hash:** ```CC:F7:8E:09:EF:F3:3D:9A:5D:8B:B0:5C:74:28:0D:F6:BE:14:1C:C4:47:F9:69:C2:90:2C:43:97:66:8B:3D:CC```
+4. **Current Fingerprint:** ```CC:F7:8E:09:EF:F3:3D:9A:5D:8B:B0:5C:74:28:0D:F6:BE:14:1C:C4:47:F9:69:C2:90:2C:43:97:66:8B:3D:CC```
 
 ### Dual Pinning Methods
 For enhanced security, the app uses two complementary pinning approaches:
 
 1. **SPKI Pinning (via Info.plist - Primary ATS Enforcement)**:
-   - Pins the SHA-256 hash of the certificate's public key (SPKI) in Base64 format.
+   - Pins the SHA-256 fingerprint of the certificate's public key (SPKI) in Base64 format.
    - Enforced by App Transport Security (ATS) for all connections to `lutheran.radio` (including subdomains).
    - Allows certificate rotations without app updates, as long as the public key remains consistent.
-   - Current Pinned SPKI Hashes (from `Info.plist` under `NSAppTransportSecurity > NSPinnedDomains > lutheran.radio > NSPinnedLeafIdentities`):
+   - Current Pinned SPKI Fingerprints (from `Info.plist` under `NSAppTransportSecurity > NSPinnedDomains > lutheran.radio > NSPinnedLeafIdentities`):
      - `fwp4KADDyKqDa3qN5vy6UUJlffXBnjzrei3QTuYofYY=`
      - `XuAdGZ5Hy28pa2OHHMOry/fzpW8XyA5AV5bEDwSX2Ys=`
    - Verification: Use `openssl s_client -connect livestream.lutheran.radio:8443 -servername livestream.lutheran.radio < /dev/null | openssl x509 -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | base64` and match against these values.
 
-2. **Full Certificate Hash Pinning (via CertificateValidator.swift - Runtime Validation)**:
-   - Pins the SHA-256 hash of the full certificate's DER representation (hex, uppercase, colon-separated).
+2. **Full Certificate Fingerprint Pinning (via CertificateValidator.swift - Runtime Validation)**:
+   - Pins the SHA-256 fingerprint of the full certificate's DER representation (hex, uppercase, colon-separated).
    - Performed at runtime for stricter validation, with caching (10 minutes) and transition support.
    - Complements SPKI by ensuring exact certificate matches, with fallback to ATS during the transition period.
 
-This dual approach provides defense-in-depth: SPKI handles baseline TLS security and rotations, while full hashing adds runtime enforcement. During the transition period (July 27–August 26, 2026), runtime validation allows hash mismatches (trusting ATS/SPKI) to prevent disruptions from certificate updates.
+This dual approach provides defense-in-depth: SPKI handles baseline TLS security and rotations, while full pinning adds runtime enforcement. During the transition period (July 27–August 26, 2026), runtime validation allows minor pinning mismatches (trusting ATS/SPKI) to prevent disruptions from certificate updates.
 
 ### Certificate Renewal Strategy
 
 To ensure uninterrupted service during SSL certificate renewals, the app includes a strategic transition system:
 
 - **Transition Period:** One month before certificate expiry
-- **User Experience:** During the transition period, the app trusts ATS validation if the pinned hash fails, allowing streaming to continue with a debug warning (visible in DEBUG builds)
-- **Security Protection:** Transition support is automatically enabled during the defined period, with strict enforcement of the pinned hash outside this window
+- **User Experience:** During the transition period, the app trusts ATS validation if the pinned fingerprint fails, allowing streaming to continue with a debug warning (visible in DEBUG builds)
+- **Security Protection:** Transition support is automatically enabled during the defined period, with strict enforcement of the pinned fingerprint outside this window
 - **Implementation:** Controlled via `CertificateValidator.swift` with predefined transition start and expiry dates
 
 This approach prevents service disruption during certificate updates while maintaining security through continued ATS enforcement and time-bounded operation.
@@ -111,9 +111,9 @@ This approach prevents service disruption during certificate updates while maint
 - Fast verification for frequent connections
 - Suitable for public key pinning (not sensitive data)
 
-### Verifying the Certificate Hash
+### Verifying the Certificate Fingerprint
 
-To check or update the pinned hash:
+To check or update the pinned fingerprint:
 
 ```bash
 openssl s_client -connect livestream.lutheran.radio:8443 -servername livestream.lutheran.radio < /dev/null 2>/dev/null \
