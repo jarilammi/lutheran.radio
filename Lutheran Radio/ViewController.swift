@@ -250,7 +250,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     private let minPlaybackInterval: TimeInterval = 1.0 // 1 second
     private var isDeallocating = false // Flag to prevent operations during deallocation
     private var hasPlayedSpecialTuningSound = false // Flag to ensure special sound plays only once
-    private var isInTransitionMode = false // Track SSL certificate transition state
     
     // Testable accessors
     @objc var isPlayingState: Bool {
@@ -543,7 +542,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 self.statusLabel.backgroundColor = .systemGreen
                 self.statusLabel.textColor = .black
                 playPauseButton.accessibilityLabel = String(localized: "accessibility_label_play_pause")  // e.g., "Pause"
-                self.isInTransitionMode = false // Clear transition mode when playing successfully
             } else {
                 self.statusLabel.text = statusText
                 playPauseButton.accessibilityLabel = String(localized: "accessibility_label_play")  // e.g., "Play"
@@ -682,7 +680,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         
         alert.addAction(UIAlertAction(title: String(localized: "alert_continue"), style: .default, handler: { [weak self] _ in
             // Continue with current connection during transition
-            self?.isInTransitionMode = true
             self?.startPlayback()
         }))
         
