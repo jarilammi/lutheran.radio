@@ -241,7 +241,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     private var isTuningSoundPlaying = false
     private var tuningPlayer: AVAudioPlayer?
     private var lastTuningSoundTime: Date?
-    private var streamSwitchTimer: Timer?
     private var streamSwitchWorkItem: DispatchWorkItem?
     private var lastStreamSwitchTime: Date?
     private let streamSwitchDebounceInterval: TimeInterval = 1.0
@@ -1175,10 +1174,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         print("📱 pausePlayback called from: \(Thread.callStackSymbols[1])")
         #endif
         
-        // Cancel any pending stream switch timer to prevent auto-restart
-        streamSwitchTimer?.invalidate()
-        streamSwitchTimer = nil
-        
         isManualPause = true
         streamingPlayer.stop { [weak self] in
             guard let self = self else { return }
@@ -1971,8 +1966,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         // Cancel existing timers
         connectivityCheckTimer?.invalidate()
         connectivityCheckTimer = nil
-        streamSwitchTimer?.invalidate()
-        streamSwitchTimer = nil
         
         // Cancel existing work items
         streamSwitchWorkItem?.cancel()
