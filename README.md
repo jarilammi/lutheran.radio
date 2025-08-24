@@ -92,7 +92,11 @@ For enhanced security, the app uses two complementary pinning approaches:
    - Performed at runtime for stricter validation, with caching (10 minutes) and transition support.
    - Complements SPKI by ensuring exact certificate matches, with fallback to ATS during the transition period.
 
-This dual approach provides defense-in-depth: SPKI handles baseline TLS security and rotations, while full pinning adds runtime enforcement. During the transition period (July 27–August 26, 2026), runtime validation allows minor pinning mismatches (trusting ATS/SPKI) to prevent disruptions from certificate updates.
+This dual approach provides defense-in-depth: SPKI handles baseline TLS security and rotations, while full pinning adds runtime enforcement. During the transition period (July 27–August 26, 2026), runtime validation allows pinning mismatches to the known alternate key (trusting ATS/SPKI) to prevent disruptions from certificate updates.
+
+The app also detects potential device time manipulation by comparing the device time with the server's Date header during validation. If a significant discrepancy (beyond 5 minutes) is detected, or if the device is in the transition period but the server is not, transition leniency is disabled. This mitigates risks of exploiting the transition window through time manipulation, ensuring stricter enforcement when anomalies are present.
+
+This check enhances security without additional dependencies, while protecting app users and preserving a seamless streaming experience under normal conditions.
 
 ### Certificate Renewal Strategy
 
@@ -174,7 +178,7 @@ To prevent naming collisions and maintain a clear history of security models, th
 | `nuuk`              | June 15, 2025    | July 26, 2025   | 1.2.1                  |
 | `stjohns`           | July 22, 2025    | August 20, 2025 | 1.2.3                  |
 | `dc`                | July 27, 2025    | (ongoing)       | 1.2.4                  |
-| `florida`           | (pending)        | (pending)       | 1.2.7                  |
+| `florida`           | August 24, 2025  | (ongoing)       | 1.2.7                  |
 
 **Notes:**
 - **Valid From:** The date when the security model was first published to the App Store.
