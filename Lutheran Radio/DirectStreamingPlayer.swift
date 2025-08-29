@@ -159,7 +159,7 @@ class NWPathMonitorAdapter: NetworkPathMonitoring {
 /// Manages direct streaming playback, including network monitoring and security validation.
 class DirectStreamingPlayer: NSObject {
     // MARK: - Security Model
-    private let appSecurityModel = "florida"
+    private let appSecurityModel = "tampa"
     private var isValidating = false
     #if DEBUG
     /// The last time security validation was performed (exposed for debugging).
@@ -181,6 +181,10 @@ class DirectStreamingPlayer: NSObject {
     }
     var validationState: ValidationState = .pending
     private var lastValidationTime: Date?
+    
+    /// Injectable closure for the current date, used for testing time-dependent logic.
+    internal var currentDate: () -> Date = { Date() }
+    
     #if DEBUG
     var networkMonitor: NetworkPathMonitoring?
     var hasInternetConnection = true
@@ -676,6 +680,16 @@ class DirectStreamingPlayer: NSObject {
     }
     
     private func validateSecurityModelAsyncImplementation(completion: @escaping (Bool) -> Void) {
+        if let lastValidation = UserDefaults.standard.object(forKey: "lastSecurityValidation") as? Date,
+           currentDate().timeIntervalSince(lastValidation) < 3600 {
+            #if DEBUG
+            print("🔒 [Security] Using cached validation (last: \(lastValidation))")
+            #endif
+            self.validationState = .success  // Sync state on cache hit
+            completion(true)
+            return
+        }
+       
         guard !isValidating else {
             #if DEBUG
             print("🔒 [Validate Async] Validation in progress, checking state")
@@ -735,7 +749,7 @@ class DirectStreamingPlayer: NSObject {
                 #endif
             }
         }
-        
+       
         isValidating = true
 
         performConnectivityCheck { [weak self] isConnected in
@@ -806,6 +820,12 @@ class DirectStreamingPlayer: NSObject {
                     } else {
                         let isValid = validModels.contains(self.appSecurityModel.lowercased())
                         self.validationState = isValid ? .success : .failedPermanent
+                        if isValid {  // Cache update only on success
+                            UserDefaults.standard.set(currentDate(), forKey: "lastSecurityValidation")  // Use currentDate()
+                            #if DEBUG
+                            print("🔒 [Security] Cached new successful validation")
+                            #endif
+                        }
                         #if DEBUG
                         print("🔒 [Validate Async] Result: isValid=\(isValid), model=\(self.appSecurityModel), validModels=\(validModels)")
                         #endif
