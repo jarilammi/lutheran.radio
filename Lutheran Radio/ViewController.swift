@@ -267,6 +267,29 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
         
+        // Add custom accessibility actions for playPauseButton
+        playPauseButton.accessibilityCustomActions = [
+            UIAccessibilityCustomAction(
+                name: NSLocalizedString("toggle_playback", comment: "Accessibility action to toggle playback"),
+                target: self,
+                selector: #selector(togglePlayback)
+            )
+        ]
+        
+        // Add custom accessibility actions for volumeSlider
+        volumeSlider.accessibilityCustomActions = [
+            UIAccessibilityCustomAction(
+                name: NSLocalizedString("increase_volume", comment: "Accessibility action to increase volume"),
+                target: self,
+                selector: #selector(increaseVolume)
+            ),
+            UIAccessibilityCustomAction(
+                name: NSLocalizedString("decrease_volume", comment: "Accessibility action to decrease volume"),
+                target: self,
+                selector: #selector(decreaseVolume)
+            )
+        ]
+        
         configureAudioSession() // Configure audio session
         setupDarwinNotificationListener()
         setupUI()
@@ -2345,6 +2368,29 @@ extension ViewController {
         if text != String(localized: "no_track_info") {
             UIAccessibility.post(notification: .announcement, argument: text)
         }
+    }
+    
+    @objc private func togglePlayback() {
+        if isPlaying {
+            pausePlayback()
+        } else {
+            startPlayback()
+        }
+        UIAccessibility.post(notification: .announcement, argument: isPlaying ? String(localized: "status_playing") : String(localized: "status_paused"))
+    }
+    
+    @objc private func increaseVolume() {
+        let newValue = min(volumeSlider.value + 0.1, volumeSlider.maximumValue)
+        volumeSlider.setValue(newValue, animated: true)
+        volumeChanged(volumeSlider)
+        UIAccessibility.post(notification: .announcement, argument: String(format: NSLocalizedString("volume_set_to", comment: ""), Int(newValue * 100)))
+    }
+    
+    @objc private func decreaseVolume() {
+        let newValue = max(volumeSlider.value - 0.1, volumeSlider.minimumValue)
+        volumeSlider.setValue(newValue, animated: true)
+        volumeChanged(volumeSlider)
+        UIAccessibility.post(notification: .announcement, argument: String(format: NSLocalizedString("volume_set_to", comment: ""), Int(newValue * 100)))
     }
     
     private func safeUpdateStatusLabel(text: String, backgroundColor: UIColor, textColor: UIColor, isPermanentError: Bool) {
