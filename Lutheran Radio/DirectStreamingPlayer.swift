@@ -185,6 +185,13 @@ class DirectStreamingPlayer: NSObject {
     private var lastFailedServerName: String?
     private var currentSelectedServer: Server = servers[0]
     
+    // MARK: - Energy Efficiency (Battery Optimization)
+    /// Detects if the device is in Low Power Mode to throttle non-essential tasks (e.g., retry intervals) and extend battery life during streaming.
+    /// Builds on thermal state handling; queried dynamically in retry/fallback logic.
+    /// Reference: iOS ProcessInfo.isLowPowerModeEnabled (available since iOS 9).
+    private var isLowEfficiencyMode: Bool {
+        ProcessInfo.processInfo.isLowPowerModeEnabled
+    }
     private var thermalObserver: NSObjectProtocol?
     private var wasPlayingBeforeThermal = false
     
@@ -330,7 +337,8 @@ class DirectStreamingPlayer: NSObject {
             }
         }
         serverSelectionWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: workItem)
+        let selectionDelay: TimeInterval = isLowEfficiencyMode ? 1.0 : 0.5
+        DispatchQueue.main.asyncAfter(deadline: .now() + selectionDelay, execute: workItem)
     }
     
     public enum PlaybackState {
@@ -665,7 +673,8 @@ class DirectStreamingPlayer: NSObject {
             #if DEBUG
             print("🔒 [Validate Async] Validation in progress, checking state")
             #endif
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+            let retryDelay: TimeInterval = isLowEfficiencyMode ? 0.4 : 0.2
+            DispatchQueue.main.asyncAfter(deadline: .now() + retryDelay) { [weak self] in
                 guard let self = self else {
                     completion(false)
                     return
@@ -1036,6 +1045,14 @@ class DirectStreamingPlayer: NSObject {
         super.init()
         setupAudioSession()
         setupNetworkMonitoring()
+        // Observe Low Power Mode changes to dynamically adjust optimizations (e.g., increase retry delays to reduce CPU/network usage).
+        // This complements thermal state monitoring for better battery life in background playback.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(energyEfficiencyChanged),
+            name: Notification.Name("NSProcessInfoPowerStateDidChangeNotification"),
+            object: nil
+        )
         #if DEBUG
         print("🎵 Player initialized, starting validation")
         #endif
@@ -1050,6 +1067,16 @@ class DirectStreamingPlayer: NSObject {
                 }
             }
         }
+    }
+    
+    /// Handles changes to Low Power Mode state.
+    /// No immediate actions here; optimizations (e.g., longer retry intervals) are applied dynamically via isLowEfficiencyMode checks.
+    /// This reduces unnecessary work in low-battery scenarios without interrupting core streaming.
+    @objc private func energyEfficiencyChanged() {
+        // No immediate action needed; the isLowEfficiencyMode property will be queried dynamically in retry/fallback spots
+        #if DEBUG
+        print("🔋 Low Power Mode changed to: \(isLowEfficiencyMode ? "Enabled" : "Disabled")")
+        #endif
     }
     
     func setupAudioSession() {
@@ -1461,15 +1488,17 @@ class DirectStreamingPlayer: NSObject {
                     self.player?.play()
                     self.hasStartedPlaying = true
                     
-                    // Check playback status after a brief moment
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                    // Check playback status after a brief moment (adaptive delay)
+                    let checkInterval: TimeInterval = self.isLowEfficiencyMode ? 0.4 : 0.2
+                    DispatchQueue.main.asyncAfter(deadline: .now() + checkInterval) {
                         if self.player?.rate ?? 0 > 0 {
                             self.safeOnStatusChange(isPlaying: true, status: String(localized: "status_playing"))
                             completion(true)
                         } else {
-                            // If still not playing, try again
+                            // If still not playing, try again (adaptive delay)
                             self.player?.play()
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            let retryCheckInterval: TimeInterval = self.isLowEfficiencyMode ? 0.6 : 0.3
+                            DispatchQueue.main.asyncAfter(deadline: .now() + retryCheckInterval) {
                                 let isPlaying = self.player?.rate ?? 0 > 0
                                 self.safeOnStatusChange(isPlaying: isPlaying, status: String(localized: isPlaying ? "status_playing" : "status_buffering"))
                                 completion(isPlaying)
@@ -1737,7 +1766,8 @@ class DirectStreamingPlayer: NSObject {
                     self.stopBufferingTimer()
                 } else if !playerItem.isPlaybackLikelyToKeepUp && self.player?.rate == 0 {
                     // NEW: Add stalled playback detection
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 10.0) { [weak self] in
+                    let stalledDelay: TimeInterval = self.isLowEfficiencyMode ? 20.0 : 10.0
+                    DispatchQueue.main.asyncAfter(deadline: .now() + stalledDelay) { [weak self] in
                         guard let self = self,
                               let currentItem = self.playerItem,
                               currentItem == playerItem,
@@ -2051,6 +2081,9 @@ class DirectStreamingPlayer: NSObject {
             NotificationCenter.default.removeObserver(observer)
         }
         
+        // Clean up Low Power Mode observer to prevent memory leaks.
+        NotificationCenter.default.removeObserver(self, name: Notification.Name("NSProcessInfoPowerStateDidChangeNotification"), object: nil)
+        
         #if DEBUG
         print("🧹 DirectStreamingPlayer deinit completed")
         #endif
@@ -2205,7 +2238,8 @@ extension DirectStreamingPlayer: AVPlayerItemMetadataOutputPushDelegate {
 extension DirectStreamingPlayer {
     func handleNetworkInterruption() {
         stop()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+        let interruptionDelay: TimeInterval = isLowEfficiencyMode ? 1.0 : 0.5
+        DispatchQueue.main.asyncAfter(deadline: .now() + interruptionDelay) { [weak self] in
             guard let self = self, self.delegate != nil else { return }
             self.safeOnStatusChange(isPlaying: false, status: String(localized: "alert_retry"))
         }
@@ -2443,7 +2477,8 @@ extension DirectStreamingPlayer {
         networkMonitor.start(queue: queue)
         
         // Wait briefly for result
-        _ = semaphore.wait(timeout: .now() + 0.1)
+        let waitTimeout: DispatchTime = .now() + (isLowEfficiencyMode ? 0.2 : 0.1)
+        _ = semaphore.wait(timeout: waitTimeout)
         networkMonitor.cancel()
         
         return isCellular

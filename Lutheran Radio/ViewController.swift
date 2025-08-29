@@ -60,6 +60,23 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     private var pendingWidgetSwitchWorkItem: DispatchWorkItem?
     private var processedActionIds: Set<String> = []
     
+    private var isLowEfficiencyMode: Bool {
+        ProcessInfo.processInfo.isLowPowerModeEnabled
+    }
+    
+    private func updateForEnergyEfficiency() {
+        if isLowEfficiencyMode {
+            // Reduce CPU/GPU usage: Remove parallax and lower image quality
+            backgroundImageView.motionEffects.forEach { backgroundImageView.removeMotionEffect($0) }
+            // Optionally, reduce alpha or hide non-essential UI elements if needed
+        } else {
+            // Re-enable parallax if it was set up
+            setupBackgroundParallax()
+        }
+        // Trigger background update with current stream to apply image processing changes
+        updateBackground(for: DirectStreamingPlayer.availableStreams[selectedStreamIndex])
+    }
+    
     /// Label displaying the app title.
     let titleLabel: UILabel = {
         let label = UILabel()
@@ -360,7 +377,17 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         setupFastWidgetActionChecking()
         isInitialSetupComplete = true
         setupBackgroundParallax()
-
+        
+        // Energy Efficiency Optimizations (iOS 18)
+        updateForEnergyEfficiency()  // Initial check
+        
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(energyEfficiencyChanged),
+            name: Notification.Name("NSProcessInfoPowerStateDidChangeNotification"),
+            object: nil
+        )
+        
         // Play special tuning sound immediately after setup
         playSpecialTuningSound { [weak self] in
             guard let self = self, self.hasInternetConnection && !self.isManualPause else {
@@ -1280,7 +1307,23 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         let cacheKey = "\(imageName)_\(traitCollection.userInterfaceStyle.rawValue)"
         let isDarkMode = traitCollection.userInterfaceStyle == .dark  // ✅ Capture on main thread
         
-        // Check cache first on background queue
+        if isLowEfficiencyMode {
+            // Low efficiency: Skip heavy processing/caching to save battery/CPU
+            // Load raw image directly (lightweight) and apply without filters
+            if let rawImage = UIImage(named: imageName) {
+                DispatchQueue.main.async {
+                    self.backgroundImageView.image = rawImage
+                    // ... Add any existing non-processing code here, e.g., constraints or animations if needed ...
+                    // For example, if you have fade-in animation:
+                    UIView.transition(with: self.backgroundImageView, duration: 0.5, options: .transitionCrossDissolve) {
+                        self.backgroundImageView.image = rawImage
+                    } completion: { _ in }
+                }
+            }
+            return
+        }
+        
+        // Normal mode: Proceed with caching and full processing
         cacheQueue.async { [weak self] in
             guard let self = self else { return }
             
@@ -2018,6 +2061,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         NotificationCenter.default.removeObserver(self, name: AVAudioSession.interruptionNotification, object: nil)
         NotificationCenter.default.removeObserver(self, name: AVAudioSession.routeChangeNotification, object: nil)
         NotificationCenter.default.removeObserver(self, name: UIApplication.didReceiveMemoryWarningNotification, object: nil)
+        NotificationCenter.default.removeObserver(self, name: Notification.Name("NSProcessInfoPowerStateDidChangeNotification"), object: nil)
         
         // Cancel network monitoring
         networkMonitor?.pathUpdateHandler = nil
@@ -2392,6 +2436,10 @@ extension ViewController {
         if text != String(localized: "no_track_info") {
             UIAccessibility.post(notification: .announcement, argument: text)
         }
+    }
+    
+    @objc private func energyEfficiencyChanged() {
+        updateForEnergyEfficiency()
     }
     
     @objc private func togglePlayback() {
