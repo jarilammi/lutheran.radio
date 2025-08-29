@@ -161,6 +161,34 @@ Example output:
 
 Compare this output to the security model defined in the app (found in ```DirectStreamingPlayer.swift``` as ```appSecurityModel```). If the app’s model (e.g., "tampa") isn’t listed, it will fail validation. To update the list, modify the TXT record for ```securitymodels.lutheran.radio``` through the DNS management interface for the ```lutheran.radio``` domain.
 
+### Security Model Validation Cache
+
+To improve resilience against transient DNS failures (e.g., network instability or temporary outages), the app implements a 1-hour persistent cache for successful security model validations. This cache is stored securely in `UserDefaults` and only applies to successful checks, ensuring the app can skip redundant DNS queries during short disruptions without compromising security.
+
+#### Key Details:
+- **Duration:** 1 hour (3600 seconds) from the last successful validation.
+- **Storage:** A non-sensitive timestamp (`Date`) is stored in `UserDefaults` under the key `"lastSecurityValidation"`. No actual security models or TXT records are cached.
+- **Behavior:**
+  - On app launch or validation trigger: If a valid cache exists (timestamp within 1 hour), the app assumes success and proceeds with streaming.
+  - Cache is only updated on successful DNS fetches (i.e., when the embedded `appSecurityModel` matches the TXT record).
+  - Failures are **not** cached—full validation (DNS query) is always performed on failure, with permanent disablement if the model is invalid.
+  - Time handling uses an injectable `currentDate()` closure for testability and consistency.
+- **Security Considerations:**
+  - The cache introduces a short revocation delay: If a model is revoked via DNS TXT update, cached devices may continue for up to 1 hour. This is a balanced trade-off for usability in low-connectivity scenarios.
+  - Mitigates risks like time manipulation (complements existing device/server time skew detection in certificate validation).
+  - No new attack surfaces: `UserDefaults` is app-sandboxed; tampering requires device compromise.
+
+#### Verifying the Cache
+For debugging (e.g., in Xcode Console during development):
+- Successful cache hit: Logs `"🔒 [Security] Using cached validation (last: [timestamp])"` (DEBUG builds only).
+- Cache update: Logs `"🔒 [Security] Cached new successful validation"` on success.
+
+To manually inspect or clear the cache:
+- Use `UserDefaults.standard.object(forKey: "lastSecurityValidation") as? Date` in code or via debugger.
+- Clear via app deletion/reinstall or `UserDefaults.standard.removeObject(forKey: "lastSecurityValidation")`.
+
+This feature enhances availability while maintaining the app's privacy-first principles, reducing unnecessary network calls.
+
 ### Security Model TXT Record Usage
 
 Lutheran Radio's security system uses a DNS TXT record to ensure only trusted app versions can stream content. The longest practical TXT record length for this purpose is about 450 bytes, which fits within standard DNS limits and supports up to 40-50 security model names (like "landvetter" or "nuuk"). This is more than enough for the current 17-byte record. If you need to use more names in the future, check that your DNS supports larger messages (EDNS0) and test the app to confirm it can handle them. Keep an eye on how your DNS behaves to ensure everything works smoothly, keeping the app secure and reliable for all users.
