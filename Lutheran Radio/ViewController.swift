@@ -187,7 +187,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     private let imageProcessingQueue = DispatchQueue(label: "radio.lutheran.imageProcessing", qos: .utility)
     private let imageProcessingContext = CIContext(options: [.useSoftwareRenderer: false])
     // Cache processed images to avoid repeated work
-    private var processedImageCache: [String: UIImage] = [:]
+    private var processedImageCache = NSCache<NSString, UIImage>()
     private let cacheQueue = DispatchQueue(label: "radio.lutheran.imageCache", qos: .utility)
     
     private var backgroundConstraints: [NSLayoutConstraint] = []
@@ -268,6 +268,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
+        processedImageCache.countLimit = 5  // One per language, as there are 5 streams
         
         // Add custom accessibility actions for playPauseButton
         playPauseButton.accessibilityCustomActions = [
@@ -1283,7 +1284,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         cacheQueue.async { [weak self] in
             guard let self = self else { return }
             
-            if let cachedImage = self.processedImageCache[cacheKey] {
+            if let cachedImage = self.processedImageCache.object(forKey: cacheKey as NSString) {
                 DispatchQueue.main.async {
                     self.applyProcessedImage(cachedImage, for: stream)
                 }
@@ -1341,7 +1342,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             
             // Cache the result
             self.cacheQueue.async {
-                self.processedImageCache[cacheKey] = finalImage
+                self.processedImageCache.setObject(finalImage, forKey: cacheKey as NSString)
             }
             
             // Apply to UI on main thread
@@ -1541,7 +1542,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         
         // Clear image cache to free memory
         cacheQueue.async {
-            self.processedImageCache.removeAll()
+            self.processedImageCache.removeAllObjects()
             #if DEBUG
             print("🧹 Cleared processed image cache")
             #endif
