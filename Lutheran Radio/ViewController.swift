@@ -148,6 +148,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         label.textColor = .secondaryLabel
         label.numberOfLines = 0
         label.translatesAutoresizingMaskIntoConstraints = false
+        label.adjustsFontSizeToFitWidth = true
+        label.minimumScaleFactor = 0.75
         label.isAccessibilityElement = true
         label.accessibilityHint = String(localized: "accessibility_hint_metadata")
         return label
@@ -289,6 +291,14 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 selector: #selector(decreaseVolume)
             )
         ]
+        
+        // Register for preferred content size category changes
+        registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) { (controller: Self, previousTraitCollection: UITraitCollection) in
+            // Reapply attributes with new font size
+            controller.updateMetadataLabel(
+                text: controller.metadataLabel.text ?? String(localized: "no_track_info")
+            )
+        }
         
         configureAudioSession() // Configure audio session
         setupDarwinNotificationListener()
@@ -2361,7 +2371,20 @@ extension ViewController {
     func updateMetadataLabel(text: String) {
         if metadataLabel.text == text { return }
         
-        metadataLabel.text = text
+        // Enable hyphenation via attributed text
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.hyphenationFactor = 1.0  // Full hyphenation
+        
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: metadataLabel.font ?? UIFont.preferredFont(forTextStyle: .callout),
+            .foregroundColor: metadataLabel.textColor ?? .secondaryLabel,
+            .paragraphStyle: paragraphStyle
+        ]
+        
+        let attributedText = NSAttributedString(string: text, attributes: attributes)
+        metadataLabel.attributedText = attributedText
+        
+        // Accessibility reads full text regardless of truncation
         metadataLabel.accessibilityLabel = text
         
         // Announce metadata changes if significant
