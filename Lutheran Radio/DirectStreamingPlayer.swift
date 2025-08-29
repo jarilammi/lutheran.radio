@@ -110,6 +110,8 @@ protocol NetworkPathMonitoring: AnyObject {
     func start(queue: DispatchQueue)
     /// Cancels monitoring.
     func cancel()
+    /// Expose currentPath for network quality checks (e.g., isExpensive).
+    var currentPath: NWPath? { get }
 }
 
 /// Adapts `NWPathMonitor` to the `NetworkPathMonitoring` protocol.
@@ -134,6 +136,11 @@ class NWPathMonitorAdapter: NetworkPathMonitoring {
                 self.pathUpdateHandler?(status)
             }
         }
+    }
+    
+    // Implement currentPath to expose the underlying monitor's currentPath.
+    var currentPath: NWPath? {
+        return monitor.currentPath
     }
     
     init() {
@@ -2430,6 +2437,15 @@ extension DirectStreamingPlayer {
             #endif
         }
         
+        // Add extra time for expensive (metered) networks, e.g., cellular or paid hotspots.
+        // This uses the exposed currentPath from networkMonitor.
+        if let path = networkMonitor?.currentPath, path.isExpensive {
+            timeout += 2.0
+            #if DEBUG
+            print("🔒 [SSL Timeout] Added 2s for expensive/metered network")
+            #endif
+        }
+        
         // Add extra time for cross-continental connections
         if selectedServer.name == "EU" && !isInEurope() {
             timeout += 1.5
@@ -2455,7 +2471,7 @@ extension DirectStreamingPlayer {
         let finalTimeout = min(timeout, 15.0)
         
         #if DEBUG
-        print("🔒 [SSL Timeout] Calculated timeout: \(finalTimeout)s (base: 4.0s)")
+        print("🔒 [SSL Timeout] Calculated timeout: \(finalTimeout)s (base: 8.0s)")
         #endif
         
         return finalTimeout
