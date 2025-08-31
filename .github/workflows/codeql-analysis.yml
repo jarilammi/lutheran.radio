@@ -40,7 +40,7 @@ jobs:
       - name: Build with Xcode
         run: |
           xcodebuild -scheme "Lutheran Radio" \
-            -sdk iphonesimulator18.6 \
+            -sdk iphonesimulator18.5 \
             -destination 'platform=iOS Simulator,OS=18.6,name=iPhone 16 Pro' \
             clean build
         env:
@@ -49,7 +49,7 @@ jobs:
 #      - name: Run Tests with Xcode
 #        run: |
 #          xcodebuild -scheme "Lutheran Radio" \
-#            -sdk iphonesimulator18.6 \
+#            -sdk iphonesimulator18.5 \
 #            -destination 'platform=iOS Simulator,OS=18.6,name=iPhone 16 Pro' \
 #            clean test | xcpretty
 #        env:
