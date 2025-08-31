@@ -29,7 +29,7 @@ jobs:
           config-file: .github/codeql/codeql-config.yml
 
       - name: Set up Xcode Developer Directory
-        run: sudo xcode-select -s /Applications/Xcode_16.1.app/Contents/Developer
+        run: sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
 
       - name: Reset and List Simulators
         run: |
@@ -40,20 +40,20 @@ jobs:
       - name: Build with Xcode
         run: |
           xcodebuild -scheme "Lutheran Radio" \
-            -sdk iphonesimulator18.1 \
-            -destination 'platform=iOS Simulator,OS=18.1,name=iPhone 16 Pro' \
+            -sdk iphonesimulator18.6 \
+            -destination 'platform=iOS Simulator,OS=18.6,name=iPhone 16 Pro' \
             clean build
         env:
-          DEVELOPER_DIR: /Applications/Xcode_16.1.app/Contents/Developer
+          DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
 
 #      - name: Run Tests with Xcode
 #        run: |
 #          xcodebuild -scheme "Lutheran Radio" \
-#            -sdk iphonesimulator18.1 \
-#            -destination 'platform=iOS Simulator,OS=18.1,name=iPhone 16 Pro' \
+#            -sdk iphonesimulator18.6 \
+#            -destination 'platform=iOS Simulator,OS=18.6,name=iPhone 16 Pro' \
 #            clean test | xcpretty
 #        env:
-#          DEVELOPER_DIR: /Applications/Xcode_16.1.app/Contents/Developer
+#          DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
