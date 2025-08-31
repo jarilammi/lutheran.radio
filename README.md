@@ -207,7 +207,7 @@ To prevent naming collisions and maintain a clear history of security models, th
 | `stjohns`           | July 22, 2025    | August 20, 2025 | 1.2.3                  |
 | `dc`                | July 27, 2025    | (ongoing)       | 1.2.4                  |
 | `florida`           | August 24, 2025  | (ongoing)       | 1.2.7                  |
-| `tampa`             | (pending)        | (pending)       | 1.2.8                  |
+| `tampa`             | August 31, 2025  | (ongoing)       | 1.2.8                  |
 
 **Notes:**
 - **Valid From:** The date when the security model was first published to the App Store.
