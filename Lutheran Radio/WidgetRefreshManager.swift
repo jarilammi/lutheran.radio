@@ -71,12 +71,20 @@ class WidgetRefreshManager {
         lastRefreshTime = Date()
         lastKnownState = state
         
-        WidgetCenter.shared.reloadTimelines(ofKind: "LutheranRadioWidget")
-        WidgetCenter.shared.reloadTimelines(ofKind: "radio.lutheran.LutheranRadio.LutheranRadioWidget")
-        
-        #if DEBUG
-        print("🔗 Widget refresh executed - playing: \(state.isPlaying), lang: \(state.currentLanguage)")
-        #endif
+        WidgetCenter.shared.getCurrentConfigurations { result in
+            if case .success(let configs) = result, !configs.isEmpty {
+                WidgetCenter.shared.reloadTimelines(ofKind: "LutheranRadioWidget")
+                WidgetCenter.shared.reloadTimelines(ofKind: "radio.lutheran.LutheranRadio.LutheranRadioWidget")
+                
+                #if DEBUG
+                print("🔗 Widget refresh executed (widgets active: \(configs.count)) - playing: \(state.isPlaying), lang: \(state.currentLanguage)")
+                #endif
+            } else {
+                #if DEBUG
+                print("🔗 Skipped widget refresh: No active widgets configured")
+                #endif
+            }
+        }
     }
     
     private func stateChanged(from old: WidgetState, to new: WidgetState) -> Bool {
