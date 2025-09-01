@@ -272,7 +272,7 @@ class CertificateValidator: NSObject, URLSessionDelegate {
             let isValid = certFingerprint == pinnedCertFingerprint
             #if DEBUG
             if !isValid {
-                print("🔒 [CertificateValidator] Fingerprint mismatch. Computed: \(certFingerprint), Expected: \(pinnedCertFingerprint)")
+                print("🔒 [CertificateValidator] Fingerprint mismatch detected")
             }
             #endif
             return isValid
