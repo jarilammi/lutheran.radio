@@ -130,14 +130,14 @@ class CertificateValidator: NSObject, URLSessionDelegate {
             isValid = isPinnedValid
             if !isValid {
                 #if DEBUG
-                print("🔒 [CertificateValidator] Certificate fingerprint validation failed after expiry at \(now). Expected: \(pinnedCertFingerprint)")
+                print("🔒 [CertificateValidator] Certificate fingerprint validation failed after expiry at \(now). Fingerprint mismatch.")
                 #endif
             }
         } else if isInTransitionPeriod {
             // During transition, apply barrier on fingerprint failure
             if !isPinnedValid {
                 #if DEBUG
-                print("⚠️ [CertificateValidator] Warning: Certificate fingerprint validation failed during transition period at \(now). Trusting ATS only if leniency allowed. Expected: \(pinnedCertFingerprint)")
+                print("⚠️ [CertificateValidator] Warning: Certificate fingerprint validation failed during transition period at \(now). Trusting ATS only if leniency allowed. Fingerprint mismatch.")
                 #endif
                 isValid = allowTransitionLeniency  // Barrier controls leniency (defaults to false, enforcing strict fingerprint)
             } else {
@@ -148,7 +148,7 @@ class CertificateValidator: NSObject, URLSessionDelegate {
             isValid = isPinnedValid
             if !isValid {
                 #if DEBUG
-                print("🔒 [CertificateValidator] Certificate fingerprint validation failed before transition at \(now). Expected: \(pinnedCertFingerprint)")
+                print("🔒 [CertificateValidator] Certificate fingerprint validation failed before transition at \(now). Fingerprint mismatch.")
                 #endif
             }
         }
