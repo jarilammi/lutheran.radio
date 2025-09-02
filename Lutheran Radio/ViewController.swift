@@ -1274,8 +1274,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         #if DEBUG
         print("📱 playPauseTapped called from: \(Thread.callStackSymbols[1])")
         #endif
-        let generator = UIImpactFeedbackGenerator(style: .medium)
-        generator.impactOccurred()
         UIView.animate(withDuration: 0.1, animations: {
             self.playPauseButton.transform = CGAffineTransform(scaleX: 0.95, y: 0.95)
         }) { _ in
