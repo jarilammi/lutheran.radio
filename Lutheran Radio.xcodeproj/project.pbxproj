@@ -10,6 +10,7 @@
 		B757A77E2DEF7B5C00FF90FC /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B757A77D2DEF7B5C00FF90FC /* WidgetKit.framework */; };
 		B757A7802DEF7B5C00FF90FC /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B757A77F2DEF7B5C00FF90FC /* SwiftUI.framework */; };
 		B757A7912DEF7B5E00FF90FC /* LutheranRadioWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = B757A77C2DEF7B5C00FF90FC /* LutheranRadioWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		B785EBA22E673D2F0034C286 /* CoreHaptics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B785EBA12E673D2F0034C286 /* CoreHaptics.framework */; };
 		B7AFC6E22CCD7DD900BDDD83 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B7AFC6E12CCD7DD900BDDD83 /* AVFoundation.framework */; };
 		B7F7B4712DAA463F00194E5C /* libmdns.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = B7F7B4702DAA463E00194E5C /* libmdns.tbd */; };
 /* End PBXBuildFile section */
@@ -56,6 +57,7 @@
 		B757A77C2DEF7B5C00FF90FC /* LutheranRadioWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LutheranRadioWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		B757A77D2DEF7B5C00FF90FC /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		B757A77F2DEF7B5C00FF90FC /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
+		B785EBA12E673D2F0034C286 /* CoreHaptics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreHaptics.framework; path = System/Library/Frameworks/CoreHaptics.framework; sourceTree = SDKROOT; };
 		B7AFC6AC2CCD7D0A00BDDD83 /* Lutheran Radio.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Lutheran Radio.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		B7AFC6C22CCD7D0C00BDDD83 /* Lutheran RadioTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Lutheran RadioTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		B7AFC6CC2CCD7D0C00BDDD83 /* Lutheran RadioUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Lutheran RadioUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -139,6 +141,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				B7AFC6E22CCD7DD900BDDD83 /* AVFoundation.framework in Frameworks */,
+				B785EBA22E673D2F0034C286 /* CoreHaptics.framework in Frameworks */,
 				B7F7B4712DAA463F00194E5C /* libmdns.tbd in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -186,6 +189,7 @@
 		B7AFC6E02CCD7DD900BDDD83 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				B785EBA12E673D2F0034C286 /* CoreHaptics.framework */,
 				B7F7B4702DAA463E00194E5C /* libmdns.tbd */,
 				B7AFC6E12CCD7DD900BDDD83 /* AVFoundation.framework */,
 				B757A77D2DEF7B5C00FF90FC /* WidgetKit.framework */,
