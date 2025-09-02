@@ -14,6 +14,7 @@ import MediaPlayer
 import AVKit
 import Network
 import CoreImage
+import CoreHaptics
 import WidgetKit
 
 // MARK: - Parallax Effect Extension
@@ -199,6 +200,22 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         "sv": "sweden",
         "ee": "estonia"
     ]
+    
+    private lazy var hapticEngine: CHHapticEngine? = {
+        do {
+            let engine = try CHHapticEngine()
+            engine.playsHapticsOnly = true // Optimize for feedback only
+            engine.resetHandler = { [weak self] in
+                try? self?.hapticEngine?.start() // Auto-restart on interruptions
+            }
+            return engine
+        } catch {
+            #if DEBUG
+            print("Haptics unavailable: \(error)")
+            #endif
+            return nil
+        }
+    }()
     
     // MARK: - Image Processing
     private let imageProcessingQueue = DispatchQueue(label: "radio.lutheran.imageProcessing", qos: .utility)
@@ -2445,8 +2462,10 @@ extension ViewController {
     @objc private func togglePlayback() {
         if isPlaying {
             pausePlayback()
+            playHapticFeedback(style: .medium) // Softer for pause
         } else {
             startPlayback()
+            playHapticFeedback(style: .heavy) // Stronger for play
         }
         UIAccessibility.post(notification: .announcement, argument: isPlaying ? String(localized: "status_playing") : String(localized: "status_paused"))
     }
@@ -2463,6 +2482,14 @@ extension ViewController {
         volumeSlider.setValue(newValue, animated: true)
         volumeChanged(volumeSlider)
         UIAccessibility.post(notification: .announcement, argument: String(format: NSLocalizedString("volume_set_to", comment: ""), Int(newValue * 100)))
+    }
+    
+    private func playHapticFeedback(style: UIImpactFeedbackGenerator.FeedbackStyle) {
+        guard CHHapticEngine.capabilitiesForHardware().supportsHaptics else { return } // Check device support
+        DispatchQueue.main.async { // Ensure on main thread
+            let generator = UIImpactFeedbackGenerator(style: style)
+            generator.impactOccurred()
+        }
     }
     
     private func safeUpdateStatusLabel(text: String, backgroundColor: UIColor, textColor: UIColor, isPermanentError: Bool) {
