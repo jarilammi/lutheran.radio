@@ -95,22 +95,29 @@ extension DirectStreamingPlayer {
     static let shared = DirectStreamingPlayer()
 }
 
+// MARK: - Network and Path Enums/Protocols
 /// Represents the network path status for connectivity monitoring.
+/// - Note: Maps to NWPath.Status; used for adaptive retries.
 enum NetworkPathStatus: Sendable {
+    /// Network is available and satisfied.
     case satisfied
+    /// Network is unavailable.
     case unsatisfied
+    /// Connection is required but not yet established.
     case requiresConnection
 }
 
 /// Protocol for monitoring network path changes.
+/// - Note: Abstracts NWPathMonitor for testability; use `NWPathMonitorAdapter` in production.
 protocol NetworkPathMonitoring: AnyObject {
     /// Handler for network path updates.
+    /// - Parameter status: The updated status (e.g., .satisfied).
     var pathUpdateHandler: (@Sendable (NetworkPathStatus) -> Void)? { get set }
     /// Starts monitoring on a specified queue.
     func start(queue: DispatchQueue)
     /// Cancels monitoring.
     func cancel()
-    /// Expose currentPath for network quality checks (e.g., isExpensive).
+    /// Current network path for checks like isExpensive (metered).
     var currentPath: NWPath? { get }
 }
 
@@ -156,7 +163,7 @@ class NWPathMonitorAdapter: NetworkPathMonitoring {
     }
 }
 
-/// Manages direct streaming playback, including network monitoring and security validation.
+/// Manages direct audio streaming, security validation, network monitoring, and privacy protections for the Lutheran Radio app.
 class DirectStreamingPlayer: NSObject {
     // MARK: - Security Model
     private let appSecurityModel = "tampa"
@@ -179,6 +186,9 @@ class DirectStreamingPlayer: NSObject {
         case failedTransient
         case failedPermanent
     }
+    
+    /// Current security validation state.
+    /// - Note: Checked before playback; .failedPermanent blocks attempts.
     var validationState: ValidationState = .pending
     private var lastValidationTime: Date?
     
@@ -210,14 +220,24 @@ class DirectStreamingPlayer: NSObject {
     var lastFailedServer: String? { return lastFailedServerName }
     var selectedServerInfo: Server { return currentSelectedServer }
     
+    // MARK: - Server and Stream Structs
+    /// A radio stream configuration.
+    /// - Example: `Stream(title: "English", url: URL(string: "https://...")!, language: "English", languageCode: "en", flag: "🇺🇸")
     struct Stream {
+        /// Display title (localized).
         let title: String
+        /// Streaming URL (HTTPS required).
         let url: URL
+        /// Language name (localized).
         let language: String
+        /// ISO language code (e.g., "en").
         let languageCode: String
+        /// Emoji flag for UI.
         let flag: String
     }
-        
+    
+    /// Available streams by language.
+    /// - Note: Static array; URLs must be HTTPS for security.
     static let availableStreams = [
         Stream(title: NSLocalizedString("lutheran_radio_title", comment: "Title for Lutheran Radio") + " - " +
                NSLocalizedString("language_english", comment: "English language option"),
@@ -295,6 +315,11 @@ class DirectStreamingPlayer: NSObject {
     /// Track deallocation state
     private var isDeallocating = false
     
+    /// Selects the optimal streaming server based on latency and failures.
+    /// - Parameter completion: Handler with selected server.
+    /// - Note: Throttles calls; prefers servers with fewer failures; delays in low-power mode.
+    /// - Example: `selectOptimalServer { server in print(server.name) }`
+    /// - SeeAlso: `fetchServerIPsAndLatencies(completion:)`
     func selectOptimalServer(completion: @escaping (Server) -> Void) {
         // If we have a server that failed recently, try the other one first
         if let lastFailed = lastFailedServerName,
@@ -679,6 +704,7 @@ class DirectStreamingPlayer: NSObject {
         return models
     }
     
+    // MARK: - Security and Validation Methods
     private func validateSecurityModelAsyncImplementation(completion: @escaping (Bool) -> Void) {
         if let lastValidation = UserDefaults.standard.object(forKey: "lastSecurityValidation") as? Date,
            currentDate().timeIntervalSince(lastValidation) < 3600 {
@@ -862,6 +888,9 @@ class DirectStreamingPlayer: NSObject {
         validateSecurityModelAsyncImplementation(completion: completion)
     }
     #else
+    /// Validates app security model asynchronously via DNS TXT record.
+    /// - Parameter completion: `true` if valid.
+    /// - Note: Caches for 10 minutes; permanent failure on invalid model.
     func validateSecurityModelAsync(completion: @escaping (Bool) -> Void) {
         validateSecurityModelAsyncImplementation(completion: completion)
     }
@@ -988,6 +1017,7 @@ class DirectStreamingPlayer: NSObject {
         networkMonitor?.start(queue: networkQueue)
     }
     #else
+    // MARK: - Network and Monitoring
     private func setupNetworkMonitoring() {
         networkMonitor = pathMonitor
         networkMonitor?.pathUpdateHandler = { [weak self] status in
@@ -1167,7 +1197,14 @@ class DirectStreamingPlayer: NSObject {
             }
         }
     }
-
+    
+    // MARK: - Playback Control Methods
+    /// Starts playback after validation and setup.
+    /// - Parameter completion: `true` on success, `false` on failure.
+    /// - Throws: Implicit errors via delegate callbacks.
+    /// - Precondition: `setStream(to:)` must be called first.
+    /// - Warning: Blocks if validation fails permanently.
+    /// - Note: Handles retries adaptively based on thermal/low-power state.
     func play(completion: @escaping (Bool) -> Void) {
         if validationState == .pending {
             validateSecurityModelAsync { [weak self] isValid in
@@ -2273,8 +2310,15 @@ extension DirectStreamingPlayer {
     }
 }
 
-// MARK: - Enhanced Resource Loader with Transition Support
+// MARK: - Extensions for Delegates and Helpers
+/// Handles custom resource loading for secure streaming.
 extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
+    /// Determines if the loader should handle the request.
+    /// - Parameters:
+    ///   - resourceLoader: The requesting loader.
+    ///   - loadingRequest: The resource request.
+    /// - Returns: `true` if handling (for lutheran.radio HTTPS URLs).
+    /// - Note: Enforces HTTPS and domain checks; sets up pinned sessions.
     func resourceLoader(_ resourceLoader: AVAssetResourceLoader, shouldWaitForLoadingOfRequestedResource loadingRequest: AVAssetResourceLoadingRequest) -> Bool {
         guard let url = loadingRequest.request.url else {
             #if DEBUG
