@@ -5,6 +5,21 @@
 //  Created by Jari Lammi on 26.10.2024.
 //
 
+/// The main view controller for the Lutheran Radio app, handling UI, audio streaming, language selection, and background playback.
+///
+/// This class manages the app's core functionality, including:
+/// - Streaming radio content in multiple languages (English, German, Finnish, Swedish, Estonian).
+/// - UI elements for playback control, volume, metadata display, and AirPlay.
+/// - Network monitoring, audio session management, and widget integration.
+/// - iOS 18-specific optimizations like low-power mode handling and haptics.
+///
+/// Flow: viewDidLoad initializes UI/audio; user interactions trigger playback/stream switches; callbacks handle status/metadata updates.
+///
+/// Key dependencies: AVFoundation for audio, UIKit for UI, CoreHaptics for feedback.
+///
+/// - Note: This app is iOS 18+ only, leveraging features like ProcessInfo.isLowPowerModeEnabled. All user-facing strings are localized.
+/// - SeeAlso: `DirectStreamingPlayer` for streaming logic, `SharedPlayerManager` for widget sharing.
+
 /// - Article: Lutheran Radio View Controller Guide
 ///
 /// Manages the main UI and streaming playback for the Lutheran Radio app, including language selection and background effects.
@@ -18,9 +33,11 @@ import CoreHaptics
 import WidgetKit
 
 // MARK: - Parallax Effect Extension
+/// Extends UIView with device motion-based parallax effects.
 extension UIView {
-    /// Adds a parallax effect to the view based on device motion.
-    /// - Parameter intensity: The intensity of the parallax effect (e.g., 10.0).
+    /// Adds horizontal and vertical tilt effects for a 3D-like appearance.
+    /// - Parameter intensity: Magnitude of the tilt (e.g., 10.0 for subtle effect).
+    /// - Note: Removes existing effects first to prevent conflicts.
     func addParallaxEffect(intensity: CGFloat) {
         // Remove any existing motion effects to avoid conflicts
         motionEffects.forEach { removeMotionEffect($0) }
@@ -52,6 +69,9 @@ extension UIView {
 
 /// The main view controller for the Lutheran Radio app.
 class ViewController: UIViewController, UICollectionViewDelegate, UICollectionViewDataSource, UIScrollViewDelegate, AVAudioPlayerDelegate {
+    // MARK: - Private Properties and Constants
+    /// Key for tracking if the user has dismissed the mobile data usage warning.
+    /// - Note: Stored in standard UserDefaults for persistence across launches.
     private enum UserDefaultsKeys {
         static let hasDismissedDataUsageNotification = "hasDismissedDataUsageNotification"
     }
@@ -61,6 +81,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     private var pendingWidgetSwitchWorkItem: DispatchWorkItem?
     private var processedActionIds: Set<String> = []
     
+    /// Flag indicating if the device is in Low Power Mode (iOS 18+).
+    /// - Returns: `true` if low power mode is enabled, triggering UI/processing optimizations.
     private var isLowEfficiencyMode: Bool {
         ProcessInfo.processInfo.isLowPowerModeEnabled
     }
@@ -78,7 +100,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         updateBackground(for: DirectStreamingPlayer.availableStreams[selectedStreamIndex])
     }
     
-    /// Label displaying the app title.
+    // MARK: - UI Elements
+    /// The main title label displaying "Lutheran Radio".
+    /// - Accessibility: Labeled for VoiceOver with dynamic font support.
     let titleLabel: UILabel = {
         let label = UILabel()
         label.text = String(localized: "lutheran_radio_title")
@@ -183,6 +207,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         return view
     }()
     
+    // MARK: - Background and Image Processing
     private let backgroundImageView: UIImageView = {
         let imageView = UIImageView()
         imageView.contentMode = .scaleAspectFill
@@ -193,6 +218,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         return imageView
     }()
     
+    /// Mapping of language codes to background image asset names.
+    /// - Note: Used for dynamic backgrounds based on selected stream.
     private let backgroundImages: [String: String] = [
         "en": "north_america",
         "de": "germany",
@@ -220,7 +247,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     // MARK: - Image Processing
     private let imageProcessingQueue = DispatchQueue(label: "radio.lutheran.imageProcessing", qos: .utility)
     private let imageProcessingContext = CIContext(options: [.useSoftwareRenderer: false])
-    // Cache processed images to avoid repeated work
+    /// Cache for processed background images to avoid redundant CIImage filtering.
+    /// - Note: Limited to 5 items (one per language) to manage memory.
     private var processedImageCache = NSCache<NSString, UIImage>()
     private let cacheQueue = DispatchQueue(label: "radio.lutheran.imageCache", qos: .utility)
     
@@ -246,6 +274,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     private var speakerImageHeightConstraint: NSLayoutConstraint!
     
+    // MARK: - Audio and Streaming
     // New streaming player
     private var streamingPlayer: DirectStreamingPlayer
     private let audioQueue = DispatchQueue(label: "radio.lutheran.audio", qos: .userInitiated)
@@ -298,7 +327,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         set { hasInternetConnection = newValue } // Allow setting for test setup
     }
     
-    // MARK: - Lifecycle
+    // MARK: - Lifecycle Methods
+    /// Initializes the view hierarchy, audio session, and initial stream selection.
+    /// - Note: Performs heavy setup; defers non-critical tasks with asyncAfter for better launch performance.
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
@@ -520,6 +551,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         NotificationCenter.default.removeObserver(self, name: AVAudioSession.routeChangeNotification, object: nil)
     }
     
+    /// Configures the audio session for background playback.
+    /// - Throws: AVAudioSession errors if category/activation fails.
+    /// - Note: Called in viewDidLoad; ensures ducking and mixing with other audio.
     private func configureAudioSession() {
         do {
             let audioSession = AVAudioSession.sharedInstance()
@@ -824,6 +858,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         #endif
     }
     
+    // MARK: - Network and Interruption Handling
     private func setupNetworkMonitoring() {
         networkMonitor?.cancel()
         networkMonitor = nil
@@ -1099,8 +1134,10 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         updatePlayPauseButton(isPlaying: false)
     }
     
-    // MARK: - Playback Control
-    
+    // MARK: - Playback Control Methods
+    /// Starts audio playback with network checks and security validation.
+    /// - Note: Debounces rapid calls and handles retries on transient errors.
+    /// - Warning: Does not play if no internet or manual pause is active.
     private func startPlayback() {
         if !hasInternetConnection {
             updateUIForNoInternet()
@@ -1244,6 +1281,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         }
     }
     
+    /// Pauses playback and updates UI/status.
+    /// - Note: Sets manual pause flag; saves state for widgets.
+    /// - SeeAlso: `startPlayback()` for resumption logic.
     private func pausePlayback() {
         #if DEBUG
         print("📱 pausePlayback called from: \(Thread.callStackSymbols[1])")
@@ -1311,6 +1351,10 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         backgroundImageView.addParallaxEffect(intensity: 10.0)
     }
     
+    /// Updates the background image based on the selected stream's language.
+    /// - Parameter stream: The current stream providing language code.
+    /// - Note: Caches processed images; applies filters async for performance.
+    /// - SeeAlso: `processImageAsync(imageName:cacheKey:stream:isDarkMode:)` for filtering details.
     private func updateBackground(for stream: DirectStreamingPlayer.Stream) {
         guard let imageName = backgroundImages[stream.languageCode] else {
             DispatchQueue.main.async {
@@ -1354,6 +1398,12 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         }
     }
     
+    /// Processes and applies background image filters asynchronously.
+    /// - Parameter imageName: Name of the base image asset.
+    /// - Parameter cacheKey: Unique key for caching (includes interface style).
+    /// - Parameter stream: Current stream for language-specific image.
+    /// - Parameter isDarkMode: `true` if dark mode filters should be applied.
+    /// - Note: Uses CIContext for efficiency; caches results to reduce CPU usage in low-power mode.
     private func processImageAsync(imageName: String, cacheKey: String, stream: DirectStreamingPlayer.Stream, isDarkMode: Bool) {
         guard let baseImage = UIImage(named: imageName) else {
             DispatchQueue.main.async {
@@ -1924,7 +1974,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         }
     }
     
-    // MARK: - UICollectionView DataSource
+    // MARK: - UICollectionView DataSource and Delegate
     func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
         DirectStreamingPlayer.availableStreams.count
     }
@@ -2041,6 +2091,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         return spacing
     }
     
+    /// Cleans up resources, observers, and audio players to prevent leaks.
+    /// - Note: Sets `isDeallocating` to avoid operations during teardown.
     deinit {
         isDeallocating = true
         
@@ -2248,7 +2300,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             }
         }
     }
-
+    
+    // MARK: - Widget and URL Scheme Handling
     /// Checks for and handles pending actions from widgets (Updated)
     public func checkForPendingWidgetActions() {
         guard let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
@@ -2342,6 +2395,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
 extension ViewController {
     
     /// Public method to start playback (callable from SceneDelegate)
+    /// - Note: Async to main; resets permanent errors.
     public func handlePlayAction() {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
@@ -2457,6 +2511,7 @@ extension ViewController {
         updateForEnergyEfficiency()
     }
     
+    // MARK: - Accessibility and Haptic Helpers
     @objc private func togglePlayback() {
         if isPlaying {
             pausePlayback()
