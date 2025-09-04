@@ -1402,59 +1402,6 @@ class DirectStreamingPlayer: NSObject {
             }
         }
     }
-
-    // Helper method to handle playback after stream switch
-    private func playAfterStreamSwitch() {
-        selectOptimalServer { [weak self] server in
-            guard let self = self else {
-                self?.isSwitchingStream = false
-                return
-            }
-            self.lastServerSelectionTime = Date()
-            #if DEBUG
-            print("📡 Selected server for stream switch: \(server.name)")
-            #endif
-            self.play { [weak self] success in
-                guard let self = self else { return }
-                if success {
-                    #if DEBUG
-                    print("✅ Stream switched to: \(self.selectedStream.language)")
-                    #endif
-                    if self.delegate != nil {
-                        self.safeOnStatusChange(isPlaying: true, status: String(localized: "status_playing"))
-                    }
-                } else {
-                    #if DEBUG
-                    print("❌ Stream switch failed for: \(self.selectedStream.language)")
-                    #endif
-                    if self.delegate != nil {
-                        self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_stream_unavailable"))
-                    }
-                }
-                self.isSwitchingStream = false
-            }
-        }
-    }
-
-    // Helper method to handle stream switch completion
-    private func handleStreamSwitchCompletion(_ success: Bool) {
-        if success {
-            #if DEBUG
-            print("✅ Stream switched to: \(self.selectedStream.language)")
-            #endif
-            if self.delegate != nil {
-                self.safeOnStatusChange(isPlaying: true, status: String(localized: "status_playing"))
-            }
-        } else {
-            #if DEBUG
-            print("❌ Stream switch failed for: \(self.selectedStream.language)")
-            #endif
-            if self.delegate != nil {
-                self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_stream_unavailable"))
-            }
-        }
-        self.isSwitchingStream = false
-    }
     
     private func startBufferingTimer() {
         stopBufferingTimer()
