@@ -1428,7 +1428,10 @@ class DirectStreamingPlayer: NSObject {
                 return
             }
             
-            self.stop()
+            self.stop(completion: nil, silent: true) // silent: true to avoid UI flash
+            #if DEBUG
+            print("🛑 Silent stop initiated")
+            #endif
             
             // Create connection with tracking
             let connectionStartTime = Date()
@@ -1864,8 +1867,11 @@ class DirectStreamingPlayer: NSObject {
         }
     }
     
-    // FIXED: Update the stop() method to include connection cleanup
-    func stop(completion: (() -> Void)? = nil) {
+    /// Stops playback and cleans up resources.
+    /// - Parameters:
+    ///   - completion: Optional completion handler.
+    ///   - silent: If true, skips status update to "stopped" (for internal resets to avoid UI flash).
+    func stop(completion: (() -> Void)? = nil, silent: Bool = false) {
         #if DEBUG
         print("🛑 FORCE STOPPING ALL PLAYBACK - isSwitchingStream: \(isSwitchingStream)")
         #endif
@@ -1887,12 +1893,11 @@ class DirectStreamingPlayer: NSObject {
         validationTimer?.invalidate()
         validationTimer = nil
         
-        // Continue with existing stop logic
-        performActualStop(completion: completion)
+        // Continue with existing stop logic, passing silent flag
+        performActualStop(completion: completion, silent: silent)
     }
 
-    // FIXED: Update performActualStop to remove connectionStartTime references
-    private func performActualStop(completion: (() -> Void)? = nil) {
+    private func performActualStop(completion: (() -> Void)? = nil, silent: Bool = false) {
         clearSSLProtectionTimer()
         isSSLHandshakeComplete = true
         hasStartedPlaying = false
@@ -1917,9 +1922,14 @@ class DirectStreamingPlayer: NSObject {
             #endif
             
             guard self.player != nil || self.playerItem != nil else {
-                DispatchQueue.main.async {
-                    self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_stopped"))
-                    completion?()
+                if !silent {
+                    DispatchQueue.main.async {
+                        self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_stopped"))
+                        completion?()
+                    }
+                } else {
+                    // For silent mode, just complete without status change
+                    DispatchQueue.main.async { completion?() }
                 }
                 #if DEBUG
                 print("🛑 Playback already stopped, skipping cleanup")
@@ -1954,9 +1964,14 @@ class DirectStreamingPlayer: NSObject {
             self.playerItem = nil
             self.removedObservers.removeAll()
             
-            DispatchQueue.main.async {
-                self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_stopped"))
-                completion?()
+            if !silent {
+                DispatchQueue.main.async {
+                    self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_stopped"))
+                    completion?()
+                }
+            } else {
+                // For silent mode, just complete without status change
+                DispatchQueue.main.async { completion?() }
             }
             
             self.stopBufferingTimer()

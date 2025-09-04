@@ -2439,7 +2439,7 @@ extension ViewController {
             self.selectedStreamIndex = targetIndex
             self.updateBackground(for: targetStream)
             
-            self.streamingPlayer.stop { [weak self] in
+            self.streamingPlayer.stop(completion: { [weak self] in
                 guard let self = self else { return }
                 self.playTuningSound { [weak self] in
                     guard let self = self else { return }
@@ -2458,7 +2458,10 @@ extension ViewController {
                         }
                     }
                 }
-            }
+            }, silent: true)
+            #if DEBUG
+            print("🛑 Silent stop initiated")
+            #endif
         }
     }
     
