@@ -9,6 +9,17 @@ import Foundation
 import AVFoundation
 import WidgetKit
 
+/// - Article: Shared State Management for Widgets and Extensions
+///
+/// `SharedPlayerManager` enables safe state sharing between the main app, widgets, and Live Activities using App Groups and UserDefaults. It prevents crashes in widget contexts by lazy-loading `DirectStreamingPlayer.swift` only in the main app.
+///
+/// Core Functions:
+/// - **State Persistence**: Saves/loads playback state (`isPlaying`, language, errors) with throttling to avoid spam (`saveCurrentState()`).
+/// - **Widget Actions**: Handles play/stop/switch via URL schemes (processed in `SceneDelegate.swift`); uses instant feedback for responsive widgets.
+/// - **Throttling/Debouncing**: Integrates with `WidgetRefreshManager.swift` for efficient `WidgetKit` reloads.
+/// - **Privacy Note**: Stores only anonymous, non-identifiable data (e.g., no timestamps or histories).
+///
+/// Usage: Access via `shared`; widgets read from UserDefaults without initializing the full player. For Live Activity integration, see `RadioLiveActivityManager.swift`.
 class SharedPlayerManager {
     static let shared = SharedPlayerManager()
     

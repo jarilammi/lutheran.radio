@@ -5,9 +5,17 @@
 //  Created by Jari Lammi on 26.10.2024.
 //
 
-/// - Article: App Delegate Lifecycle Management
+/// - Article: Lutheran Radio App Overview
 ///
-/// Handles application lifecycle and scene session configuration for the Lutheran Radio app.
+/// Lutheran Radio is a privacy-first iOS 18+ app for streaming Lutheran content in multiple languages (English, German, Finnish, Swedish, Estonian). It emphasizes secure, anonymous access without tracking, analytics, or permissions for microphone/camera/location/push notifications.
+///
+/// Key Components:
+/// - **Streaming Core**: `DirectStreamingPlayer.swift` handles audio playback with SSL pinning and adaptive retries (see `CertificateValidator.swift` for validation logic).
+/// - **UI and Controls**: `ViewController.swift` manages the main interface, language selection (`LanguageCell.swift`), and iOS 18 features like low-power mode optimization.
+/// - **Background/Widget Integration**: Uses `SharedPlayerManager.swift` for state sharing with widgets; `RadioLiveActivityManager.swift` for local-only Live Activities; `WidgetRefreshManager.swift` for throttled updates.
+/// - **Lifecycle Handling**: `SceneDelegate.swift` processes URL schemes from widgets and manages background/foreground transitions.
+///
+/// Privacy Focus: No user data collection; encrypted streams only (see `StreamingSessionDelegate.swift` for session management). For widget interactions, see `handleURLScheme` in `SceneDelegate.swift`.
 import UIKit
 import WidgetKit
 

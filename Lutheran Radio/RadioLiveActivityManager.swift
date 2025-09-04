@@ -10,6 +10,17 @@
 import ActivityKit
 import Foundation
 
+/// - Article: Privacy-First Live Activities Integration
+///
+/// `RadioLiveActivityManager` manages iOS 18 Live Activities for playback status, using local-only updates (no push notifications or server calls) to maintain privacy.
+///
+/// Process:
+/// 1. **Start/Update**: `startActivity()` creates activities with attributes like stream language/flag; `updateCurrentActivity()` refreshes every 10s via timer.
+/// 2. **Lifecycle**: Auto-starts on background (`handleAppWillEnterBackground()`); ends on terminate; observes existing activities.
+/// 3. **Integration**: Hooks into `DirectStreamingPlayer.swift` callbacks for status/metadata changes; shares state via `SharedPlayerManager.swift`.
+/// 4. **Privacy Safeguards**: All data local; no external communication (see app-wide privacy in `DirectStreamingPlayer.swift`).
+///
+/// For app lifecycle ties, see extensions in `SceneDelegate.swift` and `AppDelegate.swift`. Widgets use separate sharing via `SharedPlayerManager.swift`.
 class RadioLiveActivityManager: ObservableObject {
     static let shared = RadioLiveActivityManager()
     

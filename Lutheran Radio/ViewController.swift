@@ -20,9 +20,17 @@
 /// - Note: This app is iOS 18+ only, leveraging features like ProcessInfo.isLowPowerModeEnabled. All user-facing strings are localized.
 /// - SeeAlso: `DirectStreamingPlayer` for streaming logic, `SharedPlayerManager` for widget sharing.
 
-/// - Article: Lutheran Radio View Controller Guide
+/// - Article: Main UI and User Interaction Flow
 ///
-/// Manages the main UI and streaming playback for the Lutheran Radio app, including language selection and background effects.
+/// `ViewController` orchestrates the app's interface: title, language selector (`LanguageCell.swift`), play/pause controls, volume, and metadata display. It handles iOS 18 features like parallax effects, haptics, and low-power mode (`updateForEnergyEfficiency()`).
+///
+/// Key Interactions:
+/// - **Language Switching**: Uses `UICollectionView` with flags; updates stream in `DirectStreamingPlayer.swift` and saves to UserDefaults for widgets.
+/// - **Playback**: Toggles via `togglePlayback()`; monitors network (`NWPathMonitor`) and shows data usage alerts on cellular.
+/// - **Background Handling**: Integrates with `RadioLiveActivityManager.swift` for Live Activities on backgrounding; saves state via `SharedPlayerManager.swift`.
+/// - **Widget/URL Handling**: Public methods like `handlePlayAction()` process schemes from `SceneDelegate.swift`.
+///
+/// Accessibility: VoiceOver announcements for status/metadata; hyphenation for long text. For lifecycle events, see `SceneDelegate.swift` and `AppDelegate.swift`.
 import UIKit
 import AVFoundation
 import MediaPlayer

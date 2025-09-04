@@ -5,11 +5,19 @@
 //  Created by Jari Lammi on 26.10.2024.
 //
 
-/// - Article: Scene Delegate Lifecycle Management
-///
-/// Manages scene lifecycle events for the Lutheran Radio app, handling transitions and window setup.
 import UIKit
 
+/// - Article: Scene Lifecycle and Widget Integration
+///
+/// `SceneDelegate` manages iOS scene transitions, window setup, and URL scheme handling for widget actions in the Lutheran Radio app.
+///
+/// Core Responsibilities:
+/// - **Lifecycle Events**: Handles foreground/background transitions with state saves via `SharedPlayerManager.swift`; checks pending widget actions on active.
+/// - **Widget Communication**: Processes `lutheranradio://` schemes (e.g., play/pause/switch) from widgets, delegating to public methods in `ViewController.swift`.
+/// - **URL Handling**: Supports deep links for playback control; integrates with `AppDelegate.swift` for app-wide lifecycle.
+/// - **Privacy Note**: No external data in schemes; all actions local to app state.
+///
+/// For related background features, see `RadioLiveActivityManager.swift`. Ensures seamless widget-to-app handoff without tracking.
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     /// The main window for the app's user interface.
     var window: UIWindow?

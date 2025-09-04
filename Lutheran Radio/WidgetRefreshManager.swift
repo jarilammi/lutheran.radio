@@ -9,6 +9,17 @@
 import Foundation
 import WidgetKit
 
+/// - Article: Widget Refresh Optimization
+///
+/// `WidgetRefreshManager` prevents excessive WidgetKit reloads through debouncing, change detection, and adaptive intervals, integrated with `SharedPlayerManager.swift` for state updates.
+///
+/// Optimization Strategies:
+/// - **Throttling**: Delays non-urgent refreshes (e.g., 0.5-3s adaptive); always immediate for language changes or urgent states (playing/errors).
+/// - **Change Detection**: Compares `WidgetState` structs to skip redundant updates; checks active widgets before reloading.
+/// - **Integration**: Called from `SharedPlayerManager.swift`'s `saveCurrentState()`; uses `WidgetCenter` for timeline reloads.
+/// - **Privacy/Efficiency**: Reduces battery/network use; no data beyond anonymous state.
+///
+/// For widget data flow, see `loadSharedState()` in `SharedPlayerManager.swift`. iOS 18-focused for low-power scenarios.
 class WidgetRefreshManager {
     static let shared = WidgetRefreshManager()
     

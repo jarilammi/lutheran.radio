@@ -9,6 +9,18 @@ import Foundation
 import Security
 import CommonCrypto
 
+/// - Article: SSL Certificate Pinning and Validation
+///
+/// `CertificateValidator` enforces runtime SSL security through full certificate fingerprint pinning (SHA-256), integrated with App Transport Security (ATS). It's used by `StreamingSessionDelegate.swift` for per-session challenges and `DirectStreamingPlayer.swift` for periodic HEAD checks.
+///
+/// Key Mechanics:
+/// - **Validation Process**: Checks system trust, then leaf certificate fingerprint against a pinned value; caches results for 10 minutes.
+/// - **Transition Period**: Allows leniency during certificate rotations (July 27 to August 26, 2026) with device/server time checks to detect manipulation.
+/// - **Integration**: Singleton accessed via `shared`; handles challenges in `URLSessionDelegate` conformance.
+/// - **Privacy/Security**: Prevents MITM attacks; no data logging beyond debug prints.
+///
+/// For streaming usage, see `validateServerCertificate` in `DirectStreamingPlayer.swift`. Testable via injectable `currentDate` for date-based logic.
+/// 
 /// Singleton class responsible for managing periodic SSL certificate validation with support for a transition period during certificate rotations.
 ///
 /// This class performs runtime certificate pinning by validating the full SHA-256 fingerprint of the server's leaf certificate against a pinned value.

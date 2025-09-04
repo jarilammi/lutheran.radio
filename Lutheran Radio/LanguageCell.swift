@@ -5,11 +5,19 @@
 //  Created by Jari Lammi on 11.3.2025.
 //
 
-/// - Article: Language Cell Overview
-///
-/// A custom collection view cell for displaying language options with flag emojis in Lutheran Radio.
 import UIKit
 
+/// - Article: Language Selection UI Component
+///
+/// `LanguageCell` is a custom UICollectionViewCell for displaying stream languages with flag emojis, used in `ViewController.swift`'s language selector.
+///
+/// Features:
+/// - **Configuration**: Sets flag emoji and accessibility label from `DirectStreamingPlayer.Stream`; supports selection states with color changes.
+/// - **Accessibility**: Traits as buttons with dynamic labels (e.g., "Select English"); no borders for clean UI.
+/// - **Integration**: Part of horizontal UICollectionView in `ViewController.swift`; triggers stream switches via delegate.
+/// - **Privacy Note**: Purely local; no network or data storage involved.
+///
+/// For full language flow, see `collectionView(_:didSelectItemAt:)` in `ViewController.swift` and stream setup in `DirectStreamingPlayer.swift`.
 class LanguageCell: UICollectionViewCell {
     /// The label displaying the flag emoji for a language.
     let flagLabel: UILabel = {
