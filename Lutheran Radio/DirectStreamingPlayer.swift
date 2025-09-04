@@ -1384,7 +1384,6 @@ class DirectStreamingPlayer: NSObject {
                     defer { self.isSwitchingStream = false }
                     
                     if isValid {
-                        self.playAfterStreamSwitch()
                     } else {
                         let status = self.validationState == .failedPermanent ? "status_security_failed" : "status_no_internet"
                         DispatchQueue.main.async {
@@ -1393,8 +1392,7 @@ class DirectStreamingPlayer: NSObject {
                     }
                 }
             } else if self.validationState == .success {
-                defer { self.isSwitchingStream = false }
-                self.playAfterStreamSwitch()
+                do { self.isSwitchingStream = false }
             } else {
                 defer { self.isSwitchingStream = false }
                 let status = self.validationState == .failedPermanent ? "status_security_failed" : "status_no_internet"
