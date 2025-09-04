@@ -241,7 +241,22 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             let engine = try CHHapticEngine()
             engine.playsHapticsOnly = true // Optimize for feedback only
             engine.resetHandler = { [weak self] in
-                try? self?.hapticEngine?.start() // Auto-restart on interruptions
+                do {
+                    try self?.hapticEngine?.start()  // Auto-restart on interruptions
+                } catch {
+                    #if DEBUG
+                    print("Failed to restart haptic engine: \(error)")
+                    #endif
+                }
+            }
+            engine.stoppedHandler = { reason in
+                #if DEBUG
+                print("Haptic engine stopped: \(reason)")
+                #endif
+                // Optionally restart if not a low-memory stop
+                if reason != .systemError {
+                    try? engine.start()
+                }
             }
             return engine
         } catch {
@@ -468,6 +483,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 self.restoreVolume() // Apply audio volume after playback starts
             }
         }
+        
+        // Start the haptic engine (preps for low-latency playback)
+        startHapticEngine()
     }
     
     private func preferredVolume() -> Float {
@@ -2523,6 +2541,20 @@ extension ViewController {
     }
     
     // MARK: - Accessibility and Haptic Helpers
+    private func startHapticEngine() {
+        guard let engine = hapticEngine else { return }
+        do {
+            try engine.start()
+            #if DEBUG
+            print("Haptic engine started successfully")
+            #endif
+        } catch {
+            #if DEBUG
+            print("Failed to start haptic engine: \(error)")
+            #endif
+        }
+    }
+    
     @objc private func togglePlayback() {
         if isPlaying {
             pausePlayback()
@@ -2532,6 +2564,42 @@ extension ViewController {
             playHapticFeedback(style: .heavy) // Stronger for play
         }
         UIAccessibility.post(notification: .announcement, argument: isPlaying ? String(localized: "status_playing") : String(localized: "status_paused"))
+    }
+    
+    private func playHapticFeedback(style: UIImpactFeedbackGenerator.FeedbackStyle) {
+        guard CHHapticEngine.capabilitiesForHardware().supportsHaptics,
+              let engine = hapticEngine else {
+            #if DEBUG
+            print("Haptics not supported or engine unavailable")
+            #endif
+            return
+        }
+        
+        do {
+            // Map style to intensity/sharpness for custom feel
+            let intensityValue: Float = (style == .heavy) ? 1.0 : 0.7
+            let sharpnessValue: Float = (style == .heavy) ? 1.0 : 0.5
+            
+            // Create a simple transient event (short vibration)
+            let intensity = CHHapticEventParameter(parameterID: .hapticIntensity, value: intensityValue)
+            let sharpness = CHHapticEventParameter(parameterID: .hapticSharpness, value: sharpnessValue)
+            let event = CHHapticEvent(eventType: .hapticTransient, parameters: [intensity, sharpness], relativeTime: 0)
+            
+            // Create pattern and player
+            let pattern = try CHHapticPattern(events: [event], parameters: [])
+            let player = try engine.makePlayer(with: pattern)
+            
+            // Play immediately
+            try player.start(atTime: CHHapticTimeImmediate)
+            
+            #if DEBUG
+            print("Haptic played: style=\(style), intensity=\(intensityValue), sharpness=\(sharpnessValue)")
+            #endif
+        } catch {
+            #if DEBUG
+            print("Failed to play haptic: \(error)")
+            #endif
+        }
     }
     
     @objc private func increaseVolume() {
@@ -2546,14 +2614,6 @@ extension ViewController {
         volumeSlider.setValue(newValue, animated: true)
         volumeChanged(volumeSlider)
         UIAccessibility.post(notification: .announcement, argument: String(format: NSLocalizedString("volume_set_to", comment: ""), Int(newValue * 100)))
-    }
-    
-    private func playHapticFeedback(style: UIImpactFeedbackGenerator.FeedbackStyle) {
-        guard CHHapticEngine.capabilitiesForHardware().supportsHaptics else { return } // Check device support
-        DispatchQueue.main.async { // Ensure on main thread
-            let generator = UIImpactFeedbackGenerator(style: style)
-            generator.impactOccurred()
-        }
     }
     
     private func safeUpdateStatusLabel(text: String, backgroundColor: UIColor, textColor: UIColor, isPermanentError: Bool) {
