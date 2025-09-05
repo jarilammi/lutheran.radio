@@ -522,11 +522,7 @@ class DirectStreamingPlayer: NSObject {
     private var statusObserver: NSKeyValueObservation?
     private var registeredKeyPaths: [ObjectIdentifier: Set<String>] = [:]
     private var removedObservers: Set<ObjectIdentifier> = []
-    #if DEBUG
-    var isSwitchingStream = false // Track ongoing stream switches (testing)
-    #else
-    private var isSwitchingStream = false // Track ongoing stream switches (production)
-    #endif
+    var isSwitchingStream = false // Track ongoing stream switches
     private var timeObserver: Any?
     private var timeObserverPlayer: AVPlayer? // Track the player that added the time observer
     private var isObservingBuffer = false
