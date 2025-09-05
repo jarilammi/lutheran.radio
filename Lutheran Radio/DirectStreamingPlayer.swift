@@ -1870,10 +1870,11 @@ class DirectStreamingPlayer: NSObject {
     /// Stops playback and cleans up resources.
     /// - Parameters:
     ///   - completion: Optional completion handler.
+    ///   - isSwitchingStream: If true, treats this as a stream switch (defaults to instance flag).
     ///   - silent: If true, skips status update to "stopped" (for internal resets to avoid UI flash).
-    func stop(completion: (() -> Void)? = nil, silent: Bool = false) {
+    func stop(completion: (() -> Void)? = nil, isSwitchingStream: Bool? = nil, silent: Bool = false) {
         #if DEBUG
-        print("🛑 FORCE STOPPING ALL PLAYBACK - isSwitchingStream: \(isSwitchingStream)")
+        print("🛑 FORCE STOPPING ALL PLAYBACK - isSwitchingStream: \(String(describing: isSwitchingStream))")
         #endif
         
         // Clear all active SSL timers
@@ -1886,6 +1887,9 @@ class DirectStreamingPlayer: NSObject {
         fallbackWorkItem?.cancel()
         fallbackWorkItem = nil
         
+        // Use provided isSwitchingStream or fall back to instance var
+        let effectiveSwitching = isSwitchingStream ?? self.isSwitchingStream
+        
         // CRITICAL: Cancel any pending audio operations
         pendingPlaybackWorkItem?.cancel()
         pendingPlaybackWorkItem = nil
@@ -1893,16 +1897,24 @@ class DirectStreamingPlayer: NSObject {
         validationTimer?.invalidate()
         validationTimer = nil
         
-        // Continue with existing stop logic, passing silent flag
-        performActualStop(completion: completion, silent: silent)
+        // Continue with existing stop logic, passing silent flag and effectiveSwitching
+        performActualStop(completion: completion, silent: silent, effectiveSwitching: effectiveSwitching)
     }
 
-    private func performActualStop(completion: (() -> Void)? = nil, silent: Bool = false) {
+    /// Performs the actual stop operation.
+    /// - Parameters:
+    ///   - completion: Optional completion handler.
+    ///   - silent: If true, skips status update to "stopped".
+    ///   - effectiveSwitching: Indicates if this is part of a stream switch.
+    private func performActualStop(completion: (() -> Void)? = nil, silent: Bool = false, effectiveSwitching: Bool) {
         clearSSLProtectionTimer()
         isSSLHandshakeComplete = true
         hasStartedPlaying = false
         validationTimer?.invalidate()
         validationTimer = nil
+        
+        // In performActualStop, use effectiveSwitching for status suppression
+        let effectiveSilent = silent || effectiveSwitching // Suppress status if switching
         
         // If we're deallocating, perform cleanup synchronously
         if isDeallocating {
@@ -1924,7 +1936,7 @@ class DirectStreamingPlayer: NSObject {
             guard self.player != nil || self.playerItem != nil else {
                 if !silent {
                     DispatchQueue.main.async {
-                        self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_stopped"))
+                        if !effectiveSilent { self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_stopped")) }
                         completion?()
                     }
                 } else {
@@ -1932,7 +1944,7 @@ class DirectStreamingPlayer: NSObject {
                     DispatchQueue.main.async { completion?() }
                 }
                 #if DEBUG
-                print("🛑 Playback already stopped, skipping cleanup")
+                print("🛑 Playback already stopped, skipping cleanup (silent/effectiveSilent: \(effectiveSilent))")
                 #endif
                 return
             }
@@ -1941,7 +1953,7 @@ class DirectStreamingPlayer: NSObject {
             self.executeAudioOperation({
                 self.player?.pause()
                 self.player?.rate = 0.0
-                return ()
+                return ""
             }, completion: { _ in })
             
             // Cleanup continues immediately, not waiting for audio operation
@@ -1966,7 +1978,7 @@ class DirectStreamingPlayer: NSObject {
             
             if !silent {
                 DispatchQueue.main.async {
-                    self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_stopped"))
+                    if !effectiveSilent { self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_stopped")) }
                     completion?()
                 }
             } else {

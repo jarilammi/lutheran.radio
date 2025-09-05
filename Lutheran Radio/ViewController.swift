@@ -2235,8 +2235,11 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 print("🔗 Current selected stream: \(self.streamingPlayer.selectedStream.languageCode)")
                 #endif
                 
+                // Set flag very early, before any internal calls
+                self.streamingPlayer.isSwitchingStream = true
+                
                 // CRITICAL: Always stop current playback first, regardless of stream
-                self.streamingPlayer.stop { [weak self] in
+                self.streamingPlayer.stop(completion: { [weak self] in
                     guard let self = self else { return }
                     
                     // Find target stream
@@ -2245,9 +2248,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                         return
                     }
                     
-                    #if DEBUG
+#if DEBUG
                     print("🔗 FORCED STOP COMPLETED - Switching from \(self.streamingPlayer.selectedStream.language) to \(targetStream.language)")
-                    #endif
+#endif
                     
                     // Update state immediately
                     self.selectedStreamIndex = targetIndex
@@ -2269,7 +2272,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                             WidgetCenter.shared.reloadAllTimelines()
                         }
                     }
-                }
+                }, isSwitchingStream: true, silent: false)
             }
         }
         
@@ -2474,6 +2477,9 @@ extension ViewController {
             self.selectedStreamIndex = targetIndex
             self.updateBackground(for: targetStream)
             
+            // Set the flag early to suppress paused state during the stop
+            streamingPlayer.isSwitchingStream = true
+            
             self.streamingPlayer.stop(completion: { [weak self] in
                 guard let self = self else { return }
                 self.playTuningSound { [weak self] in
@@ -2491,9 +2497,12 @@ extension ViewController {
                         if !self.isManualPause {
                             self.startPlayback()
                         }
+                        
+                        // Reset the flag after playback starts (or attempted)
+                        self.streamingPlayer.isSwitchingStream = false
                     }
                 }
-            }, silent: true)
+            }, isSwitchingStream: true, silent: true)
             #if DEBUG
             print("🛑 Silent stop initiated")
             #endif
