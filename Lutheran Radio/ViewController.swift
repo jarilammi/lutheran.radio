@@ -236,32 +236,49 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         "ee": "estonia"
     ]
     
+    // MARK: - Haptic Engine
     private lazy var hapticEngine: CHHapticEngine? = {
         do {
             let engine = try CHHapticEngine()
             engine.playsHapticsOnly = true // Optimize for feedback only
+            
+            // Reset handler: Restart on interruptions
             engine.resetHandler = { [weak self] in
                 do {
-                    try self?.hapticEngine?.start()  // Auto-restart on interruptions
+                    try self?.hapticEngine?.start()
+                    #if DEBUG
+                    print("✅ Haptic engine restarted after reset")
+                    #endif
                 } catch {
                     #if DEBUG
-                    print("Failed to restart haptic engine: \(error)")
+                    print("❌ Failed to restart haptic engine after reset: \(error)")
                     #endif
                 }
             }
+            
+            // Stopped handler: Restart unless it's a fatal error or destroyed
             engine.stoppedHandler = { reason in
                 #if DEBUG
-                print("Haptic engine stopped: \(reason)")
+                print("⚠️ Haptic engine stopped: reason \(reason.rawValue)")
                 #endif
-                // Optionally restart if not a low-memory stop
-                if reason != .systemError {
-                    try? engine.start()
+                // Don't restart on systemError (-1) or engineDestroyed (5)
+                if reason != .systemError && reason != .engineDestroyed {
+                    do {
+                        try engine.start()
+                        #if DEBUG
+                        print("✅ Haptic engine auto-restarted")
+                        #endif
+                    } catch {
+                        #if DEBUG
+                        print("❌ Failed to auto-restart haptic engine: \(error)")
+                        #endif
+                    }
                 }
             }
             return engine
         } catch {
             #if DEBUG
-            print("Haptics unavailable: \(error)")
+            print("❌ Haptics unavailable during creation: \(error)")
             #endif
             return nil
         }
@@ -2546,15 +2563,16 @@ extension ViewController {
         do {
             try engine.start()
             #if DEBUG
-            print("Haptic engine started successfully")
+            print("✅ Haptic engine started successfully")
             #endif
         } catch {
             #if DEBUG
-            print("Failed to start haptic engine: \(error)")
+            print("❌ Failed to start haptic engine: \(error)")
             #endif
         }
     }
     
+    // MARK: - Toggle Playback
     @objc private func togglePlayback() {
         if isPlaying {
             pausePlayback()
@@ -2566,21 +2584,34 @@ extension ViewController {
         UIAccessibility.post(notification: .announcement, argument: isPlaying ? String(localized: "status_playing") : String(localized: "status_paused"))
     }
     
+    // MARK: - Play Haptic Feedback
     private func playHapticFeedback(style: UIImpactFeedbackGenerator.FeedbackStyle) {
+        // Early exit in Low Power Mode to conserve battery
+        guard !ProcessInfo.processInfo.isLowPowerModeEnabled else {
+            #if DEBUG
+            print("❌ Haptics skipped in Low Power Mode")
+            #endif
+            return
+        }
+        
+        // Check hardware support early
         guard CHHapticEngine.capabilitiesForHardware().supportsHaptics,
               let engine = hapticEngine else {
             #if DEBUG
-            print("Haptics not supported or engine unavailable")
+            print("❌ Haptics not supported or engine unavailable")
             #endif
             return
         }
         
         do {
-            // Map style to intensity/sharpness for custom feel
+            // Explicitly start the engine if it's not running. This is synchronous and throws if it can't start.
+            try engine.start()
+            
+            // Map style to custom intensity/sharpness (the custom vibration logic)
             let intensityValue: Float = (style == .heavy) ? 1.0 : 0.7
             let sharpnessValue: Float = (style == .heavy) ? 1.0 : 0.5
             
-            // Create a simple transient event (short vibration)
+            // Create a simple transient event (short custom vibration)
             let intensity = CHHapticEventParameter(parameterID: .hapticIntensity, value: intensityValue)
             let sharpness = CHHapticEventParameter(parameterID: .hapticSharpness, value: sharpnessValue)
             let event = CHHapticEvent(eventType: .hapticTransient, parameters: [intensity, sharpness], relativeTime: 0)
@@ -2593,12 +2624,15 @@ extension ViewController {
             try player.start(atTime: CHHapticTimeImmediate)
             
             #if DEBUG
-            print("Haptic played: style=\(style), intensity=\(intensityValue), sharpness=\(sharpnessValue)")
+            print("✅ Haptic played: style=\(style), intensity=\(intensityValue), sharpness=\(sharpnessValue)")
             #endif
         } catch {
             #if DEBUG
-            print("Failed to play haptic: \(error)")
+            print("❌ Failed to play haptic: \(error.localizedDescription)")
             #endif
+            // Fallback to UIImpactFeedbackGenerator if custom fails (but still respect LPM via the early guard)
+            let fallback = UIImpactFeedbackGenerator(style: style)
+            fallback.impactOccurred()
         }
     }
     
