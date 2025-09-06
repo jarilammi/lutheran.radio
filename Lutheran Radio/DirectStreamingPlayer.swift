@@ -522,6 +522,9 @@ class DirectStreamingPlayer: NSObject {
     private var statusObserver: NSKeyValueObservation?
     private var registeredKeyPaths: [ObjectIdentifier: Set<String>] = [:]
     private var removedObservers: Set<ObjectIdentifier> = []
+    /// Tracks whether a stream switch is in progress to suppress unnecessary "stopped" status updates.
+    /// - Note: Set to `true` by `ViewController` before stopping playback during a stream switch and reset to `false` after playback resumes. Used in `stop` to determine if status updates should be suppressed.
+    /// - Access: `internal` to allow coordination with `ViewController` within the module; not intended for external use.
     var isSwitchingStream = false // Track ongoing stream switches
     private var timeObserver: Any?
     private var timeObserverPlayer: AVPlayer? // Track the player that added the time observer
@@ -1865,9 +1868,10 @@ class DirectStreamingPlayer: NSObject {
     
     /// Stops playback and cleans up resources.
     /// - Parameters:
-    ///   - completion: Optional completion handler.
-    ///   - isSwitchingStream: If true, treats this as a stream switch (defaults to instance flag).
-    ///   - silent: If true, skips status update to "stopped" (for internal resets to avoid UI flash).
+    ///   - completion: Optional completion handler called after stopping.
+    ///   - isSwitchingStream: If `true`, treats this as a stream switch, suppressing "stopped" status updates unless explicitly overridden. Defaults to the instance’s `isSwitchingStream` flag.
+    ///   - silent: If `true`, skips all status updates to avoid UI flicker (e.g., during internal resets or stream switches).
+    /// - Note: When `isSwitchingStream` or `silent` is `true`, the "status_stopped" update is suppressed to prevent misleading UI changes during stream transitions. Calls `performActualStop` with an effective switching flag to handle status suppression.
     func stop(completion: (() -> Void)? = nil, isSwitchingStream: Bool? = nil, silent: Bool = false) {
         #if DEBUG
         print("🛑 FORCE STOPPING ALL PLAYBACK - isSwitchingStream: \(String(describing: isSwitchingStream))")
@@ -1899,9 +1903,10 @@ class DirectStreamingPlayer: NSObject {
 
     /// Performs the actual stop operation.
     /// - Parameters:
-    ///   - completion: Optional completion handler.
-    ///   - silent: If true, skips status update to "stopped".
-    ///   - effectiveSwitching: Indicates if this is part of a stream switch.
+    ///   - completion: Optional completion handler called after stopping.
+    ///   - silent: If `true`, skips all status updates to avoid UI flicker.
+    ///   - effectiveSwitching: If `true`, suppresses "status_stopped" updates during stream switches to prevent misleading UI changes.
+    /// - Note: Combines `silent` and `effectiveSwitching` into `effectiveSilent` to determine if status updates should be skipped. Ensures cleanup of player, resource loaders, and observers.
     private func performActualStop(completion: (() -> Void)? = nil, silent: Bool = false, effectiveSwitching: Bool) {
         clearSSLProtectionTimer()
         isSSLHandshakeComplete = true

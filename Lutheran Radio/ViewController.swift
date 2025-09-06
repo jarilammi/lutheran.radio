@@ -23,6 +23,9 @@
 /// - Article: Main UI and User Interaction Flow
 ///
 /// `ViewController` orchestrates the app's interface: title, language selector (`LanguageCell.swift`), play/pause controls, volume, and metadata display. It handles iOS 18 features like parallax effects, haptics, and low-power mode (`updateForEnergyEfficiency()`).
+/// - Stream Switching: Uses `DirectStreamingPlayer.isSwitchingStream` to suppress "stopped" status updates during language switches, preventing UI flicker and ensuring a seamless user experience.
+/// - Haptics: Provides tactile feedback for play/pause and stream switching using `CHHapticEngine` with a fallback to `UIImpactFeedbackGenerator`. Skips haptics in Low Power Mode to conserve battery.
+/// - Low Power Mode: Optimizes UI and processing (e.g., removes parallax, reduces image quality) when `ProcessInfo.processInfo.isLowPowerModeEnabled` is true.
 ///
 /// Key Interactions:
 /// - **Language Switching**: Uses `UICollectionView` with flags; updates stream in `DirectStreamingPlayer.swift` and saves to UserDefaults for widgets.
@@ -237,6 +240,14 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     ]
     
     // MARK: - Haptic Engine
+    /// Manages the `CHHapticEngine` for providing tactile feedback during user interactions (e.g., play/pause, stream switching).
+    /// - Features:
+    ///   - **Low Power Mode Support**: Skips haptics when `ProcessInfo.processInfo.isLowPowerModeEnabled` is true to conserve battery (iOS 18+ optimization).
+    ///   - **Reset Handling**: Automatically restarts the engine on interruptions (e.g., app backgrounding) via `resetHandler`.
+    ///   - **Stopped Handling**: Restarts the engine unless stopped due to fatal errors (`.systemError`) or destruction (`.engineDestroyed`).
+    ///   - **Fallback Mechanism**: Uses `UIImpactFeedbackGenerator` if `CHHapticEngine` fails to ensure reliable feedback.
+    ///   - **Hardware Check**: Verifies haptic support via `CHHapticEngine.capabilitiesForHardware().supportsHaptics` before initialization.
+    /// - Note: Optimized for low-latency feedback with `playsHapticsOnly = true`. Debug logs provide detailed feedback on engine state.
     private lazy var hapticEngine: CHHapticEngine? = {
         do {
             let engine = try CHHapticEngine()
@@ -407,6 +418,11 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         }
         
         configureAudioSession() // Configure audio session
+        // Initialize haptic engine early if hardware supports haptics to ensure low-latency feedback
+        if CHHapticEngine.capabilitiesForHardware().supportsHaptics {
+            _ = hapticEngine // Trigger lazy initialization
+            startHapticEngine()
+        }
         setupDarwinNotificationListener()
         setupUI()
         languageCollectionView.delegate = self
@@ -500,9 +516,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 self.restoreVolume() // Apply audio volume after playback starts
             }
         }
-        
-        // Start the haptic engine (preps for low-latency playback)
-        startHapticEngine()
     }
     
     private func preferredVolume() -> Float {
@@ -844,7 +857,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     }
     
     private func setupControls() {
-        playPauseButton.addTarget(self, action: #selector(playPauseTapped), for: .touchUpInside)
+        playPauseButton.addTarget(self, action: #selector(togglePlayback), for: .touchUpInside)
         playPauseButton.accessibilityIdentifier = "playPauseButton"
         playPauseButton.accessibilityHint = String(localized: "accessibility_hint_play_pause")
         playPauseButton.accessibilityLabel = String(localized: "accessibility_label_play")  // e.g., "Play" in Localizable.strings
@@ -2211,7 +2224,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         }
     }
 
-    /// Handle widget stream switch without tuning sounds
+    /// Handles widget-initiated stream switching to a specific language without playing tuning sounds.
+    /// - Parameter languageCode: The ISO language code to switch to (e.g., "en", "de").
+    /// - Note: Sets `streamingPlayer.isSwitchingStream = true` before stopping playback to suppress "stopped" status updates, ensuring smooth UI transitions. Resets `isSwitchingStream` after playback starts or fails. Updates UserDefaults and UI immediately for instant widget feedback.
     private func handleWidgetSwitchToLanguage(_ languageCode: String) {
         // CRITICAL: Debounce rapid widget switches
         let now = Date()
@@ -2248,9 +2263,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                         return
                     }
                     
-#if DEBUG
+                    #if DEBUG
                     print("🔗 FORCED STOP COMPLETED - Switching from \(self.streamingPlayer.selectedStream.language) to \(targetStream.language)")
-#endif
+                    #endif
                     
                     // Update state immediately
                     self.selectedStreamIndex = targetIndex
@@ -2348,7 +2363,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     }
     
     // MARK: - Widget and URL Scheme Handling
-    /// Checks for and handles pending actions from widgets (Updated)
+    /// Handles widget and URL scheme actions for playback control and stream switching.
+    /// - Note: Relies on `DirectStreamingPlayer.isSwitchingStream` (set to `internal`) to coordinate stream switches and suppress unnecessary "stopped" status updates during transitions. Ensures smooth UI updates for widget and URL scheme interactions.
     public func checkForPendingWidgetActions() {
         guard let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
             #if DEBUG
@@ -2458,8 +2474,10 @@ extension ViewController {
         }
     }
     
-    /// Public method to switch to a specific language stream
-    /// - Parameter languageCode: The language code to switch to (e.g., "en", "de", "fi", "sv", "ee")
+    /// Public method to switch to a specific language stream (callable from SceneDelegate).
+    /// - Parameter languageCode: The ISO language code to switch to (e.g., "en", "de", "fi", "sv", "ee").
+    /// - Note: Sets `streamingPlayer.isSwitchingStream = true` before stopping playback to suppress "stopped" status updates, ensuring smooth UI transitions. Resets `isSwitchingStream` after playback starts or fails. Plays a tuning sound for user feedback.
+    /// - Example: `handleSwitchToLanguage("en")` switches to the English stream, playing a tuning sound and suppressing "stopped" status during the transition.
     public func handleSwitchToLanguage(_ languageCode: String) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
@@ -2594,6 +2612,15 @@ extension ViewController {
     }
     
     // MARK: - Play Haptic Feedback
+    /// Plays haptic feedback for user interactions (e.g., play/pause) using `CHHapticEngine` with a fallback to `UIImpactFeedbackGenerator`.
+    /// - Parameter style: The feedback style (`.heavy` for play, `.medium` for pause).
+    /// - Features:
+    ///   - **Low Power Mode**: Skips haptics if `ProcessInfo.processInfo.isLowPowerModeEnabled` is true to conserve battery.
+    ///   - **Hardware Check**: Ensures haptic support via `CHHapticEngine.capabilitiesForHardware().supportsHaptics`.
+    ///   - **Custom Feedback**: Maps `.heavy` to intensity=1.0/sharpness=1.0 and `.medium` to intensity=0.7/sharpness=0.5 for distinct tactile feel.
+    ///   - **Fallback**: Uses `UIImpactFeedbackGenerator` if `CHHapticEngine` fails (e.g., engine not started or hardware issue).
+    /// - Note: Feedback is played synchronously after ensuring the engine is running. Debug logs track success/failure.
+    /// - SeeAlso: `hapticEngine` for details on haptic engine initialization and management.
     private func playHapticFeedback(style: UIImpactFeedbackGenerator.FeedbackStyle) {
         // Early exit in Low Power Mode to conserve battery
         guard !ProcessInfo.processInfo.isLowPowerModeEnabled else {
