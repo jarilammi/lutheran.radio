@@ -1366,25 +1366,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         saveStateForWidget()
     }
     
-    @objc func playPauseTapped() {
-        #if DEBUG
-        print("📱 playPauseTapped called from: \(Thread.callStackSymbols[1])")
-        #endif
-        UIView.animate(withDuration: 0.1, animations: {
-            self.playPauseButton.transform = CGAffineTransform(scaleX: 0.95, y: 0.95)
-        }) { _ in
-            UIView.animate(withDuration: 0.1) {
-                self.playPauseButton.transform = .identity
-            }
-        }
-        if isPlaying {
-            pausePlayback()
-        } else {
-            hasPermanentPlaybackError = false
-            startPlayback()
-        }
-    }
-    
     @objc private func volumeChanged(_ sender: UISlider) {
         streamingPlayer.setVolume(sender.value)
         sender.accessibilityValue = String(format: String(localized: "accessibility_value_volume"), Int(sender.value * 100))  // e.g., "75 percent"
@@ -2601,6 +2582,19 @@ extension ViewController {
     
     // MARK: - Toggle Playback
     @objc private func togglePlayback() {
+        #if DEBUG
+        print("📱 togglePlayback called from: \(Thread.callStackSymbols[1])")
+        #endif
+        
+        // Visual feedback: Scale animation
+        UIView.animate(withDuration: 0.1, animations: {
+            self.playPauseButton.transform = CGAffineTransform(scaleX: 0.95, y: 0.95)
+        }) { _ in
+            UIView.animate(withDuration: 0.1) {
+                self.playPauseButton.transform = .identity
+            }
+        }
+        
         if isPlaying {
             pausePlayback()
             playHapticFeedback(style: .medium) // Softer for pause
