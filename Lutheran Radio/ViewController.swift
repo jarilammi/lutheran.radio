@@ -2698,3 +2698,37 @@ extension ViewController {
         }
     }
 }
+
+// MARK: - StreamingPlayerDelegate Conformance
+extension ViewController: StreamingPlayerDelegate {
+    /// Handles status changes from DirectStreamingPlayer (e.g., playing, paused).
+    /// - Parameters:
+    ///   - status: The new player status (e.g., .playing, .paused).
+    ///   - reason: Optional reason for the change (e.g., "Interruption").
+    func onStatusChange(_ status: PlayerStatus, _ reason: String?) {
+        switch status {
+        case .playing:
+            safeUpdateStatusLabel(text: String(localized: "status_playing"), backgroundColor: .systemGreen, textColor: .white, isPermanentError: false)
+        case .paused:
+            let pauseText = (reason == "Interruption") ? "Paused - Call Active" : String(localized: "status_paused")
+            safeUpdateStatusLabel(text: pauseText, backgroundColor: .systemYellow, textColor: .label, isPermanentError: false)
+        case .stopped:
+            safeUpdateStatusLabel(text: String(localized: "status_stopped"), backgroundColor: .systemRed, textColor: .white, isPermanentError: false)
+        case .connecting:
+            safeUpdateStatusLabel(text: String(localized: "status_connecting"), backgroundColor: .systemBlue, textColor: .white, isPermanentError: false)
+        case .security:
+            safeUpdateStatusLabel(text: String(localized: "status_security_failed"), backgroundColor: .systemRed, textColor: .white, isPermanentError: true)
+        }
+        
+        // Add haptic or accessibility if needed (e.g., for resume after interruption)
+        if status == .playing && reason == nil {
+            playHapticFeedback(style: .light)  // Subtle resume feedback
+        }
+        
+        // Existing logic: Save state, announce, etc.
+        saveStateForWidget()
+        if let reason = reason {
+            UIAccessibility.post(notification: .announcement, argument: "Status: \(status) - \(reason)")
+        }
+    }
+}

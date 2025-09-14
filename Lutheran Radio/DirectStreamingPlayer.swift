@@ -12,6 +12,21 @@ import AVFoundation
 import dnssd
 import Network
 
+// MARK: - Delegate Protocol and Status Enum
+/// Protocol for delegate callbacks (e.g., UI updates from ViewController).
+protocol StreamingPlayerDelegate: AnyObject {
+    func onStatusChange(_ status: PlayerStatus, _ reason: String?)
+}
+
+/// Player status enum for callbacks
+enum PlayerStatus {
+    case playing
+    case paused
+    case stopped
+    case connecting
+    case security
+}
+
 /// - Article: Core Streaming and Privacy Architecture
 ///
 /// `DirectStreamingPlayer` is the heart of audio streaming, using AVFoundation for direct HTTPS playback with runtime SSL validation. It integrates with `CertificateValidator.swift` for certificate pinning and supports a transition period for rotations (July-August 2026).
@@ -188,6 +203,12 @@ class DirectStreamingPlayer: NSObject {
     private let validationCacheDuration: TimeInterval = 600 // 10 minutes
     private var isSSLHandshakeComplete = false
     private var hasStartedPlaying = false
+    
+    // MARK: - Audio Session Properties
+    private var interruptionObserver: NSObjectProtocol?
+    private var routeChangeObserver: NSObjectProtocol?
+    private var wasPlayingBeforeInterruption = false
+    private var isHandlingInterruption = false
     
     /// Represents the state of security model validation.
     enum ValidationState {
@@ -551,9 +572,10 @@ class DirectStreamingPlayer: NSObject {
         }
     }
     
-    private weak var delegate: AnyObject?
+    weak var delegate: StreamingPlayerDelegate?
     
-    func setDelegate(_ delegate: AnyObject?) {
+    /// Sets the delegate for callbacks (e.g., status updates).
+    func setDelegate(_ delegate: StreamingPlayerDelegate?) {
         self.delegate = delegate
     }
     
@@ -1262,6 +1284,8 @@ class DirectStreamingPlayer: NSObject {
                 }
             }
         }
+        
+        setupAudioSessionObservers()
     }
     
     private func playWithServer(_ server: Server, fallbackServers: [Server], completion: @escaping (Bool) -> Void) {
@@ -1885,6 +1909,8 @@ class DirectStreamingPlayer: NSObject {
         print("🛑 FORCE STOPPING ALL PLAYBACK - isSwitchingStream: \(String(describing: isSwitchingStream))")
         #endif
         
+        removeAudioSessionObservers()
+        
         // Clear all active SSL timers
         clearAllSSLProtectionTimers()
         
@@ -2140,6 +2166,10 @@ class DirectStreamingPlayer: NSObject {
         // Clean up Low Power Mode observer to prevent memory leaks.
         NotificationCenter.default.removeObserver(self, name: Notification.Name("NSProcessInfoPowerStateDidChangeNotification"), object: nil)
         
+        // MARK: - Additional Deinit Cleanup
+        removeAudioSessionObservers()
+        clearAllSSLProtectionTimers()  // Ensure existing SSL cleanup runs
+        
         #if DEBUG
         print("🧹 DirectStreamingPlayer deinit completed")
         #endif
@@ -2298,6 +2328,102 @@ extension DirectStreamingPlayer {
         DispatchQueue.main.asyncAfter(deadline: .now() + interruptionDelay) { [weak self] in
             guard let self = self, self.delegate != nil else { return }
             self.safeOnStatusChange(isPlaying: false, status: String(localized: "alert_retry"))
+        }
+    }
+}
+
+// MARK: - Audio Session Interruption Handling
+extension DirectStreamingPlayer {
+    /// Sets up AVAudioSession observers for interruptions and route changes.
+    /// - Note: Called in play() to avoid overhead when idle. Uses NotificationCenter for loose coupling.
+    nonisolated private func setupAudioSessionObservers() {
+        guard interruptionObserver == nil else { return }  // Idempotent
+
+        let session = AVAudioSession.sharedInstance()
+        interruptionObserver = NotificationCenter.default.addObserver(
+            forName: AVAudioSession.interruptionNotification,
+            object: session,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self else { return }
+            let info = notification.userInfo ?? [:]
+            let typeValue = info[AVAudioSessionInterruptionTypeKey] as? UInt
+            let type = AVAudioSession.InterruptionType(rawValue: typeValue ?? 0)
+
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                switch type {
+                case .began:
+                    #if DEBUG
+                    print("🔇 [AudioSession] Interruption began")
+                    #endif
+                    self.isHandlingInterruption = true
+                    self.wasPlayingBeforeInterruption = self.player?.rate ?? 0 > 0
+                    if self.wasPlayingBeforeInterruption {
+                        self.player?.pause()  // Graceful pause
+                        self.delegate?.onStatusChange(.paused, "Interruption")  // Notify UI
+                    }
+                case .ended:
+                    #if DEBUG
+                    print("🔊 [AudioSession] Interruption ended")
+                    #endif
+                    let optionsValue = info[AVAudioSessionInterruptionOptionKey] as? UInt
+                    let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue ?? 0)
+                    if options.contains(.shouldResume) && self.wasPlayingBeforeInterruption && !self.isSwitchingStream {
+                        // Async resume to avoid races (inspired by your Task.detached patterns)
+                        Task.detached(priority: .userInitiated) {
+                            try? await Task.sleep(for: .milliseconds(100))  // Brief delay for session settle
+                            _ = await MainActor.run {
+                                Task { @MainActor [weak self] in
+                                    guard let self else { return }
+                                    self.player?.play()
+                                    self.delegate?.onStatusChange(.playing, nil)
+                                }
+                            }
+                        }
+                    }
+                    self.isHandlingInterruption = false
+                    self.wasPlayingBeforeInterruption = false
+                default:
+                    // Fallback for unknown cases (exhaustive without @unknown)
+                    #if DEBUG
+                    print("⚠️ [AudioSession] Unknown interruption type: \(String(describing: type))")
+                    #endif
+                    break
+                }
+            }
+        }
+
+        // Optional: Handle route changes (e.g., AirPlay disconnect) for completeness
+        routeChangeObserver = NotificationCenter.default.addObserver(
+            forName: AVAudioSession.routeChangeNotification,
+            object: session,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                #if DEBUG
+                print("🔄 [AudioSession] Route changed")
+                #endif
+                // If disconnected during play, pause and notify
+                if self.player?.rate ?? 0 > 0 {
+                    self.player?.pause()
+                    self.delegate?.onStatusChange(.paused, "Route Change")
+                }
+            }
+        }
+    }
+
+    /// Cleans up observers.
+    nonisolated private func removeAudioSessionObservers() {
+        if let observer = interruptionObserver {
+            NotificationCenter.default.removeObserver(observer)
+            interruptionObserver = nil
+        }
+        if let observer = routeChangeObserver {
+            NotificationCenter.default.removeObserver(observer)
+            routeChangeObserver = nil
         }
     }
 }
