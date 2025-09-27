@@ -92,6 +92,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     private var pendingWidgetSwitchWorkItem: DispatchWorkItem?
     private var processedActionIds: Set<String> = []
     
+    private var lastCollectionViewSize: CGSize = .zero
+    
     /// Flag indicating if the device is in Low Power Mode (iOS 18+).
     /// - Returns: `true` if low power mode is enabled, triggering UI/processing optimizations.
     private var isLowEfficiencyMode: Bool {
@@ -520,7 +522,10 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        updateSelectionIndicator(to: selectedStreamIndex, isInitial: true)
+        if languageCollectionView.frame.size != lastCollectionViewSize {
+            updateSelectionIndicator(to: selectedStreamIndex, isInitial: true)
+            lastCollectionViewSize = languageCollectionView.frame.size
+        }
     }
     
     private func preferredVolume() -> Float {
