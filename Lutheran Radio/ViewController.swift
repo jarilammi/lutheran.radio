@@ -518,6 +518,11 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         }
     }
     
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        updateSelectionIndicator(to: selectedStreamIndex, isInitial: true)
+    }
+    
     private func preferredVolume() -> Float {
         guard let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
             return 0.5
