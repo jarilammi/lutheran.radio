@@ -1593,7 +1593,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     private func applyProcessedImage(_ image: UIImage, for stream: DirectStreamingPlayer.Stream) {
         // This runs on main thread
-        let screenSize = UIScreen.main.bounds.size
+        let screen = view.window?.windowScene?.screen
+        let screenSize = screen?.bounds.size ?? CGSize(width: 375, height: 667) // Fallback to default iPhone size if nil
         let isSmallScreen = screenSize.height < 1600
         
         backgroundImageView.image = image
