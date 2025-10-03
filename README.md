@@ -129,6 +129,12 @@ openssl s_client -connect livestream.lutheran.radio:8443 -servername livestream.
 
 Match the output against the ```SPKI-SHA256-BASE64``` value in ```Info.plist```. Update if necessary.
 
+## Memory Integrity Enforcement
+
+The app opts into iOS 26's Memory Integrity Enforcement (MIE) features, including the Enhanced Memory Tagging Extension (EMTE), to provide hardware-backed memory safety protections on compatible devices (e.g., iPhone 17 and later with A19 or newer chips). This helps mitigate memory corruption exploits, use-after-free vulnerabilities, and other memory-related security issues by enforcing tagged memory allocations, bounds checking, and pointer authentication at runtime.
+
+This feature enhances the app's defense-in-depth strategy, ensuring robust security for users on the latest iOS devices while maintaining backward compatibility.
+
 ## Security Model Validation
 
 The app enforces security model validation to ensure only versions with an approved security implementation can stream content. This protects against compromised or obsolete app versions.
