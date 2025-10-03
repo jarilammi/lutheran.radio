@@ -446,6 +446,8 @@
 				"CODE_SIGN_ENTITLEMENTS[sdk=*]" = LutheranRadioWidget/LutheranRadioWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_ENHANCED_SECURITY = YES;
+				ENABLE_POINTER_AUTHENTICATION = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = LutheranRadioWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = LutheranRadioWidget;
@@ -474,6 +476,8 @@
 				"CODE_SIGN_ENTITLEMENTS[sdk=*]" = LutheranRadioWidget/LutheranRadioWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_ENHANCED_SECURITY = YES;
+				ENABLE_POINTER_AUTHENTICATION = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = LutheranRadioWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = LutheranRadioWidget;
