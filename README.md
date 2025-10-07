@@ -135,13 +135,17 @@ The app opts into iOS 26's Memory Integrity Enforcement (MIE) features, includin
 
 This feature enhances the app's defense-in-depth strategy, ensuring robust security for users on the latest iOS devices while maintaining backward compatibility.
 
+The app enables additional MIE options for stricter memory protections:
+- `com.apple.security.hardened-process.checked-allocations.enable-pure-data = true`: Enforces pure data allocations to prevent executable code in data regions.
+- `com.apple.security.hardened-process.checked-allocations.no-tagged-receive = true`: Disallows receipt of tagged pointers from untrusted sources, preserving tag integrity.
+
 ## Security Model Validation
 
 The app enforces security model validation to ensure only versions with an approved security implementation can stream content. This protects against compromised or obsolete app versions.
 
 1. **Domain:** ```securitymodels.lutheran.radio```
-2. **Mechanism:** Queries a DNS TXT record for a comma-separated list of valid security models (e.g., `"dc,florida,tampa,atlanta"`)
-3. **Pinned Value:** Fixed security model string embedded in the app (currently `"atlanta"`)
+2. **Mechanism:** Queries a DNS TXT record for a comma-separated list of valid security models (e.g., `"dc,florida,tampa,atlanta,birmingham"`)
+3. **Pinned Value:** Fixed security model string embedded in the app (currently `"birmingham"`)
 4. **Location:** Defined in `DirectStreamingPlayer.swift` as `appSecurityModel`
 5. **Behavior:** If the app’s security model isn’t in the TXT record, playback is permanently disabled with a user-facing error message
 
@@ -162,10 +166,10 @@ dig +short TXT securitymodels.lutheran.radio
 Example output:
 
 ```
-"dc,florida,tampa,atlanta"
+"dc,florida,tampa,atlanta,birmingham"
 ```
 
-Compare this output to the security model defined in the app (found in ```DirectStreamingPlayer.swift``` as ```appSecurityModel```). If the app’s model (e.g., "atlanta") isn’t listed, it will fail validation. To update the list, modify the TXT record for ```securitymodels.lutheran.radio``` through the DNS management interface for the ```lutheran.radio``` domain.
+Compare this output to the security model defined in the app (found in ```DirectStreamingPlayer.swift``` as ```appSecurityModel```). If the app’s model (e.g., "birmingham") isn’t listed, it will fail validation. To update the list, modify the TXT record for ```securitymodels.lutheran.radio``` through the DNS management interface for the ```lutheran.radio``` domain.
 
 ### Security Model Validation Cache
 
@@ -197,7 +201,7 @@ This feature enhances availability while maintaining the app's privacy-first pri
 
 ### Security Model TXT Record Usage
 
-Lutheran Radio's security system uses a DNS TXT record to ensure only trusted app versions can stream content. The longest practical TXT record length for this purpose is about 450 bytes, which fits within standard DNS limits and supports up to 40-50 security model names (like "landvetter" or "nuuk"). This is more than enough for the current 24-byte record. If you need to use more names in the future, check that your DNS supports larger messages (EDNS0) and test the app to confirm it can handle them. Keep an eye on how your DNS behaves to ensure everything works smoothly, keeping the app secure and reliable for all users.
+Lutheran Radio's security system uses a DNS TXT record to ensure only trusted app versions can stream content. The longest practical TXT record length for this purpose is about 450 bytes, which fits within standard DNS limits and supports up to 40-50 security model names (like "landvetter" or "nuuk"). This is more than enough for the current 34-byte record. If you need to use more names in the future, check that your DNS supports larger messages (EDNS0) and test the app to confirm it can handle them. Keep an eye on how your DNS behaves to ensure everything works smoothly, keeping the app secure and reliable for all users.
 
 ### Security Model History
 
@@ -215,6 +219,7 @@ To prevent naming collisions and maintain a clear history of security models, th
 | `florida`           | August 24, 2025  | (ongoing)       | 1.2.7                  |
 | `tampa`             | August 31, 2025  | (ongoing)       | 1.2.8                  |
 | `atlanta`           | October 6, 2025  | (ongoing)       | 26.0.1                 |
+| `birmingham`        | (pending)        | (pending)       | (pending)              |
 
 **Notes:**
 - **Valid From:** The date when the security model was first published to the App Store.
@@ -232,7 +237,7 @@ When introducing a new security model:
 
 ### Why Track Security Model Names?
 
-Security model names (e.g., ```atlanta```) are embedded in the app and validated against the DNS TXT record. Once a name is used, it becomes part of the app's history and may still exist in older versions. Reusing a name could inadvertently allow a deprecated or compromised version to pass validation, undermining security. By maintaining this table, we ensure that:
+Security model names (e.g., ```birmingham```) are embedded in the app and validated against the DNS TXT record. Once a name is used, it becomes part of the app's history and may still exist in older versions. Reusing a name could inadvertently allow a deprecated or compromised version to pass validation, undermining security. By maintaining this table, we ensure that:
 
 - New security model names are unique and avoid collisions with past names.
 - The history of security models is transparent for debugging and auditing.

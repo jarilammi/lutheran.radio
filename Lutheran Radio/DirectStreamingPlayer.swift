@@ -192,7 +192,7 @@ class NWPathMonitorAdapter: NetworkPathMonitoring {
 /// Manages direct audio streaming, security validation, network monitoring, and privacy protections for the Lutheran Radio app.
 class DirectStreamingPlayer: NSObject {
     // MARK: - Security Model
-    private let appSecurityModel = "atlanta"
+    private let appSecurityModel = "birmingham"
     private var isValidating = false
     #if DEBUG
     /// The last time security validation was performed (exposed for debugging).
