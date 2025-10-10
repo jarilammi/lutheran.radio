@@ -2742,4 +2742,56 @@ extension ViewController: StreamingPlayerDelegate {
             UIAccessibility.post(notification: .announcement, argument: "Status: \(status) - \(reason)")
         }
     }
+    
+    // MARK: - Widget Action Handling
+
+    /// Handles widget-initiated actions via URL schemes.
+    public func handleWidgetAction(action: String, parameter: String?, actionId: String) {
+        guard !processedActionIds.contains(actionId) else {
+            #if DEBUG
+            print("🔗 Skipping duplicate widget action ID: \(actionId)")
+            #endif
+            return
+        }
+        processedActionIds.insert(actionId)
+        
+        switch action {
+        case "play":
+            if !SharedPlayerManager.shared.isPlaying {
+                togglePlayback()
+            }
+        case "pause":
+            if SharedPlayerManager.shared.isPlaying {
+                togglePlayback()
+            }
+        case "switch":
+            if let languageCode = parameter,
+               let targetStream = DirectStreamingPlayer.availableStreams.first(where: { $0.languageCode == languageCode }),
+               let newIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.languageCode == languageCode }) {
+                
+                // Perform the stream switch
+                SharedPlayerManager.shared.switchToStream(targetStream)
+                
+                // Update UI
+                selectedStreamIndex = newIndex
+                languageCollectionView.selectItem(at: IndexPath(row: newIndex, section: 0), animated: true, scrollPosition: .centeredHorizontally)
+                updateSelectionIndicator(to: newIndex)
+                updateBackground(for: targetStream)
+                
+                // Provide feedback
+                playHapticFeedback(style: .medium)
+                UIAccessibility.post(notification: .announcement, argument: String(localized: "switched_to_language \(targetStream.language)"))
+                
+                // Save state for widget consistency
+                saveStateForWidget()
+            }
+        default:
+            #if DEBUG
+            print("🔗 Unknown widget action: \(action)")
+            #endif
+        }
+        
+        // Clear the pending action
+        SharedPlayerManager.shared.clearPendingAction(actionId: actionId)
+    }
 }

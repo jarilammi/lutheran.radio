@@ -9,6 +9,10 @@ import Foundation
 import AVFoundation
 import WidgetKit
 
+extension Notification.Name {
+    static let streamSwitchCompleted = Notification.Name("radio.lutheran.streamSwitchCompleted")
+}
+
 /// - Article: Shared State Management for Widgets and Extensions
 ///
 /// `SharedPlayerManager` enables safe state sharing between the main app, widgets, and Live Activities using App Groups and UserDefaults. It prevents crashes in widget contexts by lazy-loading `DirectStreamingPlayer.swift` only in the main app.
@@ -46,8 +50,21 @@ class SharedPlayerManager {
     private var lastSavedState: (isPlaying: Bool, currentLanguage: String, hasError: Bool)?
     private var lastSaveTime: Date?
     private let minSaveInterval: TimeInterval = 1.0
+    private var pendingStreamSwitches: [DirectStreamingPlayer.Stream] = []
+    private var streamSwitchObserver: NSObjectProtocol?
     
-    private init() {}
+    private let streamSwitchQueue = DispatchQueue(label: "radio.lutheran.streamSwitchQueue", qos: .userInitiated)
+    
+    private init() {
+        setupStreamSwitchObserver()
+    }
+    
+    deinit {
+        if let observer = streamSwitchObserver {
+            NotificationCenter.default.removeObserver(observer)
+            streamSwitchObserver = nil
+        }
+    }
     
     // Widget-safe methods that won't crash
     var isPlaying: Bool {
@@ -144,18 +161,32 @@ class SharedPlayerManager {
             #if DEBUG
             print("🔗 Widget stream switch scheduled: \(stream.languageCode)")
             #endif
-            
             return
         }
         
-        // Main app context - ensure immediate update
-        // CRITICAL FIX: Update UserDefaults BEFORE stopping player
+        // Main app context - check if a switch is in progress
+        if player?.isSwitchingStream == true {
+            // Queue the stream switch
+            pendingStreamSwitches.append(stream)
+            #if DEBUG
+            print("🔗 Queued stream switch for \(stream.languageCode), queue size: \(pendingStreamSwitches.count)")
+            #endif
+            return
+        }
+        
+        // Update UserDefaults BEFORE stopping player
         sharedDefaults?.set(stream.languageCode, forKey: "currentLanguage")
         sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "lastUpdateTime")
         sharedDefaults?.synchronize()
         
-        guard let player = self.player else { return }
+        guard let player = self.player else {
+            #if DEBUG
+            print("🔗 No player available for stream switch")
+            #endif
+            return
+        }
         
+        let wasPlaying = player.isPlaying
         player.stop { [weak self] in
             guard let self = self else { return }
             player.resetTransientErrors()
@@ -168,17 +199,32 @@ class SharedPlayerManager {
             WidgetCenter.shared.reloadAllTimelines()
             
             // Only auto-play if not manually paused
-            if !self.loadSharedState().isPlaying {
-                return
+            if wasPlaying {
+                player.play { [weak self] success in
+                    guard let self = self else { return }
+                    #if DEBUG
+                    print("📱 Direct stream switch \(success ? "succeeded" : "failed") for \(stream.language), URL: \(stream.url)")
+                    #endif
+                    // Save state again after play attempt
+                    self.saveCurrentState()
+                    // Process next queued switch
+                    self.processNextStreamSwitch()
+                }
+            } else {
+                // Process next queued switch
+                self.processNextStreamSwitch()
             }
-            
-            player.play { success in
-                #if DEBUG
-                print("📱 Direct stream switch \(success ? "succeeded" : "failed") for \(stream.language)")
-                #endif
-                // Save state again after play attempt
-                self.saveCurrentState()
-            }
+        }
+    }
+    
+    private func processNextStreamSwitch() {
+        streamSwitchQueue.async { [weak self] in
+            guard let self = self, !self.pendingStreamSwitches.isEmpty else { return }
+            let nextStream = self.pendingStreamSwitches.removeFirst()
+            #if DEBUG
+            print("🔗 Processing queued stream switch to \(nextStream.languageCode), queue size: \(self.pendingStreamSwitches.count)")
+            #endif
+            self.switchToStream(nextStream)
         }
     }
     
@@ -288,6 +334,17 @@ class SharedPlayerManager {
 extension SharedPlayerManager {
     private var sharedDefaults: UserDefaults? {
         return UserDefaults(suiteName: "group.radio.lutheran.shared")
+    }
+    
+    private func setupStreamSwitchObserver() {
+        streamSwitchObserver = NotificationCenter.default.addObserver(
+            forName: .streamSwitchCompleted,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self = self else { return }
+            self.processNextStreamSwitch()
+        }
     }
     
     // MARK: - Refined post-initialization throttling

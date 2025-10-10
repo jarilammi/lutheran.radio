@@ -1380,6 +1380,13 @@ class DirectStreamingPlayer: NSObject {
         // CRITICAL: Update selectedStream immediately and atomically
         selectedStream = stream
         
+        // Update AVPlayer with new stream URL
+        playerItem = nil
+        player?.replaceCurrentItem(with: nil)
+        let newPlayerItem = AVPlayerItem(url: stream.url)
+        playerItem = newPlayerItem
+        player?.replaceCurrentItem(with: newPlayerItem)
+        
         // Force immediate state save to prevent race conditions
         SharedPlayerManager.shared.saveCurrentState()
         
@@ -1408,8 +1415,7 @@ class DirectStreamingPlayer: NSObject {
                     }
                     defer { self.isSwitchingStream = false }
                     
-                    if isValid {
-                    } else {
+                    if !isValid {
                         let status = self.validationState == .failedPermanent ? "status_security_failed" : "status_no_internet"
                         DispatchQueue.main.async {
                             self.safeOnStatusChange(isPlaying: false, status: NSLocalizedString(status, comment: ""))
@@ -1417,7 +1423,9 @@ class DirectStreamingPlayer: NSObject {
                     }
                 }
             } else if self.validationState == .success {
-                do { self.isSwitchingStream = false }
+                self.isSwitchingStream = false
+                // Notify that stream switch is complete to process queued requests
+                NotificationCenter.default.post(name: .streamSwitchCompleted, object: nil)
             } else {
                 defer { self.isSwitchingStream = false }
                 let status = self.validationState == .failedPermanent ? "status_security_failed" : "status_no_internet"
