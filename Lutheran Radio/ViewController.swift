@@ -2219,7 +2219,15 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     /// Handles widget-initiated stream switching to a specific language without playing tuning sounds.
     /// - Parameter languageCode: The ISO language code to switch to (e.g., "en", "de").
     /// - Note: Sets `streamingPlayer.isSwitchingStream = true` before stopping playback to suppress "stopped" status updates, ensuring smooth UI transitions. Resets `isSwitchingStream` after playback starts or fails. Updates UserDefaults and UI immediately for instant widget feedback.
-    private func handleWidgetSwitchToLanguage(_ languageCode: String) {
+    public func handleWidgetSwitchToLanguage(_ languageCode: String, actionId: String) {
+        guard !processedActionIds.contains(actionId) else {
+            #if DEBUG
+            print("🔗 Skipping duplicate widget switch action ID: \(actionId)")
+            #endif
+            return
+        }
+        processedActionIds.insert(actionId)
+        
         // CRITICAL: Debounce rapid widget switches
         let now = Date()
         if let lastSwitch = lastWidgetSwitchTime, now.timeIntervalSince(lastSwitch) < 2.0 {
@@ -2281,6 +2289,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                     }
                 }, isSwitchingStream: true, silent: false)
             }
+            
+            // Clear pending action AFTER processing (consistent with handleWidgetAction)
+            SharedPlayerManager.shared.clearPendingAction(actionId: actionId)
         }
         
         pendingWidgetSwitchWorkItem = workItem
@@ -2398,7 +2409,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 #if DEBUG
                 print("🔗 Executing widget switch action to language: \(languageCode)")
                 #endif
-                handleWidgetSwitchToLanguage(languageCode)
+                handleWidgetSwitchToLanguage(languageCode, actionId: actionId)
             } else {
                 #if DEBUG
                 print("🔗 Switch action missing language code - pendingLanguage was nil")
