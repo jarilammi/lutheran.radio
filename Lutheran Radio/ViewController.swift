@@ -2780,6 +2780,8 @@ extension ViewController: StreamingPlayerDelegate {
                let targetStream = DirectStreamingPlayer.availableStreams.first(where: { $0.languageCode == languageCode }),
                let newIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.languageCode == languageCode }) {
                 
+                let wasPlaying = SharedPlayerManager.shared.isPlaying
+                
                 // Perform the stream switch
                 SharedPlayerManager.shared.switchToStream(targetStream)
                 
@@ -2789,7 +2791,14 @@ extension ViewController: StreamingPlayerDelegate {
                 updateSelectionIndicator(to: newIndex)
                 updateBackground(for: targetStream)
                 
-                // Provide feedback
+                // Fallback resume after delay
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    if wasPlaying && !SharedPlayerManager.shared.isPlaying {
+                        SharedPlayerManager.shared.play { _ in }
+                    }
+                }
+                
+                // Feedback and save
                 playHapticFeedback(style: .medium)
                 UIAccessibility.post(notification: .announcement, argument: String(localized: "switched_to_language \(targetStream.language)"))
                 
@@ -2800,6 +2809,7 @@ extension ViewController: StreamingPlayerDelegate {
             #if DEBUG
             print("🔗 Unknown widget action: \(action)")
             #endif
+            break
         }
         
         // Clear the pending action
