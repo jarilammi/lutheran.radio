@@ -2219,7 +2219,15 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     /// Handles widget-initiated stream switching to a specific language without playing tuning sounds.
     /// - Parameter languageCode: The ISO language code to switch to (e.g., "en", "de").
     /// - Note: Sets `streamingPlayer.isSwitchingStream = true` before stopping playback to suppress "stopped" status updates, ensuring smooth UI transitions. Resets `isSwitchingStream` after playback starts or fails. Updates UserDefaults and UI immediately for instant widget feedback.
-    private func handleWidgetSwitchToLanguage(_ languageCode: String) {
+    public func handleWidgetSwitchToLanguage(_ languageCode: String, actionId: String) {
+        guard !processedActionIds.contains(actionId) else {
+            #if DEBUG
+            print("🔗 Skipping duplicate widget switch action ID: \(actionId)")
+            #endif
+            return
+        }
+        processedActionIds.insert(actionId)
+        
         // CRITICAL: Debounce rapid widget switches
         let now = Date()
         if let lastSwitch = lastWidgetSwitchTime, now.timeIntervalSince(lastSwitch) < 2.0 {
@@ -2281,6 +2289,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                     }
                 }, isSwitchingStream: true, silent: false)
             }
+            
+            // Clear pending action AFTER processing (consistent with handleWidgetAction)
+            SharedPlayerManager.shared.clearPendingAction(actionId: actionId)
         }
         
         pendingWidgetSwitchWorkItem = workItem
@@ -2398,7 +2409,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 #if DEBUG
                 print("🔗 Executing widget switch action to language: \(languageCode)")
                 #endif
-                handleWidgetSwitchToLanguage(languageCode)
+                handleWidgetSwitchToLanguage(languageCode, actionId: actionId)
             } else {
                 #if DEBUG
                 print("🔗 Switch action missing language code - pendingLanguage was nil")
@@ -2741,5 +2752,67 @@ extension ViewController: StreamingPlayerDelegate {
         if let reason = reason {
             UIAccessibility.post(notification: .announcement, argument: "Status: \(status) - \(reason)")
         }
+    }
+    
+    // MARK: - Widget Action Handling
+
+    /// Handles widget-initiated actions via URL schemes.
+    public func handleWidgetAction(action: String, parameter: String?, actionId: String) {
+        guard !processedActionIds.contains(actionId) else {
+            #if DEBUG
+            print("🔗 Skipping duplicate widget action ID: \(actionId)")
+            #endif
+            return
+        }
+        processedActionIds.insert(actionId)
+        
+        switch action {
+        case "play":
+            if !SharedPlayerManager.shared.isPlaying {
+                togglePlayback()
+            }
+        case "pause":
+            if SharedPlayerManager.shared.isPlaying {
+                togglePlayback()
+            }
+        case "switch":
+            if let languageCode = parameter,
+               let targetStream = DirectStreamingPlayer.availableStreams.first(where: { $0.languageCode == languageCode }),
+               let newIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.languageCode == languageCode }) {
+                
+                let wasPlaying = SharedPlayerManager.shared.isPlaying
+                
+                // Perform the stream switch
+                SharedPlayerManager.shared.switchToStream(targetStream)
+                
+                // Update UI
+                selectedStreamIndex = newIndex
+                languageCollectionView.selectItem(at: IndexPath(row: newIndex, section: 0), animated: true, scrollPosition: .centeredHorizontally)
+                updateSelectionIndicator(to: newIndex)
+                updateBackground(for: targetStream)
+                
+                // Fallback resume after delay
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    if wasPlaying && !SharedPlayerManager.shared.isPlaying {
+                        SharedPlayerManager.shared.play { _ in }
+                    }
+                }
+                
+                // Feedback and save
+                playHapticFeedback(style: .medium)
+                UIAccessibility.post(notification: .announcement, argument: String(localized: "switched_to_language \(targetStream.language)"))
+                
+                // Save state for widget consistency
+                saveStateForWidget()
+            }
+        default:
+            #if DEBUG
+            print("🔗 Unknown widget action: \(action)")
+            #endif
+            break
+        }
+        
+        // Clear the pending action
+        SharedPlayerManager.shared.clearPendingAction(actionId: actionId)
     }
 }

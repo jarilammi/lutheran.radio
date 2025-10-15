@@ -92,8 +92,28 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     /// Called when the app is opened via URL scheme
     func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
-        guard let url = URLContexts.first?.url else { return }
-        handleURLScheme(url)
+        guard let url = URLContexts.first?.url,
+              url.scheme == "lutheranradio",
+              url.host == "widget-action",
+              let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let action = components.queryItems?.first(where: { $0.name == "action" })?.value,
+              let actionId = components.queryItems?.first(where: { $0.name == "actionId" })?.value else {
+            return
+        }
+        
+        let parameter = components.queryItems?.first(where: { $0.name == "parameter" })?.value
+        
+        // Get the ViewController instance
+        if let windowScene = scene as? UIWindowScene,
+           let window = windowScene.windows.first,
+           let viewController = window.rootViewController as? ViewController {
+            if action == "switch", let languageCode = parameter {
+                viewController.handleWidgetSwitchToLanguage(languageCode, actionId: actionId)
+                SharedPlayerManager.shared.clearPendingAction(actionId: actionId)
+            } else {
+                viewController.handleWidgetAction(action: action, parameter: parameter, actionId: actionId)
+            }
+        }
     }
 
     /// Handles incoming URL schemes from widgets or external sources
