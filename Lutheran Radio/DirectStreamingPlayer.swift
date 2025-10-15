@@ -543,15 +543,13 @@ class DirectStreamingPlayer: NSObject {
     
     var hasPermanentError: Bool = false
     private var statusObserver: NSKeyValueObservation?
-    private var registeredKeyPaths: [ObjectIdentifier: Set<String>] = [:]
-    private var removedObservers: Set<ObjectIdentifier> = []
     /// Tracks whether a stream switch is in progress to suppress unnecessary "stopped" status updates.
     /// - Note: Set to `true` by `ViewController` before stopping playback during a stream switch and reset to `false` after playback resumes. Used in `stop` to determine if status updates should be suppressed.
     /// - Access: `internal` to allow coordination with `ViewController` within the module; not intended for external use.
     var isSwitchingStream = false // Track ongoing stream switches
     private var timeObserver: Any?
     private var timeObserverPlayer: AVPlayer? // Track the player that added the time observer
-    private var isObservingBuffer = false
+    private var playerItemObservations: [NSKeyValueObservation] = []  // Store all playerItem observations
     private var bufferingTimer: Timer?
     private var activeResourceLoaders: [AVAssetResourceLoadingRequest: StreamingSessionDelegate] = [:] // Track resource loaders
     
@@ -1650,18 +1648,14 @@ class DirectStreamingPlayer: NSObject {
         audioQueue.async { [weak self] in
             guard let self = self else { return }
             
-            // Remove existing observers for the current playerItem
-            if let currentPlayerItem = self.playerItem {
-                self.removeObservers(for: currentPlayerItem)
-            }
+            // Clear existing observations
+            self.playerItemObservations.forEach { $0.invalidate() }
+            self.playerItemObservations.removeAll()
             
             guard let playerItem = self.playerItem else { return }
             
-            let playerItemKey = ObjectIdentifier(playerItem)
-            var keyPathsSet = self.registeredKeyPaths[playerItemKey] ?? Set<String>()
-            
-            // FIXED: Simplified status observer without SSL conflicts
-            self.statusObserver = playerItem.observe(\.status, options: [.new, .initial]) { [weak self] item, _ in
+            // Status observer (unchanged logic)
+            let statusObs = playerItem.observe(\.status, options: [.new, .initial]) { [weak self] item, _ in
                 guard let self = self else { return }
                 DispatchQueue.main.async {
                     #if DEBUG
@@ -1693,27 +1687,69 @@ class DirectStreamingPlayer: NSObject {
                     }
                 }
             }
+            self.playerItemObservations.append(statusObs)
             #if DEBUG
-            print("🧹 Added status observer for playerItem \(playerItemKey)")
+            print("🧹 Added status observer")
             #endif
             
-            // Add buffer observers (unchanged)
-            let keyPaths = [
-                "playbackBufferEmpty",
-                "playbackLikelyToKeepUp",
-                "playbackBufferFull"
-            ]
-            for keyPath in keyPaths {
-                playerItem.addObserver(self, forKeyPath: keyPath, options: .new, context: nil)
-                keyPathsSet.insert(keyPath)
-                #if DEBUG
-                print("🧹 Added observer for \(keyPath) to playerItem \(playerItemKey)")
-                #endif
+            // Buffer observers (migrated to closures)
+            let bufferEmptyObs = playerItem.observe(\.isPlaybackBufferEmpty, options: [.new]) { [weak self] item, change in
+                guard let self = self, let newValue = change.newValue, newValue else { return }
+                DispatchQueue.main.async {
+                    if let error = item.error as NSError?, error.domain == "AVFoundationErrorDomain" {
+                        #if DEBUG
+                        print("🎵 Buffer empty with AVFoundation error detected, attempting recovery")
+                        #endif
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                            self.recreatePlayerItem()
+                        }
+                        return
+                    }
+                    self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_buffering"))
+                    self.startBufferingTimer()
+                }
             }
-            self.registeredKeyPaths[playerItemKey] = keyPathsSet
-            self.isObservingBuffer = true
+            self.playerItemObservations.append(bufferEmptyObs)
             
-            // Add time observer (unchanged)
+            let likelyToKeepUpObs = playerItem.observe(\.isPlaybackLikelyToKeepUp, options: [.new]) { [weak self] item, change in
+                guard let self = self, let newValue = change.newValue else { return }
+                DispatchQueue.main.async {
+                    if newValue && item.status == .readyToPlay {
+                        self.player?.play()
+                        self.safeOnStatusChange(isPlaying: true, status: String(localized: "status_playing"))
+                        self.stopBufferingTimer()
+                    } else if !newValue && self.player?.rate == 0 {
+                        let stalledDelay: TimeInterval = self.isLowEfficiencyMode ? 20.0 : 10.0
+                        DispatchQueue.main.asyncAfter(deadline: .now() + stalledDelay) { [weak self] in
+                            guard let self = self,
+                                  let currentItem = self.playerItem,
+                                  currentItem == item,
+                                  !currentItem.isPlaybackLikelyToKeepUp,
+                                  self.player?.rate == 0 else { return }
+                            #if DEBUG
+                            print("🔄 Stalled playback detected, attempting recovery")
+                            #endif
+                            self.recreatePlayerItem()
+                        }
+                    }
+                }
+            }
+            self.playerItemObservations.append(likelyToKeepUpObs)
+            
+            let bufferFullObs = playerItem.observe(\.isPlaybackBufferFull, options: [.new]) { [weak self] item, change in
+                guard let self = self, let newValue = change.newValue, newValue else { return }
+                DispatchQueue.main.async {
+                    self.player?.play()
+                    self.safeOnStatusChange(isPlaying: true, status: String(localized: "status_playing"))
+                    self.stopBufferingTimer()
+                }
+            }
+            self.playerItemObservations.append(bufferFullObs)
+            #if DEBUG
+            print("🧹 Added buffer observers")
+            #endif
+            
+            // Time observer (unchanged)
             let interval = CMTime(seconds: 1.0, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
             if let player = self.player, self.timeObserver == nil {
                 self.timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] _ in
@@ -1730,128 +1766,15 @@ class DirectStreamingPlayer: NSObject {
         }
     }
     
-    // Add new methods for observer removal
+    // Methods for observer removal
     func removeObservers(for playerItem: AVPlayerItem?) {
-        guard let playerItem = playerItem else { return }
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            self.removeObserversFrom(playerItem)
-        }
+        self.playerItemObservations.forEach { $0.invalidate() }
+        self.playerItemObservations.removeAll()
     }
 
     private func removeObserversFrom(_ playerItem: AVPlayerItem) {
-        let playerItemKey = ObjectIdentifier(playerItem)
-        
-        // Remove status observer if it's for this playerItem
-        if let statusObserver = self.statusObserver {
-            statusObserver.invalidate()
-            self.statusObserver = nil
-            #if DEBUG
-            print("🧹 Removed status observer for playerItem \(playerItemKey)")
-            #endif
-        }
-        
-        // Remove buffer observers
-        if let keyPathsSet = self.registeredKeyPaths[playerItemKey] {
-            for keyPath in keyPathsSet {
-                playerItem.removeObserver(self, forKeyPath: keyPath)
-                #if DEBUG
-                print("🧹 Removed observer for \(keyPath) from playerItem \(playerItemKey)")
-                #endif
-            }
-            self.registeredKeyPaths.removeValue(forKey: playerItemKey)
-        }
-    }
-    
-    override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
-        guard let keyPath = keyPath, let playerItem = object as? AVPlayerItem else { return }
-        
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self, self.delegate != nil else { return }
-            
-            // NEW: Add status monitoring for failed player items
-            if keyPath == "status" {
-                if playerItem.status == .failed {
-                    #if DEBUG
-                    print("🎵 Player item failed with error: \(playerItem.error?.localizedDescription ?? "Unknown")")
-                    if let error = playerItem.error as NSError? {
-                        print("🎵 Error domain: \(error.domain), code: \(error.code)")
-                    }
-                    #endif
-                    
-                    // Check for decoder-related failures (expanded error codes)
-                    if let error = playerItem.error as NSError? {
-                        let isDecoderError = error.domain == "AVFoundationErrorDomain" &&
-                                           (error.code == -11819 ||  // Media services reset
-                                            error.code == -11839 ||  // Cannot decode
-                                            error.code == -12913)    // Decoder busy
-                        
-                        if isDecoderError {
-                            #if DEBUG
-                            print("🔄 AVFoundation decoder error detected, initiating recovery")
-                            #endif
-                            
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                                self.recreatePlayerItem()
-                            }
-                            return
-                        }
-                    }
-                    
-                    // Handle other types of failures
-                    self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_stream_unavailable"))
-                }
-                
-            } else if keyPath == "playbackBufferEmpty" {
-                if playerItem.isPlaybackBufferEmpty {
-                    // ENHANCED: Expand your existing decoder error detection
-                    if let error = playerItem.error as NSError?,
-                       error.domain == "AVFoundationErrorDomain" {
-                        #if DEBUG
-                        print("🎵 Buffer empty with AVFoundation error detected, attempting recovery")
-                        #endif
-                        
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                            self.recreatePlayerItem()
-                        }
-                        return
-                    }
-                    
-                    self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_buffering"))
-                    self.startBufferingTimer()
-                }
-                
-            } else if keyPath == "playbackLikelyToKeepUp" {
-                if playerItem.isPlaybackLikelyToKeepUp && playerItem.status == .readyToPlay {
-                    self.player?.play()
-                    self.safeOnStatusChange(isPlaying: true, status: String(localized: "status_playing"))
-                    self.stopBufferingTimer()
-                } else if !playerItem.isPlaybackLikelyToKeepUp && self.player?.rate == 0 {
-                    // NEW: Add stalled playback detection
-                    let stalledDelay: TimeInterval = self.isLowEfficiencyMode ? 20.0 : 10.0
-                    DispatchQueue.main.asyncAfter(deadline: .now() + stalledDelay) { [weak self] in
-                        guard let self = self,
-                              let currentItem = self.playerItem,
-                              currentItem == playerItem,
-                              !currentItem.isPlaybackLikelyToKeepUp,
-                              self.player?.rate == 0 else { return }
-                        
-                        #if DEBUG
-                        print("🔄 Stalled playback detected, attempting recovery")
-                        #endif
-                        
-                        self.recreatePlayerItem()
-                    }
-                }
-                
-            } else if keyPath == "playbackBufferFull" {
-                if playerItem.isPlaybackBufferFull {
-                    self.player?.play()
-                    self.safeOnStatusChange(isPlaying: true, status: String(localized: "status_playing"))
-                    self.stopBufferingTimer()
-                }
-            }
-        }
+        self.playerItemObservations.forEach { $0.invalidate() }
+        self.playerItemObservations.removeAll()
     }
     
     private func recreatePlayerItem() {
@@ -1868,8 +1791,9 @@ class DirectStreamingPlayer: NSObject {
         
         let currentURL = urlAsset.url
         
-        // Remove existing observers first - FIXED: Add the required 'for' parameter
-        removeObservers(for: playerItem)
+        // Clear observations
+        playerItemObservations.forEach { $0.invalidate() }
+        playerItemObservations.removeAll()
         
         // Create new asset and player item
         let newAsset = AVURLAsset(url: currentURL)
@@ -1987,7 +1911,7 @@ class DirectStreamingPlayer: NSObject {
                     DispatchQueue.main.async { completion?() }
                 }
                 #if DEBUG
-                print("🛑 Playback already stopped, skipping cleanup (silent/effectiveSilent: \(effectiveSilent))")
+                print("🛑 Playback already stopped, skipping cleanup (silent/effectiveSilent: (effectiveSilent))")
                 #endif
                 return
             }
@@ -2000,7 +1924,7 @@ class DirectStreamingPlayer: NSObject {
             }, completion: { _ in })
             
             // Cleanup continues immediately, not waiting for audio operation
-            self.activeResourceLoaders.forEach { _, delegate in
+            self.activeResourceLoaders.forEach { (_: AVAssetResourceLoadingRequest, delegate: StreamingSessionDelegate) in
                 delegate.cancel()
             }
             self.activeResourceLoaders.removeAll()
@@ -2015,9 +1939,10 @@ class DirectStreamingPlayer: NSObject {
             }
             self.metadataOutput = nil
             
+            self.playerItemObservations.forEach { $0.invalidate() }
+            self.playerItemObservations.removeAll()
             self.removeObserversImplementation()
             self.playerItem = nil
-            self.removedObservers.removeAll()
             
             if !silent {
                 DispatchQueue.main.async {
@@ -2050,7 +1975,7 @@ class DirectStreamingPlayer: NSObject {
         }
         
         // Cancel active resource loaders
-        activeResourceLoaders.forEach { _, delegate in
+        activeResourceLoaders.forEach { (_: AVAssetResourceLoadingRequest, delegate: StreamingSessionDelegate) in
             delegate.cancel()
         }
         activeResourceLoaders.removeAll()
@@ -2068,7 +1993,6 @@ class DirectStreamingPlayer: NSObject {
         
         // Clear playerItem
         playerItem = nil
-        removedObservers.removeAll()
         
         // Stop buffering timer
         bufferingTimer?.invalidate()
@@ -2084,7 +2008,7 @@ class DirectStreamingPlayer: NSObject {
         player?.pause()
         player?.rate = 0.0
         
-        activeResourceLoaders.forEach { _, delegate in
+        activeResourceLoaders.forEach { (_: AVAssetResourceLoadingRequest, delegate: StreamingSessionDelegate) in
             delegate.cancel()
         }
         activeResourceLoaders.removeAll()
@@ -2098,38 +2022,18 @@ class DirectStreamingPlayer: NSObject {
         
         removeObserversImplementation()
         playerItem = nil
-        removedObservers.removeAll()
         stopBufferingTimer()
     }
     
     private func removeObserversSynchronously() {
-        // Remove observers without async dispatch
-        if let statusObserver = self.statusObserver {
-            statusObserver.invalidate()
-            self.statusObserver = nil
-        }
+        self.playerItemObservations.forEach { $0.invalidate() }
+        self.playerItemObservations.removeAll()
         
         if let timeObserver = self.timeObserver, let player = self.timeObserverPlayer {
             player.removeTimeObserver(timeObserver)
         }
         self.timeObserver = nil
         self.timeObserverPlayer = nil
-        
-        if isObservingBuffer, let playerItem = self.playerItem {
-            let playerItemKey = ObjectIdentifier(playerItem)
-            if !removedObservers.contains(playerItemKey) {
-                let keyPaths = ["playbackBufferEmpty", "playbackLikelyToKeepUp", "playbackBufferFull"]
-                if let keyPathsSet = registeredKeyPaths[playerItemKey] {
-                    for keyPath in keyPaths where keyPathsSet.contains(keyPath) {
-                        playerItem.removeObserver(self, forKeyPath: keyPath)
-                    }
-                }
-                registeredKeyPaths.removeValue(forKey: playerItemKey)
-                removedObservers.insert(playerItemKey)
-            }
-        }
-        isObservingBuffer = false
-        registeredKeyPaths.removeAll()
     }
     
     func clearCallbacks() {
@@ -2151,6 +2055,9 @@ class DirectStreamingPlayer: NSObject {
         
         // Stop synchronously to avoid async cleanup during deallocation
         stopSynchronously()
+        
+        playerItemObservations.forEach { $0.invalidate() }
+        playerItemObservations.removeAll()
         
         // Clear all callbacks to prevent retention cycles
         clearCallbacks()
