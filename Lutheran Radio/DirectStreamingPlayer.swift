@@ -272,31 +272,31 @@ class DirectStreamingPlayer: NSObject {
     static let availableStreams = [
         Stream(title: NSLocalizedString("lutheran_radio_title", comment: "Title for Lutheran Radio") + " - " +
                NSLocalizedString("language_english", comment: "English language option"),
-               url: URL(string: "https://english.lutheran.radio:8443/lutheranradio.mp3")!,
+               url: URL(string: "https://english.lutheran.radio:8443/lutheranradio.m3u8")!,
                language: NSLocalizedString("language_english", comment: "English language option"),
                languageCode: "en",
                flag: "🇺🇸"),
         Stream(title: NSLocalizedString("lutheran_radio_title", comment: "Title for Lutheran Radio") + " - " +
                NSLocalizedString("language_german", comment: "German language option"),
-               url: URL(string: "https://german.lutheran.radio:8443/lutheranradio.mp3")!,
+               url: URL(string: "https://german.lutheran.radio:8443/lutheranradio.m3u8")!,
                language: NSLocalizedString("language_german", comment: "German language option"),
                languageCode: "de",
                flag: "🇩🇪"),
         Stream(title: NSLocalizedString("lutheran_radio_title", comment: "Title for Lutheran Radio") + " - " +
                NSLocalizedString("language_finnish", comment: "Finnish language option"),
-               url: URL(string: "https://finnish.lutheran.radio:8443/lutheranradio.mp3")!,
+               url: URL(string: "https://finnish.lutheran.radio:8443/lutheranradio.m3u8")!,
                language: NSLocalizedString("language_finnish", comment: "Finnish language option"),
                languageCode: "fi",
                flag: "🇫🇮"),
         Stream(title: NSLocalizedString("lutheran_radio_title", comment: "Title for Lutheran Radio") + " - " +
                NSLocalizedString("language_swedish", comment: "Swedish language option"),
-               url: URL(string: "https://swedish.lutheran.radio:8443/lutheranradio.mp3")!,
+               url: URL(string: "https://swedish.lutheran.radio:8443/lutheranradio.m3u8")!,
                language: NSLocalizedString("language_swedish", comment: "Swedish language option"),
                languageCode: "sv",
                flag: "🇸🇪"),
         Stream(title: NSLocalizedString("lutheran_radio_title", comment: "Title for Lutheran Radio") + " - " +
                NSLocalizedString("language_estonian", comment: "Estonian language option"),
-               url: URL(string: "https://estonian.lutheran.radio:8443/lutheranradio.mp3")!,
+               url: URL(string: "https://estonian.lutheran.radio:8443/lutheranradio.m3u8")!,
                language: NSLocalizedString("language_estonian", comment: "Estonian language option"),
                languageCode: "ee",
                flag: "🇪🇪"),
@@ -1263,24 +1263,100 @@ class DirectStreamingPlayer: NSObject {
             return
         }
         
-        selectOptimalServer { [weak self] server in
-            guard let self = self else { completion(false); return }
+        // Define a helper to attempt playback with a server
+        func attemptPlayback(with server: Server, fallbackServers: [Server], completion: @escaping (Bool) -> Void) {
             guard let streamURL = self.getStreamURL(for: self.selectedStream, with: server) else {
                 self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_stream_unavailable"))
                 completion(false)
                 return
             }
-            CertificateValidator.shared.validateServerCertificate(for: streamURL) { isValid in
-                if isValid {
-                    self.playWithServer(server, fallbackServers: Self.servers.filter { $0.name != server.name }) { success in
-                        if success { self.startPeriodicValidation() }
-                        completion(success)
-                    }
-                } else {
+            
+            CertificateValidator.shared.validateServerCertificate(for: streamURL) { [weak self] isValid in
+                guard let self = self else { completion(false); return }
+                if !isValid {
                     self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_security_failed"))
                     completion(false)
+                    return
                 }
+                
+                // HLS initialization
+                let asset = AVURLAsset(url: streamURL) // streamURL now points to .m3u8
+                asset.resourceLoader.setDelegate(self, queue: .main) // Keep for pinning
+                
+                self.playerItem = AVPlayerItem(asset: asset)
+                
+                // Initialize metadata output for HLS timed metadata
+                self.metadataOutput = AVPlayerItemMetadataOutput(identifiers: nil)
+                self.metadataOutput?.setDelegate(self, queue: .main)
+                self.playerItem?.add(self.metadataOutput!)
+                
+                // Initialize or replace player item
+                if self.player == nil {
+                    self.player = AVPlayer(playerItem: self.playerItem)
+                    self.player?.automaticallyWaitsToMinimizeStalling = true // Optimize for live streaming
+                } else {
+                    self.player?.replaceCurrentItem(with: self.playerItem)
+                }
+                
+                // Add observers for player item status and errors
+                self.playerItem?.addObserver(self, forKeyPath: #keyPath(AVPlayerItem.status), options: [.new, .old], context: nil)
+                self.playerItem?.addObserver(self, forKeyPath: #keyPath(AVPlayerItem.error), options: [.new], context: nil)
+                
+                // Notify delegate of connecting state
+                self.delegate?.onStatusChange(.connecting, nil)
+                
+                #if DEBUG
+                print("📡 [Player] Initialized with HLS URL: \(streamURL) for server: \(server.name)")
+                #endif
+                
+                // Attempt playback with retry logic
+                self.pendingPlaybackWorkItem?.cancel()
+                let workItem = DispatchWorkItem { [weak self] in
+                    guard let self = self else {
+                        completion(false)
+                        return
+                    }
+                    self.player?.play()
+                    
+                    // Monitor playback status asynchronously
+                    let statusCheck = Task { @MainActor in
+                        for await _ in NotificationCenter.default.notifications(named: .AVPlayerItemDidPlayToEndTime).prefix(1) {
+                            // Assume success if playback starts and continues
+                            self.delegate?.onStatusChange(.playing, nil)
+                            self.startPeriodicValidation()
+                            completion(true)
+                        }
+                    }
+                    
+                    // Timeout for initial playback failure
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .seconds(self.isLowEfficiencyMode ? 10 : 5))
+                        guard !statusCheck.isCancelled else { return }
+                        if self.playerItem?.status != .readyToPlay {
+                            #if DEBUG
+                            print("📡 [Player] Playback failed for server \(server.name), trying fallback servers")
+                            #endif
+                            self.serverFailureCount[server.name, default: 0] += 1
+                            self.lastFailedServerName = server.name
+                            // Try fallback servers
+                            if !fallbackServers.isEmpty {
+                                attemptPlayback(with: fallbackServers.first!, fallbackServers: Array(fallbackServers.dropFirst()), completion: completion)
+                            } else {
+                                self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_stream_unavailable"))
+                                completion(false)
+                            }
+                        }
+                    }
+                }
+                self.pendingPlaybackWorkItem = workItem
+                self.audioQueue.async(execute: workItem)
             }
+        }
+        
+        selectOptimalServer { [weak self] server in
+            guard self != nil else { completion(false); return }
+            let fallbackServers = Self.servers.filter { $0.name != server.name }
+            attemptPlayback(with: server, fallbackServers: fallbackServers, completion: completion)
         }
         
         setupAudioSessionObservers()
@@ -2217,22 +2293,31 @@ extension Sequence where Element: Hashable {
 
 // MARK: - Metadata Handling
 extension DirectStreamingPlayer: AVPlayerItemMetadataOutputPushDelegate {
-    func metadataOutput(_ output: AVPlayerItemMetadataOutput,
-                       didOutputTimedMetadataGroups groups: [AVTimedMetadataGroup],
-                       from track: AVPlayerItemTrack?) {
-        guard delegate != nil else { return }
-        
-        guard let item = groups.first?.items.first,
-              let value = item.value(forKeyPath: "stringValue") as? String,
-              !value.isEmpty else { return }
-        
-        let streamTitle = (item.identifier == AVMetadataIdentifier("icy/StreamTitle") ||
-                       (item.key as? String) == "StreamTitle") ? value : nil
-        
-        // Store metadata locally for Live Activities
-        self.currentMetadata = streamTitle
-        
-        safeOnMetadataChange(metadata: streamTitle)
+    func metadataOutput(_ output: AVPlayerItemMetadataOutput, didOutputTimedMetadataGroups groups: [AVTimedMetadataGroup], from track: AVPlayerItemTrack?) {
+        Task { @MainActor in
+            guard let group = groups.first,
+                  let item = group.items.first else {
+                return
+            }
+            
+            do {
+                // Asynchronously load the metadata value
+                let metadata = try await item.load(.value) as? String
+                guard let metadata = metadata else {
+                    return
+                }
+                
+                #if DEBUG
+                print("🎵 [Metadata] Received HLS metadata: \(metadata)")
+                #endif
+                
+                safeOnMetadataChange(metadata: metadata)
+            } catch {
+                #if DEBUG
+                print("❌ [Metadata] Failed to load metadata value: \(error.localizedDescription)")
+                #endif
+            }
+        }
     }
 }
 
@@ -2351,7 +2436,7 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
     ///   - resourceLoader: The requesting loader.
     ///   - loadingRequest: The resource request.
     /// - Returns: `true` if handling (for lutheran.radio HTTPS URLs).
-    /// - Note: Enforces HTTPS and domain checks; sets up pinned sessions.
+    /// - Note: Enforces HTTPS and domain checks; sets up pinned sessions for HLS.
     func resourceLoader(_ resourceLoader: AVAssetResourceLoader, shouldWaitForLoadingOfRequestedResource loadingRequest: AVAssetResourceLoadingRequest) -> Bool {
         guard let url = loadingRequest.request.url else {
             #if DEBUG
@@ -2368,14 +2453,14 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
         print("📡 [Resource Loader] URL host: \(url.host ?? "nil")")
         #endif
         
-        // FIXED: Only handle HTTPS URLs for lutheran.radio domains
+        // Only handle HTTPS URLs for lutheran.radio domains
         guard url.scheme == "https",
               let host = url.host,
               host.hasSuffix("lutheran.radio") else {
             #if DEBUG
             print("📡 [Resource Loader] ❌ Not a lutheran.radio HTTPS URL, letting system handle it")
             #endif
-            return false  // Let the system handle non-lutheran.radio URLs
+            return false // Let the system handle non-lutheran.radio URLs
         }
         
         // Store the original hostname for SSL validation
@@ -2385,13 +2470,12 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
         print("📡 [Resource Loader] Original hostname for SSL: \(originalHostname)")
         #endif
         
-        // Create clean request with the HTTPS URL (no conversion needed)
+        // Create clean request with the HTTPS URL
         var modifiedRequest = URLRequest(url: url)
         
-        // Set standard streaming headers
-        modifiedRequest.setValue("audio/mpeg", forHTTPHeaderField: "Accept")
-        modifiedRequest.setValue("1", forHTTPHeaderField: "Icy-MetaData")
-        modifiedRequest.timeoutInterval = 60.0
+        // Set headers for HLS
+        modifiedRequest.setValue("application/vnd.apple.mpegurl", forHTTPHeaderField: "Accept") // HLS manifest
+        modifiedRequest.timeoutInterval = url.pathExtension == "m3u8" ? 30.0 : 60.0 // Shorter timeout for manifests
         
         #if DEBUG
         print("📡 [Resource Loader] Request headers: \(modifiedRequest.allHTTPHeaderFields ?? [:])")
@@ -2400,30 +2484,28 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
         // Create streaming delegate
         let streamingDelegate = StreamingSessionDelegate(loadingRequest: loadingRequest)
         streamingDelegate.originalHostname = originalHostname
-
+        
         #if DEBUG
         print("🔒 [Resource Loader] StreamingSessionDelegate created for hostname: \(originalHostname)")
         #endif
         
-        // Enhanced configuration for SSL pinning
+        // Enhanced configuration for SSL pinning and HLS
         let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = 60.0
+        config.timeoutIntervalForRequest = url.pathExtension == "m3u8" ? 30.0 : 60.0 // Shorter for manifests
         config.timeoutIntervalForResource = 120.0
-        
-        // Force fresh SSL connections for proper pinning validation
         config.urlCache = nil
         config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
         config.urlCredentialStorage = nil
         config.waitsForConnectivity = false
-        config.httpMaximumConnectionsPerHost = 1
+        config.httpMaximumConnectionsPerHost = 2 // Allow parallel segment fetching for HLS
         
-        // FIXED: Create URLSession with proper QoS for SSL operations
+        // Create URLSession with proper QoS
         let operationQueue = OperationQueue()
         operationQueue.qualityOfService = .userInitiated
-        operationQueue.maxConcurrentOperationCount = 1
+        operationQueue.maxConcurrentOperationCount = 2 // Match httpMaximumConnectionsPerHost
         
         #if DEBUG
-        print("🔒 [Resource Loader] Creating URLSession with SSL-forcing config")
+        print("🔒 [Resource Loader] Creating URLSession with HLS-optimized config")
         #endif
         
         streamingDelegate.session = URLSession(configuration: config, delegate: streamingDelegate, delegateQueue: operationQueue)
