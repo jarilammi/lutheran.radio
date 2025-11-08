@@ -552,7 +552,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         }
     }
     
-    private func setupDarwinNotificationListener() {
+    func setupDarwinNotificationListener() {
         let notificationName = "radio.lutheran.widget.action"
         let center = CFNotificationCenterGetDarwinNotifyCenter()
         
@@ -560,17 +560,14 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         CFNotificationCenterAddObserver(
             center,
             Unmanaged.passUnretained(self).toOpaque(),
-            { (center, observer, name, object, userInfo) in
+            { (_, observer, _, _, _) in
+                guard let observer = observer else { return }
+                let vc = Unmanaged<ViewController>.fromOpaque(observer).takeUnretainedValue()
                 DispatchQueue.main.async {
                     #if DEBUG
                     print("🔗 Received Darwin notification for widget action")
                     #endif
-                    // Get the main app's view controller and check for actions
-                    if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                       let window = windowScene.windows.first,
-                       let viewController = window.rootViewController as? ViewController {
-                        viewController.checkForPendingWidgetActions()
-                    }
+                    vc.checkForPendingWidgetActions()
                 }
             },
             notificationName as CFString,
@@ -2150,7 +2147,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         
         // Remove Darwin notification observer FIRST to prevent crashes
         let center = CFNotificationCenterGetDarwinNotifyCenter()
-        CFNotificationCenterRemoveObserver(center, Unmanaged.passUnretained(self).toOpaque(), nil, nil)
+        CFNotificationCenterRemoveEveryObserver(center, Unmanaged.passUnretained(self).toOpaque())
         
         // Cancel existing timers
         connectivityCheckTimer?.invalidate()
@@ -2780,8 +2777,6 @@ extension ViewController: StreamingPlayerDelegate {
                let targetStream = DirectStreamingPlayer.availableStreams.first(where: { $0.languageCode == languageCode }),
                let newIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.languageCode == languageCode }) {
                 
-                let wasPlaying = SharedPlayerManager.shared.isPlaying
-                
                 // Perform the stream switch
                 SharedPlayerManager.shared.switchToStream(targetStream)
                 
@@ -2791,9 +2786,9 @@ extension ViewController: StreamingPlayerDelegate {
                 updateSelectionIndicator(to: newIndex)
                 updateBackground(for: targetStream)
                 
-                // Fallback resume after delay
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                    if wasPlaying && !SharedPlayerManager.shared.isPlaying {
+                // Always start/resume playback after widget switch (user intent to listen)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {  // Shorter delay for transition
+                    if !SharedPlayerManager.shared.isPlaying {
                         SharedPlayerManager.shared.play { _ in }
                     }
                 }

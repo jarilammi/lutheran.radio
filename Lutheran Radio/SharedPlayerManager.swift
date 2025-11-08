@@ -333,7 +333,7 @@ class SharedPlayerManager {
     private func notifyMainApp(action: String, parameter: String? = nil) {
         let notificationName = "radio.lutheran.widget.action"
         let center = CFNotificationCenterGetDarwinNotifyCenter()
-        CFNotificationCenterPostNotification(center, CFNotificationName(notificationName as CFString), nil, nil, false)
+        CFNotificationCenterPostNotification(center, CFNotificationName(notificationName as CFString), nil, nil, true)
         
         #if DEBUG
         print("🔗 Posted Darwin notification for action: \(action)")
