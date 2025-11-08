@@ -27,6 +27,7 @@ jobs:
         with:
           languages: ${{ matrix.language }}
           config-file: .github/codeql/codeql-config.yml
+          build-mode: manual
 
       - name: Set up Xcode Developer Directory
         run: sudo xcode-select -s /Applications/Xcode_26.1.app/Contents/Developer
