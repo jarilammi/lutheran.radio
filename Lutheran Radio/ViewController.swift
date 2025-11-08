@@ -2268,9 +2268,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                     self.selectedStreamIndex = targetIndex
                     self.updateBackground(for: targetStream)
                     
-                    // Use setStream which handles stopping internally
-                    self.streamingPlayer.setStream(to: targetStream)
-                    updateUserDefaultsForStream(targetStream)
+                    // Use SharedPlayerManager for consistent switching and state sync
+                    SharedPlayerManager.shared.switchToStream(targetStream)
                     
                     // Update UI immediately
                     DispatchQueue.main.async {
