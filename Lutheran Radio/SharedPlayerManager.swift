@@ -92,6 +92,15 @@ class SharedPlayerManager {
     // Widget-safe play method with improved error handling
     func play(completion: @escaping (Bool) -> Void) {
         if isRunningInWidget() {
+            // Set instant feedback for playing state (mirrors switchToStream logic)
+            sharedDefaults?.set(true, forKey: "isPlaying")
+            sharedDefaults?.set(false, forKey: "hasError")
+            sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "lastUpdateTime")
+            sharedDefaults?.set(true, forKey: "isInstantFeedback")
+            sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "instantFeedbackTime")
+            sharedDefaults?.set(sharedDefaults?.string(forKey: "currentLanguage") ?? "en", forKey: "instantFeedbackLanguage")
+            sharedDefaults?.synchronize()
+            
             // For widgets, use App Group notification instead of direct scheduling
             scheduleWidgetAction(action: "play")
             notifyMainApp(action: "play")
@@ -112,10 +121,19 @@ class SharedPlayerManager {
         
         player.play(completion: completion)
     }
-    
+
     // Widget-safe stop method with improved error handling
     func stop(completion: @escaping () -> Void = {}) {
         if isRunningInWidget() {
+            // Set instant feedback for stopped state (mirrors switchToStream logic)
+            sharedDefaults?.set(false, forKey: "isPlaying")
+            sharedDefaults?.set(false, forKey: "hasError")
+            sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "lastUpdateTime")
+            sharedDefaults?.set(true, forKey: "isInstantFeedback")
+            sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "instantFeedbackTime")
+            sharedDefaults?.set(sharedDefaults?.string(forKey: "currentLanguage") ?? "en", forKey: "instantFeedbackLanguage")
+            sharedDefaults?.synchronize()
+            
             scheduleWidgetAction(action: "pause")
             notifyMainApp(action: "pause")
             
