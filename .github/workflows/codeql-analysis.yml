@@ -5,6 +5,7 @@ on:
     branches: [ "main" ]
 #  schedule:
 #    - cron: '00 07 * * 0' # Weekly on Sunday at 07:00 UTC
+
 jobs:
   analyze:
     name: Analyze
@@ -40,7 +41,7 @@ jobs:
         run: |
           xcodebuild -scheme "Lutheran Radio" \
             -sdk iphonesimulator26.1 \
-            -destination 'platform=iOS Simulator,OS=26.1,name=iPhone 17' \
+            -destination 'platform=iOS Simulator,OS=26.0,name=iPhone 17' \
             clean build
         env:
           DEVELOPER_DIR: /Applications/Xcode_26.1.app/Contents/Developer
@@ -49,7 +50,7 @@ jobs:
 #        run: |
 #          xcodebuild -scheme "Lutheran Radio" \
 #            -sdk iphonesimulator26.1 \
-#            -destination 'platform=iOS Simulator,OS=26.1,name=iPhone 17' \
+#            -destination 'platform=iOS Simulator,OS=26.0,name=iPhone 17' \
 #            clean test | xcpretty
 #        env:
 #          DEVELOPER_DIR: /Applications/Xcode_26.1.app/Contents/Developer
