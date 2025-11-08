@@ -2278,6 +2278,13 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                         self.languageCollectionView.selectItem(at: indexPath, animated: true, scrollPosition: .centeredHorizontally)
                         self.updateSelectionIndicator(to: targetIndex)
                         
+                        // Always start/resume playback after widget switch (user intent to listen)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {  // Delay for transition
+                            if !SharedPlayerManager.shared.isPlaying {
+                                SharedPlayerManager.shared.play { _ in }
+                            }
+                        }
+                        
                         // Force widget refresh with delay to ensure state is persisted
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                             self.saveStateForWidget()
