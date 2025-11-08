@@ -9,7 +9,7 @@ on:
 jobs:
   analyze:
     name: Analyze
-    runs-on: macos-26
+    runs-on: macos-latest
     permissions:
       security-events: write
       checks: write
@@ -27,10 +27,9 @@ jobs:
         with:
           languages: ${{ matrix.language }}
           config-file: .github/codeql/codeql-config.yml
-          build-mode: manual
 
       - name: Set up Xcode Developer Directory
-        run: sudo xcode-select -s /Applications/Xcode_26.1.app/Contents/Developer
+        run: sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
 
       - name: Reset and List Simulators
         run: |
@@ -44,7 +43,7 @@ jobs:
             -destination 'platform=iOS Simulator,OS=26.1,name=iPad (A16)' \
             clean build
         env:
-          DEVELOPER_DIR: /Applications/Xcode_26.1.app/Contents/Developer
+          DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
 
 #      - name: Run Tests with Xcode
 #        run: |
@@ -52,7 +51,7 @@ jobs:
 #            -destination 'platform=iOS Simulator,OS=26.1,name=iPad (A16)' \
 #            clean test | xcpretty
 #        env:
-#          DEVELOPER_DIR: /Applications/Xcode_26.1.app/Contents/Developer
+#          DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
