@@ -40,7 +40,7 @@ jobs:
       - name: Build with Xcode
         run: |
           xcodebuild -scheme "Lutheran Radio" \
-            -destination 'platform=iOS Simulator,OS=26.1,name=iPad (A16)' \
+            -destination 'platform=iOS Simulator,OS=26.0.1,name=iPad (A16)' \
             clean build
         env:
           DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
@@ -48,7 +48,7 @@ jobs:
 #      - name: Run Tests with Xcode
 #        run: |
 #          xcodebuild -scheme "Lutheran Radio" \
-#            -destination 'platform=iOS Simulator,OS=26.1,name=iPad (A16)' \
+#            -destination 'platform=iOS Simulator,OS=26.0.1,name=iPad (A16)' \
 #            clean test | xcpretty
 #        env:
 #          DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
