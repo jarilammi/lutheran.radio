@@ -2387,20 +2387,19 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
         
         // Create clean request with the HTTPS URL (no conversion needed)
         var modifiedRequest = URLRequest(url: url)
-        
-        // Set standard streaming headers
-        modifiedRequest.setValue("audio/mpeg", forHTTPHeaderField: "Accept")
-        modifiedRequest.setValue("1", forHTTPHeaderField: "Icy-MetaData")
         modifiedRequest.timeoutInterval = 60.0
         
+        // Apply Icecast/Liquidsoap compatibility headers (centralised & future-proof)
+        modifiedRequest = self.requestWithIcecastHeaders(from: modifiedRequest)
+        
         #if DEBUG
-        print("📡 [Resource Loader] Request headers: \(modifiedRequest.allHTTPHeaderFields ?? [:])")
+        print("📡 [Resource Loader] Final request headers: \(modifiedRequest.allHTTPHeaderFields ?? [:])")
         #endif
         
         // Create streaming delegate
         let streamingDelegate = StreamingSessionDelegate(loadingRequest: loadingRequest)
         streamingDelegate.originalHostname = originalHostname
-
+        
         #if DEBUG
         print("🔒 [Resource Loader] StreamingSessionDelegate created for hostname: \(originalHostname)")
         #endif
@@ -2417,7 +2416,6 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
         config.waitsForConnectivity = false
         config.httpMaximumConnectionsPerHost = 1
         
-        // FIXED: Create URLSession with proper QoS for SSL operations
         let operationQueue = OperationQueue()
         operationQueue.qualityOfService = .userInitiated
         operationQueue.maxConcurrentOperationCount = 1
@@ -2426,14 +2424,18 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
         print("🔒 [Resource Loader] Creating URLSession with SSL-forcing config")
         #endif
         
-        streamingDelegate.session = URLSession(configuration: config, delegate: streamingDelegate, delegateQueue: operationQueue)
-        streamingDelegate.dataTask = streamingDelegate.session?.dataTask(with: modifiedRequest)
+        streamingDelegate.session = URLSession(configuration: config,
+                                               delegate: streamingDelegate,
+                                               delegateQueue: operationQueue)
+        
+        // Apply Icecast/Liquidsoap headers exactly once (clean & future-proof)
+        let finalRequest = self.requestWithIcecastHeaders(from: modifiedRequest)
+        streamingDelegate.dataTask = streamingDelegate.session?.dataTask(with: finalRequest)
         
         streamingDelegate.onError = { [weak self] error in
             guard let self = self else { return }
             #if DEBUG
-            print("❌ [Resource Loader] Streaming error occurred")
-            print("❌ [Resource Loader] Error: \(error.localizedDescription)")
+            print("❌ [Resource Loader] Streaming error occurred: \(error.localizedDescription)")
             #endif
             DispatchQueue.main.async {
                 self.activeResourceLoaders.removeValue(forKey: loadingRequest)
@@ -2444,7 +2446,7 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
         activeResourceLoaders[loadingRequest] = streamingDelegate
         
         #if DEBUG
-        print("🔒 [Resource Loader] Starting data task for SSL validation...")
+        print("🔒 [Resource Loader] Starting data task with Icecast-compatible headers…")
         #endif
         streamingDelegate.dataTask?.resume()
         
@@ -2790,5 +2792,21 @@ extension DirectStreamingPlayer {
             print("🔒 [SSL Protection] Cleared all SSL protection timers")
             #endif
         }
+    }
+}
+
+// MARK: - Icecast / Liquidsoap Compatibility
+private extension DirectStreamingPlayer {
+    /// Adds headers required by Icecast2 and Liquidsoap servers.
+    /// Must be called for every AVAssetResourceLoadingRequest before creating the URLSession data task.
+    /// - Parameter originalRequest: The request coming from AVFoundation.
+    /// - Returns: A new request with the mandatory Icecast headers.
+    func requestWithIcecastHeaders(from originalRequest: URLRequest) -> URLRequest {
+        var request = originalRequest
+        request.setValue("1", forHTTPHeaderField: "Icy-Metadata")          // Critical for ICY metadata
+        request.setValue("Lutheran Radio/2.0 (iOS; LutheranRadioApp)", forHTTPHeaderField: "User-Agent")
+        request.setValue("close", forHTTPHeaderField: "Connection")      // Prevents stuck connections on some CDNs
+        request.setValue("audio/mpeg", forHTTPHeaderField: "Accept")
+        return request
     }
 }
