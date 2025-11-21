@@ -238,7 +238,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         "de": "germany",
         "fi": "finland",
         "sv": "sweden",
-        "ee": "estonia"
+        "et": "estonia"
     ]
     
     // MARK: - Haptic Engine
@@ -2481,7 +2481,7 @@ extension ViewController {
     }
     
     /// Public method to switch to a specific language stream (callable from SceneDelegate).
-    /// - Parameter languageCode: The ISO language code to switch to (e.g., "en", "de", "fi", "sv", "ee").
+    /// - Parameter languageCode: The ISO language code to switch to (e.g., "en", "de", "fi", "sv", "et").
     /// - Note: Sets `streamingPlayer.isSwitchingStream = true` before stopping playback to suppress "stopped" status updates, ensuring smooth UI transitions. Resets `isSwitchingStream` after playback starts or fails. Plays a tuning sound for user feedback.
     /// - Example: `handleSwitchToLanguage("en")` switches to the English stream, playing a tuning sound and suppressing "stopped" status during the transition.
     public func handleSwitchToLanguage(_ languageCode: String) {

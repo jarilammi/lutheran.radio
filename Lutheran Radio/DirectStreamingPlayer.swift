@@ -260,7 +260,7 @@ class DirectStreamingPlayer: NSObject {
     // Breakdown:
     // • <language-slug>  → hardcoded mapping from language code:
     //     "en" → "english"   | "de" → "german"   | "fi" → "finnish"
-    //     "sv" → "swedish"   | "ee" → "estonian" | others → fallback to "english"
+    //     "sv" → "swedish"   | "et" → "estonian" | others → fallback to "english"
     //
     // • <region> → determined at runtime via TimeZone.current:
     //     - Europe/, GMT/UTC/WET/CET/EET/Atlantic/Reykjavik/Faroe → "eu"
@@ -313,7 +313,7 @@ class DirectStreamingPlayer: NSObject {
             case "de": return "german"
             case "fi": return "finnish"
             case "sv": return "swedish"
-            case "ee": return "estonian"
+            case "et": return "estonian"
             default: return "english"
             }
         }
@@ -383,7 +383,7 @@ class DirectStreamingPlayer: NSObject {
         Stream(title: NSLocalizedString("lutheran_radio_title", comment: "Title for Lutheran Radio") + " - " +
                NSLocalizedString("language_estonian", comment: "Estonian language option"),
                language: NSLocalizedString("language_estonian", comment: "Estonian language option"),
-               languageCode: "ee",
+               languageCode: "et",
                flag: "🇪🇪"),
     ]
     
