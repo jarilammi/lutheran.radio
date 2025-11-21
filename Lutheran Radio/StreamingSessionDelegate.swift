@@ -28,7 +28,7 @@ import AVFoundation
 class StreamingSessionDelegate: NSObject, URLSessionDataDelegate {
     
     /// The AVAssetResourceLoadingRequest being fulfilled by this delegate.
-    private var loadingRequest: AVAssetResourceLoadingRequest
+    internal var loadingRequest: AVAssetResourceLoadingRequest
     
     /// Tracks the total bytes received during the streaming session.
     private var bytesReceived = 0
@@ -108,6 +108,11 @@ class StreamingSessionDelegate: NSObject, URLSessionDataDelegate {
     ///   - response: The URLResponse received.
     ///   - completionHandler: Callback to allow or cancel the response.
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse, completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+        #if DEBUG
+        if let httpResponse = response as? HTTPURLResponse {
+            print("📡 [StreamingDelegate] Received response: \(httpResponse.statusCode) – Content-Type: \(httpResponse.allHeaderFields["Content-Type"] ?? "nil")")
+        }
+        #endif
         guard let httpResponse = response as? HTTPURLResponse else {
             completionHandler(.cancel)
             return
@@ -152,10 +157,22 @@ class StreamingSessionDelegate: NSObject, URLSessionDataDelegate {
     ///   - task: The completed task.
     ///   - error: Optional error from the task.
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        if let error = error {
+        if let urlError = error as? URLError, urlError.code == .cancelled {
+            // Cancelled → treat as clean EOF (common practice for live streams)
+            #if DEBUG
+            print("📡 [StreamingDelegate] Task cancelled → finishLoading() (clean EOF)")
+            #endif
+            loadingRequest.finishLoading()
+        } else if let error = error {
+            #if DEBUG
+            print("❌ [StreamingDelegate] Task completed with error: \(error.localizedDescription)")
+            #endif
             onError?(error)
             loadingRequest.finishLoading(with: error)
         } else {
+            #if DEBUG
+            print("✅ [StreamingDelegate] Task completed successfully – finishLoading()")
+            #endif
             loadingRequest.finishLoading()
         }
     }

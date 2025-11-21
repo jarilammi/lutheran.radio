@@ -458,7 +458,6 @@ class DirectStreamingPlayer: NSObject {
             }
         }
         
-        // Existing throttling logic
         guard lastServerSelectionTime == nil || Date().timeIntervalSince(lastServerSelectionTime!) > 10.0 else {
             #if DEBUG
             print("📡 selectOptimalServer: Throttling server selection, using cached server: \(currentSelectedServer.name)")
@@ -635,6 +634,9 @@ class DirectStreamingPlayer: NSObject {
     private var playerItemObservations: [NSKeyValueObservation] = []  // Store all playerItem observations
     private var bufferingTimer: Timer?
     private var activeResourceLoaders: [AVAssetResourceLoadingRequest: StreamingSessionDelegate] = [:] // Track resource loaders
+    
+    private weak var currentLoadingDelegate: StreamingSessionDelegate?   // weak to avoid retain cycles
+    private var loadingTimeoutWorkItem: DispatchWorkItem?
     
     var onStatusChange: ((Bool, String) -> Void)?
     var onMetadataChange: ((String?) -> Void)?
@@ -1533,11 +1535,12 @@ class DirectStreamingPlayer: NSObject {
                     self.serverFailureCount[self.currentSelectedServer.name] = 0
                     self.lastFailedServerName = nil
                     
-                    // … metadata setup and play() exactly as you had …
+                    self.metadataOutput = AVPlayerItemMetadataOutput(identifiers: nil)
+                    self.metadataOutput?.setDelegate(self, queue: DispatchQueue.main)
+                    self.playerItem?.add(self.metadataOutput!)
+                    
                     self.player?.play()
                     self.hasStartedPlaying = true
-                    
-                    // existing playback-check logic unchanged …
                     
                 case .failed:
                     tempStatusObserver?.invalidate()
@@ -1813,6 +1816,10 @@ class DirectStreamingPlayer: NSObject {
         #if DEBUG
         print("🛑 FORCE STOPPING ALL PLAYBACK - isSwitchingStream: \(String(describing: isSwitchingStream))")
         #endif
+        
+        loadingTimeoutWorkItem?.cancel()
+        currentLoadingDelegate?.loadingRequest.finishLoading(with: URLError(.cancelled))
+        currentLoadingDelegate = nil
         
         removeAudioSessionObservers()
         
@@ -2405,13 +2412,19 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
         let finalRequest = self.requestWithIcecastHeaders(from: modifiedRequest)
         streamingDelegate.dataTask = streamingDelegate.session?.dataTask(with: finalRequest)
         
-        streamingDelegate.onError = { [weak self] error in
-            guard let self = self else { return }
+        streamingDelegate.onError = { [weak self, weak streamingDelegate] error in
+            guard let self = self, let delegate = streamingDelegate else { return }
+            
             #if DEBUG
             print("❌ [Resource Loader] Streaming error occurred: \(error.localizedDescription)")
             #endif
+            
             DispatchQueue.main.async {
-                self.activeResourceLoaders.removeValue(forKey: loadingRequest)
+                self.activeResourceLoaders.removeValue(forKey: delegate.loadingRequest)
+                self.loadingTimeoutWorkItem?.cancel()
+                if self.currentLoadingDelegate === delegate {
+                    self.currentLoadingDelegate = nil
+                }
                 self.handleLoadingError(error)
             }
         }
@@ -2422,6 +2435,8 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
         print("🔒 [Resource Loader] Starting data task with Icecast-compatible headers…")
         #endif
         streamingDelegate.dataTask?.resume()
+        self.currentLoadingDelegate = streamingDelegate
+        self.startLoadingRequestTimeout(for: streamingDelegate)
         
         #if DEBUG
         print("📡 [Resource Loader] ✅ Resource loader setup complete")
@@ -2435,8 +2450,13 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
         #if DEBUG
         print("📡 [SSL Debug] Resource loading cancelled for request")
         #endif
+        
         if let delegate = activeResourceLoaders.removeValue(forKey: loadingRequest) {
             delegate.cancel()
+            loadingTimeoutWorkItem?.cancel()
+            if currentLoadingDelegate === delegate {
+                currentLoadingDelegate = nil
+            }
         }
     }
 }
@@ -2504,7 +2524,7 @@ extension DirectStreamingPlayer {
     /// Calculates adaptive SSL timeout based on network conditions and server location
     private func getSSLTimeout() async -> TimeInterval {
         // Base timeout - conservative starting point
-        var timeout: TimeInterval = 8.0
+        var timeout: TimeInterval = 12.0
         
         // Add extra time for cellular connections
         let isCellular = await isOnCellular()
@@ -2546,7 +2566,7 @@ extension DirectStreamingPlayer {
         }
         
         // Cap at reasonable maximum
-        let finalTimeout = min(timeout, 15.0)
+        let finalTimeout = min(timeout, 20.0)
         
         #if DEBUG
         print("🔒 [SSL Timeout] Calculated timeout: \(finalTimeout)s (base: 8.0s)")
@@ -2766,6 +2786,30 @@ extension DirectStreamingPlayer {
             #endif
         }
     }
+    
+    // MARK: - Loading Request Hard Timeout (prevents eternal .unknown status)
+
+    private func startLoadingRequestTimeout(for delegate: StreamingSessionDelegate) {
+        loadingTimeoutWorkItem?.cancel()
+        
+        let work = DispatchWorkItem { [weak self, weak delegate] in
+            guard let self = self,
+                  let delegate = delegate,
+                  !delegate.loadingRequest.isFinished else { return }
+            
+            #if DEBUG
+            print("⏰ [Hard Timeout] Force-finishing hung loading request after 15s – this should never happen only on dead-silent servers")
+            #endif
+            
+            delegate.loadingRequest.finishLoading(with: URLError(.timedOut))
+            // Note: no need to call delegate.onError – finishLoading(with:) already triggers failure path
+            self.activeResourceLoaders.removeValue(forKey: delegate.loadingRequest)
+            self.currentLoadingDelegate = nil
+        }
+        
+        loadingTimeoutWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 15.0, execute: work)
+    }
 }
 
 // MARK: - Icecast / Liquidsoap Compatibility
@@ -2776,9 +2820,9 @@ private extension DirectStreamingPlayer {
     /// - Returns: A new request with the mandatory Icecast headers.
     func requestWithIcecastHeaders(from originalRequest: URLRequest) -> URLRequest {
         var request = originalRequest
-        request.setValue("1", forHTTPHeaderField: "Icy-Metadata")          // Critical for ICY metadata
+        request.setValue("1", forHTTPHeaderField: "Icy-MetaData")
         request.setValue("Lutheran Radio/2.0 (iOS; LutheranRadioApp)", forHTTPHeaderField: "User-Agent")
-        request.setValue("close", forHTTPHeaderField: "Connection")      // Prevents stuck connections on some CDNs
+        request.setValue("keep-alive", forHTTPHeaderField: "Connection")
         request.setValue("audio/mpeg", forHTTPHeaderField: "Accept")
         return request
     }
