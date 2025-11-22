@@ -110,7 +110,7 @@ struct Provider: AppIntentTimelineProvider {
             configuration: configuration
         )
         
-        // RESEARCHER RECOMMENDATION: Longer refresh intervals for iOS 18 stability
+        // RESEARCHER RECOMMENDATION: Longer refresh intervals for iOS 26 stability
         let nextUpdate = Calendar.current.date(byAdding: .minute, value: 15, to: Date())!
         return Timeline(entries: [entry], policy: .after(nextUpdate))
     }
