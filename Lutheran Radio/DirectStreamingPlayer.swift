@@ -37,7 +37,7 @@ enum PlayerStatus {
 /// 3. **Error Handling**: Tracks transient/permanent errors; integrates with `SharedPlayerManager.swift` for widget/Live Activity state syncing.
 /// 4. **Privacy Safeguards**: No metadata tracking; minimal network footprint; excludes features like push notifications (see excluded features list above).
 ///
-/// iOS 18 Optimizations: Low-power mode reduces retry aggressiveness. For UI callbacks, see `ViewController.swift`'s `onStatusChange` and `onMetadataChange`. Shared via `SharedPlayerManager.shared` for widgets.
+/// iOS 26 Optimizations: Low-power mode reduces retry aggressiveness. For UI callbacks, see `ViewController.swift`'s `onStatusChange` and `onMetadataChange`. Shared via `SharedPlayerManager.shared` for widgets.
 /// `DirectStreamingPlayer` manages audio streaming, security validation, and network monitoring for the Lutheran Radio app.
 ///
 /// The Lutheran Radio app prioritizes user privacy and security to protect individuals, particularly in regions where religious content consumption may be monitored or restricted. This design ensures safe, anonymous access to Lutheran content without compromising personal data.

@@ -19,7 +19,7 @@ import WidgetKit
 /// - **Integration**: Called from `SharedPlayerManager.swift`'s `saveCurrentState()`; uses `WidgetCenter` for timeline reloads.
 /// - **Privacy/Efficiency**: Reduces battery/network use; no data beyond anonymous state.
 ///
-/// For widget data flow, see `loadSharedState()` in `SharedPlayerManager.swift`. iOS 18-focused for low-power scenarios.
+/// For widget data flow, see `loadSharedState()` in `SharedPlayerManager.swift`. iOS 26-focused for low-power scenarios.
 class WidgetRefreshManager {
     static let shared = WidgetRefreshManager()
     

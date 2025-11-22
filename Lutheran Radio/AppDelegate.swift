@@ -7,11 +7,11 @@
 
 /// - Article: Lutheran Radio App Overview
 ///
-/// Lutheran Radio is a privacy-first iOS 18+ app for streaming Lutheran content in multiple languages (English, German, Finnish, Swedish, Estonian). It emphasizes secure, anonymous access without tracking, analytics, or permissions for microphone/camera/location/push notifications.
+/// Lutheran Radio is a privacy-first iOS 26+ app for streaming Lutheran content in multiple languages (English, German, Finnish, Swedish, Estonian). It emphasizes secure, anonymous access without tracking, analytics, or permissions for microphone/camera/location/push notifications.
 ///
 /// Key Components:
 /// - **Streaming Core**: `DirectStreamingPlayer.swift` handles audio playback with SSL pinning and adaptive retries (see `CertificateValidator.swift` for validation logic).
-/// - **UI and Controls**: `ViewController.swift` manages the main interface, language selection (`LanguageCell.swift`), and iOS 18 features like low-power mode optimization.
+/// - **UI and Controls**: `ViewController.swift` manages the main interface, language selection (`LanguageCell.swift`), and iOS 26 features like low-power mode optimization.
 /// - **Background/Widget Integration**: Uses `SharedPlayerManager.swift` for state sharing with widgets; `RadioLiveActivityManager.swift` for local-only Live Activities; `WidgetRefreshManager.swift` for throttled updates.
 /// - **Lifecycle Handling**: `SceneDelegate.swift` processes URL schemes from widgets and manages background/foreground transitions.
 ///
