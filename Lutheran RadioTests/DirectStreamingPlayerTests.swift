@@ -10,7 +10,7 @@ import AVFoundation
 import Network
 @testable import Lutheran_Radio
 
-@available(iOS 18.0, *)
+@available(iOS 26.0, *)
 class DirectStreamingPlayerTests: XCTestCase {
     
     // MARK: - Test-Only Types (completely separate from real implementation)
