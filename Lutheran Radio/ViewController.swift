@@ -2826,11 +2826,27 @@ extension ViewController {
             self.statusLabel.text = text
             self.statusLabel.backgroundColor = backgroundColor
             self.statusLabel.textColor = textColor
+            self.statusLabel.accessibilityLabel = text   // always keep in sync
+            
             self.hasPermanentPlaybackError = isPermanentError
+            
             if text != String(localized: "status_playing") {
                 self.saveStateForWidget()
             }
-            if text == String(localized: "status_playing") || text == String(localized: "status_paused") {
+            
+            // Announce ALL important status changes
+            let importantStatuses: Set<String> = [
+                String(localized: "status_connecting"),
+                String(localized: "status_playing"),
+                String(localized: "status_paused"),
+                String(localized: "status_paused_call"),
+                String(localized: "status_no_internet"),
+                String(localized: "status_stream_unavailable"),
+                String(localized: "status_security_failed"),
+                String(localized: "status_stopped")
+            ]
+            
+            if importantStatuses.contains(text) {
                 UIAccessibility.post(notification: .announcement, argument: text)
             }
         }
@@ -2865,9 +2881,6 @@ extension ViewController: StreamingPlayerDelegate {
         
         // Existing logic: Save state, announce, etc.
         saveStateForWidget()
-        if let reason = reason {
-            UIAccessibility.post(notification: .announcement, argument: "Status: \(status) - \(reason)")
-        }
         
         // Keep play/pause button perfectly in sync no matter where the state change comes from
         DispatchQueue.main.async { [weak self] in
