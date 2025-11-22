@@ -11,18 +11,18 @@
 /// - Streaming radio content in multiple languages (English, German, Finnish, Swedish, Estonian).
 /// - UI elements for playback control, volume, metadata display, and AirPlay.
 /// - Network monitoring, audio session management, and widget integration.
-/// - iOS 18-specific optimizations like low-power mode handling and haptics.
+/// - iOS 26-specific optimizations like low-power mode handling and haptics.
 ///
 /// Flow: viewDidLoad initializes UI/audio; user interactions trigger playback/stream switches; callbacks handle status/metadata updates.
 ///
 /// Key dependencies: AVFoundation for audio, UIKit for UI, CoreHaptics for feedback.
 ///
-/// - Note: This app is iOS 18+ only, leveraging features like ProcessInfo.isLowPowerModeEnabled. All user-facing strings are localized.
+/// - Note: This app is iOS 26+ only, leveraging features like ProcessInfo.isLowPowerModeEnabled. All user-facing strings are localized.
 /// - SeeAlso: `DirectStreamingPlayer` for streaming logic, `SharedPlayerManager` for widget sharing.
 
 /// - Article: Main UI and User Interaction Flow
 ///
-/// `ViewController` orchestrates the app's interface: title, language selector (`LanguageCell.swift`), play/pause controls, volume, and metadata display. It handles iOS 18 features like parallax effects, haptics, and low-power mode (`updateForEnergyEfficiency()`).
+/// `ViewController` orchestrates the app's interface: title, language selector (`LanguageCell.swift`), play/pause controls, volume, and metadata display. It handles iOS 26 features like parallax effects, haptics, and low-power mode (`updateForEnergyEfficiency()`).
 /// - Stream Switching: Uses `DirectStreamingPlayer.isSwitchingStream` to suppress "stopped" status updates during language switches, preventing UI flicker and ensuring a seamless user experience.
 /// - Haptics: Provides tactile feedback for play/pause and stream switching using `CHHapticEngine` with a fallback to `UIImpactFeedbackGenerator`. Skips haptics in Low Power Mode to conserve battery.
 /// - Low Power Mode: Optimizes UI and processing (e.g., removes parallax, reduces image quality) when `ProcessInfo.processInfo.isLowPowerModeEnabled` is true.
@@ -94,7 +94,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     private var lastCollectionViewSize: CGSize = .zero
     
-    /// Flag indicating if the device is in Low Power Mode (iOS 18+).
+    /// Flag indicating if the device is in Low Power Mode (iOS 26+).
     /// - Returns: `true` if low power mode is enabled, triggering UI/processing optimizations.
     private var isLowEfficiencyMode: Bool {
         ProcessInfo.processInfo.isLowPowerModeEnabled
@@ -244,7 +244,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     // MARK: - Haptic Engine
     /// Manages the `CHHapticEngine` for providing tactile feedback during user interactions (e.g., play/pause, stream switching).
     /// - Features:
-    ///   - **Low Power Mode Support**: Skips haptics when `ProcessInfo.processInfo.isLowPowerModeEnabled` is true to conserve battery (iOS 18+ optimization).
+    ///   - **Low Power Mode Support**: Skips haptics when `ProcessInfo.processInfo.isLowPowerModeEnabled` is true to conserve battery (iOS 26+ optimization).
     ///   - **Reset Handling**: Automatically restarts the engine on interruptions (e.g., app backgrounding) via `resetHandler`.
     ///   - **Stopped Handling**: Restarts the engine unless stopped due to fatal errors (`.systemError`) or destruction (`.engineDestroyed`).
     ///   - **Fallback Mechanism**: Uses `UIImpactFeedbackGenerator` if `CHHapticEngine` fails to ensure reliable feedback.
@@ -484,7 +484,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         isInitialSetupComplete = true
         setupBackgroundParallax()
         
-        // Energy Efficiency Optimizations (iOS 18)
+        // Energy Efficiency Optimizations (iOS 26)
         updateForEnergyEfficiency()  // Initial check
         
         NotificationCenter.default.addObserver(

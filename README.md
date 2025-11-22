@@ -207,20 +207,20 @@ Lutheran Radio's security system uses a DNS TXT record to ensure only trusted ap
 
 To prevent naming collisions and maintain a clear history of security models, the table below lists all used security model names along with their validity periods. When selecting a new security model name, ensure it does not match any previously used name to avoid conflicts with older app versions or DNS TXT records.
 
-| Security Model Name | Valid From       | Valid Until     | App Version Introduced |
-|---------------------|------------------|-----------------|------------------------|
-| `turku`             | April 8, 2025    | April 20, 2025  | 1.0.4                  |
-| `mariehamn`         | April 15, 2025   | July 26, 2025   | 1.0.7                  |
-| `visby`             | May 26, 2025     | July 26, 2025   | 1.1.1                  |
-| `landvetter`        | June 1, 2025     | July 26, 2025   | 1.1.2                  |
-| `nuuk`              | June 15, 2025    | July 26, 2025   | 1.2.1                  |
-| `stjohns`           | July 22, 2025    | August 20, 2025 | 1.2.3                  |
-| `dc`                | July 27, 2025    | (ongoing)       | 1.2.4                  |
-| `florida`           | August 24, 2025  | (ongoing)       | 1.2.7                  |
-| `tampa`             | August 31, 2025  | (ongoing)       | 1.2.8                  |
-| `atlanta`           | October 6, 2025  | (ongoing)       | 26.0.1                 |
-| `birmingham`        | November 9, 2025 | (ongoing)       | 26.0.2                 |
-| `houston`           | (pending)        | (pending)       | (pending)              |
+| Security Model Name | Valid From         | Valid Until        | App Version Introduced |
+|---------------------|--------------------|--------------------|------------------------|
+| `turku`             | April 8, 2025      | April 20, 2025     | 1.0.4                  |
+| `mariehamn`         | April 15, 2025     | July 26, 2025      | 1.0.7                  |
+| `visby`             | May 26, 2025       | July 26, 2025      | 1.1.1                  |
+| `landvetter`        | June 1, 2025       | July 26, 2025      | 1.1.2                  |
+| `nuuk`              | June 15, 2025      | July 26, 2025      | 1.2.1                  |
+| `stjohns`           | July 22, 2025      | August 20, 2025    | 1.2.3                  |
+| `dc`                | July 27, 2025      | (ongoing)          | 1.2.4                  |
+| `florida`           | August 24, 2025    | (ongoing)          | 1.2.7                  |
+| `tampa`             | August 31, 2025    | (ongoing)          | 1.2.8                  |
+| `atlanta`           | October 6, 2025    | (ongoing)          | 26.0.1                 |
+| `birmingham`        | November 9, 2025   | (ongoing)          | 26.0.2                 |
+| `houston`           | (pending)          | (pending)          | (pending)              |
 
 **Notes:**
 - **Valid From:** The date when the security model was first published to the App Store.

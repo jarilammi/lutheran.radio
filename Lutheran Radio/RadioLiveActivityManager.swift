@@ -12,7 +12,7 @@ import Foundation
 
 /// - Article: Privacy-First Live Activities Integration
 ///
-/// `RadioLiveActivityManager` manages iOS 18 Live Activities for playback status, using local-only updates (no push notifications or server calls) to maintain privacy.
+/// `RadioLiveActivityManager` manages iOS 26 Live Activities for playback status, using local-only updates (no push notifications or server calls) to maintain privacy.
 ///
 /// Process:
 /// 1. **Start/Update**: `startActivity()` creates activities with attributes like stream language/flag; `updateCurrentActivity()` refreshes every 10s via timer.
