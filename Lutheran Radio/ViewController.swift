@@ -494,6 +494,23 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             object: nil
         )
         
+        // Fix stuck "Connecting…" label after successful stream switches
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleStreamSwitchCompleted),
+            name: .streamSwitchCompleted,
+            object: nil
+        )
+        
+        // Guarantee "Playing" UI after successful stream switch
+        // (covers rare case where AVPlayer rate KVO fails on some streams but audio actually plays)
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(forcePlayingStateAfterSwitch),
+            name: .streamSwitchCompleted,
+            object: nil
+        )
+        
         // Play special tuning sound immediately after setup
         playSpecialTuningSound { [weak self] in
             guard let self = self, self.hasInternetConnection && !self.isManualPause else {
@@ -1381,14 +1398,22 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         sharedDefaults?.synchronize()
     }
     
-    private func updatePlayPauseButton(isPlaying: Bool) {
-        if self.isPlaying == isPlaying {
-            return
-        }
-        let config = UIImage.SymbolConfiguration(weight: .bold)
+    private func updatePlayPauseButton(isPlaying: Bool, animated: Bool = false) {
         let imageName = isPlaying ? "pause.fill" : "play.fill"
-        playPauseButton.setImage(UIImage(systemName: imageName, withConfiguration: config), for: .normal)
-        playPauseButton.accessibilityLabel = String(localized: isPlaying ? "accessibility_label_pause" : "accessibility_label_play")
+        let config = UIImage.SymbolConfiguration(weight: .bold)
+        let newImage = UIImage(systemName: imageName, withConfiguration: config)
+        
+        if animated {
+            UIView.transition(with: playPauseButton, duration: 0.22, options: .transitionCrossDissolve, animations: {
+                self.playPauseButton.setImage(newImage, for: .normal)
+            })
+        } else {
+            playPauseButton.setImage(newImage, for: .normal)
+        }
+        
+        playPauseButton.accessibilityLabel = isPlaying
+        ? String(localized: "accessibility_label_play_pause")
+        : String(localized: "accessibility_label_play")
     }
     
     private func setupBackgroundParallax() {
@@ -1738,6 +1763,21 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             tuningPlayer?.numberOfLoops = 0
             tuningPlayer?.prepareToPlay()
             let didPlay = tuningPlayer?.play() ?? false
+            
+            // Optimistic UI during tuning sound – masks latency perfectly
+            DispatchQueue.main.async { [weak self] in
+                self?.updatePlayPauseButton(isPlaying: true, animated: true)
+                
+                if !SharedPlayerManager.shared.isPlaying {
+                    self?.safeUpdateStatusLabel(
+                        text: String(localized: "status_connecting"),
+                        backgroundColor: .systemYellow,
+                        textColor: .label,
+                        isPermanentError: false
+                    )
+                }
+            }
+            
             isTuningSoundPlaying = didPlay
             hasPlayedSpecialTuningSound = true // Mark as played
             #if DEBUG
@@ -1802,6 +1842,21 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             tuningPlayer?.numberOfLoops = 0
             tuningPlayer?.prepareToPlay()
             let didPlay = tuningPlayer?.play() ?? false
+            
+            // Optimistic UI during tuning sound – masks latency perfectly
+            DispatchQueue.main.async { [weak self] in
+                self?.updatePlayPauseButton(isPlaying: true, animated: true)
+                
+                if !SharedPlayerManager.shared.isPlaying {
+                    self?.safeUpdateStatusLabel(
+                        text: String(localized: "status_connecting"),
+                        backgroundColor: .systemYellow,
+                        textColor: .label,
+                        isPermanentError: false
+                    )
+                }
+            }
+            
             isTuningSoundPlaying = didPlay
             #if DEBUG
             if didPlay {
@@ -2174,6 +2229,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         NotificationCenter.default.removeObserver(self, name: AVAudioSession.routeChangeNotification, object: nil)
         NotificationCenter.default.removeObserver(self, name: UIApplication.didReceiveMemoryWarningNotification, object: nil)
         NotificationCenter.default.removeObserver(self, name: Notification.Name("NSProcessInfoPowerStateDidChangeNotification"), object: nil)
+        NotificationCenter.default.removeObserver(self, name: .streamSwitchCompleted, object: nil)
         
         // Cancel network monitoring
         networkMonitor?.pathUpdateHandler = nil
@@ -2607,11 +2663,7 @@ extension ViewController {
     
     // MARK: - Toggle Playback
     @objc private func togglePlayback() {
-        #if DEBUG
-        print("📱 togglePlayback called from: \(Thread.callStackSymbols[1])")
-        #endif
-        
-        // Visual feedback: Scale animation
+        // Instant visual press feedback
         UIView.animate(withDuration: 0.1, animations: {
             self.playPauseButton.transform = CGAffineTransform(scaleX: 0.95, y: 0.95)
         }) { _ in
@@ -2620,14 +2672,75 @@ extension ViewController {
             }
         }
         
-        if isPlaying {
-            pausePlayback()
-            playHapticFeedback(style: .medium) // Softer for pause
-        } else {
-            startPlayback()
-            playHapticFeedback(style: .heavy) // Stronger for play
+        // Prevent multiple rapid taps
+        playPauseButton.isUserInteractionEnabled = false
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            [weak self] in
+            self?.playPauseButton.isUserInteractionEnabled = true
         }
-        UIAccessibility.post(notification: .announcement, argument: isPlaying ? String(localized: "status_playing") : String(localized: "status_paused"))
+        
+        if SharedPlayerManager.shared.isPlaying {
+            // === PAUSE ===
+            updatePlayPauseButton(isPlaying: false)
+            safeUpdateStatusLabel(text: String(localized: "status_paused"),
+                                  backgroundColor: .systemYellow,
+                                  textColor: .label,
+                                  isPermanentError: false)
+            
+            SharedPlayerManager.shared.stop {
+                self.playHapticFeedback(style: .medium)  // Softer for pause
+            }
+            
+        } else {
+            // === PLAY – optimistic UI ===
+            updatePlayPauseButton(isPlaying: true)
+            safeUpdateStatusLabel(text: String(localized: "status_connecting"),
+                                  backgroundColor: .systemYellow,
+                                  textColor: .label,
+                                  isPermanentError: false)
+            
+            SharedPlayerManager.shared.play { [weak self] success in
+                DispatchQueue.main.async {
+                    guard let self = self else { return }
+                    
+                    if !success {
+                        // Revert on failure
+                        self.updatePlayPauseButton(isPlaying: false)
+                        self.safeUpdateStatusLabel(text: String(localized: "status_stopped"),
+                                                   backgroundColor: .systemRed,
+                                                   textColor: .white,
+                                                   isPermanentError: false)
+                    }
+                    // success → onStatusChange(.playing) will keep the pause button
+                    
+                    self.playHapticFeedback(style: .heavy)  // Stronger haptic for Play
+                }
+            }
+        }
+    }
+    
+    @objc private func handleStreamSwitchCompleted() {
+        // Force correct state after successful stream switch (fixes stuck "Connecting…" bug)
+        let isPlaying = SharedPlayerManager.shared.isPlaying
+        
+        updatePlayPauseButton(isPlaying: isPlaying)
+        
+        if isPlaying {
+            safeUpdateStatusLabel(
+                text: String(localized: "status_playing"),
+                backgroundColor: .systemGreen,
+                textColor: .white,
+                isPermanentError: false
+            )
+            
+            // Optional: subtle haptic on successful switch (feels nice)
+            playHapticFeedback(style: .light)
+        }
+    }
+    
+    @objc private func forcePlayingStateAfterSwitch() {
+        // Stream switch completed successfully → audio is playing even if rate KVO bugged
+        onStatusChange(.playing, nil)  // re-use all the perfect logic we already have
     }
     
     // MARK: - Play Haptic Feedback
@@ -2740,7 +2853,7 @@ extension ViewController: StreamingPlayerDelegate {
         case .stopped:
             safeUpdateStatusLabel(text: String(localized: "status_stopped"), backgroundColor: .systemRed, textColor: .white, isPermanentError: false)
         case .connecting:
-            safeUpdateStatusLabel(text: String(localized: "status_connecting"), backgroundColor: .systemBlue, textColor: .white, isPermanentError: false)
+            safeUpdateStatusLabel(text: String(localized: "status_connecting"), backgroundColor: .systemYellow, textColor: .label, isPermanentError: false)
         case .security:
             safeUpdateStatusLabel(text: String(localized: "status_security_failed"), backgroundColor: .systemRed, textColor: .white, isPermanentError: true)
         }
@@ -2754,6 +2867,17 @@ extension ViewController: StreamingPlayerDelegate {
         saveStateForWidget()
         if let reason = reason {
             UIAccessibility.post(notification: .announcement, argument: "Status: \(status) - \(reason)")
+        }
+        
+        // Keep play/pause button perfectly in sync no matter where the state change comes from
+        DispatchQueue.main.async { [weak self] in
+            let showPauseButton = switch status {
+            case .playing, .connecting: true
+            case .paused where reason == "Interruption": true   // keep pause icon during phone call, etc.
+            default: false                                      // stopped, security error, etc. → show play icon
+            }
+            
+            self?.updatePlayPauseButton(isPlaying: showPauseButton)
         }
     }
     
