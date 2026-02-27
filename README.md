@@ -41,6 +41,16 @@ The app is fully localized in the following languages:
 
 ## Local Development and Contributing
 
+### AI Coding Instructions
+
+All AI coding agents (Claude, Grok, Cursor, Aider, Windsurf, etc.) **must** follow [`CODING_AGENT.md`](CODING_AGENT.md) as their permanent system prompt / project instructions.
+
+This ensures every single change respects the same non-negotiable security model, localization rules, and build gates.
+
+### Prerequisites
+ - Xcode 16.3+ (Swift 6)
+ - iOS 26.1 simulator
+
 To ensure a smooth development experience, follow these steps before contributing:
 
 1. **Verify Project Build:** Confirm the project builds successfully with: ```xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.1 -destination 'platform=iOS Simulator,OS=26.1,name=iPhone 17' clean build```
