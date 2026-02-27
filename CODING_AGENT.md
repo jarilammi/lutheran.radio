@@ -25,11 +25,11 @@ It is live on the App Store: https://apps.apple.com/fi/app/lutheran-radio/id6738
 2. **Build & Test Gate**
    - Every single change must keep these commands green:
      ```bash
-     xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.1 \
-       -destination 'platform=iOS Simulator,OS=26.1,name=iPhone 17' clean build
+     xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.2 \
+       -destination 'platform=iOS Simulator,OS=26.2,name=iPhone 17' clean build
 
-     xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.1 \
-       -destination 'platform=iOS Simulator,OS=26.1,name=iPhone 17' clean test
+     xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.2 \
+       -destination 'platform=iOS Simulator,OS=26.2,name=iPhone 17' clean test
      ```
    - If either fails → fix it before suggesting the change.
 
@@ -69,7 +69,7 @@ It is live on the App Store: https://apps.apple.com/fi/app/lutheran-radio/id6738
 ## Development Workflow (Always Follow)
 
 1. Open `Lutheran Radio.xcodeproj` in latest Xcode.
-2. Use iPhone 17 simulator, iOS 26.1.
+2. Use iPhone 17 simulator, iOS 26.2.
 3. Run the two xcodebuild commands above after **every** change.
 4. Update `README.md` and relevant docs/ files if behavior changes.
 5. Never commit broken builds.

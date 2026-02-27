@@ -49,7 +49,7 @@ This ensures every single change respects the same non-negotiable security model
 
 ### Prerequisites
  - Xcode 16.3+ (Swift 6)
- - iOS 26.1 simulator
+ - iOS 26.2 simulator
 
 To ensure a smooth development experience, follow these steps before contributing:
 
