@@ -90,14 +90,9 @@ It is live on the App Store: https://apps.apple.com/fi/app/lutheran-radio/id6738
 - Use modern Swift patterns (actors, async/await, `#available`, strict concurrency).
 - Never use force-unwraps (`!`) on security or networking paths.
 
-## Security Model History (Reference Only – Do Not Modify)
+## Security Model History Reference (Do Not Modify – See README.md)
 
-| Model       | Valid From     | Valid Until    | Introduced In |
-|-------------|----------------|----------------|---------------|
-| houston     | pending        | pending        | upcoming      |
-| birmingham  | 2025-11-09     | ongoing        | 26.0.2        |
-| atlanta     | 2025-10-06     | ongoing        | 26.0.1        |
-| ... (older models archived in docs/) | ... | ... | ... |
+The complete security model history is archived in README.md, which serves as the source of truth. Refer to it for the full table of past and current models, including validity periods and app versions.
 
 Current model = **houston**
 
