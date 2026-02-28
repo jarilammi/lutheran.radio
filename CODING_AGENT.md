@@ -53,7 +53,7 @@ It is live on the App Store: https://apps.apple.com/fi/app/lutheran-radio/id6738
 - **Language**: Swift (99%)
 - **Project**: `Lutheran Radio.xcodeproj`
 - **UI**: SwiftUI + WidgetKit (LutheranRadioWidget)
-- **Audio**: `DirectStreamingPlayer.swift` (custom secure player over port 8443)
+- **Audio**: `DirectStreamingPlayer.swift` (custom secure HTTPS player)
 - **Security**:
   * `CertificateValidator.swift` (runtime full-cert + SPKI fallback + transition window)
   * ATS + NSPinnedDomains in Info.plist
@@ -122,7 +122,7 @@ Operate in full agentic mode at all times:
 
 ## Common Pitfalls
 
-- SSL Certificate Check on Port 8443: When verifying SSL certificate functionality or connectivity on port 8443 of the remote server, if you receive a "403 Access Forbidden" response, it is likely because the current security model (e.g., appSecurityModel = "houston" in DirectStreamingPlayer.swift) was not embedded in the URL. This is not a server-side issue but a deliberate part of the security protocol. Always ensure the security model is included in the URL path when performing such checks or tests. Refer to DirectStreamingPlayer.swift for examples of proper URL construction.
+- SSL Certificate Check: When verifying SSL certificate functionality or connectivity on the remote server, if you receive a "403 Access Forbidden" response, it is likely because the current security model (e.g., appSecurityModel = "houston" in DirectStreamingPlayer.swift) was not embedded in the URL. This is not a server-side issue but a deliberate part of the security protocol. Always ensure the security model is included in the URL query when performing such checks or tests. Refer to DirectStreamingPlayer.swift for examples of proper URL construction.
 
 ## Agent Compatibility Notes
 - **Claude / Cursor / Windsurf**: Load this file as Project Instructions / custom system prompt.
