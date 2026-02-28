@@ -95,7 +95,7 @@ For enhanced security, the app uses two complementary pinning approaches:
    - Current Pinned SPKI Fingerprints (from `Info.plist` under `NSAppTransportSecurity > NSPinnedDomains > lutheran.radio > NSPinnedLeafIdentities`):
      - `fwp4KADDyKqDa3qN5vy6UUJlffXBnjzrei3QTuYofYY=`
      - `XuAdGZ5Hy28pa2OHHMOry/fzpW8XyA5AV5bEDwSX2Ys=`
-   - Verification: Use `openssl s_client -connect livestream.lutheran.radio:8443 -servername livestream.lutheran.radio < /dev/null | openssl x509 -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | base64` and match against these values.
+   - Verification: Use `openssl s_client -connect livestream.lutheran.radio:443 -servername livestream.lutheran.radio < /dev/null | openssl x509 -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | base64` and match against these values.
 
 2. **Full Certificate Fingerprint Pinning (via CertificateValidator.swift - Runtime Validation)**:
    - Pins the SHA-256 fingerprint of the full certificate's DER representation (hex, uppercase, colon-separated).
@@ -130,7 +130,7 @@ This approach prevents service disruption during certificate updates while maint
 To check or update the pinned fingerprint:
 
 ```bash
-openssl s_client -connect livestream.lutheran.radio:8443 -servername livestream.lutheran.radio < /dev/null 2>/dev/null \
+openssl s_client -connect livestream.lutheran.radio:443 -servername livestream.lutheran.radio < /dev/null 2>/dev/null \
 | openssl x509 -pubkey -noout \
 | openssl pkey -pubin -inform pem -outform der \
 | openssl dgst -sha256 -binary \
