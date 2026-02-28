@@ -43,10 +43,10 @@ class CertificateValidator: NSObject, URLSessionDelegate {
     
     /// The pinned SHA-256 fingerprint of the full certificate (DER representation), formatted as hex (uppercase, colon-separated).
     ///
-    /// Generated via: `openssl s_client -connect livestream.lutheran.radio:8443 | openssl x509 -fingerprint -sha256 -noout`.
+    /// Generated via: `openssl s_client -connect livestream.lutheran.radio:443 | openssl x509 -fingerprint -sha256 -noout`.
     /// Update this value post-certificate expiry/rotation via app release.
     internal var pinnedCertFingerprint: String {
-        "CC:F7:8E:09:EF:F3:3D:9A:5D:8B:B0:5C:74:28:0D:F6:BE:14:1C:C4:47:F9:69:C2:90:2C:43:97:66:8B:3D:CC" // openssl s_client -connect livestream.lutheran.radio:8443 | openssl x509 -fingerprint -sha256 -noout
+        "CC:F7:8E:09:EF:F3:3D:9A:5D:8B:B0:5C:74:28:0D:F6:BE:14:1C:C4:47:F9:69:C2:90:2C:43:97:66:8B:3D:CC" // openssl s_client -connect livestream.lutheran.radio:443 | openssl x509 -fingerprint -sha256 -noout
     }
     
     /// The start date for the certificate transition period (July 27, 2026).
