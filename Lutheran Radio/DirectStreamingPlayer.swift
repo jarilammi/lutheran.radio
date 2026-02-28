@@ -1144,7 +1144,7 @@ class DirectStreamingPlayer: NSObject {
             if self.hasInternetConnection && !wasConnected {
                 // Reset server selection to force new selection
                 self.lastServerSelectionTime = nil
-                self.selectedServer = Self.servers[0] // Reset to default
+                self.currentSelectedServer = Self.servers[0] // Reset to default
                 
                 self.lastValidationTime = nil
                 self.validationState = .pending
