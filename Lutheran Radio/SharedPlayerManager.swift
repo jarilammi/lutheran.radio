@@ -152,6 +152,7 @@ class SharedPlayerManager {
         }
         
         player.stop(completion: completion)
+        sharedDefaults?.set(false, forKey: "isPlaying")
     }
     
     // Simplified switch stream method for widgets
