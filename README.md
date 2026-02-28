@@ -230,7 +230,7 @@ To prevent naming collisions and maintain a clear history of security models, th
 | `tampa`             | August 31, 2025    | (ongoing)          | 1.2.8                  |
 | `atlanta`           | October 6, 2025    | (ongoing)          | 26.0.1                 |
 | `birmingham`        | November 9, 2025   | (ongoing)          | 26.0.2                 |
-| `houston`           | (pending)          | (pending)          | (pending)              |
+| `houston`           | March 1, 2026      | (ongoing)          | 26.3.0                 |
 
 **Notes:**
 - **Valid From:** The date when the security model was first published to the App Store.
