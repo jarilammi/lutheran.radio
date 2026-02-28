@@ -431,7 +431,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         languageCollectionView.delegate = self
         languageCollectionView.dataSource = self
         languageCollectionView.register(LanguageCell.self, forCellWithReuseIdentifier: "LanguageCell")
-            
+        languageCollectionView.bounces = false
+        languageCollectionView.isScrollEnabled = false
+        
         let currentLocale = Locale.current
         let languageCode = currentLocale.language.languageCode?.identifier ?? "en"
         let initialIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.languageCode == languageCode }) ?? 0
@@ -446,7 +448,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         let indexPath = IndexPath(item: initialIndex, section: 0)
         languageCollectionView.selectItem(at: indexPath, animated: false, scrollPosition: .centeredHorizontally)
         centerCollectionViewContent()
-        languageCollectionView.scrollToItem(at: indexPath, at: .centeredHorizontally, animated: false)
         updateSelectionIndicator(to: initialIndex, isInitial: true)
         
         // Set initial volume slider position (UI only)
@@ -607,6 +608,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {  // Increased delay for more stability
+            self.updateSelectionIndicator(to: self.selectedStreamIndex, isInitial: true)
+        }
         if !didInitialLayout {
             didInitialLayout = true
             selectionIndicator.center.x = view.bounds.width / 2
@@ -618,7 +622,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
                 guard let self = self else { return }
                 let indexPath = IndexPath(item: initialIndex, section: 0)
-                self.languageCollectionView.scrollToItem(at: indexPath, at: .centeredHorizontally, animated: true)
+                self.languageCollectionView.selectItem(at: indexPath, animated: false, scrollPosition: .centeredHorizontally)
                 // Ensure indicator stays put
                 self.updateSelectionIndicator(to: initialIndex, isInitial: true)
             }
@@ -1963,8 +1967,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         coordinator.animate(alongsideTransition: { [weak self] _ in
             guard let self = self else { return }
             self.centerCollectionViewContent()
-            let indexPath = IndexPath(item: self.selectedStreamIndex, section: 0)
-            self.languageCollectionView.scrollToItem(at: indexPath, at: .centeredHorizontally, animated: false)
             self.updateSelectionIndicator(to: self.selectedStreamIndex, isInitial: false)
         }, completion: { [weak self] _ in
             guard let self = self else { return }
@@ -2007,17 +2009,14 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         }
         
         let indexPath = IndexPath(item: index, section: 0)
-        languageCollectionView.scrollToItem(at: indexPath, at: .centeredHorizontally, animated: !isInitial)
-        languageCollectionView.layoutIfNeeded()
+        
+        languageCollectionView.layoutIfNeeded() // Ensure latest layout
         
         if let layoutAttributes = languageCollectionView.layoutAttributesForItem(at: indexPath) {
             let cellFrame = layoutAttributes.frame
             var cellCenterX = cellFrame.midX
             
-            // Adjust to view space
-            cellCenterX -= languageCollectionView.bounds.minX
-            
-            // Clamp to view space (0 + half-width to bounds.width - half-width)
+            // Clamp to view space to prevent offscreen
             let halfWidth = selectionIndicator.frame.width / 2
             let minX = halfWidth
             let maxX = languageCollectionView.bounds.width - halfWidth
@@ -2109,7 +2108,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         #if DEBUG
         print("📱 collectionView:didSelectItemAt called for index \(indexPath.item)")
         #endif
-
+        
         // Debounce stream switch
         let now = Date()
         if let lastTime = lastStreamSwitchTime, now.timeIntervalSince(lastTime) < streamSwitchDebounceInterval {
@@ -2119,7 +2118,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             return
         }
         lastStreamSwitchTime = now
-
+        
         streamSwitchWorkItem?.cancel()
         let workItem = DispatchWorkItem { [weak self] in
             guard let self = self else { return }
@@ -2182,7 +2181,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                     self.startPlayback()
                 }
                 self.updateSelectionIndicator(to: index)
-                self.languageCollectionView.scrollToItem(at: IndexPath(item: index, section: 0), at: .centeredHorizontally, animated: true)
                 
                 // Force another save after UI updates - keep this for safety
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
