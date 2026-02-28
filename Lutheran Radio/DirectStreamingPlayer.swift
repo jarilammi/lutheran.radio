@@ -255,7 +255,7 @@ class DirectStreamingPlayer: NSObject {
     //
     // All stream URLs follow this exact pattern:
     //
-    //   https://<language-slug>-<region>.lutheran.radio:8443/lutheranradio.mp3?security_model=<model>
+    //   https://<language-slug>-<region>.lutheran.radio/lutheranradio.mp3?security_model=<model>
     //
     // Breakdown:
     // • <language-slug>  → hardcoded mapping from language code:
@@ -267,7 +267,7 @@ class DirectStreamingPlayer: NSObject {
     //     - America/, US/, Canada/, EST/CST/MST/PST → "us"
     //     - Everything else → "us" (US cluster has higher capacity)
     //
-    // • Port is always 8443 (TLS on non-standard port)
+    // • Port is always 443 (TLS on standard port)
     // • Path is always "/lutheranradio.mp3"
     // • Query parameter "security_model" = current appSecurityModel ("houston" as of version 26.1.0)
     //
@@ -328,7 +328,7 @@ class DirectStreamingPlayer: NSObject {
             var components = URLComponents()
             components.scheme = "https"
             components.host = "\(languageSlug)-\(region).lutheran.radio"
-            components.port = 8443
+            // Removed: components.port = 8443 (now defaults to 443 for https)
             components.path = "/lutheranradio.mp3"
             components.queryItems = [
                 URLQueryItem(name: "security_model", value: DirectStreamingPlayer.appSecurityModel)
