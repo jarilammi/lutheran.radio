@@ -120,6 +120,10 @@ Operate in full agentic mode at all times:
   - Cross-check Apple docs or Swift proposals when relevant
 - After every suggestion, include exact diff or full file, security impact, and build status.
 
+## Common Pitfalls
+
+- SSL Certificate Check on Port 8443: When verifying SSL certificate functionality or connectivity on port 8443 of the remote server, if you receive a "403 Access Forbidden" response, it is likely because the current security model (e.g., appSecurityModel = "houston" in DirectStreamingPlayer.swift) was not embedded in the URL. This is not a server-side issue but a deliberate part of the security protocol. Always ensure the security model is included in the URL path when performing such checks or tests. Refer to DirectStreamingPlayer.swift for examples of proper URL construction.
+
 ## Agent Compatibility Notes
 - **Claude / Cursor / Windsurf**: Load this file as Project Instructions / custom system prompt.
 - **Grok**: Leverage your native tools (code_execution, web_search, browse_page, etc.) for validation loops.
