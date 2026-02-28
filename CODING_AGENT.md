@@ -12,6 +12,11 @@ It is live on the App Store: https://apps.apple.com/fi/app/lutheran-radio/id6738
 
 **Core value**: Security is non-negotiable. Everything else is secondary.
 
+## Document Maintenance
+
+- Updates to this file must be approved by the repository owner and documented in a PR with security review.
+- All changes must include a security impact assessment.
+
 ## Non-Negotiable Rules (Violating any = immediate rejection)
 
 1. **Security Model is Non-Negotiable**
@@ -50,9 +55,9 @@ It is live on the App Store: https://apps.apple.com/fi/app/lutheran-radio/id6738
 - **UI**: SwiftUI + WidgetKit (LutheranRadioWidget)
 - **Audio**: `DirectStreamingPlayer.swift` (custom secure player over port 8443)
 - **Security**:
-  - `CertificateValidator.swift` (runtime full-cert + SPKI fallback + transition window)
-  - ATS + NSPinnedDomains in Info.plist
-  - DNS TXT security model validation (1-hour cache in UserDefaults)
+  * `CertificateValidator.swift` (runtime full-cert + SPKI fallback + transition window)
+  * ATS + NSPinnedDomains in Info.plist
+  * DNS TXT security model validation (1-hour cache in UserDefaults)
 - **Tests**: Unit + UI tests in dedicated targets
 - **Scripts**: Minimal Python (1%) — treat as build helpers only
 
@@ -77,10 +82,10 @@ It is live on the App Store: https://apps.apple.com/fi/app/lutheran-radio/id6738
 ## When You Make Changes
 
 - Always provide:
-  - Clear explanation of **why** the change is needed
-  - Security impact assessment (even if "none")
-  - Updated xcodebuild status
-  - Any new strings that need localization
+  * Clear explanation of **why** the change is needed
+  * Security impact assessment (even if "none")
+  * Updated xcodebuild status
+  * Any new strings that need localization
 - Prefer small, focused PRs.
 - Use modern Swift patterns (actors, async/await, `#available`, strict concurrency).
 - Never use force-unwraps (`!`) on security or networking paths.
@@ -114,10 +119,10 @@ Operate in full agentic mode at all times:
 - Think step-by-step out loud before any code change.
 - Explicitly evaluate security, localization, and build impact first.
 - If the agent supports tools (Grok tools, Claude computer use, code interpreter, browser, etc.), use them aggressively to:
-  - Validate xcodebuild commands
-  - Fetch current DNS TXT record at `securitymodels.lutheran.radio`
-  - Verify certificate fingerprints (use README openssl commands)
-  - Cross-check Apple docs or Swift proposals when relevant
+  * Validate xcodebuild commands
+  * Fetch current DNS TXT record at `securitymodels.lutheran.radio`
+  * Verify certificate fingerprints (use README openssl commands)
+  * Cross-check Apple docs or Swift proposals when relevant
 - After every suggestion, include exact diff or full file, security impact, and build status.
 
 ## Common Pitfalls
