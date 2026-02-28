@@ -307,8 +307,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     private var backgroundConstraints: [NSLayoutConstraint] = []
     private var selectedStreamIndex: Int = 0
+    private var isRotating = false
     private var lastRotationTime: Date? // To debounce rapid rotations
-    private let rotationDebounceInterval: TimeInterval = 0.1 // 100ms
+    private let rotationDebounceInterval: TimeInterval = 0.5 // 500ms
     
     private var isInitialSetupComplete = false
     private var isInitialScrollLocked = true
@@ -1943,6 +1944,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         print("📱 viewWillTransition to size: \(size)")
         #endif
         
+        isRotating = true  // Set flag
+        
         // Verify selectedStreamIndex against the player's current stream
         if let currentStreamIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.url == streamingPlayer.selectedStream.url }) {
             if currentStreamIndex != selectedStreamIndex {
@@ -1972,6 +1975,10 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             #if DEBUG
             print("📱 Rotation completed, selected index: \(self.selectedStreamIndex)")
             #endif
+            
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {  // Slight delay for stability
+                self.isRotating = false  // Clear flag post-animation
+            }
         })
     }
     
@@ -2007,9 +2014,13 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             let cellFrame = layoutAttributes.frame
             var cellCenterX = cellFrame.midX
             
-            // Clamp cellCenterX to collection view bounds
-            let minX = languageCollectionView.bounds.minX + selectionIndicator.frame.width / 2
-            let maxX = languageCollectionView.bounds.maxX - selectionIndicator.frame.width / 2
+            // Adjust to view space
+            cellCenterX -= languageCollectionView.bounds.minX
+            
+            // Clamp to view space (0 + half-width to bounds.width - half-width)
+            let halfWidth = selectionIndicator.frame.width / 2
+            let minX = halfWidth
+            let maxX = languageCollectionView.bounds.width - halfWidth
             cellCenterX = max(minX, min(maxX, cellCenterX))
             
             #if DEBUG
@@ -2088,6 +2099,13 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     // MARK: - UICollectionView Delegate
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
+        guard !isRotating else {  // Suppress during rotation
+            #if DEBUG
+            print("📱 Suppressed didSelect during rotation")
+            #endif
+            return
+        }
+        
         #if DEBUG
         print("📱 collectionView:didSelectItemAt called for index \(indexPath.item)")
         #endif
