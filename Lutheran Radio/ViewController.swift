@@ -332,16 +332,16 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     // New streaming player
     private var streamingPlayer: DirectStreamingPlayer
     private let audioQueue = DispatchQueue(label: "radio.lutheran.audio", qos: .userInitiated)
-    
+
     // Add initializer for testing
-    init(streamingPlayer: DirectStreamingPlayer = DirectStreamingPlayer()) {
+    init(streamingPlayer: DirectStreamingPlayer = DirectStreamingPlayer.shared) {
         self.streamingPlayer = streamingPlayer
         super.init(nibName: nil, bundle: nil)
         self.streamingPlayer.setDelegate(self)
     }
-    
+
     required init?(coder: NSCoder) {
-        self.streamingPlayer = DirectStreamingPlayer()
+        self.streamingPlayer = DirectStreamingPlayer.shared
         super.init(coder: coder)
         self.streamingPlayer.setDelegate(self)
     }
