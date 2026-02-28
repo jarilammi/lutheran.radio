@@ -826,7 +826,7 @@ class DirectStreamingPlayerTests: XCTestCase {
         XCTAssertTrue(streams.contains { $0.languageCode == "de" })
         XCTAssertTrue(streams.contains { $0.languageCode == "fi" })
         XCTAssertTrue(streams.contains { $0.languageCode == "sv" })
-        XCTAssertTrue(streams.contains { $0.languageCode == "ee" })
+        XCTAssertTrue(streams.contains { $0.languageCode == "et" })
     }
     
     // MARK: - Performance Tests
