@@ -45,6 +45,7 @@ It is live on the App Store: https://apps.apple.com/fi/app/lutheran-radio/id6738
 
 4. **iOS 26+ Only**
    - Target iOS 26.1 minimum.
+   - Minimum Xcode 26+ for MIE/EMTE support and full Swift 6 compatibility.
    - Use modern APIs (Swift 6 concurrency, Observation, etc.).
    - Leverage Memory Integrity Enforcement (MIE) and Enhanced Memory Tagging Extension (EMTE) where possible.
 
@@ -58,6 +59,7 @@ It is live on the App Store: https://apps.apple.com/fi/app/lutheran-radio/id6738
   * `CertificateValidator.swift` (runtime full-cert + SPKI fallback + transition window)
   * ATS + NSPinnedDomains in Info.plist
   * DNS TXT security model validation (1-hour cache in UserDefaults)
+  * MIE/EMTE: Enabled via hardened runtime entitlements (requires Xcode 26+ for build support)
 - **Tests**: Unit + UI tests in dedicated targets
 - **Scripts**: Minimal Python (1%) — treat as build helpers only
 
@@ -73,7 +75,7 @@ It is live on the App Store: https://apps.apple.com/fi/app/lutheran-radio/id6738
 
 ## Development Workflow (Always Follow)
 
-1. Open `Lutheran Radio.xcodeproj` in latest Xcode.
+1. Open `Lutheran Radio.xcodeproj` in Xcode 26+ (latest stable version recommended).
 2. Use iPhone 17 simulator, iOS 26.2.
 3. Run the two xcodebuild commands above after **every** change.
 4. Update `README.md` and relevant docs/ files if behavior changes.

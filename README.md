@@ -48,7 +48,7 @@ All AI coding agents (Claude, Grok, Cursor, Aider, Windsurf, etc.) **must** foll
 This ensures every single change respects the same non-negotiable security model, localization rules, and build gates.
 
 ### Prerequisites
- - Xcode 16.3+ (Swift 6)
+ - Xcode 26+ (Swift 6)
  - iOS 26.2 simulator
 
 To ensure a smooth development experience, follow these steps before contributing:
@@ -141,7 +141,7 @@ Match the output against the ```SPKI-SHA256-BASE64``` value in ```Info.plist```.
 
 ## Memory Integrity Enforcement
 
-The app opts into iOS 26's Memory Integrity Enforcement (MIE) features, including the Enhanced Memory Tagging Extension (EMTE), to provide hardware-backed memory safety protections on compatible devices (e.g., iPhone 17 and later with A19 or newer chips). This helps mitigate memory corruption exploits, use-after-free vulnerabilities, and other memory-related security issues by enforcing tagged memory allocations, bounds checking, and pointer authentication at runtime.
+The app opts into iOS 26's Memory Integrity Enforcement (MIE) features, including the Enhanced Memory Tagging Extension (EMTE), to provide hardware-backed memory safety protections on compatible devices (e.g., iPhone 17 and later with A19 or newer chips). Full support for building and enabling these features requires Xcode 26+. This helps mitigate memory corruption exploits, use-after-free vulnerabilities, and other memory-related security issues by enforcing tagged memory allocations, bounds checking, and pointer authentication at runtime.
 
 This feature enhances the app's defense-in-depth strategy, ensuring robust security for users on the latest iOS devices while maintaining backward compatibility.
 
