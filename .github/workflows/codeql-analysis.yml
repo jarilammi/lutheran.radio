@@ -9,7 +9,7 @@ on:
 jobs:
   analyze:
     name: Analyze
-    runs-on: macos-latest
+    runs-on: macos-26
     permissions:
       security-events: write
       checks: write
@@ -29,7 +29,7 @@ jobs:
           config-file: .github/codeql/codeql-config.yml
 
       - name: Set up Xcode Developer Directory
-        run: sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
+        run: sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
 
       - name: Reset and List Simulators
         run: |
@@ -40,18 +40,18 @@ jobs:
       - name: Build with Xcode
         run: |
           xcodebuild -scheme "Lutheran Radio" \
-            -destination 'platform=iOS Simulator,OS=26.0.1,name=iPad (A16)' \
+            -destination 'platform=iOS Simulator,OS=26.2,name=iPad Pro (12.9-inch) (6th generation)' \
             clean build
         env:
-          DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+          DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
 
 #      - name: Run Tests with Xcode
 #        run: |
 #          xcodebuild -scheme "Lutheran Radio" \
-#            -destination 'platform=iOS Simulator,OS=26.0.1,name=iPad (A16)' \
+#            -destination 'platform=iOS Simulator,OS=26.2,name=iPad Pro (12.9-inch) (6th generation)' \
 #            clean test | xcpretty
 #        env:
-#          DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+#          DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
