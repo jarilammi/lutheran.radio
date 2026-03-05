@@ -353,7 +353,7 @@ struct LutheranRadioLiveActivityWidget: Widget {
         case "de": return "German"
         case "fi": return "Finnish"
         case "sv": return "Swedish"
-        case "ee": return "Estonian"
+        case "et": return "Estonian"
         default: return "Unknown"
         }
     }
@@ -364,13 +364,13 @@ struct LutheranRadioLiveActivityWidget: Widget {
         case "de": return "🇩🇪"
         case "fi": return "🇫🇮"
         case "sv": return "🇸🇪"
-        case "ee": return "🇪🇪"
+        case "et": return "🇪🇪"
         default: return "🌍"
         }
     }
     
     private func getAlternativeStreams(current: String) -> [String] {
-        let allStreams = ["en", "de", "fi", "sv", "ee"]
+        let allStreams = ["en", "de", "fi", "sv", "et"]
         return Array(allStreams.filter { $0 != current }.prefix(3))
     }
     
@@ -482,13 +482,13 @@ struct LockScreenLiveActivityView: View {
         case "de": return String(localized: "language_german")
         case "fi": return String(localized: "language_finnish")
         case "sv": return String(localized: "language_swedish")
-        case "ee": return String(localized: "language_estonian")
+        case "et": return String(localized: "language_estonian")
         default: return "Unknown"
         }
     }
     
     private func getAlternativeStreams(current: String) -> [String] {
-        let allStreams = ["en", "de", "fi", "sv", "ee"]
+        let allStreams = ["en", "de", "fi", "sv", "et"]
         return allStreams.filter { $0 != current }
     }
     
@@ -498,7 +498,7 @@ struct LockScreenLiveActivityView: View {
         case "de": return "🇩🇪"
         case "fi": return "🇫🇮"
         case "sv": return "🇸🇪"
-        case "ee": return "🇪🇪"
+        case "et": return "🇪🇪"
         default: return "🌍"
         }
     }

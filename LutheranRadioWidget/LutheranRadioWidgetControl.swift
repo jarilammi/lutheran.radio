@@ -166,7 +166,7 @@ enum StreamLanguageOption: String, AppEnum {
     case german = "de"       // German Lutheran content
     case finnish = "fi"      // Finnish Lutheran content
     case swedish = "sv"      // Swedish Lutheran content
-    case estonian = "ee"     // Estonian Lutheran content
+    case estonian = "et"     // Estonian Lutheran content
     
     static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "Language")
     
