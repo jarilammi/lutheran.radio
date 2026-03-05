@@ -199,7 +199,7 @@ class DirectStreamingPlayerTests: XCTestCase {
             MockStream(title: "Lutheran Radio - German", url: URL(string: "https://german.lutheran.radio/lutheranradio.mp3")!, language: "German", languageCode: "de", flag: "🇩🇪"),
             MockStream(title: "Lutheran Radio - Finnish", url: URL(string: "https://finnish.lutheran.radio/lutheranradio.mp3")!, language: "Finnish", languageCode: "fi", flag: "🇫🇮"),
             MockStream(title: "Lutheran Radio - Swedish", url: URL(string: "https://swedish.lutheran.radio/lutheranradio.mp3")!, language: "Swedish", languageCode: "sv", flag: "🇸🇪"),
-            MockStream(title: "Lutheran Radio - Estonian", url: URL(string: "https://estonian.lutheran.radio/lutheranradio.mp3")!, language: "Estonian", languageCode: "ee", flag: "🇪🇪")
+            MockStream(title: "Lutheran Radio - Estonian", url: URL(string: "https://estonian.lutheran.radio/lutheranradio.mp3")!, language: "Estonian", languageCode: "et", flag: "🇪🇪")
         ]
         
         static let mockServers = [
@@ -501,7 +501,7 @@ class DirectStreamingPlayerTests: XCTestCase {
         XCTAssertTrue(streams.contains { $0.languageCode == "de" })
         XCTAssertTrue(streams.contains { $0.languageCode == "fi" })
         XCTAssertTrue(streams.contains { $0.languageCode == "sv" })
-        XCTAssertTrue(streams.contains { $0.languageCode == "ee" })
+        XCTAssertTrue(streams.contains { $0.languageCode == "et" })
     }
     
     // MARK: - Server Selection Tests
