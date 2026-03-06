@@ -37,7 +37,7 @@ import CommonCrypto
 /// - Access via `CertificateValidator.shared`.
 /// - Call `validateServerCertificate(for:completion:)` for initial/periodic HEAD-based validation.
 /// - Implements `URLSessionDelegate` for challenge-based validation during sessions.
-class CertificateValidator: NSObject, URLSessionDelegate {
+final class CertificateValidator: NSObject, URLSessionDelegate {
     /// Shared singleton instance for global access.
     static let shared = CertificateValidator()
     
@@ -89,7 +89,7 @@ class CertificateValidator: NSObject, URLSessionDelegate {
     /// validator.currentDate = { Date(timeIntervalSince1970: someTimestamp) }
     /// ```
     /// - Important: Do not change in production.
-    internal var currentDate: () -> Date = { Date() }
+    internal var currentDate: @Sendable () -> Date = { Date() }
     
     /// Determines if the current date falls within the defined transition period.
     private var isInTransitionPeriod: Bool {
