@@ -930,29 +930,33 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             print("🔒 [Validate Async] Starting validation for model: \(DirectStreamingPlayer.appSecurityModel)")
             #endif
             
-            let timeoutWorkItem = DispatchWorkItem { [weak self] in
+            let timeoutTask = Task { [weak self, completion] in          // Task<Void, Never> is Sendable
+                try? await Task.sleep(for: .seconds(5))
+                
                 guard let self = self, self.isValidating else { return }
-                self.isValidating = false
-                self.validationState = .failedTransient
-                #if DEBUG
-                print("🔒 [Validate Async] Validation timed out")
-                #endif
-                DispatchQueue.main.async {
+                
+                await MainActor.run { [weak self, completion] in
+                    guard let self = self, self.isValidating else { return }
+                    
+                    self.isValidating = false
+                    self.validationState = .failedTransient
+                    #if DEBUG
+                    print("🔒 [Validate Async] Validation timed out")
+                    #endif
                     self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_no_internet"))
                     completion(false)
                 }
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 5.0, execute: timeoutWorkItem)
-            
-            let unmanagedTimeout = Unmanaged.passRetained(timeoutWorkItem)   // ← one new line
-            
-            self.fetchValidSecurityModels { [weak self, unmanagedTimeout] result in   // ← capture list updated (no inner async needed)
+
+            // Now the fetch closure can capture the Task directly (Sendable!)
+            self.fetchValidSecurityModels { [weak self, timeoutTask] result in
                 guard let self = self else { return }
                 
-                unmanagedTimeout.takeRetainedValue().cancel()   // ← cancel updated
+                timeoutTask.cancel()                     // ← clean, safe, Sendable
                 
                 self.isValidating = false
                 self.lastValidationTime = Date()
+                
                 #if DEBUG
                 print("🔒 [Validate Async] Updated lastValidationTime to \(self.lastValidationTime!)")
                 #endif
