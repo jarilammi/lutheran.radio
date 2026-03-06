@@ -34,7 +34,6 @@ final class WidgetRefreshManager: @unchecked Sendable {
     private init() {}
     
     // Main refresh method with debouncing and change detection
-    // Main refresh method with debouncing and change detection
     func refreshIfNeeded(for newState: WidgetState, immediate: Bool = false) {
         // ALWAYS refresh on language changes, regardless of throttling
         if let lastState = lastKnownState,
