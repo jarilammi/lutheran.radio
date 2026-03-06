@@ -653,15 +653,15 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     var onMetadataChange: ((String?) -> Void)?
     internal var currentMetadata: String?
     
-    // Safe wrappers to ensure callbacks are always on main thread
+    // MARK: - Safe callbacks to MainActor (Swift 6 fix)
     private func safeOnStatusChange(isPlaying: Bool, status: String) {
-        DispatchQueue.main.async { [weak self] in
+        Task { @MainActor [weak self] in
             self?.onStatusChange?(isPlaying, status)
         }
     }
     
     private func safeOnMetadataChange(metadata: String?) {
-        DispatchQueue.main.async { [weak self] in
+        Task { @MainActor [weak self] in
             self?.onMetadataChange?(metadata)
         }
     }

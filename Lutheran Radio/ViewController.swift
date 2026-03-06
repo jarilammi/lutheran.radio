@@ -760,6 +760,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 #endif
                 return
             }
+            
+            // ✅ Now guaranteed to run on MainActor (thanks to player's Task { @MainActor })
             self.isPlaying = isPlaying
             self.updatePlayPauseButton(isPlaying: isPlaying)
             
@@ -770,12 +772,12 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 self.statusLabel.text = String(localized: "status_playing")
                 self.statusLabel.backgroundColor = .systemGreen
                 self.statusLabel.textColor = .black
-                playPauseButton.accessibilityLabel = String(localized: "accessibility_label_play_pause")  // e.g., "Pause"
+                playPauseButton.accessibilityLabel = String(localized: "accessibility_label_play_pause")
             } else {
                 self.statusLabel.text = statusText
-                playPauseButton.accessibilityLabel = String(localized: "accessibility_label_play")  // e.g., "Play"
+                playPauseButton.accessibilityLabel = String(localized: "accessibility_label_play")
                 
-                // Handle different status types with appropriate colors and actions
+                // Handle different status types...
                 if statusText == String(localized: "status_security_failed") {
                     self.hasPermanentPlaybackError = true
                     self.isManualPause = true
@@ -784,7 +786,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                     self.showSecurityModelAlert()
                     
                 } else if statusText == String(localized: "status_ssl_transition") {
-                    // NEW: Handle SSL transition state
                     self.statusLabel.backgroundColor = .systemOrange
                     self.statusLabel.textColor = .white
                     self.showSSLTransitionAlert()
@@ -797,7 +798,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 } else if statusText == String(localized: "status_stream_unavailable") {
                     self.statusLabel.backgroundColor = .systemOrange
                     self.statusLabel.textColor = .white
-                    // Show alert if not already presenting
                     if self.presentedViewController == nil {
                         let alert = UIAlertController(
                             title: String(localized: "stream_unavailable_title"),
@@ -816,7 +816,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                     self.statusLabel.textColor = .black
                 }
             }
-            self.updateNowPlayingInfo()
+            self.updateNowPlayingInfo()   // ✅ safe — both this closure and the function are on MainActor
         }
         
         streamingPlayer.onMetadataChange = { [weak self] metadata in
@@ -826,56 +826,60 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 #endif
                 return
             }
-            DispatchQueue.main.async {
-                if let metadata = metadata {
-                    self.metadataLabel.text = metadata
-                    self.updateNowPlayingInfo(title: metadata)
-                    
-                    // Extract potential speaker names using regex
-                    let regex = try? NSRegularExpression(pattern: "\\b[A-Z][a-z]+(?:\\s[A-Z][a-z]+)*\\b")
-                    let matches = regex?.matches(in: metadata, range: NSRange(metadata.startIndex..., in: metadata))
-                    let potentialNames = matches?.compactMap { match in
-                        Range(match.range, in: metadata).map { String(metadata[$0]) }
-                    }
-                    
-                    // Check for specific speakers or "Lutheran Radio"
-                    let specificSpeakers = Set(["Jari Lammi"])
-                    let matchedSpeaker = potentialNames?.first(where: { specificSpeakers.contains($0) })
-                    
-                    if let speaker = matchedSpeaker, let image = UIImage(named: speaker.lowercased().replacingOccurrences(of: " ", with: "_") + "_photo") {
-                        UIView.transition(with: self.speakerImageView, duration: 0.3, options: .transitionCrossDissolve, animations: {
-                            self.speakerImageView.image = image
-                            self.speakerImageView.isHidden = false
-                            self.speakerImageHeightConstraint.constant = 100
-                            self.speakerImageView.accessibilityLabel = "Photo of \(speaker)"
-                        }, completion: { _ in
-                            #if DEBUG
-                            print("Speaker image frame: \(self.speakerImageView.frame)")
-                            print("Language collection view frame: \(self.languageCollectionView.frame)")
-                            #endif
-                        })
-                    } else if potentialNames?.contains("Lutheran Radio") == true, let image = UIImage(named: "radio-placeholder") {
-                        UIView.transition(with: self.speakerImageView, duration: 0.3, options: .transitionCrossDissolve, animations: {
-                            self.speakerImageView.image = image
-                            self.speakerImageView.isHidden = false
-                            self.speakerImageHeightConstraint.constant = 100
-                            self.speakerImageView.accessibilityLabel = "Lutheran Radio Logo"
-                        }, completion: { _ in
-                            #if DEBUG
-                            print("Speaker image frame: \(self.speakerImageView.frame)")
-                            print("Language collection view frame: \(self.languageCollectionView.frame)")
-                            #endif
-                        })
-                    } else {
-                        self.speakerImageView.isHidden = true
-                    }
+            
+            // ✅ Removed DispatchQueue.main.async — no longer needed!
+            // The callback is now guaranteed to run on the MainActor
+            // (thanks to Task { @MainActor } in DirectStreamingPlayer)
+            
+            if let metadata = metadata {
+                self.metadataLabel.text = metadata
+                self.updateNowPlayingInfo(title: metadata)
+                
+                // Extract potential speaker names using regex
+                let regex = try? NSRegularExpression(pattern: "\\b[A-Z][a-z]+(?:\\s[A-Z][a-z]+)*\\b")
+                let matches = regex?.matches(in: metadata, range: NSRange(metadata.startIndex..., in: metadata))
+                let potentialNames = matches?.compactMap { match in
+                    Range(match.range, in: metadata).map { String(metadata[$0]) }
+                }
+                
+                let specificSpeakers = Set(["Jari Lammi"])
+                let matchedSpeaker = potentialNames?.first(where: { specificSpeakers.contains($0) })
+                
+                if let speaker = matchedSpeaker,
+                   let image = UIImage(named: speaker.lowercased().replacingOccurrences(of: " ", with: "_") + "_photo") {
+                    UIView.transition(with: self.speakerImageView, duration: 0.3, options: .transitionCrossDissolve, animations: {
+                        self.speakerImageView.image = image
+                        self.speakerImageView.isHidden = false
+                        self.speakerImageHeightConstraint.constant = 100
+                        self.speakerImageView.accessibilityLabel = "Photo of \(speaker)"
+                    }, completion: { _ in
+                        #if DEBUG
+                        print("Speaker image frame: \(self.speakerImageView.frame)")
+                        print("Language collection view frame: \(self.languageCollectionView.frame)")
+                        #endif
+                    })
+                } else if potentialNames?.contains("Lutheran Radio") == true,
+                          let image = UIImage(named: "radio-placeholder") {
+                    UIView.transition(with: self.speakerImageView, duration: 0.3, options: .transitionCrossDissolve, animations: {
+                        self.speakerImageView.image = image
+                        self.speakerImageView.isHidden = false
+                        self.speakerImageHeightConstraint.constant = 100
+                        self.speakerImageView.accessibilityLabel = "Lutheran Radio Logo"
+                    }, completion: { _ in
+                        #if DEBUG
+                        print("Speaker image frame: \(self.speakerImageView.frame)")
+                        print("Language collection view frame: \(self.languageCollectionView.frame)")
+                        #endif
+                    })
                 } else {
-                    self.metadataLabel.text = String(localized: "no_track_info")
-                    self.updateNowPlayingInfo()
                     self.speakerImageView.isHidden = true
                 }
-                self.saveStateForWidget()
+            } else {
+                self.metadataLabel.text = String(localized: "no_track_info")
+                self.updateNowPlayingInfo()
+                self.speakerImageView.isHidden = true
             }
+            self.saveStateForWidget()
         }
     }
     
@@ -1229,6 +1233,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         }
     }
     
+    @MainActor
     private func updateNowPlayingInfo(title: String? = nil) {
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: title ?? "Lutheran Radio Live",
@@ -1237,10 +1242,12 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
             MPMediaItemPropertyMediaType: MPMediaType.anyAudio.rawValue
         ]
+        
         if let image = UIImage(named: "radio-placeholder") {
             let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
             info[MPMediaItemPropertyArtwork] = artwork
         }
+        
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
     }
     
