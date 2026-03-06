@@ -21,6 +21,7 @@ import Foundation
 /// 4. **Privacy Safeguards**: All data local; no external communication (see app-wide privacy in `DirectStreamingPlayer.swift`).
 ///
 /// For app lifecycle ties, see extensions in `SceneDelegate.swift` and `AppDelegate.swift`. Widgets use separate sharing via `SharedPlayerManager.swift`.
+@MainActor
 class RadioLiveActivityManager: ObservableObject {
     static let shared = RadioLiveActivityManager()
     
