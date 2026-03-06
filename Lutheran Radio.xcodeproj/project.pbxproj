@@ -100,7 +100,7 @@
 				Tools/tuning_sound_8.wav,
 				Tools/tuning_sound_9.wav,
 				Tools/tuning_sound_10.wav,
-				Tools/tuning_sound_11wav,
+				Tools/tuning_sound_11.wav,
 				Tools/tuning_sound_12.wav,
 			);
 			target = B7AFC6AB2CCD7D0A00BDDD83 /* Lutheran Radio */;
