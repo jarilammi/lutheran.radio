@@ -13,7 +13,8 @@ import dnssd
 import Network
 
 // MARK: - Sendable Completion Helpers (Swift 6)
-typealias BoolCompletion = @Sendable (Bool) -> Void
+typealias BoolCompletion   = @Sendable (Bool) -> Void
+typealias VoidCompletion   = () -> Void
 typealias ResultCompletion<T> = @Sendable (Result<T, Error>) -> Void
 
 // MARK: - Delegate Protocol and Status Enum
@@ -1323,7 +1324,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// - Precondition: `setStream(to:)` must be called first.
     /// - Warning: Blocks if validation fails permanently.
     /// - Note: Handles retries adaptively based on thermal/low-power state.
-    func play(completion: BoolCompletion) {
+    func play(completion: @escaping BoolCompletion) {
         if validationState == .pending {
             validateSecurityModelAsync { [weak self] isValid in
                 guard let self else { completion(false); return }
@@ -1370,7 +1371,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         setupAudioSessionObservers()
     }
     
-    private func playWithServer(fallbackServers: [Server], completion: BoolCompletion) {
+    private func playWithServer(fallbackServers: [Server], completion: @escaping BoolCompletion) {
         lastServerSelectionTime = Date()
         #if DEBUG
         print("📡 Attempting playback with server: \(currentSelectedServer.name)")
@@ -1391,7 +1392,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         }
     }
 
-    private func tryNextServer(fallbackServers: [Server], completion: BoolCompletion) {
+    private func tryNextServer(fallbackServers: [Server], completion: @escaping BoolCompletion) {
         guard let nextServer = fallbackServers.first else {
             self.safeOnStatusChange(isPlaying: false, status: String(localized: String.LocalizationValue("status_stream_unavailable")))
             completion(false)
@@ -1499,11 +1500,11 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         bufferingTimer = nil
     }
     
-    private func startPlaybackWithFallback(fallbackServers: [Server], completion: BoolCompletion) {
+    private func startPlaybackWithFallback(fallbackServers: [Server], completion: @escaping BoolCompletion) {
         DispatchQueue.main.async { [weak self] in
             guard let self else { completion(false); return }
             
-            self.stop(completion: nil, silent: true)
+            self.stop(completion: nil as VoidCompletion?, silent: true)
             
             let connectionStartTime = Date()
             let connectionId = UUID()
@@ -1824,7 +1825,9 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     ///   - isSwitchingStream: If `true`, treats this as a stream switch, suppressing "stopped" status updates unless explicitly overridden. Defaults to the instance’s `isSwitchingStream` flag.
     ///   - silent: If `true`, skips all status updates to avoid UI flicker (e.g., during internal resets or stream switches).
     /// - Note: When `isSwitchingStream` or `silent` is `true`, the "status_stopped" update is suppressed to prevent misleading UI changes during stream transitions. Calls `performActualStop` with an effective switching flag to handle status suppression.
-    func stop(completion: (() -> Void)? = nil, isSwitchingStream: Bool? = nil, silent: Bool = false) {
+    func stop(completion: VoidCompletion? = nil,
+              isSwitchingStream: Bool? = nil,
+              silent: Bool = false) {
         #if DEBUG
         print("🛑 FORCE STOPPING ALL PLAYBACK - isSwitchingStream: \(String(describing: isSwitchingStream))")
         #endif
@@ -1865,7 +1868,9 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     ///   - silent: If `true`, skips all status updates to avoid UI flicker.
     ///   - effectiveSwitching: If `true`, suppresses "status_stopped" updates during stream switches to prevent misleading UI changes.
     /// - Note: Combines `silent` and `effectiveSwitching` into `effectiveSilent` to determine if status updates should be skipped. Ensures cleanup of player, resource loaders, and observers.
-    private func performActualStop(completion: (() -> Void)? = nil, silent: Bool = false, effectiveSwitching: Bool) {
+    private func performActualStop(completion: VoidCompletion? = nil,
+                                   silent: Bool = false,
+                                   effectiveSwitching: Bool) {
         clearSSLProtectionTimer()
         isSSLHandshakeComplete = true
         hasStartedPlaying = false
