@@ -37,7 +37,7 @@ import CommonCrypto
 /// - Access via `CertificateValidator.shared`.
 /// - Call `validateServerCertificate(for:completion:)` for initial/periodic HEAD-based validation.
 /// - Implements `URLSessionDelegate` for challenge-based validation during sessions.
-final class CertificateValidator: NSObject, URLSessionDelegate {
+final class CertificateValidator: NSObject, URLSessionDelegate, @unchecked Sendable {
     /// Shared singleton instance for global access.
     static let shared = CertificateValidator()
     
