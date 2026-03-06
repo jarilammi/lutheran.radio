@@ -335,7 +335,7 @@ struct SmallWidgetView: View {
                 Spacer()
                 
                 // Large, accessible play/pause button
-                Button(intent: ToggleRadioIntent()) {
+                Button(intent: WidgetToggleRadioIntent()) {
                     Image(systemName: entry.isPlaying ? "pause.circle.fill" : "play.circle.fill")
                         .font(.title2)
                         .foregroundColor(entry.isPlaying ? .orange : .blue)
@@ -431,7 +431,7 @@ struct MediumWidgetView: View {
                 // RIGHT SIDE: Control panel
                 VStack(spacing: 8) {
                     // Primary play/pause button
-                    Button(intent: ToggleRadioIntent()) {
+                    Button(intent: WidgetToggleRadioIntent()) {
                         VStack(spacing: 2) {
                             Image(systemName: entry.isPlaying ? "pause.circle.fill" : "play.circle.fill")
                                 .font(.title)
@@ -546,7 +546,7 @@ struct LargeWidgetView: View {
                         .font(.headline)
                         .fontWeight(.bold)
                     Spacer()
-                    Button(intent: ToggleRadioIntent()) {
+                    Button(intent: WidgetToggleRadioIntent()) {
                         Image(systemName: entry.isPlaying ? "pause.circle.fill" : "play.circle.fill")
                             .font(.title2)
                             .foregroundColor(entry.isPlaying ? .orange : .blue)
@@ -631,9 +631,13 @@ struct LargeWidgetView: View {
  * - Immediate user feedback
  */
 struct WidgetToggleRadioIntent: AppIntent {
-    static var title: LocalizedStringResource = "Toggle Lutheran Radio"
-    static var description = IntentDescription("Play or pause Lutheran Radio.")
-
+    nonisolated static var title: LocalizedStringResource {
+        "Toggle Lutheran Radio"
+    }
+    nonisolated static var description: IntentDescription {
+        IntentDescription("Play or pause Lutheran Radio.")
+    }
+    
     /**
      * Executes play/pause toggle from Home Screen widget
      * Provides immediate feedback to user through debug logging
@@ -680,8 +684,12 @@ struct WidgetToggleRadioIntent: AppIntent {
  * - Safe error handling for missing streams
  */
 struct SwitchStreamIntent: AppIntent {
-    static var title: LocalizedStringResource = "Switch Stream"
-    static var description = IntentDescription("Switch to a different language stream.")
+    nonisolated static var title: LocalizedStringResource {
+        "Switch Stream"
+    }
+    nonisolated static var description: IntentDescription {
+        IntentDescription("Switch to a different language stream.")
+    }
     
     /// Target language code for the switch
     @Parameter(title: "Language Code")
@@ -731,6 +739,10 @@ struct SwitchStreamIntent: AppIntent {
  * - Display customization options
  */
 struct RadioWidgetConfiguration: WidgetConfigurationIntent {
-    static var title: LocalizedStringResource = "Widget Configuration"
-    static var description = IntentDescription("Configuration for Lutheran Radio widget.")
+    nonisolated static var title: LocalizedStringResource {
+        "Widget Configuration"
+    }
+    nonisolated static var description: IntentDescription {
+        IntentDescription("Configuration for Lutheran Radio widget.")
+    }
 }
