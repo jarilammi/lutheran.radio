@@ -135,7 +135,7 @@ enum NetworkPathStatus: Sendable {
 
 /// Protocol for monitoring network path changes.
 /// - Note: Abstracts NWPathMonitor for testability; use `NWPathMonitorAdapter` in production.
-protocol NetworkPathMonitoring: AnyObject {
+protocol NetworkPathMonitoring: AnyObject, Sendable {
     /// Handler for network path updates.
     /// - Parameter status: The updated status (e.g., .satisfied).
     var pathUpdateHandler: (@Sendable (NetworkPathStatus) -> Void)? { get set }
@@ -148,7 +148,7 @@ protocol NetworkPathMonitoring: AnyObject {
 }
 
 /// Adapts `NWPathMonitor` to the `NetworkPathMonitoring` protocol.
-class NWPathMonitorAdapter: NetworkPathMonitoring {
+final class NWPathMonitorAdapter: NetworkPathMonitoring, @unchecked Sendable {
     private let monitor: NWPathMonitor
     
     var pathUpdateHandler: (@Sendable (NetworkPathStatus) -> Void)? {
@@ -190,7 +190,7 @@ class NWPathMonitorAdapter: NetworkPathMonitoring {
 }
 
 /// Manages direct audio streaming, security validation, network monitoring, and privacy protections for the Lutheran Radio app.
-class DirectStreamingPlayer: NSObject {
+final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     // MARK: - Security Model
     private static let appSecurityModel = "houston"   // ← CHANGE ONLY HERE when rotating
     private var isValidating = false
@@ -224,7 +224,7 @@ class DirectStreamingPlayer: NSObject {
     private var lastValidationTime: Date?
     
     /// Injectable closure for the current date, used for testing time-dependent logic.
-    internal var currentDate: () -> Date = { Date() }
+    internal var currentDate: @Sendable () -> Date = { Date() }
     
     #if DEBUG
     var networkMonitor: NetworkPathMonitoring?
@@ -692,7 +692,7 @@ class DirectStreamingPlayer: NSObject {
     }
     
     #if DEBUG
-    open func fetchValidSecurityModels(completion: @escaping (Result<Set<String>, Error>) -> Void) {
+    public func fetchValidSecurityModels(completion: @escaping (Result<Set<String>, Error>) -> Void) {
         fetchValidSecurityModelsImplementation(completion: completion)
     }
     #else
@@ -1001,7 +1001,7 @@ class DirectStreamingPlayer: NSObject {
     }
     
     #if DEBUG
-    open func validateSecurityModelAsync(completion: @escaping (Bool) -> Void) {
+    public func validateSecurityModelAsync(completion: @escaping (Bool) -> Void) {
         validateSecurityModelAsyncImplementation(completion: completion)
     }
     #else
@@ -1084,7 +1084,7 @@ class DirectStreamingPlayer: NSObject {
     }
     
     #if DEBUG
-    open func setupNetworkMonitoring() {
+    public func setupNetworkMonitoring() {
         networkMonitor = pathMonitor
         networkMonitor?.pathUpdateHandler = { [weak self] status in
             guard let self = self else {
@@ -2117,7 +2117,7 @@ extension DirectStreamingPlayer {
         let subdomain: String
     }
     
-    static var servers = [
+    static let servers = [
         Server(
             name: "EU",
             pingURL: URL(string: "https://european.lutheran.radio/ping")!,
@@ -2581,7 +2581,7 @@ extension DirectStreamingPlayer {
     ///   - Captures Sendables only in handler; weak `self` avoids cycles.
     ///   - Deallocs post-resume (lifetime ~0.1-0.2s).
     /// Invariant: Exactly one path (timeout or update) resumes the continuation.
-    private class CellularCheckCoordinator {
+    private final class CellularCheckCoordinator: @unchecked Sendable {
         private let syncQueue = DispatchQueue(label: "cellular.hasResumed")
         private var hasResumed = false
         private weak var monitor: NWPathMonitor?
