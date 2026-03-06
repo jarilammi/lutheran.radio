@@ -25,7 +25,7 @@ import AVFoundation
 /// - Initialize with an `AVAssetResourceLoadingRequest` from AVFoundation.
 /// - Set as the delegate for a URLSession handling streaming requests.
 /// - Call `cancel()` to stop ongoing data tasks and invalidate the session.
-class StreamingSessionDelegate: NSObject, URLSessionDataDelegate {
+final class StreamingSessionDelegate: NSObject, URLSessionDataDelegate, @unchecked Sendable {
     
     /// The AVAssetResourceLoadingRequest being fulfilled by this delegate.
     internal var loadingRequest: AVAssetResourceLoadingRequest
