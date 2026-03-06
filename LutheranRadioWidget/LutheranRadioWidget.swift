@@ -658,7 +658,7 @@ struct WidgetToggleRadioIntent: AppIntent {
             currentLanguage: manager.currentStream.languageCode,
             hasError: manager.hasError
         )
-        WidgetRefreshManager.shared.refreshIfNeeded(for: newState, immediate: true)
+        await WidgetRefreshManager.shared.refreshIfNeeded(for: newState, immediate: true)
         
         #if DEBUG
         print("🔗 WidgetToggleRadioIntent completed successfully")
