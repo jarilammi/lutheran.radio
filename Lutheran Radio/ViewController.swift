@@ -753,7 +753,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     // MARK: - Enhanced Status Change Handling
     private func setupStreamingCallbacks() {
-        streamingPlayer.onStatusChange = { [weak self] isPlaying, statusText in
+        streamingPlayer.onStatusChange = { @MainActor [weak self] isPlaying, statusText in
             guard let self = self else {
                 #if DEBUG
                 print("📱 onStatusChange: ViewController is nil, skipping callback")
@@ -761,11 +761,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 return
             }
             
-            // ✅ Now guaranteed to run on MainActor (thanks to player's Task { @MainActor })
             self.isPlaying = isPlaying
             self.updatePlayPauseButton(isPlaying: isPlaying)
-            
-            // Save state for widget after any status change
             self.saveStateForWidget()
             
             if isPlaying {
@@ -777,7 +774,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 self.statusLabel.text = statusText
                 playPauseButton.accessibilityLabel = String(localized: "accessibility_label_play")
                 
-                // Handle different status types...
                 if statusText == String(localized: "status_security_failed") {
                     self.hasPermanentPlaybackError = true
                     self.isManualPause = true
@@ -816,20 +812,16 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                     self.statusLabel.textColor = .black
                 }
             }
-            self.updateNowPlayingInfo()   // ✅ safe — both this closure and the function are on MainActor
+            self.updateNowPlayingInfo()
         }
         
-        streamingPlayer.onMetadataChange = { [weak self] metadata in
+        streamingPlayer.onMetadataChange = { @MainActor [weak self] metadata in
             guard let self = self else {
                 #if DEBUG
                 print("📱 onMetadataChange: ViewController is nil, skipping callback")
                 #endif
                 return
             }
-            
-            // ✅ Removed DispatchQueue.main.async — no longer needed!
-            // The callback is now guaranteed to run on the MainActor
-            // (thanks to Task { @MainActor } in DirectStreamingPlayer)
             
             if let metadata = metadata {
                 self.metadataLabel.text = metadata
