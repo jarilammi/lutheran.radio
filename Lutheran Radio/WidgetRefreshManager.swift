@@ -20,7 +20,8 @@ import WidgetKit
 /// - **Privacy/Efficiency**: Reduces battery/network use; no data beyond anonymous state.
 ///
 /// For widget data flow, see `loadSharedState()` in `SharedPlayerManager.swift`. iOS 26-focused for low-power scenarios.
-class WidgetRefreshManager {
+@MainActor
+final class WidgetRefreshManager: @unchecked Sendable {
     static let shared = WidgetRefreshManager()
     
     private var lastRefreshTime: Date?
@@ -33,11 +34,14 @@ class WidgetRefreshManager {
     private init() {}
     
     // Main refresh method with debouncing and change detection
+    // Main refresh method with debouncing and change detection
     func refreshIfNeeded(for newState: WidgetState, immediate: Bool = false) {
         // ALWAYS refresh on language changes, regardless of throttling
         if let lastState = lastKnownState,
            lastState.currentLanguage != newState.currentLanguage {
-            performRefresh(for: newState, immediate: true)
+            Task { @MainActor in
+                await performRefresh(for: newState)
+            }
             return
         }
         
@@ -62,28 +66,38 @@ class WidgetRefreshManager {
             }
         }
         
-        performRefresh(for: newState, immediate: immediate)
+        // Normal case → fire immediately on the main actor
+        Task { @MainActor in
+            await performRefresh(for: newState)
+        }
     }
     
     private func scheduleDelayedRefresh(for state: WidgetState, delay: TimeInterval) {
         pendingRefresh?.cancel()
         
         pendingRefresh = DispatchWorkItem { [weak self] in
-            self?.performRefresh(for: state, immediate: false)
-            // Gradually decrease interval after successful refresh
-            self?.adaptiveInterval = max((self?.adaptiveInterval ?? 0.5) * 0.8, 0.5)
+            Task { @MainActor in
+                guard let self else { return }
+                
+                await self.performRefresh(for: state)
+                
+                // Gradually decrease interval after successful refresh
+                self.adaptiveInterval = max(self.adaptiveInterval * 0.8, 0.5)
+            }
         }
         
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: pendingRefresh!)
     }
-    
-    private func performRefresh(for state: WidgetState, immediate: Bool) {
+
+    private func performRefresh(for state: WidgetState) async {
         pendingRefresh?.cancel()
         lastRefreshTime = Date()
         lastKnownState = state
         
-        WidgetCenter.shared.getCurrentConfigurations { result in
-            if case .success(let configs) = result, !configs.isEmpty {
+        do {
+            let configs = try await WidgetCenter.shared.currentConfigurations()
+            
+            if !configs.isEmpty {
                 WidgetCenter.shared.reloadTimelines(ofKind: "LutheranRadioWidget")
                 WidgetCenter.shared.reloadTimelines(ofKind: "radio.lutheran.LutheranRadio.LutheranRadioWidget")
                 
@@ -95,6 +109,10 @@ class WidgetRefreshManager {
                 print("🔗 Skipped widget refresh: No active widgets configured")
                 #endif
             }
+        } catch {
+            #if DEBUG
+            print("🔗 Widget refresh failed: \(error.localizedDescription)")
+            #endif
         }
     }
     

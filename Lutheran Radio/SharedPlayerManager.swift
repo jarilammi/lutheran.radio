@@ -24,7 +24,7 @@ extension Notification.Name {
 /// - **Privacy Note**: Stores only anonymous, non-identifiable data (e.g., no timestamps or histories).
 ///
 /// Usage: Access via `shared`; widgets read from UserDefaults without initializing the full player. For Live Activity integration, see `RadioLiveActivityManager.swift`.
-class SharedPlayerManager {
+final class SharedPlayerManager: @unchecked Sendable {
     static let shared = SharedPlayerManager()
     
     // Add initialization tracking
@@ -90,7 +90,7 @@ class SharedPlayerManager {
     }
     
     // Widget-safe play method with improved error handling
-    func play(completion: @escaping (Bool) -> Void) {
+    func play(completion: @escaping @Sendable (Bool) -> Void) {
         if isRunningInWidget() {
             // Set instant feedback for playing state (mirrors switchToStream logic)
             sharedDefaults?.set(true, forKey: "isPlaying")
@@ -123,7 +123,7 @@ class SharedPlayerManager {
     }
 
     // Widget-safe stop method with improved error handling
-    func stop(completion: @escaping () -> Void = {}) {
+    func stop(completion: @escaping @Sendable () -> Void = {}) {
         if isRunningInWidget() {
             // Set instant feedback for stopped state (mirrors switchToStream logic)
             sharedDefaults?.set(false, forKey: "isPlaying")
@@ -266,7 +266,10 @@ class SharedPlayerManager {
             hasError: loadSharedState().hasError,
             isTransitioning: true
         )
-        WidgetRefreshManager.shared.refreshIfNeeded(for: newState, immediate: true)
+        // FIXED: Hop to main actor for the @MainActor refresh manager
+        Task { @MainActor in
+            WidgetRefreshManager.shared.refreshIfNeeded(for: newState, immediate: true)
+        }
         
         #if DEBUG
         print("🔗 Updated cached state for instant UI feedback: \(languageCode)")
@@ -471,7 +474,11 @@ extension SharedPlayerManager {
         
         // Use throttled refresh instead of immediate for non-critical updates
         let isUrgentUpdate = state.isPlaying || state.hasError
-        WidgetRefreshManager.shared.refreshIfNeeded(for: newWidgetState, immediate: isUrgentUpdate)
+        
+        // FIXED: Hop to main actor for the @MainActor refresh manager
+        Task { @MainActor in
+            WidgetRefreshManager.shared.refreshIfNeeded(for: newWidgetState, immediate: isUrgentUpdate)
+        }
         
         lastSavedState = state
         lastSaveTime = time
