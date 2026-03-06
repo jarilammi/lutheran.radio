@@ -12,6 +12,10 @@ import AVFoundation
 import dnssd
 import Network
 
+// MARK: - Sendable Completion Helpers (Swift 6)
+typealias BoolCompletion = @Sendable (Bool) -> Void
+typealias ResultCompletion<T> = @Sendable (Result<T, Error>) -> Void
+
 // MARK: - Delegate Protocol and Status Enum
 /// Protocol for delegate callbacks (e.g., UI updates from ViewController).
 protocol StreamingPlayerDelegate: AnyObject {
@@ -585,7 +589,10 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     // MARK: - Queue Priority Management
     
     /// Escalates queue priority when audio operations are blocked
-    private func executeWithAudioPriority<T>(_ operation: @escaping () -> T, completion: @escaping (T) -> Void) {
+    private func executeWithAudioPriority<T>(
+        _ operation: @escaping @Sendable () -> T,
+        completion: @escaping @Sendable (T) -> Void
+    ) {
         if player?.timeControlStatus == .waitingToPlayAtSpecifiedRate {
             // Audio is waiting - escalate to highest priority
             DispatchQueue.global(qos: .userInteractive).async {
@@ -606,7 +613,10 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     }
     
     // CRITICAL: All AVPlayer operations must be on main thread
-    private func executeAudioOperation<T>(_ operation: @escaping () -> T, completion: @escaping (T) -> Void) {
+    private func executeAudioOperation<T>(
+        _ operation: @escaping @Sendable () -> T,
+        completion: @escaping @Sendable (T) -> Void
+    ) {
         // Always execute AVPlayer operations on main thread
         DispatchQueue.main.async {
             let result = operation()
@@ -664,7 +674,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     
     // MARK: - Security Model Validation
     
-    private func fetchValidSecurityModelsImplementation(completion: @escaping (Result<Set<String>, Error>) -> Void) {
+    private func fetchValidSecurityModelsImplementation(completion: @escaping ResultCompletion<Set<String>>) {
         let domain = "securitymodels.lutheran.radio"
         #if DEBUG
         print("🔒 [Fetch Security Models] Fetching valid security models for domain: \(domain)")
@@ -692,7 +702,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     }
     
     #if DEBUG
-    public func fetchValidSecurityModels(completion: @escaping (Result<Set<String>, Error>) -> Void) {
+    public func fetchValidSecurityModels(completion: @escaping ResultCompletion<Set<String>>) {
         fetchValidSecurityModelsImplementation(completion: completion)
     }
     #else
@@ -822,7 +832,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     }
     
     // MARK: - Security and Validation Methods
-    private func validateSecurityModelAsyncImplementation(completion: @escaping (Bool) -> Void) {
+    private func validateSecurityModelAsyncImplementation(completion: @escaping BoolCompletion) {
         if let lastValidation = UserDefaults.standard.object(forKey: "lastSecurityValidation") as? Date,
            currentDate().timeIntervalSince(lastValidation) < 3600 {
             #if DEBUG
@@ -919,7 +929,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             #if DEBUG
             print("🔒 [Validate Async] Starting validation for model: \(DirectStreamingPlayer.appSecurityModel)")
             #endif
-
+            
             let timeoutWorkItem = DispatchWorkItem { [weak self] in
                 guard let self = self, self.isValidating else { return }
                 self.isValidating = false
@@ -933,13 +943,14 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 }
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 5.0, execute: timeoutWorkItem)
-
-            self.fetchValidSecurityModels { [weak self] result in
-                guard let self = self else {
-                    completion(false)
-                    return
-                }
-                timeoutWorkItem.cancel()
+            
+            let unmanagedTimeout = Unmanaged.passRetained(timeoutWorkItem)   // ← one new line
+            
+            self.fetchValidSecurityModels { [weak self, unmanagedTimeout] result in   // ← capture list updated (no inner async needed)
+                guard let self = self else { return }
+                
+                unmanagedTimeout.takeRetainedValue().cancel()   // ← cancel updated
+                
                 self.isValidating = false
                 self.lastValidationTime = Date()
                 #if DEBUG
@@ -963,8 +974,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                     } else {
                         let isValid = validModels.contains(DirectStreamingPlayer.appSecurityModel.lowercased())
                         self.validationState = isValid ? .success : .failedPermanent
-                        if isValid {  // Cache update only on success
-                            UserDefaults.standard.set(currentDate(), forKey: "lastSecurityValidation")  // Use currentDate()
+                        if isValid {
+                            UserDefaults.standard.set(currentDate(), forKey: "lastSecurityValidation")
                             #if DEBUG
                             print("🔒 [Security] Cached new successful validation")
                             #endif
@@ -1001,19 +1012,19 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     }
     
     #if DEBUG
-    public func validateSecurityModelAsync(completion: @escaping (Bool) -> Void) {
+    public func validateSecurityModelAsync(completion: @escaping BoolCompletion) {
         validateSecurityModelAsyncImplementation(completion: completion)
     }
     #else
     /// Validates app security model asynchronously via DNS TXT record.
     /// - Parameter completion: `true` if valid.
     /// - Note: Caches for 10 minutes; permanent failure on invalid model.
-    func validateSecurityModelAsync(completion: @escaping (Bool) -> Void) {
+    func validateSecurityModelAsync(completion: @escaping BoolCompletion) {
         validateSecurityModelAsyncImplementation(completion: completion)
     }
     #endif
     
-    private func performConnectivityCheck(completion: @escaping (Bool) -> Void) {
+    private func performConnectivityCheck(completion: @escaping BoolCompletion) {
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 3.0
         let session = URLSession(configuration: config)
@@ -1308,7 +1319,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// - Precondition: `setStream(to:)` must be called first.
     /// - Warning: Blocks if validation fails permanently.
     /// - Note: Handles retries adaptively based on thermal/low-power state.
-    func play(completion: @escaping (Bool) -> Void) {
+    func play(completion: BoolCompletion) {
         if validationState == .pending {
             validateSecurityModelAsync { [weak self] isValid in
                 guard let self else { completion(false); return }
@@ -1355,7 +1366,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         setupAudioSessionObservers()
     }
     
-    private func playWithServer(fallbackServers: [Server], completion: @escaping (Bool) -> Void) {
+    private func playWithServer(fallbackServers: [Server], completion: BoolCompletion) {
         lastServerSelectionTime = Date()
         #if DEBUG
         print("📡 Attempting playback with server: \(currentSelectedServer.name)")
@@ -1376,7 +1387,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         }
     }
 
-    private func tryNextServer(fallbackServers: [Server], completion: @escaping (Bool) -> Void) {
+    private func tryNextServer(fallbackServers: [Server], completion: BoolCompletion) {
         guard let nextServer = fallbackServers.first else {
             self.safeOnStatusChange(isPlaying: false, status: String(localized: String.LocalizationValue("status_stream_unavailable")))
             completion(false)
@@ -1484,10 +1495,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         bufferingTimer = nil
     }
     
-    private func startPlaybackWithFallback(
-        fallbackServers: [Server],
-        completion: @escaping (Bool) -> Void
-    ) {
+    private func startPlaybackWithFallback(fallbackServers: [Server], completion: BoolCompletion) {
         DispatchQueue.main.async { [weak self] in
             guard let self else { completion(false); return }
             
@@ -2241,11 +2249,13 @@ extension DirectStreamingPlayer {
             queue: .main
         ) { [weak self] notification in
             guard let self else { return }
-            let info = notification.userInfo ?? [:]
-            let typeValue = info[AVAudioSessionInterruptionTypeKey] as? UInt
-            let type = AVAudioSession.InterruptionType(rawValue: typeValue ?? 0)
+            // NEW — only Sendable values cross the boundary
+            let typeValue = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
+            let optionsValue = notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt
 
-            Task { @MainActor [weak self] in
+            Task { @MainActor [weak self, typeValue, optionsValue] in
+                let type = AVAudioSession.InterruptionType(rawValue: typeValue ?? 0)
+                let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue ?? 0)
                 guard let self else { return }
                 switch type {
                 case .began:
@@ -2262,7 +2272,6 @@ extension DirectStreamingPlayer {
                     #if DEBUG
                     print("🔊 [AudioSession] Interruption ended")
                     #endif
-                    let optionsValue = info[AVAudioSessionInterruptionOptionKey] as? UInt
                     let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue ?? 0)
                     if options.contains(.shouldResume) && self.wasPlayingBeforeInterruption && !self.isSwitchingStream {
                         // Async resume to avoid races (inspired by your Task.detached patterns)
