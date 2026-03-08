@@ -197,7 +197,7 @@ final class NWPathMonitorAdapter: NetworkPathMonitoring, @unchecked Sendable {
 /// Manages direct audio streaming, security validation, network monitoring, and privacy protections for the Lutheran Radio app.
 final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     // MARK: - Security Model
-    private static let appSecurityModel = "houston"   // ← CHANGE ONLY HERE when rotating
+    private static let appSecurityModel = "starbase"   // ← CHANGE ONLY HERE when rotating
     private var isValidating = false
     #if DEBUG
     /// The last time security validation was performed (exposed for debugging).
@@ -1319,56 +1319,72 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     }
     
     // MARK: - Playback Control Methods
-    /// Starts playback after validation and setup.
-    /// - Parameter completion: `true` on success, `false` on failure.
+    /// Starts playback with optimistic immediate completion for responsive widgets and UI.
+    /// Completion is fired **immediately** with `true`; security-model validation + DNS resolution + optimal server selection + CertificateValidator check run non-blockingly in a background `Task.detached`.
+    /// If any validation fails later, playback is stopped and error status is shown (completion is never called again).
+    /// - Parameter completion: `true` (optimistic).
     /// - Precondition: `setStream(to:)` must be called first.
-    /// - Warning: Blocks if validation fails permanently.
     /// - Note: Handles retries adaptively based on thermal/low-power state.
     func play(completion: @escaping BoolCompletion) {
-        if validationState == .pending {
-            validateSecurityModelAsync { [weak self] isValid in
-                guard let self else { completion(false); return }
-                if isValid {
-                    self.play(completion: completion)   // recurse once
-                } else {
-                    let key = self.validationState == .failedPermanent ? "status_security_failed" : "status_no_internet"
-                    DispatchQueue.main.async {
-                        self.safeOnStatusChange(isPlaying: false, status: String(localized: String.LocalizationValue(key)))
-                        completion(false)
+        safeOnStatusChange(isPlaying: true, status: "status_connecting")
+        completion(true)
+
+        Task.detached { [weak self] in
+            guard let self else { return }
+
+            if self.validationState == .pending {
+                self.validateSecurityModelAsync { [weak self] isValid in
+                    guard let self else { return }
+                    if isValid {
+                        self.performOptimalServerSelectionAndCertificateCheck()
+                    } else {
+                        let key = self.validationState == .failedPermanent ? "status_security_failed" : "status_no_internet"
+                        DispatchQueue.main.async {
+                            self.safeOnStatusChange(isPlaying: false, status: String(localized: String.LocalizationValue(key)))
+                            self.stop()
+                        }
                     }
                 }
+                return
             }
-            return
-        }
-        
-        guard validationState == .success else {
-            let key = validationState == .failedPermanent ? "status_security_failed" : "status_no_internet"
-            DispatchQueue.main.async {
-                self.safeOnStatusChange(isPlaying: false, status: String(localized: String.LocalizationValue(key)))
-                completion(false)
+
+            guard self.validationState == .success else {
+                let key = self.validationState == .failedPermanent ? "status_security_failed" : "status_no_internet"
+                DispatchQueue.main.async {
+                    self.safeOnStatusChange(isPlaying: false, status: String(localized: String.LocalizationValue(key)))
+                    self.stop()
+                }
+                return
             }
-            return
+
+            self.performOptimalServerSelectionAndCertificateCheck()
         }
-        
+
+        setupAudioSessionObservers()
+    }
+    
+    private func performOptimalServerSelectionAndCertificateCheck() {
         selectOptimalServer { [weak self] _ in
-            guard let self else { completion(false); return }
-            
+            guard let self else { return }
+
             let streamURL = self.selectedStream.url
-            
+
             CertificateValidator.shared.validateServerCertificate(for: streamURL) { isValid in
                 if isValid {
                     self.playWithServer(fallbackServers: Self.servers.filter { $0.name != self.currentSelectedServer.name }) { success in
-                        if success { self.startPeriodicValidation() }
-                        completion(success)
+                        if success {
+                            self.startPeriodicValidation()
+                        } else {
+                            self.safeOnStatusChange(isPlaying: false, status: String(localized: String.LocalizationValue("status_security_failed")))
+                            self.stop()
+                        }
                     }
                 } else {
                     self.safeOnStatusChange(isPlaying: false, status: String(localized: String.LocalizationValue("status_security_failed")))
-                    completion(false)
+                    self.stop()
                 }
             }
         }
-        
-        setupAudioSessionObservers()
     }
     
     private func playWithServer(fallbackServers: [Server], completion: @escaping BoolCompletion) {
