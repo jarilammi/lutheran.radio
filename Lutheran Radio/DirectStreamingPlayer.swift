@@ -86,7 +86,7 @@ enum PlayerStatus {
 /// - **Dynamic Access Control**:
 ///   - Queries `securitymodels.lutheran.radio` TXT record to validate app authorization.
 ///   - Supports remote access control without requiring app updates.
-///   - Requires the app security model (`houston`) to be in the authorized list.
+///   - Requires the app security model (`starbase`) to be in the authorized list.
 /// - **Privacy-Safe Data Management**:
 ///   - Streaming state stored only in memory during use.
 ///   - No persistent traces of listening activity.
@@ -274,7 +274,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     //
     // • Port is always 443 (TLS on standard port)
     // • Path is always "/lutheranradio.mp3"
-    // • Query parameter "security_model" = current appSecurityModel ("houston" as of version 26.1.0)
+    // • Query parameter "security_model" = current appSecurityModel ("starbase" as of version 26.3.1)
     //
     // This design achieves:
     // 1. Geographic load distribution (lower latency)
