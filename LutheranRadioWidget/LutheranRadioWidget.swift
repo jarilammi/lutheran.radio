@@ -118,10 +118,11 @@ struct Provider: AppIntentTimelineProvider {
     // helper method to the Provider struct
     private func getValidatedStreamState() -> (isPlaying: Bool, currentStation: String, statusMessage: String) {
         let manager = SharedPlayerManager.shared
-        let isPlaying = manager.isPlaying
-        let currentStream = manager.currentStream
+        let state = manager.loadSharedState()
+        let isPlaying = state.isPlaying
+        let currentStream = manager.availableStreams.first(where: { $0.languageCode == state.currentLanguage }) ?? manager.availableStreams[0]
         let currentStation = currentStream.flag + " " + currentStream.language
-        let hasError = manager.hasError
+        let hasError = state.hasError
         
         let statusMessage: String
         if hasError {
@@ -648,7 +649,8 @@ struct WidgetToggleRadioIntent: AppIntent {
         #endif
         
         let manager = SharedPlayerManager.shared
-        let isCurrentlyPlaying = manager.isPlaying
+        let state = manager.loadSharedState()
+        let isCurrentlyPlaying = state.isPlaying
         
         if isCurrentlyPlaying {
             manager.stop()
@@ -659,8 +661,8 @@ struct WidgetToggleRadioIntent: AppIntent {
         // NEW: Immediate refresh for user action
         let newState = WidgetState(
             isPlaying: !isCurrentlyPlaying,
-            currentLanguage: manager.currentStream.languageCode,
-            hasError: manager.hasError
+            currentLanguage: state.currentLanguage,
+            hasError: state.hasError
         )
         await WidgetRefreshManager.shared.refreshIfNeeded(for: newState, immediate: true)
         

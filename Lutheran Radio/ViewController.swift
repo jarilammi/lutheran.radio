@@ -1807,9 +1807,13 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             
             // Optimistic UI during tuning sound – masks latency perfectly
             DispatchQueue.main.async { [weak self] in
+                let manager = SharedPlayerManager.shared
+                let state = manager.loadSharedState()
+                let currentStream = manager.availableStreams.first(where: { $0.languageCode == state.currentLanguage }) ?? manager.availableStreams[0]
+                
                 self?.updatePlayPauseButton(isPlaying: true, animated: true)
                 
-                if !SharedPlayerManager.shared.isPlaying {
+                if !state.isPlaying {
                     self?.safeUpdateStatusLabel(
                         text: String(localized: "status_connecting"),
                         backgroundColor: .systemYellow,
@@ -1886,9 +1890,13 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             
             // Optimistic UI during tuning sound – masks latency perfectly
             DispatchQueue.main.async { [weak self] in
+                let manager = SharedPlayerManager.shared
+                let state = manager.loadSharedState()
+                let currentStream = manager.availableStreams.first(where: { $0.languageCode == state.currentLanguage }) ?? manager.availableStreams[0]
+                
                 self?.updatePlayPauseButton(isPlaying: true, animated: true)
                 
-                if !SharedPlayerManager.shared.isPlaying {
+                if !state.isPlaying {
                     self?.safeUpdateStatusLabel(
                         text: String(localized: "status_connecting"),
                         backgroundColor: .systemYellow,
@@ -2360,7 +2368,11 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                         
                         // Always start/resume playback after widget switch (user intent to listen)
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {  // Delay for transition
-                            if !SharedPlayerManager.shared.isPlaying {
+                            let manager = SharedPlayerManager.shared
+                            let state = manager.loadSharedState()
+                            let currentStream = manager.availableStreams.first(where: { $0.languageCode == state.currentLanguage }) ?? manager.availableStreams[0]
+                            
+                            if !state.isPlaying {
                                 SharedPlayerManager.shared.play { _ in }
                             }
                         }
@@ -2704,7 +2716,11 @@ extension ViewController {
             self?.playPauseButton.isUserInteractionEnabled = true
         }
         
-        if SharedPlayerManager.shared.isPlaying {
+        let manager = SharedPlayerManager.shared
+        let state = manager.loadSharedState()
+        let currentStream = manager.availableStreams.first(where: { $0.languageCode == state.currentLanguage }) ?? manager.availableStreams[0]
+        
+        if state.isPlaying {
             // === PAUSE ===
             updatePlayPauseButton(isPlaying: false)
             safeUpdateStatusLabel(text: String(localized: "status_paused"),
@@ -2746,7 +2762,10 @@ extension ViewController {
     
     @objc private func handleStreamSwitchCompleted() {
         // Force correct state after successful stream switch (fixes stuck "Connecting…" bug)
-        let isPlaying = SharedPlayerManager.shared.isPlaying
+        let manager = SharedPlayerManager.shared
+        let state = manager.loadSharedState()
+        let currentStream = manager.availableStreams.first(where: { $0.languageCode == state.currentLanguage }) ?? manager.availableStreams[0]
+        let isPlaying = state.isPlaying
         
         updatePlayPauseButton(isPlaying: isPlaying)
         
@@ -2929,19 +2948,23 @@ extension ViewController: StreamingPlayerDelegate {
     public func handleWidgetAction(action: String, parameter: String?, actionId: String) {
         guard !processedActionIds.contains(actionId) else {
             #if DEBUG
-            print("🔗 Skipping duplicate widget action ID: \(actionId)")
+            print("Skipping duplicate widget action ID: \(actionId)")
             #endif
             return
         }
         processedActionIds.insert(actionId)
         
+        let manager = SharedPlayerManager.shared
+        let state = manager.loadSharedState()
+        let currentStream = manager.availableStreams.first(where: { $0.languageCode == state.currentLanguage }) ?? manager.availableStreams[0]
+        
         switch action {
         case "play":
-            if !SharedPlayerManager.shared.isPlaying {
+            if !state.isPlaying {
                 togglePlayback()
             }
         case "pause":
-            if SharedPlayerManager.shared.isPlaying {
+            if state.isPlaying {
                 togglePlayback()
             }
         case "switch":
@@ -2960,7 +2983,7 @@ extension ViewController: StreamingPlayerDelegate {
                 
                 // Always start/resume playback after widget switch (user intent to listen)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {  // Shorter delay for transition
-                    if !SharedPlayerManager.shared.isPlaying {
+                    if !state.isPlaying {
                         SharedPlayerManager.shared.play { _ in }
                     }
                 }
@@ -2974,7 +2997,7 @@ extension ViewController: StreamingPlayerDelegate {
             }
         default:
             #if DEBUG
-            print("🔗 Unknown widget action: \(action)")
+            print("Unknown widget action: \(action)")
             #endif
             break
         }

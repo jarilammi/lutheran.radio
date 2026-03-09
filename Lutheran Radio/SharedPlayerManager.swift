@@ -18,7 +18,7 @@ extension Notification.Name {
 /// `SharedPlayerManager` enables safe state sharing between the main app, widgets, and Live Activities using App Groups and UserDefaults. It prevents crashes in widget contexts by lazy-loading `DirectStreamingPlayer.swift` only in the main app.
 ///
 /// Core Functions:
-/// - **State Persistence**: Saves/loads playback state (`isPlaying`, language, errors) with throttling to avoid spam (`saveCurrentState()`).
+/// - **State Persistence**: State is now owned exclusively by `DirectStreamingPlayer` + UserDefaults persistence via `saveCurrentState()`.
 /// - **Widget Actions**: Handles play/stop/switch via URL schemes (processed in `SceneDelegate.swift`); uses instant feedback for responsive widgets.
 /// - **Throttling/Debouncing**: Integrates with `WidgetRefreshManager.swift` for efficient `WidgetKit` reloads.
 /// - **Privacy Note**: Stores only anonymous, non-identifiable data (e.g., no timestamps or histories).
@@ -67,34 +67,14 @@ final class SharedPlayerManager: @unchecked Sendable {
     }
     
     // Widget-safe methods that won't crash
-    var isPlaying: Bool {
-        // Always read from UserDefaults for consistency
-        let sharedState = loadSharedState()
-        return sharedState.isPlaying
-    }
-    
-    var currentStream: DirectStreamingPlayer.Stream {
-        // Always reconstruct from UserDefaults
-        let languageCode = sharedDefaults?.string(forKey: "currentLanguage") ?? "en"
-        return availableStreams.first { $0.languageCode == languageCode } ?? availableStreams[0]
-    }
-    
     var availableStreams: [DirectStreamingPlayer.Stream] {
         return DirectStreamingPlayer.availableStreams
-    }
-    
-    var hasError: Bool {
-        // Always read from UserDefaults
-        let sharedState = loadSharedState()
-        return sharedState.hasError
     }
     
     // Widget-safe play method with improved error handling
     func play(completion: @escaping @Sendable (Bool) -> Void) {
         if isRunningInWidget() {
             // Set instant feedback for playing state (mirrors switchToStream logic)
-            sharedDefaults?.set(true, forKey: "isPlaying")
-            sharedDefaults?.set(false, forKey: "hasError")
             sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "lastUpdateTime")
             sharedDefaults?.set(true, forKey: "isInstantFeedback")
             sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "instantFeedbackTime")
@@ -126,8 +106,6 @@ final class SharedPlayerManager: @unchecked Sendable {
     func stop(completion: @escaping @Sendable () -> Void = {}) {
         if isRunningInWidget() {
             // Set instant feedback for stopped state (mirrors switchToStream logic)
-            sharedDefaults?.set(false, forKey: "isPlaying")
-            sharedDefaults?.set(false, forKey: "hasError")
             sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "lastUpdateTime")
             sharedDefaults?.set(true, forKey: "isInstantFeedback")
             sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "instantFeedbackTime")
@@ -152,14 +130,12 @@ final class SharedPlayerManager: @unchecked Sendable {
         }
         
         player.stop(completion: completion)
-        sharedDefaults?.set(false, forKey: "isPlaying")
     }
     
     // Simplified switch stream method for widgets
     func switchToStream(_ stream: DirectStreamingPlayer.Stream) {
         if isRunningInWidget() {
             // CRITICAL FIX: Update cached state immediately for instant feedback
-            sharedDefaults?.set(stream.languageCode, forKey: "currentLanguage")
             sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "lastUpdateTime")
             
             // CRITICAL FIX: Set instant feedback with proper timing
@@ -194,7 +170,6 @@ final class SharedPlayerManager: @unchecked Sendable {
         }
         
         // Update UserDefaults BEFORE stopping player
-        sharedDefaults?.set(stream.languageCode, forKey: "currentLanguage")
         sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "lastUpdateTime")
         sharedDefaults?.synchronize()
         

@@ -46,7 +46,8 @@ class RadioLiveActivityManager: ObservableObject {
         endActivity()
         
         let manager = SharedPlayerManager.shared
-        let currentStream = manager.currentStream
+        let state = manager.loadSharedState()
+        let currentStream = manager.availableStreams.first(where: { $0.languageCode == state.currentLanguage }) ?? manager.availableStreams[0]
         
         let attributes = LutheranRadioLiveActivityAttributes(
             appName: "Lutheran Radio",
@@ -54,9 +55,9 @@ class RadioLiveActivityManager: ObservableObject {
         )
         
         let initialContentState = LutheranRadioLiveActivityAttributes.ContentState(
-            isPlaying: manager.isPlaying,
+            isPlaying: state.isPlaying,
             currentMetadata: getCurrentMetadata(),
-            streamStatus: getStreamStatus(isPlaying: manager.isPlaying, hasError: manager.hasError),
+            streamStatus: getStreamStatus(isPlaying: state.isPlaying, hasError: state.hasError),
             lastUpdated: Date(),
             currentStreamLanguage: currentStream.languageCode,
             currentStreamFlag: currentStream.flag
@@ -87,12 +88,13 @@ class RadioLiveActivityManager: ObservableObject {
         guard let activity = currentActivity else { return }
         
         let manager = SharedPlayerManager.shared
-        let currentStream = manager.currentStream
+        let state = manager.loadSharedState()
+        let currentStream = manager.availableStreams.first(where: { $0.languageCode == state.currentLanguage }) ?? manager.availableStreams[0]
         
         let updatedContentState = LutheranRadioLiveActivityAttributes.ContentState(
-            isPlaying: manager.isPlaying,
+            isPlaying: state.isPlaying,
             currentMetadata: getCurrentMetadata(),
-            streamStatus: getStreamStatus(isPlaying: manager.isPlaying, hasError: manager.hasError),
+            streamStatus: getStreamStatus(isPlaying: state.isPlaying, hasError: state.hasError),
             lastUpdated: Date(),
             currentStreamLanguage: currentStream.languageCode,
             currentStreamFlag: currentStream.flag
@@ -101,7 +103,7 @@ class RadioLiveActivityManager: ObservableObject {
         await activity.update(.init(state: updatedContentState, staleDate: nil))
         
         #if DEBUG
-        print("🔴 Live Activity updated locally: playing=\(manager.isPlaying)")
+        print("🔴 Live Activity updated locally: playing=\(state.isPlaying)")
         #endif
     }
 
@@ -115,13 +117,17 @@ class RadioLiveActivityManager: ObservableObject {
         currentActivity = nil
         
         Task { @MainActor in
+            let manager = SharedPlayerManager.shared
+            let state = manager.loadSharedState()
+            let currentStream = manager.availableStreams.first(where: { $0.languageCode == state.currentLanguage }) ?? manager.availableStreams[0]
+            
             let finalContentState = LutheranRadioLiveActivityAttributes.ContentState(
                 isPlaying: false,
                 currentMetadata: nil,
                 streamStatus: "Stopped",
                 lastUpdated: Date(),
-                currentStreamLanguage: SharedPlayerManager.shared.currentStream.languageCode,
-                currentStreamFlag: SharedPlayerManager.shared.currentStream.flag
+                currentStreamLanguage: currentStream.languageCode,
+                currentStreamFlag: currentStream.flag
             )
             
             await activityToEnd.end(.init(state: finalContentState, staleDate: nil), dismissalPolicy: .default)
@@ -238,7 +244,10 @@ extension DirectStreamingPlayer {
 extension RadioLiveActivityManager {
     func handleAppWillEnterBackground() {
         // Auto-start Live Activity when backgrounding with audio
-        if SharedPlayerManager.shared.isPlaying && currentActivity == nil {
+        let manager = SharedPlayerManager.shared
+        let state = manager.loadSharedState()
+        
+        if state.isPlaying && currentActivity == nil {
             startActivity()
         }
     }

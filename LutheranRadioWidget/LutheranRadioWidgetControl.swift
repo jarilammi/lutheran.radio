@@ -118,13 +118,14 @@ extension LutheranRadioWidgetControl {
          */
         func currentValue(configuration: ControlConfigurationAppIntent) async throws -> Value {
             let manager = SharedPlayerManager.shared
-            let isPlaying = manager.isPlaying
-            let currentStream = manager.currentStream
+            let state = manager.loadSharedState()
+            let isPlaying = state.isPlaying
+            let currentStream = manager.availableStreams.first(where: { $0.languageCode == state.currentLanguage }) ?? manager.availableStreams[0]
             // Format station name with flag emoji and language name for easy recognition
             let currentStation = currentStream.flag + " " + currentStream.language
             
             // Check for connection or streaming errors
-            let hasError = manager.hasError
+            let hasError = state.hasError
             
             return LutheranRadioWidgetControl.Value(
                 isPlaying: isPlaying,
@@ -223,11 +224,12 @@ struct ToggleRadioIntent: SetValueIntent {
      */
     func perform() async throws -> some IntentResult {
         #if DEBUG
-        print("🔗 WidgetToggleRadioIntent.perform called")
+        print("WidgetToggleRadioIntent.perform called")
         #endif
         
         let manager = SharedPlayerManager.shared
-        let isCurrentlyPlaying = manager.isPlaying
+        let state = manager.loadSharedState()
+        let isCurrentlyPlaying = state.isPlaying
         
         // Toggle playback state
         if isCurrentlyPlaying {
@@ -239,13 +241,13 @@ struct ToggleRadioIntent: SetValueIntent {
         // NEW: Use optimized refresh for immediate user feedback
         let newState = WidgetState(
             isPlaying: !isCurrentlyPlaying,
-            currentLanguage: manager.currentStream.languageCode,
-            hasError: manager.hasError
+            currentLanguage: state.currentLanguage,
+            hasError: state.hasError
         )
         await WidgetRefreshManager.shared.refreshIfNeeded(for: newState, immediate: true)
         
         #if DEBUG
-        print("🔗 WidgetToggleRadioIntent completed successfully")
+        print("WidgetToggleRadioIntent completed successfully")
         #endif
         
         return .result()

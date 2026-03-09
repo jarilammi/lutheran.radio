@@ -21,11 +21,12 @@ struct LiveActivityTogglePlaybackIntent: AppIntent {
     
     func perform() async throws -> some IntentResult {
         #if DEBUG
-        print("🔗 LiveActivityTogglePlaybackIntent.perform called")
+        print("LiveActivityTogglePlaybackIntent.perform called")
         #endif
         
         let manager = SharedPlayerManager.shared
-        let isCurrentlyPlaying = manager.isPlaying
+        let state = manager.loadSharedState()
+        let isCurrentlyPlaying = state.isPlaying
         
         if isCurrentlyPlaying {
             manager.stop()
@@ -34,7 +35,7 @@ struct LiveActivityTogglePlaybackIntent: AppIntent {
         }
         
         #if DEBUG
-        print("🔗 LiveActivityTogglePlaybackIntent completed")
+        print("LiveActivityTogglePlaybackIntent completed")
         #endif
         
         return .result()
@@ -51,11 +52,12 @@ struct LutheranRadioLiveActivityTogglePlaybackIntent: AppIntent {
     
     func perform() async throws -> some IntentResult {
         #if DEBUG
-        print("🔗 LutheranRadioLiveActivityTogglePlaybackIntent.perform called")
+        print("LutheranRadioLiveActivityTogglePlaybackIntent.perform called")
         #endif
         
         let manager = SharedPlayerManager.shared
-        let isCurrentlyPlaying = manager.isPlaying
+        let state = manager.loadSharedState()
+        let isCurrentlyPlaying = state.isPlaying
         
         if isCurrentlyPlaying {
             manager.stop()
@@ -64,7 +66,7 @@ struct LutheranRadioLiveActivityTogglePlaybackIntent: AppIntent {
         }
         
         #if DEBUG
-        print("🔗 LutheranRadioLiveActivityTogglePlaybackIntent completed")
+        print("LutheranRadioLiveActivityTogglePlaybackIntent completed")
         #endif
         
         return .result()
