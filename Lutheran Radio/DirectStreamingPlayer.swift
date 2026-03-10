@@ -36,10 +36,12 @@ enum PlayerStatus {
 ///
 /// `DirectStreamingPlayer` is the heart of audio streaming, using AVFoundation for direct HTTPS playback with runtime SSL validation. It integrates with `CertificateValidator.swift` for certificate pinning and supports a transition period for rotations (July-August 2026).
 ///
+/// **Single source of truth for state**: `DirectStreamingPlayer` now owns ALL mutations to `isPlaying`, `selectedStream`, `hasPermanentError`, `validationState`, etc. It calls `SharedPlayerManager.shared.saveCurrentState()` immediately after EVERY mutation (play, stop, setStream, status observers, server fallback, validation callbacks). This eliminates widget/Live Activity desync.
+///
 /// Workflow:
 /// 1. **Initialization/Setup**: Queries DNS for access authorization; sets up AVPlayer with custom resource loading (`StreamingSessionDelegate.swift`).
 /// 2. **Playback Control**: `play()`/`stop()` manage state; adaptive retries handle network issues (cellular-aware timeouts via `NetworkPathMonitoring`).
-/// 3. **Error Handling**: Tracks transient/permanent errors; integrates with `SharedPlayerManager.swift` for widget/Live Activity state syncing.
+/// 3. **Error Handling**: Tracks transient/permanent errors; now guarantees persistence via `saveCurrentState()`.
 /// 4. **Privacy Safeguards**: No metadata tracking; minimal network footprint; excludes features like push notifications (see excluded features list above).
 ///
 /// iOS 26 Optimizations: Low-power mode reduces retry aggressiveness. For UI callbacks, see `ViewController.swift`'s `onStatusChange` and `onMetadataChange`. Shared via `SharedPlayerManager.shared` for widgets.
@@ -455,9 +457,10 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             
             if let betterServer = workingServers.first {
                 #if DEBUG
-                print("📡 Avoiding recently failed server \(lastFailed), using \(betterServer.name)")
+                print("Avoiding recently failed server \(lastFailed), using \(betterServer.name)")
                 #endif
                 currentSelectedServer = betterServer
+                SharedPlayerManager.shared.saveCurrentState()
                 completion(betterServer)
                 return
             }
@@ -481,11 +484,13 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 let validResults = results.filter { $0.latency != .infinity }
                 if let bestResult = validResults.min(by: { $0.latency < $1.latency }) {
                     self.currentSelectedServer = bestResult.server
+                    SharedPlayerManager.shared.saveCurrentState()
                     #if DEBUG
                     print("📡 [Server Selection] Selected \(bestResult.server.name) with latency \(bestResult.latency)s")
                     #endif
                 } else {
                     self.currentSelectedServer = Self.servers[0]
+                    SharedPlayerManager.shared.saveCurrentState()
                     #if DEBUG
                     print("📡 [Server Selection] No valid ping results, falling back to \(self.currentSelectedServer.name)")
                     #endif
@@ -658,6 +663,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         Task { @MainActor [weak self] in
             self?.onStatusChange?(isPlaying, status)
         }
+        SharedPlayerManager.shared.saveCurrentState()
     }
     
     private func safeOnMetadataChange(metadata: String?) {
@@ -1328,6 +1334,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     func play(completion: @escaping BoolCompletion) {
         safeOnStatusChange(isPlaying: true, status: "status_connecting")
         completion(true)
+        SharedPlayerManager.shared.saveCurrentState()
 
         Task.detached { [weak self] in
             guard let self else { return }
@@ -1358,6 +1365,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             }
 
             self.performOptimalServerSelectionAndCertificateCheck()
+            SharedPlayerManager.shared.saveCurrentState()  // after full playback success path
         }
 
         setupAudioSessionObservers()
@@ -1430,18 +1438,19 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         // CRITICAL: Prevent concurrent stream switches
         guard !isSwitchingStream else {
             #if DEBUG
-            print("🔗 Stream switch already in progress, ignoring request for \(stream.languageCode)")
+            print("Stream switch already in progress, ignoring request for \(stream.languageCode)")
             #endif
             return
         }
         isSwitchingStream = true
         
         #if DEBUG
-        print("🔗 ATOMIC STREAM SWITCH: \(selectedStream.languageCode) -> \(stream.languageCode)")
+        print("ATOMIC STREAM SWITCH: \(selectedStream.languageCode) -> \(stream.languageCode)")
         #endif
         
         // CRITICAL: Update selectedStream immediately and atomically
         selectedStream = stream
+        SharedPlayerManager.shared.saveCurrentState()
         
         // Update AVPlayer with new stream URL
         playerItem = nil
@@ -1845,7 +1854,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
               isSwitchingStream: Bool? = nil,
               silent: Bool = false) {
         #if DEBUG
-        print("🛑 FORCE STOPPING ALL PLAYBACK - isSwitchingStream: \(String(describing: isSwitchingStream))")
+        print("FORCE STOPPING ALL PLAYBACK - isSwitchingStream: \(String(describing: isSwitchingStream))")
         #endif
         
         loadingTimeoutWorkItem?.cancel()
@@ -1876,6 +1885,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         
         // Continue with existing stop logic, passing silent flag and effectiveSwitching
         performActualStop(completion: completion, silent: silent, effectiveSwitching: effectiveSwitching)
+        SharedPlayerManager.shared.saveCurrentState()
     }
 
     /// Performs the actual stop operation.

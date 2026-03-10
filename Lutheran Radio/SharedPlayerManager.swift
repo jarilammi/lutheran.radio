@@ -17,8 +17,10 @@ extension Notification.Name {
 ///
 /// `SharedPlayerManager` enables safe state sharing between the main app, widgets, and Live Activities using App Groups and UserDefaults. It prevents crashes in widget contexts by lazy-loading `DirectStreamingPlayer.swift` only in the main app.
 ///
+/// **Single source of truth**: All state mutations (`isPlaying`, `selectedStream`, `hasPermanentError`, `validationState`, etc.) now live exclusively in `DirectStreamingPlayer`. `DirectStreamingPlayer` calls `saveCurrentState()` immediately after every mutation. `SharedPlayerManager` only provides read access, widget instant feedback, and URL-scheme handling.
+///
 /// Core Functions:
-/// - **State Persistence**: State is now owned exclusively by `DirectStreamingPlayer` + UserDefaults persistence via `saveCurrentState()`.
+/// - **State Persistence**: Delegated entirely to `DirectStreamingPlayer`.
 /// - **Widget Actions**: Handles play/stop/switch via URL schemes (processed in `SceneDelegate.swift`); uses instant feedback for responsive widgets.
 /// - **Throttling/Debouncing**: Integrates with `WidgetRefreshManager.swift` for efficient `WidgetKit` reloads.
 /// - **Privacy Note**: Stores only anonymous, non-identifiable data (e.g., no timestamps or histories).
@@ -175,7 +177,7 @@ final class SharedPlayerManager: @unchecked Sendable {
         
         guard let player = self.player else {
             #if DEBUG
-            print("🔗 No player available for stream switch")
+            print("No player available for stream switch")
             #endif
             return
         }
@@ -186,9 +188,6 @@ final class SharedPlayerManager: @unchecked Sendable {
             player.resetTransientErrors()
             player.setStream(to: stream)
             
-            // Force immediate state update
-            self.saveCurrentState()
-            
             // Force widget refresh
             WidgetCenter.shared.reloadAllTimelines()
             
@@ -197,10 +196,8 @@ final class SharedPlayerManager: @unchecked Sendable {
                 player.play { [weak self] success in
                     guard let self = self else { return }
                     #if DEBUG
-                    print("📱 Direct stream switch \(success ? "succeeded" : "failed") for \(stream.language), URL: \(stream.url)")
+                    print("Direct stream switch \(success ? "succeeded" : "failed") for \(stream.language), URL: \(stream.url)")
                     #endif
-                    // Save state again after play attempt
-                    self.saveCurrentState()
                     // Process next queued switch
                     self.processNextStreamSwitch()
                 }
