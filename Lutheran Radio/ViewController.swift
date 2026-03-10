@@ -501,23 +501,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             object: nil
         )
         
-        // Fix stuck "Connecting…" label after successful stream switches
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(handleStreamSwitchCompleted),
-            name: .streamSwitchCompleted,
-            object: nil
-        )
-        
-        // Guarantee "Playing" UI after successful stream switch
-        // (covers rare case where AVPlayer rate KVO fails on some streams but audio actually plays)
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(forcePlayingStateAfterSwitch),
-            name: .streamSwitchCompleted,
-            object: nil
-        )
-        
         // Play special tuning sound immediately after setup
         playSpecialTuningSound { [weak self] in
             guard let self = self, self.hasInternetConnection && !self.isManualPause else {
@@ -661,7 +644,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         // Also remove the other NotificationCenter observers here (idempotent)
         NotificationCenter.default.removeObserver(self, name: UIApplication.didReceiveMemoryWarningNotification, object: nil)
         NotificationCenter.default.removeObserver(self, name: Notification.Name("NSProcessInfoPowerStateDidChangeNotification"), object: nil)
-        NotificationCenter.default.removeObserver(self, name: .streamSwitchCompleted, object: nil)
+        // ← REMOVED: .streamSwitchCompleted observer (no longer exists or needed)
         
         #if DEBUG
         print("🧹 ViewController cleanup completed in viewDidDisappear")
@@ -2758,33 +2741,6 @@ extension ViewController {
                 }
             }
         }
-    }
-    
-    @objc private func handleStreamSwitchCompleted() {
-        // Force correct state after successful stream switch (fixes stuck "Connecting…" bug)
-        let manager = SharedPlayerManager.shared
-        let state = manager.loadSharedState()
-        let currentStream = manager.availableStreams.first(where: { $0.languageCode == state.currentLanguage }) ?? manager.availableStreams[0]
-        let isPlaying = state.isPlaying
-        
-        updatePlayPauseButton(isPlaying: isPlaying)
-        
-        if isPlaying {
-            safeUpdateStatusLabel(
-                text: String(localized: "status_playing"),
-                backgroundColor: .systemGreen,
-                textColor: .white,
-                isPermanentError: false
-            )
-            
-            // Optional: subtle haptic on successful switch (feels nice)
-            playHapticFeedback(style: .light)
-        }
-    }
-    
-    @objc private func forcePlayingStateAfterSwitch() {
-        // Stream switch completed successfully → audio is playing even if rate KVO bugged
-        onStatusChange(.playing, nil)  // re-use all the perfect logic we already have
     }
     
     // MARK: - Play Haptic Feedback

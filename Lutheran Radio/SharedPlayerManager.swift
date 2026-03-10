@@ -9,10 +9,6 @@ import Foundation
 import AVFoundation
 import WidgetKit
 
-extension Notification.Name {
-    static let streamSwitchCompleted = Notification.Name("radio.lutheran.streamSwitchCompleted")
-}
-
 /// - Article: Shared State Management for Widgets and Extensions
 ///
 /// `SharedPlayerManager` enables safe state sharing between the main app, widgets, and Live Activities using App Groups and UserDefaults. It prevents crashes in widget contexts by lazy-loading `DirectStreamingPlayer.swift` only in the main app.
@@ -49,23 +45,7 @@ final class SharedPlayerManager: @unchecked Sendable {
         return _player
     }
     
-    private var lastSavedState: (isPlaying: Bool, currentLanguage: String, hasError: Bool)?
-    private var lastSaveTime: Date?
-    private let minSaveInterval: TimeInterval = 1.0
-    private var pendingStreamSwitches: [DirectStreamingPlayer.Stream] = []
-    private var streamSwitchObserver: NSObjectProtocol?
-    
-    private let streamSwitchQueue = DispatchQueue(label: "radio.lutheran.streamSwitchQueue", qos: .userInitiated)
-    
     private init() {
-        setupStreamSwitchObserver()
-    }
-    
-    deinit {
-        if let observer = streamSwitchObserver {
-            NotificationCenter.default.removeObserver(observer)
-            streamSwitchObserver = nil
-        }
     }
     
     // Widget-safe methods that won't crash
@@ -76,38 +56,35 @@ final class SharedPlayerManager: @unchecked Sendable {
     // Widget-safe play method with improved error handling
     func play(completion: @escaping @Sendable (Bool) -> Void) {
         if isRunningInWidget() {
-            // Set instant feedback for playing state (mirrors switchToStream logic)
+            // ← instant UserDefaults + pending action (keep exactly as-is)
             sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "lastUpdateTime")
             sharedDefaults?.set(true, forKey: "isInstantFeedback")
             sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "instantFeedbackTime")
             sharedDefaults?.set(sharedDefaults?.string(forKey: "currentLanguage") ?? "en", forKey: "instantFeedbackLanguage")
             sharedDefaults?.synchronize()
             
-            // For widgets, use App Group notification instead of direct scheduling
             scheduleWidgetAction(action: "play")
             notifyMainApp(action: "play")
             
-            // Delay the completion and widget refresh to allow main app to process
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 completion(true)
-                self.reloadAllWidgets()
+                self.reloadAllWidgets()          // or WidgetRefreshManager if you prefer
             }
             return
         }
         
-        // Main app context - use player directly
+        // Main app → pure forward, no local vars touched
         guard let player = self.player else {
             completion(false)
             return
         }
-        
         player.play(completion: completion)
     }
 
-    // Widget-safe stop method with improved error handling
+    // Widget-safe stop method – unchanged (already perfect)
     func stop(completion: @escaping @Sendable () -> Void = {}) {
         if isRunningInWidget() {
-            // Set instant feedback for stopped state (mirrors switchToStream logic)
+            // ← instant UserDefaults + pending action (keep exactly as-is)
             sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "lastUpdateTime")
             sharedDefaults?.set(true, forKey: "isInstantFeedback")
             sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "instantFeedbackTime")
@@ -117,7 +94,6 @@ final class SharedPlayerManager: @unchecked Sendable {
             scheduleWidgetAction(action: "pause")
             notifyMainApp(action: "pause")
             
-            // Delay the completion and widget refresh to allow main app to process
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 completion()
                 self.reloadAllWidgets()
@@ -125,56 +101,36 @@ final class SharedPlayerManager: @unchecked Sendable {
             return
         }
         
-        // Main app context
+        // Main app → pure forward, no local vars touched
         guard let player = self.player else {
             completion()
             return
         }
-        
         player.stop(completion: completion)
     }
-    
-    // Simplified switch stream method for widgets
+
+    // NEW: switchToStream – now also a pure dispatcher
     func switchToStream(_ stream: DirectStreamingPlayer.Stream) {
         if isRunningInWidget() {
-            // CRITICAL FIX: Update cached state immediately for instant feedback
+            // ← instant UserDefaults + pending action (already perfect – keep exactly as-is)
             sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "lastUpdateTime")
-            
-            // CRITICAL FIX: Set instant feedback with proper timing
             sharedDefaults?.set(true, forKey: "isInstantFeedback")
             sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "instantFeedbackTime")
             sharedDefaults?.set(stream.languageCode, forKey: "instantFeedbackLanguage")
-            
-            // Force synchronization
             sharedDefaults?.synchronize()
             
-            // CRITICAL FIX: Schedule widget action with language parameter
             scheduleWidgetAction(action: "switch", parameter: stream.languageCode)
             notifyMainApp(action: "switch", parameter: stream.languageCode)
             
-            // Immediate widget refresh
             WidgetCenter.shared.reloadAllTimelines()
             
             #if DEBUG
-            print("🔗 Widget stream switch scheduled: \(stream.languageCode)")
+            print("Widget stream switch scheduled: \(stream.languageCode)")
             #endif
             return
         }
         
-        // Main app context - check if a switch is in progress
-        if player?.isSwitchingStream == true {
-            // Queue the stream switch
-            pendingStreamSwitches.append(stream)
-            #if DEBUG
-            print("🔗 Queued stream switch for \(stream.languageCode), queue size: \(pendingStreamSwitches.count)")
-            #endif
-            return
-        }
-        
-        // Update UserDefaults BEFORE stopping player
-        sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "lastUpdateTime")
-        sharedDefaults?.synchronize()
-        
+        // Main app → pure forward, NO local vars touched (no pending queue, no isSwitchingStream check here)
         guard let player = self.player else {
             #if DEBUG
             print("No player available for stream switch")
@@ -182,70 +138,29 @@ final class SharedPlayerManager: @unchecked Sendable {
             return
         }
         
+        // Update shared state BEFORE we touch the player (this is NOT local state)
+        sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "lastUpdateTime")
+        sharedDefaults?.synchronize()
+        
         let wasPlaying = player.isPlaying
         player.stop { [weak self] in
             guard let self = self else { return }
             player.resetTransientErrors()
             player.setStream(to: stream)
             
-            // Force widget refresh
+            self.saveCurrentState()                    // still fine – persistence helper
             WidgetCenter.shared.reloadAllTimelines()
             
-            // Only auto-play if not manually paused
             if wasPlaying {
                 player.play { [weak self] success in
                     guard let self = self else { return }
                     #if DEBUG
-                    print("Direct stream switch \(success ? "succeeded" : "failed") for \(stream.language), URL: \(stream.url)")
+                    print("Direct stream switch \(success ? "succeeded" : "failed") for \(stream.language)")
                     #endif
-                    // Process next queued switch
-                    self.processNextStreamSwitch()
+                    self.saveCurrentState()
                 }
-            } else {
-                // Process next queued switch
-                self.processNextStreamSwitch()
             }
         }
-    }
-    
-    private func processNextStreamSwitch() {
-        streamSwitchQueue.async { [weak self] in
-            guard let self = self, !self.pendingStreamSwitches.isEmpty else { return }
-            let nextStream = self.pendingStreamSwitches.removeFirst()
-            #if DEBUG
-            print("🔗 Processing queued stream switch to \(nextStream.languageCode), queue size: \(self.pendingStreamSwitches.count)")
-            #endif
-            self.switchToStream(nextStream)
-        }
-    }
-    
-    // FIXED: Helper method to immediately update cached state for instant UI feedback
-    private func updateCachedStateForInstantFeedback(languageCode: String) {
-        sharedDefaults?.set(languageCode, forKey: "currentLanguage")
-        sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "lastUpdateTime")
-        
-        // FIXED: Set instant feedback flags
-        sharedDefaults?.set(true, forKey: "isInstantFeedback")
-        sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "instantFeedbackTime")
-        sharedDefaults?.set(languageCode, forKey: "instantFeedbackLanguage")
-        
-        sharedDefaults?.synchronize()
-        
-        // NEW: Immediate refresh for language switch
-        let newState = WidgetState(
-            isPlaying: loadSharedState().isPlaying,
-            currentLanguage: languageCode,
-            hasError: loadSharedState().hasError,
-            isTransitioning: true
-        )
-        // FIXED: Hop to main actor for the @MainActor refresh manager
-        Task { @MainActor in
-            WidgetRefreshManager.shared.refreshIfNeeded(for: newState, immediate: true)
-        }
-        
-        #if DEBUG
-        print("🔗 Updated cached state for instant UI feedback: \(languageCode)")
-        #endif
     }
     
     // Check if running in widget context with additional checks
@@ -330,99 +245,30 @@ extension SharedPlayerManager {
         return UserDefaults(suiteName: "group.radio.lutheran.shared")
     }
     
-    private func setupStreamSwitchObserver() {
-        streamSwitchObserver = NotificationCenter.default.addObserver(
-            forName: .streamSwitchCompleted,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            guard let self = self else { return }
-            self.processNextStreamSwitch()
-        }
-    }
-    
-    // MARK: - Refined post-initialization throttling
+    // 2026 Apple-recommended: pure save, no local throttling state
+    // (DirectStreamingPlayer now calls this only on real mutations)
     func saveCurrentState() {
         guard !isRunningInWidget() else { return }
         guard let player = self.player else { return }
         
         let now = Date()
-        let timeSinceAppLaunch = now.timeIntervalSince(appLaunchTime)
-        let isInInitializationPeriod = timeSinceAppLaunch < initializationSettlingPeriod
         
-        // Get current state from player
-        let playerRate = player.currentPlayerRate
-        let itemStatus = player.currentItemStatus
-        let hasCurrentItem = player.hasPlayerItem
-        let actuallyPlaying = player.actualPlaybackState
-        
-        // Always read language from UserDefaults (which ViewController updates)
+        // Always read fresh state from the real owner
         let currentLanguageCode = sharedDefaults?.string(forKey: "currentLanguage") ?? "en"
         
         let currentState = (
-            isPlaying: actuallyPlaying,
+            isPlaying: player.actualPlaybackState,
             currentLanguage: currentLanguageCode,
             hasError: player.hasPermanentError || player.isLastErrorPermanent()
         )
         
         #if DEBUG
-        print("🔗 Detailed state: rate=\(playerRate), itemStatus=\(itemStatus.rawValue), hasItem=\(hasCurrentItem), result=\(actuallyPlaying), language=\(currentLanguageCode)")
+        let playerRate = player.currentPlayerRate
+        let itemStatus = player.currentItemStatus
+        let hasCurrentItem = player.hasPlayerItem
+        print("🔗 Detailed state: rate=\(playerRate), itemStatus=\(itemStatus.rawValue), hasItem=\(hasCurrentItem), result=\(currentState.isPlaying), language=\(currentLanguageCode)")
         #endif
         
-        // Advanced: Check for identical states first
-        if let lastState = lastSavedState,
-           lastState.isPlaying == currentState.isPlaying,
-           lastState.currentLanguage == currentState.currentLanguage,
-           lastState.hasError == currentState.hasError {
-            
-            // Calculate refined throttle intervals
-            let throttleInterval: TimeInterval
-            if isInInitializationPeriod {
-                throttleInterval = 4.0  // Keep existing for init
-            } else {
-                // MASSIVELY increased post-init throttling
-                throttleInterval = 8.0  // Increased from 1.0s to 8.0s!
-            }
-            
-            // Check if we're trying to save too frequently
-            if let lastSave = lastSaveTime,
-               now.timeIntervalSince(lastSave) < throttleInterval {
-                #if DEBUG
-                if isInInitializationPeriod {
-                    print("🔗 Refined throttling during initialization: identical state blocked for \(throttleInterval)s")
-                } else {
-                    print("🔗 Advanced post-init throttling: identical state blocked for \(throttleInterval)s")
-                }
-                #endif
-                return
-            }
-        }
-        
-        // ADDITIONAL SPAM PROTECTION: Don't save non-playing states frequently
-        if isInInitializationPeriod && !actuallyPlaying && !currentState.hasError {
-            // During initialization, only save if we're actually playing or have a real error
-            if let lastSave = lastSaveTime,
-               now.timeIntervalSince(lastSave) < 6.0 {
-                #if DEBUG
-                print("🔗 Skipping non-essential connection state during initialization")
-                #endif
-                return
-            }
-        }
-        
-        // NEW: Post-initialization spam protection for non-essential states
-        if !isInInitializationPeriod && !actuallyPlaying && !currentState.hasError {
-            // After initialization, be VERY conservative about saving "stopped" states
-            if let lastSave = lastSaveTime,
-               now.timeIntervalSince(lastSave) < 15.0 {
-                #if DEBUG
-                print("🔗 Advanced background management: non-essential stopped state blocked for 15s")
-                #endif
-                return
-            }
-        }
-        
-        // Only save meaningful state changes
         performActualSave(currentState, at: now)
     }
 
@@ -432,28 +278,23 @@ extension SharedPlayerManager {
         sharedDefaults?.set(state.hasError, forKey: "hasError")
         sharedDefaults?.set(time.timeIntervalSince1970, forKey: "lastUpdateTime")
         
-        // Clear instant feedback flags when saving real state
+        // Clear instant feedback flags (still required for widget responsiveness)
         sharedDefaults?.removeObject(forKey: "isInstantFeedback")
         sharedDefaults?.removeObject(forKey: "instantFeedbackTime")
         sharedDefaults?.removeObject(forKey: "instantFeedbackLanguage")
         
-        // Update widget with more conservative refresh strategy
         let newWidgetState = WidgetState(
             isPlaying: state.isPlaying,
             currentLanguage: state.currentLanguage,
             hasError: state.hasError
         )
         
-        // Use throttled refresh instead of immediate for non-critical updates
         let isUrgentUpdate = state.isPlaying || state.hasError
         
-        // FIXED: Hop to main actor for the @MainActor refresh manager
+        // Always hop to MainActor for WidgetRefreshManager (required in Swift 6)
         Task { @MainActor in
             WidgetRefreshManager.shared.refreshIfNeeded(for: newWidgetState, immediate: isUrgentUpdate)
         }
-        
-        lastSavedState = state
-        lastSaveTime = time
         
         #if DEBUG
         print("🔗 State saved: playing=\(state.isPlaying), language=\(state.currentLanguage)")

@@ -1434,8 +1434,10 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         playWithServer(fallbackServers: Array(fallbackServers.dropFirst()), completion: completion)
     }
     
+    // MARK: - Stream Switching (now the single source of truth)
+
     func setStream(to stream: Stream) {
-        // CRITICAL: Prevent concurrent stream switches
+        // CRITICAL: Prevent concurrent stream switches (local state in the real owner = fine)
         guard !isSwitchingStream else {
             #if DEBUG
             print("Stream switch already in progress, ignoring request for \(stream.languageCode)")
@@ -1448,7 +1450,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         print("ATOMIC STREAM SWITCH: \(selectedStream.languageCode) -> \(stream.languageCode)")
         #endif
         
-        // CRITICAL: Update selectedStream immediately and atomically
+        // Update selectedStream immediately and atomically
         selectedStream = stream
         SharedPlayerManager.shared.saveCurrentState()
         
@@ -1459,14 +1461,11 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         playerItem = newPlayerItem
         player?.replaceCurrentItem(with: newPlayerItem)
         
-        // Force immediate state save to prevent race conditions
+        // Force immediate state save
         SharedPlayerManager.shared.saveCurrentState()
         
         stop { [weak self] in
-            guard let self = self else {
-                self?.isSwitchingStream = false
-                return
-            }
+            guard let self = self else { return }
             
             // Ensure selectedStream is still set after stop
             self.selectedStream = stream
@@ -1481,10 +1480,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             
             if self.validationState == .pending {
                 self.validateSecurityModelAsync { [weak self] isValid in
-                    guard let self = self else {
-                        self?.isSwitchingStream = false
-                        return
-                    }
+                    guard let self = self else { return }
                     defer { self.isSwitchingStream = false }
                     
                     if !isValid {
@@ -1496,8 +1492,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 }
             } else if self.validationState == .success {
                 self.isSwitchingStream = false
-                // Notify that stream switch is complete to process queued requests
-                NotificationCenter.default.post(name: .streamSwitchCompleted, object: nil)
+                // OLD QUEUE NOTIFICATION REMOVED — no longer needed
             } else {
                 defer { self.isSwitchingStream = false }
                 let status = self.validationState == .failedPermanent ? "status_security_failed" : "status_no_internet"
