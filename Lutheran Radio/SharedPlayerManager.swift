@@ -11,18 +11,30 @@ import WidgetKit
 
 /// - Article: Shared State Management for Widgets and Extensions
 ///
-/// `SharedPlayerManager` enables safe state sharing between the main app, widgets, and Live Activities using App Groups and UserDefaults. It prevents crashes in widget contexts by lazy-loading `DirectStreamingPlayer.swift` only in the main app.
+/// `SharedPlayerManager` is a **pure dispatcher** that enables safe state sharing
+/// between the main app, widgets, and Live Activities via App Groups + `UserDefaults`.
 ///
-/// **Single source of truth**: All state mutations (`isPlaying`, `selectedStream`, `hasPermanentError`, `validationState`, etc.) now live exclusively in `DirectStreamingPlayer`.
-/// `SharedPlayerManager` is now a **pure dispatcher** only.
+/// **Single source of truth**: All state mutations (`isPlaying`, `selectedStream`,
+/// `hasPermanentError`, `validationState`, etc.) now live **exclusively** in
+/// `DirectStreamingPlayer`. `SharedPlayerManager` never mutates state itself — it
+/// only forwards calls and persists the authoritative state via
+/// `DirectStreamingPlayer.saveCurrentState()` + `UserDefaults` (suite
+/// `group.radio.lutheran.shared`).
 ///
 /// Core Functions:
-/// - **State Persistence**: Delegated entirely to `DirectStreamingPlayer`.
-/// - **Widget Actions**: Handles play/stop/switch via URL schemes (processed in `SceneDelegate.swift`); uses instant feedback for responsive widgets.
-/// - **Throttling/Debouncing**: Integrates with `WidgetRefreshManager.swift` for efficient `WidgetKit` reloads.
-/// - **Privacy Note**: Stores only anonymous, non-identifiable data (e.g., no timestamps or histories).
+/// - **State Persistence**: delegated entirely to `DirectStreamingPlayer`
+/// - **Widget Actions**: play/stop/switch via URL schemes (handled in `SceneDelegate`)
+///   with instant-feedback `UserDefaults` for responsive widget UI
+/// - **Refresh**: `WidgetRefreshManager` (no direct `WidgetCenter` calls)
+/// - **Privacy**: only anonymous data; no timestamps, no history, no PII
 ///
-/// Usage: Access via `shared`; widgets read from UserDefaults without initializing the full player. For Live Activity integration, see `RadioLiveActivityManager.swift`.
+/// Usage:
+/// - Main app: `SharedPlayerManager.shared.play { … }`
+/// - Widgets / Live Activities: `SharedPlayerManager.shared.loadSharedState()`
+///   (no player is ever instantiated)
+///
+/// See also: `DirectStreamingPlayer` (single source of truth) and
+/// `RadioLiveActivityManager.swift`.
 final class SharedPlayerManager: @unchecked Sendable {
     static let shared = SharedPlayerManager()
     

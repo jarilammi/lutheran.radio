@@ -1325,12 +1325,20 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     }
     
     // MARK: - Playback Control Methods
-    /// Starts playback with optimistic immediate completion for responsive widgets and UI.
-    /// Completion is fired **immediately** with `true`; security-model validation + DNS resolution + optimal server selection + CertificateValidator check run non-blockingly in a background `Task.detached`.
-    /// If any validation fails later, playback is stopped and error status is shown (completion is never called again).
-    /// - Parameter completion: `true` (optimistic).
-    /// - Precondition: `setStream(to:)` must be called first.
-    /// - Note: Handles retries adaptively based on thermal/low-power state.
+    /// Starts playback **immediately** with an optimistic completion for
+    /// responsive widgets and UI.
+    ///
+    /// - Completion is fired **synchronously on the main thread** with `true`.
+    /// - All security-model validation (DNS TXT), optimal server selection,
+    ///   and `CertificateValidator` checks run **non-blocking** in a background
+    ///   `Task.detached`.
+    /// - If any check fails later, playback is stopped and an error status is
+    ///   shown (the original completion is never called again).
+    ///
+    /// - Parameter completion: Always `true` (optimistic).
+    /// - Precondition: `setStream(to:)` must have been called first.
+    /// - Note: Retries and fallbacks are adaptive to thermal/low-power mode
+    ///   (2026 energy-efficiency guidelines).
     func play(completion: @escaping BoolCompletion) {
         safeOnStatusChange(isPlaying: true, status: "status_connecting")
         completion(true)

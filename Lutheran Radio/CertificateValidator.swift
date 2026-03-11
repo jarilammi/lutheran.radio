@@ -32,6 +32,10 @@ import CommonCrypto
 /// - Caches validation results for 10 minutes to reduce overhead.
 /// - Logs warnings during transition for debugging (visible in DEBUG builds).
 /// - Enforces strict pinning outside the transition period.
+/// - **Non-blocking**: `validateServerCertificate(for:completion:)` is always
+///   asynchronous and **no longer blocks** `DirectStreamingPlayer.play()`.
+///   Playback starts optimistically; validation runs in the background and
+///   aborts playback only if it fails (2026 concurrency model).
 ///
 /// Usage:
 /// - Access via `CertificateValidator.shared`.
