@@ -1310,7 +1310,13 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             
             let urlToValidate = self.selectedStream.url   // always valid, includes current server + security_model
             
-            CertificateValidator.shared.validateServerCertificate(for: urlToValidate) { isValid in
+            // 2026 concurrency model: fire-and-forget background validation (exactly as your original design intended)
+            // Playback continues optimistically; we only stop if validation later fails.
+            Task { [weak self] in
+                guard let self else { return }
+                
+                let isValid = await CertificateValidator.shared.validateServerCertificate(for: urlToValidate)
+                
                 guard !isValid else { return }
                 
                 self.stop()
@@ -1409,7 +1415,13 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
 
             let streamURL = self.selectedStream.url
 
-            CertificateValidator.shared.validateServerCertificate(for: streamURL) { isValid in
+            // 2026 concurrency model: fire-and-forget background validation
+            // (exactly as your original "optimistic playback" design intended)
+            Task { [weak self] in
+                guard let self else { return }
+
+                let isValid = await CertificateValidator.shared.validateServerCertificate(for: streamURL)
+
                 if isValid {
                     self.playWithServer(fallbackServers: Self.servers.filter { $0.name != self.currentSelectedServer.name }) { success in
                         if success {
@@ -1435,8 +1447,15 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         
         let streamURL = selectedStream.url
         
-        CertificateValidator.shared.validateServerCertificate(for: streamURL) { [weak self] isValid in
-            guard let self else { completion(false); return }
+        // 2026 concurrency model: fire-and-forget background validation
+        // (validation no longer blocks; completion is still called exactly as before)
+        Task { [weak self] in
+            guard let self else {
+                completion(false)
+                return
+            }
+            
+            let isValid = await CertificateValidator.shared.validateServerCertificate(for: streamURL)
             
             guard isValid else {
                 self.safeOnStatusChange(isPlaying: false, status: String(localized: String.LocalizationValue("status_security_failed")))

@@ -6,8 +6,8 @@
 //
 
 import Foundation
-import Security
 import CommonCrypto
+@preconcurrency import Security
 
 /// - Article: SSL Certificate Pinning and Validation
 ///
@@ -41,7 +41,7 @@ import CommonCrypto
 /// - Access via `CertificateValidator.shared`.
 /// - Call `validateServerCertificate(for:completion:)` for initial/periodic HEAD-based validation.
 /// - Implements `URLSessionDelegate` for challenge-based validation during sessions.
-final class CertificateValidator: NSObject, URLSessionDelegate, @unchecked Sendable {
+actor CertificateValidator: NSObject, URLSessionTaskDelegate {
     /// Shared singleton instance for global access.
     static let shared = CertificateValidator()
     
@@ -116,13 +116,12 @@ final class CertificateValidator: NSObject, URLSessionDelegate, @unchecked Senda
     /// - Parameters:
     ///   - serverTrust: The `SecTrust` object from the authentication challenge.
     ///   - completion: Callback with the validation result (true if valid/trusted).
-    func validateServerTrust(_ serverTrust: SecTrust, completion: @escaping (Bool) -> Void) {
+    func validateServerTrust(_ serverTrust: SecTrust) async -> Bool {
         if let lastTime = lastValidationTime, Date().timeIntervalSince(lastTime) < validationInterval, lastValidationResult {
             #if DEBUG
             print("🔒 [CertificateValidator] Using cached valid result from \(lastTime)")
             #endif
-            completion(true)
-            return
+            return true
         }
         
         // Perform system trust evaluation (includes ATS pinning and chain validation)
@@ -133,8 +132,7 @@ final class CertificateValidator: NSObject, URLSessionDelegate, @unchecked Senda
             #endif
             lastValidationTime = Date()
             lastValidationResult = false
-            completion(false)
-            return
+            return false
         }
         
         let isPinnedValid = validateCertificateChain(serverTrust: serverTrust)
@@ -174,10 +172,11 @@ final class CertificateValidator: NSObject, URLSessionDelegate, @unchecked Senda
         #if DEBUG
         print("🔒 [CertificateValidator] Certificate validation \(isValid ? "succeeded" : "failed") at \(now)")
         #endif
-        completion(isValid)
+        return isValid
     }
     
     /// Performs certificate validation for a given URL via a HEAD request.
+    /// Now fully async/await (2026 pattern). Uses the async task delegate above.
     ///
     /// This method creates an ephemeral URLSession to issue a HEAD request, triggering SSL validation.
     /// It relies on the session delegate (`self`) to handle authentication challenges.
@@ -185,58 +184,58 @@ final class CertificateValidator: NSObject, URLSessionDelegate, @unchecked Senda
     /// - Parameters:
     ///   - url: The stream URL to validate (must be HTTPS).
     ///   - completion: Callback with the validation result (true if valid and no error).
-    func validateServerCertificate(for url: URL, completion: @escaping (Bool) -> Void) {
+    func validateServerCertificate(for url: URL) async -> Bool {
         let session = URLSession(configuration: .ephemeral, delegate: self, delegateQueue: nil)
         var request = URLRequest(url: url)
         request.httpMethod = "HEAD"
-        let task = session.dataTask(with: request) { [weak self] _, response, error in
-            guard let self = self else { completion(false); return }
-            let isValid = error == nil && self.lastValidationResult
+        
+        do {
+            let (_, response) = try await session.data(for: request)  // ← modern async API
             
-            // Manipulation detection on success
+            let isValid = lastValidationResult  // set by the async challenge handler
+            
+            // Manipulation detection (unchanged logic)
             if isValid, let httpResponse = response as? HTTPURLResponse,
                let dateStr = httpResponse.value(forHTTPHeaderField: "Date"),
                let serverDate = self.httpDateFormatter.date(from: dateStr) {
                 
-                self.allowTransitionLeniency = true  // Reset to true at start
+                self.allowTransitionLeniency = true
                 
                 let deviceDate = self.currentDate()
-                let tolerance: TimeInterval = 300  // 5 minutes for skew
+                let tolerance: TimeInterval = 300
                 
-                // Check for significant discrepancy indicating manipulation
                 let timeDiff = abs(deviceDate.timeIntervalSince(serverDate))
                 if timeDiff > tolerance {
                     #if DEBUG
-                    print("⚠️ [CertificateValidator] Device time manipulation suspected: Device \(deviceDate), Server \(serverDate), Diff \(timeDiff)s")
+                    print("⚠️ [CertificateValidator] Device time manipulation suspected...")
                     #endif
                     self.allowTransitionLeniency = false
                 } else {
-                    // Specific transition mismatch check
                     let deviceInTransition = deviceDate >= Self.transitionStartDate && deviceDate <= Self.certificateExpiryDate
                     let serverInTransition = serverDate >= Self.transitionStartDate && serverDate <= Self.certificateExpiryDate
                     if deviceInTransition && !serverInTransition {
                         #if DEBUG
-                        print("⚠️ [CertificateValidator] Transition mismatch detected: Device in transition but server not. Disabling leniency.")
+                        print("⚠️ [CertificateValidator] Transition mismatch detected...")
                         #endif
                         self.allowTransitionLeniency = false
                     }
                 }
-            } else if isValid {
-                #if DEBUG
-                print("⚠️ [CertificateValidator] Skipping manipulation check: No valid Date header in response.")
-                #endif
-                // Optionally: Fallback to true or handle as potential issue
             }
             
             #if DEBUG
-            print("🔒 [CertificateValidator] HEAD request completed for \(url). Valid: \(isValid), Error: \(error?.localizedDescription ?? "None")")
+            print("🔒 [CertificateValidator] HEAD request completed for \(url). Valid: \(isValid)")
             #endif
-            completion(isValid)
+            return isValid
+            
+        } catch {
+            #if DEBUG
+            print("🔒 [CertificateValidator] HEAD request failed: \(error.localizedDescription)")
+            #endif
+            return false
         }
-        task.resume()
     }
     
-    // MARK: - URLSessionDelegate
+    // MARK: - Modern async delegate (WWDC 2025 / Swift 6 recommendation)
     
     /// Handles server trust authentication challenges during URLSession tasks.
     ///
@@ -247,20 +246,19 @@ final class CertificateValidator: NSObject, URLSessionDelegate, @unchecked Senda
     ///   - session: The URLSession instance.
     ///   - challenge: The authentication challenge.
     ///   - completionHandler: Callback to disposition the challenge (use credential or cancel).
-    func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+    nonisolated func urlSession(_ session: URLSession,
+                                task: URLSessionTask,
+                                didReceive challenge: URLAuthenticationChallenge) async -> (URLSession.AuthChallengeDisposition, URLCredential?) {
         guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
               let serverTrust = challenge.protectionSpace.serverTrust else {
-            lastValidationResult = false
-            completionHandler(.performDefaultHandling, nil)
-            return
+            return (.performDefaultHandling, nil)
         }
         
-        validateServerTrust(serverTrust) { isValid in
-            if isValid {
-                completionHandler(.useCredential, URLCredential(trust: serverTrust))
-            } else {
-                completionHandler(.cancelAuthenticationChallenge, nil)
-            }
+        let isValid = await validateServerTrust(serverTrust)
+        if isValid {
+            return (.useCredential, URLCredential(trust: serverTrust))
+        } else {
+            return (.cancelAuthenticationChallenge, nil)
         }
     }
     
