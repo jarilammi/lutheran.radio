@@ -13,7 +13,8 @@ import WidgetKit
 ///
 /// `SharedPlayerManager` enables safe state sharing between the main app, widgets, and Live Activities using App Groups and UserDefaults. It prevents crashes in widget contexts by lazy-loading `DirectStreamingPlayer.swift` only in the main app.
 ///
-/// **Single source of truth**: All state mutations (`isPlaying`, `selectedStream`, `hasPermanentError`, `validationState`, etc.) now live exclusively in `DirectStreamingPlayer`. `DirectStreamingPlayer` calls `saveCurrentState()` immediately after every mutation. `SharedPlayerManager` only provides read access, widget instant feedback, and URL-scheme handling.
+/// **Single source of truth**: All state mutations (`isPlaying`, `selectedStream`, `hasPermanentError`, `validationState`, etc.) now live exclusively in `DirectStreamingPlayer`.
+/// `SharedPlayerManager` is now a **pure dispatcher** only.
 ///
 /// Core Functions:
 /// - **State Persistence**: Delegated entirely to `DirectStreamingPlayer`.
@@ -109,10 +110,10 @@ final class SharedPlayerManager: @unchecked Sendable {
         player.stop(completion: completion)
     }
 
-    // NEW: switchToStream – now also a pure dispatcher
+    // NEW: switchToStream – now a pure dispatcher (Swift 6 compliant)
     func switchToStream(_ stream: DirectStreamingPlayer.Stream) {
         if isRunningInWidget() {
-            // ← instant UserDefaults + pending action (already perfect – keep exactly as-is)
+            // ← instant UserDefaults + pending action (keep exactly as-is)
             sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "lastUpdateTime")
             sharedDefaults?.set(true, forKey: "isInstantFeedback")
             sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "instantFeedbackTime")
@@ -130,7 +131,8 @@ final class SharedPlayerManager: @unchecked Sendable {
             return
         }
         
-        // Main app → pure forward, NO local vars touched (no pending queue, no isSwitchingStream check here)
+        // Main app → pure forward, NO local vars touched, NO UserDefaults, NO saveCurrentState
+        // (all mutations + persistence + WidgetRefreshManager now live in DirectStreamingPlayer)
         guard let player = self.player else {
             #if DEBUG
             print("No player available for stream switch")
@@ -138,29 +140,7 @@ final class SharedPlayerManager: @unchecked Sendable {
             return
         }
         
-        // Update shared state BEFORE we touch the player (this is NOT local state)
-        sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "lastUpdateTime")
-        sharedDefaults?.synchronize()
-        
-        let wasPlaying = player.isPlaying
-        player.stop { [weak self] in
-            guard let self = self else { return }
-            player.resetTransientErrors()
-            player.setStream(to: stream)
-            
-            self.saveCurrentState()                    // still fine – persistence helper
-            WidgetCenter.shared.reloadAllTimelines()
-            
-            if wasPlaying {
-                player.play { [weak self] success in
-                    guard let self = self else { return }
-                    #if DEBUG
-                    print("Direct stream switch \(success ? "succeeded" : "failed") for \(stream.language)")
-                    #endif
-                    self.saveCurrentState()
-                }
-            }
-        }
+        player.switchToStream(stream)
     }
     
     // Check if running in widget context with additional checks

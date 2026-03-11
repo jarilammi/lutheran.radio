@@ -1371,6 +1371,30 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         setupAudioSessionObservers()
     }
     
+    // MARK: - Stream Switching (Swift 6 pure mutation)
+    // Called only from SharedPlayerManager.main-app path or internally.
+    // Guarantees: every mutation triggers saveCurrentState() + WidgetRefreshManager.
+    func switchToStream(_ stream: Stream) {
+        let wasPlaying = isPlaying                     // use whatever public var you expose (matches the old call site)
+        
+        stop { [weak self] in
+            guard let self else { return }
+            
+            self.resetTransientErrors()
+            self.setStream(to: stream)                 // ← this already calls saveCurrentState() per your design
+            
+            if wasPlaying {
+                self.play { [weak self] success in
+                    guard let self else { return }
+                    #if DEBUG
+                    print("Direct stream switch \(success ? "succeeded" : "failed") for \(stream.language)")
+                    #endif
+                    // play() already calls saveCurrentState() — no extra call needed
+                }
+            }
+        }
+    }
+    
     private func performOptimalServerSelectionAndCertificateCheck() {
         selectOptimalServer { [weak self] _ in
             guard let self else { return }
