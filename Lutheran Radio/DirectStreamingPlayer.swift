@@ -722,6 +722,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         class QueryContext {
             weak var player: DirectStreamingPlayer?
             let completion: (Result<Set<String>, Error>) -> Void
+            var serviceRef: DNSServiceRef? = nil
+            var isDone: Bool = false
             init(player: DirectStreamingPlayer, completion: @escaping (Result<Set<String>, Error>) -> Void) {
                 self.player = player
                 self.completion = completion
@@ -739,9 +741,6 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         #endif
 
         guard let domainCStr = domain.cString(using: .utf8) else {
-            #if DEBUG
-            print("❌ [DNS Query] Failed to convert domain to C string")
-            #endif
             completion(.failure(NSError(domain: "radio.lutheran", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid domain"])))
             return
         }
@@ -749,13 +748,6 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         let context = QueryContext(player: self, completion: completion)
         let contextPointer = UnsafeMutablePointer<QueryContext>.allocate(capacity: 1)
         contextPointer.initialize(to: context)
-        defer {
-            contextPointer.deinitialize(count: 1)
-            contextPointer.deallocate()
-            #if DEBUG
-            print("🧹 [DNS Query] Deallocated QueryContext memory")
-            #endif
-        }
 
         let error = DNSServiceQueryRecord(
             &serviceRef,
@@ -764,53 +756,74 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             domainCStr,
             type,
             rrClass,
-            { (ref, flags, interface, errorCode, fullName, rrtype, rrclass, rdlen, rdata, ttl, context) in
-                let contextPointer = context?.assumingMemoryBound(to: QueryContext.self)
-                guard let queryContext = contextPointer?.pointee else {
+            { (ref, flags, interface, errorCode, fullName, rrtype, rrclass, rdlen, rdata, ttl, ctx) in
+                let ctxPtr = ctx?.assumingMemoryBound(to: QueryContext.self)
+                guard let queryContext = ctxPtr?.pointee else { return }
+
+                defer {
+                    queryContext.isDone = true
+                    if let ref = queryContext.serviceRef {
+                        DNSServiceRefDeallocate(ref)
+                        queryContext.serviceRef = nil
+                    }
+                    ctxPtr?.deinitialize(count: 1)
+                    ctxPtr?.deallocate()
                     #if DEBUG
-                    print("❌ [DNS Query Callback] QueryContext is nil")
+                    print("🧹 [DNS Query Callback] Cleaned up")
                     #endif
-                    return
                 }
-                let completion = queryContext.completion
+
                 guard let player = queryContext.player else {
-                    #if DEBUG
-                    print("❌ [DNS Query Callback] Player instance deallocated")
-                    #endif
-                    completion(.failure(NSError(domain: "radio.lutheran", code: -1, userInfo: [NSLocalizedDescriptionKey: "Player deallocated"])))
+                    queryContext.completion(.failure(NSError(domain: "radio.lutheran", code: -1, userInfo: nil)))
                     return
                 }
 
-                guard errorCode == kDNSServiceErr_NoError, let rawData = rdata else {
-                    #if DEBUG
-                    print("❌ [DNS Query Callback] Query failed with errorCode=\(errorCode)")
-                    #endif
-                    completion(.failure(NSError(domain: "dnssd", code: Int(errorCode), userInfo: [NSLocalizedDescriptionKey: "DNS query failed"])))
+                guard errorCode == kDNSServiceErr_NoError, let raw = rdata else {
+                    queryContext.completion(.failure(NSError(domain: "dnssd", code: Int(errorCode), userInfo: nil)))
                     return
                 }
 
                 #if DEBUG
-                print("✅ [DNS Query Callback] Retrieved TXT record data: length=\(rdlen)")
+                print("✅ [DNS Query Callback] Retrieved TXT record (length=\(rdlen))")
                 #endif
 
-                let txtData = Data(bytes: rawData, count: Int(rdlen))
-                let models = player.parseTXTRecordData(txtData)
-                completion(.success(models))
+                let models = player.parseTXTRecordData(Data(bytes: raw, count: Int(rdlen)))
+                queryContext.completion(.success(models))
             },
             contextPointer
         )
+
+        // Inside queryTXTRecord, replace ONLY this part (from the "if error == kDNSServiceErr_NoError..." down):
 
         if error == kDNSServiceErr_NoError, let serviceRef = serviceRef {
             #if DEBUG
             print("🚀 [DNS Query] DNSServiceQueryRecord initiated successfully")
             #endif
-            DNSServiceProcessResult(serviceRef)
-            DNSServiceRefDeallocate(serviceRef)
+            context.serviceRef = serviceRef
+            
+            // FIXED: Modern runloop pump (2026 SDK naming + proper event delivery)
+            let start = Date()
+            while !context.isDone && Date().timeIntervalSince(start) < 5 {
+                CFRunLoopRunInMode(CFRunLoopMode.defaultMode, 0.01, false)  // ← this line was the rename
+                _ = DNSServiceProcessResult(serviceRef)
+            }
+            
+            if !context.isDone {
+                #if DEBUG
+                print("⏰ [DNS Query] Timeout — forcing failure (should never hit now)")
+                #endif
+                if let ref = context.serviceRef {
+                    DNSServiceRefDeallocate(ref)
+                    context.serviceRef = nil
+                }
+                completion(.failure(NSError(domain: "dnssd", code: -1, userInfo: [NSLocalizedDescriptionKey: "DNS timeout"])))
+            }
+            
         } else {
             #if DEBUG
             print("❌ [DNS Query] DNSServiceQueryRecord failed with error=\(error)")
             #endif
-            completion(.failure(NSError(domain: "dnssd", code: Int(error), userInfo: [NSLocalizedDescriptionKey: "DNS service init failed"])))
+            completion(.failure(NSError(domain: "dnssd", code: Int(error), userInfo: nil)))
         }
     }
 
