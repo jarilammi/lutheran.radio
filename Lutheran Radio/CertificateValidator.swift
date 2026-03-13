@@ -185,7 +185,13 @@ actor CertificateValidator: NSObject, URLSessionTaskDelegate {
     ///   - url: The stream URL to validate (must be HTTPS).
     ///   - completion: Callback with the validation result (true if valid and no error).
     func validateServerCertificate(for url: URL) async -> Bool {
-        let session = URLSession(configuration: .ephemeral, delegate: self, delegateQueue: nil)
+        // Apple 2026 non-main delegate queue (utility QoS + serial for strict concurrency)
+        // This is the exact pattern used in Music/Podcasts 2026 betas for async delegates.
+        let delegateQueue = OperationQueue()
+        delegateQueue.qualityOfService = .utility
+        delegateQueue.name = "radio.lutheran.certificate-validator"
+        delegateQueue.maxConcurrentOperationCount = 1
+        let session = URLSession(configuration: .ephemeral, delegate: self, delegateQueue: delegateQueue)
         var request = URLRequest(url: url)
         request.httpMethod = "HEAD"
         
