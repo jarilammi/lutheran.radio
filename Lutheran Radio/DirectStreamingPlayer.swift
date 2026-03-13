@@ -688,23 +688,46 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         print("🔒 [Fetch Security Models] Fetching valid security models for domain: \(domain)")
         #endif
         
-        // Use SSL queue with priority escalation for audio-blocking operations
         sslValidationQueue.async { [weak self] in
-            // Escalate to userInteractive if audio is waiting
-            if self?.player?.timeControlStatus == .waitingToPlayAtSpecifiedRate {
-                DispatchQueue.global(qos: .userInteractive).async {
-                    self?.queryTXTRecord(domain: domain) { result in
+            // ← TINY ADJUSTMENT THAT ELIMINATES THE NSObject error
+            guard let self = self else {
+                #if DEBUG
+                print("❌ [Fetch Security Models] self deallocated before query")
+                #endif
+                DispatchQueue.main.async { completion(.failure(NSError(domain: "radio.lutheran", code: -1, userInfo: nil))) }
+                return
+            }
+
+            #if DEBUG
+            print("✅ [Fetch Security Models] guard let self succeeded → concrete DirectStreamingPlayer type locked")
+            #endif
+
+            // Escalate only if audio is blocked (exact same logic as before)
+            let launchQuery = {
+                Task {
+                    do {
+                        #if DEBUG
+                        print("🚀 [Fetch Security Models] Launching async queryTXTRecord(for:) on dnsQueue")
+                        #endif
+                        let models = try await self.queryTXTRecord(for: domain)
                         DispatchQueue.main.async {
-                            completion(result)
+                            completion(.success(models))
+                        }
+                    } catch {
+                        DispatchQueue.main.async {
+                            completion(.failure(error))
                         }
                     }
                 }
+            }
+
+            if self.player?.timeControlStatus == .waitingToPlayAtSpecifiedRate {
+                #if DEBUG
+                print("⚡ [Fetch Security Models] Audio blocked → escalating to .userInteractive")
+                #endif
+                DispatchQueue.global(qos: .userInteractive).async { launchQuery() }
             } else {
-                self?.queryTXTRecord(domain: domain) { result in
-                    DispatchQueue.main.async {
-                        completion(result)
-                    }
-                }
+                launchQuery()
             }
         }
     }
@@ -719,120 +742,140 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     }
     #endif
     
-    private func queryTXTRecord(domain: String, completion: @escaping (Result<Set<String>, Error>) -> Void) {
-        #if DEBUG
-        print("🔍 [DNS Query] Starting TXT record query for domain: \(domain)")
-        #endif
-
-        dnsQueue.async { [weak self] in
-            guard let self else {
-                DispatchQueue.main.async {
-                    completion(.failure(NSError(domain: "radio.lutheran", code: -1, userInfo: nil)))
+    private func queryTXTRecord(for domain: String) async throws -> Set<String> {
+        try await withCheckedThrowingContinuation { continuation in
+            let completion: (Result<Set<String>, Error>) -> Void = { result in
+                switch result {
+                case .success(let models): continuation.resume(returning: models)
+                case .failure(let error):  continuation.resume(throwing: error)
                 }
-                return
             }
 
-            class QueryContext {
+            class QueryContext: @unchecked Sendable {
                 weak var player: DirectStreamingPlayer?
                 let completion: (Result<Set<String>, Error>) -> Void
-                var serviceRef: DNSServiceRef? = nil
-                var isDone: Bool = false
-                init(player: DirectStreamingPlayer, completion: @escaping (Result<Set<String>, Error>) -> Void) {
+                var isDone = false
+                var serviceRef: DNSServiceRef?
+
+                init(player: DirectStreamingPlayer?, completion: @escaping (Result<Set<String>, Error>) -> Void) {
                     self.player = player
                     self.completion = completion
                 }
             }
 
-            var serviceRef: DNSServiceRef?
-            let flags: DNSServiceFlags = kDNSServiceFlagsTimeout
-            let interfaceIndex: UInt32 = 0
-            let type: UInt16 = UInt16(kDNSServiceType_TXT)
-            let rrClass: UInt16 = UInt16(kDNSServiceClass_IN)
+            dnsQueue.async { [weak self] in
+                #if DEBUG
+                print("🔍 [DNS Query] dnsQueue.async block entered (background thread)")
+                #endif
 
-            guard let domainCStr = domain.cString(using: .utf8) else {
-                DispatchQueue.main.async {
-                    completion(.failure(NSError(domain: "radio.lutheran", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid domain"])))
+                guard let self = self else {
+                    completion(.failure(NSError(domain: "radio.lutheran", code: -1, userInfo: [NSLocalizedDescriptionKey: "Player deallocated"])))
+                    return
                 }
-                return
-            }
 
-            let context = QueryContext(player: self, completion: completion)
-            let contextPointer = UnsafeMutablePointer<QueryContext>.allocate(capacity: 1)
-            contextPointer.initialize(to: context)
+                #if DEBUG
+                print("✅ [DNS Query] guard let self succeeded")
+                #endif
 
-            let error = DNSServiceQueryRecord(
-                &serviceRef,
-                flags,
-                interfaceIndex,
-                domainCStr,
-                type,
-                rrClass,
-                { (ref, flags, interface, errorCode, fullName, rrtype, rrclass, rdlen, rdata, ttl, ctx) in
-                    let ctxPtr = ctx?.assumingMemoryBound(to: QueryContext.self)
-                    guard let queryContext = ctxPtr?.pointee else { return }
+                guard let domainCStr = domain.cString(using: .utf8) else {
+                    completion(.failure(NSError(domain: "radio.lutheran", code: -2, userInfo: [NSLocalizedDescriptionKey: "Invalid domain encoding"])))
+                    return
+                }
 
-                    defer {
-                        queryContext.isDone = true
-                        if let ref = queryContext.serviceRef {
-                            DNSServiceRefDeallocate(ref)
-                            queryContext.serviceRef = nil
+                #if DEBUG
+                print("✅ [DNS Query] domainCStr guard passed")
+                #endif
+
+                let context = QueryContext(player: self, completion: completion)
+                let contextOpaque = Unmanaged.passRetained(context).toOpaque()
+
+                #if DEBUG
+                print("✅ [DNS Query] contextOpaque created")
+                #endif
+
+                #if DEBUG
+                print("🚀 [DNS Query] About to call DNSServiceQueryRecord (this is the line we want to reach)")
+                #endif
+
+                var serviceRef: DNSServiceRef?
+                let error = DNSServiceQueryRecord(
+                    &serviceRef,
+                    0,                    // flags = 0 (2026 DispatchQueue pattern – this is what worked before)
+                    0,                    // interfaceIndex
+                    domainCStr,
+                    16,                   // TXT
+                    1,                    // IN
+                    { (ref, flags, interface, errorCode, fullName, rrtype, rrclass, rdlen, rdata, ttl, ctx) in
+                        guard let ctx = ctx else { return }
+                        let queryContext = Unmanaged<QueryContext>.fromOpaque(ctx).takeRetainedValue()
+
+                        defer {
+                            queryContext.isDone = true
+                            if let ref = queryContext.serviceRef {
+                                DNSServiceRefDeallocate(ref)
+                                queryContext.serviceRef = nil
+                            }
+                            #if DEBUG
+                            print("🧹 [DNS Query Callback] Cleaned up")
+                            #endif
                         }
-                        ctxPtr?.deinitialize(count: 1)
-                        ctxPtr?.deallocate()
+
+                        guard let player = queryContext.player else {
+                            queryContext.completion(.failure(NSError(domain: "radio.lutheran", code: -1, userInfo: nil)))
+                            return
+                        }
+
+                        guard errorCode == kDNSServiceErr_NoError, let raw = rdata else {
+                            queryContext.completion(.failure(NSError(domain: "dnssd", code: Int(errorCode), userInfo: nil)))
+                            return
+                        }
+
                         #if DEBUG
-                        print("🧹 [DNS Query Callback] Cleaned up")
+                        print("✅ [DNS Query Callback] Retrieved TXT record (length=\(rdlen))")
                         #endif
-                    }
 
-                    guard let player = queryContext.player else {
-                        queryContext.completion(.failure(NSError(domain: "radio.lutheran", code: -1, userInfo: nil)))
-                        return
-                    }
+                        let models = player.parseTXTRecordData(Data(bytes: raw, count: Int(rdlen)))
+                        queryContext.completion(.success(models))
+                    } as DNSServiceQueryRecordReply,
+                    contextOpaque
+                )
 
-                    guard errorCode == kDNSServiceErr_NoError, let raw = rdata else {
-                        queryContext.completion(.failure(NSError(domain: "dnssd", code: Int(errorCode), userInfo: nil)))
-                        return
-                    }
+                // ← NEW PRINT: tells us exactly what the call returned
+                #if DEBUG
+                print("🔍 [DNS Query] DNSServiceQueryRecord returned with error code = \(error)")
+                #endif
 
+                if error == kDNSServiceErr_NoError, let serviceRef = serviceRef {
                     #if DEBUG
-                    print("✅ [DNS Query Callback] Retrieved TXT record (length=\(rdlen))")
+                    print("🚀 [DNS Query] DNSServiceQueryRecord initiated successfully")
+                    #endif
+                    context.serviceRef = serviceRef
+
+                    DNSServiceSetDispatchQueue(serviceRef, self.dnsQueue)
+                    #if DEBUG
+                    print("📡 [DNS Query] DNSServiceSetDispatchQueue attached to non-main dnsQueue (callbacks now fire async, zero blocking)")
                     #endif
 
-                    let models = player.parseTXTRecordData(Data(bytes: raw, count: Int(rdlen)))
-                    queryContext.completion(.success(models))
-                },
-                contextPointer
-            )
-
-            if error == kDNSServiceErr_NoError, let serviceRef = serviceRef {
-                #if DEBUG
-                print("🚀 [DNS Query] DNSServiceQueryRecord initiated successfully")
-                #endif
-                context.serviceRef = serviceRef
-
-                // FIXED: Modern runloop pump (2026 SDK naming + proper event delivery)
-                let start = Date()
-                while !context.isDone && Date().timeIntervalSince(start) < 5 {
-                    CFRunLoopRunInMode(CFRunLoopMode.defaultMode, 0.01, false)
-                    _ = DNSServiceProcessResult(serviceRef)
-                }
-
-                if !context.isDone {
-                    #if DEBUG
-                    print("⏰ [DNS Query] Timeout — forcing failure (should never hit now)")
-                    #endif
-                    if let ref = context.serviceRef {
-                        DNSServiceRefDeallocate(ref)
-                        context.serviceRef = nil
+                    // 5-second watchdog (simulator-safe)
+                    dnsQueue.asyncAfter(deadline: .now() + 5.0) { [weak context, contextOpaque] in
+                        guard let context = context, !context.isDone else { return }
+                        #if DEBUG
+                        print("⏰ [DNS Query] Timeout watchdog fired – forcing continuation resume")
+                        #endif
+                        if let ref = context.serviceRef {
+                            DNSServiceRefDeallocate(ref)
+                            context.serviceRef = nil
+                        }
+                        context.completion(.failure(NSError(domain: "dnssd", code: -1, userInfo: [NSLocalizedDescriptionKey: "DNS timeout"])))
+                        Unmanaged<QueryContext>.fromOpaque(contextOpaque).release()
                     }
-                    completion(.failure(NSError(domain: "dnssd", code: -1, userInfo: [NSLocalizedDescriptionKey: "DNS timeout"])))
+                } else {
+                    #if DEBUG
+                    print("❌ [DNS Query] DNSServiceQueryRecord failed with error=\(error)")
+                    #endif
+                    completion(.failure(NSError(domain: "dnssd", code: Int(error), userInfo: nil)))
+                    Unmanaged<QueryContext>.fromOpaque(contextOpaque).release()
                 }
-
-            } else {
-                #if DEBUG
-                print("❌ [DNS Query] DNSServiceQueryRecord failed with error=\(error)")
-                #endif
-                completion(.failure(NSError(domain: "dnssd", code: Int(error), userInfo: nil)))
             }
         }
     }
