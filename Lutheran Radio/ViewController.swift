@@ -79,6 +79,7 @@ extension UIView {
 }
 
 /// The main view controller for the Lutheran Radio app.
+@MainActor
 class ViewController: UIViewController, UICollectionViewDelegate, UICollectionViewDataSource, UIScrollViewDelegate, AVAudioPlayerDelegate {
     // MARK: - Private Properties and Constants
     /// Key for tracking if the user has dismissed the mobile data usage warning.
@@ -334,7 +335,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     // MARK: - Audio and Streaming
     // New streaming player
-    private var streamingPlayer: DirectStreamingPlayer
+    nonisolated private let streamingPlayer: DirectStreamingPlayer
     private let audioQueue = DispatchQueue(label: "radio.lutheran.audio", qos: .userInitiated)
 
     // Add initializer for testing
@@ -1305,31 +1306,37 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             statusLabel.backgroundColor = .systemYellow
             statusLabel.textColor = .black
 
-            streamingPlayer.validateSecurityModelAsync { isValid in
-                if isValid {
-                    self.streamingPlayer.resetTransientErrors()
-                    self.streamingPlayer.play { success in
-                        if success {
-                            self.isPlaying = true
-                            self.updatePlayPauseButton(isPlaying: true)
-                            self.statusLabel.text = String(localized: "status_playing")
-                            self.statusLabel.backgroundColor = .systemGreen
-                        } else if self.streamingPlayer.isLastErrorPermanent() {
-                            self.hasPermanentPlaybackError = true
-                            self.statusLabel.text = String(localized: "status_stream_unavailable")
-                            self.statusLabel.backgroundColor = .systemOrange
-                            self.statusLabel.textColor = .white
-                        } else {
-                            self.attemptPlaybackWithRetry(attempt: 1, maxAttempts: 3)
+            streamingPlayer.validateSecurityModelAsync { [weak self] isValid in
+                Task { @MainActor in
+                    guard let self = self else { return }
+                    if isValid {
+                        self.streamingPlayer.resetTransientErrors()
+                        self.streamingPlayer.play { [weak self] success in
+                            Task { @MainActor in
+                                guard let self = self else { return }
+                                if success {
+                                    self.isPlaying = true
+                                    self.updatePlayPauseButton(isPlaying: true)
+                                    self.statusLabel.text = String(localized: "status_playing")
+                                    self.statusLabel.backgroundColor = .systemGreen
+                                } else if self.streamingPlayer.isLastErrorPermanent() {
+                                    self.hasPermanentPlaybackError = true
+                                    self.statusLabel.text = String(localized: "status_stream_unavailable")
+                                    self.statusLabel.backgroundColor = .systemOrange
+                                    self.statusLabel.textColor = .white
+                                } else {
+                                    self.attemptPlaybackWithRetry(attempt: 1, maxAttempts: 3)
+                                }
+                            }
                         }
-                    }
-                } else {
-                    self.statusLabel.text = self.streamingPlayer.isLastErrorPermanent() ? String(localized: "status_security_failed") : String(localized: "status_no_internet")
-                    self.statusLabel.backgroundColor = self.streamingPlayer.isLastErrorPermanent() ? .systemRed : .systemGray
-                    self.statusLabel.textColor = .white
-                    self.hasPermanentPlaybackError = self.streamingPlayer.isLastErrorPermanent()
-                    if self.streamingPlayer.isLastErrorPermanent() {
-                        self.showSecurityModelAlert()
+                    } else {
+                        self.statusLabel.text = self.streamingPlayer.isLastErrorPermanent() ? String(localized: "status_security_failed") : String(localized: "status_no_internet")
+                        self.statusLabel.backgroundColor = self.streamingPlayer.isLastErrorPermanent() ? .systemRed : .systemGray
+                        self.statusLabel.textColor = .white
+                        self.hasPermanentPlaybackError = self.streamingPlayer.isLastErrorPermanent()
+                        if self.streamingPlayer.isLastErrorPermanent() {
+                            self.showSecurityModelAlert()
+                        }
                     }
                 }
             }
@@ -2435,45 +2442,50 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         )
 
         streamingPlayer.validateSecurityModelAsync { [weak self] isValid in
-            guard let self = self else { return }
-            if isValid {
-                self.streamingPlayer.resetTransientErrors()
-                self.streamingPlayer.play { success in
-                    if success {
-                        self.isPlaying = true
-                        self.updatePlayPauseButton(isPlaying: true)
-                        self.safeUpdateStatusLabel(
-                            text: String(localized: "status_playing"),
-                            backgroundColor: .systemGreen,
-                            textColor: .black,
-                            isPermanentError: false
-                        )
-                        
-                        // FIXED: Only save state after successful playback with the new stream
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                            self.saveStateForWidget()
-                        }
-                    } else if self.streamingPlayer.isLastErrorPermanent() {
-                        self.safeUpdateStatusLabel(
-                            text: String(localized: "status_stream_unavailable"),
-                            backgroundColor: .systemOrange,
-                            textColor: .white,
-                            isPermanentError: true
-                        )
-                    } else {
-                        // Simple retry without complex logic
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                            self.startPlaybackDirect()
+            Task { @MainActor in
+                guard let self = self else { return }
+                if isValid {
+                    self.streamingPlayer.resetTransientErrors()
+                    self.streamingPlayer.play { [weak self] success in
+                        Task { @MainActor in
+                            guard let self = self else { return }
+                            if success {
+                                self.isPlaying = true
+                                self.updatePlayPauseButton(isPlaying: true)
+                                self.safeUpdateStatusLabel(
+                                    text: String(localized: "status_playing"),
+                                    backgroundColor: .systemGreen,
+                                    textColor: .black,
+                                    isPermanentError: false
+                                )
+                                
+                                // FIXED: Only save state after successful playback with the new stream
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                                    self.saveStateForWidget()
+                                }
+                            } else if self.streamingPlayer.isLastErrorPermanent() {
+                                self.safeUpdateStatusLabel(
+                                    text: String(localized: "status_stream_unavailable"),
+                                    backgroundColor: .systemOrange,
+                                    textColor: .white,
+                                    isPermanentError: true
+                                )
+                            } else {
+                                // Simple retry without complex logic
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                                    self.startPlaybackDirect()
+                                }
+                            }
                         }
                     }
+                } else {
+                    self.safeUpdateStatusLabel(
+                        text: self.streamingPlayer.isLastErrorPermanent() ? String(localized: "status_security_failed") : String(localized: "status_no_internet"),
+                        backgroundColor: self.streamingPlayer.isLastErrorPermanent() ? .systemRed : .systemGray,
+                        textColor: .white,
+                        isPermanentError: self.streamingPlayer.isLastErrorPermanent()
+                    )
                 }
-            } else {
-                self.safeUpdateStatusLabel(
-                    text: self.streamingPlayer.isLastErrorPermanent() ? String(localized: "status_security_failed") : String(localized: "status_no_internet"),
-                    backgroundColor: self.streamingPlayer.isLastErrorPermanent() ? .systemRed : .systemGray,
-                    textColor: .white,
-                    isPermanentError: self.streamingPlayer.isLastErrorPermanent()
-                )
             }
         }
     }
@@ -2745,8 +2757,10 @@ extension ViewController {
                                   textColor: .label,
                                   isPermanentError: false)
             
-            SharedPlayerManager.shared.stop {
-                self.playHapticFeedback(style: .medium)  // Softer for pause
+            SharedPlayerManager.shared.stop { [weak self] in
+                Task { @MainActor in
+                    self?.playHapticFeedback(style: .medium)  // Softer for pause
+                }
             }
             
         } else {
@@ -2765,9 +2779,9 @@ extension ViewController {
                         // Revert on failure
                         self.updatePlayPauseButton(isPlaying: false)
                         self.safeUpdateStatusLabel(text: String(localized: "status_stopped"),
-                                                   backgroundColor: .systemRed,
-                                                   textColor: .white,
-                                                   isPermanentError: false)
+                                                  backgroundColor: .systemRed,
+                                                  textColor: .white,
+                                                  isPermanentError: false)
                     }
                     // success → onStatusChange(.playing) will keep the pause button
                     
@@ -2910,25 +2924,27 @@ extension ViewController: StreamingPlayerDelegate {
             case .security:
                 safeUpdateStatusLabel(text: String(localized: "status_security_failed"), backgroundColor: .systemRed, textColor: .white, isPermanentError: true)
             }
-        }
-        
-        // Add haptic or accessibility if needed (e.g., for resume after interruption)
-        if status == .playing && reason == nil {
-            playHapticFeedback(style: .light)  // Subtle resume feedback
-        }
-        
-        // Existing logic: Save state, announce, etc.
-        saveStateForWidget()
-        
-        // Keep play/pause button perfectly in sync no matter where the state change comes from
-        DispatchQueue.main.async { [weak self] in
+            
+            // Keep play/pause button perfectly in sync no matter where the state change comes from
             let showPauseButton = switch status {
             case .playing, .connecting: true
             case .paused where reason == "Interruption": true   // keep pause icon during phone call, etc.
             default: false                                      // stopped, security error, etc. → show play icon
             }
             
-            self?.updatePlayPauseButton(isPlaying: showPauseButton)
+            updatePlayPauseButton(isPlaying: showPauseButton)
+        }
+        
+        // Add haptic or accessibility if needed (e.g., for resume after interruption)
+        if status == .playing && reason == nil {
+            Task { @MainActor in
+                playHapticFeedback(style: .light)  // Subtle resume feedback
+            }
+        }
+        
+        // Existing logic: Save state, announce, etc.
+        Task { @MainActor in
+            saveStateForWidget()
         }
     }
     
