@@ -244,6 +244,10 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     private var lastFailedServerName: String?
     private var currentSelectedServer: Server = servers[0]
     
+    /// Track initialization and defer callbacks.
+    private var isInitializing: Bool = true
+    private var pendingStatusChanges: [(isPlaying: Bool, status: String)] = []
+    
     // MARK: - Energy Efficiency (Battery Optimization)
     /// Detects if the device is in Low Power Mode to throttle non-essential tasks (e.g., retry intervals) and extend battery life during streaming.
     /// Builds on thermal state handling; queried dynamically in retry/fallback logic.
@@ -660,11 +664,20 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     internal var currentMetadata: String?
     
     // MARK: - Safe callbacks to MainActor (Swift 6 fix)
-    private func safeOnStatusChange(isPlaying: Bool, status: String) {
-        Task { @MainActor [weak self] in
-            self?.onStatusChange?(isPlaying, status)
+    func safeOnStatusChange(isPlaying: Bool, status: String) {
+        DispatchQueue.main.async {  // Ensure main-thread safety for UI/delegate calls
+            if self.isInitializing {
+                self.pendingStatusChanges.append((isPlaying, status))
+            } else {
+                self.invokeStatusCallbacks(isPlaying: isPlaying, status: status)
+                SharedPlayerManager.shared.saveCurrentState()
+            }
         }
-        SharedPlayerManager.shared.saveCurrentState()
+    }
+    
+    private func invokeStatusCallbacks(isPlaying: Bool, status: String) {
+        onStatusChange?(isPlaying, status)
+        delegate?.onStatusChange(isPlaying ? .playing : .stopped, status)  // Map to enum, pass status as reason
     }
     
     private func safeOnMetadataChange(metadata: String?) {
@@ -1170,7 +1183,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         return validationState == .failedPermanent
     }
     
-    override init() {
+    private override init() {
         self.audioSession = .sharedInstance()
         self.pathMonitor = NWPathMonitorAdapter()
         let currentLocale = Locale.current
@@ -1206,6 +1219,13 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         #endif
         
         setupThermalProtection()
+        
+        isInitializing = false
+        for change in pendingStatusChanges {
+            invokeStatusCallbacks(isPlaying: change.isPlaying, status: change.status)
+        }
+        pendingStatusChanges = []
+        SharedPlayerManager.shared.saveCurrentState()  // Initial save post-init
     }
     
     #if DEBUG
