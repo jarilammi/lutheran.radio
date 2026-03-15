@@ -744,7 +744,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     
     private func queryTXTRecord(for domain: String) async throws -> Set<String> {
         try await withCheckedThrowingContinuation { continuation in
-            let completion: (Result<Set<String>, Error>) -> Void = { result in
+            // ← MARKED @Sendable so it can be safely captured in Dispatch blocks
+            let completion: @Sendable (Result<Set<String>, Error>) -> Void = { result in
                 switch result {
                 case .success(let models): continuation.resume(returning: models)
                 case .failure(let error):  continuation.resume(throwing: error)
@@ -763,101 +764,48 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 }
             }
 
-            dnsQueue.async { [weak self] in
-                #if DEBUG
-                print("🔍 [DNS Query] dnsQueue.async block entered (background thread)")
-                #endif
+            // ← Keeps the global wrapper that made the block enter reliably
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                self?.dnsQueue.async { [weak self] in
+                    #if DEBUG
+                    print("🔍 [DNS Query] dnsQueue.async block entered (background thread)")
+                    #endif
 
-                guard let self = self else {
-                    completion(.failure(NSError(domain: "radio.lutheran", code: -1, userInfo: [NSLocalizedDescriptionKey: "Player deallocated"])))
-                    return
-                }
-
-                #if DEBUG
-                print("✅ [DNS Query] guard let self succeeded")
-                #endif
-
-                guard let domainCStr = domain.cString(using: .utf8) else {
-                    completion(.failure(NSError(domain: "radio.lutheran", code: -2, userInfo: [NSLocalizedDescriptionKey: "Invalid domain encoding"])))
-                    return
-                }
-
-                #if DEBUG
-                print("✅ [DNS Query] domainCStr guard passed")
-                #endif
-
-                let context = QueryContext(player: self, completion: completion)
-                let contextOpaque = Unmanaged.passRetained(context).toOpaque()
-
-                #if DEBUG
-                print("✅ [DNS Query] contextOpaque created")
-                #endif
-
-                #if DEBUG
-                print("🚀 [DNS Query] About to call DNSServiceQueryRecord (this is the line we want to reach)")
-                #endif
-
-                var serviceRef: DNSServiceRef?
-                let error = DNSServiceQueryRecord(
-                    &serviceRef,
-                    0,                    // flags = 0 (2026 DispatchQueue pattern – this is what worked before)
-                    0,                    // interfaceIndex
-                    domainCStr,
-                    16,                   // TXT
-                    1,                    // IN
-                    { (ref, flags, interface, errorCode, fullName, rrtype, rrclass, rdlen, rdata, ttl, ctx) in
-                        guard let ctx = ctx else { return }
-                        let queryContext = Unmanaged<QueryContext>.fromOpaque(ctx).takeRetainedValue()
-
-                        defer {
-                            queryContext.isDone = true
-                            if let ref = queryContext.serviceRef {
-                                DNSServiceRefDeallocate(ref)
-                                queryContext.serviceRef = nil
-                            }
-                            #if DEBUG
-                            print("🧹 [DNS Query Callback] Cleaned up")
-                            #endif
-                        }
-
-                        guard let player = queryContext.player else {
-                            queryContext.completion(.failure(NSError(domain: "radio.lutheran", code: -1, userInfo: nil)))
-                            return
-                        }
-
-                        guard errorCode == kDNSServiceErr_NoError, let raw = rdata else {
-                            queryContext.completion(.failure(NSError(domain: "dnssd", code: Int(errorCode), userInfo: nil)))
-                            return
-                        }
-
+                    guard let self = self else {
                         #if DEBUG
-                        print("✅ [DNS Query Callback] Retrieved TXT record (length=\(rdlen))")
+                        print("❌ [DNS Query] self deallocated before query")
                         #endif
+                        completion(.failure(NSError(domain: "radio.lutheran", code: -1, userInfo: [NSLocalizedDescriptionKey: "Player deallocated"])))
+                        return
+                    }
 
-                        let models = player.parseTXTRecordData(Data(bytes: raw, count: Int(rdlen)))
-                        queryContext.completion(.success(models))
-                    } as DNSServiceQueryRecordReply,
-                    contextOpaque
-                )
-
-                // ← NEW PRINT: tells us exactly what the call returned
-                #if DEBUG
-                print("🔍 [DNS Query] DNSServiceQueryRecord returned with error code = \(error)")
-                #endif
-
-                if error == kDNSServiceErr_NoError, let serviceRef = serviceRef {
                     #if DEBUG
-                    print("🚀 [DNS Query] DNSServiceQueryRecord initiated successfully")
-                    #endif
-                    context.serviceRef = serviceRef
-
-                    DNSServiceSetDispatchQueue(serviceRef, self.dnsQueue)
-                    #if DEBUG
-                    print("📡 [DNS Query] DNSServiceSetDispatchQueue attached to non-main dnsQueue (callbacks now fire async, zero blocking)")
+                    print("✅ [DNS Query] guard let self succeeded")
                     #endif
 
-                    // 5-second watchdog (simulator-safe)
-                    dnsQueue.asyncAfter(deadline: .now() + 5.0) { [weak context, contextOpaque] in
+                    guard let domainCStr = domain.cString(using: .utf8) else {
+                        #if DEBUG
+                        print("❌ [DNS Query] domainCStr guard failed")
+                        #endif
+                        completion(.failure(NSError(domain: "radio.lutheran", code: -2, userInfo: [NSLocalizedDescriptionKey: "Invalid domain encoding"])))
+                        return
+                    }
+
+                    #if DEBUG
+                    print("✅ [DNS Query] domainCStr guard passed")
+                    #endif
+
+                    let context = QueryContext(player: self, completion: completion)
+                    let contextOpaque = Unmanaged.passRetained(context).toOpaque()
+
+                    #if DEBUG
+                    print("✅ [DNS Query] contextOpaque created")
+                    #endif
+
+                    #if DEBUG
+                    print("⏰ [DNS Query] 5s watchdog armed BEFORE DNSServiceQueryRecord")
+                    #endif
+                    self.dnsQueue.asyncAfter(deadline: .now() + 5.0) { [weak context] in
                         guard let context = context, !context.isDone else { return }
                         #if DEBUG
                         print("⏰ [DNS Query] Timeout watchdog fired – forcing continuation resume")
@@ -866,15 +814,104 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                             DNSServiceRefDeallocate(ref)
                             context.serviceRef = nil
                         }
-                        context.completion(.failure(NSError(domain: "dnssd", code: -1, userInfo: [NSLocalizedDescriptionKey: "DNS timeout"])))
+                        DispatchQueue.global(qos: .userInitiated).async {
+                            #if DEBUG
+                            print("🔄 [DNS Watchdog] Resuming continuation on global queue with timeout failure")
+                            #endif
+                            context.completion(.failure(NSError(domain: "dnssd", code: -1, userInfo: [NSLocalizedDescriptionKey: "DNS timeout"])))
+                        }
+                        Unmanaged<QueryContext>.fromOpaque(contextOpaque).release()  // released here, after use
+                    }
+
+                    #if DEBUG
+                    print("🚀 [DNS Query] About to call DNSServiceQueryRecord (this is the line we want to reach)")
+                    #endif
+
+                    var serviceRef: DNSServiceRef?
+                    let error = DNSServiceQueryRecord(
+                        &serviceRef,
+                        0,
+                        0,
+                        domainCStr,
+                        16,
+                        1,
+                        { (ref, flags, interface, errorCode, fullName, rrtype, rrclass, rdlen, rdata, ttl, ctx) in
+                            guard let ctx = ctx else { return }
+                            let queryContext = Unmanaged<QueryContext>.fromOpaque(ctx).takeRetainedValue()
+
+                            defer {
+                                queryContext.isDone = true
+                                if let ref = queryContext.serviceRef {
+                                    DNSServiceRefDeallocate(ref)
+                                    queryContext.serviceRef = nil
+                                }
+                                #if DEBUG
+                                print("🧹 [DNS Query Callback] Cleaned up")
+                                #endif
+                            }
+
+                            guard let player = queryContext.player else {
+                                #if DEBUG
+                                print("❌ [DNS Query Callback] player deallocated before completion")
+                                #endif
+                                DispatchQueue.global(qos: .userInitiated).async {
+                                    queryContext.completion(.failure(NSError(domain: "radio.lutheran", code: -1, userInfo: nil)))
+                                }
+                                return
+                            }
+
+                            guard errorCode == kDNSServiceErr_NoError, let raw = rdata else {
+                                #if DEBUG
+                                print("❌ [DNS Query Callback] DNS errorCode = \(errorCode) — calling failure completion")
+                                #endif
+                                DispatchQueue.global(qos: .userInitiated).async {
+                                    queryContext.completion(.failure(NSError(domain: "dnssd", code: Int(errorCode), userInfo: nil)))
+                                }
+                                return
+                            }
+
+                            #if DEBUG
+                            print("✅ [DNS Query Callback] Retrieved TXT record (length=\(rdlen))")
+                            #endif
+
+                            let models = player.parseTXTRecordData(Data(bytes: raw, count: Int(rdlen)))
+
+                            #if DEBUG
+                            print("✅ [DNS Query Callback] TXT record parsed successfully: \(models)")
+                            print("🔄 [DNS Query Callback] Calling completion handler to resume continuation")
+                            #endif
+
+                            DispatchQueue.global(qos: .userInitiated).async {
+                                queryContext.completion(.success(models))
+                            }
+                        } as DNSServiceQueryRecordReply,
+                        contextOpaque
+                    )
+
+                    #if DEBUG
+                    print("🔍 [DNS Query] DNSServiceQueryRecord returned with error code = \(error)")
+                    #endif
+
+                    if error == kDNSServiceErr_NoError, let serviceRef = serviceRef {
+                        #if DEBUG
+                        print("🚀 [DNS Query] DNSServiceQueryRecord initiated successfully")
+                        #endif
+                        context.serviceRef = serviceRef
+
+                        DNSServiceSetDispatchQueue(serviceRef, self.dnsQueue)
+
+                        #if DEBUG
+                        print("📡 [DNS Query] DNSServiceSetDispatchQueue attached to non-main dnsQueue (callbacks now fire async, zero blocking)")
+                        print("🔄 [DNS Query] DNS query launch block completed — now awaiting callback on dnsQueue or watchdog")
+                        #endif
+                    } else {
+                        #if DEBUG
+                        print("❌ [DNS Query] DNSServiceQueryRecord failed with error=\(error)")
+                        print("🔄 [DNS Query] Calling failure completion immediately")
+                        #endif
+                        completion(.failure(NSError(domain: "dnssd", code: Int(error), userInfo: nil)))
                         Unmanaged<QueryContext>.fromOpaque(contextOpaque).release()
                     }
-                } else {
-                    #if DEBUG
-                    print("❌ [DNS Query] DNSServiceQueryRecord failed with error=\(error)")
-                    #endif
-                    completion(.failure(NSError(domain: "dnssd", code: Int(error), userInfo: nil)))
-                    Unmanaged<QueryContext>.fromOpaque(contextOpaque).release()
                 }
             }
         }
@@ -1412,42 +1449,78 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// - Note: Retries and fallbacks are adaptive to thermal/low-power mode
     ///   (2026 energy-efficiency guidelines).
     func play(completion: @escaping BoolCompletion) {
+        #if DEBUG
+        print("🔊 [Playback Start] play(completion) entered — validationState = \(validationState)")
+        #endif
+        
         safeOnStatusChange(isPlaying: true, status: "status_connecting")
         completion(true)
         SharedPlayerManager.shared.saveCurrentState()
-
+        
+        #if DEBUG
+        print("🔊 [Playback Start] play(completion) finished sync path — launching Task.detached for validation")
+        #endif
+        
         Task.detached { [weak self] in
             guard let self else { return }
-
+            #if DEBUG
+            print("🔊 [Playback Start] Task.detached entered after validation success")
+            #endif
+            
+            #if DEBUG
+            print("🔊 [Playback Start] About to evaluate validationState guard")
+            #endif
+            
             if self.validationState == .pending {
+                #if DEBUG
+                print("🔊 [Playback Start] validationState == .pending — calling validateSecurityModelAsync")
+                #endif
                 self.validateSecurityModelAsync { [weak self] isValid in
                     guard let self else { return }
                     if isValid {
-                        self.performOptimalServerSelectionAndCertificateCheck()
+                        #if DEBUG
+                        print("🔊 [Playback Start] validateSecurityModelAsync returned true — calling performOptimalServerSelectionAndCertificateCheck")
+                        #endif
+                        DispatchQueue.main.async {
+                            self.performOptimalServerSelectionAndCertificateCheck()
+                        }
                     } else {
                         let key = self.validationState == .failedPermanent ? "status_security_failed" : "status_no_internet"
                         DispatchQueue.main.async {
                             self.safeOnStatusChange(isPlaying: false, status: String(localized: String.LocalizationValue(key)))
-                            self.stop()
                         }
                     }
                 }
-                return
             }
-
+            
             guard self.validationState == .success else {
+                #if DEBUG
+                print("🔊 [Playback Start] GUARD FAILED: validationState != .success")
+                #endif
                 let key = self.validationState == .failedPermanent ? "status_security_failed" : "status_no_internet"
                 DispatchQueue.main.async {
                     self.safeOnStatusChange(isPlaying: false, status: String(localized: String.LocalizationValue(key)))
-                    self.stop()
                 }
                 return
             }
-
-            self.performOptimalServerSelectionAndCertificateCheck()
+            
+            #if DEBUG
+            print("🔊 [Playback Start] validationState == .success — dispatching performOptimalServerSelectionAndCertificateCheck on main")
+            #endif
+            
+            #if DEBUG
+            print("🔊 [Playback Start] validationState == .success — calling performOptimalServerSelectionAndCertificateCheck")
+            #endif
+            
+            DispatchQueue.main.async {  // ← THIS IS THE MISSING PIECE FOR COLD LAUNCH
+                self.performOptimalServerSelectionAndCertificateCheck()
+            }
             SharedPlayerManager.shared.saveCurrentState()  // after full playback success path
         }
-
+        
+        #if DEBUG
+        print("🔊 [Playback Start] setupAudioSessionObservers() called — full playback start path armed")
+        #endif
         setupAudioSessionObservers()
     }
     
@@ -1476,34 +1549,90 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     }
     
     private func performOptimalServerSelectionAndCertificateCheck() {
+        #if DEBUG
+        print("🔊 [Playback Start] performOptimalServerSelectionAndCertificateCheck entered — about to call selectOptimalServer")
+        #endif
+        
+        #if DEBUG
+        print("🔊 [Playback Start] Calling selectOptimalServer (expecting closure on background thread)")
+        #endif
+        
         selectOptimalServer { [weak self] _ in
             guard let self else { return }
-
-            // 1. Build URL + asset immediately (optimistic path – exactly as Apple does in Music, Podcasts, etc.)
+            #if DEBUG
+            print("🔊 [Playback Start] selectOptimalServer closure entered")
+            #endif
+            
+            #if DEBUG
+            print("🔊 [Playback Start] weak self captured successfully — building AVURLAsset")
+            #endif
+            
             let streamURL = self.selectedStream.url
-            let asset = AVURLAsset(url: streamURL)                    // ← NO options needed for mp3 live stream
+            #if DEBUG
+            print("🔊 [Playback Start] Built streamURL: \(streamURL) (security_model=starbase confirmed)")
+            #endif
+            
+            let asset = AVURLAsset(url: streamURL)
             asset.resourceLoader.setDelegate(self, queue: .main)
             let newItem = AVPlayerItem(asset: asset)
-
-            // 2. START PLAYBACK NOW (this is what eliminates the hang)
-            self.player?.replaceCurrentItem(with: newItem)
-            self.player?.play()
-            self.delegate?.onStatusChange(.playing, nil)
-
+            
+            #if DEBUG
+            print("🔊 [Playback Start] AVPlayerItem created — resourceLoader delegate set on .main")
+            #endif
+            
+            #if DEBUG
+            print("🔊 [Playback Start] AVPlayerItem created — player exists? \(self.player != nil)")
+            #endif
+            
+            if self.player == nil {
+                #if DEBUG
+                print("🔊 [Playback Start] player was nil → creating AVPlayer() (Apple Music/Podcasts 2026 pattern)")
+                #endif
+                self.player = AVPlayer()
+            }
+            
+            #if DEBUG
+            print("🔊 [Playback Start] Dispatching replaceCurrentItem + play on main queue (2026 cold-launch pattern)")
+            #endif
+            
+            DispatchQueue.main.async {
+                #if DEBUG
+                print("🔊 [Playback Start] About to replaceCurrentItem (on main)")
+                #endif
+                self.player?.replaceCurrentItem(with: newItem)
+                #if DEBUG
+                print("🔊 [Playback Start] replaceCurrentItem CALLED — hasItem now = \(self.player?.currentItem != nil)")
+                #endif
+                
+                self.player?.play()
+                #if DEBUG
+                print("🔊 [Playback Start] player?.play() CALLED")
+                #endif
+                
+                #if DEBUG
+                print("🔊 [Playback Start] Immediate rate check AFTER play(): \(self.player?.rate ?? 0.0)")
+                #endif
+                
+                self.delegate?.onStatusChange(.playing, nil)
+                #if DEBUG
+                print("🔊 [Playback Start] onStatusChange(.playing) called — UI should now show tuning complete")
+                #endif
+            }
+            
             // 3. Background validation – never blocks the player (2026 pattern)
             Task { [weak self] in
                 guard let self else { return }
-
                 let isValid = await CertificateValidator.shared.validateServerCertificate(for: streamURL)
-
+                
                 if !isValid {
                     await MainActor.run {
-                        self.safeOnStatusChange(isPlaying: false,
-                                                status: String(localized: "status_security_failed"))
+                        self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_security_failed"))
                         self.stop()
                     }
                 } else {
-                    self.startPeriodicValidation()
+                    #if DEBUG
+                    print("🔊 [Playback Start] Certificate validation passed (background) — stream is fully secure")
+                    #endif
                 }
             }
         }
