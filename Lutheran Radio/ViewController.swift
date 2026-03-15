@@ -736,7 +736,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     // MARK: - Enhanced Status Change Handling
     private func setupStreamingCallbacks() {
-        streamingPlayer.onStatusChange = { @MainActor [weak self] isPlaying, statusText in
+        streamingPlayer.onStatusChange = { [weak self] isPlaying, statusText in
             guard let self = self else {
                 #if DEBUG
                 print("📱 onStatusChange: ViewController is nil, skipping callback")
@@ -744,61 +744,66 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 return
             }
             
+            // Non-UI updates (safe on background if properties are nonisolated)
             self.isPlaying = isPlaying
-            self.updatePlayPauseButton(isPlaying: isPlaying)
-            self.saveStateForWidget()
             
-            if isPlaying {
-                self.statusLabel.text = String(localized: "status_playing")
-                self.statusLabel.backgroundColor = .systemGreen
-                self.statusLabel.textColor = .black
-                playPauseButton.accessibilityLabel = String(localized: "accessibility_label_play_pause")
-            } else {
-                self.statusLabel.text = statusText
-                playPauseButton.accessibilityLabel = String(localized: "accessibility_label_play")
+            // Hop to main for UI and isolated state
+            DispatchQueue.main.async {
+                self.updatePlayPauseButton(isPlaying: isPlaying)
+                self.saveStateForWidget()
                 
-                if statusText == String(localized: "status_security_failed") {
-                    self.hasPermanentPlaybackError = true
-                    self.isManualPause = true
-                    self.statusLabel.backgroundColor = .systemRed
-                    self.statusLabel.textColor = .white
-                    self.showSecurityModelAlert()
-                    
-                } else if statusText == String(localized: "status_ssl_transition") {
-                    self.statusLabel.backgroundColor = .systemOrange
-                    self.statusLabel.textColor = .white
-                    self.showSSLTransitionAlert()
-                    
-                } else if statusText == String(localized: "status_no_internet") {
-                    self.statusLabel.backgroundColor = .systemGray
-                    self.statusLabel.textColor = .white
-                    self.updateUIForNoInternet()
-                    
-                } else if statusText == String(localized: "status_stream_unavailable") {
-                    self.statusLabel.backgroundColor = .systemOrange
-                    self.statusLabel.textColor = .white
-                    if self.presentedViewController == nil {
-                        let alert = UIAlertController(
-                            title: String(localized: "stream_unavailable_title"),
-                            message: String(localized: "stream_unavailable_message"),
-                            preferredStyle: .alert
-                        )
-                        alert.addAction(UIAlertAction(title: String(localized: "alert_retry"), style: .default) { _ in
-                            self.hasPermanentPlaybackError = false
-                            self.startPlayback()
-                        })
-                        alert.addAction(UIAlertAction(title: String(localized: "ok"), style: .cancel, handler: nil))
-                        self.present(alert, animated: true)
-                    }
-                } else {
-                    self.statusLabel.backgroundColor = self.isManualPause ? .systemGray : .systemYellow
+                if isPlaying {
+                    self.statusLabel.text = String(localized: "status_playing")
+                    self.statusLabel.backgroundColor = .systemGreen
                     self.statusLabel.textColor = .black
+                    self.playPauseButton.accessibilityLabel = String(localized: "accessibility_label_play_pause")
+                } else {
+                    self.statusLabel.text = statusText
+                    self.playPauseButton.accessibilityLabel = String(localized: "accessibility_label_play")
+                    
+                    if statusText == String(localized: "status_security_failed") {
+                        self.hasPermanentPlaybackError = true
+                        self.isManualPause = true
+                        self.statusLabel.backgroundColor = .systemRed
+                        self.statusLabel.textColor = .white
+                        self.showSecurityModelAlert()
+                        
+                    } else if statusText == String(localized: "status_ssl_transition") {
+                        self.statusLabel.backgroundColor = .systemOrange
+                        self.statusLabel.textColor = .white
+                        self.showSSLTransitionAlert()
+                        
+                    } else if statusText == String(localized: "status_no_internet") {
+                        self.statusLabel.backgroundColor = .systemGray
+                        self.statusLabel.textColor = .white
+                        self.updateUIForNoInternet()
+                        
+                    } else if statusText == String(localized: "status_stream_unavailable") {
+                        self.statusLabel.backgroundColor = .systemOrange
+                        self.statusLabel.textColor = .white
+                        if self.presentedViewController == nil {
+                            let alert = UIAlertController(
+                                title: String(localized: "stream_unavailable_title"),
+                                message: String(localized: "stream_unavailable_message"),
+                                preferredStyle: .alert
+                            )
+                            alert.addAction(UIAlertAction(title: String(localized: "alert_retry"), style: .default) { _ in
+                                self.hasPermanentPlaybackError = false
+                                self.startPlayback()
+                            })
+                            alert.addAction(UIAlertAction(title: String(localized: "ok"), style: .cancel, handler: nil))
+                            self.present(alert, animated: true)
+                        }
+                    } else {
+                        self.statusLabel.backgroundColor = self.isManualPause ? .systemGray : .systemYellow
+                        self.statusLabel.textColor = .black
+                    }
                 }
+                self.updateNowPlayingInfo()
             }
-            self.updateNowPlayingInfo()
         }
         
-        streamingPlayer.onMetadataChange = { @MainActor [weak self] metadata in
+        streamingPlayer.onMetadataChange = { [weak self] metadata in
             guard let self = self else {
                 #if DEBUG
                 print("📱 onMetadataChange: ViewController is nil, skipping callback")
@@ -806,55 +811,69 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 return
             }
             
+            // Process metadata on background (regex is cheap and thread-safe)
+            var potentialNames: [String]? = nil
             if let metadata = metadata {
-                self.metadataLabel.text = metadata
-                self.updateNowPlayingInfo(title: metadata)
-                
-                // Extract potential speaker names using regex
-                let regex = try? NSRegularExpression(pattern: "\\b[A-Z][a-z]+(?:\\s[A-Z][a-z]+)*\\b")
-                let matches = regex?.matches(in: metadata, range: NSRange(metadata.startIndex..., in: metadata))
-                let potentialNames = matches?.compactMap { match in
-                    Range(match.range, in: metadata).map { String(metadata[$0]) }
+                do {
+                    let regex = try NSRegularExpression(pattern: "\\b[A-Z][a-z]+(?:\\s[A-Z][a-z]+)*\\b")  // Tighten if needed, e.g., add length min
+                    let matches = regex.matches(in: metadata, range: NSRange(metadata.startIndex..., in: metadata))
+                    potentialNames = matches.compactMap { match in
+                        Range(match.range, in: metadata).map { String(metadata[$0]) }
+                    }
+                } catch {
+                    #if DEBUG
+                    print("🔴 Regex failed in onMetadataChange: \(error)")
+                    #endif
                 }
-                
-                let specificSpeakers = Set(["Jari Lammi"])
-                let matchedSpeaker = potentialNames?.first(where: { specificSpeakers.contains($0) })
-                
-                if let speaker = matchedSpeaker,
-                   let image = UIImage(named: speaker.lowercased().replacingOccurrences(of: " ", with: "_") + "_photo") {
-                    UIView.transition(with: self.speakerImageView, duration: 0.3, options: .transitionCrossDissolve, animations: {
-                        self.speakerImageView.image = image
-                        self.speakerImageView.isHidden = false
-                        self.speakerImageHeightConstraint.constant = 100
-                        self.speakerImageView.accessibilityLabel = "Photo of \(speaker)"
-                    }, completion: { _ in
-                        #if DEBUG
-                        print("Speaker image frame: \(self.speakerImageView.frame)")
-                        print("Language collection view frame: \(self.languageCollectionView.frame)")
-                        #endif
-                    })
-                } else if potentialNames?.contains("Lutheran Radio") == true,
-                          let image = UIImage(named: "radio-placeholder") {
-                    UIView.transition(with: self.speakerImageView, duration: 0.3, options: .transitionCrossDissolve, animations: {
-                        self.speakerImageView.image = image
-                        self.speakerImageView.isHidden = false
-                        self.speakerImageHeightConstraint.constant = 100
-                        self.speakerImageView.accessibilityLabel = "Lutheran Radio Logo"
-                    }, completion: { _ in
-                        #if DEBUG
-                        print("Speaker image frame: \(self.speakerImageView.frame)")
-                        print("Language collection view frame: \(self.languageCollectionView.frame)")
-                        #endif
-                    })
+            }
+            
+            // Hop to main for UI updates
+            DispatchQueue.main.async {
+                if let metadata = metadata {
+                    self.metadataLabel.text = metadata
+                    self.updateNowPlayingInfo(title: metadata)
+                    
+                    let specificSpeakers = Set(["Jari Lammi"])
+                    let matchedSpeaker = potentialNames?.first(where: { specificSpeakers.contains($0) })
+                    
+                    if let speaker = matchedSpeaker,
+                       let imagePath = Bundle.main.path(forResource: speaker.lowercased().replacingOccurrences(of: " ", with: "_") + "_photo", ofType: "png"),  // Assume png; adjust
+                       let image = UIImage(contentsOfFile: imagePath) {
+                        UIView.transition(with: self.speakerImageView, duration: 0.3, options: .transitionCrossDissolve, animations: {
+                            self.speakerImageView.image = image
+                            self.speakerImageView.isHidden = false
+                            self.speakerImageHeightConstraint.constant = 100
+                            self.speakerImageView.accessibilityLabel = "Photo of \(speaker)"
+                        }, completion: { _ in
+                            #if DEBUG
+                            print("Speaker image frame: \(self.speakerImageView.frame)")
+                            print("Language collection view frame: \(self.languageCollectionView.frame)")
+                            #endif
+                        })
+                    } else if potentialNames?.contains("Lutheran Radio") == true,
+                              let imagePath = Bundle.main.path(forResource: "radio-placeholder", ofType: "png"),
+                              let image = UIImage(contentsOfFile: imagePath) {
+                        UIView.transition(with: self.speakerImageView, duration: 0.3, options: .transitionCrossDissolve, animations: {
+                            self.speakerImageView.image = image
+                            self.speakerImageView.isHidden = false
+                            self.speakerImageHeightConstraint.constant = 100
+                            self.speakerImageView.accessibilityLabel = "Lutheran Radio Logo"
+                        }, completion: { _ in
+                            #if DEBUG
+                            print("Speaker image frame: \(self.speakerImageView.frame)")
+                            print("Language collection view frame: \(self.languageCollectionView.frame)")
+                            #endif
+                        })
+                    } else {
+                        self.speakerImageView.isHidden = true
+                    }
                 } else {
+                    self.metadataLabel.text = String(localized: "no_track_info")
+                    self.updateNowPlayingInfo()
                     self.speakerImageView.isHidden = true
                 }
-            } else {
-                self.metadataLabel.text = String(localized: "no_track_info")
-                self.updateNowPlayingInfo()
-                self.speakerImageView.isHidden = true
+                self.saveStateForWidget()
             }
-            self.saveStateForWidget()
         }
     }
     
@@ -1208,7 +1227,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         }
     }
     
-    @MainActor
     private func updateNowPlayingInfo(title: String? = nil) {
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: title ?? "Lutheran Radio Live",
@@ -1218,12 +1236,24 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             MPMediaItemPropertyMediaType: MPMediaType.anyAudio.rawValue
         ]
         
-        if let image = UIImage(named: "radio-placeholder") {
-            let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+        // Load image thread-safely (using bundle path to avoid UI assumptions)
+        if let imagePath = Bundle.main.path(forResource: "radio-placeholder", ofType: nil),
+           let image = UIImage(contentsOfFile: imagePath) {
+            let artwork = MPMediaItemArtwork(boundsSize: image.size) { size in
+                // This closure may run on background; resize if needed (example)
+                UIGraphicsBeginImageContextWithOptions(size, false, 0.0)
+                image.draw(in: CGRect(origin: .zero, size: size))
+                let resizedImage = UIGraphicsGetImageFromCurrentImageContext()
+                UIGraphicsEndImageContext()
+                return resizedImage ?? image
+            }
             info[MPMediaItemPropertyArtwork] = artwork
+        } else {
+            print("🔴 Failed to load placeholder image")
         }
         
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+        print("🔄 Updated nowPlayingInfo on thread: \(Thread.isMainThread ? "main" : "background")")
     }
     
     private func updateUIForNoInternet() {
@@ -1395,11 +1425,15 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         isManualPause = true
         streamingPlayer.stop { [weak self] in
             guard let self = self else { return }
-            self.isPlaying = false
-            self.updatePlayPauseButton(isPlaying: false)
-            self.updateStatusLabel(text: String(localized: "status_paused"), backgroundColor: .systemGray, textColor: .white)
-            self.updateNowPlayingInfo()
-            self.saveStateForWidget()
+            
+            // Hop to main queue for UI and isolated state updates
+            DispatchQueue.main.async {
+                self.isPlaying = false
+                self.updatePlayPauseButton(isPlaying: false)
+                self.updateStatusLabel(text: String(localized: "status_paused"), backgroundColor: .systemGray, textColor: .white)
+                self.updateNowPlayingInfo()
+                self.saveStateForWidget()
+            }
         }
     }
     
