@@ -1221,11 +1221,13 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         setupThermalProtection()
         
         isInitializing = false
-        for change in pendingStatusChanges {
-            invokeStatusCallbacks(isPlaying: change.isPlaying, status: change.status)
+        DispatchQueue.main.async {  // Defer to after init returns
+            for change in self.pendingStatusChanges {
+                self.invokeStatusCallbacks(isPlaying: change.isPlaying, status: change.status)
+            }
+            self.pendingStatusChanges = []
+            SharedPlayerManager.shared.saveCurrentState()  // Now safe post-init
         }
-        pendingStatusChanges = []
-        SharedPlayerManager.shared.saveCurrentState()  // Initial save post-init
     }
     
     #if DEBUG
