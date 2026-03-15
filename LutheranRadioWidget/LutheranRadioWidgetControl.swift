@@ -118,13 +118,14 @@ extension LutheranRadioWidgetControl {
          */
         func currentValue(configuration: ControlConfigurationAppIntent) async throws -> Value {
             let manager = SharedPlayerManager.shared
-            let isPlaying = manager.isPlaying
-            let currentStream = manager.currentStream
+            let state = manager.loadSharedState()
+            let isPlaying = state.isPlaying
+            let currentStream = manager.availableStreams.first(where: { $0.languageCode == state.currentLanguage }) ?? manager.availableStreams[0]
             // Format station name with flag emoji and language name for easy recognition
             let currentStation = currentStream.flag + " " + currentStream.language
             
             // Check for connection or streaming errors
-            let hasError = manager.hasError
+            let hasError = state.hasError
             
             return LutheranRadioWidgetControl.Value(
                 isPlaying: isPlaying,
@@ -142,8 +143,12 @@ extension LutheranRadioWidgetControl {
  * This configuration is stored locally and respects user privacy.
  */
 struct ControlConfigurationAppIntent: ControlConfigurationIntent {
-    static let title: LocalizedStringResource = "Control Configuration"
-    static let description = IntentDescription("Configure Lutheran Radio control widget.")
+    nonisolated static var title: LocalizedStringResource {
+        "Control Configuration"
+    }
+    nonisolated static var description: IntentDescription {
+        IntentDescription("Configure Lutheran Radio control widget.")
+    }
     
     /// User's preferred language stream for initial playback
     @Parameter(title: "Preferred Language", description: "Default language stream to use")
@@ -168,16 +173,20 @@ enum StreamLanguageOption: String, AppEnum {
     case swedish = "sv"      // Swedish Lutheran content
     case estonian = "et"     // Estonian Lutheran content
     
-    static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "Language")
+    nonisolated static var typeDisplayRepresentation: TypeDisplayRepresentation {
+        TypeDisplayRepresentation(name: "Language")
+    }
     
     /// User-friendly display names with flag emojis for easy recognition
-    static var caseDisplayRepresentations: [StreamLanguageOption: DisplayRepresentation] = [
-        .english: DisplayRepresentation(title: LocalizedStringResource("🇺🇸 English")),
-        .german: DisplayRepresentation(title: LocalizedStringResource("🇩🇪 German")),
-        .finnish: DisplayRepresentation(title: LocalizedStringResource("🇫🇮 Finnish")),
-        .swedish: DisplayRepresentation(title: LocalizedStringResource("🇸🇪 Swedish")),
-        .estonian: DisplayRepresentation(title: LocalizedStringResource("🇪🇪 Estonian"))
-    ]
+    nonisolated static var caseDisplayRepresentations: [StreamLanguageOption: DisplayRepresentation] {
+        [
+            .english: DisplayRepresentation(title: LocalizedStringResource("🇺🇸 English")),
+            .german: DisplayRepresentation(title: LocalizedStringResource("🇩🇪 German")),
+            .finnish: DisplayRepresentation(title: LocalizedStringResource("🇫🇮 Finnish")),
+            .swedish: DisplayRepresentation(title: LocalizedStringResource("🇸🇪 Swedish")),
+            .estonian: DisplayRepresentation(title: LocalizedStringResource("🇪🇪 Estonian"))
+        ]
+    }
 }
 
 /**
@@ -192,9 +201,13 @@ enum StreamLanguageOption: String, AppEnum {
  * - Graceful error handling for poor network conditions
  */
 struct ToggleRadioIntent: SetValueIntent {
-    static let title: LocalizedStringResource = "Toggle Lutheran Radio"
-    static let description = IntentDescription("Start or stop Lutheran Radio playback.")
-
+    nonisolated static var title: LocalizedStringResource {
+        "Toggle Lutheran Radio"
+    }
+    nonisolated static var description: IntentDescription {
+        IntentDescription("Start or stop Lutheran Radio playback.")
+    }
+    
     @Parameter(title: "Is Playing")
     var value: Bool
 
@@ -211,11 +224,12 @@ struct ToggleRadioIntent: SetValueIntent {
      */
     func perform() async throws -> some IntentResult {
         #if DEBUG
-        print("🔗 WidgetToggleRadioIntent.perform called")
+        print("WidgetToggleRadioIntent.perform called")
         #endif
         
         let manager = SharedPlayerManager.shared
-        let isCurrentlyPlaying = manager.isPlaying
+        let state = manager.loadSharedState()
+        let isCurrentlyPlaying = state.isPlaying
         
         // Toggle playback state
         if isCurrentlyPlaying {
@@ -227,13 +241,13 @@ struct ToggleRadioIntent: SetValueIntent {
         // NEW: Use optimized refresh for immediate user feedback
         let newState = WidgetState(
             isPlaying: !isCurrentlyPlaying,
-            currentLanguage: manager.currentStream.languageCode,
-            hasError: manager.hasError
+            currentLanguage: state.currentLanguage,
+            hasError: state.hasError
         )
-        WidgetRefreshManager.shared.refreshIfNeeded(for: newState, immediate: true)
+        await WidgetRefreshManager.shared.refreshIfNeeded(for: newState, immediate: true)
         
         #if DEBUG
-        print("🔗 WidgetToggleRadioIntent completed successfully")
+        print("WidgetToggleRadioIntent completed successfully")
         #endif
         
         return .result()
@@ -252,8 +266,12 @@ struct ToggleRadioIntent: SetValueIntent {
  * - Support for all available Lutheran radio languages
  */
 struct QuickSwitchStreamIntent: AppIntent {
-    static var title: LocalizedStringResource = "Switch Lutheran Radio Language"
-    static var description = IntentDescription("Quickly switch to a different language stream.")
+    nonisolated static var title: LocalizedStringResource {
+        "Switch Lutheran Radio Language"
+    }
+    nonisolated static var description: IntentDescription {
+        IntentDescription("Quickly switch to a different language stream.")
+    }
     
     /// Target language for switching
     @Parameter(title: "Language", description: "Language stream to switch to")

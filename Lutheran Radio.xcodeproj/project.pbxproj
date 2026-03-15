@@ -90,7 +90,18 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
+				Tools/AudioToTextDecoder.py,
 				Tools/generate_tuning_sound.py,
+				Tools/TextToAudioEncoder.py,
+				Tools/tuning_sound_4.wav,
+				Tools/tuning_sound_5.wav,
+				Tools/tuning_sound_6.wav,
+				Tools/tuning_sound_7.wav,
+				Tools/tuning_sound_8.wav,
+				Tools/tuning_sound_9.wav,
+				Tools/tuning_sound_10.wav,
+				Tools/tuning_sound_11.wav,
+				Tools/tuning_sound_12.wav,
 			);
 			target = B7AFC6AB2CCD7D0A00BDDD83 /* Lutheran Radio */;
 		};
@@ -458,12 +469,12 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 26.3.0;
+				MARKETING_VERSION = 26.3.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "radio.lutheran.Lutheran-Radio.LutheranRadioWidget";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
@@ -488,12 +499,12 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 26.3.0;
+				MARKETING_VERSION = 26.3.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "radio.lutheran.Lutheran-Radio.LutheranRadioWidget";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
@@ -522,11 +533,11 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 26.3.0;
+				MARKETING_VERSION = 26.3.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "radio.lutheran.Lutheran-Radio";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
@@ -555,11 +566,11 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 26.3.0;
+				MARKETING_VERSION = 26.3.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "radio.lutheran.Lutheran-Radio";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
@@ -705,7 +716,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "radio.lutheran.Lutheran-RadioTests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Lutheran Radio.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Lutheran Radio";
 			};
@@ -723,7 +734,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "radio.lutheran.Lutheran-RadioTests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Lutheran Radio.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Lutheran Radio";
 			};
@@ -740,7 +751,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "radio.lutheran.Lutheran-RadioUITests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = "Lutheran Radio";
 			};
@@ -757,7 +768,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "radio.lutheran.Lutheran-RadioUITests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = "Lutheran Radio";
 			};

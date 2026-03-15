@@ -253,15 +253,20 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     private lazy var hapticEngine: CHHapticEngine? = {
         do {
             let engine = try CHHapticEngine()
-            engine.playsHapticsOnly = true // Optimize for feedback only
+            engine.playsHapticsOnly = true
             
-            // Reset handler: Restart on interruptions
+            // Reset handler – now correctly captures weak self inside the @MainActor Task
             engine.resetHandler = { [weak self] in
                 do {
                     try self?.hapticEngine?.start()
-                    #if DEBUG
-                    print("✅ Haptic engine restarted after reset")
-                    #endif
+                    
+                    // Capture weak self HERE (Apple-recommended pattern for nonisolated → MainActor hop)
+                    Task { @MainActor [weak self] in
+                        guard let self else { return }
+                        #if DEBUG
+                        print("✅ Haptic engine restarted after reset")
+                        #endif
+                    }
                 } catch {
                     #if DEBUG
                     print("❌ Failed to restart haptic engine after reset: \(error)")
@@ -269,12 +274,11 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 }
             }
             
-            // Stopped handler: Restart unless it's a fatal error or destroyed
+            // Stopped handler (unchanged – no self capture)
             engine.stoppedHandler = { reason in
                 #if DEBUG
                 print("⚠️ Haptic engine stopped: reason \(reason.rawValue)")
                 #endif
-                // Don't restart on systemError (-1) or engineDestroyed (5)
                 if reason != .systemError && reason != .engineDestroyed {
                     do {
                         try engine.start()
@@ -351,7 +355,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     private var isManualPause = false
     private var hasPermanentPlaybackError = false
     private var networkMonitor: NWPathMonitor?
-    private var networkMonitorHandler: ((NWPath) -> Void)? // Store handler to clear it
+    private var networkMonitorHandler: (@Sendable (NWPath) -> Void)? // Store handler to clear it
     private var hasInternetConnection = true
     private var connectivityCheckTimer: Timer?
     private var lastConnectionAttemptTime: Date?
@@ -413,10 +417,11 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         ]
         
         // Register for preferred content size category changes
-        registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) { (controller: Self, previousTraitCollection: UITraitCollection) in
-            // Reapply attributes with new font size
-            controller.updateMetadataLabel(
-                text: controller.metadataLabel.text ?? String(localized: "no_track_info")
+        registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) { [weak self] (controller: Self, previousTraitCollection: UITraitCollection) in
+            guard let self else { return }   // ← [weak self] capture list + shorthand guard (Apple-recommended)
+            // Reapply attributes with new font size (prevents "sending 'self'" data race)
+            self.updateMetadataLabel(
+                text: self.metadataLabel.text ?? String(localized: "no_track_info")
             )
         }
         
@@ -493,23 +498,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             self,
             selector: #selector(energyEfficiencyChanged),
             name: Notification.Name("NSProcessInfoPowerStateDidChangeNotification"),
-            object: nil
-        )
-        
-        // Fix stuck "Connecting…" label after successful stream switches
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(handleStreamSwitchCompleted),
-            name: .streamSwitchCompleted,
-            object: nil
-        )
-        
-        // Guarantee "Playing" UI after successful stream switch
-        // (covers rare case where AVPlayer rate KVO fails on some streams but audio actually plays)
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(forcePlayingStateAfterSwitch),
-            name: .streamSwitchCompleted,
             object: nil
         )
         
@@ -634,6 +622,33 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         // Remove notification observers early to prevent them from firing during deallocation
         NotificationCenter.default.removeObserver(self, name: AVAudioSession.interruptionNotification, object: nil)
         NotificationCenter.default.removeObserver(self, name: AVAudioSession.routeChangeNotification, object: nil)
+        
+        // All non-Sendable cleanup – Apple-recommended (2026)
+        isDeallocating = true
+        
+        streamingPlayer.clearCallbacks()
+        
+        connectivityCheckTimer?.invalidate()
+        connectivityCheckTimer = nil
+        streamSwitchWorkItem?.cancel()
+        streamSwitchWorkItem = nil
+        tuningPlayer?.stop()
+        tuningPlayer = nil
+        isTuningSoundPlaying = false
+        
+        networkMonitor?.pathUpdateHandler = nil
+        networkMonitorHandler = nil
+        networkMonitor?.cancel()
+        networkMonitor = nil
+        
+        // Also remove the other NotificationCenter observers here (idempotent)
+        NotificationCenter.default.removeObserver(self, name: UIApplication.didReceiveMemoryWarningNotification, object: nil)
+        NotificationCenter.default.removeObserver(self, name: Notification.Name("NSProcessInfoPowerStateDidChangeNotification"), object: nil)
+        // ← REMOVED: .streamSwitchCompleted observer (no longer exists or needed)
+        
+        #if DEBUG
+        print("🧹 ViewController cleanup completed in viewDidDisappear")
+        #endif
     }
     
     /// Configures the audio session for background playback.
@@ -728,63 +743,64 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 #endif
                 return
             }
+            
+            // Non-UI updates (safe on background if properties are nonisolated)
             self.isPlaying = isPlaying
-            self.updatePlayPauseButton(isPlaying: isPlaying)
             
-            // Save state for widget after any status change
-            self.saveStateForWidget()
-            
-            if isPlaying {
-                self.statusLabel.text = String(localized: "status_playing")
-                self.statusLabel.backgroundColor = .systemGreen
-                self.statusLabel.textColor = .black
-                playPauseButton.accessibilityLabel = String(localized: "accessibility_label_play_pause")  // e.g., "Pause"
-            } else {
-                self.statusLabel.text = statusText
-                playPauseButton.accessibilityLabel = String(localized: "accessibility_label_play")  // e.g., "Play"
+            // Hop to main for UI and isolated state
+            DispatchQueue.main.async {
+                self.updatePlayPauseButton(isPlaying: isPlaying)
+                self.saveStateForWidget()
                 
-                // Handle different status types with appropriate colors and actions
-                if statusText == String(localized: "status_security_failed") {
-                    self.hasPermanentPlaybackError = true
-                    self.isManualPause = true
-                    self.statusLabel.backgroundColor = .systemRed
-                    self.statusLabel.textColor = .white
-                    self.showSecurityModelAlert()
-                    
-                } else if statusText == String(localized: "status_ssl_transition") {
-                    // NEW: Handle SSL transition state
-                    self.statusLabel.backgroundColor = .systemOrange
-                    self.statusLabel.textColor = .white
-                    self.showSSLTransitionAlert()
-                    
-                } else if statusText == String(localized: "status_no_internet") {
-                    self.statusLabel.backgroundColor = .systemGray
-                    self.statusLabel.textColor = .white
-                    self.updateUIForNoInternet()
-                    
-                } else if statusText == String(localized: "status_stream_unavailable") {
-                    self.statusLabel.backgroundColor = .systemOrange
-                    self.statusLabel.textColor = .white
-                    // Show alert if not already presenting
-                    if self.presentedViewController == nil {
-                        let alert = UIAlertController(
-                            title: String(localized: "stream_unavailable_title"),
-                            message: String(localized: "stream_unavailable_message"),
-                            preferredStyle: .alert
-                        )
-                        alert.addAction(UIAlertAction(title: String(localized: "alert_retry"), style: .default) { _ in
-                            self.hasPermanentPlaybackError = false
-                            self.startPlayback()
-                        })
-                        alert.addAction(UIAlertAction(title: String(localized: "ok"), style: .cancel, handler: nil))
-                        self.present(alert, animated: true)
-                    }
-                } else {
-                    self.statusLabel.backgroundColor = self.isManualPause ? .systemGray : .systemYellow
+                if isPlaying {
+                    self.statusLabel.text = String(localized: "status_playing")
+                    self.statusLabel.backgroundColor = .systemGreen
                     self.statusLabel.textColor = .black
+                    self.playPauseButton.accessibilityLabel = String(localized: "accessibility_label_play_pause")
+                } else {
+                    self.statusLabel.text = statusText
+                    self.playPauseButton.accessibilityLabel = String(localized: "accessibility_label_play")
+                    
+                    if statusText == String(localized: "status_security_failed") {
+                        self.hasPermanentPlaybackError = true
+                        self.isManualPause = true
+                        self.statusLabel.backgroundColor = .systemRed
+                        self.statusLabel.textColor = .white
+                        self.showSecurityModelAlert()
+                        
+                    } else if statusText == String(localized: "status_ssl_transition") {
+                        self.statusLabel.backgroundColor = .systemOrange
+                        self.statusLabel.textColor = .white
+                        self.showSSLTransitionAlert()
+                        
+                    } else if statusText == String(localized: "status_no_internet") {
+                        self.statusLabel.backgroundColor = .systemGray
+                        self.statusLabel.textColor = .white
+                        self.updateUIForNoInternet()
+                        
+                    } else if statusText == String(localized: "status_stream_unavailable") {
+                        self.statusLabel.backgroundColor = .systemOrange
+                        self.statusLabel.textColor = .white
+                        if self.presentedViewController == nil {
+                            let alert = UIAlertController(
+                                title: String(localized: "stream_unavailable_title"),
+                                message: String(localized: "stream_unavailable_message"),
+                                preferredStyle: .alert
+                            )
+                            alert.addAction(UIAlertAction(title: String(localized: "alert_retry"), style: .default) { _ in
+                                self.hasPermanentPlaybackError = false
+                                self.startPlayback()
+                            })
+                            alert.addAction(UIAlertAction(title: String(localized: "ok"), style: .cancel, handler: nil))
+                            self.present(alert, animated: true)
+                        }
+                    } else {
+                        self.statusLabel.backgroundColor = self.isManualPause ? .systemGray : .systemYellow
+                        self.statusLabel.textColor = .black
+                    }
                 }
+                self.updateNowPlayingInfo()
             }
-            self.updateNowPlayingInfo()
         }
         
         streamingPlayer.onMetadataChange = { [weak self] metadata in
@@ -794,23 +810,35 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 #endif
                 return
             }
+            
+            // Process metadata on background (regex is cheap and thread-safe)
+            var potentialNames: [String]? = nil
+            if let metadata = metadata {
+                do {
+                    let regex = try NSRegularExpression(pattern: "\\b[A-Z][a-z]+(?:\\s[A-Z][a-z]+)*\\b")  // Tighten if needed, e.g., add length min
+                    let matches = regex.matches(in: metadata, range: NSRange(metadata.startIndex..., in: metadata))
+                    potentialNames = matches.compactMap { match in
+                        Range(match.range, in: metadata).map { String(metadata[$0]) }
+                    }
+                } catch {
+                    #if DEBUG
+                    print("🔴 Regex failed in onMetadataChange: \(error)")
+                    #endif
+                }
+            }
+            
+            // Hop to main for UI updates
             DispatchQueue.main.async {
                 if let metadata = metadata {
                     self.metadataLabel.text = metadata
                     self.updateNowPlayingInfo(title: metadata)
                     
-                    // Extract potential speaker names using regex
-                    let regex = try? NSRegularExpression(pattern: "\\b[A-Z][a-z]+(?:\\s[A-Z][a-z]+)*\\b")
-                    let matches = regex?.matches(in: metadata, range: NSRange(metadata.startIndex..., in: metadata))
-                    let potentialNames = matches?.compactMap { match in
-                        Range(match.range, in: metadata).map { String(metadata[$0]) }
-                    }
-                    
-                    // Check for specific speakers or "Lutheran Radio"
                     let specificSpeakers = Set(["Jari Lammi"])
                     let matchedSpeaker = potentialNames?.first(where: { specificSpeakers.contains($0) })
                     
-                    if let speaker = matchedSpeaker, let image = UIImage(named: speaker.lowercased().replacingOccurrences(of: " ", with: "_") + "_photo") {
+                    if let speaker = matchedSpeaker,
+                       let imagePath = Bundle.main.path(forResource: speaker.lowercased().replacingOccurrences(of: " ", with: "_") + "_photo", ofType: "png"),  // Assume png; adjust
+                       let image = UIImage(contentsOfFile: imagePath) {
                         UIView.transition(with: self.speakerImageView, duration: 0.3, options: .transitionCrossDissolve, animations: {
                             self.speakerImageView.image = image
                             self.speakerImageView.isHidden = false
@@ -822,7 +850,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                             print("Language collection view frame: \(self.languageCollectionView.frame)")
                             #endif
                         })
-                    } else if potentialNames?.contains("Lutheran Radio") == true, let image = UIImage(named: "radio-placeholder") {
+                    } else if potentialNames?.contains("Lutheran Radio") == true,
+                              let imagePath = Bundle.main.path(forResource: "radio-placeholder", ofType: "png"),
+                              let image = UIImage(contentsOfFile: imagePath) {
                         UIView.transition(with: self.speakerImageView, duration: 0.3, options: .transitionCrossDissolve, animations: {
                             self.speakerImageView.image = image
                             self.speakerImageView.isHidden = false
@@ -855,8 +885,12 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         )
         alert.addAction(UIAlertAction(title: String(localized: "alert_retry"), style: .default, handler: { [weak self] _ in
             self?.streamingPlayer.resetTransientErrors()
-            self?.streamingPlayer.validateSecurityModelAsync { isValid in
-                self?.startPlayback()
+            self?.streamingPlayer.validateSecurityModelAsync { [weak self] isValid in
+                // validateSecurityModelAsync completion runs off-main → hop back
+                Task { @MainActor in
+                    guard let self = self else { return }
+                    self.startPlayback()
+                }
             }
         }))
         alert.addAction(UIAlertAction(title: String(localized: "ok"), style: .cancel, handler: nil))
@@ -1201,11 +1235,25 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
             MPMediaItemPropertyMediaType: MPMediaType.anyAudio.rawValue
         ]
-        if let image = UIImage(named: "radio-placeholder") {
-            let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+        
+        // Load image thread-safely (using bundle path to avoid UI assumptions)
+        if let imagePath = Bundle.main.path(forResource: "radio-placeholder", ofType: nil),
+           let image = UIImage(contentsOfFile: imagePath) {
+            let artwork = MPMediaItemArtwork(boundsSize: image.size) { size in
+                // This closure may run on background; resize if needed (example)
+                UIGraphicsBeginImageContextWithOptions(size, false, 0.0)
+                image.draw(in: CGRect(origin: .zero, size: size))
+                let resizedImage = UIGraphicsGetImageFromCurrentImageContext()
+                UIGraphicsEndImageContext()
+                return resizedImage ?? image
+            }
             info[MPMediaItemPropertyArtwork] = artwork
+        } else {
+            print("🔴 Failed to load placeholder image")
         }
+        
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+        print("🔄 Updated nowPlayingInfo on thread: \(Thread.isMainThread ? "main" : "background")")
     }
     
     private func updateUIForNoInternet() {
@@ -1377,11 +1425,15 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         isManualPause = true
         streamingPlayer.stop { [weak self] in
             guard let self = self else { return }
-            self.isPlaying = false
-            self.updatePlayPauseButton(isPlaying: false)
-            self.updateStatusLabel(text: String(localized: "status_paused"), backgroundColor: .systemGray, textColor: .white)
-            self.updateNowPlayingInfo()
-            self.saveStateForWidget()
+            
+            // Hop to main queue for UI and isolated state updates
+            DispatchQueue.main.async {
+                self.isPlaying = false
+                self.updatePlayPauseButton(isPlaying: false)
+                self.updateStatusLabel(text: String(localized: "status_paused"), backgroundColor: .systemGray, textColor: .white)
+                self.updateNowPlayingInfo()
+                self.saveStateForWidget()
+            }
         }
     }
     
@@ -1444,7 +1496,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             // Low efficiency: Skip heavy processing/caching to save battery/CPU
             // Load raw image directly (lightweight) and apply without filters
             if let rawImage = UIImage(named: imageName) {
-                DispatchQueue.main.async {
+                DispatchQueue.main.async { [weak self] in
+                    guard let self = self else { return }
                     self.backgroundImageView.image = rawImage
                     // ... Add any existing non-processing code here, e.g., constraints or animations if needed ...
                     // For example, if you have fade-in animation:
@@ -1771,9 +1824,13 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             
             // Optimistic UI during tuning sound – masks latency perfectly
             DispatchQueue.main.async { [weak self] in
+                let manager = SharedPlayerManager.shared
+                let state = manager.loadSharedState()
+                let currentStream = manager.availableStreams.first(where: { $0.languageCode == state.currentLanguage }) ?? manager.availableStreams[0]
+                
                 self?.updatePlayPauseButton(isPlaying: true, animated: true)
                 
-                if !SharedPlayerManager.shared.isPlaying {
+                if !state.isPlaying {
                     self?.safeUpdateStatusLabel(
                         text: String(localized: "status_connecting"),
                         backgroundColor: .systemYellow,
@@ -1850,9 +1907,13 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             
             // Optimistic UI during tuning sound – masks latency perfectly
             DispatchQueue.main.async { [weak self] in
+                let manager = SharedPlayerManager.shared
+                let state = manager.loadSharedState()
+                let currentStream = manager.availableStreams.first(where: { $0.languageCode == state.currentLanguage }) ?? manager.availableStreams[0]
+                
                 self?.updatePlayPauseButton(isPlaying: true, animated: true)
                 
-                if !SharedPlayerManager.shared.isPlaying {
+                if !state.isPlaying {
                     self?.safeUpdateStatusLabel(
                         text: String(localized: "status_connecting"),
                         backgroundColor: .systemYellow,
@@ -1890,20 +1951,26 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         }
     }
     
-    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-        #if DEBUG
-        print("🎵 Tuning sound finished playing, success: \(flag)")
-        #endif
-        isTuningSoundPlaying = false
-        tuningPlayer = nil
+    nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        // nonisolated because AVAudioPlayerDelegate can be called off-main
+        // We hop to MainActor for UI/property access
+        Task { @MainActor in
+            #if DEBUG
+            print("🎵 Tuning sound finished playing, success: \(flag)")
+            #endif
+            isTuningSoundPlaying = false
+            tuningPlayer = nil
+        }
     }
     
-    func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
-        #if DEBUG
-        print("❌ Tuning sound decode error: \(error?.localizedDescription ?? "Unknown")")
-        #endif
-        isTuningSoundPlaying = false
-        tuningPlayer = nil
+    nonisolated func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
+        Task { @MainActor in
+            #if DEBUG
+            print("❌ Tuning sound decode error: \(error?.localizedDescription ?? "Unknown")")
+            #endif
+            isTuningSoundPlaying = false
+            tuningPlayer = nil
+        }
     }
     
     private func stopTuningSound() {
@@ -2213,45 +2280,12 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         isDeallocating = true
         
         #if DEBUG
-        print("🧹 ViewController deinit starting...")
+        print("🧹 ViewController deinit starting")
         #endif
         
-        // Remove Darwin notification observer FIRST to prevent crashes
+        // ONLY this is allowed in deinit (CF + Unmanaged is explicitly permitted)
         let center = CFNotificationCenterGetDarwinNotifyCenter()
         CFNotificationCenterRemoveEveryObserver(center, Unmanaged.passUnretained(self).toOpaque())
-        
-        // Cancel existing timers
-        connectivityCheckTimer?.invalidate()
-        connectivityCheckTimer = nil
-        
-        // Cancel existing work items
-        streamSwitchWorkItem?.cancel()
-        streamSwitchWorkItem = nil
-        
-        #if DEBUG
-        print("🧹 [Deinit] Cancelled all timers and work items")
-        #endif
-        
-        // Stop audio players
-        tuningPlayer?.stop()
-        tuningPlayer = nil
-        isTuningSoundPlaying = false
-        
-        // Clean up streaming player
-        streamingPlayer.clearCallbacks()
-        
-        // Remove notification observers early to prevent firing during deallocation
-        NotificationCenter.default.removeObserver(self, name: AVAudioSession.interruptionNotification, object: nil)
-        NotificationCenter.default.removeObserver(self, name: AVAudioSession.routeChangeNotification, object: nil)
-        NotificationCenter.default.removeObserver(self, name: UIApplication.didReceiveMemoryWarningNotification, object: nil)
-        NotificationCenter.default.removeObserver(self, name: Notification.Name("NSProcessInfoPowerStateDidChangeNotification"), object: nil)
-        NotificationCenter.default.removeObserver(self, name: .streamSwitchCompleted, object: nil)
-        
-        // Cancel network monitoring
-        networkMonitor?.pathUpdateHandler = nil
-        networkMonitorHandler = nil
-        networkMonitor?.cancel()
-        networkMonitor = nil
         
         #if DEBUG
         print("🧹 ViewController deinit completed")
@@ -2351,7 +2385,11 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                         
                         // Always start/resume playback after widget switch (user intent to listen)
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {  // Delay for transition
-                            if !SharedPlayerManager.shared.isPlaying {
+                            let manager = SharedPlayerManager.shared
+                            let state = manager.loadSharedState()
+                            let currentStream = manager.availableStreams.first(where: { $0.languageCode == state.currentLanguage }) ?? manager.availableStreams[0]
+                            
+                            if !state.isPlaying {
                                 SharedPlayerManager.shared.play { _ in }
                             }
                         }
@@ -2695,7 +2733,11 @@ extension ViewController {
             self?.playPauseButton.isUserInteractionEnabled = true
         }
         
-        if SharedPlayerManager.shared.isPlaying {
+        let manager = SharedPlayerManager.shared
+        let state = manager.loadSharedState()
+        let currentStream = manager.availableStreams.first(where: { $0.languageCode == state.currentLanguage }) ?? manager.availableStreams[0]
+        
+        if state.isPlaying {
             // === PAUSE ===
             updatePlayPauseButton(isPlaying: false)
             safeUpdateStatusLabel(text: String(localized: "status_paused"),
@@ -2733,30 +2775,6 @@ extension ViewController {
                 }
             }
         }
-    }
-    
-    @objc private func handleStreamSwitchCompleted() {
-        // Force correct state after successful stream switch (fixes stuck "Connecting…" bug)
-        let isPlaying = SharedPlayerManager.shared.isPlaying
-        
-        updatePlayPauseButton(isPlaying: isPlaying)
-        
-        if isPlaying {
-            safeUpdateStatusLabel(
-                text: String(localized: "status_playing"),
-                backgroundColor: .systemGreen,
-                textColor: .white,
-                isPermanentError: false
-            )
-            
-            // Optional: subtle haptic on successful switch (feels nice)
-            playHapticFeedback(style: .light)
-        }
-    }
-    
-    @objc private func forcePlayingStateAfterSwitch() {
-        // Stream switch completed successfully → audio is playing even if rate KVO bugged
-        onStatusChange(.playing, nil)  // re-use all the perfect logic we already have
     }
     
     // MARK: - Play Haptic Feedback
@@ -2875,19 +2893,23 @@ extension ViewController: StreamingPlayerDelegate {
     /// - Parameters:
     ///   - status: The new player status (e.g., .playing, .paused).
     ///   - reason: Optional reason for the change (e.g., "Interruption").
-    func onStatusChange(_ status: PlayerStatus, _ reason: String?) {
-        switch status {
-        case .playing:
-            safeUpdateStatusLabel(text: String(localized: "status_playing"), backgroundColor: .systemGreen, textColor: .white, isPermanentError: false)
-        case .paused:
-            let pauseText = (reason == "Interruption") ? "Paused - Call Active" : String(localized: "status_paused")
-            safeUpdateStatusLabel(text: pauseText, backgroundColor: .systemYellow, textColor: .label, isPermanentError: false)
-        case .stopped:
-            safeUpdateStatusLabel(text: String(localized: "status_stopped"), backgroundColor: .systemRed, textColor: .white, isPermanentError: false)
-        case .connecting:
-            safeUpdateStatusLabel(text: String(localized: "status_connecting"), backgroundColor: .systemYellow, textColor: .label, isPermanentError: false)
-        case .security:
-            safeUpdateStatusLabel(text: String(localized: "status_security_failed"), backgroundColor: .systemRed, textColor: .white, isPermanentError: true)
+    /// Called from background threads in DirectStreamingPlayer (@unchecked Sendable).
+    /// Marked nonisolated + explicit MainActor hop to satisfy strict concurrency.
+    nonisolated func onStatusChange(_ status: PlayerStatus, _ reason: String?) {
+        Task { @MainActor in
+            switch status {
+            case .playing:
+                safeUpdateStatusLabel(text: String(localized: "status_playing"), backgroundColor: .systemGreen, textColor: .white, isPermanentError: false)
+            case .paused:
+                let pauseText = (reason == "Interruption") ? "Paused - Call Active" : String(localized: "status_paused")
+                safeUpdateStatusLabel(text: pauseText, backgroundColor: .systemYellow, textColor: .label, isPermanentError: false)
+            case .stopped:
+                safeUpdateStatusLabel(text: String(localized: "status_stopped"), backgroundColor: .systemRed, textColor: .white, isPermanentError: false)
+            case .connecting:
+                safeUpdateStatusLabel(text: String(localized: "status_connecting"), backgroundColor: .systemYellow, textColor: .label, isPermanentError: false)
+            case .security:
+                safeUpdateStatusLabel(text: String(localized: "status_security_failed"), backgroundColor: .systemRed, textColor: .white, isPermanentError: true)
+            }
         }
         
         // Add haptic or accessibility if needed (e.g., for resume after interruption)
@@ -2916,19 +2938,23 @@ extension ViewController: StreamingPlayerDelegate {
     public func handleWidgetAction(action: String, parameter: String?, actionId: String) {
         guard !processedActionIds.contains(actionId) else {
             #if DEBUG
-            print("🔗 Skipping duplicate widget action ID: \(actionId)")
+            print("Skipping duplicate widget action ID: \(actionId)")
             #endif
             return
         }
         processedActionIds.insert(actionId)
         
+        let manager = SharedPlayerManager.shared
+        let state = manager.loadSharedState()
+        let currentStream = manager.availableStreams.first(where: { $0.languageCode == state.currentLanguage }) ?? manager.availableStreams[0]
+        
         switch action {
         case "play":
-            if !SharedPlayerManager.shared.isPlaying {
+            if !state.isPlaying {
                 togglePlayback()
             }
         case "pause":
-            if SharedPlayerManager.shared.isPlaying {
+            if state.isPlaying {
                 togglePlayback()
             }
         case "switch":
@@ -2947,7 +2973,7 @@ extension ViewController: StreamingPlayerDelegate {
                 
                 // Always start/resume playback after widget switch (user intent to listen)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {  // Shorter delay for transition
-                    if !SharedPlayerManager.shared.isPlaying {
+                    if !state.isPlaying {
                         SharedPlayerManager.shared.play { _ in }
                     }
                 }
@@ -2961,7 +2987,7 @@ extension ViewController: StreamingPlayerDelegate {
             }
         default:
             #if DEBUG
-            print("🔗 Unknown widget action: \(action)")
+            print("Unknown widget action: \(action)")
             #endif
             break
         }

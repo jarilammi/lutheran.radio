@@ -12,16 +12,21 @@ import AppIntents
 
 // MARK: - Live Activity Intents
 struct LiveActivityTogglePlaybackIntent: AppIntent {
-    static var title: LocalizedStringResource = "Toggle Lutheran Radio Playback"
-    static var description = IntentDescription("Toggle play/pause from Live Activity.")
-
+    nonisolated static var title: LocalizedStringResource {
+        "Toggle Lutheran Radio Playback"
+    }
+    nonisolated static var description: IntentDescription {
+        IntentDescription("Toggle play/pause from Live Activity.")
+    }
+    
     func perform() async throws -> some IntentResult {
         #if DEBUG
-        print("🔗 LiveActivityTogglePlaybackIntent.perform called")
+        print("LiveActivityTogglePlaybackIntent.perform called")
         #endif
         
         let manager = SharedPlayerManager.shared
-        let isCurrentlyPlaying = manager.isPlaying
+        let state = manager.loadSharedState()
+        let isCurrentlyPlaying = state.isPlaying
         
         if isCurrentlyPlaying {
             manager.stop()
@@ -30,7 +35,7 @@ struct LiveActivityTogglePlaybackIntent: AppIntent {
         }
         
         #if DEBUG
-        print("🔗 LiveActivityTogglePlaybackIntent completed")
+        print("LiveActivityTogglePlaybackIntent completed")
         #endif
         
         return .result()
@@ -38,16 +43,21 @@ struct LiveActivityTogglePlaybackIntent: AppIntent {
 }
 
 struct LutheranRadioLiveActivityTogglePlaybackIntent: AppIntent {
-    static var title: LocalizedStringResource = "Toggle Lutheran Radio Playback"
-    static var description = IntentDescription("Toggle play/pause from Live Activity.")
-
+    nonisolated static var title: LocalizedStringResource {
+        "Toggle Lutheran Radio Playback"
+    }
+    nonisolated static var description: IntentDescription {
+        IntentDescription("Toggle play/pause from Live Activity.")
+    }
+    
     func perform() async throws -> some IntentResult {
         #if DEBUG
-        print("🔗 LutheranRadioLiveActivityTogglePlaybackIntent.perform called")
+        print("LutheranRadioLiveActivityTogglePlaybackIntent.perform called")
         #endif
         
         let manager = SharedPlayerManager.shared
-        let isCurrentlyPlaying = manager.isPlaying
+        let state = manager.loadSharedState()
+        let isCurrentlyPlaying = state.isPlaying
         
         if isCurrentlyPlaying {
             manager.stop()
@@ -56,7 +66,7 @@ struct LutheranRadioLiveActivityTogglePlaybackIntent: AppIntent {
         }
         
         #if DEBUG
-        print("🔗 LutheranRadioLiveActivityTogglePlaybackIntent completed")
+        print("LutheranRadioLiveActivityTogglePlaybackIntent completed")
         #endif
         
         return .result()
@@ -64,8 +74,12 @@ struct LutheranRadioLiveActivityTogglePlaybackIntent: AppIntent {
 }
 
 struct LiveActivitySwitchStreamIntent: AppIntent {
-    static var title: LocalizedStringResource = "Switch Stream"
-    static var description = IntentDescription("Switch to a different language stream from Live Activity.")
+    nonisolated static var title: LocalizedStringResource {
+        "Switch Stream"
+    }
+    nonisolated static var description: IntentDescription {
+        IntentDescription("Switch to a different language stream from Live Activity.")
+    }
     
     @Parameter(title: "Language Code")
     var languageCode: String

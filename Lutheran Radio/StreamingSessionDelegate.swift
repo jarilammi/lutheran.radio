@@ -7,6 +7,7 @@
 
 import Foundation
 import AVFoundation
+@preconcurrency import Security
 
 /// Custom URLSession delegate for managing audio streaming sessions with integrated SSL certificate pinning validation.
 ///
@@ -25,7 +26,7 @@ import AVFoundation
 /// - Initialize with an `AVAssetResourceLoadingRequest` from AVFoundation.
 /// - Set as the delegate for a URLSession handling streaming requests.
 /// - Call `cancel()` to stop ongoing data tasks and invalidate the session.
-class StreamingSessionDelegate: NSObject, URLSessionDataDelegate {
+final class StreamingSessionDelegate: NSObject, URLSessionDataDelegate, URLSessionTaskDelegate, @unchecked Sendable {
     
     /// The AVAssetResourceLoadingRequest being fulfilled by this delegate.
     internal var loadingRequest: AVAssetResourceLoadingRequest
@@ -70,30 +71,30 @@ class StreamingSessionDelegate: NSObject, URLSessionDataDelegate {
         dataTask = nil
     }
     
-    /// Handles server trust authentication challenges.
-    ///
-    /// This method is called when a server trust challenge occurs. It uses `CertificateValidator` to validate the trust,
-    /// and either proceeds with the credential or cancels the challenge (triggering an error).
-    ///
-    /// - Parameters:
-    ///   - session: The URLSession instance.
-    ///   - challenge: The authentication challenge.
-    ///   - completionHandler: Callback to disposition the challenge (use credential or cancel).
-    func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+    // MARK: - Modern async delegate (WWDC 2025 / Swift 6 recommendation)
+    
+    /// Handles server trust authentication challenges using the 2026 async API.
+    /// Delegates validation to CertificateValidator (now actor-isolated + async).
+    /// On failure, immediately notifies the AVAssetResourceLoadingRequest (exact same behaviour as before).
+    nonisolated func urlSession(_ session: URLSession,
+                    task: URLSessionTask,
+                    didReceive challenge: URLAuthenticationChallenge) async -> (URLSession.AuthChallengeDisposition, URLCredential?) {
         guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
               let serverTrust = challenge.protectionSpace.serverTrust else {
-            completionHandler(.performDefaultHandling, nil)
-            return
+            return (.performDefaultHandling, nil)
         }
         
-        CertificateValidator.shared.validateServerTrust(serverTrust) { isValid in
-            if isValid {
-                completionHandler(.useCredential, URLCredential(trust: serverTrust))
-            } else {
-                completionHandler(.cancelAuthenticationChallenge, nil)
-                self.onError?(URLError(.serverCertificateUntrusted))
-                self.loadingRequest.finishLoading(with: URLError(.serverCertificateUntrusted))
-            }
+        let isValid = await CertificateValidator.shared.validateServerTrust(serverTrust)
+        
+        if isValid {
+            return (.useCredential, URLCredential(trust: serverTrust))
+        } else {
+            #if DEBUG
+            print("🔒 [StreamingSessionDelegate] Certificate validation failed – cancelling stream")
+            #endif
+            self.onError?(URLError(.serverCertificateUntrusted))
+            self.loadingRequest.finishLoading(with: URLError(.serverCertificateUntrusted))
+            return (.cancelAuthenticationChallenge, nil)
         }
     }
     

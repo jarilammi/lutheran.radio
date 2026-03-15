@@ -118,10 +118,11 @@ struct Provider: AppIntentTimelineProvider {
     // helper method to the Provider struct
     private func getValidatedStreamState() -> (isPlaying: Bool, currentStation: String, statusMessage: String) {
         let manager = SharedPlayerManager.shared
-        let isPlaying = manager.isPlaying
-        let currentStream = manager.currentStream
+        let state = manager.loadSharedState()
+        let isPlaying = state.isPlaying
+        let currentStream = manager.availableStreams.first(where: { $0.languageCode == state.currentLanguage }) ?? manager.availableStreams[0]
         let currentStation = currentStream.flag + " " + currentStream.language
-        let hasError = manager.hasError
+        let hasError = state.hasError
         
         let statusMessage: String
         if hasError {
@@ -335,7 +336,7 @@ struct SmallWidgetView: View {
                 Spacer()
                 
                 // Large, accessible play/pause button
-                Button(intent: ToggleRadioIntent()) {
+                Button(intent: WidgetToggleRadioIntent()) {
                     Image(systemName: entry.isPlaying ? "pause.circle.fill" : "play.circle.fill")
                         .font(.title2)
                         .foregroundColor(entry.isPlaying ? .orange : .blue)
@@ -431,7 +432,7 @@ struct MediumWidgetView: View {
                 // RIGHT SIDE: Control panel
                 VStack(spacing: 8) {
                     // Primary play/pause button
-                    Button(intent: ToggleRadioIntent()) {
+                    Button(intent: WidgetToggleRadioIntent()) {
                         VStack(spacing: 2) {
                             Image(systemName: entry.isPlaying ? "pause.circle.fill" : "play.circle.fill")
                                 .font(.title)
@@ -546,7 +547,7 @@ struct LargeWidgetView: View {
                         .font(.headline)
                         .fontWeight(.bold)
                     Spacer()
-                    Button(intent: ToggleRadioIntent()) {
+                    Button(intent: WidgetToggleRadioIntent()) {
                         Image(systemName: entry.isPlaying ? "pause.circle.fill" : "play.circle.fill")
                             .font(.title2)
                             .foregroundColor(entry.isPlaying ? .orange : .blue)
@@ -631,9 +632,13 @@ struct LargeWidgetView: View {
  * - Immediate user feedback
  */
 struct WidgetToggleRadioIntent: AppIntent {
-    static var title: LocalizedStringResource = "Toggle Lutheran Radio"
-    static var description = IntentDescription("Play or pause Lutheran Radio.")
-
+    nonisolated static var title: LocalizedStringResource {
+        "Toggle Lutheran Radio"
+    }
+    nonisolated static var description: IntentDescription {
+        IntentDescription("Play or pause Lutheran Radio.")
+    }
+    
     /**
      * Executes play/pause toggle from Home Screen widget
      * Provides immediate feedback to user through debug logging
@@ -644,7 +649,8 @@ struct WidgetToggleRadioIntent: AppIntent {
         #endif
         
         let manager = SharedPlayerManager.shared
-        let isCurrentlyPlaying = manager.isPlaying
+        let state = manager.loadSharedState()
+        let isCurrentlyPlaying = state.isPlaying
         
         if isCurrentlyPlaying {
             manager.stop()
@@ -655,10 +661,10 @@ struct WidgetToggleRadioIntent: AppIntent {
         // NEW: Immediate refresh for user action
         let newState = WidgetState(
             isPlaying: !isCurrentlyPlaying,
-            currentLanguage: manager.currentStream.languageCode,
-            hasError: manager.hasError
+            currentLanguage: state.currentLanguage,
+            hasError: state.hasError
         )
-        WidgetRefreshManager.shared.refreshIfNeeded(for: newState, immediate: true)
+        await WidgetRefreshManager.shared.refreshIfNeeded(for: newState, immediate: true)
         
         #if DEBUG
         print("🔗 WidgetToggleRadioIntent completed successfully")
@@ -680,8 +686,12 @@ struct WidgetToggleRadioIntent: AppIntent {
  * - Safe error handling for missing streams
  */
 struct SwitchStreamIntent: AppIntent {
-    static var title: LocalizedStringResource = "Switch Stream"
-    static var description = IntentDescription("Switch to a different language stream.")
+    nonisolated static var title: LocalizedStringResource {
+        "Switch Stream"
+    }
+    nonisolated static var description: IntentDescription {
+        IntentDescription("Switch to a different language stream.")
+    }
     
     /// Target language code for the switch
     @Parameter(title: "Language Code")
@@ -731,6 +741,10 @@ struct SwitchStreamIntent: AppIntent {
  * - Display customization options
  */
 struct RadioWidgetConfiguration: WidgetConfigurationIntent {
-    static var title: LocalizedStringResource = "Widget Configuration"
-    static var description = IntentDescription("Configuration for Lutheran Radio widget.")
+    nonisolated static var title: LocalizedStringResource {
+        "Widget Configuration"
+    }
+    nonisolated static var description: IntentDescription {
+        IntentDescription("Configuration for Lutheran Radio widget.")
+    }
 }

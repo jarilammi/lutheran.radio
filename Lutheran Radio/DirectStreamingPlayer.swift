@@ -12,6 +12,11 @@ import AVFoundation
 import dnssd
 import Network
 
+// MARK: - Sendable Completion Helpers (Swift 6)
+typealias BoolCompletion   = @Sendable (Bool) -> Void
+typealias VoidCompletion   = () -> Void
+typealias ResultCompletion<T> = @Sendable (Result<T, Error>) -> Void
+
 // MARK: - Delegate Protocol and Status Enum
 /// Protocol for delegate callbacks (e.g., UI updates from ViewController).
 protocol StreamingPlayerDelegate: AnyObject {
@@ -31,10 +36,12 @@ enum PlayerStatus {
 ///
 /// `DirectStreamingPlayer` is the heart of audio streaming, using AVFoundation for direct HTTPS playback with runtime SSL validation. It integrates with `CertificateValidator.swift` for certificate pinning and supports a transition period for rotations (July-August 2026).
 ///
+/// **Single source of truth for state**: `DirectStreamingPlayer` now owns ALL mutations to `isPlaying`, `selectedStream`, `hasPermanentError`, `validationState`, etc. It calls `SharedPlayerManager.shared.saveCurrentState()` immediately after EVERY mutation (play, stop, setStream, status observers, server fallback, validation callbacks). This eliminates widget/Live Activity desync.
+///
 /// Workflow:
 /// 1. **Initialization/Setup**: Queries DNS for access authorization; sets up AVPlayer with custom resource loading (`StreamingSessionDelegate.swift`).
 /// 2. **Playback Control**: `play()`/`stop()` manage state; adaptive retries handle network issues (cellular-aware timeouts via `NetworkPathMonitoring`).
-/// 3. **Error Handling**: Tracks transient/permanent errors; integrates with `SharedPlayerManager.swift` for widget/Live Activity state syncing.
+/// 3. **Error Handling**: Tracks transient/permanent errors; now guarantees persistence via `saveCurrentState()`.
 /// 4. **Privacy Safeguards**: No metadata tracking; minimal network footprint; excludes features like push notifications (see excluded features list above).
 ///
 /// iOS 26 Optimizations: Low-power mode reduces retry aggressiveness. For UI callbacks, see `ViewController.swift`'s `onStatusChange` and `onMetadataChange`. Shared via `SharedPlayerManager.shared` for widgets.
@@ -81,7 +88,7 @@ enum PlayerStatus {
 /// - **Dynamic Access Control**:
 ///   - Queries `securitymodels.lutheran.radio` TXT record to validate app authorization.
 ///   - Supports remote access control without requiring app updates.
-///   - Requires the app security model (`houston`) to be in the authorized list.
+///   - Requires the app security model (`starbase`) to be in the authorized list.
 /// - **Privacy-Safe Data Management**:
 ///   - Streaming state stored only in memory during use.
 ///   - No persistent traces of listening activity.
@@ -135,7 +142,7 @@ enum NetworkPathStatus: Sendable {
 
 /// Protocol for monitoring network path changes.
 /// - Note: Abstracts NWPathMonitor for testability; use `NWPathMonitorAdapter` in production.
-protocol NetworkPathMonitoring: AnyObject {
+protocol NetworkPathMonitoring: AnyObject, Sendable {
     /// Handler for network path updates.
     /// - Parameter status: The updated status (e.g., .satisfied).
     var pathUpdateHandler: (@Sendable (NetworkPathStatus) -> Void)? { get set }
@@ -148,7 +155,7 @@ protocol NetworkPathMonitoring: AnyObject {
 }
 
 /// Adapts `NWPathMonitor` to the `NetworkPathMonitoring` protocol.
-class NWPathMonitorAdapter: NetworkPathMonitoring {
+final class NWPathMonitorAdapter: NetworkPathMonitoring, @unchecked Sendable {
     private let monitor: NWPathMonitor
     
     var pathUpdateHandler: (@Sendable (NetworkPathStatus) -> Void)? {
@@ -190,9 +197,9 @@ class NWPathMonitorAdapter: NetworkPathMonitoring {
 }
 
 /// Manages direct audio streaming, security validation, network monitoring, and privacy protections for the Lutheran Radio app.
-class DirectStreamingPlayer: NSObject {
+final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     // MARK: - Security Model
-    private static let appSecurityModel = "houston"   // ← CHANGE ONLY HERE when rotating
+    private static let appSecurityModel = "starbase"   // ← CHANGE ONLY HERE when rotating
     private var isValidating = false
     #if DEBUG
     /// The last time security validation was performed (exposed for debugging).
@@ -224,7 +231,7 @@ class DirectStreamingPlayer: NSObject {
     private var lastValidationTime: Date?
     
     /// Injectable closure for the current date, used for testing time-dependent logic.
-    internal var currentDate: () -> Date = { Date() }
+    internal var currentDate: @Sendable () -> Date = { Date() }
     
     #if DEBUG
     var networkMonitor: NetworkPathMonitoring?
@@ -236,6 +243,10 @@ class DirectStreamingPlayer: NSObject {
     private var serverFailureCount: [String: Int] = [:]
     private var lastFailedServerName: String?
     private var currentSelectedServer: Server = servers[0]
+    
+    /// Track initialization and defer callbacks.
+    private var isInitializing: Bool = true
+    private var pendingStatusChanges: [(isPlaying: Bool, status: String)] = []
     
     // MARK: - Energy Efficiency (Battery Optimization)
     /// Detects if the device is in Low Power Mode to throttle non-essential tasks (e.g., retry intervals) and extend battery life during streaming.
@@ -269,7 +280,7 @@ class DirectStreamingPlayer: NSObject {
     //
     // • Port is always 443 (TLS on standard port)
     // • Path is always "/lutheranradio.mp3"
-    // • Query parameter "security_model" = current appSecurityModel ("houston" as of version 26.1.0)
+    // • Query parameter "security_model" = current appSecurityModel ("starbase" as of version 26.3.1)
     //
     // This design achieves:
     // 1. Geographic load distribution (lower latency)
@@ -450,9 +461,10 @@ class DirectStreamingPlayer: NSObject {
             
             if let betterServer = workingServers.first {
                 #if DEBUG
-                print("📡 Avoiding recently failed server \(lastFailed), using \(betterServer.name)")
+                print("Avoiding recently failed server \(lastFailed), using \(betterServer.name)")
                 #endif
                 currentSelectedServer = betterServer
+                SharedPlayerManager.shared.saveCurrentState()
                 completion(betterServer)
                 return
             }
@@ -476,11 +488,13 @@ class DirectStreamingPlayer: NSObject {
                 let validResults = results.filter { $0.latency != .infinity }
                 if let bestResult = validResults.min(by: { $0.latency < $1.latency }) {
                     self.currentSelectedServer = bestResult.server
+                    SharedPlayerManager.shared.saveCurrentState()
                     #if DEBUG
                     print("📡 [Server Selection] Selected \(bestResult.server.name) with latency \(bestResult.latency)s")
                     #endif
                 } else {
                     self.currentSelectedServer = Self.servers[0]
+                    SharedPlayerManager.shared.saveCurrentState()
                     #if DEBUG
                     print("📡 [Server Selection] No valid ping results, falling back to \(self.currentSelectedServer.name)")
                     #endif
@@ -564,6 +578,7 @@ class DirectStreamingPlayer: NSObject {
     private let audioQueue = DispatchQueue(label: "radio.lutheran.audio", qos: .userInteractive)
     // SSL operations at supporting priority
     private let sslValidationQueue = DispatchQueue(label: "radio.lutheran.ssl", qos: .userInitiated)
+    private let dnsQueue = DispatchQueue(label: "radio.lutheran.dns", qos: .userInitiated)
     // Network operations at background priority
     private let networkQueue = DispatchQueue(label: "radio.lutheran.network", qos: .utility)
     // Keep playbackQueue for compatibility, but redirect to audioQueue
@@ -585,7 +600,10 @@ class DirectStreamingPlayer: NSObject {
     // MARK: - Queue Priority Management
     
     /// Escalates queue priority when audio operations are blocked
-    private func executeWithAudioPriority<T>(_ operation: @escaping () -> T, completion: @escaping (T) -> Void) {
+    private func executeWithAudioPriority<T>(
+        _ operation: @escaping @Sendable () -> T,
+        completion: @escaping @Sendable (T) -> Void
+    ) {
         if player?.timeControlStatus == .waitingToPlayAtSpecifiedRate {
             // Audio is waiting - escalate to highest priority
             DispatchQueue.global(qos: .userInteractive).async {
@@ -606,7 +624,10 @@ class DirectStreamingPlayer: NSObject {
     }
     
     // CRITICAL: All AVPlayer operations must be on main thread
-    private func executeAudioOperation<T>(_ operation: @escaping () -> T, completion: @escaping (T) -> Void) {
+    private func executeAudioOperation<T>(
+        _ operation: @escaping @Sendable () -> T,
+        completion: @escaping @Sendable (T) -> Void
+    ) {
         // Always execute AVPlayer operations on main thread
         DispatchQueue.main.async {
             let result = operation()
@@ -642,15 +663,25 @@ class DirectStreamingPlayer: NSObject {
     var onMetadataChange: ((String?) -> Void)?
     internal var currentMetadata: String?
     
-    // Safe wrappers to ensure callbacks are always on main thread
-    private func safeOnStatusChange(isPlaying: Bool, status: String) {
-        DispatchQueue.main.async { [weak self] in
-            self?.onStatusChange?(isPlaying, status)
+    // MARK: - Safe callbacks to MainActor (Swift 6 fix)
+    func safeOnStatusChange(isPlaying: Bool, status: String) {
+        DispatchQueue.main.async {  // Ensure main-thread safety for UI/delegate calls
+            if self.isInitializing {
+                self.pendingStatusChanges.append((isPlaying, status))
+            } else {
+                self.invokeStatusCallbacks(isPlaying: isPlaying, status: status)
+                SharedPlayerManager.shared.saveCurrentState()
+            }
         }
     }
     
+    private func invokeStatusCallbacks(isPlaying: Bool, status: String) {
+        onStatusChange?(isPlaying, status)
+        delegate?.onStatusChange(isPlaying ? .playing : .stopped, status)  // Map to enum, pass status as reason
+    }
+    
     private func safeOnMetadataChange(metadata: String?) {
-        DispatchQueue.main.async { [weak self] in
+        Task { @MainActor [weak self] in
             self?.onMetadataChange?(metadata)
         }
     }
@@ -664,35 +695,58 @@ class DirectStreamingPlayer: NSObject {
     
     // MARK: - Security Model Validation
     
-    private func fetchValidSecurityModelsImplementation(completion: @escaping (Result<Set<String>, Error>) -> Void) {
+    private func fetchValidSecurityModelsImplementation(completion: @escaping ResultCompletion<Set<String>>) {
         let domain = "securitymodels.lutheran.radio"
         #if DEBUG
         print("🔒 [Fetch Security Models] Fetching valid security models for domain: \(domain)")
         #endif
         
-        // Use SSL queue with priority escalation for audio-blocking operations
         sslValidationQueue.async { [weak self] in
-            // Escalate to userInteractive if audio is waiting
-            if self?.player?.timeControlStatus == .waitingToPlayAtSpecifiedRate {
-                DispatchQueue.global(qos: .userInteractive).async {
-                    self?.queryTXTRecord(domain: domain) { result in
+            // ← TINY ADJUSTMENT THAT ELIMINATES THE NSObject error
+            guard let self = self else {
+                #if DEBUG
+                print("❌ [Fetch Security Models] self deallocated before query")
+                #endif
+                DispatchQueue.main.async { completion(.failure(NSError(domain: "radio.lutheran", code: -1, userInfo: nil))) }
+                return
+            }
+
+            #if DEBUG
+            print("✅ [Fetch Security Models] guard let self succeeded → concrete DirectStreamingPlayer type locked")
+            #endif
+
+            // Escalate only if audio is blocked (exact same logic as before)
+            let launchQuery = {
+                Task {
+                    do {
+                        #if DEBUG
+                        print("🚀 [Fetch Security Models] Launching async queryTXTRecord(for:) on dnsQueue")
+                        #endif
+                        let models = try await self.queryTXTRecord(for: domain)
                         DispatchQueue.main.async {
-                            completion(result)
+                            completion(.success(models))
+                        }
+                    } catch {
+                        DispatchQueue.main.async {
+                            completion(.failure(error))
                         }
                     }
                 }
+            }
+
+            if self.player?.timeControlStatus == .waitingToPlayAtSpecifiedRate {
+                #if DEBUG
+                print("⚡ [Fetch Security Models] Audio blocked → escalating to .userInteractive")
+                #endif
+                DispatchQueue.global(qos: .userInteractive).async { launchQuery() }
             } else {
-                self?.queryTXTRecord(domain: domain) { result in
-                    DispatchQueue.main.async {
-                        completion(result)
-                    }
-                }
+                launchQuery()
             }
         }
     }
     
     #if DEBUG
-    open func fetchValidSecurityModels(completion: @escaping (Result<Set<String>, Error>) -> Void) {
+    public func fetchValidSecurityModels(completion: @escaping ResultCompletion<Set<String>>) {
         fetchValidSecurityModelsImplementation(completion: completion)
     }
     #else
@@ -701,99 +755,178 @@ class DirectStreamingPlayer: NSObject {
     }
     #endif
     
-    private func queryTXTRecord(domain: String, completion: @escaping (Result<Set<String>, Error>) -> Void) {
-        class QueryContext {
-            weak var player: DirectStreamingPlayer?
-            let completion: (Result<Set<String>, Error>) -> Void
-            init(player: DirectStreamingPlayer, completion: @escaping (Result<Set<String>, Error>) -> Void) {
-                self.player = player
-                self.completion = completion
+    private func queryTXTRecord(for domain: String) async throws -> Set<String> {
+        try await withCheckedThrowingContinuation { continuation in
+            // ← MARKED @Sendable so it can be safely captured in Dispatch blocks
+            let completion: @Sendable (Result<Set<String>, Error>) -> Void = { result in
+                switch result {
+                case .success(let models): continuation.resume(returning: models)
+                case .failure(let error):  continuation.resume(throwing: error)
+                }
             }
-        }
 
-        var serviceRef: DNSServiceRef?
-        let flags: DNSServiceFlags = kDNSServiceFlagsTimeout
-        let interfaceIndex: UInt32 = 0
-        let type: UInt16 = UInt16(kDNSServiceType_TXT)
-        let rrClass: UInt16 = UInt16(kDNSServiceClass_IN)
+            class QueryContext: @unchecked Sendable {
+                weak var player: DirectStreamingPlayer?
+                let completion: (Result<Set<String>, Error>) -> Void
+                var isDone = false
+                var serviceRef: DNSServiceRef?
 
-        #if DEBUG
-        print("🔍 [DNS Query] Starting TXT record query for domain: \(domain)")
-        #endif
-
-        guard let domainCStr = domain.cString(using: .utf8) else {
-            #if DEBUG
-            print("❌ [DNS Query] Failed to convert domain to C string")
-            #endif
-            completion(.failure(NSError(domain: "radio.lutheran", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid domain"])))
-            return
-        }
-
-        let context = QueryContext(player: self, completion: completion)
-        let contextPointer = UnsafeMutablePointer<QueryContext>.allocate(capacity: 1)
-        contextPointer.initialize(to: context)
-        defer {
-            contextPointer.deinitialize(count: 1)
-            contextPointer.deallocate()
-            #if DEBUG
-            print("🧹 [DNS Query] Deallocated QueryContext memory")
-            #endif
-        }
-
-        let error = DNSServiceQueryRecord(
-            &serviceRef,
-            flags,
-            interfaceIndex,
-            domainCStr,
-            type,
-            rrClass,
-            { (ref, flags, interface, errorCode, fullName, rrtype, rrclass, rdlen, rdata, ttl, context) in
-                let contextPointer = context?.assumingMemoryBound(to: QueryContext.self)
-                guard let queryContext = contextPointer?.pointee else {
-                    #if DEBUG
-                    print("❌ [DNS Query Callback] QueryContext is nil")
-                    #endif
-                    return
+                init(player: DirectStreamingPlayer?, completion: @escaping (Result<Set<String>, Error>) -> Void) {
+                    self.player = player
+                    self.completion = completion
                 }
-                let completion = queryContext.completion
-                guard let player = queryContext.player else {
+            }
+
+            // ← Keeps the global wrapper that made the block enter reliably
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                self?.dnsQueue.async { [weak self] in
                     #if DEBUG
-                    print("❌ [DNS Query Callback] Player instance deallocated")
+                    print("🔍 [DNS Query] dnsQueue.async block entered (background thread)")
                     #endif
-                    completion(.failure(NSError(domain: "radio.lutheran", code: -1, userInfo: [NSLocalizedDescriptionKey: "Player deallocated"])))
-                    return
-                }
 
-                guard errorCode == kDNSServiceErr_NoError, let rawData = rdata else {
+                    guard let self = self else {
+                        #if DEBUG
+                        print("❌ [DNS Query] self deallocated before query")
+                        #endif
+                        completion(.failure(NSError(domain: "radio.lutheran", code: -1, userInfo: [NSLocalizedDescriptionKey: "Player deallocated"])))
+                        return
+                    }
+
                     #if DEBUG
-                    print("❌ [DNS Query Callback] Query failed with errorCode=\(errorCode)")
+                    print("✅ [DNS Query] guard let self succeeded")
                     #endif
-                    completion(.failure(NSError(domain: "dnssd", code: Int(errorCode), userInfo: [NSLocalizedDescriptionKey: "DNS query failed"])))
-                    return
+
+                    guard let domainCStr = domain.cString(using: .utf8) else {
+                        #if DEBUG
+                        print("❌ [DNS Query] domainCStr guard failed")
+                        #endif
+                        completion(.failure(NSError(domain: "radio.lutheran", code: -2, userInfo: [NSLocalizedDescriptionKey: "Invalid domain encoding"])))
+                        return
+                    }
+
+                    #if DEBUG
+                    print("✅ [DNS Query] domainCStr guard passed")
+                    #endif
+
+                    let context = QueryContext(player: self, completion: completion)
+                    let contextOpaque = Unmanaged.passRetained(context).toOpaque()
+
+                    #if DEBUG
+                    print("✅ [DNS Query] contextOpaque created")
+                    #endif
+
+                    #if DEBUG
+                    print("⏰ [DNS Query] 5s watchdog armed BEFORE DNSServiceQueryRecord")
+                    #endif
+                    self.dnsQueue.asyncAfter(deadline: .now() + 5.0) { [weak context] in
+                        guard let context = context, !context.isDone else { return }
+                        #if DEBUG
+                        print("⏰ [DNS Query] Timeout watchdog fired – forcing continuation resume")
+                        #endif
+                        if let ref = context.serviceRef {
+                            DNSServiceRefDeallocate(ref)
+                            context.serviceRef = nil
+                        }
+                        DispatchQueue.global(qos: .userInitiated).async {
+                            #if DEBUG
+                            print("🔄 [DNS Watchdog] Resuming continuation on global queue with timeout failure")
+                            #endif
+                            context.completion(.failure(NSError(domain: "dnssd", code: -1, userInfo: [NSLocalizedDescriptionKey: "DNS timeout"])))
+                        }
+                        Unmanaged<QueryContext>.fromOpaque(contextOpaque).release()  // released here, after use
+                    }
+
+                    #if DEBUG
+                    print("🚀 [DNS Query] About to call DNSServiceQueryRecord (this is the line we want to reach)")
+                    #endif
+
+                    var serviceRef: DNSServiceRef?
+                    let error = DNSServiceQueryRecord(
+                        &serviceRef,
+                        0,
+                        0,
+                        domainCStr,
+                        16,
+                        1,
+                        { (ref, flags, interface, errorCode, fullName, rrtype, rrclass, rdlen, rdata, ttl, ctx) in
+                            guard let ctx = ctx else { return }
+                            let queryContext = Unmanaged<QueryContext>.fromOpaque(ctx).takeRetainedValue()
+
+                            defer {
+                                queryContext.isDone = true
+                                if let ref = queryContext.serviceRef {
+                                    DNSServiceRefDeallocate(ref)
+                                    queryContext.serviceRef = nil
+                                }
+                                #if DEBUG
+                                print("🧹 [DNS Query Callback] Cleaned up")
+                                #endif
+                            }
+
+                            guard let player = queryContext.player else {
+                                #if DEBUG
+                                print("❌ [DNS Query Callback] player deallocated before completion")
+                                #endif
+                                DispatchQueue.global(qos: .userInitiated).async {
+                                    queryContext.completion(.failure(NSError(domain: "radio.lutheran", code: -1, userInfo: nil)))
+                                }
+                                return
+                            }
+
+                            guard errorCode == kDNSServiceErr_NoError, let raw = rdata else {
+                                #if DEBUG
+                                print("❌ [DNS Query Callback] DNS errorCode = \(errorCode) — calling failure completion")
+                                #endif
+                                DispatchQueue.global(qos: .userInitiated).async {
+                                    queryContext.completion(.failure(NSError(domain: "dnssd", code: Int(errorCode), userInfo: nil)))
+                                }
+                                return
+                            }
+
+                            #if DEBUG
+                            print("✅ [DNS Query Callback] Retrieved TXT record (length=\(rdlen))")
+                            #endif
+
+                            let models = player.parseTXTRecordData(Data(bytes: raw, count: Int(rdlen)))
+
+                            #if DEBUG
+                            print("✅ [DNS Query Callback] TXT record parsed successfully: \(models)")
+                            print("🔄 [DNS Query Callback] Calling completion handler to resume continuation")
+                            #endif
+
+                            DispatchQueue.global(qos: .userInitiated).async {
+                                queryContext.completion(.success(models))
+                            }
+                        } as DNSServiceQueryRecordReply,
+                        contextOpaque
+                    )
+
+                    #if DEBUG
+                    print("🔍 [DNS Query] DNSServiceQueryRecord returned with error code = \(error)")
+                    #endif
+
+                    if error == kDNSServiceErr_NoError, let serviceRef = serviceRef {
+                        #if DEBUG
+                        print("🚀 [DNS Query] DNSServiceQueryRecord initiated successfully")
+                        #endif
+                        context.serviceRef = serviceRef
+
+                        DNSServiceSetDispatchQueue(serviceRef, self.dnsQueue)
+
+                        #if DEBUG
+                        print("📡 [DNS Query] DNSServiceSetDispatchQueue attached to non-main dnsQueue (callbacks now fire async, zero blocking)")
+                        print("🔄 [DNS Query] DNS query launch block completed — now awaiting callback on dnsQueue or watchdog")
+                        #endif
+                    } else {
+                        #if DEBUG
+                        print("❌ [DNS Query] DNSServiceQueryRecord failed with error=\(error)")
+                        print("🔄 [DNS Query] Calling failure completion immediately")
+                        #endif
+                        completion(.failure(NSError(domain: "dnssd", code: Int(error), userInfo: nil)))
+                        Unmanaged<QueryContext>.fromOpaque(contextOpaque).release()
+                    }
                 }
-
-                #if DEBUG
-                print("✅ [DNS Query Callback] Retrieved TXT record data: length=\(rdlen)")
-                #endif
-
-                let txtData = Data(bytes: rawData, count: Int(rdlen))
-                let models = player.parseTXTRecordData(txtData)
-                completion(.success(models))
-            },
-            contextPointer
-        )
-
-        if error == kDNSServiceErr_NoError, let serviceRef = serviceRef {
-            #if DEBUG
-            print("🚀 [DNS Query] DNSServiceQueryRecord initiated successfully")
-            #endif
-            DNSServiceProcessResult(serviceRef)
-            DNSServiceRefDeallocate(serviceRef)
-        } else {
-            #if DEBUG
-            print("❌ [DNS Query] DNSServiceQueryRecord failed with error=\(error)")
-            #endif
-            completion(.failure(NSError(domain: "dnssd", code: Int(error), userInfo: [NSLocalizedDescriptionKey: "DNS service init failed"])))
+            }
         }
     }
 
@@ -822,7 +955,7 @@ class DirectStreamingPlayer: NSObject {
     }
     
     // MARK: - Security and Validation Methods
-    private func validateSecurityModelAsyncImplementation(completion: @escaping (Bool) -> Void) {
+    private func validateSecurityModelAsyncImplementation(completion: @escaping BoolCompletion) {
         if let lastValidation = UserDefaults.standard.object(forKey: "lastSecurityValidation") as? Date,
            currentDate().timeIntervalSince(lastValidation) < 3600 {
             #if DEBUG
@@ -919,29 +1052,34 @@ class DirectStreamingPlayer: NSObject {
             #if DEBUG
             print("🔒 [Validate Async] Starting validation for model: \(DirectStreamingPlayer.appSecurityModel)")
             #endif
-
-            let timeoutWorkItem = DispatchWorkItem { [weak self] in
+            
+            let timeoutTask = Task { [weak self, completion] in          // Task<Void, Never> is Sendable
+                try? await Task.sleep(for: .seconds(5))
+                
                 guard let self = self, self.isValidating else { return }
-                self.isValidating = false
-                self.validationState = .failedTransient
-                #if DEBUG
-                print("🔒 [Validate Async] Validation timed out")
-                #endif
-                DispatchQueue.main.async {
+                
+                await MainActor.run { [weak self, completion] in
+                    guard let self = self, self.isValidating else { return }
+                    
+                    self.isValidating = false
+                    self.validationState = .failedTransient
+                    #if DEBUG
+                    print("🔒 [Validate Async] Validation timed out")
+                    #endif
                     self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_no_internet"))
                     completion(false)
                 }
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 5.0, execute: timeoutWorkItem)
 
-            self.fetchValidSecurityModels { [weak self] result in
-                guard let self = self else {
-                    completion(false)
-                    return
-                }
-                timeoutWorkItem.cancel()
+            // Now the fetch closure can capture the Task directly (Sendable!)
+            self.fetchValidSecurityModels { [weak self, timeoutTask] result in
+                guard let self = self else { return }
+                
+                timeoutTask.cancel()                     // ← clean, safe, Sendable
+                
                 self.isValidating = false
                 self.lastValidationTime = Date()
+                
                 #if DEBUG
                 print("🔒 [Validate Async] Updated lastValidationTime to \(self.lastValidationTime!)")
                 #endif
@@ -963,8 +1101,8 @@ class DirectStreamingPlayer: NSObject {
                     } else {
                         let isValid = validModels.contains(DirectStreamingPlayer.appSecurityModel.lowercased())
                         self.validationState = isValid ? .success : .failedPermanent
-                        if isValid {  // Cache update only on success
-                            UserDefaults.standard.set(currentDate(), forKey: "lastSecurityValidation")  // Use currentDate()
+                        if isValid {
+                            UserDefaults.standard.set(currentDate(), forKey: "lastSecurityValidation")
                             #if DEBUG
                             print("🔒 [Security] Cached new successful validation")
                             #endif
@@ -1001,19 +1139,19 @@ class DirectStreamingPlayer: NSObject {
     }
     
     #if DEBUG
-    open func validateSecurityModelAsync(completion: @escaping (Bool) -> Void) {
+    public func validateSecurityModelAsync(completion: @escaping BoolCompletion) {
         validateSecurityModelAsyncImplementation(completion: completion)
     }
     #else
     /// Validates app security model asynchronously via DNS TXT record.
     /// - Parameter completion: `true` if valid.
     /// - Note: Caches for 10 minutes; permanent failure on invalid model.
-    func validateSecurityModelAsync(completion: @escaping (Bool) -> Void) {
+    func validateSecurityModelAsync(completion: @escaping BoolCompletion) {
         validateSecurityModelAsyncImplementation(completion: completion)
     }
     #endif
     
-    private func performConnectivityCheck(completion: @escaping (Bool) -> Void) {
+    private func performConnectivityCheck(completion: @escaping BoolCompletion) {
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 3.0
         let session = URLSession(configuration: config)
@@ -1045,7 +1183,7 @@ class DirectStreamingPlayer: NSObject {
         return validationState == .failedPermanent
     }
     
-    override init() {
+    private override init() {
         self.audioSession = .sharedInstance()
         self.pathMonitor = NWPathMonitorAdapter()
         let currentLocale = Locale.current
@@ -1081,10 +1219,19 @@ class DirectStreamingPlayer: NSObject {
         #endif
         
         setupThermalProtection()
+        
+        isInitializing = false
+        DispatchQueue.main.async {  // Defer to after init returns
+            for change in self.pendingStatusChanges {
+                self.invokeStatusCallbacks(isPlaying: change.isPlaying, status: change.status)
+            }
+            self.pendingStatusChanges = []
+            SharedPlayerManager.shared.saveCurrentState()  // Now safe post-init
+        }
     }
     
     #if DEBUG
-    open func setupNetworkMonitoring() {
+    public func setupNetworkMonitoring() {
         networkMonitor = pathMonitor
         networkMonitor?.pathUpdateHandler = { [weak self] status in
             guard let self = self else {
@@ -1288,7 +1435,13 @@ class DirectStreamingPlayer: NSObject {
             
             let urlToValidate = self.selectedStream.url   // always valid, includes current server + security_model
             
-            CertificateValidator.shared.validateServerCertificate(for: urlToValidate) { isValid in
+            // 2026 concurrency model: fire-and-forget background validation (exactly as your original design intended)
+            // Playback continues optimistically; we only stop if validation later fails.
+            Task { [weak self] in
+                guard let self else { return }
+                
+                let isValid = await CertificateValidator.shared.validateServerCertificate(for: urlToValidate)
+                
                 guard !isValid else { return }
                 
                 self.stop()
@@ -1303,59 +1456,211 @@ class DirectStreamingPlayer: NSObject {
     }
     
     // MARK: - Playback Control Methods
-    /// Starts playback after validation and setup.
-    /// - Parameter completion: `true` on success, `false` on failure.
-    /// - Precondition: `setStream(to:)` must be called first.
-    /// - Warning: Blocks if validation fails permanently.
-    /// - Note: Handles retries adaptively based on thermal/low-power state.
-    func play(completion: @escaping (Bool) -> Void) {
-        if validationState == .pending {
-            validateSecurityModelAsync { [weak self] isValid in
-                guard let self else { completion(false); return }
-                if isValid {
-                    self.play(completion: completion)   // recurse once
-                } else {
-                    let key = self.validationState == .failedPermanent ? "status_security_failed" : "status_no_internet"
-                    DispatchQueue.main.async {
-                        self.safeOnStatusChange(isPlaying: false, status: String(localized: String.LocalizationValue(key)))
-                        completion(false)
+    /// Starts playback **immediately** with an optimistic completion for
+    /// responsive widgets and UI.
+    ///
+    /// - Completion is fired **synchronously on the main thread** with `true`.
+    /// - All security-model validation (DNS TXT), optimal server selection,
+    ///   and `CertificateValidator` checks run **non-blocking** in a background
+    ///   `Task.detached`.
+    /// - If any check fails later, playback is stopped and an error status is
+    ///   shown (the original completion is never called again).
+    ///
+    /// - Parameter completion: Always `true` (optimistic).
+    /// - Precondition: `setStream(to:)` must have been called first.
+    /// - Note: Retries and fallbacks are adaptive to thermal/low-power mode
+    ///   (2026 energy-efficiency guidelines).
+    func play(completion: @escaping BoolCompletion) {
+        #if DEBUG
+        print("🔊 [Playback Start] play(completion) entered — validationState = \(validationState)")
+        #endif
+        
+        safeOnStatusChange(isPlaying: true, status: "status_connecting")
+        completion(true)
+        SharedPlayerManager.shared.saveCurrentState()
+        
+        #if DEBUG
+        print("🔊 [Playback Start] play(completion) finished sync path — launching Task.detached for validation")
+        #endif
+        
+        Task.detached { [weak self] in
+            guard let self else { return }
+            #if DEBUG
+            print("🔊 [Playback Start] Task.detached entered after validation success")
+            #endif
+            
+            #if DEBUG
+            print("🔊 [Playback Start] About to evaluate validationState guard")
+            #endif
+            
+            if self.validationState == .pending {
+                #if DEBUG
+                print("🔊 [Playback Start] validationState == .pending — calling validateSecurityModelAsync")
+                #endif
+                self.validateSecurityModelAsync { [weak self] isValid in
+                    guard let self else { return }
+                    if isValid {
+                        #if DEBUG
+                        print("🔊 [Playback Start] validateSecurityModelAsync returned true — calling performOptimalServerSelectionAndCertificateCheck")
+                        #endif
+                        DispatchQueue.main.async {
+                            self.performOptimalServerSelectionAndCertificateCheck()
+                        }
+                    } else {
+                        let key = self.validationState == .failedPermanent ? "status_security_failed" : "status_no_internet"
+                        DispatchQueue.main.async {
+                            self.safeOnStatusChange(isPlaying: false, status: String(localized: String.LocalizationValue(key)))
+                        }
                     }
                 }
             }
-            return
-        }
-        
-        guard validationState == .success else {
-            let key = validationState == .failedPermanent ? "status_security_failed" : "status_no_internet"
-            DispatchQueue.main.async {
-                self.safeOnStatusChange(isPlaying: false, status: String(localized: String.LocalizationValue(key)))
-                completion(false)
-            }
-            return
-        }
-        
-        selectOptimalServer { [weak self] _ in
-            guard let self else { completion(false); return }
             
-            let streamURL = self.selectedStream.url
-            
-            CertificateValidator.shared.validateServerCertificate(for: streamURL) { isValid in
-                if isValid {
-                    self.playWithServer(fallbackServers: Self.servers.filter { $0.name != self.currentSelectedServer.name }) { success in
-                        if success { self.startPeriodicValidation() }
-                        completion(success)
-                    }
-                } else {
-                    self.safeOnStatusChange(isPlaying: false, status: String(localized: String.LocalizationValue("status_security_failed")))
-                    completion(false)
+            guard self.validationState == .success else {
+                #if DEBUG
+                print("🔊 [Playback Start] GUARD FAILED: validationState != .success")
+                #endif
+                let key = self.validationState == .failedPermanent ? "status_security_failed" : "status_no_internet"
+                DispatchQueue.main.async {
+                    self.safeOnStatusChange(isPlaying: false, status: String(localized: String.LocalizationValue(key)))
                 }
+                return
             }
+            
+            #if DEBUG
+            print("🔊 [Playback Start] validationState == .success — dispatching performOptimalServerSelectionAndCertificateCheck on main")
+            #endif
+            
+            #if DEBUG
+            print("🔊 [Playback Start] validationState == .success — calling performOptimalServerSelectionAndCertificateCheck")
+            #endif
+            
+            DispatchQueue.main.async {  // ← THIS IS THE MISSING PIECE FOR COLD LAUNCH
+                self.performOptimalServerSelectionAndCertificateCheck()
+            }
+            SharedPlayerManager.shared.saveCurrentState()  // after full playback success path
         }
         
+        #if DEBUG
+        print("🔊 [Playback Start] setupAudioSessionObservers() called — full playback start path armed")
+        #endif
         setupAudioSessionObservers()
     }
     
-    private func playWithServer(fallbackServers: [Server], completion: @escaping (Bool) -> Void) {
+    // MARK: - Stream Switching (Swift 6 pure mutation)
+    // Called only from SharedPlayerManager.main-app path or internally.
+    // Guarantees: every mutation triggers saveCurrentState() + WidgetRefreshManager.
+    func switchToStream(_ stream: Stream) {
+        let wasPlaying = isPlaying                     // use whatever public var you expose (matches the old call site)
+        
+        stop { [weak self] in
+            guard let self else { return }
+            
+            self.resetTransientErrors()
+            self.setStream(to: stream)                 // ← this already calls saveCurrentState() per your design
+            
+            if wasPlaying {
+                self.play { [weak self] success in
+                    guard let self else { return }
+                    #if DEBUG
+                    print("Direct stream switch \(success ? "succeeded" : "failed") for \(stream.language)")
+                    #endif
+                    // play() already calls saveCurrentState() — no extra call needed
+                }
+            }
+        }
+    }
+    
+    private func performOptimalServerSelectionAndCertificateCheck() {
+        #if DEBUG
+        print("🔊 [Playback Start] performOptimalServerSelectionAndCertificateCheck entered — about to call selectOptimalServer")
+        #endif
+        
+        #if DEBUG
+        print("🔊 [Playback Start] Calling selectOptimalServer (expecting closure on background thread)")
+        #endif
+        
+        selectOptimalServer { [weak self] _ in
+            guard let self else { return }
+            #if DEBUG
+            print("🔊 [Playback Start] selectOptimalServer closure entered")
+            #endif
+            
+            #if DEBUG
+            print("🔊 [Playback Start] weak self captured successfully — building AVURLAsset")
+            #endif
+            
+            let streamURL = self.selectedStream.url
+            #if DEBUG
+            print("🔊 [Playback Start] Built streamURL: \(streamURL) (security_model=starbase confirmed)")
+            #endif
+            
+            let asset = AVURLAsset(url: streamURL)
+            asset.resourceLoader.setDelegate(self, queue: .main)
+            let newItem = AVPlayerItem(asset: asset)
+            
+            #if DEBUG
+            print("🔊 [Playback Start] AVPlayerItem created — resourceLoader delegate set on .main")
+            #endif
+            
+            #if DEBUG
+            print("🔊 [Playback Start] AVPlayerItem created — player exists? \(self.player != nil)")
+            #endif
+            
+            if self.player == nil {
+                #if DEBUG
+                print("🔊 [Playback Start] player was nil → creating AVPlayer() (Apple Music/Podcasts 2026 pattern)")
+                #endif
+                self.player = AVPlayer()
+            }
+            
+            #if DEBUG
+            print("🔊 [Playback Start] Dispatching replaceCurrentItem + play on main queue (2026 cold-launch pattern)")
+            #endif
+            
+            DispatchQueue.main.async {
+                #if DEBUG
+                print("🔊 [Playback Start] About to replaceCurrentItem (on main)")
+                #endif
+                self.player?.replaceCurrentItem(with: newItem)
+                #if DEBUG
+                print("🔊 [Playback Start] replaceCurrentItem CALLED — hasItem now = \(self.player?.currentItem != nil)")
+                #endif
+                
+                self.player?.play()
+                #if DEBUG
+                print("🔊 [Playback Start] player?.play() CALLED")
+                #endif
+                
+                #if DEBUG
+                print("🔊 [Playback Start] Immediate rate check AFTER play(): \(self.player?.rate ?? 0.0)")
+                #endif
+                
+                self.delegate?.onStatusChange(.playing, nil)
+                #if DEBUG
+                print("🔊 [Playback Start] onStatusChange(.playing) called — UI should now show tuning complete")
+                #endif
+            }
+            
+            // 3. Background validation – never blocks the player (2026 pattern)
+            Task { [weak self] in
+                guard let self else { return }
+                let isValid = await CertificateValidator.shared.validateServerCertificate(for: streamURL)
+                
+                if !isValid {
+                    await MainActor.run {
+                        self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_security_failed"))
+                        self.stop()
+                    }
+                } else {
+                    #if DEBUG
+                    print("🔊 [Playback Start] Certificate validation passed (background) — stream is fully secure")
+                    #endif
+                }
+            }
+        }
+    }
+    
+    private func playWithServer(fallbackServers: [Server], completion: @escaping BoolCompletion) {
         lastServerSelectionTime = Date()
         #if DEBUG
         print("📡 Attempting playback with server: \(currentSelectedServer.name)")
@@ -1363,8 +1668,15 @@ class DirectStreamingPlayer: NSObject {
         
         let streamURL = selectedStream.url
         
-        CertificateValidator.shared.validateServerCertificate(for: streamURL) { [weak self] isValid in
-            guard let self else { completion(false); return }
+        // 2026 concurrency model: fire-and-forget background validation
+        // (validation no longer blocks; completion is still called exactly as before)
+        Task { [weak self] in
+            guard let self else {
+                completion(false)
+                return
+            }
+            
+            let isValid = await CertificateValidator.shared.validateServerCertificate(for: streamURL)
             
             guard isValid else {
                 self.safeOnStatusChange(isPlaying: false, status: String(localized: String.LocalizationValue("status_security_failed")))
@@ -1376,7 +1688,7 @@ class DirectStreamingPlayer: NSObject {
         }
     }
 
-    private func tryNextServer(fallbackServers: [Server], completion: @escaping (Bool) -> Void) {
+    private func tryNextServer(fallbackServers: [Server], completion: @escaping BoolCompletion) {
         guard let nextServer = fallbackServers.first else {
             self.safeOnStatusChange(isPlaying: false, status: String(localized: String.LocalizationValue("status_stream_unavailable")))
             completion(false)
@@ -1394,22 +1706,25 @@ class DirectStreamingPlayer: NSObject {
         playWithServer(fallbackServers: Array(fallbackServers.dropFirst()), completion: completion)
     }
     
+    // MARK: - Stream Switching (now the single source of truth)
+
     func setStream(to stream: Stream) {
-        // CRITICAL: Prevent concurrent stream switches
+        // CRITICAL: Prevent concurrent stream switches (local state in the real owner = fine)
         guard !isSwitchingStream else {
             #if DEBUG
-            print("🔗 Stream switch already in progress, ignoring request for \(stream.languageCode)")
+            print("Stream switch already in progress, ignoring request for \(stream.languageCode)")
             #endif
             return
         }
         isSwitchingStream = true
         
         #if DEBUG
-        print("🔗 ATOMIC STREAM SWITCH: \(selectedStream.languageCode) -> \(stream.languageCode)")
+        print("ATOMIC STREAM SWITCH: \(selectedStream.languageCode) -> \(stream.languageCode)")
         #endif
         
-        // CRITICAL: Update selectedStream immediately and atomically
+        // Update selectedStream immediately and atomically
         selectedStream = stream
+        SharedPlayerManager.shared.saveCurrentState()
         
         // Update AVPlayer with new stream URL
         playerItem = nil
@@ -1418,14 +1733,11 @@ class DirectStreamingPlayer: NSObject {
         playerItem = newPlayerItem
         player?.replaceCurrentItem(with: newPlayerItem)
         
-        // Force immediate state save to prevent race conditions
+        // Force immediate state save
         SharedPlayerManager.shared.saveCurrentState()
         
         stop { [weak self] in
-            guard let self = self else {
-                self?.isSwitchingStream = false
-                return
-            }
+            guard let self = self else { return }
             
             // Ensure selectedStream is still set after stop
             self.selectedStream = stream
@@ -1440,10 +1752,7 @@ class DirectStreamingPlayer: NSObject {
             
             if self.validationState == .pending {
                 self.validateSecurityModelAsync { [weak self] isValid in
-                    guard let self = self else {
-                        self?.isSwitchingStream = false
-                        return
-                    }
+                    guard let self = self else { return }
                     defer { self.isSwitchingStream = false }
                     
                     if !isValid {
@@ -1455,8 +1764,7 @@ class DirectStreamingPlayer: NSObject {
                 }
             } else if self.validationState == .success {
                 self.isSwitchingStream = false
-                // Notify that stream switch is complete to process queued requests
-                NotificationCenter.default.post(name: .streamSwitchCompleted, object: nil)
+                // OLD QUEUE NOTIFICATION REMOVED — no longer needed
             } else {
                 defer { self.isSwitchingStream = false }
                 let status = self.validationState == .failedPermanent ? "status_security_failed" : "status_no_internet"
@@ -1484,14 +1792,11 @@ class DirectStreamingPlayer: NSObject {
         bufferingTimer = nil
     }
     
-    private func startPlaybackWithFallback(
-        fallbackServers: [Server],
-        completion: @escaping (Bool) -> Void
-    ) {
+    private func startPlaybackWithFallback(fallbackServers: [Server], completion: @escaping BoolCompletion) {
         DispatchQueue.main.async { [weak self] in
             guard let self else { completion(false); return }
             
-            self.stop(completion: nil, silent: true)
+            self.stop(completion: nil as VoidCompletion?, silent: true)
             
             let connectionStartTime = Date()
             let connectionId = UUID()
@@ -1812,9 +2117,11 @@ class DirectStreamingPlayer: NSObject {
     ///   - isSwitchingStream: If `true`, treats this as a stream switch, suppressing "stopped" status updates unless explicitly overridden. Defaults to the instance’s `isSwitchingStream` flag.
     ///   - silent: If `true`, skips all status updates to avoid UI flicker (e.g., during internal resets or stream switches).
     /// - Note: When `isSwitchingStream` or `silent` is `true`, the "status_stopped" update is suppressed to prevent misleading UI changes during stream transitions. Calls `performActualStop` with an effective switching flag to handle status suppression.
-    func stop(completion: (() -> Void)? = nil, isSwitchingStream: Bool? = nil, silent: Bool = false) {
+    func stop(completion: VoidCompletion? = nil,
+              isSwitchingStream: Bool? = nil,
+              silent: Bool = false) {
         #if DEBUG
-        print("🛑 FORCE STOPPING ALL PLAYBACK - isSwitchingStream: \(String(describing: isSwitchingStream))")
+        print("FORCE STOPPING ALL PLAYBACK - isSwitchingStream: \(String(describing: isSwitchingStream))")
         #endif
         
         loadingTimeoutWorkItem?.cancel()
@@ -1845,6 +2152,7 @@ class DirectStreamingPlayer: NSObject {
         
         // Continue with existing stop logic, passing silent flag and effectiveSwitching
         performActualStop(completion: completion, silent: silent, effectiveSwitching: effectiveSwitching)
+        SharedPlayerManager.shared.saveCurrentState()
     }
 
     /// Performs the actual stop operation.
@@ -1853,7 +2161,9 @@ class DirectStreamingPlayer: NSObject {
     ///   - silent: If `true`, skips all status updates to avoid UI flicker.
     ///   - effectiveSwitching: If `true`, suppresses "status_stopped" updates during stream switches to prevent misleading UI changes.
     /// - Note: Combines `silent` and `effectiveSwitching` into `effectiveSilent` to determine if status updates should be skipped. Ensures cleanup of player, resource loaders, and observers.
-    private func performActualStop(completion: (() -> Void)? = nil, silent: Bool = false, effectiveSwitching: Bool) {
+    private func performActualStop(completion: VoidCompletion? = nil,
+                                   silent: Bool = false,
+                                   effectiveSwitching: Bool) {
         clearSSLProtectionTimer()
         isSSLHandshakeComplete = true
         hasStartedPlaying = false
@@ -2117,7 +2427,7 @@ extension DirectStreamingPlayer {
         let subdomain: String
     }
     
-    static var servers = [
+    static let servers = [
         Server(
             name: "EU",
             pingURL: URL(string: "https://european.lutheran.radio/ping")!,
@@ -2241,11 +2551,13 @@ extension DirectStreamingPlayer {
             queue: .main
         ) { [weak self] notification in
             guard let self else { return }
-            let info = notification.userInfo ?? [:]
-            let typeValue = info[AVAudioSessionInterruptionTypeKey] as? UInt
-            let type = AVAudioSession.InterruptionType(rawValue: typeValue ?? 0)
+            // NEW — only Sendable values cross the boundary
+            let typeValue = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
+            let optionsValue = notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt
 
-            Task { @MainActor [weak self] in
+            Task { @MainActor [weak self, typeValue, optionsValue] in
+                let type = AVAudioSession.InterruptionType(rawValue: typeValue ?? 0)
+                let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue ?? 0)
                 guard let self else { return }
                 switch type {
                 case .began:
@@ -2262,7 +2574,6 @@ extension DirectStreamingPlayer {
                     #if DEBUG
                     print("🔊 [AudioSession] Interruption ended")
                     #endif
-                    let optionsValue = info[AVAudioSessionInterruptionOptionKey] as? UInt
                     let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue ?? 0)
                     if options.contains(.shouldResume) && self.wasPlayingBeforeInterruption && !self.isSwitchingStream {
                         // Async resume to avoid races (inspired by your Task.detached patterns)
@@ -2581,7 +2892,7 @@ extension DirectStreamingPlayer {
     ///   - Captures Sendables only in handler; weak `self` avoids cycles.
     ///   - Deallocs post-resume (lifetime ~0.1-0.2s).
     /// Invariant: Exactly one path (timeout or update) resumes the continuation.
-    private class CellularCheckCoordinator {
+    private final class CellularCheckCoordinator: @unchecked Sendable {
         private let syncQueue = DispatchQueue(label: "cellular.hasResumed")
         private var hasResumed = false
         private weak var monitor: NWPathMonitor?
