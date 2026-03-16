@@ -516,20 +516,20 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     private var lastError: Error?
         
     public func getPlaybackState() -> PlaybackState {
-        switch playerItem?.status {
+        switch player?.currentItem?.status {
         case .unknown:
             return .unknown
         case .readyToPlay:
             return .readyToPlay
         case .failed:
-            return .failed(playerItem?.error)
+            return .failed(player?.currentItem?.error)
         default:
             return .unknown
         }
     }
     
     var isPlaying: Bool {
-        return player?.rate ?? 0 > 0
+        return (player?.rate ?? 0) > 0 && player?.currentItem?.status == .readyToPlay
     }
     
     #if DEBUG
@@ -560,7 +560,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     }
 
     var hasPlayerItem: Bool {
-        return playerItem != nil && player?.currentItem != nil
+        return player?.currentItem != nil
     }
 
     var actualPlaybackState: Bool {
@@ -645,6 +645,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     #endif
     
     var hasPermanentError: Bool = false
+    private var rateObserver: NSKeyValueObservation?
     private var statusObserver: NSKeyValueObservation?
     /// Tracks whether a stream switch is in progress to suppress unnecessary "stopped" status updates.
     /// - Note: Set to `true` by `ViewController` before stopping playback during a stream switch and reset to `false` after playback resumes. Used in `stop` to determine if status updates should be suppressed.
@@ -1622,6 +1623,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 print("🔊 [Playback Start] About to replaceCurrentItem (on main)")
                 #endif
                 self.player?.replaceCurrentItem(with: newItem)
+                self.playerItem = newItem  // sync playerItem with the actual currentItem
                 #if DEBUG
                 print("🔊 [Playback Start] replaceCurrentItem CALLED — hasItem now = \(self.player?.currentItem != nil)")
                 #endif
@@ -1635,10 +1637,49 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 print("🔊 [Playback Start] Immediate rate check AFTER play(): \(self.player?.rate ?? 0.0)")
                 #endif
                 
-                self.delegate?.onStatusChange(.playing, nil)
-                #if DEBUG
-                print("🔊 [Playback Start] onStatusChange(.playing) called — UI should now show tuning complete")
-                #endif
+                if self.isPlaying {  // Guard to ensure actual playback
+                    self.delegate?.onStatusChange(.playing, nil)
+                    #if DEBUG
+                    print("🔊 [Playback Start] onStatusChange(.playing) called — UI should now show tuning complete")
+                    #endif
+                } else {
+                    #if DEBUG
+                    print("🔊 [Playback Start] Deferred onStatusChange(.playing) — waiting for readyToPlay")
+                    #endif
+                }
+                
+                // Add KVO to fire deferred delegate on async changes
+                self.rateObserver = self.player?.observe(\.rate, options: [.new]) { [weak self] player, change in
+                    guard let self else { return }
+                    #if DEBUG
+                    print("🔊 [KVO] Rate changed to \(player.rate)")
+                    #endif
+                    if self.isPlaying {
+                        self.delegate?.onStatusChange(.playing, nil)
+                    } else if player.rate == 0 {
+                        self.delegate?.onStatusChange(.stopped, nil)
+                    }
+                    SharedPlayerManager.shared.saveCurrentState()
+                }
+                
+                self.statusObserver = self.player?.currentItem?.observe(\.status, options: [.new]) { [weak self] item, change in
+                    guard let self else { return }
+                    #if DEBUG
+                    print("🔊 [KVO] Item status changed to \(item.status.rawValue)")
+                    #endif
+                    switch item.status {
+                    case .readyToPlay:
+                        if self.isPlaying {
+                            self.delegate?.onStatusChange(.playing, nil)
+                        }
+                    case .failed:
+                        self.delegate?.onStatusChange(.stopped, item.error?.localizedDescription)
+                        self.handlePlaybackError(item.error)  // Call existing or add handler for errors
+                    default:
+                        break
+                    }
+                    SharedPlayerManager.shared.saveCurrentState()
+                }
             }
             
             // 3. Background validation – never blocks the player (2026 pattern)
@@ -2535,6 +2576,21 @@ extension DirectStreamingPlayer {
             self.safeOnStatusChange(isPlaying: false, status: String(localized: "alert_retry"))
         }
     }
+    
+    private func handlePlaybackError(_ error: Error?) {
+        guard let avError = error as? AVError else { return }
+        #if DEBUG
+        print("❌ Playback error: code=\(avError.code.rawValue), desc=\(avError.localizedDescription)")
+        #endif
+        self.hasPermanentError = true  // Flag for reset in stop
+        self.stop(completion: nil, silent: true)  // Silent stop to reset
+        if avError.localizedDescription.contains("unmatched audio object type") || avError.localizedDescription.contains("SBR decoder") {
+            #if DEBUG
+            print("⚠️ HE-AAC/SBR format issue detected—recommend server-side LC-AAC fallback")
+            #endif
+            // Optional: Trigger fallback stream if available (e.g., switchToStream(fallbackStream))
+        }
+    }
 }
 
 // MARK: - Audio Session Interruption Handling
@@ -2565,10 +2621,11 @@ extension DirectStreamingPlayer {
                     print("🔇 [AudioSession] Interruption began")
                     #endif
                     self.isHandlingInterruption = true
-                    self.wasPlayingBeforeInterruption = self.player?.rate ?? 0 > 0
+                    self.wasPlayingBeforeInterruption = self.isPlaying  // Use refined check
                     if self.wasPlayingBeforeInterruption {
                         self.player?.pause()  // Graceful pause
                         self.delegate?.onStatusChange(.paused, "Interruption")  // Notify UI
+                        SharedPlayerManager.shared.saveCurrentState()  // Optional: Persist for widget
                     }
                 case .ended:
                     #if DEBUG
@@ -2576,15 +2633,15 @@ extension DirectStreamingPlayer {
                     #endif
                     let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue ?? 0)
                     if options.contains(.shouldResume) && self.wasPlayingBeforeInterruption && !self.isSwitchingStream {
-                        // Async resume to avoid races (inspired by your Task.detached patterns)
                         Task.detached(priority: .userInitiated) {
-                            try? await Task.sleep(for: .milliseconds(100))  // Brief delay for session settle
-                            _ = await MainActor.run {
-                                Task { @MainActor [weak self] in
-                                    guard let self else { return }
-                                    self.player?.play()
+                            try? await Task.sleep(for: .milliseconds(100))
+                            await MainActor.run { [weak self] in
+                                guard let self else { return }
+                                self.player?.play()
+                                if self.isPlaying {  // Guard delegate
                                     self.delegate?.onStatusChange(.playing, nil)
                                 }
+                                SharedPlayerManager.shared.saveCurrentState()  // Optional
                             }
                         }
                     }
