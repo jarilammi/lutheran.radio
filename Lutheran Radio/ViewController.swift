@@ -2944,7 +2944,7 @@ extension ViewController: StreamingPlayerDelegate {
             updatePlayPauseButton(isPlaying: showPauseIcon)
             
             // Optional but VERY nice — button tint now follows the state too
-            playPauseButton.tintColor = visualState.buttonTintColor
+            // playPauseButton.tintColor = visualState.buttonTintColor
             
             // Update flag
             if status == .playing {
