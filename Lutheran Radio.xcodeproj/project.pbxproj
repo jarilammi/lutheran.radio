@@ -80,6 +80,7 @@
 				DirectStreamingPlayer.swift,
 				Localizable.xcstrings,
 				LutheranRadioLiveActivityAttributes.swift,
+				PlayerVisualState.swift,
 				SharedPlayerManager.swift,
 				StreamingSessionDelegate.swift,
 				WidgetRefreshManager.swift,
