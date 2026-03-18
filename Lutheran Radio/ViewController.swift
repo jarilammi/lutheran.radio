@@ -352,6 +352,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     }
     
     private let appLaunchTime = Date()
+    private var hasEverPlayed = false
     private var isPlaying = false
     private var isManualPause = false
     private var hasPermanentPlaybackError = false
@@ -1430,6 +1431,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         #endif
         
         isManualPause = true
+        hasEverPlayed = false
         streamingPlayer.stop { [weak self] in
             guard let self = self else { return }
             
@@ -2911,40 +2913,50 @@ extension ViewController: StreamingPlayerDelegate {
     /// Marked nonisolated + explicit MainActor hop to satisfy strict concurrency.
     nonisolated func onStatusChange(_ status: PlayerStatus, _ reason: String?) {
         Task { @MainActor in
-            switch status {
-            case .playing:
-                safeUpdateStatusLabel(text: String(localized: "status_playing"), backgroundColor: .systemGreen, textColor: .white, isPermanentError: false)
-            case .paused:
-                let pauseText = (reason == "Interruption") ? "Paused - Call Active" : String(localized: "status_paused")
-                safeUpdateStatusLabel(text: pauseText, backgroundColor: .systemYellow, textColor: .label, isPermanentError: false)
-            case .stopped:
-                safeUpdateStatusLabel(text: String(localized: "status_stopped"), backgroundColor: .systemRed, textColor: .white, isPermanentError: false)
-            case .connecting:
-                safeUpdateStatusLabel(text: String(localized: "status_connecting"), backgroundColor: .systemYellow, textColor: .label, isPermanentError: false)
-            case .security:
-                safeUpdateStatusLabel(text: String(localized: "status_security_failed"), backgroundColor: .systemRed, textColor: .white, isPermanentError: true)
+            let visualState = PlayerVisualState.from(
+                status: status,
+                isManualPause: isManualPause,
+                hasEverPlayed: hasEverPlayed
+            )
+            
+            let statusText: String = {
+                switch status {
+                case .playing:     return String(localized: "status_playing")
+                case .paused:      return (reason == "Interruption")
+                                     ? String(localized: "status_paused_call")
+                                     : String(localized: "status_paused")
+                case .stopped:     return String(localized: "status_stopped")
+                case .connecting:  return String(localized: "status_connecting")
+                case .security:    return String(localized: "status_security_failed")
+                @unknown default:  return "Unknown state"
+                }
+            }()
+            
+            safeUpdateStatusLabel(
+                text: statusText,
+                backgroundColor: visualState.backgroundColor,
+                textColor: visualState.textColor,
+                isPermanentError: status == .security
+            )
+            
+            let showPauseIcon = status == .playing ||
+                               (status == .paused && reason == "Interruption")
+            updatePlayPauseButton(isPlaying: showPauseIcon)
+            
+            // Optional but VERY nice — button tint now follows the state too
+            playPauseButton.tintColor = visualState.buttonTintColor
+            
+            // Update flag
+            if status == .playing {
+                hasEverPlayed = true
+                
+                // Only haptic when user-initiated resume (not auto-resume after interruption)
+                if reason == nil {
+                    playHapticFeedback(style: .light)
+                }
             }
             
-            // Keep play/pause button perfectly in sync no matter where the state change comes from
-            let showPauseButton = switch status {
-            case .playing, .connecting: true
-            case .paused where reason == "Interruption": true   // keep pause icon during phone call, etc.
-            default: false                                      // stopped, security error, etc. → show play icon
-            }
-            
-            updatePlayPauseButton(isPlaying: showPauseButton)
-        }
-        
-        // Add haptic or accessibility if needed (e.g., for resume after interruption)
-        if status == .playing && reason == nil {
-            Task { @MainActor in
-                playHapticFeedback(style: .light)  // Subtle resume feedback
-            }
-        }
-        
-        // Existing logic: Save state, announce, etc.
-        Task { @MainActor in
-            saveStateForWidget()
+            saveStateForWidget()   // keeps widget in sync
         }
     }
     
