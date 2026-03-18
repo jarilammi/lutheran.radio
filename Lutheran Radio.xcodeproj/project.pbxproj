@@ -11,6 +11,8 @@
 		B757A7802DEF7B5C00FF90FC /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B757A77F2DEF7B5C00FF90FC /* SwiftUI.framework */; };
 		B757A7912DEF7B5E00FF90FC /* LutheranRadioWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = B757A77C2DEF7B5C00FF90FC /* LutheranRadioWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		B785EBA22E673D2F0034C286 /* CoreHaptics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B785EBA12E673D2F0034C286 /* CoreHaptics.framework */; };
+		B78E91902F6B492A00450FE1 /* SecurityConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = B78E918F2F6B492A00450FE1 /* SecurityConfiguration.swift */; };
+		B78E91912F6B492A00450FE1 /* SecurityConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = B78E918F2F6B492A00450FE1 /* SecurityConfiguration.swift */; };
 		B7AFC6E22CCD7DD900BDDD83 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B7AFC6E12CCD7DD900BDDD83 /* AVFoundation.framework */; };
 		B7F7B4712DAA463F00194E5C /* libmdns.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = B7F7B4702DAA463E00194E5C /* libmdns.tbd */; };
 /* End PBXBuildFile section */
@@ -58,6 +60,7 @@
 		B757A77D2DEF7B5C00FF90FC /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		B757A77F2DEF7B5C00FF90FC /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		B785EBA12E673D2F0034C286 /* CoreHaptics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreHaptics.framework; path = System/Library/Frameworks/CoreHaptics.framework; sourceTree = SDKROOT; };
+		B78E918F2F6B492A00450FE1 /* SecurityConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecurityConfiguration.swift; sourceTree = "<group>"; };
 		B7AFC6AC2CCD7D0A00BDDD83 /* Lutheran Radio.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Lutheran Radio.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		B7AFC6C22CCD7D0C00BDDD83 /* Lutheran RadioTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Lutheran RadioTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		B7AFC6CC2CCD7D0C00BDDD83 /* Lutheran RadioUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Lutheran RadioUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -175,9 +178,34 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		B78E91892F6B481100450FE1 /* Core */ = {
+			isa = PBXGroup;
+			children = (
+				B78E918B2F6B48AB00450FE1 /* Actors */,
+				B78E918A2F6B482300450FE1 /* Configuration */,
+			);
+			path = Core;
+			sourceTree = "<group>";
+		};
+		B78E918A2F6B482300450FE1 /* Configuration */ = {
+			isa = PBXGroup;
+			children = (
+				B78E918F2F6B492A00450FE1 /* SecurityConfiguration.swift */,
+			);
+			path = Configuration;
+			sourceTree = "<group>";
+		};
+		B78E918B2F6B48AB00450FE1 /* Actors */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = Actors;
+			sourceTree = "<group>";
+		};
 		B7AFC6A32CCD7D0A00BDDD83 = {
 			isa = PBXGroup;
 			children = (
+				B78E91892F6B481100450FE1 /* Core */,
 				B7AFC6AE2CCD7D0A00BDDD83 /* Lutheran Radio */,
 				B7AFC6C52CCD7D0C00BDDD83 /* Lutheran RadioTests */,
 				B7AFC6CF2CCD7D0C00BDDD83 /* Lutheran RadioUITests */,
@@ -405,6 +433,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B78E91912F6B492A00450FE1 /* SecurityConfiguration.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -412,6 +441,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B78E91902F6B492A00450FE1 /* SecurityConfiguration.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
