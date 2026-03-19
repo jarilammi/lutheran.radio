@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import dnssd
 
 /// Low-level context for the DNS-SD TXT query callback.
 ///
@@ -85,11 +86,41 @@ public actor SecurityModelValidator {
     }
 
     public var currentState: ValidationState {
-        validationState
+        get async { validationState }
     }
 
     public enum ValidationState {
         case pending, success, failedPermanent, failedTransient
+    }
+    
+    /// Returns whether the current security model is considered valid right now.
+    /// Treats transient failures as "not valid for now" (safe default).
+    public func isCurrentlyValid() async -> Bool {
+        await validateSecurityModel()
+    }
+    
+    public var isPermanentlyInvalid: Bool {
+        get async {
+            validationState == .failedPermanent
+            // or: await currentState == .failedPermanent
+        }
+    }
+    
+    // MARK: - State Recovery
+
+    /// Clears transient validation failures and invalidates the cache,
+    /// allowing the next validation attempt to perform a fresh check.
+    ///
+    /// Permanent validation failures (e.g. model mismatch) are not affected
+    /// and require either a new app build or updated configuration to resolve.
+    public func resetTransientState() {
+        if validationState == .failedTransient {
+            validationState = .pending
+            lastValidationTime = nil
+            #if DEBUG
+            print("🔄 Reset transient state → pending, cache invalidated")
+            #endif
+        }
     }
     
     // MARK: - Private implementation
