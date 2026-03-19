@@ -14,7 +14,8 @@
 		B78E91902F6B492A00450FE1 /* SecurityConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = B78E918F2F6B492A00450FE1 /* SecurityConfiguration.swift */; };
 		B78E91912F6B492A00450FE1 /* SecurityConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = B78E918F2F6B492A00450FE1 /* SecurityConfiguration.swift */; };
 		B7AFC6E22CCD7DD900BDDD83 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B7AFC6E12CCD7DD900BDDD83 /* AVFoundation.framework */; };
-		B7F7B4712DAA463F00194E5C /* libmdns.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = B7F7B4702DAA463E00194E5C /* libmdns.tbd */; };
+		B7D282E42F6C513D001E6432 /* SecurityModelValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7D282E32F6C513D001E6432 /* SecurityModelValidator.swift */; };
+		B7D282E52F6C513D001E6432 /* SecurityModelValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7D282E32F6C513D001E6432 /* SecurityModelValidator.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -65,6 +66,8 @@
 		B7AFC6C22CCD7D0C00BDDD83 /* Lutheran RadioTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Lutheran RadioTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		B7AFC6CC2CCD7D0C00BDDD83 /* Lutheran RadioUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Lutheran RadioUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		B7AFC6E12CCD7DD900BDDD83 /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
+		B7D282E32F6C513D001E6432 /* SecurityModelValidator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecurityModelValidator.swift; sourceTree = "<group>"; };
+		B7D282E62F6C586C001E6432 /* LutheranRadio-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "LutheranRadio-Bridging-Header.h"; sourceTree = "<group>"; };
 		B7F7B4702DAA463E00194E5C /* libmdns.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libmdns.tbd; path = usr/lib/libmdns.tbd; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
@@ -157,7 +160,6 @@
 			files = (
 				B7AFC6E22CCD7DD900BDDD83 /* AVFoundation.framework in Frameworks */,
 				B785EBA22E673D2F0034C286 /* CoreHaptics.framework in Frameworks */,
-				B7F7B4712DAA463F00194E5C /* libmdns.tbd in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -198,6 +200,7 @@
 		B78E918B2F6B48AB00450FE1 /* Actors */ = {
 			isa = PBXGroup;
 			children = (
+				B7D282E32F6C513D001E6432 /* SecurityModelValidator.swift */,
 			);
 			path = Actors;
 			sourceTree = "<group>";
@@ -205,6 +208,7 @@
 		B7AFC6A32CCD7D0A00BDDD83 = {
 			isa = PBXGroup;
 			children = (
+				B7D282E62F6C586C001E6432 /* LutheranRadio-Bridging-Header.h */,
 				B78E91892F6B481100450FE1 /* Core */,
 				B7AFC6AE2CCD7D0A00BDDD83 /* Lutheran Radio */,
 				B7AFC6C52CCD7D0C00BDDD83 /* Lutheran RadioTests */,
@@ -433,6 +437,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B7D282E52F6C513D001E6432 /* SecurityModelValidator.swift in Sources */,
 				B78E91912F6B492A00450FE1 /* SecurityConfiguration.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -441,6 +446,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B7D282E42F6C513D001E6432 /* SecurityModelValidator.swift in Sources */,
 				B78E91902F6B492A00450FE1 /* SecurityConfiguration.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -568,6 +574,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "radio.lutheran.Lutheran-Radio";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "LutheranRadio-Bridging-Header.h";
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -601,6 +608,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "radio.lutheran.Lutheran-Radio";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "LutheranRadio-Bridging-Header.h";
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
