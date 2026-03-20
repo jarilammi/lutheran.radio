@@ -233,37 +233,39 @@ final class SharedPlayerManager: @unchecked Sendable {
 
 // MARK: - UserDefaults Communication
 extension SharedPlayerManager {
+    
     private var sharedDefaults: UserDefaults? {
-        return UserDefaults(suiteName: "group.radio.lutheran.shared")
+        UserDefaults(suiteName: "group.radio.lutheran.shared")
     }
     
-    // 2026 Apple-recommended: pure save, no local throttling state
-    // (DirectStreamingPlayer now calls this only on real mutations)
-    func saveCurrentState() {
+    // Now async – callers must await this when they want to save
+    func saveCurrentState() async {
         guard !isRunningInWidget() else { return }
         guard let player = self.player else { return }
         
         let now = Date()
         
-        // Always read fresh state from the real owner
         let currentLanguageCode = sharedDefaults?.string(forKey: "currentLanguage") ?? "en"
+        
+        // Now safe to await
+        let isPermanentError = await player.isLastErrorPermanent()
         
         let currentState = (
             isPlaying: player.actualPlaybackState,
             currentLanguage: currentLanguageCode,
-            hasError: player.hasPermanentError || player.isLastErrorPermanent()
+            hasError: player.hasPermanentError || isPermanentError
         )
         
         #if DEBUG
         let playerRate = player.currentPlayerRate
         let itemStatus = player.currentItemStatus
         let hasCurrentItem = player.hasPlayerItem
-        print("🔗 Detailed state: rate=\(playerRate), itemStatus=\(itemStatus.rawValue), hasItem=\(hasCurrentItem), result=\(currentState.isPlaying), language=\(currentLanguageCode)")
+        print("🔗 Detailed state: rate=\(playerRate), itemStatus=\(itemStatus.rawValue), hasItem=\(hasCurrentItem), result=\(currentState.isPlaying), language=\(currentLanguageCode), hasPermanentError=\(isPermanentError)")
         #endif
         
         performActualSave(currentState, at: now)
     }
-
+    
     private func performActualSave(_ state: (isPlaying: Bool, currentLanguage: String, hasError: Bool), at time: Date) {
         sharedDefaults?.set(state.isPlaying, forKey: "isPlaying")
         sharedDefaults?.set(state.currentLanguage, forKey: "currentLanguage")
@@ -357,4 +359,5 @@ extension SharedPlayerManager {
             #endif
         }
     }
+    
 }
