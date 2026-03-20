@@ -228,14 +228,14 @@ struct ToggleRadioIntent: SetValueIntent {
         #endif
         
         let manager = SharedPlayerManager.shared
-        let state = manager.loadSharedState()
+        let state = manager.loadSharedState()  // assuming already nonisolated
         let isCurrentlyPlaying = state.isPlaying
         
-        // Toggle playback state
+        // Toggle playback state – now await the async versions
         if isCurrentlyPlaying {
-            manager.stop()  // Stop religious audio content
+            await manager.stop()           // ← now async, no completion
         } else {
-            manager.play { _ in }  // Start streaming religious content
+            try await manager.play()       // ← now async throws, no completion
         }
         
         // NEW: Use optimized refresh for immediate user feedback
@@ -316,8 +316,8 @@ struct QuickSwitchStreamIntent: AppIntent {
             return .result()
         }
         
-        // Switch to the new Lutheran content stream
-        manager.switchToStream(targetStream)
+        // Switch to the new Lutheran content stream – now properly awaited
+        await manager.switchToStream(targetStream)
         
         // Update all widget displays immediately
         WidgetCenter.shared.reloadTimelines(ofKind: "LutheranRadioWidget")

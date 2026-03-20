@@ -849,13 +849,30 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                         }
                     } else if self.player?.rate ?? 0 == 0, !self.hasPermanentError {
                         // Auto-replay if previously playing / ready
-                        self.play { success in
-                            let playStatusKey = success ? "status_playing" : "status_stream_unavailable"
-                            DispatchQueue.main.async {
-                                self.safeOnStatusChange(
-                                    isPlaying: success,
-                                    status: String(localized: String.LocalizationValue(playStatusKey))
-                                )
+                    } else if self.player?.rate ?? 0 == 0, !self.hasPermanentError {
+                        // Auto-replay if previously playing / ready
+                        
+                        Task { @MainActor in   // ← important: ensure we run on the right actor
+                            do {
+                                try await self.play()   // ← now async throws, no completion
+                                
+                                let playStatusKey = "status_playing"
+                                await MainActor.run {   // or just self.safeOnStatusChange since we're already @MainActor
+                                    self.safeOnStatusChange(
+                                        isPlaying: true,
+                                        status: String(localized: String.LocalizationValue(playStatusKey))
+                                    )
+                                }
+                            } catch {
+                                let playStatusKey = "status_stream_unavailable"
+                                await MainActor.run {
+                                    self.safeOnStatusChange(
+                                        isPlaying: false,
+                                        status: String(localized: String.LocalizationValue(playStatusKey))
+                                    )
+                                }
+                                // Optionally log the error
+                                print("Auto-replay failed: \(error)")
                             }
                         }
                     }
@@ -926,13 +943,30 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                         }
                     } else if self.player?.rate ?? 0 == 0, !self.hasPermanentError {
                         // Auto-replay if previously playing / ready
-                        self.play { success in
-                            let playStatusKey = success ? "status_playing" : "status_stream_unavailable"
-                            DispatchQueue.main.async {
-                                self.safeOnStatusChange(
-                                    isPlaying: success,
-                                    status: String(localized: String.LocalizationValue(playStatusKey))
-                                )
+                    } else if self.player?.rate ?? 0 == 0, !self.hasPermanentError {
+                        // Auto-replay if previously playing / ready
+                        
+                        Task { @MainActor in   // ← important: ensure we run on the right actor
+                            do {
+                                try await self.play()   // ← now async throws, no completion
+                                
+                                let playStatusKey = "status_playing"
+                                await MainActor.run {   // or just self.safeOnStatusChange since we're already @MainActor
+                                    self.safeOnStatusChange(
+                                        isPlaying: true,
+                                        status: String(localized: String.LocalizationValue(playStatusKey))
+                                    )
+                                }
+                            } catch {
+                                let playStatusKey = "status_stream_unavailable"
+                                await MainActor.run {
+                                    self.safeOnStatusChange(
+                                        isPlaying: false,
+                                        status: String(localized: String.LocalizationValue(playStatusKey))
+                                    )
+                                }
+                                // Optionally log the error
+                                print("Auto-replay failed: \(error)")
                             }
                         }
                     }
@@ -966,23 +1000,47 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            guard let self = self else { return }
+            guard let self else { return }
             
-            if ProcessInfo.processInfo.thermalState == .critical ||
-               ProcessInfo.processInfo.thermalState == .serious {
+            let currentState = ProcessInfo.processInfo.thermalState
+            
+            if currentState == .critical || currentState == .serious {
                 // Pause if device temperature critical or serious
                 if self.isPlaying {
                     self.wasPlayingBeforeThermal = true
-                    self.stop {
-                        self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_thermal_paused"))
+                    
+                    Task { @MainActor in
+                        await self.stop()
+                        self.safeOnStatusChange(
+                            isPlaying: false,
+                            status: String(localized: String.LocalizationValue(stringLiteral: "status_thermal_paused"))
+                        )
                     }
                 }
             } else if self.wasPlayingBeforeThermal &&
-                        (ProcessInfo.processInfo.thermalState == .nominal ||
-                         ProcessInfo.processInfo.thermalState == .fair) {
+                      (currentState == .nominal || currentState == .fair) {
                 // Resume when the device has actually cooled down to a safe temperature
                 self.wasPlayingBeforeThermal = false
-                self.play { _ in }
+                
+                Task { @MainActor in
+                    do {
+                        try await self.play()
+                        // If play() returns success Bool, you can use it:
+                        // let success = try await self.play()
+                        // then conditionally update status
+                        
+                        self.safeOnStatusChange(
+                            isPlaying: true,
+                            status: String(localized: String.LocalizationValue(stringLiteral: "status_playing"))
+                        )
+                    } catch {
+                        self.safeOnStatusChange(
+                            isPlaying: false,
+                            status: String(localized: String.LocalizationValue(stringLiteral: "status_stream_unavailable"))
+                        )
+                        print("Thermal resume play failed: \(error)")
+                    }
+                }
             }
         }
     }
@@ -1123,13 +1181,13 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         print("🔊 [Playback Start] async play() entered")
         #endif
 
-        // 1. Optimistic UI update (still fast & responsive)
-        safeOnStatusChange(isPlaying: true, status: "status_connecting")
+        // 1. Optimistic UI update
+        safeOnStatusChange(isPlaying: true, status: String(localized: "status_connecting"))
 
-        // Immediate optimistic save (non-blocking)
-        SharedPlayerManager.shared.saveFireAndForget()   // ← assume you added this helper on the actor
+        // Immediate optimistic save
+        SharedPlayerManager.shared.saveFireAndForget()
 
-        // 2. Critical: validate **before** doing expensive work
+        // 2. Critical: validate before expensive work
         let isValid = await SecurityModelValidator.shared.isCurrentlyValid()
 
         #if DEBUG
@@ -1138,6 +1196,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
 
         guard isValid else {
             let isPermanent = await SecurityModelValidator.shared.isPermanentlyInvalid
+            
             let statusKey = isPermanent ? "status_security_failed" : "status_no_internet"
 
             #if DEBUG
@@ -1146,7 +1205,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
 
             safeOnStatusChange(
                 isPlaying: false,
-                status: String(localized: statusKey)
+                status: String(localized: String.LocalizationValue(stringLiteral: statusKey))
             )
 
             SharedPlayerManager.shared.saveFireAndForget()
@@ -1157,15 +1216,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         print("🔊 [Playback Start] Validation passed — proceeding to server selection & cert check")
         #endif
 
-        // 3. Do the real setup work (should be async where possible)
-        //    Ideally refactor performOptimalServerSelectionAndCertificateCheck() → async
-        //    For now assume it's sync but quick; move heavy parts (DNS, ping) to async if not already.
+        // 3. Real setup work
         performOptimalServerSelectionAndCertificateCheck()
-
-        // Assume the method above ends up calling:
-        //   player?.replaceCurrentItem(with: newItem)
-        //   player?.play()
-        //   observe status/rate changes
 
         let success = (player?.rate ?? 0) > 0
 
@@ -1173,13 +1225,15 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             #if DEBUG
             print("🔊 [Playback Start] Playback initiated successfully")
             #endif
-            // Final success save
             await SharedPlayerManager.shared.saveCurrentState()
         } else {
             #if DEBUG
             print("🔊 [Playback Start] Setup failed after validation")
             #endif
-            safeOnStatusChange(isPlaying: false, status: "status_stream_unavailable")
+            safeOnStatusChange(
+                isPlaying: false,
+                status: String(localized: String.LocalizationValue(stringLiteral: "status_stream_unavailable"))
+            )
             SharedPlayerManager.shared.saveFireAndForget()
         }
 
@@ -1189,23 +1243,27 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     // MARK: - Stream Switching (Swift 6 pure mutation)
     // Called only from SharedPlayerManager.main-app path or internally.
     // Guarantees: every mutation triggers saveCurrentState() + WidgetRefreshManager.
-    func switchToStream(_ stream: Stream) {
-        let wasPlaying = isPlaying                     // use whatever public var you expose (matches the old call site)
+    @MainActor
+    func switchToStream(_ stream: Stream) async {
+        let wasPlaying = isPlaying
         
-        stop { [weak self] in
-            guard let self else { return }
-            
-            self.resetTransientErrors()
-            self.setStream(to: stream)                 // ← this already calls saveCurrentState() per your design
-            
-            if wasPlaying {
-                self.play { [weak self] success in
-                    guard let self else { return }
-                    #if DEBUG
-                    print("Direct stream switch \(success ? "succeeded" : "failed") for \(stream.language)")
-                    #endif
-                    // play() already calls saveCurrentState() — no extra call needed
-                }
+        await stop()
+        
+        resetTransientErrors()
+        await setStream(to: stream)     // ← add await here
+        
+        if wasPlaying {
+            do {
+                try await play()
+                
+                #if DEBUG
+                print("Direct stream switch succeeded for \(stream.language)")
+                #endif
+            } catch {
+                #if DEBUG
+                print("Direct stream switch failed for \(stream.language): \(error)")
+                #endif
+                // Optionally restore previous stream / show error UI
             }
         }
     }
@@ -1396,7 +1454,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     
     // MARK: - Stream Switching (now the single source of truth)
 
-    func setStream(to stream: Stream) {
+    @MainActor
+    func setStream(to stream: Stream) async {
         guard !isSwitchingStream else {
             #if DEBUG
             print("Stream switch already in progress, ignoring request for \(stream.languageCode)")
@@ -1431,62 +1490,68 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             await SharedPlayerManager.shared.saveCurrentState()
         }
         
-        // Because stop callback is short-lived / one-shot, strong capture is usually safe
-        // (no retain cycle if stop() doesn't store the closure long-term)
-        stop { [self] in
-            // No guard needed — self is already strong/non-optional here
+        // Stop playback first (await instead of completion handler)
+        await stop()
+        
+        // Defensive re-set + post-stop save
+        selectedStream = stream
+        
+        Task {
+            await SharedPlayerManager.shared.saveCurrentState()
+        }
+        
+        isSwitchingStream = false  // release guard flag
+        
+        #if DEBUG
+        print("📡 Stream set to: \(stream.language), URL: \(stream.url)")
+        print("🔍 selectedStream.languageCode = \(selectedStream.languageCode)")
+        #endif
+        
+        // Security validation & playback resume
+        let validator = SecurityModelValidator.shared
+        
+        let isValid = await validator.validateSecurityModel()
+        
+        guard isValid else {
+            let isPermanent = await validator.isPermanentlyInvalid
             
-            selectedStream = stream                     // defensive re-set (good)
+            let statusKey = isPermanent ? "status_security_failed" : "status_no_internet"
             
-            // Save after stop completes (state is now "settled")
+            let message = NSLocalizedString(statusKey, comment: "")
+            safeOnStatusChange(isPlaying: false, status: message)
+            
+            // Optional: save failure state
             Task {
                 await SharedPlayerManager.shared.saveCurrentState()
             }
             
-            isSwitchingStream = false                   // release guard flag here (sync)
+            return
+        }
+        
+        // Success path: security valid → resume playback
+        do {
+            try await play()  // ← or await play() if non-throwing
             
             #if DEBUG
-            print("📡 Stream set to: \(stream.language), URL: \(stream.url)")
-            print("🔍 selectedStream.languageCode = \(selectedStream.languageCode)")
+            print("Stream switch succeeded → playback resumed")
             #endif
             
-            Task { @MainActor in
-                let validator = SecurityModelValidator.shared
-                
-                let isValid = await validator.validateSecurityModel()
-                
-                guard isValid else {
-                    let isPermanent = await validator.isPermanentlyInvalid
-                    
-                    let statusKey = isPermanent
-                        ? "status_security_failed"
-                        : "status_no_internet"
-                    
-                    let message = NSLocalizedString(statusKey, comment: "")
-                    safeOnStatusChange(isPlaying: false, status: message)
-                    
-                    // Optional: also save failure state here if desired
-                    Task {
-                        await SharedPlayerManager.shared.saveCurrentState()
-                    }
-                    
-                    return
-                }
-                
-                // Success path: security model is currently valid
-                // → (re)start playback, update UI, enable controls, etc.
-                // Add your logic here, e.g.:
-                play { success in
-                    if success {
-                        // Optional: final success save
-                        Task {
-                            await SharedPlayerManager.shared.saveCurrentState()
-                        }
-                    }
-                }
-                // updateNowPlayingInfo()
-                // notifyObservers()
+            // Optional final save after successful play
+            Task {
+                await SharedPlayerManager.shared.saveCurrentState()
             }
+            
+            // updateNowPlayingInfo()
+            // notifyObservers()
+        } catch {
+            #if DEBUG
+            print("Failed to resume playback after stream switch: \(error)")
+            #endif
+            
+            safeOnStatusChange(
+                isPlaying: false,
+                status: NSLocalizedString("status_stream_unavailable", comment: "")
+            )
         }
     }
     
