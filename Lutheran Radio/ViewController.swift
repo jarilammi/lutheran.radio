@@ -691,24 +691,31 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         
         let stateBeforeSave = SharedPlayerManager.shared.loadSharedState()
         
-        // Save current state for widget access
-        SharedPlayerManager.shared.saveCurrentState()
-        
-        let stateAfterSave = SharedPlayerManager.shared.loadSharedState()
-        
-        // Only update timestamp and log if state actually changed
-        if stateBeforeSave.isPlaying != stateAfterSave.isPlaying ||
-           stateBeforeSave.currentLanguage != stateAfterSave.currentLanguage ||
-           stateBeforeSave.hasError != stateAfterSave.hasError {
-            lastWidgetUpdate = now
+        Task {
+            await SharedPlayerManager.shared.saveCurrentState()
             
-            #if DEBUG
-            print("🔗 State saved for widgets (meaningful change detected)")
-            #endif
-        } else {
-            #if DEBUG
-            print("🔗 No meaningful state change, skipping widget timestamp update")
-            #endif
+            // Now load after the save has completed
+            let stateAfterSave = SharedPlayerManager.shared.loadSharedState()
+            
+            if stateBeforeSave.isPlaying != stateAfterSave.isPlaying ||
+               stateBeforeSave.currentLanguage != stateAfterSave.currentLanguage ||
+               stateBeforeSave.hasError != stateAfterSave.hasError {
+                
+                // Update timestamp on the main actor (since lastWidgetUpdate is likely UI-related)
+                await MainActor.run {
+                    self.lastWidgetUpdate = now
+                    
+                    #if DEBUG
+                    print("🔗 State saved for widgets (meaningful change detected)")
+                    #endif
+                }
+            } else {
+                #if DEBUG
+                await MainActor.run {
+                    print("🔗 No meaningful state change, skipping widget timestamp update")
+                }
+                #endif
+            }
         }
     }
     
@@ -885,17 +892,35 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             message: String(localized: "security_model_error_message"),
             preferredStyle: .alert
         )
+        
         alert.addAction(UIAlertAction(title: String(localized: "alert_retry"), style: .default, handler: { [weak self] _ in
-            self?.streamingPlayer.resetTransientErrors()
-            self?.streamingPlayer.validateSecurityModelAsync { [weak self] isValid in
-                // validateSecurityModelAsync completion runs off-main → hop back
-                Task { @MainActor in
-                    guard let self = self else { return }
+            guard let self else { return }
+            
+            Task { @MainActor in   // ← Keeps UI work on main + gives us async context
+                // Reset transient failures (now async)
+                await self.streamingPlayer.resetTransientErrors()
+                
+                // Validate using the shared actor — automatic actor hop via await
+                let isValid = await SecurityModelValidator.shared.validateSecurityModel()
+                
+                if isValid {
                     self.startPlayback()
+                } else {
+                    // Optional: distinguish failure type for better UX/logging
+                    let isPermanent = await SecurityModelValidator.shared.isPermanentlyInvalid
+                    
+                    #if DEBUG
+                    print("Retry failed — permanent? \(isPermanent)")
+                    #endif
+                    
+                    // Could re-show alert or show different message
+                    // For now: just log / do nothing extra
                 }
             }
         }))
+        
         alert.addAction(UIAlertAction(title: String(localized: "ok"), style: .cancel, handler: nil))
+        
         present(alert, animated: true, completion: nil)
     }
     
@@ -1152,17 +1177,23 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     private func handleNetworkReconnection() {
         hasInternetConnection = true
+        
         #if DEBUG
         print("📱 Network reconnected - checking validation state")
         #endif
-        streamingPlayer.validationState = .pending // Reset to allow retry
-        streamingPlayer.hasPermanentError = false
-        streamingPlayer.validateSecurityModelAsync { [weak self] isValid in
-            guard let self = self else { return }
+        
+        Task { @MainActor in
+            // 1. Reset transient failures (now async – assuming the method is marked async)
+            await self.streamingPlayer.resetTransientErrors()
+            
+            // 2. Re-validate using the shared actor
+            let isValid = await SecurityModelValidator.shared.validateSecurityModel()
+            
             if isValid {
                 #if DEBUG
                 print("📱 Validation succeeded after reconnection - attempting playback")
                 #endif
+                
                 self.streamingPlayer.play { success in
                     if success {
                         self.streamingPlayer.onStatusChange?(true, String(localized: "status_playing"))
@@ -1174,16 +1205,25 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 #if DEBUG
                 print("📱 Security model validation failed after reconnection")
                 #endif
-                self.streamingPlayer.onStatusChange?(false, String(localized: self.streamingPlayer.validationState == .failedPermanent ? "status_security_failed" : "status_no_internet"))
-                // Show alert only if not already presenting
-                if self.presentedViewController == nil {
+                
+                // Distinguish transient vs permanent using the new property
+                let isPermanent = await SecurityModelValidator.shared.isPermanentlyInvalid
+                
+                let statusKey: String.LocalizationValue = isPermanent
+                    ? "status_security_failed"
+                    : "status_no_internet"
+                
+                self.streamingPlayer.onStatusChange?(false, String(localized: statusKey))
+                
+                // Show alert only if not already presenting one
+                if presentedViewController == nil {
                     let alert = UIAlertController(
                         title: String(localized: "security_model_error_title"),
                         message: String(localized: "security_model_error_message"),
                         preferredStyle: .alert
                     )
                     alert.addAction(UIAlertAction(title: String(localized: "ok"), style: .default))
-                    self.present(alert, animated: true)
+                    present(alert, animated: true)
                 }
             }
         }
@@ -1281,46 +1321,49 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             return
         }
         
-        // Smart debounce - only prevent rapid attempts to the same failing server
         let now = Date()
-        if let lastAttempt = lastPlaybackAttempt, now.timeIntervalSince(lastAttempt) < 0.5 {
-            // Only debounce if we're trying the same server that just failed
-            if let lastFailedServer = streamingPlayer.lastFailedServer,
-               lastFailedServer == streamingPlayer.selectedServerInfo.name {
-                #if DEBUG
-                print("📱 Debouncing failed server \(lastFailedServer), time since last: \(now.timeIntervalSince(lastAttempt))s")
-                #endif
-                return
-            }
+        if let lastAttempt = lastPlaybackAttempt,
+           now.timeIntervalSince(lastAttempt) < 0.5,
+           let lastFailedServer = streamingPlayer.lastFailedServer,
+           lastFailedServer == streamingPlayer.selectedServerInfo.name {
+            #if DEBUG
+            print("📱 Debouncing failed server \(lastFailedServer), time since last: \(now.timeIntervalSince(lastAttempt))s")
+            #endif
+            return
         }
         lastPlaybackAttempt = now
-
-        // Stop tuning sound to avoid conflicts
+        
         stopTuningSound()
-
-        // Cancel any pending playback
+        
         pendingPlaybackWorkItem?.cancel()
+        
         let workItem = DispatchWorkItem { [weak self] in
-            guard let self = self else { return }
+            guard let self else { return }
+            
             isManualPause = false
             statusLabel.text = String(localized: "status_connecting")
             statusLabel.backgroundColor = .systemYellow
             statusLabel.textColor = .black
-
-            streamingPlayer.validateSecurityModelAsync { [weak self] isValid in
-                Task { @MainActor in
-                    guard let self = self else { return }
-                    if isValid {
-                        self.streamingPlayer.resetTransientErrors()
-                        self.streamingPlayer.play { [weak self] success in
-                            Task { @MainActor in
-                                guard let self = self else { return }
-                                if success {
-                                    self.isPlaying = true
-                                    self.updatePlayPauseButton(isPlaying: true)
-                                    self.statusLabel.text = String(localized: "status_playing")
-                                    self.statusLabel.backgroundColor = .systemGreen
-                                } else if self.streamingPlayer.isLastErrorPermanent() {
+            
+            Task { @MainActor in
+                let isValid = await SecurityModelValidator.shared.validateSecurityModel()
+                
+                if isValid {
+                    await self.streamingPlayer.resetTransientErrors()
+                    
+                    self.streamingPlayer.play { [weak self] success in
+                        Task { @MainActor in
+                            guard let self else { return }
+                            
+                            if success {
+                                self.isPlaying = true
+                                self.updatePlayPauseButton(isPlaying: true)
+                                self.statusLabel.text = String(localized: "status_playing")
+                                self.statusLabel.backgroundColor = .systemGreen
+                            } else {
+                                let isPermanent = await SecurityModelValidator.shared.isPermanentlyInvalid
+                                
+                                if isPermanent {
                                     self.hasPermanentPlaybackError = true
                                     self.statusLabel.text = String(localized: "status_stream_unavailable")
                                     self.statusLabel.backgroundColor = .systemOrange
@@ -1330,20 +1373,29 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                                 }
                             }
                         }
-                    } else {
-                        self.statusLabel.text = self.streamingPlayer.isLastErrorPermanent() ? String(localized: "status_security_failed") : String(localized: "status_no_internet")
-                        self.statusLabel.backgroundColor = self.streamingPlayer.isLastErrorPermanent() ? .systemRed : .systemGray
-                        self.statusLabel.textColor = .white
-                        self.hasPermanentPlaybackError = self.streamingPlayer.isLastErrorPermanent()
-                        if self.streamingPlayer.isLastErrorPermanent() {
-                            self.showSecurityModelAlert()
-                        }
+                    }
+                } else {
+                    let isPermanent = await SecurityModelValidator.shared.isPermanentlyInvalid
+                    
+                    self.statusLabel.text = isPermanent
+                        ? String(localized: "status_security_failed")
+                        : String(localized: "status_no_internet")
+                    
+                    self.statusLabel.backgroundColor = isPermanent ? .systemRed : .systemGray
+                    self.statusLabel.textColor = .white
+                    
+                    self.hasPermanentPlaybackError = isPermanent
+                    
+                    if isPermanent {
+                        self.showSecurityModelAlert()
                     }
                 }
             }
         }
+        
         pendingPlaybackWorkItem = workItem
         DispatchQueue.main.async(execute: workItem)
+        
         saveStateForWidget()
     }
     
@@ -1352,13 +1404,18 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             #if DEBUG
             print("📱 Aborting playback attempt \(attempt) - no internet, manually paused, or previous permanent error")
             #endif
-            if hasPermanentPlaybackError { streamingPlayer.onStatusChange?(false, String(localized: "status_stream_unavailable")) }
+            if hasPermanentPlaybackError {
+                streamingPlayer.onStatusChange?(false, String(localized: "status_stream_unavailable"))
+            }
             return
         }
+        
         let now = Date()
-        if let lastAttempt = lastPlaybackAttempt, now.timeIntervalSince(lastAttempt) < minPlaybackInterval {
+        if let lastAttempt = lastPlaybackAttempt,
+           now.timeIntervalSince(lastAttempt) < minPlaybackInterval {
+            
             DispatchQueue.main.asyncAfter(deadline: .now() + minPlaybackInterval) { [weak self] in
-                guard let self = self else {
+                guard let self else {
                     #if DEBUG
                     print("📱 attemptPlaybackWithRetry (asyncAfter): ViewController is nil, skipping callback")
                     #endif
@@ -1370,52 +1427,66 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         }
         
         lastPlaybackAttempt = now
+        
         #if DEBUG
         print("📱 Playback attempt \(attempt)/\(maxAttempts)")
         #endif
-        let delay = pow(2.0, Double(attempt-1))
+        
+        let delay = pow(2.0, Double(attempt - 1))
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            guard let self = self else {
+            guard let self else {
                 #if DEBUG
                 print("📱 attemptPlaybackWithRetry (asyncAfter): ViewController is nil, skipping callback")
                 #endif
                 return
             }
+            
+            // UI / player setup on main thread
             self.streamingPlayer.setVolume(self.volumeSlider.value)
+            
             self.streamingPlayer.play { [weak self] success in
-                guard let self = self else {
-                    #if DEBUG
-                    print("📱 play (completion): ViewController is nil, skipping callback")
-                    #endif
-                    return
-                }
-                if success {
-                    #if DEBUG
-                    print("📱 Playback succeeded on attempt \(attempt)")
-                    #endif
-                } else {
-                    if self.streamingPlayer.isLastErrorPermanent() {
+                // This closure likely runs on a background thread → wrap UI + async work in MainActor Task
+                Task { @MainActor in
+                    guard let self else {
                         #if DEBUG
-                        print("📱 Permanent error detected - stopping retries")
+                        print("📱 play (completion): ViewController is nil, skipping callback")
                         #endif
-                        self.hasPermanentPlaybackError = true
-                        self.streamingPlayer.onStatusChange?(false, String(localized: "status_stream_unavailable"))
-                        self.statusLabel.text = String(localized: "status_stream_unavailable")
-                        self.statusLabel.backgroundColor = .systemOrange
-                        self.statusLabel.textColor = .white
-                    } else if attempt < maxAttempts {
+                        return
+                    }
+                    
+                    if success {
                         #if DEBUG
-                        print("📱 Playback attempt \(attempt) failed, retrying...")
+                        print("📱 Playback succeeded on attempt \(attempt)")
                         #endif
-                        self.attemptPlaybackWithRetry(attempt: attempt + 1, maxAttempts: maxAttempts)
+                        // Optional: add success UI updates here if not already handled elsewhere
+                        // e.g. self.isPlaying = true; self.updatePlayPauseButton(isPlaying: true)
                     } else {
-                        #if DEBUG
-                        print("📱 Max attempts (\(maxAttempts)) reached - giving up")
-                        #endif
-                        self.streamingPlayer.onStatusChange?(false, String(localized: "alert_connection_failed_title"))
-                        self.statusLabel.text = String(localized: "alert_connection_failed_title")
-                        self.statusLabel.backgroundColor = .systemRed
-                        self.statusLabel.textColor = .white
+                        // ← Concurrency error was here (or very close): old synchronous call to actor-isolated state
+                        let isPermanent = await SecurityModelValidator.shared.isPermanentlyInvalid
+                        
+                        if isPermanent {
+                            #if DEBUG
+                            print("📱 Permanent security model failure detected - stopping retries")
+                            #endif
+                            self.hasPermanentPlaybackError = true
+                            self.streamingPlayer.onStatusChange?(false, String(localized: "status_stream_unavailable"))
+                            self.statusLabel.text = String(localized: "status_stream_unavailable")
+                            self.statusLabel.backgroundColor = .systemOrange
+                            self.statusLabel.textColor = .white
+                        } else if attempt < maxAttempts {
+                            #if DEBUG
+                            print("📱 Playback attempt \(attempt) failed, retrying...")
+                            #endif
+                            self.attemptPlaybackWithRetry(attempt: attempt + 1, maxAttempts: maxAttempts)
+                        } else {
+                            #if DEBUG
+                            print("📱 Max attempts (\(maxAttempts)) reached - giving up")
+                            #endif
+                            self.streamingPlayer.onStatusChange?(false, String(localized: "alert_connection_failed_title"))
+                            self.statusLabel.text = String(localized: "alert_connection_failed_title")
+                            self.statusLabel.backgroundColor = .systemRed
+                            self.statusLabel.textColor = .white
+                        }
                     }
                 }
             }
@@ -2427,7 +2498,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         sharedDefaults?.synchronize()
     }
 
-    /// Direct playback without tuning sounds (for widget actions)
+    /// Direct playback without tuning sounds (for widget actions, quick actions, etc.)
     private func startPlaybackDirect() {
         if !hasInternetConnection {
             updateUIForNoInternet()
@@ -2436,36 +2507,44 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         }
         
         isManualPause = false
+        
         safeUpdateStatusLabel(
             text: String(localized: "status_connecting"),
             backgroundColor: .systemYellow,
             textColor: .black,
             isPermanentError: false
         )
-
-        streamingPlayer.validateSecurityModelAsync { [weak self] isValid in
-            Task { @MainActor in
-                guard let self = self else { return }
-                if isValid {
-                    self.streamingPlayer.resetTransientErrors()
-                    self.streamingPlayer.play { [weak self] success in
-                        Task { @MainActor in
-                            guard let self = self else { return }
-                            if success {
-                                self.isPlaying = true
-                                self.updatePlayPauseButton(isPlaying: true)
-                                self.safeUpdateStatusLabel(
-                                    text: String(localized: "status_playing"),
-                                    backgroundColor: .systemGreen,
-                                    textColor: .black,
-                                    isPermanentError: false
-                                )
-                                
-                                // FIXED: Only save state after successful playback with the new stream
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                                    self.saveStateForWidget()
-                                }
-                            } else if self.streamingPlayer.isLastErrorPermanent() {
+        
+        Task { @MainActor in
+            let isValid = await SecurityModelValidator.shared.validateSecurityModel()
+            
+            if isValid {
+                await self.streamingPlayer.resetTransientErrors()
+                
+                self.streamingPlayer.play { [weak self] success in
+                    Task { @MainActor in
+                        guard let self else { return }
+                        
+                        if success {
+                            self.isPlaying = true
+                            self.updatePlayPauseButton(isPlaying: true)
+                            
+                            self.safeUpdateStatusLabel(
+                                text: String(localized: "status_playing"),
+                                backgroundColor: .systemGreen,
+                                textColor: .black,
+                                isPermanentError: false
+                            )
+                            
+                            // FIXED: Only save state after successful playback with the new stream
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                                self.saveStateForWidget()
+                            }
+                        } else {
+                            // Use the authoritative security state instead of player-internal error
+                            let isPermanent = await SecurityModelValidator.shared.isPermanentlyInvalid
+                            
+                            if isPermanent {
                                 self.safeUpdateStatusLabel(
                                     text: String(localized: "status_stream_unavailable"),
                                     backgroundColor: .systemOrange,
@@ -2480,14 +2559,18 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                             }
                         }
                     }
-                } else {
-                    self.safeUpdateStatusLabel(
-                        text: self.streamingPlayer.isLastErrorPermanent() ? String(localized: "status_security_failed") : String(localized: "status_no_internet"),
-                        backgroundColor: self.streamingPlayer.isLastErrorPermanent() ? .systemRed : .systemGray,
-                        textColor: .white,
-                        isPermanentError: self.streamingPlayer.isLastErrorPermanent()
-                    )
                 }
+            } else {
+                let isPermanent = await SecurityModelValidator.shared.isPermanentlyInvalid
+                
+                self.safeUpdateStatusLabel(
+                    text: isPermanent
+                        ? String(localized: "status_security_failed")
+                        : String(localized: "status_no_internet"),
+                    backgroundColor: isPermanent ? .systemRed : .systemGray,
+                    textColor: .white,
+                    isPermanentError: isPermanent
+                )
             }
         }
     }

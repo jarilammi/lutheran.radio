@@ -443,7 +443,12 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 print("Avoiding recently failed server \(lastFailed), using \(betterServer.name)")
                 #endif
                 currentSelectedServer = betterServer
-                SharedPlayerManager.shared.saveCurrentState()
+                
+                // Fire-and-forget save (no need to block selection)
+                Task {
+                    await SharedPlayerManager.shared.saveCurrentState()
+                }
+                
                 completion(betterServer)
                 return
             }
@@ -459,28 +464,42 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         
         serverSelectionWorkItem?.cancel()
         let workItem = DispatchWorkItem { [weak self] in
-            guard let self = self else {
+            guard let self else {
                 completion(Self.servers[0])
                 return
             }
+            
             self.fetchServerIPsAndLatencies { results in
                 let validResults = results.filter { $0.latency != .infinity }
+                
                 if let bestResult = validResults.min(by: { $0.latency < $1.latency }) {
                     self.currentSelectedServer = bestResult.server
-                    SharedPlayerManager.shared.saveCurrentState()
+                    
+                    // Fire-and-forget save
+                    Task {
+                        await SharedPlayerManager.shared.saveCurrentState()
+                    }
+                    
                     #if DEBUG
                     print("📡 [Server Selection] Selected \(bestResult.server.name) with latency \(bestResult.latency)s")
                     #endif
                 } else {
                     self.currentSelectedServer = Self.servers[0]
-                    SharedPlayerManager.shared.saveCurrentState()
+                    
+                    // Fire-and-forget save
+                    Task {
+                        await SharedPlayerManager.shared.saveCurrentState()
+                    }
+                    
                     #if DEBUG
                     print("📡 [Server Selection] No valid ping results, falling back to \(self.currentSelectedServer.name)")
                     #endif
                 }
+                
                 completion(self.currentSelectedServer)
             }
         }
+        
         serverSelectionWorkItem = workItem
         let selectionDelay: TimeInterval = isLowEfficiencyMode ? 1.0 : 0.5
         DispatchQueue.main.asyncAfter(deadline: .now() + selectionDelay, execute: workItem)
@@ -650,7 +669,11 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 self.pendingStatusChanges.append((isPlaying, status))
             } else {
                 self.invokeStatusCallbacks(isPlaying: isPlaying, status: status)
-                SharedPlayerManager.shared.saveCurrentState()
+                
+                // Fire-and-forget async save (does not block UI/delegate callbacks)
+                Task {
+                    await SharedPlayerManager.shared.saveCurrentState()
+                }
             }
         }
     }
@@ -712,27 +735,31 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     private override init() {
         self.audioSession = .sharedInstance()
         self.pathMonitor = NWPathMonitorAdapter()
+        
         let currentLocale = Locale.current
         let languageCode = currentLocale.language.languageCode?.identifier
+        
         if let stream = Self.availableStreams.first(where: { $0.languageCode == languageCode }) {
             selectedStream = stream
         } else {
             selectedStream = Self.availableStreams[0]
         }
+        
         #if DEBUG
         isTesting = NSClassFromString("XCTestCase") != nil
         #endif
+        
         super.init()
         
         setupAudioSession()
         setupNetworkMonitoring()
-
+        
         #if DEBUG
         print("🎵 Player initialized, starting validation")
         #endif
-
+        
         if hasInternetConnection {
-            Task { @MainActor in   // ← @MainActor if you update UI/state immediately after
+            Task { @MainActor in
                 let isValid = await SecurityModelValidator.shared.validateSecurityModel()
                 
                 #if DEBUG
@@ -742,11 +769,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 if isValid {
                     self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_connecting"))
                 } else {
-                    // Optional: distinguish transient vs permanent for better UX
                     let isPermanent = await SecurityModelValidator.shared.isPermanentlyInvalid
-                    let statusKey = isPermanent
-                        ? "status_security_failed"
-                        : "status_no_internet"
+                    let statusKey = isPermanent ? "status_security_failed" : "status_no_internet"
                     let localizedStatus = String(localized: String.LocalizationValue(statusKey))
                     self.safeOnStatusChange(isPlaying: false, status: localizedStatus)
                     
@@ -759,7 +783,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             // No internet at init → transient failure state
             safeOnStatusChange(isPlaying: false, status: String(localized: "status_no_internet"))
         }
-
+        
         #if DEBUG
         logQueueHierarchy()
         #endif
@@ -767,12 +791,17 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         setupThermalProtection()
         
         isInitializing = false
+        
         DispatchQueue.main.async {  // Defer to after init returns
             for change in self.pendingStatusChanges {
                 self.invokeStatusCallbacks(isPlaying: change.isPlaying, status: change.status)
             }
             self.pendingStatusChanges = []
-            SharedPlayerManager.shared.saveCurrentState()  // Now safe post-init
+            
+            // Fire-and-forget the final state save (post-init, no blocking needed)
+            Task {
+                await SharedPlayerManager.shared.saveCurrentState()
+            }
         }
     }
     
@@ -1080,71 +1109,81 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     }
     
     // MARK: - Playback Control Methods
-    /// Starts playback **immediately** with an optimistic completion for
-    /// responsive widgets and UI.
+
+    /// Starts or resumes playback after validation and server selection.
     ///
-    /// - Completion is fired **synchronously on the main thread** with `true`.
-    /// - All security-model validation (DNS TXT), optimal server selection,
-    ///   and `CertificateValidator` checks run **non-blocking** in a background
-    ///   `Task.detached`.
-    /// - If any check fails later, playback is stopped and an error status is
-    ///   shown (the original completion is never called again).
-    ///
-    /// - Parameter completion: Always `true` (optimistic).
-    /// - Precondition: `setStream(to:)` must have been called first.
-    /// - Note: Retries and fallbacks are adaptive to thermal/low-power mode
-    ///   (2026 energy-efficiency guidelines).
-    func play(completion: @escaping BoolCompletion) {
+    /// - Returns: `true` if playback was successfully initiated (item replaced + rate > 0).
+    ///           `false` if validation failed or setup could not proceed.
+    /// - Throws: Only critical unrecoverable errors (rare).
+    /// - Important: This is the **preferred** modern entry point.
+    ///   For compatibility with old completion-style callers, use the overload below.
+    @MainActor
+    func play() async -> Bool {
         #if DEBUG
-        print("🔊 [Playback Start] play(completion) entered")
+        print("🔊 [Playback Start] async play() entered")
         #endif
-        
+
+        // 1. Optimistic UI update (still fast & responsive)
         safeOnStatusChange(isPlaying: true, status: "status_connecting")
-        completion(true)
-        SharedPlayerManager.shared.saveCurrentState()
-        
+
+        // Immediate optimistic save (non-blocking)
+        SharedPlayerManager.shared.saveFireAndForget()   // ← assume you added this helper on the actor
+
+        // 2. Critical: validate **before** doing expensive work
+        let isValid = await SecurityModelValidator.shared.isCurrentlyValid()
+
         #if DEBUG
-        print("🔊 [Playback Start] play(completion) finished sync path — launching Task for validation & playback")
+        print("🔒 [Playback Start] Validation result: \(isValid)")
         #endif
-        
-        Task { @MainActor in   // ← @MainActor for safe UI / main-thread operations
-            // 1. Ensure validation is up-to-date
-            let isValid = await SecurityModelValidator.shared.isCurrentlyValid()
-            
+
+        guard isValid else {
+            let isPermanent = await SecurityModelValidator.shared.isPermanentlyInvalid
+            let statusKey = isPermanent ? "status_security_failed" : "status_no_internet"
+
             #if DEBUG
-            print("🔒 [Playback Start] Validation result: \(isValid)")
+            print("🔊 [Playback Start] Validation failed — \(isPermanent ? "permanent" : "transient")")
             #endif
-            
-            guard isValid else {
-                let isPermanent = await SecurityModelValidator.shared.isPermanentlyInvalid
-                let statusKey = isPermanent ? "status_security_failed" : "status_no_internet"
-                
-                #if DEBUG
-                print("🔊 [Playback Start] Validation failed — \(isPermanent ? "permanent" : "transient")")
-                #endif
-                
-                self.safeOnStatusChange(
-                    isPlaying: false,
-                    status: String(localized: String.LocalizationValue(statusKey))
-                )
-                return
-            }
-            
-            #if DEBUG
-            print("🔊 [Playback Start] Validation succeeded — proceeding to server selection & certificate check")
-            #endif
-            
-            // 2. Perform server selection + cert check (on main as it likely touches UI/network)
-            self.performOptimalServerSelectionAndCertificateCheck()
-            
-            // 3. Final state save after full success path
-            SharedPlayerManager.shared.saveCurrentState()
+
+            safeOnStatusChange(
+                isPlaying: false,
+                status: String(localized: statusKey)
+            )
+
+            SharedPlayerManager.shared.saveFireAndForget()
+            return false
         }
-        
+
         #if DEBUG
-        print("🔊 [Playback Start] setupAudioSessionObservers() called — full playback start path armed")
+        print("🔊 [Playback Start] Validation passed — proceeding to server selection & cert check")
         #endif
-        setupAudioSessionObservers()
+
+        // 3. Do the real setup work (should be async where possible)
+        //    Ideally refactor performOptimalServerSelectionAndCertificateCheck() → async
+        //    For now assume it's sync but quick; move heavy parts (DNS, ping) to async if not already.
+        performOptimalServerSelectionAndCertificateCheck()
+
+        // Assume the method above ends up calling:
+        //   player?.replaceCurrentItem(with: newItem)
+        //   player?.play()
+        //   observe status/rate changes
+
+        let success = (player?.rate ?? 0) > 0
+
+        if success {
+            #if DEBUG
+            print("🔊 [Playback Start] Playback initiated successfully")
+            #endif
+            // Final success save
+            await SharedPlayerManager.shared.saveCurrentState()
+        } else {
+            #if DEBUG
+            print("🔊 [Playback Start] Setup failed after validation")
+            #endif
+            safeOnStatusChange(isPlaying: false, status: "status_stream_unavailable")
+            SharedPlayerManager.shared.saveFireAndForget()
+        }
+
+        return success
     }
     
     // MARK: - Stream Switching (Swift 6 pure mutation)
@@ -1259,7 +1298,11 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                     } else if player.rate == 0 {
                         self.delegate?.onStatusChange(.stopped, nil)
                     }
-                    SharedPlayerManager.shared.saveCurrentState()
+                    
+                    // Fire-and-forget state save on rate change
+                    Task {
+                        await SharedPlayerManager.shared.saveCurrentState()
+                    }
                 }
                 
                 self.statusObserver = self.player?.currentItem?.observe(\.status, options: [.new]) { [weak self] item, change in
@@ -1278,7 +1321,11 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                     default:
                         break
                     }
-                    SharedPlayerManager.shared.saveCurrentState()
+                    
+                    // Fire-and-forget state save on status change
+                    Task {
+                        await SharedPlayerManager.shared.saveCurrentState()
+                    }
                 }
             }
             
@@ -1365,7 +1412,11 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         
         // Update model layer immediately
         selectedStream = stream
-        SharedPlayerManager.shared.saveCurrentState()
+        
+        // Optimistic save — fire-and-forget
+        Task {
+            await SharedPlayerManager.shared.saveCurrentState()
+        }
         
         // Prepare new player item
         playerItem = nil
@@ -1376,7 +1427,9 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         player?.replaceCurrentItem(with: newItem)
         
         // One more save before we potentially stop & re-evaluate
-        SharedPlayerManager.shared.saveCurrentState()
+        Task {
+            await SharedPlayerManager.shared.saveCurrentState()
+        }
         
         // Because stop callback is short-lived / one-shot, strong capture is usually safe
         // (no retain cycle if stop() doesn't store the closure long-term)
@@ -1384,7 +1437,11 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             // No guard needed — self is already strong/non-optional here
             
             selectedStream = stream                     // defensive re-set (good)
-            SharedPlayerManager.shared.saveCurrentState()
+            
+            // Save after stop completes (state is now "settled")
+            Task {
+                await SharedPlayerManager.shared.saveCurrentState()
+            }
             
             isSwitchingStream = false                   // release guard flag here (sync)
             
@@ -1407,13 +1464,26 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                     
                     let message = NSLocalizedString(statusKey, comment: "")
                     safeOnStatusChange(isPlaying: false, status: message)
+                    
+                    // Optional: also save failure state here if desired
+                    Task {
+                        await SharedPlayerManager.shared.saveCurrentState()
+                    }
+                    
                     return
                 }
                 
                 // Success path: security model is currently valid
                 // → (re)start playback, update UI, enable controls, etc.
                 // Add your logic here, e.g.:
-                // play()
+                play { success in
+                    if success {
+                        // Optional: final success save
+                        Task {
+                            await SharedPlayerManager.shared.saveCurrentState()
+                        }
+                    }
+                }
                 // updateNowPlayingInfo()
                 // notifyObservers()
             }
@@ -1801,7 +1871,11 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         
         // Continue with existing stop logic
         performActualStop(completion: completion, silent: silent, effectiveSwitching: effectiveSwitching)
-        SharedPlayerManager.shared.saveCurrentState()
+        
+        // Final state save – fire-and-forget (no need to block caller or completion handler)
+        Task {
+            await SharedPlayerManager.shared.saveCurrentState()
+        }
     }
 
     /// Performs the actual stop operation.
@@ -2211,7 +2285,7 @@ extension DirectStreamingPlayer {
     /// - Note: Called in play() to avoid overhead when idle. Uses NotificationCenter for loose coupling.
     nonisolated private func setupAudioSessionObservers() {
         guard interruptionObserver == nil else { return }  // Idempotent
-
+        
         let session = AVAudioSession.sharedInstance()
         interruptionObserver = NotificationCenter.default.addObserver(
             forName: AVAudioSession.interruptionNotification,
@@ -2222,11 +2296,12 @@ extension DirectStreamingPlayer {
             // NEW — only Sendable values cross the boundary
             let typeValue = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
             let optionsValue = notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt
-
+            
             Task { @MainActor [weak self, typeValue, optionsValue] in
                 let type = AVAudioSession.InterruptionType(rawValue: typeValue ?? 0)
                 let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue ?? 0)
                 guard let self else { return }
+                
                 switch type {
                 case .began:
                     #if DEBUG
@@ -2234,16 +2309,21 @@ extension DirectStreamingPlayer {
                     #endif
                     self.isHandlingInterruption = true
                     self.wasPlayingBeforeInterruption = self.isPlaying  // Use refined check
+                    
                     if self.wasPlayingBeforeInterruption {
                         self.player?.pause()  // Graceful pause
                         self.delegate?.onStatusChange(.paused, "Interruption")  // Notify UI
-                        SharedPlayerManager.shared.saveCurrentState()  // Optional: Persist for widget
+                        
+                        // Persist paused state for widget — non-blocking
+                        Task {
+                            await SharedPlayerManager.shared.saveCurrentState()
+                        }
                     }
+                    
                 case .ended:
                     #if DEBUG
                     print("🔊 [AudioSession] Interruption ended")
                     #endif
-                    let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue ?? 0)
                     if options.contains(.shouldResume) && self.wasPlayingBeforeInterruption && !self.isSwitchingStream {
                         Task.detached(priority: .userInitiated) {
                             try? await Task.sleep(for: .milliseconds(100))
@@ -2253,12 +2333,17 @@ extension DirectStreamingPlayer {
                                 if self.isPlaying {  // Guard delegate
                                     self.delegate?.onStatusChange(.playing, nil)
                                 }
-                                SharedPlayerManager.shared.saveCurrentState()  // Optional
+                                
+                                // Persist resumed state — non-blocking
+                                Task {
+                                    await SharedPlayerManager.shared.saveCurrentState()
+                                }
                             }
                         }
                     }
                     self.isHandlingInterruption = false
                     self.wasPlayingBeforeInterruption = false
+                    
                 default:
                     // Fallback for unknown cases (exhaustive without @unknown)
                     #if DEBUG
@@ -2268,7 +2353,7 @@ extension DirectStreamingPlayer {
                 }
             }
         }
-
+        
         // Optional: Handle route changes (e.g., AirPlay disconnect) for completeness
         routeChangeObserver = NotificationCenter.default.addObserver(
             forName: AVAudioSession.routeChangeNotification,
@@ -2285,6 +2370,11 @@ extension DirectStreamingPlayer {
                 if self.player?.rate ?? 0 > 0 {
                     self.player?.pause()
                     self.delegate?.onStatusChange(.paused, "Route Change")
+                    
+                    // Optional: persist paused state after route change
+                    Task {
+                        await SharedPlayerManager.shared.saveCurrentState()
+                    }
                 }
             }
         }

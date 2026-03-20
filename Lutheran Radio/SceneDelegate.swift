@@ -58,7 +58,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
         
         // Save current state when becoming active (in case widget needs fresh data)
-        SharedPlayerManager.shared.saveCurrentState()
+        // → non-blocking / fire-and-forget
+        Task {
+            await SharedPlayerManager.shared.saveCurrentState()
+        }
     }
 
     /// Called when the scene will resign active state.
@@ -85,8 +88,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // Use this method to save data, release shared resources, and store enough scene-specific state information
         // to restore the scene back to its current state.
         
-        // Save current state for widget sharing
-        SharedPlayerManager.shared.saveCurrentState()
+        // Save current state for widget sharing — non-blocking / fire-and-forget
+        Task {
+            await SharedPlayerManager.shared.saveCurrentState()
+        }
         
         #if DEBUG
         print("🔗 Saved state for widget on background")

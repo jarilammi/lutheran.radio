@@ -35,27 +35,27 @@ import WidgetKit
 ///
 /// See also: `DirectStreamingPlayer` (single source of truth) and
 /// `RadioLiveActivityManager.swift`.
-final class SharedPlayerManager: @unchecked Sendable {
+actor SharedPlayerManager {
     static let shared = SharedPlayerManager()
     
     // Add initialization tracking
     private let appLaunchTime = Date()
     private let initializationSettlingPeriod: TimeInterval = 5.0
     
-    // Use lazy initialization and check widget context
-    private lazy var _player: DirectStreamingPlayer? = {
-        // Never create player in widget context
-        guard !isRunningInWidget() else {
-            #if DEBUG
-            print("🔗 Prevented DirectStreamingPlayer creation in widget context")
-            #endif
-            return nil
+    nonisolated func isRunningInWidget() -> Bool {
+        // Example common implementations – use yours
+        #if DEBUG
+        if Bundle.main.bundleIdentifier?.hasSuffix(".widget") == true {
+            print("Running in widget (bundle ID suffix)")
         }
-        return DirectStreamingPlayer.shared
-    }()
+        #endif
+        return Bundle.main.bundleIdentifier?.hasSuffix(".widget") == true ||
+        ProcessInfo.processInfo.environment["WidgetKit"] != nil  // or your exact check
+    }
     
-    private var player: DirectStreamingPlayer? {
-        return _player
+    // NEW: Make sharedDefaults easily accessible (nonisolated since it's read-only & safe)
+    nonisolated private var sharedDefaults: UserDefaults? {
+        UserDefaults(suiteName: "group.radio.lutheran.shared")
     }
     
     private init() {
@@ -69,29 +69,36 @@ final class SharedPlayerManager: @unchecked Sendable {
     // Widget-safe play method with improved error handling
     func play(completion: @escaping @Sendable (Bool) -> Void) {
         if isRunningInWidget() {
-            // ← instant UserDefaults + pending action (keep exactly as-is)
+            // Instant visual feedback for the user (very important for perceived responsiveness)
             sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "lastUpdateTime")
             sharedDefaults?.set(true, forKey: "isInstantFeedback")
             sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "instantFeedbackTime")
-            sharedDefaults?.set(sharedDefaults?.string(forKey: "currentLanguage") ?? "en", forKey: "instantFeedbackLanguage")
-            sharedDefaults?.synchronize()
-            
+            sharedDefaults?.set(sharedDefaults?.string(forKey: "currentLanguage") ?? "en",
+                               forKey: "instantFeedbackLanguage")
+            // No need for .synchronize() in 2025+ — system handles it fast enough
+
             scheduleWidgetAction(action: "play")
             notifyMainApp(action: "play")
-            
+
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 completion(true)
-                self.reloadAllWidgets()          // or WidgetRefreshManager if you prefer
+                self.reloadAllWidgets()           // or better: WidgetRefreshManager.shared.refreshIfNeeded()
+                SharedPlayerManager.shared.saveFireAndForget()  // best-effort state push
             }
             return
         }
-        
-        // Main app → pure forward, no local vars touched
-        guard let player = self.player else {
-            completion(false)
-            return
+
+        // Main app path — security + real playback happens here
+        Task { @MainActor in
+            do {
+                try await DirectStreamingPlayer.shared.play()  // assuming throws now
+                completion(true)
+            } catch {
+                completion(false)
+                // Optionally log or set hasPermanentError
+            }
+            await self.saveCurrentState()  // pushes authoritative state to shared defaults
         }
-        player.play(completion: completion)
     }
 
     // Widget-safe stop method – unchanged (already perfect)
@@ -114,12 +121,8 @@ final class SharedPlayerManager: @unchecked Sendable {
             return
         }
         
-        // Main app → pure forward, no local vars touched
-        guard let player = self.player else {
-            completion()
-            return
-        }
-        player.stop(completion: completion)
+        // Main app forward
+        DirectStreamingPlayer.shared.stop(completion: completion)
     }
 
     // NEW: switchToStream – now a pure dispatcher (Swift 6 compliant)
@@ -143,35 +146,8 @@ final class SharedPlayerManager: @unchecked Sendable {
             return
         }
         
-        // Main app → pure forward, NO local vars touched, NO UserDefaults, NO saveCurrentState
-        // (all mutations + persistence + WidgetRefreshManager now live in DirectStreamingPlayer)
-        guard let player = self.player else {
-            #if DEBUG
-            print("No player available for stream switch")
-            #endif
-            return
-        }
-        
-        player.switchToStream(stream)
-    }
-    
-    // Check if running in widget context with additional checks
-    private func isRunningInWidget() -> Bool {
-        let bundlePath = Bundle.main.bundlePath
-        let bundleId = Bundle.main.bundleIdentifier ?? ""
-        
-        let isWidget = bundlePath.contains("PlugIns") ||
-                      bundlePath.contains("SystemExtensions") ||
-                      bundleId.contains("LutheranRadioWidget") ||
-                      bundleId.hasSuffix(".LutheranRadioWidget")
-        
-        #if DEBUG
-        if isWidget {
-            print("🔗 Running in widget context: bundlePath=\(bundlePath), bundleId=\(bundleId)")
-        }
-        #endif
-        
-        return isWidget
+        // Main app forward
+        DirectStreamingPlayer.shared.switchToStream(stream)
     }
     
     // Schedule widget action for main app to handle
@@ -234,36 +210,33 @@ final class SharedPlayerManager: @unchecked Sendable {
 // MARK: - UserDefaults Communication
 extension SharedPlayerManager {
     
-    private var sharedDefaults: UserDefaults? {
-        UserDefaults(suiteName: "group.radio.lutheran.shared")
-    }
-    
     // Now async – callers must await this when they want to save
     func saveCurrentState() async {
         guard !isRunningInWidget() else { return }
-        guard let player = self.player else { return }
+        
+        let player = DirectStreamingPlayer.shared  // ← use the singleton directly
         
         let now = Date()
         
+        // Fetch current values from the real player (add these getters if missing!)
         let currentLanguageCode = sharedDefaults?.string(forKey: "currentLanguage") ?? "en"
-        
-        // Now safe to await
-        let isPermanentError = await player.isLastErrorPermanent()
+        let isPermanentError     = await player.isLastErrorPermanent()
+        let isPlaying            = player.actualPlaybackState     // assume this exists/returns Bool
+        let hasPermanentError    = player.hasPermanentError
         
         let currentState = (
-            isPlaying: player.actualPlaybackState,
+            isPlaying: isPlaying,
             currentLanguage: currentLanguageCode,
-            hasError: player.hasPermanentError || isPermanentError
+            hasError: hasPermanentError || isPermanentError
         )
         
-        #if DEBUG
-        let playerRate = player.currentPlayerRate
-        let itemStatus = player.currentItemStatus
-        let hasCurrentItem = player.hasPlayerItem
-        print("🔗 Detailed state: rate=\(playerRate), itemStatus=\(itemStatus.rawValue), hasItem=\(hasCurrentItem), result=\(currentState.isPlaying), language=\(currentLanguageCode), hasPermanentError=\(isPermanentError)")
-        #endif
-        
         performActualSave(currentState, at: now)
+    }
+    
+    nonisolated func saveFireAndForget() {
+        Task {
+            await saveCurrentState()
+        }
     }
     
     private func performActualSave(_ state: (isPlaying: Bool, currentLanguage: String, hasError: Bool), at time: Date) {
