@@ -196,19 +196,12 @@ final class NWPathMonitorAdapter: NetworkPathMonitoring, @unchecked Sendable {
     }
 }
 
+private let securityValidator = SecurityModelValidator.shared
+
 /// Manages direct audio streaming, security validation, network monitoring, and privacy protections for the Lutheran Radio app.
 final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
-    // MARK: - Security Model
-    private static let appSecurityModel = "starbase"   // ← CHANGE ONLY HERE when rotating
-    private var isValidating = false
-    #if DEBUG
-    /// The last time security validation was performed (exposed for debugging).
-    var validationTimer: Timer?
-    #else
-    private var validationTimer: Timer?
-    #endif
-    private let validationCacheDuration: TimeInterval = 600 // 10 minutes
     private var isSSLHandshakeComplete = false
+    private var certificateValidationTimer: Timer?
     private var hasStartedPlaying = false
     
     // MARK: - Audio Session Properties
@@ -216,20 +209,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     private var routeChangeObserver: NSObjectProtocol?
     private var wasPlayingBeforeInterruption = false
     private var isHandlingInterruption = false
-    
-    /// Represents the state of security model validation.
-    enum ValidationState {
-        case pending
-        case success
-        case failedTransient
-        case failedPermanent
-    }
-    
-    /// Current security validation state.
-    /// - Note: Checked before playback; .failedPermanent blocks attempts.
-    var validationState: ValidationState = .pending
-    private var lastValidationTime: Date?
-    
+        
     /// Injectable closure for the current date, used for testing time-dependent logic.
     internal var currentDate: @Sendable () -> Date = { Date() }
     
@@ -339,10 +319,9 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             var components = URLComponents()
             components.scheme = "https"
             components.host = "\(languageSlug)-\(region).lutheran.radio"
-            // Removed: components.port = 8443 (now defaults to 443 for https)
             components.path = "/lutheranradio.mp3"
             components.queryItems = [
-                URLQueryItem(name: "security_model", value: DirectStreamingPlayer.appSecurityModel)
+                URLQueryItem(name: "security_model", value: SecurityConfiguration.current.expectedSecurityModel)
             ]
             
             // In production this can never fail, but to silence the compiler nicely:
@@ -578,7 +557,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     private let audioQueue = DispatchQueue(label: "radio.lutheran.audio", qos: .userInteractive)
     // SSL operations at supporting priority
     private let sslValidationQueue = DispatchQueue(label: "radio.lutheran.ssl", qos: .userInitiated)
-    private let dnsQueue = DispatchQueue(label: "radio.lutheran.dns", qos: .userInitiated)
+    //*********private let dnsQueue = DispatchQueue(label: "radio.lutheran.dns", qos: .userInitiated)
     // Network operations at background priority
     private let networkQueue = DispatchQueue(label: "radio.lutheran.network", qos: .utility)
     // Keep playbackQueue for compatibility, but redirect to audioQueue
@@ -694,464 +673,6 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         self.delegate = delegate
     }
     
-    // MARK: - Security Model Validation
-    
-    private func fetchValidSecurityModelsImplementation(completion: @escaping ResultCompletion<Set<String>>) {
-        let domain = "securitymodels.lutheran.radio"
-        #if DEBUG
-        print("🔒 [Fetch Security Models] Fetching valid security models for domain: \(domain)")
-        #endif
-        
-        sslValidationQueue.async { [weak self] in
-            // ← TINY ADJUSTMENT THAT ELIMINATES THE NSObject error
-            guard let self = self else {
-                #if DEBUG
-                print("❌ [Fetch Security Models] self deallocated before query")
-                #endif
-                DispatchQueue.main.async { completion(.failure(NSError(domain: "radio.lutheran", code: -1, userInfo: nil))) }
-                return
-            }
-
-            #if DEBUG
-            print("✅ [Fetch Security Models] guard let self succeeded → concrete DirectStreamingPlayer type locked")
-            #endif
-
-            // Escalate only if audio is blocked (exact same logic as before)
-            let launchQuery = {
-                Task {
-                    do {
-                        #if DEBUG
-                        print("🚀 [Fetch Security Models] Launching async queryTXTRecord(for:) on dnsQueue")
-                        #endif
-                        let models = try await self.queryTXTRecord(for: domain)
-                        DispatchQueue.main.async {
-                            completion(.success(models))
-                        }
-                    } catch {
-                        DispatchQueue.main.async {
-                            completion(.failure(error))
-                        }
-                    }
-                }
-            }
-
-            if self.player?.timeControlStatus == .waitingToPlayAtSpecifiedRate {
-                #if DEBUG
-                print("⚡ [Fetch Security Models] Audio blocked → escalating to .userInteractive")
-                #endif
-                DispatchQueue.global(qos: .userInteractive).async { launchQuery() }
-            } else {
-                launchQuery()
-            }
-        }
-    }
-    
-    #if DEBUG
-    public func fetchValidSecurityModels(completion: @escaping ResultCompletion<Set<String>>) {
-        fetchValidSecurityModelsImplementation(completion: completion)
-    }
-    #else
-    private func fetchValidSecurityModels(completion: @escaping (Result<Set<String>, Error>) -> Void) {
-        fetchValidSecurityModelsImplementation(completion: completion)
-    }
-    #endif
-    
-    private func queryTXTRecord(for domain: String) async throws -> Set<String> {
-        try await withCheckedThrowingContinuation { continuation in
-            // ← MARKED @Sendable so it can be safely captured in Dispatch blocks
-            let completion: @Sendable (Result<Set<String>, Error>) -> Void = { result in
-                switch result {
-                case .success(let models): continuation.resume(returning: models)
-                case .failure(let error):  continuation.resume(throwing: error)
-                }
-            }
-
-            class QueryContext: @unchecked Sendable {
-                weak var player: DirectStreamingPlayer?
-                let completion: (Result<Set<String>, Error>) -> Void
-                var isDone = false
-                var serviceRef: DNSServiceRef?
-
-                init(player: DirectStreamingPlayer?, completion: @escaping (Result<Set<String>, Error>) -> Void) {
-                    self.player = player
-                    self.completion = completion
-                }
-            }
-
-            // ← Keeps the global wrapper that made the block enter reliably
-            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                self?.dnsQueue.async { [weak self] in
-                    #if DEBUG
-                    print("🔍 [DNS Query] dnsQueue.async block entered (background thread)")
-                    #endif
-
-                    guard let self = self else {
-                        #if DEBUG
-                        print("❌ [DNS Query] self deallocated before query")
-                        #endif
-                        completion(.failure(NSError(domain: "radio.lutheran", code: -1, userInfo: [NSLocalizedDescriptionKey: "Player deallocated"])))
-                        return
-                    }
-
-                    #if DEBUG
-                    print("✅ [DNS Query] guard let self succeeded")
-                    #endif
-
-                    guard let domainCStr = domain.cString(using: .utf8) else {
-                        #if DEBUG
-                        print("❌ [DNS Query] domainCStr guard failed")
-                        #endif
-                        completion(.failure(NSError(domain: "radio.lutheran", code: -2, userInfo: [NSLocalizedDescriptionKey: "Invalid domain encoding"])))
-                        return
-                    }
-
-                    #if DEBUG
-                    print("✅ [DNS Query] domainCStr guard passed")
-                    #endif
-
-                    let context = QueryContext(player: self, completion: completion)
-                    let contextOpaque = Unmanaged.passRetained(context).toOpaque()
-
-                    #if DEBUG
-                    print("✅ [DNS Query] contextOpaque created")
-                    #endif
-
-                    #if DEBUG
-                    print("⏰ [DNS Query] 5s watchdog armed BEFORE DNSServiceQueryRecord")
-                    #endif
-                    self.dnsQueue.asyncAfter(deadline: .now() + 5.0) { [weak context] in
-                        guard let context = context, !context.isDone else { return }
-                        #if DEBUG
-                        print("⏰ [DNS Query] Timeout watchdog fired – forcing continuation resume")
-                        #endif
-                        if let ref = context.serviceRef {
-                            DNSServiceRefDeallocate(ref)
-                            context.serviceRef = nil
-                        }
-                        DispatchQueue.global(qos: .userInitiated).async {
-                            #if DEBUG
-                            print("🔄 [DNS Watchdog] Resuming continuation on global queue with timeout failure")
-                            #endif
-                            context.completion(.failure(NSError(domain: "dnssd", code: -1, userInfo: [NSLocalizedDescriptionKey: "DNS timeout"])))
-                        }
-                        Unmanaged<QueryContext>.fromOpaque(contextOpaque).release()  // released here, after use
-                    }
-
-                    #if DEBUG
-                    print("🚀 [DNS Query] About to call DNSServiceQueryRecord (this is the line we want to reach)")
-                    #endif
-
-                    var serviceRef: DNSServiceRef?
-                    let error = DNSServiceQueryRecord(
-                        &serviceRef,
-                        0,
-                        0,
-                        domainCStr,
-                        16,
-                        1,
-                        { (ref, flags, interface, errorCode, fullName, rrtype, rrclass, rdlen, rdata, ttl, ctx) in
-                            guard let ctx = ctx else { return }
-                            let queryContext = Unmanaged<QueryContext>.fromOpaque(ctx).takeRetainedValue()
-
-                            defer {
-                                queryContext.isDone = true
-                                if let ref = queryContext.serviceRef {
-                                    DNSServiceRefDeallocate(ref)
-                                    queryContext.serviceRef = nil
-                                }
-                                #if DEBUG
-                                print("🧹 [DNS Query Callback] Cleaned up")
-                                #endif
-                            }
-
-                            guard let player = queryContext.player else {
-                                #if DEBUG
-                                print("❌ [DNS Query Callback] player deallocated before completion")
-                                #endif
-                                DispatchQueue.global(qos: .userInitiated).async {
-                                    queryContext.completion(.failure(NSError(domain: "radio.lutheran", code: -1, userInfo: nil)))
-                                }
-                                return
-                            }
-
-                            guard errorCode == kDNSServiceErr_NoError, let raw = rdata else {
-                                #if DEBUG
-                                print("❌ [DNS Query Callback] DNS errorCode = \(errorCode) — calling failure completion")
-                                #endif
-                                DispatchQueue.global(qos: .userInitiated).async {
-                                    queryContext.completion(.failure(NSError(domain: "dnssd", code: Int(errorCode), userInfo: nil)))
-                                }
-                                return
-                            }
-
-                            #if DEBUG
-                            print("✅ [DNS Query Callback] Retrieved TXT record (length=\(rdlen))")
-                            #endif
-
-                            let models = player.parseTXTRecordData(Data(bytes: raw, count: Int(rdlen)))
-
-                            #if DEBUG
-                            print("✅ [DNS Query Callback] TXT record parsed successfully: \(models)")
-                            print("🔄 [DNS Query Callback] Calling completion handler to resume continuation")
-                            #endif
-
-                            DispatchQueue.global(qos: .userInitiated).async {
-                                queryContext.completion(.success(models))
-                            }
-                        } as DNSServiceQueryRecordReply,
-                        contextOpaque
-                    )
-
-                    #if DEBUG
-                    print("🔍 [DNS Query] DNSServiceQueryRecord returned with error code = \(error)")
-                    #endif
-
-                    if error == kDNSServiceErr_NoError, let serviceRef = serviceRef {
-                        #if DEBUG
-                        print("🚀 [DNS Query] DNSServiceQueryRecord initiated successfully")
-                        #endif
-                        context.serviceRef = serviceRef
-
-                        DNSServiceSetDispatchQueue(serviceRef, self.dnsQueue)
-
-                        #if DEBUG
-                        print("📡 [DNS Query] DNSServiceSetDispatchQueue attached to non-main dnsQueue (callbacks now fire async, zero blocking)")
-                        print("🔄 [DNS Query] DNS query launch block completed — now awaiting callback on dnsQueue or watchdog")
-                        #endif
-                    } else {
-                        #if DEBUG
-                        print("❌ [DNS Query] DNSServiceQueryRecord failed with error=\(error)")
-                        print("🔄 [DNS Query] Calling failure completion immediately")
-                        #endif
-                        completion(.failure(NSError(domain: "dnssd", code: Int(error), userInfo: nil)))
-                        Unmanaged<QueryContext>.fromOpaque(contextOpaque).release()
-                    }
-                }
-            }
-        }
-    }
-
-    private func parseTXTRecordData(_ data: Data) -> Set<String> {
-        var models = Set<String>()
-        var index = 0
-        while index < data.count {
-            let length = Int(data[index])
-            guard length > 0 && length <= 255 else { break } // Stop parsing on invalid length
-            index += 1
-            if index + length <= data.count {
-                let strData = data.subdata(in: index..<index + length)
-                if let str = String(data: strData, encoding: .utf8) {
-                    let modelList = str.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces).lowercased() }
-                    models.formUnion(modelList)
-                }
-                index += length
-            } else {
-                break
-            }
-        }
-        #if DEBUG
-        print("📜 [Parse TXT Record] Parsed models: \(models)")
-        #endif
-        return models
-    }
-    
-    // MARK: - Security and Validation Methods
-    private func validateSecurityModelAsyncImplementation(completion: @escaping BoolCompletion) {
-        if let lastValidation = UserDefaults.standard.object(forKey: "lastSecurityValidation") as? Date,
-           currentDate().timeIntervalSince(lastValidation) < 3600 {
-            #if DEBUG
-            print("🔒 [Security] Using cached validation (last: \(lastValidation))")
-            #endif
-            self.validationState = .success  // Sync state on cache hit
-            completion(true)
-            return
-        }
-       
-        guard !isValidating else {
-            #if DEBUG
-            print("🔒 [Validate Async] Validation in progress, checking state")
-            #endif
-            let retryDelay: TimeInterval = isLowEfficiencyMode ? 0.4 : 0.2
-            DispatchQueue.main.asyncAfter(deadline: .now() + retryDelay) { [weak self] in
-                guard let self = self else {
-                    completion(false)
-                    return
-                }
-                switch self.validationState {
-                case .success:
-                    #if DEBUG
-                    print("🔒 [Validate Async] Reusing cached success state")
-                    #endif
-                    completion(true)
-                case .failedPermanent:
-                    #if DEBUG
-                    print("🔒 [Validate Async] Reusing cached failedPermanent state")
-                    #endif
-                    completion(false)
-                default:
-                    #if DEBUG
-                    print("🔒 [Validate Async] Retrying validation")
-                    #endif
-                    self.validateSecurityModelAsync(completion: completion)
-                }
-            }
-            return
-        }
-
-        if let lastValidation = lastValidationTime,
-           Date().timeIntervalSince(lastValidation) < validationCacheDuration {
-            switch validationState {
-            case .success:
-                #if DEBUG
-                print("🔒 [Validate Async] Using cached validation: Success, time since last: \(Date().timeIntervalSince(lastValidation))s")
-                #endif
-                DispatchQueue.main.async {
-                    self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_connecting"))
-                    completion(true)
-                }
-                return
-            case .failedPermanent:
-                #if DEBUG
-                print("🔒 [Validate Async] Using cached validation: FailedPermanent, time since last: \(Date().timeIntervalSince(lastValidation))s")
-                #endif
-                hasPermanentError = true
-                DispatchQueue.main.async {
-                    self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_security_failed"))
-                    completion(false)
-                }
-                return
-            case .failedTransient, .pending:
-                #if DEBUG
-                print("🔒 [Validate Async] Cache stale or transient/pending state, proceeding with validation")
-                #endif
-            }
-        }
-       
-        isValidating = true
-
-        performConnectivityCheck { [weak self] isConnected in
-            guard let self = self else {
-                completion(false)
-                return
-            }
-
-            if !isConnected {
-                #if DEBUG
-                print("🔒 [Validate Async] No internet, transient failure")
-                #endif
-                self.isValidating = false
-                self.validationState = .failedTransient
-                self.hasInternetConnection = false
-                DispatchQueue.main.async {
-                    self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_no_internet"))
-                    completion(false)
-                }
-                return
-            }
-
-            self.hasInternetConnection = true
-            #if DEBUG
-            print("🔒 [Validate Async] Starting validation for model: \(DirectStreamingPlayer.appSecurityModel)")
-            #endif
-            
-            let timeoutTask = Task { [weak self, completion] in          // Task<Void, Never> is Sendable
-                try? await Task.sleep(for: .seconds(5))
-                
-                guard let self = self, self.isValidating else { return }
-                
-                await MainActor.run { [weak self, completion] in
-                    guard let self = self, self.isValidating else { return }
-                    
-                    self.isValidating = false
-                    self.validationState = .failedTransient
-                    #if DEBUG
-                    print("🔒 [Validate Async] Validation timed out")
-                    #endif
-                    self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_no_internet"))
-                    completion(false)
-                }
-            }
-
-            // Now the fetch closure can capture the Task directly (Sendable!)
-            self.fetchValidSecurityModels { [weak self, timeoutTask] result in
-                guard let self = self else { return }
-                
-                timeoutTask.cancel()                     // ← clean, safe, Sendable
-                
-                self.isValidating = false
-                self.lastValidationTime = Date()
-                
-                #if DEBUG
-                print("🔒 [Validate Async] Updated lastValidationTime to \(self.lastValidationTime!)")
-                #endif
-                switch result {
-                case .success(let validModels):
-                    #if DEBUG
-                    print("🔒 [Validate Async] Fetched models: \(validModels)")
-                    #endif
-                    if validModels.isEmpty {
-                        self.validationState = .failedPermanent
-                        self.hasPermanentError = true
-                        #if DEBUG
-                        print("🔒 [Validate Async] No valid models received")
-                        #endif
-                        DispatchQueue.main.async {
-                            self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_security_failed"))
-                            completion(false)
-                        }
-                    } else {
-                        let isValid = validModels.contains(DirectStreamingPlayer.appSecurityModel.lowercased())
-                        self.validationState = isValid ? .success : .failedPermanent
-                        if isValid {
-                            UserDefaults.standard.set(currentDate(), forKey: "lastSecurityValidation")
-                            #if DEBUG
-                            print("🔒 [Security] Cached new successful validation")
-                            #endif
-                        }
-                        #if DEBUG
-                        print("🔒 [Validate Async] Result: isValid=\(isValid), model=\(DirectStreamingPlayer.appSecurityModel), validModels=\(validModels)")
-                        #endif
-                        if !isValid {
-                            self.hasPermanentError = true
-                            DispatchQueue.main.async {
-                                self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_security_failed"))
-                                completion(false)
-                            }
-                        } else {
-                            self.hasPermanentError = false
-                            DispatchQueue.main.async {
-                                self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_connecting"))
-                                completion(true)
-                            }
-                        }
-                    }
-                case .failure(let error):
-                    self.validationState = .failedTransient
-                    #if DEBUG
-                    print("🔒 [Validate Async] Failed to fetch models: \(error.localizedDescription)")
-                    #endif
-                    DispatchQueue.main.async {
-                        self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_no_internet"))
-                        completion(false)
-                    }
-                }
-            }
-        }
-    }
-    
-    #if DEBUG
-    public func validateSecurityModelAsync(completion: @escaping BoolCompletion) {
-        validateSecurityModelAsyncImplementation(completion: completion)
-    }
-    #else
-    /// Validates app security model asynchronously via DNS TXT record.
-    /// - Parameter completion: `true` if valid.
-    /// - Note: Caches for 10 minutes; permanent failure on invalid model.
-    func validateSecurityModelAsync(completion: @escaping BoolCompletion) {
-        validateSecurityModelAsyncImplementation(completion: completion)
-    }
-    #endif
-    
     private func performConnectivityCheck(completion: @escaping BoolCompletion) {
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 3.0
@@ -1170,18 +691,22 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     }
     
     public func resetTransientErrors() {
-        if validationState == .failedTransient {
-            validationState = .pending
-            lastValidationTime = nil
-            #if DEBUG
-            print("🔄 Reset transient errors to pending and invalidated cache")
-            #endif
+        // Reset transient state in the shared validator
+        // (Permanent failures stay permanent until app restart or model rotation)
+        Task {
+            await SecurityModelValidator.shared.resetTransientState()
         }
+        
+        // Also clear any local permanent error flag if your UI/playback uses it
         hasPermanentError = false
+        
+        #if DEBUG
+        print("🔄 Requested reset of transient security validation state")
+        #endif
     }
 
-    func isLastErrorPermanent() -> Bool {
-        return validationState == .failedPermanent
+    func isLastErrorPermanent() async -> Bool {
+        await SecurityModelValidator.shared.isPermanentlyInvalid
     }
     
     private override init() {
@@ -1201,20 +726,40 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         
         setupAudioSession()
         setupNetworkMonitoring()
+
         #if DEBUG
         print("🎵 Player initialized, starting validation")
         #endif
+
         if hasInternetConnection {
-            validateSecurityModelAsync { [weak self] isValid in
-                guard let self = self else { return }
+            Task { @MainActor in   // ← @MainActor if you update UI/state immediately after
+                let isValid = await SecurityModelValidator.shared.validateSecurityModel()
+                
                 #if DEBUG
                 print("🔒 Initial validation completed: \(isValid)")
                 #endif
+                
                 if isValid {
                     self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_connecting"))
+                } else {
+                    // Optional: distinguish transient vs permanent for better UX
+                    let isPermanent = await SecurityModelValidator.shared.isPermanentlyInvalid
+                    let statusKey = isPermanent
+                        ? "status_security_failed"
+                        : "status_no_internet"
+                    let localizedStatus = String(localized: String.LocalizationValue(statusKey))
+                    self.safeOnStatusChange(isPlaying: false, status: localizedStatus)
+                    
+                    #if DEBUG
+                    print("🔒 Validation failed — permanent? \(isPermanent)")
+                    #endif
                 }
             }
+        } else {
+            // No internet at init → transient failure state
+            safeOnStatusChange(isPlaying: false, status: String(localized: "status_no_internet"))
         }
+
         #if DEBUG
         logQueueHierarchy()
         #endif
@@ -1232,50 +777,76 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     }
     
     #if DEBUG
-    public func setupNetworkMonitoring() {
+    private func setupNetworkMonitoring() {
         networkMonitor = pathMonitor
         networkMonitor?.pathUpdateHandler = { [weak self] status in
-            guard let self = self else {
+            guard let self else {
                 print("🧹 [Network] Skipped path update: self is nil")
                 return
             }
+            
             let wasConnected = self.hasInternetConnection
             self.hasInternetConnection = status == .satisfied
+            
             print("🌐 [Network] Status: \(self.hasInternetConnection ? "Connected" : "Disconnected")")
+            
             if self.hasInternetConnection && !wasConnected {
+                // ── Reconnect case ──
                 print("🌐 [Network] Connection restored, previous server: \(self.currentSelectedServer.name)")
                 
-                // Force fresh server selection on reconnect
+                // Clear server selection cache
                 self.lastServerSelectionTime = nil
-                self.serverFailureCount.removeAll()  // clear old failures
+                self.serverFailureCount.removeAll()
                 print("🌐 [Network] Cleared server selection cache + failure counts")
                 
-                self.lastValidationTime = nil
-                self.validationState = .pending
-                print("🔒 [Network] Invalidated security model validation cache")
-                self.selectOptimalServer { server in
-                    print("🌐 [Network] New server selected: \(server.name)")
-                    if self.validationState == .failedTransient {
-                        self.validationState = .pending
-                        self.hasPermanentError = false
-                        self.validateSecurityModelAsync { isValid in
-                            print("🔒 [Network] Revalidation result: \(isValid)")
-                            if !isValid {
-                                DispatchQueue.main.async {
-                                    self.safeOnStatusChange(isPlaying: false, status: String(localized: self.validationState == .failedPermanent ? "status_security_failed" : "status_no_internet"))
-                                }
-                            } else if self.player?.rate ?? 0 == 0, !self.hasPermanentError {
-                                self.play { success in
-                                    self.safeOnStatusChange(isPlaying: success, status: String(localized: success ? "status_playing" : "status_stream_unavailable"))
-                                }
+                // Reset transient security state + revalidate
+                Task {
+                    await SecurityModelValidator.shared.resetTransientState()
+                    print("🔒 [Network] Invalidated security model validation cache (transient reset)")
+                    
+                    let isValid = await SecurityModelValidator.shared.validateSecurityModel()
+                    print("🔒 [Network] Revalidation result on reconnect: \(isValid)")
+                    
+                    if !isValid {
+                        let isPermanent = await SecurityModelValidator.shared.isPermanentlyInvalid
+                        
+                        let statusKey = isPermanent ? "status_security_failed" : "status_no_internet"
+                        
+                        DispatchQueue.main.async {
+                            self.safeOnStatusChange(
+                                isPlaying: false,
+                                status: String(localized: String.LocalizationValue(statusKey))
+                            )
+                        }
+                    } else if self.player?.rate ?? 0 == 0, !self.hasPermanentError {
+                        // Auto-replay if previously playing / ready
+                        self.play { success in
+                            let playStatusKey = success ? "status_playing" : "status_stream_unavailable"
+                            DispatchQueue.main.async {
+                                self.safeOnStatusChange(
+                                    isPlaying: success,
+                                    status: String(localized: String.LocalizationValue(playStatusKey))
+                                )
                             }
                         }
                     }
                 }
-            } else if !self.hasInternetConnection && wasConnected {
-                self.validationState = .failedTransient
+                
+                // Select optimal server after reconnect
+                self.selectOptimalServer { server in
+                    print("🌐 [Network] New server selected: \(server.name)")
+                    // Any additional post-selection logic here if needed
+                }
+            }
+            else if !self.hasInternetConnection && wasConnected {
+                // ── Disconnect case ──
+                print("🌐 [Network] Connection lost")
+                
                 DispatchQueue.main.async {
-                    self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_no_internet"))
+                    self.safeOnStatusChange(
+                        isPlaying: false,
+                        status: String(localized: String.LocalizationValue("status_no_internet"))
+                    )
                 }
             }
         }
@@ -1283,40 +854,76 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     }
     #else
     // MARK: - Network and Monitoring
-    private func setupNetworkMonitoring() {
+    public func setupNetworkMonitoring() {
         networkMonitor = pathMonitor
         networkMonitor?.pathUpdateHandler = { [weak self] status in
-            guard let self = self else { return }
+            guard let self else {
+                print("🧹 [Network] Skipped path update: self is nil")
+                return
+            }
+            
             let wasConnected = self.hasInternetConnection
             self.hasInternetConnection = status == .satisfied
+            
+            print("🌐 [Network] Status: \(self.hasInternetConnection ? "Connected" : "Disconnected")")
+            
             if self.hasInternetConnection && !wasConnected {
-                // Reset server selection to force new selection
-                self.lastServerSelectionTime = nil
-                self.currentSelectedServer = Self.servers[0] // Reset to default
+                // ── Reconnect case ──
+                print("🌐 [Network] Connection restored, previous server: \(self.currentSelectedServer.name)")
                 
-                self.lastValidationTime = nil
-                self.validationState = .pending
-                self.selectOptimalServer { server in
-                    if self.validationState == .failedTransient {
-                        self.validationState = .pending
-                        self.hasPermanentError = false
-                        self.validateSecurityModelAsync { isValid in
-                            if !isValid {
-                                DispatchQueue.main.async {
-                                    self.safeOnStatusChange(isPlaying: false, status: String(localized: self.validationState == .failedPermanent ? "status_security_failed" : "status_no_internet"))
-                                }
-                            } else if self.player?.rate ?? 0 == 0, !self.hasPermanentError {
-                                self.play { success in
-                                    self.safeOnStatusChange(isPlaying: success, status: String(localized: success ? "status_playing" : "status_stream_unavailable"))
-                                }
+                // Clear server selection cache
+                self.lastServerSelectionTime = nil
+                self.serverFailureCount.removeAll()
+                print("🌐 [Network] Cleared server selection cache + failure counts")
+                
+                // Reset transient security state + revalidate
+                Task {
+                    await SecurityModelValidator.shared.resetTransientState()
+                    print("🔒 [Network] Invalidated security model validation cache (transient reset)")
+                    
+                    let isValid = await SecurityModelValidator.shared.validateSecurityModel()
+                    print("🔒 [Network] Revalidation result on reconnect: \(isValid)")
+                    
+                    if !isValid {
+                        let isPermanent = await SecurityModelValidator.shared.isPermanentlyInvalid
+                        
+                        let statusKey = isPermanent ? "status_security_failed" : "status_no_internet"
+                        
+                        DispatchQueue.main.async {
+                            self.safeOnStatusChange(
+                                isPlaying: false,
+                                status: String(localized: String.LocalizationValue(statusKey))
+                            )
+                        }
+                    } else if self.player?.rate ?? 0 == 0, !self.hasPermanentError {
+                        // Auto-replay if previously playing / ready
+                        self.play { success in
+                            let playStatusKey = success ? "status_playing" : "status_stream_unavailable"
+                            DispatchQueue.main.async {
+                                self.safeOnStatusChange(
+                                    isPlaying: success,
+                                    status: String(localized: String.LocalizationValue(playStatusKey))
+                                )
                             }
                         }
                     }
                 }
-            } else if !self.hasInternetConnection && wasConnected {
-                self.validationState = .failedTransient
+                
+                // Select optimal server after reconnect
+                self.selectOptimalServer { server in
+                    print("🌐 [Network] New server selected: \(server.name)")
+                    // Any additional post-selection logic here if needed
+                }
+            }
+            else if !self.hasInternetConnection && wasConnected {
+                // ── Disconnect case ──
+                print("🌐 [Network] Connection lost")
+                
                 DispatchQueue.main.async {
-                    self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_no_internet"))
+                    self.safeOnStatusChange(
+                        isPlaying: false,
+                        status: String(localized: String.LocalizationValue("status_no_internet"))
+                    )
                 }
             }
         }
@@ -1354,38 +961,55 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     init(audioSession: AVAudioSession = .sharedInstance(), pathMonitor: NetworkPathMonitoring = NWPathMonitorAdapter()) {
         self.audioSession = audioSession
         self.pathMonitor = pathMonitor
+        
         let currentLocale = Locale.current
         let languageCode = currentLocale.language.languageCode?.identifier
+        
         if let stream = Self.availableStreams.first(where: { $0.languageCode == languageCode }) {
             selectedStream = stream
         } else {
             selectedStream = Self.availableStreams[0]
         }
+        
         #if DEBUG
         isTesting = NSClassFromString("XCTestCase") != nil
         #endif
+        
         super.init()
+        
         setupAudioSession()
         setupNetworkMonitoring()
-        // Observe Low Power Mode changes to dynamically adjust optimizations (e.g., increase retry delays to reduce CPU/network usage).
-        // This complements thermal state monitoring for better battery life in background playback.
+        
+        // Observe Low Power Mode changes to dynamically adjust optimizations
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(energyEfficiencyChanged),
             name: Notification.Name("NSProcessInfoPowerStateDidChangeNotification"),
             object: nil
         )
+        
         #if DEBUG
         print("🎵 Player initialized, starting validation")
         #endif
+        
         if hasInternetConnection {
-            validateSecurityModelAsync { [weak self] isValid in
-                guard let self = self else { return }
+            Task { @MainActor in
+                let isValid = await SecurityModelValidator.shared.validateSecurityModel()
+                
                 #if DEBUG
                 print("🔒 Initial validation completed: \(isValid)")
                 #endif
+                
                 if isValid {
-                    self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_connecting"))
+                    self.safeOnStatusChange(isPlaying: false, status: String(localized: String.LocalizationValue("status_connecting")))
+                } else {
+                    // Optional: show appropriate failure state
+                    let isPermanent = await SecurityModelValidator.shared.isPermanentlyInvalid
+                    let statusKey = isPermanent ? "status_security_failed" : "status_no_internet"
+                    self.safeOnStatusChange(
+                        isPlaying: false,
+                        status: String(localized: String.LocalizationValue(statusKey))
+                    )
                 }
             }
         }
@@ -1430,27 +1054,26 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// the next validation will check the new cluster’s cert. Since both clusters use the same cert,
     /// this is safe and gives us early detection if one cluster ever diverges).
     private func startPeriodicValidation() {
-        validationTimer?.invalidate()
-        validationTimer = Timer.scheduledTimer(withTimeInterval: 600, repeats: true) { [weak self] _ in
+        certificateValidationTimer?.invalidate()
+        certificateValidationTimer = Timer.scheduledTimer(withTimeInterval: 600, repeats: true) { [weak self] _ in
             guard let self else { return }
             
             let urlToValidate = self.selectedStream.url   // always valid, includes current server + security_model
             
-            // 2026 concurrency model: fire-and-forget background validation (exactly as your original design intended)
+            // 2026 concurrency model: fire-and-forget background validation
             // Playback continues optimistically; we only stop if validation later fails.
-            Task { [weak self] in
-                guard let self else { return }
-                
+            Task {
                 let isValid = await CertificateValidator.shared.validateServerCertificate(for: urlToValidate)
                 
                 guard !isValid else { return }
                 
-                self.stop()
-                DispatchQueue.main.async {
-                    self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_security_failed"))
+                await MainActor.run {
+                    self.stop()
+                    self.safeOnStatusChange(isPlaying: false, status: String(localized: String.LocalizationValue("status_security_failed")))
                 }
+                
                 #if DEBUG
-                print("🔒 [Periodic Validation] Certificate validation failed → stopping stream")
+                print("🔒 [Periodic Validation] Certificate validation failed → stopping stream for URL: \(urlToValidate)")
                 #endif
             }
         }
@@ -1473,7 +1096,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     ///   (2026 energy-efficiency guidelines).
     func play(completion: @escaping BoolCompletion) {
         #if DEBUG
-        print("🔊 [Playback Start] play(completion) entered — validationState = \(validationState)")
+        print("🔊 [Playback Start] play(completion) entered")
         #endif
         
         safeOnStatusChange(isPlaying: true, status: "status_connecting")
@@ -1481,64 +1104,41 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         SharedPlayerManager.shared.saveCurrentState()
         
         #if DEBUG
-        print("🔊 [Playback Start] play(completion) finished sync path — launching Task.detached for validation")
+        print("🔊 [Playback Start] play(completion) finished sync path — launching Task for validation & playback")
         #endif
         
-        Task.detached { [weak self] in
-            guard let self else { return }
-            #if DEBUG
-            print("🔊 [Playback Start] Task.detached entered after validation success")
-            #endif
+        Task { @MainActor in   // ← @MainActor for safe UI / main-thread operations
+            // 1. Ensure validation is up-to-date
+            let isValid = await SecurityModelValidator.shared.isCurrentlyValid()
             
             #if DEBUG
-            print("🔊 [Playback Start] About to evaluate validationState guard")
+            print("🔒 [Playback Start] Validation result: \(isValid)")
             #endif
             
-            if self.validationState == .pending {
+            guard isValid else {
+                let isPermanent = await SecurityModelValidator.shared.isPermanentlyInvalid
+                let statusKey = isPermanent ? "status_security_failed" : "status_no_internet"
+                
                 #if DEBUG
-                print("🔊 [Playback Start] validationState == .pending — calling validateSecurityModelAsync")
+                print("🔊 [Playback Start] Validation failed — \(isPermanent ? "permanent" : "transient")")
                 #endif
-                self.validateSecurityModelAsync { [weak self] isValid in
-                    guard let self else { return }
-                    if isValid {
-                        #if DEBUG
-                        print("🔊 [Playback Start] validateSecurityModelAsync returned true — calling performOptimalServerSelectionAndCertificateCheck")
-                        #endif
-                        DispatchQueue.main.async {
-                            self.performOptimalServerSelectionAndCertificateCheck()
-                        }
-                    } else {
-                        let key = self.validationState == .failedPermanent ? "status_security_failed" : "status_no_internet"
-                        DispatchQueue.main.async {
-                            self.safeOnStatusChange(isPlaying: false, status: String(localized: String.LocalizationValue(key)))
-                        }
-                    }
-                }
-            }
-            
-            guard self.validationState == .success else {
-                #if DEBUG
-                print("🔊 [Playback Start] GUARD FAILED: validationState != .success")
-                #endif
-                let key = self.validationState == .failedPermanent ? "status_security_failed" : "status_no_internet"
-                DispatchQueue.main.async {
-                    self.safeOnStatusChange(isPlaying: false, status: String(localized: String.LocalizationValue(key)))
-                }
+                
+                self.safeOnStatusChange(
+                    isPlaying: false,
+                    status: String(localized: String.LocalizationValue(statusKey))
+                )
                 return
             }
             
             #if DEBUG
-            print("🔊 [Playback Start] validationState == .success — dispatching performOptimalServerSelectionAndCertificateCheck on main")
+            print("🔊 [Playback Start] Validation succeeded — proceeding to server selection & certificate check")
             #endif
             
-            #if DEBUG
-            print("🔊 [Playback Start] validationState == .success — calling performOptimalServerSelectionAndCertificateCheck")
-            #endif
+            // 2. Perform server selection + cert check (on main as it likely touches UI/network)
+            self.performOptimalServerSelectionAndCertificateCheck()
             
-            DispatchQueue.main.async {  // ← THIS IS THE MISSING PIECE FOR COLD LAUNCH
-                self.performOptimalServerSelectionAndCertificateCheck()
-            }
-            SharedPlayerManager.shared.saveCurrentState()  // after full playback success path
+            // 3. Final state save after full success path
+            SharedPlayerManager.shared.saveCurrentState()
         }
         
         #if DEBUG
@@ -1750,68 +1350,72 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     // MARK: - Stream Switching (now the single source of truth)
 
     func setStream(to stream: Stream) {
-        // CRITICAL: Prevent concurrent stream switches (local state in the real owner = fine)
         guard !isSwitchingStream else {
             #if DEBUG
             print("Stream switch already in progress, ignoring request for \(stream.languageCode)")
             #endif
             return
         }
+        
         isSwitchingStream = true
         
         #if DEBUG
-        print("ATOMIC STREAM SWITCH: \(selectedStream.languageCode) -> \(stream.languageCode)")
+        print("ATOMIC STREAM SWITCH: \(selectedStream.languageCode) → \(stream.languageCode)")
         #endif
         
-        // Update selectedStream immediately and atomically
+        // Update model layer immediately
         selectedStream = stream
         SharedPlayerManager.shared.saveCurrentState()
         
-        // Update AVPlayer with new stream URL
+        // Prepare new player item
         playerItem = nil
         player?.replaceCurrentItem(with: nil)
-        let newPlayerItem = AVPlayerItem(url: stream.url)
-        playerItem = newPlayerItem
-        player?.replaceCurrentItem(with: newPlayerItem)
         
-        // Force immediate state save
+        let newItem = AVPlayerItem(url: stream.url)
+        playerItem = newItem
+        player?.replaceCurrentItem(with: newItem)
+        
+        // One more save before we potentially stop & re-evaluate
         SharedPlayerManager.shared.saveCurrentState()
         
-        stop { [weak self] in
-            guard let self = self else { return }
+        // Because stop callback is short-lived / one-shot, strong capture is usually safe
+        // (no retain cycle if stop() doesn't store the closure long-term)
+        stop { [self] in
+            // No guard needed — self is already strong/non-optional here
             
-            // Ensure selectedStream is still set after stop
-            self.selectedStream = stream
+            selectedStream = stream                     // defensive re-set (good)
+            SharedPlayerManager.shared.saveCurrentState()
+            
+            isSwitchingStream = false                   // release guard flag here (sync)
             
             #if DEBUG
             print("📡 Stream set to: \(stream.language), URL: \(stream.url)")
-            print("🔍 DEBUG: selectedStream.languageCode = \(self.selectedStream.languageCode)")
+            print("🔍 selectedStream.languageCode = \(selectedStream.languageCode)")
             #endif
             
-            // Force another state save after stop completes
-            SharedPlayerManager.shared.saveCurrentState()
-            
-            if self.validationState == .pending {
-                self.validateSecurityModelAsync { [weak self] isValid in
-                    guard let self = self else { return }
-                    defer { self.isSwitchingStream = false }
+            Task { @MainActor in
+                let validator = SecurityModelValidator.shared
+                
+                let isValid = await validator.validateSecurityModel()
+                
+                guard isValid else {
+                    let isPermanent = await validator.isPermanentlyInvalid
                     
-                    if !isValid {
-                        let status = self.validationState == .failedPermanent ? "status_security_failed" : "status_no_internet"
-                        DispatchQueue.main.async {
-                            self.safeOnStatusChange(isPlaying: false, status: NSLocalizedString(status, comment: ""))
-                        }
-                    }
+                    let statusKey = isPermanent
+                        ? "status_security_failed"
+                        : "status_no_internet"
+                    
+                    let message = NSLocalizedString(statusKey, comment: "")
+                    safeOnStatusChange(isPlaying: false, status: message)
+                    return
                 }
-            } else if self.validationState == .success {
-                self.isSwitchingStream = false
-                // OLD QUEUE NOTIFICATION REMOVED — no longer needed
-            } else {
-                defer { self.isSwitchingStream = false }
-                let status = self.validationState == .failedPermanent ? "status_security_failed" : "status_no_internet"
-                DispatchQueue.main.async {
-                    self.safeOnStatusChange(isPlaying: false, status: NSLocalizedString(status, comment: ""))
-                }
+                
+                // Success path: security model is currently valid
+                // → (re)start playback, update UI, enable controls, etc.
+                // Add your logic here, e.g.:
+                // play()
+                // updateNowPlayingInfo()
+                // notifyObservers()
             }
         }
     }
@@ -2188,10 +1792,14 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         pendingPlaybackWorkItem?.cancel()
         pendingPlaybackWorkItem = nil
         
-        validationTimer?.invalidate()
-        validationTimer = nil
+        // ────────────────────────────────────────────────────────────────
+        // Removed: validationTimer?.invalidate() and validationTimer = nil
+        // Periodic / on-demand validation is now handled exclusively via
+        // SecurityModelValidator.shared.validateSecurityModel() calls
+        // when needed (e.g. during stream switch).
+        // ────────────────────────────────────────────────────────────────
         
-        // Continue with existing stop logic, passing silent flag and effectiveSwitching
+        // Continue with existing stop logic
         performActualStop(completion: completion, silent: silent, effectiveSwitching: effectiveSwitching)
         SharedPlayerManager.shared.saveCurrentState()
     }
@@ -2208,11 +1816,13 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         clearSSLProtectionTimer()
         isSSLHandshakeComplete = true
         hasStartedPlaying = false
-        validationTimer?.invalidate()
-        validationTimer = nil
+        
+        // Removed: validationTimer?.invalidate() / validationTimer = nil
+        // → Security validation is now handled on-demand via SecurityModelValidator.shared
+        //   (no periodic timer exists in this class anymore)
         
         // In performActualStop, use effectiveSwitching for status suppression
-        let effectiveSilent = silent || effectiveSwitching // Suppress status if switching
+        let effectiveSilent = silent || effectiveSwitching
         
         // If we're deallocating, perform cleanup synchronously
         if isDeallocating {
@@ -2222,7 +1832,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         }
         
         audioQueue.async { [weak self] in
-            guard let self = self, !self.isDeallocating else {
+            guard let self, !self.isDeallocating else {
                 DispatchQueue.main.async { completion?() }
                 return
             }
@@ -2234,15 +1844,16 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             guard self.player != nil || self.playerItem != nil else {
                 if !silent {
                     DispatchQueue.main.async {
-                        if !effectiveSilent { self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_stopped")) }
+                        if !effectiveSilent {
+                            self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_stopped"))
+                        }
                         completion?()
                     }
                 } else {
-                    // For silent mode, just complete without status change
                     DispatchQueue.main.async { completion?() }
                 }
                 #if DEBUG
-                print("🛑 Playback already stopped, skipping cleanup (silent/effectiveSilent: (effectiveSilent))")
+                print("🛑 Playback already stopped, skipping cleanup (silent/effectiveSilent: \(effectiveSilent))")
                 #endif
                 return
             }
@@ -2277,11 +1888,12 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             
             if !silent {
                 DispatchQueue.main.async {
-                    if !effectiveSilent { self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_stopped")) }
+                    if !effectiveSilent {
+                        self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_stopped"))
+                    }
                     completion?()
                 }
             } else {
-                // For silent mode, just complete without status change
                 DispatchQueue.main.async { completion?() }
             }
             
