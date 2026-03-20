@@ -20,7 +20,7 @@ It is live on the App Store: https://apps.apple.com/fi/app/lutheran-radio/id6738
 ## Non-Negotiable Rules (Violating any = immediate rejection)
 
 1. **Security Model is Non-Negotiable**
-   - Current `appSecurityModel = "starbase"` (DirectStreamingPlayer.swift)
+   - Current `expectedSecurityModel = "starbase"` (Core/Configuration/SecurityConfiguration.swift)
    - Never change, remove, or comment out DNS TXT validation against `securitymodels.lutheran.radio`
    - Never bypass full-certificate fingerprint pinning (`CC:F7:8E:09:EF:F3:3D:9A:5D:8B:B0:5C:74:28:0D:F6:BE:14:1C:C4:47:F9:69:C2:90:2C:43:97:66:8B:3D:CC`)
    - Never weaken SPKI pinning in Info.plist
@@ -60,18 +60,21 @@ It is live on the App Store: https://apps.apple.com/fi/app/lutheran-radio/id6738
   * ATS + NSPinnedDomains in Info.plist
   * DNS TXT security model validation (1-hour cache in UserDefaults)
   * MIE/EMTE: Enabled via hardened runtime entitlements (requires Xcode 26+ for build support)
+- Security logic is now isolated into the `Core/` module (`Core/Configuration/` and `Core/Actors/`) using Swift actors and strict concurrency for better isolation, testability, and maintainability. All security decisions flow through `SecurityConfiguration` and `SecurityModelValidator`.
 - **Tests**: Unit + UI tests in dedicated targets
 - **Scripts**: Minimal Python (1%) — treat as build helpers only
 
 ### Key Files You Must Know Intimately
 
-| File | Responsibility | Critical Notes |
-|------|----------------|---------------|
-| `DirectStreamingPlayer.swift` | Main audio engine + security model validation | Contains `appSecurityModel` constant |
-| `CertificateValidator.swift` | Full certificate pinning + transition logic (Jul 27 – Aug 26 2026) | 10-minute cache |
-| `Info.plist` | ATS pinning (SPKI + domain) | Never edit without updating validator |
-| `LutheranRadioWidget/` | Home-screen widget | Must respect same security rules |
-| `docs/` | All architecture & security decision records | Read before any major change |
+| File                                              | Responsibility                                                                 | Critical Notes                                                                 |
+|---------------------------------------------------|--------------------------------------------------------------------------------|--------------------------------------------------------------------------------|
+| `DirectStreamingPlayer.swift`                     | Main audio engine + consumes shared security validation                        | No longer contains `appSecurityModel` constant                                 |
+| `CertificateValidator.swift`                      | Full certificate pinning + transition logic (Jul 27 – Aug 26 2026)             | 10-minute cache; uses shared `SecurityConfiguration`                           |
+| `Core/Configuration/SecurityConfiguration.swift`  | Centralized security policy: expected model, fingerprints, transition dates    | Single source of truth for all pinned values and model name                    |
+| `Core/Actors/SecurityModelValidator.swift`        | Actor-isolated DNS TXT security model validation                               | New primary validator; uses `dns_sd.h` + 1-hour cache in UserDefaults          |
+| `Info.plist`                                      | ATS pinning (SPKI + domain)                                                    | Never edit without updating `SecurityConfiguration` and validator              |
+| `LutheranRadioWidget/`                            | Home-screen widget                                                             | Must respect same security rules via shared `Core` module                      |
+| `docs/`                                           | All architecture & security decision records                                   | Read before any major change                                                   |
 
 ## Development Workflow (Always Follow)
 

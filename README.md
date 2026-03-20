@@ -155,8 +155,8 @@ The app enforces security model validation to ensure only versions with an appro
 
 1. **Domain:** ```securitymodels.lutheran.radio```
 2. **Mechanism:** Queries a DNS TXT record for a comma-separated list of valid security models (e.g., `"dc,florida,tampa,atlanta,birmingham,houston,starbase"`)
-3. **Pinned Value:** Fixed security model string embedded in the app (currently `"starbase"`)
-4. **Location:** Defined in `DirectStreamingPlayer.swift` as `appSecurityModel`
+3. **Pinned Value:** Defined in `Core/Configuration/SecurityConfiguration.swift` as `expectedSecurityModel` (currently `"starbase"`)
+4. **Location:** Enforced by the actor `Core/Actors/SecurityModelValidator.swift` (single source of truth for validation)
 5. **Behavior:** If the app’s security model isn’t in the TXT record, playback is permanently disabled with a user-facing error message
 
 ### Why DNS TXT Records?
@@ -209,6 +209,19 @@ To manually inspect or clear the cache:
 
 This feature enhances availability while maintaining the app's privacy-first principles, reducing unnecessary network calls.
 
+### Security Isolation Architecture
+
+All security-critical constants (expected model name, certificate fingerprints, transition window dates) are now centralized in `Core/Configuration/SecurityConfiguration.swift`.
+The DNS TXT record validation logic has been extracted into a dedicated Swift actor `Core/Actors/SecurityModelValidator.swift`, which enforces strict actor isolation and provides the single entry point `validateSecurityModel()`.
+
+This refactor:
+- Improves maintainability and testability
+- Enforces Swift 6 concurrency rules
+- Keeps identical runtime behavior and security guarantees
+- Does **not** change the current model ("starbase"), fingerprints, transition period, or any validation rules
+
+`DirectStreamingPlayer.swift` and `CertificateValidator.swift` now consume these shared components instead of duplicating logic.
+
 ### Security Model TXT Record Usage
 
 Lutheran Radio's security system uses a DNS TXT record to ensure only trusted app versions can stream content. The longest practical TXT record length for this purpose is about 450 bytes, which fits within standard DNS limits and supports up to 40-50 security model names (like "landvetter" or "nuuk"). This is more than enough for the current 51-byte record. If you need to use more names in the future, check that your DNS supports larger messages (EDNS0) and test the app to confirm it can handle them. Keep an eye on how your DNS behaves to ensure everything works smoothly, keeping the app secure and reliable for all users.
@@ -243,7 +256,7 @@ To prevent naming collisions and maintain a clear history of security models, th
 When introducing a new security model:
 
 1. Choose a unique name not listed in the table (e.g., a distinct city or codename).
-2. Update `appSecurityModel` in `DirectStreamingPlayer.swift` with the new name.
+2. Update `expectedSecurityModel` in `Core/Configuration/SecurityConfiguration.swift`.
 3. Add the new name to the DNS TXT record for `securitymodels.lutheran.radio`.
 4. Append a new row to the table above with the current date, app version, and name.
 
