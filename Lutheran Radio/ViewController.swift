@@ -42,6 +42,7 @@ import Network
 import CoreImage
 import CoreHaptics
 import WidgetKit
+import Core
 
 // MARK: - Parallax Effect Extension
 /// Extends UIView with device motion-based parallax effects.
