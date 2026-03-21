@@ -8,6 +8,7 @@
 import Foundation
 import AVFoundation
 @preconcurrency import Security
+import Core
 
 /// Custom URLSession delegate for managing audio streaming sessions with integrated SSL certificate pinning validation.
 ///

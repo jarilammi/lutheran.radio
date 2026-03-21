@@ -107,7 +107,7 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
     /// - Parameters:
     ///   - serverTrust: The `SecTrust` object from the authentication challenge.
     ///   - completion: Callback with the validation result (true if valid/trusted).
-    func validateServerTrust(_ serverTrust: SecTrust) async -> Bool {
+    public func validateServerTrust(_ serverTrust: SecTrust) async -> Bool {
         if let lastTime = lastValidationTime,
            Date().timeIntervalSince(lastTime) < validationInterval,
            lastValidationResult {

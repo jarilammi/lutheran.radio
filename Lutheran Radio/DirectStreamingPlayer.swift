@@ -11,6 +11,7 @@ import CommonCrypto
 import AVFoundation
 import dnssd
 import Network
+import Core
 
 // MARK: - Sendable Completion Helpers (Swift 6)
 typealias BoolCompletion   = @Sendable (Bool) -> Void
