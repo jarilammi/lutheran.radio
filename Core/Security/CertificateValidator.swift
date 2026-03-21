@@ -41,9 +41,9 @@ import CommonCrypto
 /// - Access via `CertificateValidator.shared`.
 /// - Call `validateServerCertificate(for:completion:)` for initial/periodic HEAD-based validation.
 /// - Implements `URLSessionDelegate` for challenge-based validation during sessions.
-actor CertificateValidator: NSObject, URLSessionTaskDelegate {
+public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
     /// Shared singleton instance for global access.
-    static let shared = CertificateValidator()
+    public static let shared = CertificateValidator()
     
     internal var pinnedCertFingerprint: String {
         SecurityConfiguration().pinnedLeafFingerprint
@@ -178,7 +178,7 @@ actor CertificateValidator: NSObject, URLSessionTaskDelegate {
     /// - Parameters:
     ///   - url: The stream URL to validate (must be HTTPS).
     ///   - completion: Callback with the validation result (true if valid and no error).
-    func validateServerCertificate(for url: URL) async -> Bool {
+    public func validateServerCertificate(for url: URL) async -> Bool {
         // Apple 2026 non-main delegate queue (utility QoS + serial for strict concurrency)
         // This is the exact pattern used in Music/Podcasts 2026 betas for async delegates.
         let delegateQueue = OperationQueue()
@@ -254,7 +254,7 @@ actor CertificateValidator: NSObject, URLSessionTaskDelegate {
     ///   - session: The URLSession instance.
     ///   - challenge: The authentication challenge.
     ///   - completionHandler: Callback to disposition the challenge (use credential or cancel).
-    nonisolated func urlSession(_ session: URLSession,
+    public nonisolated func urlSession(_ session: URLSession,
                                 task: URLSessionTask,
                                 didReceive challenge: URLAuthenticationChallenge) async -> (URLSession.AuthChallengeDisposition, URLCredential?) {
         guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
