@@ -10,6 +10,7 @@
 		B757A77E2DEF7B5C00FF90FC /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B757A77D2DEF7B5C00FF90FC /* WidgetKit.framework */; };
 		B757A7802DEF7B5C00FF90FC /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B757A77F2DEF7B5C00FF90FC /* SwiftUI.framework */; };
 		B757A7912DEF7B5E00FF90FC /* LutheranRadioWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = B757A77C2DEF7B5C00FF90FC /* LutheranRadioWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		B7759C6D2F6E62EA00829AC0 /* CertificateValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7759C352F6E62EA00829AC0 /* CertificateValidator.swift */; };
 		B785EBA22E673D2F0034C286 /* CoreHaptics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B785EBA12E673D2F0034C286 /* CoreHaptics.framework */; };
 		B78E91902F6B492A00450FE1 /* SecurityConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = B78E918F2F6B492A00450FE1 /* SecurityConfiguration.swift */; };
 		B78E91912F6B492A00450FE1 /* SecurityConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = B78E918F2F6B492A00450FE1 /* SecurityConfiguration.swift */; };
@@ -60,6 +61,7 @@
 		B757A77C2DEF7B5C00FF90FC /* LutheranRadioWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LutheranRadioWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		B757A77D2DEF7B5C00FF90FC /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		B757A77F2DEF7B5C00FF90FC /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
+		B7759C352F6E62EA00829AC0 /* CertificateValidator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CertificateValidator.swift; sourceTree = "<group>"; };
 		B785EBA12E673D2F0034C286 /* CoreHaptics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreHaptics.framework; path = System/Library/Frameworks/CoreHaptics.framework; sourceTree = SDKROOT; };
 		B78E918F2F6B492A00450FE1 /* SecurityConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecurityConfiguration.swift; sourceTree = "<group>"; };
 		B7AFC6AC2CCD7D0A00BDDD83 /* Lutheran Radio.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Lutheran Radio.app"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -82,7 +84,6 @@
 		B777FE962DEF8307000007DA /* Exceptions for "Lutheran Radio" folder in "LutheranRadioWidgetExtension" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				CertificateValidator.swift,
 				DirectStreamingPlayer.swift,
 				Localizable.xcstrings,
 				LutheranRadioLiveActivityAttributes.swift,
@@ -180,9 +181,18 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		B7759C912F6E62F700829AC0 /* Security */ = {
+			isa = PBXGroup;
+			children = (
+				B7759C352F6E62EA00829AC0 /* CertificateValidator.swift */,
+			);
+			path = Security;
+			sourceTree = "<group>";
+		};
 		B78E91892F6B481100450FE1 /* Core */ = {
 			isa = PBXGroup;
 			children = (
+				B7759C912F6E62F700829AC0 /* Security */,
 				B78E918B2F6B48AB00450FE1 /* Actors */,
 				B78E918A2F6B482300450FE1 /* Configuration */,
 			);
@@ -439,6 +449,7 @@
 			files = (
 				B7D282E52F6C513D001E6432 /* SecurityModelValidator.swift in Sources */,
 				B78E91912F6B492A00450FE1 /* SecurityConfiguration.swift in Sources */,
+				B7759C6D2F6E62EA00829AC0 /* CertificateValidator.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -448,6 +459,7 @@
 			files = (
 				B7D282E42F6C513D001E6432 /* SecurityModelValidator.swift in Sources */,
 				B78E91902F6B492A00450FE1 /* SecurityConfiguration.swift in Sources */,
+				B7759C4C2F6E62EA00829AC0 /* CertificateValidator.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
