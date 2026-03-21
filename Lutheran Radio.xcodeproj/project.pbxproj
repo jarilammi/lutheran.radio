@@ -10,13 +10,18 @@
 		B757A77E2DEF7B5C00FF90FC /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B757A77D2DEF7B5C00FF90FC /* WidgetKit.framework */; };
 		B757A7802DEF7B5C00FF90FC /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B757A77F2DEF7B5C00FF90FC /* SwiftUI.framework */; };
 		B757A7912DEF7B5E00FF90FC /* LutheranRadioWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = B757A77C2DEF7B5C00FF90FC /* LutheranRadioWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		B7759C6D2F6E62EA00829AC0 /* CertificateValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7759C352F6E62EA00829AC0 /* CertificateValidator.swift */; };
+		B77E54282F6E6A6700A055DA /* Core.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B77E541D2F6E6A6700A055DA /* Core.framework */; };
+		B77E54332F6E6A6700A055DA /* Core.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = B77E541D2F6E6A6700A055DA /* Core.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		B77E54442F6E6A9000A055DA /* CertificateValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7759C352F6E62EA00829AC0 /* CertificateValidator.swift */; };
+		B77E54452F6E6A9000A055DA /* CertificateValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7759C352F6E62EA00829AC0 /* CertificateValidator.swift */; };
+		B77E54462F6E6A9E00A055DA /* SecurityModelValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7D282E32F6C513D001E6432 /* SecurityModelValidator.swift */; };
+		B77E54472F6E6A9E00A055DA /* SecurityModelValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7D282E32F6C513D001E6432 /* SecurityModelValidator.swift */; };
+		B77E54482F6E6AAD00A055DA /* SecurityConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = B78E918F2F6B492A00450FE1 /* SecurityConfiguration.swift */; };
+		B77E54492F6E6AAD00A055DA /* SecurityConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = B78E918F2F6B492A00450FE1 /* SecurityConfiguration.swift */; };
+		B77E544A2F6E6BBC00A055DA /* Core.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B77E541D2F6E6A6700A055DA /* Core.framework */; };
 		B785EBA22E673D2F0034C286 /* CoreHaptics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B785EBA12E673D2F0034C286 /* CoreHaptics.framework */; };
-		B78E91902F6B492A00450FE1 /* SecurityConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = B78E918F2F6B492A00450FE1 /* SecurityConfiguration.swift */; };
-		B78E91912F6B492A00450FE1 /* SecurityConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = B78E918F2F6B492A00450FE1 /* SecurityConfiguration.swift */; };
 		B7AFC6E22CCD7DD900BDDD83 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B7AFC6E12CCD7DD900BDDD83 /* AVFoundation.framework */; };
-		B7D282E42F6C513D001E6432 /* SecurityModelValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7D282E32F6C513D001E6432 /* SecurityModelValidator.swift */; };
-		B7D282E52F6C513D001E6432 /* SecurityModelValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7D282E32F6C513D001E6432 /* SecurityModelValidator.swift */; };
+		B7D26EFC2F6E6EFF003568F0 /* Core.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7D26EF72F6E6EFF003568F0 /* Core.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -26,6 +31,27 @@
 			proxyType = 1;
 			remoteGlobalIDString = B757A77B2DEF7B5C00FF90FC;
 			remoteInfo = LutheranRadioWidgetExtension;
+		};
+		B77E54292F6E6A6700A055DA /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = B7AFC6A42CCD7D0A00BDDD83 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B77E541C2F6E6A6700A055DA;
+			remoteInfo = Core;
+		};
+		B77E542B2F6E6A6700A055DA /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = B7AFC6A42CCD7D0A00BDDD83 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B7AFC6AB2CCD7D0A00BDDD83;
+			remoteInfo = "Lutheran Radio";
+		};
+		B77E544B2F6E6BDA00A055DA /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = B7AFC6A42CCD7D0A00BDDD83 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B77E541C2F6E6A6700A055DA;
+			remoteInfo = Core;
 		};
 		B7AFC6C32CCD7D0C00BDDD83 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -55,6 +81,17 @@
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		B77E54372F6E6A6700A055DA /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				B77E54332F6E6A6700A055DA /* Core.framework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
@@ -62,12 +99,15 @@
 		B757A77D2DEF7B5C00FF90FC /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		B757A77F2DEF7B5C00FF90FC /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		B7759C352F6E62EA00829AC0 /* CertificateValidator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CertificateValidator.swift; sourceTree = "<group>"; };
+		B77E541D2F6E6A6700A055DA /* Core.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Core.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		B77E54272F6E6A6700A055DA /* CoreTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CoreTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B785EBA12E673D2F0034C286 /* CoreHaptics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreHaptics.framework; path = System/Library/Frameworks/CoreHaptics.framework; sourceTree = SDKROOT; };
 		B78E918F2F6B492A00450FE1 /* SecurityConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecurityConfiguration.swift; sourceTree = "<group>"; };
 		B7AFC6AC2CCD7D0A00BDDD83 /* Lutheran Radio.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Lutheran Radio.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		B7AFC6C22CCD7D0C00BDDD83 /* Lutheran RadioTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Lutheran RadioTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		B7AFC6CC2CCD7D0C00BDDD83 /* Lutheran RadioUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Lutheran RadioUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		B7AFC6E12CCD7DD900BDDD83 /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
+		B7D26EF72F6E6EFF003568F0 /* Core.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Core.swift; sourceTree = "<group>"; };
 		B7D282E32F6C513D001E6432 /* SecurityModelValidator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecurityModelValidator.swift; sourceTree = "<group>"; };
 		B7D282E62F6C586C001E6432 /* LutheranRadio-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "LutheranRadio-Bridging-Header.h"; sourceTree = "<group>"; };
 		B7F7B4702DAA463E00194E5C /* libmdns.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libmdns.tbd; path = usr/lib/libmdns.tbd; sourceTree = SDKROOT; };
@@ -124,6 +164,11 @@
 			path = LutheranRadioWidget;
 			sourceTree = "<group>";
 		};
+		B77E542D2F6E6A6700A055DA /* CoreTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = CoreTests;
+			sourceTree = "<group>";
+		};
 		B7AFC6AE2CCD7D0A00BDDD83 /* Lutheran Radio */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
@@ -155,10 +200,26 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		B77E541A2F6E6A6700A055DA /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B77E54242F6E6A6700A055DA /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B77E54282F6E6A6700A055DA /* Core.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		B7AFC6A92CCD7D0A00BDDD83 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B77E544A2F6E6BBC00A055DA /* Core.framework in Frameworks */,
 				B7AFC6E22CCD7DD900BDDD83 /* AVFoundation.framework in Frameworks */,
 				B785EBA22E673D2F0034C286 /* CoreHaptics.framework in Frameworks */,
 			);
@@ -195,6 +256,7 @@
 				B7759C912F6E62F700829AC0 /* Security */,
 				B78E918B2F6B48AB00450FE1 /* Actors */,
 				B78E918A2F6B482300450FE1 /* Configuration */,
+				B7D26EF72F6E6EFF003568F0 /* Core.swift */,
 			);
 			path = Core;
 			sourceTree = "<group>";
@@ -224,6 +286,7 @@
 				B7AFC6C52CCD7D0C00BDDD83 /* Lutheran RadioTests */,
 				B7AFC6CF2CCD7D0C00BDDD83 /* Lutheran RadioUITests */,
 				B757A7812DEF7B5C00FF90FC /* LutheranRadioWidget */,
+				B77E542D2F6E6A6700A055DA /* CoreTests */,
 				B7AFC6E02CCD7DD900BDDD83 /* Frameworks */,
 				B7AFC6AD2CCD7D0A00BDDD83 /* Products */,
 			);
@@ -236,6 +299,8 @@
 				B7AFC6C22CCD7D0C00BDDD83 /* Lutheran RadioTests.xctest */,
 				B7AFC6CC2CCD7D0C00BDDD83 /* Lutheran RadioUITests.xctest */,
 				B757A77C2DEF7B5C00FF90FC /* LutheranRadioWidgetExtension.appex */,
+				B77E541D2F6E6A6700A055DA /* Core.framework */,
+				B77E54272F6E6A6700A055DA /* CoreTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -253,6 +318,16 @@
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
+
+/* Begin PBXHeadersBuildPhase section */
+		B77E54182F6E6A6700A055DA /* Headers */ = {
+			isa = PBXHeadersBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXHeadersBuildPhase section */
 
 /* Begin PBXNativeTarget section */
 		B757A77B2DEF7B5C00FF90FC /* LutheranRadioWidgetExtension */ = {
@@ -277,6 +352,50 @@
 			productReference = B757A77C2DEF7B5C00FF90FC /* LutheranRadioWidgetExtension.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		B77E541C2F6E6A6700A055DA /* Core */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B77E54342F6E6A6700A055DA /* Build configuration list for PBXNativeTarget "Core" */;
+			buildPhases = (
+				B77E54182F6E6A6700A055DA /* Headers */,
+				B77E54192F6E6A6700A055DA /* Sources */,
+				B77E541A2F6E6A6700A055DA /* Frameworks */,
+				B77E541B2F6E6A6700A055DA /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Core;
+			packageProductDependencies = (
+			);
+			productName = Core;
+			productReference = B77E541D2F6E6A6700A055DA /* Core.framework */;
+			productType = "com.apple.product-type.framework";
+		};
+		B77E54262F6E6A6700A055DA /* CoreTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B77E54382F6E6A6700A055DA /* Build configuration list for PBXNativeTarget "CoreTests" */;
+			buildPhases = (
+				B77E54232F6E6A6700A055DA /* Sources */,
+				B77E54242F6E6A6700A055DA /* Frameworks */,
+				B77E54252F6E6A6700A055DA /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				B77E542A2F6E6A6700A055DA /* PBXTargetDependency */,
+				B77E542C2F6E6A6700A055DA /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				B77E542D2F6E6A6700A055DA /* CoreTests */,
+			);
+			name = CoreTests;
+			packageProductDependencies = (
+			);
+			productName = CoreTests;
+			productReference = B77E54272F6E6A6700A055DA /* CoreTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		B7AFC6AB2CCD7D0A00BDDD83 /* Lutheran Radio */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = B7AFC6D52CCD7D0C00BDDD83 /* Build configuration list for PBXNativeTarget "Lutheran Radio" */;
@@ -285,10 +404,12 @@
 				B7AFC6A92CCD7D0A00BDDD83 /* Frameworks */,
 				B7AFC6AA2CCD7D0A00BDDD83 /* Resources */,
 				B757A7922DEF7B5E00FF90FC /* Embed Foundation Extensions */,
+				B77E54372F6E6A6700A055DA /* Embed Frameworks */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				B77E544C2F6E6BDA00A055DA /* PBXTargetDependency */,
 				B757A7902DEF7B5E00FF90FC /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
@@ -354,11 +475,18 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 1640;
+				LastSwiftUpdateCheck = 2630;
 				LastUpgradeCheck = 2600;
 				TargetAttributes = {
 					B757A77B2DEF7B5C00FF90FC = {
 						CreatedOnToolsVersion = 16.4;
+					};
+					B77E541C2F6E6A6700A055DA = {
+						CreatedOnToolsVersion = 26.3;
+					};
+					B77E54262F6E6A6700A055DA = {
+						CreatedOnToolsVersion = 26.3;
+						TestTargetID = B7AFC6AB2CCD7D0A00BDDD83;
 					};
 					B7AFC6AB2CCD7D0A00BDDD83 = {
 						CreatedOnToolsVersion = 16.0;
@@ -407,12 +535,28 @@
 				B7AFC6C12CCD7D0C00BDDD83 /* Lutheran RadioTests */,
 				B7AFC6CB2CCD7D0C00BDDD83 /* Lutheran RadioUITests */,
 				B757A77B2DEF7B5C00FF90FC /* LutheranRadioWidgetExtension */,
+				B77E541C2F6E6A6700A055DA /* Core */,
+				B77E54262F6E6A6700A055DA /* CoreTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		B757A77A2DEF7B5C00FF90FC /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B77E541B2F6E6A6700A055DA /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B77E54252F6E6A6700A055DA /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -447,9 +591,27 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				B7D282E52F6C513D001E6432 /* SecurityModelValidator.swift in Sources */,
-				B78E91912F6B492A00450FE1 /* SecurityConfiguration.swift in Sources */,
-				B7759C6D2F6E62EA00829AC0 /* CertificateValidator.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B77E54192F6E6A6700A055DA /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B77E54442F6E6A9000A055DA /* CertificateValidator.swift in Sources */,
+				B7D26EFC2F6E6EFF003568F0 /* Core.swift in Sources */,
+				B77E54482F6E6AAD00A055DA /* SecurityConfiguration.swift in Sources */,
+				B77E54462F6E6A9E00A055DA /* SecurityModelValidator.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B77E54232F6E6A6700A055DA /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B77E54472F6E6A9E00A055DA /* SecurityModelValidator.swift in Sources */,
+				B77E54452F6E6A9000A055DA /* CertificateValidator.swift in Sources */,
+				B77E54492F6E6AAD00A055DA /* SecurityConfiguration.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -457,9 +619,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				B7D282E42F6C513D001E6432 /* SecurityModelValidator.swift in Sources */,
-				B78E91902F6B492A00450FE1 /* SecurityConfiguration.swift in Sources */,
-				B7759C4C2F6E62EA00829AC0 /* CertificateValidator.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -484,6 +643,21 @@
 			isa = PBXTargetDependency;
 			target = B757A77B2DEF7B5C00FF90FC /* LutheranRadioWidgetExtension */;
 			targetProxy = B757A78F2DEF7B5E00FF90FC /* PBXContainerItemProxy */;
+		};
+		B77E542A2F6E6A6700A055DA /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B77E541C2F6E6A6700A055DA /* Core */;
+			targetProxy = B77E54292F6E6A6700A055DA /* PBXContainerItemProxy */;
+		};
+		B77E542C2F6E6A6700A055DA /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B7AFC6AB2CCD7D0A00BDDD83 /* Lutheran Radio */;
+			targetProxy = B77E542B2F6E6A6700A055DA /* PBXContainerItemProxy */;
+		};
+		B77E544C2F6E6BDA00A055DA /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B77E541C2F6E6A6700A055DA /* Core */;
+			targetProxy = B77E544B2F6E6BDA00A055DA /* PBXContainerItemProxy */;
 		};
 		B7AFC6C42CCD7D0C00BDDD83 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
@@ -555,6 +729,122 @@
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		B77E54352F6E6A6700A055DA /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUILD_LIBRARY_FOR_DISTRIBUTION = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				ENABLE_MODULE_VERIFIER = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				MODULE_VERIFIER_SUPPORTED_LANGUAGES = "objective-c objective-c++";
+				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu17 gnu++20";
+				PRODUCT_BUNDLE_IDENTIFIER = radio.lutheran.Core;
+				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_INSTALL_MODULE = YES;
+				SWIFT_INSTALL_OBJC_HEADER = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VERSIONING_SYSTEM = "apple-generic";
+				VERSION_INFO_PREFIX = "";
+			};
+			name = Debug;
+		};
+		B77E54362F6E6A6700A055DA /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUILD_LIBRARY_FOR_DISTRIBUTION = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				ENABLE_MODULE_VERIFIER = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				MODULE_VERIFIER_SUPPORTED_LANGUAGES = "objective-c objective-c++";
+				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu17 gnu++20";
+				PRODUCT_BUNDLE_IDENTIFIER = radio.lutheran.Core;
+				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_INSTALL_MODULE = YES;
+				SWIFT_INSTALL_OBJC_HEADER = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VERSIONING_SYSTEM = "apple-generic";
+				VERSION_INFO_PREFIX = "";
+			};
+			name = Release;
+		};
+		B77E54392F6E6A6700A055DA /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = radio.lutheran.CoreTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Lutheran Radio.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Lutheran Radio";
+			};
+			name = Debug;
+		};
+		B77E543A2F6E6A6700A055DA /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = radio.lutheran.CoreTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Lutheran Radio.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Lutheran Radio";
 			};
 			name = Release;
 		};
@@ -833,6 +1123,24 @@
 			buildConfigurations = (
 				B757A7932DEF7B5E00FF90FC /* Debug */,
 				B757A7942DEF7B5E00FF90FC /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		B77E54342F6E6A6700A055DA /* Build configuration list for PBXNativeTarget "Core" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B77E54352F6E6A6700A055DA /* Debug */,
+				B77E54362F6E6A6700A055DA /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		B77E54382F6E6A6700A055DA /* Build configuration list for PBXNativeTarget "CoreTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B77E54392F6E6A6700A055DA /* Debug */,
+				B77E543A2F6E6A6700A055DA /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
