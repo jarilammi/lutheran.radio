@@ -7,13 +7,13 @@
 
 import Foundation
 
-struct SecurityConfiguration {
+public struct SecurityConfiguration {
     
     // MARK: - Security Model (DNS TXT validated)
     
     /// The embedded security model this app build enforces.
     /// Must match one of the comma-separated values in the TXT record.
-    let expectedSecurityModel: String = "starbase"
+    public let expectedSecurityModel: String = "starbase"
     
     /// Domain queried for TXT record containing valid models (comma-separated).
     let txtRecordDomain: String = "securitymodels.lutheran.radio"
@@ -32,7 +32,7 @@ struct SecurityConfiguration {
     
     /// Optional: If you ever support multiple active certificates (e.g. during overlap),
     /// expand to a Set<String>. For now kept as single value for simplicity.
-    var pinnedFingerprints: Set<String> {
+    public var pinnedFingerprints: Set<String> {
         [pinnedLeafFingerprint]
     }
     
@@ -66,7 +66,7 @@ struct SecurityConfiguration {
     }()
     
     /// Whether the current date is inside the transition grace period.
-    var isInTransitionWindow: Bool {
+    public var isInTransitionWindow: Bool {
         let now = Date()
         return now >= transitionWindowStart && now <= transitionWindowEnd
     }
@@ -82,5 +82,5 @@ struct SecurityConfiguration {
     // MARK: - Convenience / Current Instance
     
     /// Recommended usage: SecurityConfiguration.current (or inject via init)
-    static let current = SecurityConfiguration()
+    public static let current = SecurityConfiguration()
 }
