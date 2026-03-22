@@ -1,0 +1,37 @@
+{
+  "configurations" : [
+    {
+      "id" : "0EACE072-727E-4044-8205-7C4224B9CD8C",
+      "name" : "Test Scheme Action",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "codeCoverage" : false,
+    "performanceAntipatternCheckerEnabled" : true,
+    "targetForVariableExpansion" : {
+      "containerPath" : "container:Lutheran Radio.xcodeproj",
+      "identifier" : "B7AFC6AB2CCD7D0A00BDDD83",
+      "name" : "Lutheran Radio"
+    }
+  },
+  "testTargets" : [
+    {
+      "target" : {
+        "containerPath" : "container:Lutheran Radio.xcodeproj",
+        "identifier" : "B7AFC6C12CCD7D0C00BDDD83",
+        "name" : "Lutheran RadioTests"
+      }
+    },
+    {
+      "target" : {
+        "containerPath" : "container:Lutheran Radio.xcodeproj",
+        "identifier" : "B7AFC6CB2CCD7D0C00BDDD83",
+        "name" : "Lutheran RadioUITests"
+      }
+    }
+  ],
+  "version" : 1
+}
