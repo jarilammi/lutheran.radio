@@ -22,6 +22,7 @@
 		B785EBA22E673D2F0034C286 /* CoreHaptics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B785EBA12E673D2F0034C286 /* CoreHaptics.framework */; };
 		B7AFC6E22CCD7DD900BDDD83 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B7AFC6E12CCD7DD900BDDD83 /* AVFoundation.framework */; };
 		B7D26EFC2F6E6EFF003568F0 /* Core.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7D26EF72F6E6EFF003568F0 /* Core.swift */; };
+		B7E3FCED2F6FC2E0001A2BD9 /* Core.xctestplan in Resources */ = {isa = PBXBuildFile; fileRef = B7E3FCEC2F6FC2E0001A2BD9 /* Core.xctestplan */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -110,6 +111,8 @@
 		B7D26EF72F6E6EFF003568F0 /* Core.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Core.swift; sourceTree = "<group>"; };
 		B7D282E32F6C513D001E6432 /* SecurityModelValidator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecurityModelValidator.swift; sourceTree = "<group>"; };
 		B7D282E62F6C586C001E6432 /* LutheranRadio-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "LutheranRadio-Bridging-Header.h"; sourceTree = "<group>"; };
+		B7E3FCEB2F6FC244001A2BD9 /* Lutheran Radio.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; path = "Lutheran Radio.xctestplan"; sourceTree = "<group>"; };
+		B7E3FCEC2F6FC2E0001A2BD9 /* Core.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; path = Core.xctestplan; sourceTree = SOURCE_ROOT; };
 		B7F7B4702DAA463E00194E5C /* libmdns.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libmdns.tbd; path = usr/lib/libmdns.tbd; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
@@ -253,6 +256,7 @@
 		B78E91892F6B481100450FE1 /* Core */ = {
 			isa = PBXGroup;
 			children = (
+				B7E3FCEC2F6FC2E0001A2BD9 /* Core.xctestplan */,
 				B7759C912F6E62F700829AC0 /* Security */,
 				B78E918B2F6B48AB00450FE1 /* Actors */,
 				B78E918A2F6B482300450FE1 /* Configuration */,
@@ -280,6 +284,7 @@
 		B7AFC6A32CCD7D0A00BDDD83 = {
 			isa = PBXGroup;
 			children = (
+				B7E3FCEB2F6FC244001A2BD9 /* Lutheran Radio.xctestplan */,
 				B7D282E62F6C586C001E6432 /* LutheranRadio-Bridging-Header.h */,
 				B78E91892F6B481100450FE1 /* Core */,
 				B7AFC6AE2CCD7D0A00BDDD83 /* Lutheran Radio */,
@@ -553,6 +558,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B7E3FCED2F6FC2E0001A2BD9 /* Core.xctestplan in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
