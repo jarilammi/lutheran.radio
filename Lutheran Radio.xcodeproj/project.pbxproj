@@ -7,9 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		B72CC03C2F7489390090CBC0 /* Core.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B77E541D2F6E6A6700A055DA /* Core.framework */; };
 		B757A77E2DEF7B5C00FF90FC /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B757A77D2DEF7B5C00FF90FC /* WidgetKit.framework */; };
 		B757A7802DEF7B5C00FF90FC /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B757A77F2DEF7B5C00FF90FC /* SwiftUI.framework */; };
-		B757A7912DEF7B5E00FF90FC /* LutheranRadioWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = B757A77C2DEF7B5C00FF90FC /* LutheranRadioWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		B77E54282F6E6A6700A055DA /* Core.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B77E541D2F6E6A6700A055DA /* Core.framework */; };
 		B77E54332F6E6A6700A055DA /* Core.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = B77E541D2F6E6A6700A055DA /* Core.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		B77E54442F6E6A9000A055DA /* CertificateValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7759C352F6E62EA00829AC0 /* CertificateValidator.swift */; };
@@ -26,12 +26,12 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
-		B757A78F2DEF7B5E00FF90FC /* PBXContainerItemProxy */ = {
+		B72CC03E2F7489390090CBC0 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = B7AFC6A42CCD7D0A00BDDD83 /* Project object */;
 			proxyType = 1;
-			remoteGlobalIDString = B757A77B2DEF7B5C00FF90FC;
-			remoteInfo = LutheranRadioWidgetExtension;
+			remoteGlobalIDString = B77E541C2F6E6A6700A055DA;
+			remoteInfo = Core;
 		};
 		B77E54292F6E6A6700A055DA /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -71,17 +71,6 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
-		B757A7922DEF7B5E00FF90FC /* Embed Foundation Extensions */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = "";
-			dstSubfolderSpec = 13;
-			files = (
-				B757A7912DEF7B5E00FF90FC /* LutheranRadioWidgetExtension.appex in Embed Foundation Extensions */,
-			);
-			name = "Embed Foundation Extensions";
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		B77E54372F6E6A6700A055DA /* Embed Frameworks */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
@@ -199,6 +188,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				B757A7802DEF7B5C00FF90FC /* SwiftUI.framework in Frameworks */,
+				B72CC03C2F7489390090CBC0 /* Core.framework in Frameworks */,
 				B757A77E2DEF7B5C00FF90FC /* WidgetKit.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -346,6 +336,7 @@
 			buildRules = (
 			);
 			dependencies = (
+				B72CC03F2F7489390090CBC0 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				B757A7812DEF7B5C00FF90FC /* LutheranRadioWidget */,
@@ -408,14 +399,12 @@
 				B7AFC6A82CCD7D0A00BDDD83 /* Sources */,
 				B7AFC6A92CCD7D0A00BDDD83 /* Frameworks */,
 				B7AFC6AA2CCD7D0A00BDDD83 /* Resources */,
-				B757A7922DEF7B5E00FF90FC /* Embed Foundation Extensions */,
 				B77E54372F6E6A6700A055DA /* Embed Frameworks */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 				B77E544C2F6E6BDA00A055DA /* PBXTargetDependency */,
-				B757A7902DEF7B5E00FF90FC /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				B7AFC6AE2CCD7D0A00BDDD83 /* Lutheran Radio */,
@@ -645,10 +634,10 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
-		B757A7902DEF7B5E00FF90FC /* PBXTargetDependency */ = {
+		B72CC03F2F7489390090CBC0 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = B757A77B2DEF7B5C00FF90FC /* LutheranRadioWidgetExtension */;
-			targetProxy = B757A78F2DEF7B5E00FF90FC /* PBXContainerItemProxy */;
+			target = B77E541C2F6E6A6700A055DA /* Core */;
+			targetProxy = B72CC03E2F7489390090CBC0 /* PBXContainerItemProxy */;
 		};
 		B77E542A2F6E6A6700A055DA /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
