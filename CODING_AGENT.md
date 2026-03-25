@@ -44,10 +44,10 @@ It is live on the App Store: https://apps.apple.com/fi/app/lutheran-radio/id6738
    - All 18 languages must remain supported.
 
 4. **iOS 26+ Only**
-   - Target iOS 26.1 minimum.
-   - Minimum Xcode 26+ for MIE/EMTE support and full Swift 6 compatibility.
-   - Use modern APIs (Swift 6 concurrency, Observation, etc.).
-   - Leverage Memory Integrity Enforcement (MIE) and Enhanced Memory Tagging Extension (EMTE) where possible.
+   - Minimum deployment target is **iOS 26.2** (no exceptions).
+   - Required for full **EMTE + MIE** hardware-backed memory protections.
+   - Requires Xcode 26+ for proper MIE/EMTE support and Swift 6 mode.
+   - Prefer modern APIs and leverage Memory Integrity Enforcement wherever possible.
 
 ## Tech Stack & Architecture
 
