@@ -2477,15 +2477,42 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 self.languageCollectionView.selectItem(at: indexPath, animated: true, scrollPosition: .centeredHorizontally)
                 self.updateSelectionIndicator(to: targetIndex)
                 
-                // 6. Ensure playback starts (widget switches usually want immediate resume)
-                try? await Task.sleep(for: .seconds(0.4))
-                
+                // 6. Ensure playback starts — robust version for launch timing
+                try? await Task.sleep(for: .seconds(0.6))
+
                 let state = SharedPlayerManager.shared.loadSharedState()
                 if !state.isPlaying {
-                    try? await SharedPlayerManager.shared.play()
+                    #if DEBUG
+                    print("▶️ Attempting to start playback after switch (state: playing=\(state.isPlaying), lang=\(state.currentLanguage))")
+                    #endif
+                    
+                    do {
+                        try await SharedPlayerManager.shared.play()
+                        
+                        #if DEBUG
+                        print("✅ SharedPlayerManager.play() succeeded")
+                        #endif
+                        
+                        // Optional: wait a bit and verify actual AVPlayer status
+                        try? await Task.sleep(for: .seconds(0.8))
+                        let finalState = SharedPlayerManager.shared.loadSharedState()
+                        if !finalState.isPlaying {
+                            #if DEBUG
+                            print("⚠️ play() returned success but state still shows not playing — forcing retry")
+                            #endif
+                            try? await SharedPlayerManager.shared.play()
+                        }
+                        
+                    } catch {
+                        #if DEBUG
+                        print("❌ SharedPlayerManager.play() failed: \(error.localizedDescription)")
+                        #endif
+                    }
+                } else {
+                    #if DEBUG
+                    print("ℹ️ Playback already active after switch")
+                    #endif
                 }
-                
-                self.streamingPlayer.isSwitchingStream = false
                 
                 // 7. Widget refresh (once, at the end)
                 self.saveStateForWidget()
@@ -2743,11 +2770,43 @@ extension ViewController {
             self.languageCollectionView.selectItem(at: indexPath, animated: true, scrollPosition: .centeredHorizontally)
             self.updateSelectionIndicator(to: targetIndex)
             
+            // === CRITICAL: Robust playback start ===
             if !self.isManualPause {
                 #if DEBUG
                 print("▶️ Starting playback after switch")
                 #endif
-                try? await SharedPlayerManager.shared.play()   // Prefer the shared manager here for consistency
+                
+                // Small delay to let AVPlayerItem settle after setStream
+                try? await Task.sleep(for: .seconds(0.5))
+                
+                do {
+                    try await SharedPlayerManager.shared.play()
+                    #if DEBUG
+                    print("✅ SharedPlayerManager.play() succeeded for \(languageCode)")
+                    #endif
+                    
+                    // Extra safety check — sometimes play() returns success but state doesn't update immediately
+                    try? await Task.sleep(for: .seconds(0.7))
+                    let finalState = SharedPlayerManager.shared.loadSharedState()
+                    if !finalState.isPlaying {
+                        #if DEBUG
+                        print("⚠️ State still not playing after play() — retrying once")
+                        #endif
+                        try? await SharedPlayerManager.shared.play()
+                    }
+                } catch {
+                    #if DEBUG
+                    print("❌ Failed to start playback after switch to \(languageCode): \(error)")
+                    #endif
+                    
+                    // Optional: one retry with longer delay
+                    try? await Task.sleep(for: .seconds(1.0))
+                    try? await SharedPlayerManager.shared.play()
+                }
+            } else {
+                #if DEBUG
+                print("⏸️ Manual pause active — skipping auto-play after switch")
+                #endif
             }
             
             self.streamingPlayer.isSwitchingStream = false
@@ -2756,7 +2815,7 @@ extension ViewController {
             print("✅ handleSwitchToLanguage completed for \(languageCode)")
             #endif
             
-            // Final widget refresh
+            // Final widget refresh (only once)
             self.saveStateForWidget()
             WidgetCenter.shared.reloadAllTimelines()
         }
