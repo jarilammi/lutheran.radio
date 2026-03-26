@@ -421,7 +421,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         
         // Register for preferred content size category changes
         registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) { [weak self] (controller: Self, previousTraitCollection: UITraitCollection) in
-            guard let self else { return }   // ← [weak self] capture list + shorthand guard (Apple-recommended)
+            guard let self else { return }
             // Reapply attributes with new font size (prevents "sending 'self'" data race)
             self.updateMetadataLabel(
                 text: self.metadataLabel.text ?? String(localized: "no_track_info")
@@ -429,26 +429,27 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         }
         
         configureAudioSession() // Configure audio session
-        // Initialize haptic engine early if hardware supports haptics to ensure low-latency feedback
+        
+        // Initialize haptic engine early if hardware supports haptics
         if CHHapticEngine.capabilitiesForHardware().supportsHaptics {
             _ = hapticEngine // Trigger lazy initialization
             startHapticEngine()
         }
+        
         setupDarwinNotificationListener()
         setupUI()
+        
         languageCollectionView.delegate = self
         languageCollectionView.dataSource = self
         languageCollectionView.register(LanguageCell.self, forCellWithReuseIdentifier: "LanguageCell")
         languageCollectionView.bounces = false
         languageCollectionView.isScrollEnabled = false
         
+        // Calculate initial stream index (synchronous part)
         let currentLocale = Locale.current
         let languageCode = currentLocale.language.languageCode?.identifier ?? "en"
         let initialIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.languageCode == languageCode }) ?? 0
-        selectedStreamIndex = initialIndex // Set initial index
-        streamingPlayer.setStream(to: DirectStreamingPlayer.availableStreams[initialIndex])
-        updateUserDefaultsLanguage(DirectStreamingPlayer.availableStreams[initialIndex].languageCode)
-        updateBackground(for: DirectStreamingPlayer.availableStreams[initialIndex])
+        selectedStreamIndex = initialIndex
         
         languageCollectionView.reloadData()
         languageCollectionView.layoutIfNeeded()
@@ -504,29 +505,34 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             object: nil
         )
         
-        // Play special tuning sound immediately after setup
-        playSpecialTuningSound { [weak self] in
-            guard let self = self, self.hasInternetConnection && !self.isManualPause else {
+        // === Asynchronous initialization (required for Swift 6 concurrency) ===
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            
+            // Set the initial stream asynchronously (this was causing the error)
+            await self.streamingPlayer.setStream(to: DirectStreamingPlayer.availableStreams[initialIndex])
+            
+            self.updateUserDefaultsLanguage(DirectStreamingPlayer.availableStreams[initialIndex].languageCode)
+            self.updateBackground(for: DirectStreamingPlayer.availableStreams[initialIndex])
+            
+            // Play special tuning sound, then auto-play if appropriate
+            await self.playSpecialTuningSound()
+            
+            guard self.hasInternetConnection && !self.isManualPause else {
                 #if DEBUG
                 print("📱 Skipped auto-play: no internet or manually paused")
                 #endif
                 return
             }
             
-            // FIXED: Cancel any pending delayed stops before starting playback
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-                guard let self = self else { return }
-                
-                #if DEBUG
-                print("📱 Starting auto-playback after tuning sound - cancelling any pending stops")
-                #endif
-                
-                // FIXED: Cancel any pending delayed stops before starting playback
-                self.streamingPlayer.cancelPendingSSLProtection()
-                self.streamingPlayer.resetTransientErrors()
-                self.startPlayback()
-                self.restoreVolume() // Apply audio volume after playback starts
-            }
+            #if DEBUG
+            print("📱 Starting auto-playback after tuning sound - cancelling any pending stops")
+            #endif
+            
+            self.streamingPlayer.cancelPendingSSLProtection()
+            self.streamingPlayer.resetTransientErrors()
+            await self.startPlayback()
+            self.restoreVolume()
         }
     }
     
@@ -1184,7 +1190,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         #endif
         
         Task { @MainActor in
-            // 1. Reset transient failures (now async – assuming the method is marked async)
+            // 1. Reset transient failures
             await self.streamingPlayer.resetTransientErrors()
             
             // 2. Re-validate using the shared actor
@@ -1195,13 +1201,15 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 print("📱 Validation succeeded after reconnection - attempting playback")
                 #endif
                 
-                self.streamingPlayer.play { success in
-                    if success {
-                        self.streamingPlayer.onStatusChange?(true, String(localized: "status_playing"))
-                    } else {
-                        self.streamingPlayer.onStatusChange?(false, String(localized: "status_stream_unavailable"))
-                    }
+                // Updated call – no longer takes a completion closure
+                let success = await self.streamingPlayer.play()
+                
+                if success {
+                    self.streamingPlayer.onStatusChange?(true, String(localized: "status_playing"))
+                } else {
+                    self.streamingPlayer.onStatusChange?(false, String(localized: "status_stream_unavailable"))
                 }
+                
             } else {
                 #if DEBUG
                 print("📱 Security model validation failed after reconnection")
@@ -1352,27 +1360,24 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 if isValid {
                     await self.streamingPlayer.resetTransientErrors()
                     
-                    self.streamingPlayer.play { [weak self] success in
-                        Task { @MainActor in
-                            guard let self else { return }
-                            
-                            if success {
-                                self.isPlaying = true
-                                self.updatePlayPauseButton(isPlaying: true)
-                                self.statusLabel.text = String(localized: "status_playing")
-                                self.statusLabel.backgroundColor = .systemGreen
-                            } else {
-                                let isPermanent = await SecurityModelValidator.shared.isPermanentlyInvalid
-                                
-                                if isPermanent {
-                                    self.hasPermanentPlaybackError = true
-                                    self.statusLabel.text = String(localized: "status_stream_unavailable")
-                                    self.statusLabel.backgroundColor = .systemOrange
-                                    self.statusLabel.textColor = .white
-                                } else {
-                                    self.attemptPlaybackWithRetry(attempt: 1, maxAttempts: 3)
-                                }
-                            }
+                    // FIXED: Modern async/await version (no trailing closure)
+                    let success = await self.streamingPlayer.play()
+                    
+                    if success {
+                        self.isPlaying = true
+                        self.updatePlayPauseButton(isPlaying: true)
+                        self.statusLabel.text = String(localized: "status_playing")
+                        self.statusLabel.backgroundColor = .systemGreen
+                    } else {
+                        let isPermanent = await SecurityModelValidator.shared.isPermanentlyInvalid
+                        
+                        if isPermanent {
+                            self.hasPermanentPlaybackError = true
+                            self.statusLabel.text = String(localized: "status_stream_unavailable")
+                            self.statusLabel.backgroundColor = .systemOrange
+                            self.statusLabel.textColor = .white
+                        } else {
+                            self.attemptPlaybackWithRetry(attempt: 1, maxAttempts: 3)
                         }
                     }
                 } else {
@@ -1434,6 +1439,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         #endif
         
         let delay = pow(2.0, Double(attempt - 1))
+        
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
             guard let self else {
                 #if DEBUG
@@ -1445,49 +1451,42 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             // UI / player setup on main thread
             self.streamingPlayer.setVolume(self.volumeSlider.value)
             
-            self.streamingPlayer.play { [weak self] success in
-                // This closure likely runs on a background thread → wrap UI + async work in MainActor Task
-                Task { @MainActor in
-                    guard let self else {
-                        #if DEBUG
-                        print("📱 play (completion): ViewController is nil, skipping callback")
-                        #endif
-                        return
-                    }
+            // FIXED: Use modern async/await version instead of trailing closure
+            Task { @MainActor in
+                let success = await self.streamingPlayer.play()
+                
+                if success {
+                    #if DEBUG
+                    print("📱 Playback succeeded on attempt \(attempt)")
+                    #endif
+                    // Success UI updates can be handled here if needed.
+                    // Usually already handled in startPlayback(), so optional.
                     
-                    if success {
+                } else {
+                    let isPermanent = await SecurityModelValidator.shared.isPermanentlyInvalid
+                    
+                    if isPermanent {
                         #if DEBUG
-                        print("📱 Playback succeeded on attempt \(attempt)")
+                        print("📱 Permanent security model failure detected - stopping retries")
                         #endif
-                        // Optional: add success UI updates here if not already handled elsewhere
-                        // e.g. self.isPlaying = true; self.updatePlayPauseButton(isPlaying: true)
+                        self.hasPermanentPlaybackError = true
+                        self.streamingPlayer.onStatusChange?(false, String(localized: "status_stream_unavailable"))
+                        self.statusLabel.text = String(localized: "status_stream_unavailable")
+                        self.statusLabel.backgroundColor = .systemOrange
+                        self.statusLabel.textColor = .white
+                    } else if attempt < maxAttempts {
+                        #if DEBUG
+                        print("📱 Playback attempt \(attempt) failed, retrying...")
+                        #endif
+                        self.attemptPlaybackWithRetry(attempt: attempt + 1, maxAttempts: maxAttempts)
                     } else {
-                        // ← Concurrency error was here (or very close): old synchronous call to actor-isolated state
-                        let isPermanent = await SecurityModelValidator.shared.isPermanentlyInvalid
-                        
-                        if isPermanent {
-                            #if DEBUG
-                            print("📱 Permanent security model failure detected - stopping retries")
-                            #endif
-                            self.hasPermanentPlaybackError = true
-                            self.streamingPlayer.onStatusChange?(false, String(localized: "status_stream_unavailable"))
-                            self.statusLabel.text = String(localized: "status_stream_unavailable")
-                            self.statusLabel.backgroundColor = .systemOrange
-                            self.statusLabel.textColor = .white
-                        } else if attempt < maxAttempts {
-                            #if DEBUG
-                            print("📱 Playback attempt \(attempt) failed, retrying...")
-                            #endif
-                            self.attemptPlaybackWithRetry(attempt: attempt + 1, maxAttempts: maxAttempts)
-                        } else {
-                            #if DEBUG
-                            print("📱 Max attempts (\(maxAttempts)) reached - giving up")
-                            #endif
-                            self.streamingPlayer.onStatusChange?(false, String(localized: "alert_connection_failed_title"))
-                            self.statusLabel.text = String(localized: "alert_connection_failed_title")
-                            self.statusLabel.backgroundColor = .systemRed
-                            self.statusLabel.textColor = .white
-                        }
+                        #if DEBUG
+                        print("📱 Max attempts (\(maxAttempts)) reached - giving up")
+                        #endif
+                        self.streamingPlayer.onStatusChange?(false, String(localized: "alert_connection_failed_title"))
+                        self.statusLabel.text = String(localized: "alert_connection_failed_title")
+                        self.statusLabel.backgroundColor = .systemRed
+                        self.statusLabel.textColor = .white
                     }
                 }
             }
@@ -1950,15 +1949,24 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         }
     }
     
+    // Legacy compatibility
     func playTuningSound(completion: (() -> Void)? = nil) {
+        Task { @MainActor in
+            await playTuningSound()   // calls the new async version
+            completion?()
+        }
+    }
+    
+    /// Modern async version - preferred in 2026 Swift code
+    func playTuningSound() async {
         let now = Date()
         if let lastTime = lastTuningSoundTime, now.timeIntervalSince(lastTime) < 1.0 {
             #if DEBUG
             print("🎵 Skipping tuning sound: Debouncing, time since last: \(now.timeIntervalSince(lastTime))s")
             #endif
-            completion?()
             return
         }
+        
         lastTuningSoundTime = now
         
         let soundIndex = Int.random(in: 1...3)
@@ -1966,69 +1974,59 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             #if DEBUG
             print("❌ Error: tuning_sound_\(soundIndex).wav not found in bundle")
             #endif
-            completion?()
             return
         }
         
         do {
-            // Configure and activate audio session
             let audioSession = AVAudioSession.sharedInstance()
             try audioSession.setCategory(.playback, mode: .default, options: [])
             try audioSession.setActive(true)
+            
             #if DEBUG
             print("🔊 Audio session activated for tuning sound")
             #endif
             
             tuningPlayer = try AVAudioPlayer(contentsOf: tuningURL)
             tuningPlayer?.delegate = self
-            tuningPlayer?.volume = 1.0 // Full volume for audibility
+            tuningPlayer?.volume = 1.0
             tuningPlayer?.numberOfLoops = 0
             tuningPlayer?.prepareToPlay()
+            
             let didPlay = tuningPlayer?.play() ?? false
-            
-            // Optimistic UI during tuning sound – masks latency perfectly
-            DispatchQueue.main.async { [weak self] in
-                let manager = SharedPlayerManager.shared
-                let state = manager.loadSharedState()
-                let currentStream = manager.availableStreams.first(where: { $0.languageCode == state.currentLanguage }) ?? manager.availableStreams[0]
-                
-                self?.updatePlayPauseButton(isPlaying: true, animated: true)
-                
-                if !state.isPlaying {
-                    self?.safeUpdateStatusLabel(
-                        text: String(localized: "status_connecting"),
-                        backgroundColor: .systemYellow,
-                        textColor: .label,
-                        isPermanentError: false
-                    )
-                }
-            }
-            
             isTuningSoundPlaying = didPlay
+            
             #if DEBUG
-            if didPlay {
-                print("🎵 Tuning sound \(soundIndex) started playing")
-            } else {
-                print("❌ Failed to start tuning sound \(soundIndex)")
-            }
+            print(didPlay ? "🎵 Tuning sound \(soundIndex) started playing" : "❌ Failed to start tuning sound \(soundIndex)")
             #endif
-            if didPlay {
-                // Call completion after sound duration
-                DispatchQueue.main.asyncAfter(deadline: .now() + (tuningPlayer?.duration ?? 1.0)) {
-                    #if DEBUG
-                    print("🎵 Tuning sound \(soundIndex) should have finished")
-                    #endif
-                    completion?()
-                }
-            } else {
-                completion?()
+            
+            // Optimistic UI update (still on MainActor)
+            let manager = SharedPlayerManager.shared
+            let state = manager.loadSharedState()
+            let currentStream = manager.availableStreams.first(where: { $0.languageCode == state.currentLanguage })
+                ?? manager.availableStreams[0]
+            
+            updatePlayPauseButton(isPlaying: true, animated: true)
+            
+            if !state.isPlaying {
+                safeUpdateStatusLabel(
+                    text: String(localized: "status_connecting"),
+                    backgroundColor: .systemYellow,
+                    textColor: .label,
+                    isPermanentError: false
+                )
             }
+            
+            // Wait for the sound to finish naturally (this is the key improvement)
+            if didPlay, let duration = tuningPlayer?.duration {
+                try? await Task.sleep(for: .seconds(duration))
+            } else {
+                try? await Task.sleep(for: .seconds(1.0)) // fallback
+            }
+            
         } catch {
             #if DEBUG
             print("❌ Error loading tuning sound \(soundIndex): \(error.localizedDescription)")
             #endif
-            completion?()
-            return
         }
     }
     
@@ -2222,12 +2220,32 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     func pickerView(_ pickerView: UIPickerView, didSelectRow row: Int, inComponent component: Int) {
         let selectedStream = DirectStreamingPlayer.availableStreams[row]
-        streamingPlayer.stop { [weak self] in
-            guard let self = self else { return }
-            self.playTuningSound {
-                self.streamingPlayer.setStream(to: selectedStream)
-                self.hasPermanentPlaybackError = false
-                if self.isPlaying || !self.isManualPause { self.startPlayback() }
+        
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            
+            await streamingPlayer.stop()
+            
+            // Convert completion handler to async/await properly
+            await withCheckedContinuation { continuation in
+                playTuningSound { [weak self] in
+                    guard let self else {
+                        continuation.resume()
+                        return
+                    }
+                    
+                    // Now we can safely await inside this Task because we're still on @MainActor
+                    Task { @MainActor in
+                        await streamingPlayer.setStream(to: selectedStream)
+                        hasPermanentPlaybackError = false
+                        
+                        if isPlaying || !isManualPause {
+                            await startPlayback()           // assuming this is async too
+                        }
+                        
+                        continuation.resume()
+                    }
+                }
             }
         }
     }
@@ -2302,42 +2320,56 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     }
     
     private func completeStreamSwitch(stream: DirectStreamingPlayer.Stream, index: Int) {
-        // CRITICAL FIX: Update UserDefaults IMMEDIATELY at the start
-        // This ensures widgets show correct language during the entire transition
+        // Immediate non-async work
         updateUserDefaultsLanguage(stream.languageCode)
         self.selectedStreamIndex = index
-        
-        // Immediate widget state update for instant visual feedback
         saveStateForWidget()
         
-        streamingPlayer.stop { [weak self] in
-            guard let self = self else { return }
-            self.playTuningSound { [weak self] in
-                guard let self = self else { return }
-                self.streamingPlayer.resetTransientErrors()
-                self.streamingPlayer.setStream(to: stream)
-                
-                // Confirm UserDefaults is still correct (redundant but safe)
-                self.updateUserDefaultsLanguage(stream.languageCode)
-                
-                self.hasPermanentPlaybackError = false
-                
-                // Save state after stream is actually set
-                self.saveStateForWidget()
-                
-                if self.isPlaying || !self.isManualPause {
-                    self.startPlayback()
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            
+            // 1. Stop the current stream (assuming it has a completion handler)
+            await withCheckedContinuation { continuation in
+                streamingPlayer.stop {
+                    continuation.resume()
                 }
-                self.updateSelectionIndicator(to: index)
-                
-                // Force another save after UI updates - keep this for safety
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    self.saveStateForWidget()
+            }
+            
+            // 2. Play tuning sound
+            await withCheckedContinuation { continuation in
+                self.playTuningSound { [weak self] in
+                    guard let self else {
+                        continuation.resume()
+                        return
+                    }
+                    
+                    // All the work that was inside the old nested closures
+                    Task { @MainActor in   // Inner Task because setStream/startPlayback are async
+                        await self.streamingPlayer.setStream(to: stream)
+                        
+                        self.streamingPlayer.resetTransientErrors()
+                        self.updateUserDefaultsLanguage(stream.languageCode)
+                        self.hasPermanentPlaybackError = false
+                        
+                        self.saveStateForWidget()
+                        
+                        if self.isPlaying || !self.isManualPause {
+                            await self.startPlayback()
+                        }
+                        
+                        self.updateSelectionIndicator(to: index)
+                        
+                        // Final safety save
+                        try? await Task.sleep(for: .seconds(0.5))
+                        self.saveStateForWidget()
+                        
+                        #if DEBUG
+                        print("📱 completeStreamSwitch: Switched to stream \(stream.language), index=\(index)")
+                        #endif
+                        
+                        continuation.resume()
+                    }
                 }
-                
-                #if DEBUG
-                print("📱 completeStreamSwitch: Switched to stream \(stream.language), index=\(index)")
-                #endif
             }
         }
     }
@@ -3007,8 +3039,8 @@ extension ViewController: StreamingPlayerDelegate {
                 switch status {
                 case .playing:     return String(localized: "status_playing")
                 case .paused:      return (reason == "Interruption")
-                                     ? String(localized: "status_paused_call")
-                                     : String(localized: "status_paused")
+                    ? String(localized: "status_paused_call")
+                    : String(localized: "status_paused")
                 case .stopped:     return String(localized: "status_stopped")
                 case .connecting:  return String(localized: "status_connecting")
                 case .security:    return String(localized: "status_security_failed")
@@ -3024,7 +3056,7 @@ extension ViewController: StreamingPlayerDelegate {
             )
             
             let showPauseIcon = status == .playing ||
-                               (status == .paused && reason == "Interruption")
+            (status == .paused && reason == "Interruption")
             updatePlayPauseButton(isPlaying: showPauseIcon)
             
             // Optional but VERY nice — button tint now follows the state too
@@ -3056,55 +3088,63 @@ extension ViewController: StreamingPlayerDelegate {
         }
         processedActionIds.insert(actionId)
         
-        let manager = SharedPlayerManager.shared
-        let state = manager.loadSharedState()
-        let currentStream = manager.availableStreams.first(where: { $0.languageCode == state.currentLanguage }) ?? manager.availableStreams[0]
-        
-        switch action {
-        case "play":
-            if !state.isPlaying {
-                togglePlayback()
-            }
-        case "pause":
-            if state.isPlaying {
-                togglePlayback()
-            }
-        case "switch":
-            if let languageCode = parameter,
-               let targetStream = DirectStreamingPlayer.availableStreams.first(where: { $0.languageCode == languageCode }),
-               let newIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.languageCode == languageCode }) {
-                
-                // Perform the stream switch
-                SharedPlayerManager.shared.switchToStream(targetStream)
-                
-                // Update UI
-                selectedStreamIndex = newIndex
-                languageCollectionView.selectItem(at: IndexPath(row: newIndex, section: 0), animated: true, scrollPosition: .centeredHorizontally)
-                updateSelectionIndicator(to: newIndex)
-                updateBackground(for: targetStream)
-                
-                // Always start/resume playback after widget switch (user intent to listen)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {  // Shorter delay for transition
-                    if !state.isPlaying {
-                        SharedPlayerManager.shared.play { _ in }
-                    }
+        Task { @MainActor in
+            let manager = SharedPlayerManager.shared
+            let state = manager.loadSharedState()
+            let currentStream = manager.availableStreams.first(where: { $0.languageCode == state.currentLanguage })
+                ?? manager.availableStreams[0]
+            
+            switch action {
+            case "play":
+                if !state.isPlaying {
+                    await togglePlayback()          // ← Added 'await'
                 }
                 
-                // Feedback and save
-                playHapticFeedback(style: .medium)
-                UIAccessibility.post(notification: .announcement, argument: String(localized: "switched_to_language \(targetStream.language)"))
+            case "pause":
+                if state.isPlaying {
+                    await togglePlayback()          // ← Added 'await'
+                }
                 
-                // Save state for widget consistency
-                saveStateForWidget()
+            case "switch":
+                if let languageCode = parameter,
+                   let targetStream = DirectStreamingPlayer.availableStreams.first(where: { $0.languageCode == languageCode }),
+                   let newIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.languageCode == languageCode }) {
+                    
+                    // Perform the stream switch
+                    SharedPlayerManager.shared.switchToStream(targetStream)
+                    
+                    // Update UI (safe on @MainActor)
+                    selectedStreamIndex = newIndex
+                    languageCollectionView.selectItem(at: IndexPath(row: newIndex, section: 0),
+                                                     animated: true,
+                                                     scrollPosition: .centeredHorizontally)
+                    updateSelectionIndicator(to: newIndex)
+                    updateBackground(for: targetStream)
+                    
+                    // Always start/resume playback after widget switch (user intent)
+                    try? await Task.sleep(for: .seconds(0.5))   // ← Added 'try?'
+                    
+                    if !state.isPlaying {
+                        await SharedPlayerManager.shared.play()   // No trailing closure
+                    }
+                    
+                    // Feedback and save
+                    playHapticFeedback(style: .medium)
+                    UIAccessibility.post(notification: .announcement,
+                                       argument: String(localized: "switched_to_language \(targetStream.language)"))
+                    
+                    // Save state for widget consistency
+                    saveStateForWidget()
+                }
+                
+            default:
+                #if DEBUG
+                print("Unknown widget action: \(action)")
+                #endif
             }
-        default:
-            #if DEBUG
-            print("Unknown widget action: \(action)")
-            #endif
-            break
+            
+            // Clear the pending action (actor-isolated)
+            await SharedPlayerManager.shared.clearPendingAction(actionId: actionId)
         }
-        
-        // Clear the pending action
-        SharedPlayerManager.shared.clearPendingAction(actionId: actionId)
     }
 }
