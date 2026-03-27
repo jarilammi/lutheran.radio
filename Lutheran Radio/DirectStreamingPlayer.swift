@@ -229,6 +229,10 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     private var isInitializing: Bool = true
     private var pendingStatusChanges: [(isPlaying: Bool, status: String)] = []
     
+    /// Protects the playback startup path from aggressive `stop()` calls during async validation + server selection.
+    /// Set to `true` at the beginning of `play()` and reset in `defer`.
+    private var isCurrentlyAttemptingPlayback = false
+    
     // MARK: - Energy Efficiency (Battery Optimization)
     /// Detects if the device is in Low Power Mode to throttle non-essential tasks (e.g., retry intervals) and extend battery life during streaming.
     /// Builds on thermal state handling; queried dynamically in retry/fallback logic.
@@ -1170,25 +1174,21 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     // MARK: - Playback Control Methods
 
     /// Starts or resumes playback after validation and server selection.
-    ///
-    /// - Returns: `true` if playback was successfully initiated (item replaced + rate > 0).
-    ///           `false` if validation failed or setup could not proceed.
+    /// - Returns: `true` if playback was successfully *initiated* (item replaced + play() called).
+    ///            Note: Actual audio may start slightly later when the item becomes readyToPlay.
     /// - Throws: Only critical unrecoverable errors (rare).
-    /// - Important: This is the **preferred** modern entry point.
-    ///   For compatibility with old completion-style callers, use the overload below.
     @MainActor
     func play() async -> Bool {
+        isCurrentlyAttemptingPlayback = true
+        defer { isCurrentlyAttemptingPlayback = false }
+        
         #if DEBUG
-        print("🔊 [Playback Start] async play() entered")
+        print("🔊 [Playback Start] async play() entered — attemptingPlayback flag set to true")
         #endif
 
-        // 1. Optimistic UI update
         safeOnStatusChange(isPlaying: true, status: String(localized: "status_connecting"))
-
-        // Immediate optimistic save
         SharedPlayerManager.shared.saveFireAndForget()
 
-        // 2. Critical: validate before expensive work
         let isValid = await SecurityModelValidator.shared.isCurrentlyValid()
 
         #if DEBUG
@@ -1197,48 +1197,137 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
 
         guard isValid else {
             let isPermanent = await SecurityModelValidator.shared.isPermanentlyInvalid
-            
             let statusKey = isPermanent ? "status_security_failed" : "status_no_internet"
 
             #if DEBUG
-            print("🔊 [Playback Start] Validation failed — \(isPermanent ? "permanent" : "transient")")
+            print("❌ [Playback Start] Validation failed — \(isPermanent ? "permanent" : "transient")")
             #endif
 
-            safeOnStatusChange(
-                isPlaying: false,
-                status: String(localized: String.LocalizationValue(stringLiteral: statusKey))
-            )
-
+            let localizedStatus = String(localized: String.LocalizationValue(statusKey))
+            safeOnStatusChange(isPlaying: false, status: localizedStatus)
             SharedPlayerManager.shared.saveFireAndForget()
             return false
         }
 
         #if DEBUG
-        print("🔊 [Playback Start] Validation passed — proceeding to server selection & cert check")
+        print("✅ [Playback Start] Security validation passed — proceeding to async setup")
         #endif
 
-        // 3. Real setup work
-        performOptimalServerSelectionAndCertificateCheck()
+        let setupSucceeded = await performOptimalServerSelectionAndFullPlaybackSetup()
 
-        let success = (player?.rate ?? 0) > 0
-
-        if success {
-            #if DEBUG
-            print("🔊 [Playback Start] Playback initiated successfully")
-            #endif
+        if setupSucceeded {
             await SharedPlayerManager.shared.saveCurrentState()
-        } else {
             #if DEBUG
-            print("🔊 [Playback Start] Setup failed after validation")
+            print("▶️ [Playback Start] Setup succeeded — playback initiated")
             #endif
-            safeOnStatusChange(
-                isPlaying: false,
-                status: String(localized: String.LocalizationValue(stringLiteral: "status_stream_unavailable"))
-            )
+        } else {
+            safeOnStatusChange(isPlaying: false, status: String(localized: "status_stream_unavailable"))
             SharedPlayerManager.shared.saveFireAndForget()
         }
 
-        return success
+        return setupSucceeded
+    }
+    
+    @MainActor
+    private func performOptimalServerSelectionAndFullPlaybackSetup() async -> Bool {
+        #if DEBUG
+        print("🔊 [Playback Setup] Starting server selection + asset creation")
+        #endif
+
+        // 1. Select optimal server (make this async if possible; otherwise keep closure but await result)
+        // Best: refactor selectOptimalServer to be async and return the URL directly.
+        // For minimal change right now:
+        return await withCheckedContinuation { continuation in
+            selectOptimalServer { [weak self] _ in
+                guard let self else {
+                    continuation.resume(returning: false)
+                    return
+                }
+
+                let streamURL = self.selectedStream.url
+
+                #if DEBUG
+                print("🔊 [Playback Setup] Selected URL: \(streamURL)")
+                #endif
+
+                // 2. Audio Session (critical!)
+                do {
+                    try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
+                    try AVAudioSession.sharedInstance().setActive(true)
+                } catch {
+                    #if DEBUG
+                    print("❌ AudioSession failed: \(error)")
+                    #endif
+                    continuation.resume(returning: false)
+                    return
+                }
+
+                // 3. Asset + Resource Loader (use a serial background queue!)
+                let asset = AVURLAsset(url: streamURL)
+                let loaderQueue = DispatchQueue(label: "com.lutheran.radio.resourceLoader", attributes: [])
+                asset.resourceLoader.setDelegate(self, queue: loaderQueue)   // ← better than .main
+
+                let playerItem = AVPlayerItem(asset: asset)
+
+                if self.player == nil {
+                    self.player = AVPlayer()
+                }
+
+                self.player?.replaceCurrentItem(with: playerItem)
+                self.playerItem = playerItem
+
+                // 4. Explicit play()
+                self.player?.play()
+
+                // 5. Setup observers once (idempotent)
+                self.setupPlaybackObservers()
+
+                #if DEBUG
+                print("▶️ [Playback Setup] replaceCurrentItem + play() called on main actor")
+                #endif
+
+                // We consider initiation successful here.
+                // Real "playing" state comes from KVO later.
+                continuation.resume(returning: true)
+            }
+        }
+    }
+    
+    private func setupPlaybackObservers() {
+        // Invalidate old ones first to avoid leaks/duplicates
+        rateObserver?.invalidate()
+        statusObserver?.invalidate()
+
+        rateObserver = player?.observe(\.rate, options: [.new]) { [weak self] player, _ in
+            guard let self else { return }
+            #if DEBUG
+            print("🔊 [KVO] Rate changed to \(player.rate)")
+            #endif
+            if player.rate > 0 {
+                self.safeOnStatusChange(isPlaying: true, status: String(localized: "status_playing"))
+            } else {
+                self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_stopped"))
+            }
+            Task { await SharedPlayerManager.shared.saveCurrentState() }
+        }
+
+        statusObserver = player?.currentItem?.observe(\.status, options: [.new]) { [weak self] item, _ in
+            guard let self else { return }
+            #if DEBUG
+            print("🔊 [KVO] Item status → \(item.status.rawValue)")
+            #endif
+            switch item.status {
+            case .readyToPlay:
+                self.safeOnStatusChange(isPlaying: true, status: String(localized: "status_playing"))
+            case .failed:
+                self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_stream_unavailable"))
+                if let error = item.error {
+                    self.handlePlaybackError(error)
+                }
+            default: break
+            }
+            Task { await SharedPlayerManager.shared.saveCurrentState() }
+        }
     }
     
     // MARK: - Stream Switching (Swift 6 pure mutation)
@@ -1901,44 +1990,58 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     func stop(completion: VoidCompletion? = nil,
               isSwitchingStream: Bool? = nil,
               silent: Bool = false) {
+        
         #if DEBUG
-        print("FORCE STOPPING ALL PLAYBACK - isSwitchingStream: \(String(describing: isSwitchingStream))")
+        print("🛑 FORCE STOPPING ALL PLAYBACK - isSwitchingStream: \(String(describing: isSwitchingStream)), attemptingPlayback: \(isCurrentlyAttemptingPlayback)")
         #endif
         
+        // WIDER GUARD: protect startup even during atomic switch
+        if isCurrentlyAttemptingPlayback {
+            #if DEBUG
+            print("⚠️ [Stop Guard] Skipping aggressive stop during playback startup attempt (even switch)")
+            #endif
+            loadingTimeoutWorkItem?.cancel()
+            fallbackWorkItem?.cancel()
+            pendingPlaybackWorkItem?.cancel()
+            retryWorkItem?.cancel()
+            return
+        }
+        
+        // NEW: Critical guard — protect startup path from aggressive stop
+        if isCurrentlyAttemptingPlayback && (isSwitchingStream == nil || isSwitchingStream == false) {
+            #if DEBUG
+            print("⚠️ [Stop Guard] Skipping aggressive stop during playback startup attempt")
+            #endif
+            
+            // Still cancel pending timers/work items, but do NOT clear player resources
+            loadingTimeoutWorkItem?.cancel()
+            fallbackWorkItem?.cancel()
+            pendingPlaybackWorkItem?.cancel()
+            retryWorkItem?.cancel()
+            return
+        }
+
         loadingTimeoutWorkItem?.cancel()
         currentLoadingDelegate?.loadingRequest.finishLoading(with: URLError(.cancelled))
         currentLoadingDelegate = nil
         
         removeAudioSessionObservers()
-        
-        // Clear all active SSL timers
         clearAllSSLProtectionTimers()
-        
-        // Prevent auto-restart after manual pause by canceling retry attempts
-        self.retryWorkItem?.cancel()
-        
-        // Cancel fallback timeout to prevent server switches
+        retryWorkItem?.cancel()
         fallbackWorkItem?.cancel()
         fallbackWorkItem = nil
-        
-        // Use provided isSwitchingStream or fall back to instance var
-        let effectiveSwitching = isSwitchingStream ?? self.isSwitchingStream
-        
-        // CRITICAL: Cancel any pending audio operations
         pendingPlaybackWorkItem?.cancel()
         pendingPlaybackWorkItem = nil
+
+        let effectiveSwitching = isSwitchingStream ?? self.isSwitchingStream
         
-        // ────────────────────────────────────────────────────────────────
-        // Removed: validationTimer?.invalidate() and validationTimer = nil
-        // Periodic / on-demand validation is now handled exclusively via
-        // SecurityModelValidator.shared.validateSecurityModel() calls
-        // when needed (e.g. during stream switch).
-        // ────────────────────────────────────────────────────────────────
+        performActualStop(
+            completion: completion,
+            silent: silent || effectiveSwitching,
+            effectiveSwitching: effectiveSwitching
+        )
         
-        // Continue with existing stop logic
-        performActualStop(completion: completion, silent: silent, effectiveSwitching: effectiveSwitching)
-        
-        // Final state save – fire-and-forget (no need to block caller or completion handler)
+        // Final state save
         Task {
             await SharedPlayerManager.shared.saveCurrentState()
         }
