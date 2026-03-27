@@ -19,9 +19,9 @@ It is live on the App Store: https://apps.apple.com/fi/app/lutheran-radio/id6738
 
 ## Non-Negotiable Rules (Violating any = immediate rejection)
 
-1. **Security Model is Non-Negotiable**
+1. **Security Model**
    - Current `expectedSecurityModel = "starbase"` (Core/Configuration/SecurityConfiguration.swift)
-   - Never change, remove, or comment out DNS TXT validation against `securitymodels.lutheran.radio`
+   - Do not change, remove, or comment out DNS TXT validation against `securitymodels.lutheran.radio`
    - Never bypass full-certificate fingerprint pinning (`CC:F7:8E:09:EF:F3:3D:9A:5D:8B:B0:5C:74:28:0D:F6:BE:14:1C:C4:47:F9:69:C2:90:2C:43:97:66:8B:3D:CC`)
    - Never weaken SPKI pinning in Info.plist
    - Never disable device-time vs server-time skew check (>5 min = no leniency)
@@ -133,7 +133,7 @@ Operate in full agentic mode at all times:
 
 ## Common Pitfalls
 
-- SSL Certificate Check: When verifying SSL certificate functionality or connectivity on the remote server, if you receive a "403 Access Forbidden" response, it is likely because the current security model (e.g., appSecurityModel = "starbase" in DirectStreamingPlayer.swift) was not embedded in the URL. This is not a server-side issue but a deliberate part of the security protocol. Always ensure the security model is included in the URL query when performing such checks or tests. Refer to DirectStreamingPlayer.swift for examples of proper URL construction.
+- SSL Certificate Check: When verifying SSL certificate functionality or connectivity on the remote server, if you receive a "403 Access Forbidden" response, it is likely because the security model was not included in the URL. This is expected behavior as part of the security protocol. Always ensure the security model is included in the URL query when performing such checks or tests. Refer to DirectStreamingPlayer.swift for examples of proper URL construction.
 
 ## Agent Compatibility Notes
 - **Claude / Cursor / Windsurf**: Load this file as Project Instructions / custom system prompt.
