@@ -27,6 +27,12 @@ It is live on the App Store: https://apps.apple.com/fi/app/lutheran-radio/id6738
    - Never disable device-time vs server-time skew check (>5 min = no leniency)
    - Never remove MIE/EMTE hardened runtime entitlements
 
+   **DNS TXT Validation Specifics**
+   - The `securitymodels.lutheran.radio` zone uses DNSSEC with signed delegation (visible RRSIG records).
+   - The app currently calls `DNSServiceQueryRecord` **without** `kDNSServiceFlagsValidate` (or `kDNSServiceFlagsValidateOptional`), so it does **not** perform client-side DNSSEC validation.
+   - Always consult the "Why DNS TXT Records?" section in `README.md` for the latest DNSSEC status, AD flag behavior, and verification commands.
+   - Any change touching DNS validation must preserve or strengthen the documented security properties.
+
 2. **Build & Test Gate**
    - Every single change must keep these commands green:
      ```bash
@@ -97,7 +103,7 @@ It is live on the App Store: https://apps.apple.com/fi/app/lutheran-radio/id6738
 
 ## Security Model History Reference (Do Not Modify – See README.md)
 
-The complete security model history is archived in README.md, which serves as the source of truth. Refer to it for the full table of past and current models, including validity periods and app versions.
+The complete security model history is maintained in the Security Model History table in README.md, which serves as the source of truth. Refer to it for the full table of past and current models, including validity periods and app versions.
 
 Current model = **starbase**
 

@@ -161,22 +161,54 @@ The app enforces security model validation to ensure only versions with an appro
 
 ### Why DNS TXT Records?
 
-- **Dynamic Updates:** Allows real-time revocation of compromised models by updating the TXT record, without requiring app updates.
-- **Simplicity:** Leverages existing DNS infrastructure for lightweight validation, avoiding the need for a dedicated server.
-- **Security:** Complements certificate pinning by linking app functionality to a centrally managed DNS record.
+The app uses a DNS TXT record on `securitymodels.lutheran.radio` for lightweight, dynamic security model validation. This mechanism allows central, near-real-time revocation of compromised or obsolete app versions without forcing an immediate App Store update for every user.
+
+**DNSSEC Protection**
+The `lutheran.radio` zone, including the `securitymodels` subdomain, is protected by **DNSSEC with signed delegation**. The zone is properly signed (visible RRSIG records) and the chain of trust is established from the `.radio` TLD upward.
+
+When queried with the DO (DNSSEC OK) bit set (e.g. `dig +dnssec`), the response includes:
+- The TXT record containing the comma-separated list of valid models:
+  `"dc,florida,tampa,atlanta,birmingham,houston,starbase"`
+- An accompanying **RRSIG** signature.
+
+In the current observed responses, the **AD (Authenticated Data)** flag is **not** set (`;; flags: qr rd ra`), indicating that the recursive resolver did not perform (or did not assert) full DNSSEC validation when answering the query.
+
+**Current Validation Behavior**
+The app performs the TXT query via `DNSServiceQueryRecord` **without** the `kDNSServiceFlagsValidate` (or `kDNSServiceFlagsValidateOptional`) flag. Therefore:
+- It does **not** perform client-side DNSSEC validation itself.
+- It relies on the device’s configured recursive resolver for any DNSSEC checking.
+- The mechanism still benefits from the signed zone, making off-path forgery and cache poisoning significantly harder.
+
+Because of these characteristics, the DNS TXT record serves as a **strong but not absolute** dynamic revocation signal. It is backed by aggressive certificate pinning on the streaming infrastructure and the app’s permanent-failure model: once validation fails, streaming is disabled until the user installs a new app version that contains an updated `expectedSecurityModel`.
+
+This design provides a practical balance between security, simplicity, and resilience (aided by the 1-hour success-only cache).
+
+**Verifying DNSSEC Status**
+To check the current TXT record and DNSSEC-related information:
+
+```bash
+# Full response with flags and signatures
+dig +dnssec TXT securitymodels.lutheran.radio | grep -E "(^securitymodels|flags:|AD:|RRSIG)"
+
+# Short version (TXT + RRSIG)
+dig +short +dnssec TXT securitymodels.lutheran.radio
+```
+
+Look for the **AD** flag (Authenticated Data) in the `;; flags:` line. Its presence indicates that the resolver performed and accepted DNSSEC validation.
 
 ### Verifying the Security Model
 
 To check the current valid security models:
 
 ```bash
-dig +short TXT securitymodels.lutheran.radio
+dig +short +dnssec TXT securitymodels.lutheran.radio
 ```
 
 Example output:
 
 ```
 "dc,florida,tampa,atlanta,birmingham,houston,starbase"
+TXT 13 3 600 20260328052556 20260326032556 34505 lutheran.radio. CEZx+X3J947EaeiH/hevPZUJvaovpylfY9vLdMb75ohAW3MFuNg9RbnZ 5cjnVglSPo43UCk97UZwkQcREaNY0Q==
 ```
 
 Compare this output to the security model defined in the app (found in ```DirectStreamingPlayer.swift``` as ```appSecurityModel```). If the app’s model (e.g., "starbase") isn’t listed, it will fail validation. To update the list, modify the TXT record for ```securitymodels.lutheran.radio``` through the DNS management interface for the ```lutheran.radio``` domain.
