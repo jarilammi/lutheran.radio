@@ -67,6 +67,10 @@ actor SharedPlayerManager {
         return DirectStreamingPlayer.availableStreams
     }
     
+    // Single source of truth for playback intent (UI + widget + Live Activity)
+    // This prevents the "play on pause" resurrection bug when set synchronously to .userPaused
+    var currentVisualState: PlayerVisualState = .prePlay
+    
     // MARK: - Public API
 
     /// Public async entry point for playing — safe to call from anywhere
@@ -119,8 +123,15 @@ actor SharedPlayerManager {
         // Main app path
         DirectStreamingPlayer.shared.stop()
         
+        // CRITICAL: Update visual state SYNCHRONOUSLY before any async work
+        // This prevents the "play on pause" resurrection
+        currentVisualState = .userPaused
+        
         // Always save after stop
         await saveCurrentState()
+        
+        // Also persist the new visual state for widgets / Live Activities
+        saveVisualState()
         
         notifyMainApp(action: "pause")
     }
@@ -181,26 +192,49 @@ actor SharedPlayerManager {
         notifyMainApp(action: "play")
     }
     
-    // MARK: - Private Helpers for stop()
+    // MARK: - PlayerVisualState Persistence
+
+    private func saveVisualState() {
+        let encoder = JSONEncoder()
+        if let data = try? encoder.encode(currentVisualState) {
+            sharedDefaults?.set(data, forKey: "playerVisualState")
+            sharedDefaults?.synchronize()   // Safe and cheap for widget/extension sync
+        }
+    }
+
+    private func loadVisualState() -> PlayerVisualState {
+        guard let data = sharedDefaults?.data(forKey: "playerVisualState"),
+              let decoded = try? JSONDecoder().decode(PlayerVisualState.self, from: data) else {
+            return .prePlay   // safe fallback
+        }
+        return decoded
+    }
     
+    // MARK: - Private Helpers for stop()
+
     private func handleWidgetStop() {
-        // Instant visual feedback for widget
+        // Instant visual feedback for widget using the new authoritative state
         let now = Date().timeIntervalSince1970
         sharedDefaults?.set(now, forKey: "lastUpdateTime")
         sharedDefaults?.set(true, forKey: "isInstantFeedback")
-        // instantFeedbackTime and language are optional for stop, but added for consistency
         sharedDefaults?.set(now, forKey: "instantFeedbackTime")
         sharedDefaults?.set(sharedDefaults?.string(forKey: "currentLanguage") ?? "en",
                             forKey: "instantFeedbackLanguage")
         
+        // CRITICAL: Set the paused state synchronously for widget path
+        currentVisualState = .userPaused
+        
+        // Persist the full visual state so widget / Live Activity read the correct paused intent
+        saveVisualState()
+        
         scheduleWidgetAction(action: "pause")
         notifyMainApp(action: "pause")
         
-        // Small delay + optimistic widget refresh
+        // Small delay + optimistic widget refresh using correct paused state
         Task {
             try? await Task.sleep(for: .seconds(0.5))
             let optimisticState = WidgetState(
-                isPlaying: false,
+                isPlaying: false,                    // keep for backward compatibility for now
                 currentLanguage: sharedDefaults?.string(forKey: "currentLanguage") ?? "en",
                 hasError: false
             )
