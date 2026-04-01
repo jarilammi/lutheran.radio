@@ -71,17 +71,41 @@ actor SharedPlayerManager {
 
     /// Public async entry point for playing — safe to call from anywhere
     public func play() async {
+        #if DEBUG
+        print("🚀 SharedPlayerManager.play() ENTERED")
+        #endif
+
         let isValid = await SecurityModelValidator.shared.validateSecurityModel()
+
+        #if DEBUG
+        print("🔐 SecurityModelValidator returned: \(isValid)")
+        if !isValid {
+            print("❌ Validation failed → bailing out of playback")
+        } else {
+            print("✅ Validation passed → proceeding with playback")
+        }
+        #endif
+
         guard isValid else { return }
 
         if isRunningInWidget() {
+            #if DEBUG
+            print("📱 Running in widget → calling handleWidgetPlay()")
+            #endif
             handleWidgetPlay()
             return
         }
 
         let stream = DirectStreamingPlayer.shared.selectedStream
+        #if DEBUG
+        print("🎵 Setting stream to: \(stream)")
+        #endif
+
         await DirectStreamingPlayer.shared.setStream(to: stream)
         
+        #if DEBUG
+        print("💾 Saving current state after stream setup")
+        #endif
         await saveCurrentState()
     }
     

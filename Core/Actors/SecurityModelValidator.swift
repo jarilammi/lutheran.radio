@@ -51,7 +51,15 @@ public actor SecurityModelValidator {
     // MARK: - Public API
 
     public func validateSecurityModel() async -> Bool {
-        guard !Task.isCancelled else { return false }
+        #if DEBUG
+        print("🔒 SecurityModelValidator.validateSecurityModel() started")
+        #endif
+        guard !Task.isCancelled else {
+            #if DEBUG
+            print("🔒 Task cancelled")
+            #endif
+            return false
+        }
 
         if let last = lastValidationTime ?? UserDefaults.standard.object(forKey: userDefaultsKey) as? Date,
            currentDate().timeIntervalSince(last) < config.modelCacheDuration {
@@ -126,56 +134,74 @@ public actor SecurityModelValidator {
     // MARK: - Private implementation
 
     private func queryTXTRecord(for domain: String) async throws -> Set<String> {
-            try await withCheckedThrowingContinuation { continuation in
-                let complete: @Sendable (Result<Set<String>, Error>) -> Void = {
-                    continuation.resume(with: $0)
+        try await withCheckedThrowingContinuation { continuation in
+            let complete: @Sendable (Result<Set<String>, Error>) -> Void = { result in
+                continuation.resume(with: result)
+            }
+
+            let context = QueryContext(completion: complete)
+            let contextPtr = Unmanaged.passRetained(context).toOpaque()
+
+            // Correct watchdog using DispatchTime
+            let watchdog = DispatchWorkItem { [weak context] in
+                guard let context, !context.isDone else { return }
+                if let ref = context.serviceRef {
+                    DNSServiceRefDeallocate(ref)
+                    context.serviceRef = nil
                 }
+                context.completion(.failure(
+                    NSError(domain: "dnssd", code: -999, userInfo: [NSLocalizedDescriptionKey: "DNS query timeout"])
+                ))
+            }
 
-                let context = QueryContext(completion: complete)
-                let contextPtr = Unmanaged.passRetained(context).toOpaque()
+            DispatchQueue.global(qos: .userInitiated).asyncAfter(
+                deadline: .now() + 5.0,   // ← Correct: DispatchTime
+                execute: watchdog
+            )
 
-                // Watchdog unchanged
-                DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 5.0) { [weak context] in
-                    guard let context, !context.isDone else { return }
-                    if let ref = context.serviceRef {
-                        DNSServiceRefDeallocate(ref)
-                        context.serviceRef = nil
+            guard let domainCStr = domain.cString(using: .utf8) else {
+                watchdog.cancel()
+                Self.releaseContextPointer(contextPtr)
+                complete(.failure(NSError(domain: "radio.lutheran", code: -998, userInfo: nil)))
+                return
+            }
+
+            var serviceRef: DNSServiceRef?
+            let err = DNSServiceQueryRecord(
+                &serviceRef,
+                0,
+                0,
+                domainCStr,
+                UInt16(kDNSServiceType_TXT),
+                UInt16(kDNSServiceClass_IN),
+                Self.dnsQueryCallback,
+                contextPtr
+            )
+
+            guard err == kDNSServiceErr_NoError, let serviceRef = serviceRef else {
+                watchdog.cancel()
+                Self.releaseContextPointer(contextPtr)
+                complete(.failure(NSError(domain: "dnssd", code: Int(err), userInfo: nil)))
+                return
+            }
+
+            context.serviceRef = serviceRef
+
+            // === Process results on a background queue (this was the missing piece) ===
+            let processingQueue = DispatchQueue(label: "radio.lutheran.dnssd", qos: .userInitiated)
+            processingQueue.async {
+                while !context.isDone {
+                    let processErr = DNSServiceProcessResult(serviceRef)
+                    if processErr != kDNSServiceErr_NoError {
+                        break
                     }
-                }
-
-                guard let domainCStr = domain.cString(using: .utf8) else {
-                    complete(.failure(
-                        NSError(domain: "radio.lutheran", code: -998, userInfo: [NSLocalizedDescriptionKey: "Invalid domain encoding"])
-                    ))
-                    Self.releaseContextPointer(contextPtr)
-                    return
-                }
-
-                var serviceRef: DNSServiceRef?
-                let err = DNSServiceQueryRecord(
-                    &serviceRef,
-                    0,
-                    0,
-                    domainCStr,
-                    UInt16(kDNSServiceType_TXT),
-                    UInt16(kDNSServiceClass_IN),
-
-                    // ────────────────────────────────────────────────────────────────
-                    // Key change: use a static function instead of inline closure literal
-                    Self.dnsQueryCallback as DNSServiceQueryRecordReply,
-                    contextPtr
-                )
-
-                if err == kDNSServiceErr_NoError, let serviceRef {
-                    context.serviceRef = serviceRef
-                } else {
-                    complete(.failure(NSError(domain: "dnssd", code: Int(err), userInfo: nil)))
-                    Self.releaseContextPointer(contextPtr)
+                    usleep(10_000) // 10 ms – acceptable for this short-lived query
                 }
             }
         }
+    }
 
-        // New static non-capturing callback — marked @convention(c) explicitly
+    // New static non-capturing callback — marked @convention(c) explicitly
     private static let dnsQueryCallback: DNSServiceQueryRecordReply = {
         sdRef, flags, interfaceIdx, errorCode, fullName, rrtype, rrclass, rdlen, rdata, ttl, ctx in
         
