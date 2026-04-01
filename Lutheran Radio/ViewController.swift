@@ -605,9 +605,11 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {  // Increased delay for more stability
             self.updateSelectionIndicator(to: self.selectedStreamIndex, isInitial: true)
         }
+        
         if !didInitialLayout {
             didInitialLayout = true
             selectionIndicator.center.x = view.bounds.width / 2
@@ -624,6 +626,17 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 self.updateSelectionIndicator(to: initialIndex, isInitial: true)
             }
         }
+        
+        // ───────────────────────────────────────────────────────────────────
+        // Trigger playback through the central actor after security refactor
+        // This ensures initial launch always goes through SharedPlayerManager
+        Task { @MainActor in
+            #if DEBUG
+            print("🔥 ViewController.viewDidAppear → triggering SharedPlayerManager.play()")
+            #endif
+            await SharedPlayerManager.shared.play()
+        }
+        // ───────────────────────────────────────────────────────────────────
     }
     
     override func viewDidDisappear(_ animated: Bool) {
@@ -2353,9 +2366,12 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                         
                         self.saveStateForWidget()
                         
-                        if self.isPlaying || !self.isManualPause {
-                            await self.startPlayback()
-                        }
+                        // MINIMAL CHANGE: Use central manager instead of direct startPlayback
+                        // This makes stream switching also go through SharedPlayerManager
+                        #if DEBUG
+                        print("🔄 completeStreamSwitch → calling SharedPlayerManager.play()")
+                        #endif
+                        await SharedPlayerManager.shared.play()
                         
                         self.updateSelectionIndicator(to: index)
                         
