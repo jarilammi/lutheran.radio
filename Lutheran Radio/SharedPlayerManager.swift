@@ -66,20 +66,77 @@ actor SharedPlayerManager {
         return DirectStreamingPlayer.availableStreams
     }
     
-    // Widget-safe play method with improved error handling
-    func play() async throws {
+    // MARK: - Public API
+
+    /// Public async entry point for playing — safe to call from anywhere (main app or widget)
+    public func play() async {
+        // 1. Security / validation check first (important!)
+        let validated = await validatePlaybackRequest()
+        guard validated else {
+            #if DEBUG
+            print("🔒 Playback request rejected by validation")
+            #endif
+            return
+        }
+
         if isRunningInWidget() {
-            // Instant visual feedback
-            sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "lastUpdateTime")
-            sharedDefaults?.set(true, forKey: "isInstantFeedback")
-            sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "instantFeedbackTime")
-            sharedDefaults?.set(sharedDefaults?.string(forKey: "currentLanguage") ?? "en",
-                                forKey: "instantFeedbackLanguage")
+            // Widget path — instant UI feedback + schedule action for main app
+            handleWidgetPlay()
+            return
+        }
+
+        // Main app path — this is the critical part
+        do {
+            // Call the real player and await it (assuming DirectStreamingPlayer.play() is now async)
+            await DirectStreamingPlayer.shared.play()
             
-            scheduleWidgetAction(action: "play")
-            notifyMainApp(action: "play")
+            // Only save state AFTER the play() call has completed its synchronous work
+            // (delegate callbacks for actual start/failure may still come later)
+            await saveCurrentState()
             
-            // Correct delay + refresh
+        } catch {
+            #if DEBUG
+            print("❌ SharedPlayerManager.play() failed: \(error)")
+            #endif
+            await saveCurrentState()   // still save error state
+        }
+    }
+    
+    /// Public async entry point for stopping playback
+    public func stop() async {
+        if isRunningInWidget() {
+            // Widget path — instant UI feedback + schedule action for main app
+            handleWidgetStop()
+            return
+        }
+        
+        // Main app path
+        DirectStreamingPlayer.shared.stop()
+        await saveCurrentState()
+    }
+
+    // MARK: - Private Helpers for play()
+
+    private func validatePlaybackRequest() async -> Bool {
+        // TODO: Put your actual validation logic here (subscription check, network, etc.)
+        // For now we allow everything — replace this when you have a validator
+        return true
+    }
+
+    private func handleWidgetPlay() {
+        // Instant visual feedback for widget
+        let now = Date().timeIntervalSince1970
+        sharedDefaults?.set(now, forKey: "lastUpdateTime")
+        sharedDefaults?.set(true, forKey: "isInstantFeedback")
+        sharedDefaults?.set(now, forKey: "instantFeedbackTime")
+        sharedDefaults?.set(sharedDefaults?.string(forKey: "currentLanguage") ?? "en",
+                            forKey: "instantFeedbackLanguage")
+        
+        scheduleWidgetAction(action: "play")
+        notifyMainApp(action: "play")
+        
+        // Small delay + optimistic widget refresh
+        Task {
             try? await Task.sleep(for: .seconds(0.5))
             let optimisticState = WidgetState(
                 isPlaying: true,
@@ -89,25 +146,26 @@ actor SharedPlayerManager {
             await WidgetRefreshManager.shared.refreshIfNeeded(for: optimisticState, immediate: true)
             
             await saveFireAndForget()
-            return
         }
-        
-        // Main app path
-        try await DirectStreamingPlayer.shared.play()
-        await saveCurrentState()
     }
-
-    // Widget-safe stop method – unchanged (already perfect)
-    func stop() async {
-        if isRunningInWidget() {
-            sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "lastUpdateTime")
-            sharedDefaults?.set(true, forKey: "isInstantFeedback")
-            // Add instantFeedbackTime & language if desired for consistency
-            
-            scheduleWidgetAction(action: "pause")
-            notifyMainApp(action: "pause")
-            
-            // Correct delay + refresh
+    
+    // MARK: - Private Helpers for stop()
+    
+    private func handleWidgetStop() {
+        // Instant visual feedback for widget
+        let now = Date().timeIntervalSince1970
+        sharedDefaults?.set(now, forKey: "lastUpdateTime")
+        sharedDefaults?.set(true, forKey: "isInstantFeedback")
+        // instantFeedbackTime and language are optional for stop, but added for consistency
+        sharedDefaults?.set(now, forKey: "instantFeedbackTime")
+        sharedDefaults?.set(sharedDefaults?.string(forKey: "currentLanguage") ?? "en",
+                            forKey: "instantFeedbackLanguage")
+        
+        scheduleWidgetAction(action: "pause")
+        notifyMainApp(action: "pause")
+        
+        // Small delay + optimistic widget refresh
+        Task {
             try? await Task.sleep(for: .seconds(0.5))
             let optimisticState = WidgetState(
                 isPlaying: false,
@@ -115,37 +173,39 @@ actor SharedPlayerManager {
                 hasError: false
             )
             await WidgetRefreshManager.shared.refreshIfNeeded(for: optimisticState, immediate: true)
-            
-            return
         }
-        
-        DirectStreamingPlayer.shared.stop()  // ← refactor to async when possible
-        await saveCurrentState()
     }
+    
+    // MARK: - Stream Switching
 
     nonisolated func switchToStream(_ stream: DirectStreamingPlayer.Stream) async {
         if isRunningInWidget() {
-            // ← this path remains fully synchronous and fast
-            sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "lastUpdateTime")
-            sharedDefaults?.set(true, forKey: "isInstantFeedback")
-            sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "instantFeedbackTime")
-            sharedDefaults?.set(stream.languageCode, forKey: "instantFeedbackLanguage")
-            sharedDefaults?.synchronize()
-            
-            scheduleWidgetAction(action: "switch", parameter: stream.languageCode)
-            notifyMainApp(action: "switch", parameter: stream.languageCode)
-            
-            WidgetCenter.shared.reloadAllTimelines()
-            
-            #if DEBUG
-            print("Widget stream switch scheduled: \(stream.languageCode)")
-            #endif
-            
+            // Widget path must stay nonisolated and synchronous/fast
+            handleWidgetSwitch(to: stream)
             return
         }
         
-        // Main app forward – now properly awaited
+        // Main app path
         await DirectStreamingPlayer.shared.switchToStream(stream)
+    }
+
+    // This helper must be nonisolated because it's called from the nonisolated switchToStream
+    nonisolated private func handleWidgetSwitch(to stream: DirectStreamingPlayer.Stream) {
+        let now = Date().timeIntervalSince1970
+        sharedDefaults?.set(now, forKey: "lastUpdateTime")
+        sharedDefaults?.set(true, forKey: "isInstantFeedback")
+        sharedDefaults?.set(now, forKey: "instantFeedbackTime")
+        sharedDefaults?.set(stream.languageCode, forKey: "instantFeedbackLanguage")
+        sharedDefaults?.synchronize()
+        
+        scheduleWidgetAction(action: "switch", parameter: stream.languageCode)
+        notifyMainApp(action: "switch", parameter: stream.languageCode)
+        
+        WidgetCenter.shared.reloadAllTimelines()
+        
+        #if DEBUG
+        print("🔗 Widget stream switch scheduled: \(stream.languageCode)")
+        #endif
     }
     
     // Schedule widget action for main app to handle

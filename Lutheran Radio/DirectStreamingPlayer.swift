@@ -1181,7 +1181,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     func play() async -> Bool {
         isCurrentlyAttemptingPlayback = true
         defer { isCurrentlyAttemptingPlayback = false }
-        
+
         #if DEBUG
         print("🔊 [Playback Start] async play() entered — attemptingPlayback flag set to true")
         #endif
@@ -1206,6 +1206,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             let localizedStatus = String(localized: String.LocalizationValue(statusKey))
             safeOnStatusChange(isPlaying: false, status: localizedStatus)
             SharedPlayerManager.shared.saveFireAndForget()
+
             return false
         }
 
@@ -1213,6 +1214,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         print("✅ [Playback Start] Security validation passed — proceeding to async setup")
         #endif
 
+        // Critical: All AVPlayer work must be on MainActor
         let setupSucceeded = await performOptimalServerSelectionAndFullPlaybackSetup()
 
         if setupSucceeded {
@@ -1227,16 +1229,15 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
 
         return setupSucceeded
     }
-    
+
+    // MARK: - Playback Setup
+
     @MainActor
     private func performOptimalServerSelectionAndFullPlaybackSetup() async -> Bool {
         #if DEBUG
         print("🔊 [Playback Setup] Starting server selection + asset creation")
         #endif
 
-        // 1. Select optimal server (make this async if possible; otherwise keep closure but await result)
-        // Best: refactor selectOptimalServer to be async and return the URL directly.
-        // For minimal change right now:
         return await withCheckedContinuation { continuation in
             selectOptimalServer { [weak self] _ in
                 guard let self else {
@@ -1250,49 +1251,59 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 print("🔊 [Playback Setup] Selected URL: \(streamURL)")
                 #endif
 
-                // 2. Audio Session (critical!)
-                do {
-                    try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
-                    try AVAudioSession.sharedInstance().setActive(true)
-                } catch {
+                // Everything that touches AVPlayer must run on MainActor
+                Task { @MainActor [weak self] in
+                    guard let self else {
+                        continuation.resume(returning: false)
+                        return
+                    }
+
+                    // 1. Audio Session (critical!)
+                    do {
+                        try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
+                        try AVAudioSession.sharedInstance().setActive(true)
+                    } catch {
+                        #if DEBUG
+                        print("❌ AudioSession failed: \(error)")
+                        #endif
+                        continuation.resume(returning: false)
+                        return
+                    }
+
+                    // 2. Asset + Resource Loader
+                    let asset = AVURLAsset(url: streamURL)
+                    // Note: Using .main for now (safer during transition).
+                    // You can change back to a background queue later if you carefully audit it.
+                    asset.resourceLoader.setDelegate(self, queue: .main)
+
+                    let playerItem = AVPlayerItem(asset: asset)
+
+                    if self.player == nil {
+                        self.player = AVPlayer()
+                    }
+
+                    self.player?.replaceCurrentItem(with: playerItem)
+                    self.playerItem = playerItem
+
+                    // 3. Setup observers (idempotent) — BEFORE play()
+                    self.setupPlaybackObservers()
+
+                    // 4. Explicit play()
+                    self.player?.play()
+
                     #if DEBUG
-                    print("❌ AudioSession failed: \(error)")
+                    print("▶️ [Playback Setup] replaceCurrentItem + play() called on main actor")
                     #endif
-                    continuation.resume(returning: false)
-                    return
+
+                    // We consider initiation successful here.
+                    // Real "playing" state comes from KVO observers later.
+                    continuation.resume(returning: true)
                 }
-
-                // 3. Asset + Resource Loader (use a serial background queue!)
-                let asset = AVURLAsset(url: streamURL)
-                let loaderQueue = DispatchQueue(label: "com.lutheran.radio.resourceLoader", attributes: [])
-                asset.resourceLoader.setDelegate(self, queue: loaderQueue)   // ← better than .main
-
-                let playerItem = AVPlayerItem(asset: asset)
-
-                if self.player == nil {
-                    self.player = AVPlayer()
-                }
-
-                self.player?.replaceCurrentItem(with: playerItem)
-                self.playerItem = playerItem
-
-                // 4. Explicit play()
-                self.player?.play()
-
-                // 5. Setup observers once (idempotent)
-                self.setupPlaybackObservers()
-
-                #if DEBUG
-                print("▶️ [Playback Setup] replaceCurrentItem + play() called on main actor")
-                #endif
-
-                // We consider initiation successful here.
-                // Real "playing" state comes from KVO later.
-                continuation.resume(returning: true)
             }
         }
     }
     
+    @MainActor
     private func setupPlaybackObservers() {
         // Invalidate old ones first to avoid leaks/duplicates
         rateObserver?.invalidate()
@@ -1664,9 +1675,13 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     
     private func startPlaybackWithFallback(fallbackServers: [Server], completion: @escaping BoolCompletion) {
         DispatchQueue.main.async { [weak self] in
-            guard let self else { completion(false); return }
+            guard let self else {
+                completion(false);
+                return
+            }
             
-            self.stop(completion: nil as VoidCompletion?, silent: true)
+            // Stop previous playback
+            self.stop(completion: nil, silent: true)
             
             let connectionStartTime = Date()
             let connectionId = UUID()
@@ -1678,7 +1693,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             self.isSSLHandshakeComplete = false
             self.hasStartedPlaying = false
             
-            let finalURL = self.selectedStream.url   // always correct
+            let finalURL = self.selectedStream.url
             
             let asset = AVURLAsset(url: finalURL)
             asset.resourceLoader.setDelegate(self, queue: DispatchQueue(label: "radio.lutheran.resourceloader"))
@@ -1714,7 +1729,10 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                     self.metadataOutput?.setDelegate(self, queue: DispatchQueue.main)
                     self.playerItem?.add(self.metadataOutput!)
                     
-                    self.player?.play()
+                    // CRITICAL: Ensure play() happens on MainActor (this was the main cause of "stream does not play")
+                    MainActor.assumeIsolated {
+                        self.player?.play()
+                    }
                     self.hasStartedPlaying = true
                     
                 case .failed:
@@ -1987,7 +2005,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     ///   - isSwitchingStream: If `true`, treats this as a stream switch, suppressing "stopped" status updates unless explicitly overridden. Defaults to the instance’s `isSwitchingStream` flag.
     ///   - silent: If `true`, skips all status updates to avoid UI flicker (e.g., during internal resets or stream switches).
     /// - Note: When `isSwitchingStream` or `silent` is `true`, the "status_stopped" update is suppressed to prevent misleading UI changes during stream transitions. Calls `performActualStop` with an effective switching flag to handle status suppression.
-    func stop(completion: VoidCompletion? = nil,
+    func stop(completion: (@MainActor @Sendable () -> Void)? = nil,
               isSwitchingStream: Bool? = nil,
               silent: Bool = false) {
         
@@ -2051,32 +2069,38 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// - Parameters:
     ///   - completion: Optional completion handler called after stopping.
     ///   - silent: If `true`, skips all status updates to avoid UI flicker.
-    ///   - effectiveSwitching: If `true`, suppresses "status_stopped" updates during stream switches to prevent misleading UI changes.
-    /// - Note: Combines `silent` and `effectiveSwitching` into `effectiveSilent` to determine if status updates should be skipped. Ensures cleanup of player, resource loaders, and observers.
-    private func performActualStop(completion: VoidCompletion? = nil,
+    ///   - effectiveSwitching: If `true`, suppresses "status_stopped" updates during stream switches.
+    /// - Note: Combines `silent` and `effectiveSwitching` into `effectiveSilent`. All main-thread work is now explicitly isolated.
+    private func performActualStop(completion: (@MainActor () -> Void)? = nil,
                                    silent: Bool = false,
                                    effectiveSwitching: Bool) {
         clearSSLProtectionTimer()
         isSSLHandshakeComplete = true
         hasStartedPlaying = false
         
-        // Removed: validationTimer?.invalidate() / validationTimer = nil
-        // → Security validation is now handled on-demand via SecurityModelValidator.shared
-        //   (no periodic timer exists in this class anymore)
+        // Security validation is now handled on-demand via SecurityModelValidator.shared (unchanged)
         
-        // In performActualStop, use effectiveSwitching for status suppression
         let effectiveSilent = silent || effectiveSwitching
         
-        // If we're deallocating, perform cleanup synchronously
         if isDeallocating {
             stopSynchronously()
-            completion?()
+            if let completion = completion {
+                MainActor.assumeIsolated {
+                    completion()
+                }
+            }
             return
         }
         
         audioQueue.async { [weak self] in
             guard let self, !self.isDeallocating else {
-                DispatchQueue.main.async { completion?() }
+                if let completion = completion {
+                    DispatchQueue.main.async {
+                        MainActor.assumeIsolated {
+                            completion()
+                        }
+                    }
+                }
                 return
             }
             
@@ -2087,13 +2111,19 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             guard self.player != nil || self.playerItem != nil else {
                 if !silent {
                     DispatchQueue.main.async {
-                        if !effectiveSilent {
-                            self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_stopped"))
+                        MainActor.assumeIsolated {
+                            if !effectiveSilent {
+                                self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_stopped"))
+                            }
+                            completion?()
                         }
-                        completion?()
                     }
-                } else {
-                    DispatchQueue.main.async { completion?() }
+                } else if let completion = completion {
+                    DispatchQueue.main.async {
+                        MainActor.assumeIsolated {
+                            completion()
+                        }
+                    }
                 }
                 #if DEBUG
                 print("🛑 Playback already stopped, skipping cleanup (silent/effectiveSilent: \(effectiveSilent))")
@@ -2101,15 +2131,15 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 return
             }
             
-            // ONLY pause/rate operations use executeAudioOperation
+            // Pause operations
             self.executeAudioOperation({
                 self.player?.pause()
                 self.player?.rate = 0.0
                 return ""
             }, completion: { _ in })
             
-            // Cleanup continues immediately, not waiting for audio operation
-            self.activeResourceLoaders.forEach { (_: AVAssetResourceLoadingRequest, delegate: StreamingSessionDelegate) in
+            // Cleanup (unchanged)
+            self.activeResourceLoaders.forEach { (_, delegate) in
                 delegate.cancel()
             }
             self.activeResourceLoaders.removeAll()
@@ -2131,13 +2161,19 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             
             if !silent {
                 DispatchQueue.main.async {
-                    if !effectiveSilent {
-                        self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_stopped"))
+                    MainActor.assumeIsolated {
+                        if !effectiveSilent {
+                            self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_stopped"))
+                        }
+                        completion?()
                     }
-                    completion?()
                 }
-            } else {
-                DispatchQueue.main.async { completion?() }
+            } else if let completion = completion {
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated {
+                        completion()
+                    }
+                }
             }
             
             self.stopBufferingTimer()
