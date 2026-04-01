@@ -8,6 +8,7 @@
 import Foundation
 import AVFoundation
 import WidgetKit
+import Core
 
 /// - Article: Shared State Management for Widgets and Extensions
 ///
@@ -70,29 +71,18 @@ actor SharedPlayerManager {
 
     /// Public async entry point for playing — safe to call from anywhere
     public func play() async {
-        let validated = await validatePlaybackRequest()
-        guard validated else { return }
+        let isValid = await SecurityModelValidator.shared.validateSecurityModel()
+        guard isValid else { return }
 
         if isRunningInWidget() {
             handleWidgetPlay()
             return
         }
 
-        // Main app path — player is now guaranteed @MainActor
-        do {
-            let success = await DirectStreamingPlayer.shared.play()
-            
-            if success {
-                await saveCurrentStateAfterSuccess()
-            } else {
-                await saveCurrentState()
-            }
-        } catch {
-            #if DEBUG
-            print("❌ SharedPlayerManager.play() failed: \(error)")
-            #endif
-            await saveCurrentState()
-        }
+        let stream = DirectStreamingPlayer.shared.selectedStream
+        await DirectStreamingPlayer.shared.setStream(to: stream)
+        
+        await saveCurrentState()
     }
     
     /// Public async entry point for stopping playback

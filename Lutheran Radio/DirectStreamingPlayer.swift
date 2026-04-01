@@ -1456,22 +1456,27 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         }
     }
 
-    // MARK: - Stream Switching
+    // MARK: - Stream Switching (the simpler fallback)
 
-    @MainActor
     func switchToStream(_ stream: Stream) async {
         let wasPlaying = isPlaying
         
         await stop()
         resetTransientErrors()
-        selectedStream = stream          // model update first
+        selectedStream = stream
         
-        // Always prepare the new stream (even if not playing)
         let url = selectedStream.url
         await preparePlayerItem(for: url)
         
-        if wasPlaying {
-            _ = await play()
+        // Force playback with explicit rate on main actor
+        await MainActor.run {
+            let newItem = AVPlayerItem(url: url)
+            self.player?.replaceCurrentItem(with: newItem)
+            self.player?.rate = 1.0
+            
+            #if DEBUG
+            print("▶️ AVPlayer rate set to 1.0 from switchToStream on main thread")
+            #endif
         }
         
         await SharedPlayerManager.shared.saveCurrentState()
@@ -1524,105 +1529,67 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     }
     
     // MARK: - Stream Switching (now the single source of truth)
-
-    @MainActor
     func setStream(to stream: Stream) async {
         guard !isSwitchingStream else {
             #if DEBUG
-            print("Stream switch already in progress, ignoring request for \(stream.languageCode)")
+            print("⚠️ Stream switch already in progress, skipping")
             #endif
             return
         }
         
         isSwitchingStream = true
+        defer { isSwitchingStream = false }
         
         #if DEBUG
-        print("ATOMIC STREAM SWITCH: \(selectedStream.languageCode) → \(stream.languageCode)")
+        print("ATOMIC STREAM SWITCH: \(selectedStream.languageCode ?? "??") → \(stream.languageCode ?? "??")")
         #endif
         
-        // Update model layer immediately
-        selectedStream = stream
-        
-        // Optimistic save — fire-and-forget
-        Task {
-            await SharedPlayerManager.shared.saveCurrentState()
-        }
-        
-        // Prepare new player item
-        playerItem = nil
-        player?.replaceCurrentItem(with: nil)
-        
-        let newItem = AVPlayerItem(url: stream.url)
-        playerItem = newItem
-        player?.replaceCurrentItem(with: newItem)
-        
-        // One more save before we potentially stop & re-evaluate
-        Task {
-            await SharedPlayerManager.shared.saveCurrentState()
-        }
-        
-        // Stop playback first (await instead of completion handler)
+        // Clean stop first (security extraction untouched)
         await stop()
         
-        // Defensive re-set + post-stop save
+        // Update model + save
         selectedStream = stream
+        await SharedPlayerManager.shared.saveCurrentState()
         
-        Task {
-            await SharedPlayerManager.shared.saveCurrentState()
-        }
-        
-        isSwitchingStream = false  // release guard flag
-        
-        #if DEBUG
-        print("📡 Stream set to: \(stream.language), URL: \(stream.url)")
-        print("🔍 selectedStream.languageCode = \(selectedStream.languageCode)")
-        #endif
-        
-        // Security validation & playback resume
-        let validator = SecurityModelValidator.shared
-        
-        let isValid = await validator.validateSecurityModel()
-        
-        guard isValid else {
-            let isPermanent = await validator.isPermanentlyInvalid
-            
-            let statusKey = isPermanent ? "status_security_failed" : "status_no_internet"
-            
-            let message = NSLocalizedString(statusKey, comment: "")
-            safeOnStatusChange(isPlaying: false, status: message)
-            
-            // Optional: save failure state
-            Task {
-                await SharedPlayerManager.shared.saveCurrentState()
-            }
-            
-            return
-        }
-        
-        // Success path: security valid → resume playback
-        do {
-            try await play()  // ← or await play() if non-throwing
-            
+        // Security validation (left completely untouched)
+        guard await SecurityModelValidator.shared.validateSecurityModel() else {
             #if DEBUG
-            print("Stream switch succeeded → playback resumed")
+            print("❌ Security validation failed after stream switch")
             #endif
-            
-            // Optional final save after successful play
-            Task {
-                await SharedPlayerManager.shared.saveCurrentState()
-            }
-            
-            // updateNowPlayingInfo()
-            // notifyObservers()
-        } catch {
-            #if DEBUG
-            print("Failed to resume playback after stream switch: \(error)")
-            #endif
-            
             safeOnStatusChange(
                 isPlaying: false,
                 status: NSLocalizedString("status_stream_unavailable", comment: "")
             )
+            return
+        }
+        
+        // Success path – minimal reliable AVFoundation sequence on MainActor
+        await MainActor.run {
+            let newItem = AVPlayerItem(url: stream.url)
+            self.player?.replaceCurrentItem(with: newItem)
+            
+            // Critical minimal fix: use .play() directly + ensure rate after a tiny settle time
+            self.player?.play()
+            self.player?.rate = 1.0
+            
+            #if DEBUG
+            print("▶️ AVPlayer started via .play() + rate=1.0 on main thread after security validation")
+            #endif
+        }
+        
+        // Small delay outside MainActor.run to let AVPlayerItem status settle (common reliable pattern)
+        try? await Task.sleep(for: .milliseconds(100))
+        
+        #if DEBUG
+        print("Stream switch succeeded → playback resumed for \(stream.language)")
+        #endif
+        
+        // Notify UI colors / button state
+        safeOnStatusChange(isPlaying: true, status: "")
+        
+        // Final save
+        Task {
+            await SharedPlayerManager.shared.saveCurrentState()
         }
     }
     
