@@ -68,7 +68,7 @@ actor SharedPlayerManager {
     
     // MARK: - Public API
 
-    /// Public async entry point for playing — safe to call from anywhere (main app or widget)
+    /// Public async entry point for playing — safe to call from anywhere
     public func play() async {
         // 1. Security / validation check first (important!)
         let validated = await validatePlaybackRequest()
@@ -85,34 +85,41 @@ actor SharedPlayerManager {
             return
         }
 
-        // Main app path — this is the critical part
+        // Main app path only from here
         do {
-            // Call the real player and await it (assuming DirectStreamingPlayer.play() is now async)
-            await DirectStreamingPlayer.shared.play()
+            // 2. Call the real player and await the actual result
+            let success = await DirectStreamingPlayer.shared.play()
             
-            // Only save state AFTER the play() call has completed its synchronous work
-            // (delegate callbacks for actual start/failure may still come later)
-            await saveCurrentState()
+            if success {
+                // 3. Only on real success: save state + notify
+                await saveCurrentStateAfterSuccess()
+            } else {
+                // 4. On explicit failure: still save error state
+                await saveCurrentState()
+            }
             
         } catch {
             #if DEBUG
             print("❌ SharedPlayerManager.play() failed: \(error)")
             #endif
-            await saveCurrentState()   // still save error state
+            await saveCurrentState()   // save error state
         }
     }
     
     /// Public async entry point for stopping playback
     public func stop() async {
         if isRunningInWidget() {
-            // Widget path — instant UI feedback + schedule action for main app
             handleWidgetStop()
             return
         }
         
         // Main app path
         DirectStreamingPlayer.shared.stop()
+        
+        // Always save after stop
         await saveCurrentState()
+        
+        notifyMainApp(action: "pause")
     }
 
     // MARK: - Private Helpers for play()
@@ -147,6 +154,28 @@ actor SharedPlayerManager {
             
             await saveFireAndForget()
         }
+    }
+    
+    /// Called only after the player confirmed successful start of playback
+    private func saveCurrentStateAfterSuccess() async {
+        guard !isRunningInWidget() else { return }
+        
+        let player = DirectStreamingPlayer.shared
+        let now = Date()
+        
+        let currentLanguageCode = sharedDefaults?.string(forKey: "currentLanguage") ?? "en"
+        let hasPermanentError = await player.isLastErrorPermanent()
+        
+        let currentState = (
+            isPlaying: true,                    // We KNOW it's playing now
+            currentLanguage: currentLanguageCode,
+            hasError: hasPermanentError
+        )
+        
+        performActualSave(currentState, at: now)
+        
+        // Optional: extra notification for widgets/Live Activities
+        notifyMainApp(action: "play")
     }
     
     // MARK: - Private Helpers for stop()

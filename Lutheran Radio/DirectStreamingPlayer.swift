@@ -1230,7 +1230,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         return setupSucceeded
     }
 
-    // MARK: - Playback Setup
+    // MARK: - Playback Setup (MainActor preferred path)
 
     @MainActor
     private func performOptimalServerSelectionAndFullPlaybackSetup() async -> Bool {
@@ -1272,8 +1272,6 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
 
                     // 2. Asset + Resource Loader
                     let asset = AVURLAsset(url: streamURL)
-                    // Note: Using .main for now (safer during transition).
-                    // You can change back to a background queue later if you carefully audit it.
                     asset.resourceLoader.setDelegate(self, queue: .main)
 
                     let playerItem = AVPlayerItem(asset: asset)
@@ -1285,10 +1283,10 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                     self.player?.replaceCurrentItem(with: playerItem)
                     self.playerItem = playerItem
 
-                    // 3. Setup observers (idempotent) — BEFORE play()
+                    // 3. Setup observers — BEFORE play()
                     self.setupPlaybackObservers()
 
-                    // 4. Explicit play()
+                    // 4. Explicit play() — guaranteed on MainActor
                     self.player?.play()
 
                     #if DEBUG
@@ -1296,13 +1294,14 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                     #endif
 
                     // We consider initiation successful here.
-                    // Real "playing" state comes from KVO observers later.
                     continuation.resume(returning: true)
                 }
             }
         }
     }
-    
+
+    // MARK: - Observers
+
     @MainActor
     private func setupPlaybackObservers() {
         // Invalidate old ones first to avoid leaks/duplicates
@@ -1340,10 +1339,95 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             Task { await SharedPlayerManager.shared.saveCurrentState() }
         }
     }
-    
-    // MARK: - Stream Switching (Swift 6 pure mutation)
-    // Called only from SharedPlayerManager.main-app path or internally.
-    // Guarantees: every mutation triggers saveCurrentState() + WidgetRefreshManager.
+
+    // MARK: - Legacy Playback Path (kept for compatibility)
+
+    /// Legacy / fallback playback setup path.
+    /// Prefer `performOptimalServerSelectionAndFullPlaybackSetup()` when possible.
+    private func performOptimalServerSelectionAndCertificateCheck() {
+        #if DEBUG
+        print("🔊 [Playback Start] performOptimalServerSelectionAndCertificateCheck entered")
+        #endif
+
+        selectOptimalServer { [weak self] _ in
+            guard let self else { return }
+
+            #if DEBUG
+            print("🔊 [Playback Start] selectOptimalServer closure entered — building asset")
+            #endif
+
+            let streamURL = self.selectedStream.url
+
+            // All AVPlayer work must happen on the main actor
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+
+                #if DEBUG
+                print("🔊 [Playback Start] Running on @MainActor — setting up player")
+                #endif
+
+                // 1. Ensure player exists
+                if self.player == nil {
+                    self.player = AVPlayer()
+                    #if DEBUG
+                    print("🔊 [Playback Start] Created new AVPlayer()")
+                    #endif
+                }
+
+                // 2. Create asset + set resource loader delegate
+                let asset = AVURLAsset(url: streamURL)
+                asset.resourceLoader.setDelegate(self, queue: .main)
+
+                let newItem = AVPlayerItem(asset: asset)
+
+                // 3. Replace current item and start playback (on MainActor)
+                self.player?.replaceCurrentItem(with: newItem)
+                self.playerItem = newItem
+
+                #if DEBUG
+                print("🔊 [Playback Start] replaceCurrentItem called")
+                #endif
+
+                self.player?.play()
+
+                #if DEBUG
+                print("▶️ AVPlayer.play() called directly on @MainActor")
+                #endif
+
+                // 4. Setup observers (idempotent)
+                self.setupPlaybackObservers()
+
+                // 5. Immediate feedback
+                if self.isPlaying {
+                    self.delegate?.onStatusChange(.playing, nil)
+                } else {
+                    #if DEBUG
+                    print("🔊 [Playback Start] Playback initiated — waiting for readyToPlay via KVO")
+                    #endif
+                }
+            }
+
+            // Background certificate validation – does NOT block playback
+            Task { [weak self] in
+                guard let self else { return }
+                let isValid = await CertificateValidator.shared.validateServerCertificate(for: streamURL)
+
+                if !isValid {
+                    await MainActor.run {
+                        self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_security_failed"))
+                        self.stop()
+                    }
+                } else {
+                    #if DEBUG
+                    print("🔒 [Playback Start] Certificate validation passed in background")
+                    #endif
+                }
+            }
+        }
+    }
+
+    // MARK: - Stream Switching
+
     @MainActor
     func switchToStream(_ stream: Stream) async {
         let wasPlaying = isPlaying
@@ -1351,7 +1435,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         await stop()
         
         resetTransientErrors()
-        await setStream(to: stream)     // ← add await here
+        await setStream(to: stream)
         
         if wasPlaying {
             do {
@@ -1365,144 +1449,6 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 print("Direct stream switch failed for \(stream.language): \(error)")
                 #endif
                 // Optionally restore previous stream / show error UI
-            }
-        }
-    }
-    
-    private func performOptimalServerSelectionAndCertificateCheck() {
-        #if DEBUG
-        print("🔊 [Playback Start] performOptimalServerSelectionAndCertificateCheck entered — about to call selectOptimalServer")
-        #endif
-        
-        #if DEBUG
-        print("🔊 [Playback Start] Calling selectOptimalServer (expecting closure on background thread)")
-        #endif
-        
-        selectOptimalServer { [weak self] _ in
-            guard let self else { return }
-            #if DEBUG
-            print("🔊 [Playback Start] selectOptimalServer closure entered")
-            #endif
-            
-            #if DEBUG
-            print("🔊 [Playback Start] weak self captured successfully — building AVURLAsset")
-            #endif
-            
-            let streamURL = self.selectedStream.url
-            #if DEBUG
-            print("🔊 [Playback Start] Built streamURL: \(streamURL) (security_model=starbase confirmed)")
-            #endif
-            
-            let asset = AVURLAsset(url: streamURL)
-            asset.resourceLoader.setDelegate(self, queue: .main)
-            let newItem = AVPlayerItem(asset: asset)
-            
-            #if DEBUG
-            print("🔊 [Playback Start] AVPlayerItem created — resourceLoader delegate set on .main")
-            #endif
-            
-            #if DEBUG
-            print("🔊 [Playback Start] AVPlayerItem created — player exists? \(self.player != nil)")
-            #endif
-            
-            if self.player == nil {
-                #if DEBUG
-                print("🔊 [Playback Start] player was nil → creating AVPlayer() (Apple Music/Podcasts 2026 pattern)")
-                #endif
-                self.player = AVPlayer()
-            }
-            
-            #if DEBUG
-            print("🔊 [Playback Start] Dispatching replaceCurrentItem + play on main queue (2026 cold-launch pattern)")
-            #endif
-            
-            DispatchQueue.main.async {
-                #if DEBUG
-                print("🔊 [Playback Start] About to replaceCurrentItem (on main)")
-                #endif
-                self.player?.replaceCurrentItem(with: newItem)
-                self.playerItem = newItem  // sync playerItem with the actual currentItem
-                #if DEBUG
-                print("🔊 [Playback Start] replaceCurrentItem CALLED — hasItem now = \(self.player?.currentItem != nil)")
-                #endif
-                
-                self.player?.play()
-                #if DEBUG
-                print("🔊 [Playback Start] player?.play() CALLED")
-                #endif
-                
-                #if DEBUG
-                print("🔊 [Playback Start] Immediate rate check AFTER play(): \(self.player?.rate ?? 0.0)")
-                #endif
-                
-                if self.isPlaying {  // Guard to ensure actual playback
-                    self.delegate?.onStatusChange(.playing, nil)
-                    #if DEBUG
-                    print("🔊 [Playback Start] onStatusChange(.playing) called — UI should now show tuning complete")
-                    #endif
-                } else {
-                    #if DEBUG
-                    print("🔊 [Playback Start] Deferred onStatusChange(.playing) — waiting for readyToPlay")
-                    #endif
-                }
-                
-                // Add KVO to fire deferred delegate on async changes
-                self.rateObserver = self.player?.observe(\.rate, options: [.new]) { [weak self] player, change in
-                    guard let self else { return }
-                    #if DEBUG
-                    print("🔊 [KVO] Rate changed to \(player.rate)")
-                    #endif
-                    if self.isPlaying {
-                        self.delegate?.onStatusChange(.playing, nil)
-                    } else if player.rate == 0 {
-                        self.delegate?.onStatusChange(.stopped, nil)
-                    }
-                    
-                    // Fire-and-forget state save on rate change
-                    Task {
-                        await SharedPlayerManager.shared.saveCurrentState()
-                    }
-                }
-                
-                self.statusObserver = self.player?.currentItem?.observe(\.status, options: [.new]) { [weak self] item, change in
-                    guard let self else { return }
-                    #if DEBUG
-                    print("🔊 [KVO] Item status changed to \(item.status.rawValue)")
-                    #endif
-                    switch item.status {
-                    case .readyToPlay:
-                        if self.isPlaying {
-                            self.delegate?.onStatusChange(.playing, nil)
-                        }
-                    case .failed:
-                        self.delegate?.onStatusChange(.stopped, item.error?.localizedDescription)
-                        self.handlePlaybackError(item.error)  // Call existing or add handler for errors
-                    default:
-                        break
-                    }
-                    
-                    // Fire-and-forget state save on status change
-                    Task {
-                        await SharedPlayerManager.shared.saveCurrentState()
-                    }
-                }
-            }
-            
-            // 3. Background validation – never blocks the player (2026 pattern)
-            Task { [weak self] in
-                guard let self else { return }
-                let isValid = await CertificateValidator.shared.validateServerCertificate(for: streamURL)
-                
-                if !isValid {
-                    await MainActor.run {
-                        self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_security_failed"))
-                        self.stop()
-                    }
-                } else {
-                    #if DEBUG
-                    print("🔊 [Playback Start] Certificate validation passed (background) — stream is fully secure")
-                    #endif
-                }
             }
         }
     }
