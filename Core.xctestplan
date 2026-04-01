@@ -1,0 +1,24 @@
+{
+  "configurations" : [
+    {
+      "id" : "07807685-97AC-4F64-B607-F06C45144FC9",
+      "name" : "Configuration 1",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "testTimeoutsEnabled" : true
+  },
+  "testTargets" : [
+    {
+      "target" : {
+        "containerPath" : "container:Lutheran Radio.xcodeproj",
+        "identifier" : "B77E54262F6E6A6700A055DA",
+        "name" : "CoreTests"
+      }
+    }
+  ],
+  "version" : 1
+}

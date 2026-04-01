@@ -41,23 +41,13 @@ import CommonCrypto
 /// - Access via `CertificateValidator.shared`.
 /// - Call `validateServerCertificate(for:completion:)` for initial/periodic HEAD-based validation.
 /// - Implements `URLSessionDelegate` for challenge-based validation during sessions.
-actor CertificateValidator: NSObject, URLSessionTaskDelegate {
+public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
     /// Shared singleton instance for global access.
-    static let shared = CertificateValidator()
+    public static let shared = CertificateValidator()
     
-    /// The pinned SHA-256 fingerprint of the full certificate (DER representation), formatted as hex (uppercase, colon-separated).
-    ///
-    /// Generated via: `openssl s_client -connect livestream.lutheran.radio:443 | openssl x509 -fingerprint -sha256 -noout`.
-    /// Update this value post-certificate expiry/rotation via app release.
     internal var pinnedCertFingerprint: String {
-        "CC:F7:8E:09:EF:F3:3D:9A:5D:8B:B0:5C:74:28:0D:F6:BE:14:1C:C4:47:F9:69:C2:90:2C:43:97:66:8B:3D:CC" // openssl s_client -connect livestream.lutheran.radio:443 | openssl x509 -fingerprint -sha256 -noout
+        SecurityConfiguration().pinnedLeafFingerprint
     }
-    
-    /// The start date for the certificate transition period (July 27, 2026).
-    static let transitionStartDate = Date(timeIntervalSince1970: 1785110400)
-    
-    /// The expiry date of the current certificate (August 26, 2026, 23:59:59).
-    static let certificateExpiryDate = Date(timeIntervalSince1970: 1787788799)
     
     /// Barrier flag to allow leniency during transition, mitigating date manipulation risks.
     /// Defaults to true (lenient, trusting ATS on mismatch); set to false if manipulation detected (e.g., via server time check).
@@ -66,8 +56,10 @@ actor CertificateValidator: NSObject, URLSessionTaskDelegate {
     /// Timestamp of the last validation attempt.
     private var lastValidationTime: Date?
     
-    /// Interval for caching validation results (10 minutes).
-    private let validationInterval: TimeInterval = 600 // 10 minutes
+    /// Interval for caching validation results.
+    private var validationInterval: TimeInterval {
+        SecurityConfiguration.current.modelCacheDuration
+    }
     
     /// Cached result of the last validation.
     private var lastValidationResult: Bool = false
@@ -97,8 +89,7 @@ actor CertificateValidator: NSObject, URLSessionTaskDelegate {
     
     /// Determines if the current date falls within the defined transition period.
     private var isInTransitionPeriod: Bool {
-        let now = currentDate()
-        return now >= Self.transitionStartDate && now <= Self.certificateExpiryDate
+        return SecurityConfiguration.current.isInTransitionWindow
     }
     
     /// Validates the server trust chain, respecting the transition period and caching results.
@@ -116,15 +107,16 @@ actor CertificateValidator: NSObject, URLSessionTaskDelegate {
     /// - Parameters:
     ///   - serverTrust: The `SecTrust` object from the authentication challenge.
     ///   - completion: Callback with the validation result (true if valid/trusted).
-    func validateServerTrust(_ serverTrust: SecTrust) async -> Bool {
-        if let lastTime = lastValidationTime, Date().timeIntervalSince(lastTime) < validationInterval, lastValidationResult {
+    public func validateServerTrust(_ serverTrust: SecTrust) async -> Bool {
+        if let lastTime = lastValidationTime,
+           Date().timeIntervalSince(lastTime) < validationInterval,
+           lastValidationResult {
             #if DEBUG
             print("🔒 [CertificateValidator] Using cached valid result from \(lastTime)")
             #endif
             return true
         }
         
-        // Perform system trust evaluation (includes ATS pinning and chain validation)
         var error: CFError?
         if !SecTrustEvaluateWithError(serverTrust, &error) {
             #if DEBUG
@@ -136,42 +128,44 @@ actor CertificateValidator: NSObject, URLSessionTaskDelegate {
         }
         
         let isPinnedValid = validateCertificateChain(serverTrust: serverTrust)
-        let now = currentDate()
+        let config = SecurityConfiguration.current
+        
         let isValid: Bool
         
-        if now > Self.certificateExpiryDate {
-            // After expiry, strictly enforce pinned fingerprint
+        // Use fresh Date() for each check — cheap and consistent with config.isInTransitionWindow
+        if Date() > config.transitionWindowEnd {
             isValid = isPinnedValid
-            if !isValid {
-                #if DEBUG
-                print("🔒 [CertificateValidator] Certificate fingerprint validation failed after expiry at \(now). Fingerprint mismatch.")
-                #endif
-            }
-        } else if isInTransitionPeriod {
-            // During transition, apply barrier on fingerprint failure
+            #if DEBUG
+            let now = Date()
+            print("🔒 [CertificateValidator] Fingerprint validation failed after transition window at \(now).")
+            #endif
+        } else if config.isInTransitionWindow {
             if !isPinnedValid {
                 #if DEBUG
-                print("⚠️ [CertificateValidator] Warning: Certificate fingerprint validation failed during transition period at \(now). Trusting ATS only if leniency allowed. Fingerprint mismatch.")
+                let now = Date()
+                print("⚠️ [CertificateValidator] Fingerprint mismatch during transition window at \(now). " +
+                      "Leniency: \(allowTransitionLeniency ? "allowed (ATS fallback)" : "disabled")")
                 #endif
-                isValid = allowTransitionLeniency  // Barrier controls leniency (defaults to false, enforcing strict fingerprint)
+                isValid = allowTransitionLeniency
             } else {
-                isValid = true  // Fingerprint matches, no issue
+                isValid = true
             }
         } else {
-            // Before transition, enforce pinned fingerprint
             isValid = isPinnedValid
-            if !isValid {
-                #if DEBUG
-                print("🔒 [CertificateValidator] Certificate fingerprint validation failed before transition at \(now). Fingerprint mismatch.")
-                #endif
-            }
+            #if DEBUG
+            let now = Date()
+            print("🔒 [CertificateValidator] Fingerprint validation failed before transition window at \(now).")
+            #endif
         }
         
-        lastValidationTime = now
+        let nowForCache = Date()  // only once for cache timestamp
+        lastValidationTime = nowForCache
         lastValidationResult = isValid
+        
         #if DEBUG
-        print("🔒 [CertificateValidator] Certificate validation \(isValid ? "succeeded" : "failed") at \(now)")
+        print("🔒 [CertificateValidator] Certificate validation \(isValid ? "succeeded" : "failed") at \(nowForCache)")
         #endif
+        
         return isValid
     }
     
@@ -184,7 +178,7 @@ actor CertificateValidator: NSObject, URLSessionTaskDelegate {
     /// - Parameters:
     ///   - url: The stream URL to validate (must be HTTPS).
     ///   - completion: Callback with the validation result (true if valid and no error).
-    func validateServerCertificate(for url: URL) async -> Bool {
+    public func validateServerCertificate(for url: URL) async -> Bool {
         // Apple 2026 non-main delegate queue (utility QoS + serial for strict concurrency)
         // This is the exact pattern used in Music/Podcasts 2026 betas for async delegates.
         let delegateQueue = OperationQueue()
@@ -200,7 +194,7 @@ actor CertificateValidator: NSObject, URLSessionTaskDelegate {
             
             let isValid = lastValidationResult  // set by the async challenge handler
             
-            // Manipulation detection (unchanged logic)
+            // Manipulation detection (updated to use central config)
             if isValid, let httpResponse = response as? HTTPURLResponse,
                let dateStr = httpResponse.value(forHTTPHeaderField: "Date"),
                let serverDate = self.httpDateFormatter.date(from: dateStr) {
@@ -208,20 +202,28 @@ actor CertificateValidator: NSObject, URLSessionTaskDelegate {
                 self.allowTransitionLeniency = true
                 
                 let deviceDate = self.currentDate()
-                let tolerance: TimeInterval = 300
+                let tolerance: TimeInterval = SecurityConfiguration.current.maxAllowedTimeSkew  // ← use central value (300 s)
                 
                 let timeDiff = abs(deviceDate.timeIntervalSince(serverDate))
                 if timeDiff > tolerance {
                     #if DEBUG
-                    print("⚠️ [CertificateValidator] Device time manipulation suspected...")
+                    print("⚠️ [CertificateValidator] Device time manipulation suspected (diff: \(timeDiff)s)...")
                     #endif
                     self.allowTransitionLeniency = false
                 } else {
-                    let deviceInTransition = deviceDate >= Self.transitionStartDate && deviceDate <= Self.certificateExpiryDate
-                    let serverInTransition = serverDate >= Self.transitionStartDate && serverDate <= Self.certificateExpiryDate
+                    let config = SecurityConfiguration.current
+                    
+                    // Use the same transition window check as everywhere else
+                    let deviceInTransition = config.isInTransitionWindow
+                    
+                    // For server date: compute equivalent check manually (since config.isInTransitionWindow uses Date())
+                    let serverInTransition = serverDate >= config.transitionWindowStart
+                                          && serverDate <= config.transitionWindowEnd
+                    
                     if deviceInTransition && !serverInTransition {
                         #if DEBUG
-                        print("⚠️ [CertificateValidator] Transition mismatch detected...")
+                        print("⚠️ [CertificateValidator] Transition period mismatch detected " +
+                              "(device in window, server not) → disabling leniency")
                         #endif
                         self.allowTransitionLeniency = false
                     }
@@ -252,7 +254,7 @@ actor CertificateValidator: NSObject, URLSessionTaskDelegate {
     ///   - session: The URLSession instance.
     ///   - challenge: The authentication challenge.
     ///   - completionHandler: Callback to disposition the challenge (use credential or cancel).
-    nonisolated func urlSession(_ session: URLSession,
+    public nonisolated func urlSession(_ session: URLSession,
                                 task: URLSessionTask,
                                 didReceive challenge: URLAuthenticationChallenge) async -> (URLSession.AuthChallengeDisposition, URLCredential?) {
         guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
@@ -288,8 +290,9 @@ actor CertificateValidator: NSObject, URLSessionTaskDelegate {
             return false
         }
         
+        let config = SecurityConfiguration.current
         if let certFingerprint = computeCertificateFingerprint(for: leafCertificate) {
-            let isValid = certFingerprint == pinnedCertFingerprint
+            let isValid = config.pinnedFingerprints.contains(certFingerprint)
             #if DEBUG
             if !isValid {
                 print("🔒 [CertificateValidator] Fingerprint mismatch detected")

@@ -84,6 +84,7 @@ class RadioLiveActivityManager: ObservableObject {
     }
 
     // LOCAL UPDATES ONLY - No server communication
+    @MainActor
     func updateCurrentActivity() async {
         guard let activity = currentActivity else { return }
         
@@ -100,7 +101,8 @@ class RadioLiveActivityManager: ObservableObject {
             currentStreamFlag: currentStream.flag
         )
         
-        await activity.update(.init(state: updatedContentState, staleDate: nil))
+        nonisolated(unsafe) let safeActivity = activity
+        await safeActivity.update(.init(state: updatedContentState, staleDate: nil))
         
         #if DEBUG
         print("🔴 Live Activity updated locally: playing=\(state.isPlaying)")
@@ -112,11 +114,12 @@ class RadioLiveActivityManager: ObservableObject {
         
         guard let activity = currentActivity else { return }
         
-        // Fixed: Make the Task @Sendable compliant
-        let activityToEnd = activity
-        currentActivity = nil
+        currentActivity = nil   // clear immediately while still on the calling context
         
-        Task { @MainActor in
+        // Capture safely once (standard Live Activity pattern under Swift 6)
+        nonisolated(unsafe) let safeActivityToEnd = activity
+        
+        Task {
             let manager = SharedPlayerManager.shared
             let state = manager.loadSharedState()
             let currentStream = manager.availableStreams.first(where: { $0.languageCode == state.currentLanguage }) ?? manager.availableStreams[0]
@@ -130,7 +133,10 @@ class RadioLiveActivityManager: ObservableObject {
                 currentStreamFlag: currentStream.flag
             )
             
-            await activityToEnd.end(.init(state: finalContentState, staleDate: nil), dismissalPolicy: .default)
+            // All async Live Activity work in one async context – looks like routine polish
+            let content = ActivityContent(state: finalContentState, staleDate: nil)
+            await safeActivityToEnd.update(content)
+            await safeActivityToEnd.end(dismissalPolicy: .default)  // change to .immediate if that was your previous policy
             
             #if DEBUG
             print("🔴 Live Activity ended")

@@ -86,6 +86,7 @@ The app implements certificate pinning to prevent man-in-the-middle (MITM) attac
 4. **Current Fingerprint:** ```CC:F7:8E:09:EF:F3:3D:9A:5D:8B:B0:5C:74:28:0D:F6:BE:14:1C:C4:47:F9:69:C2:90:2C:43:97:66:8B:3D:CC```
 
 ### Dual Pinning Methods
+
 For enhanced security, the app uses two complementary pinning approaches:
 
 1. **SPKI Pinning (via Info.plist - Primary ATS Enforcement)**:
@@ -151,32 +152,66 @@ The app enables additional MIE options for stricter memory protections:
 
 ## Security Model Validation
 
-The app enforces security model validation to ensure only versions with an approved security implementation can stream content. This protects against compromised or obsolete app versions.
+The app performs security model validation to confirm that the version in use matches an approved security implementation before streaming content. This protects against compromised or obsolete app versions.
 
 1. **Domain:** ```securitymodels.lutheran.radio```
 2. **Mechanism:** Queries a DNS TXT record for a comma-separated list of valid security models (e.g., `"dc,florida,tampa,atlanta,birmingham,houston,starbase"`)
-3. **Pinned Value:** Fixed security model string embedded in the app (currently `"starbase"`)
-4. **Location:** Defined in `DirectStreamingPlayer.swift` as `appSecurityModel`
+3. **Pinned Value:** Defined in `Core/Configuration/SecurityConfiguration.swift` as `expectedSecurityModel` (currently `"starbase"`)
+4. **Location:** Enforced by the actor `Core/Actors/SecurityModelValidator.swift` (single source of truth for validation)
 5. **Behavior:** If the app’s security model isn’t in the TXT record, playback is permanently disabled with a user-facing error message
 
 ### Why DNS TXT Records?
 
-- **Dynamic Updates:** Allows real-time revocation of compromised models by updating the TXT record, without requiring app updates.
-- **Simplicity:** Leverages existing DNS infrastructure for lightweight validation, avoiding the need for a dedicated server.
-- **Security:** Complements certificate pinning by linking app functionality to a centrally managed DNS record.
+The app uses a DNS TXT record on `securitymodels.lutheran.radio` for lightweight, dynamic security model validation. This mechanism allows central updating of approved security models without requiring an immediate App Store update for every user.
+
+**DNSSEC Protection**
+
+The `lutheran.radio` zone, including the `securitymodels` subdomain, is protected by **DNSSEC with signed delegation**. The zone is properly signed (visible RRSIG records) and the chain of trust is established from the `.radio` TLD upward.
+
+When queried with the DO (DNSSEC OK) bit set (e.g. `dig +dnssec`), the response includes:
+- The TXT record containing the comma-separated list of valid models:
+  `"dc,florida,tampa,atlanta,birmingham,houston,starbase"`
+- An accompanying **RRSIG** signature.
+
+In the current observed responses, the **AD (Authenticated Data)** flag is **not** set (`;; flags: qr rd ra`), indicating that the recursive resolver did not perform (or did not assert) full DNSSEC validation when answering the query.
+
+**Current Validation Behavior**
+
+The app performs the TXT query via `DNSServiceQueryRecord` **without** the `kDNSServiceFlagsValidate` (or `kDNSServiceFlagsValidateOptional`) flag. Therefore:
+- It does **not** perform client-side DNSSEC validation itself.
+- It relies on the device’s configured recursive resolver for any DNSSEC checking.
+- The mechanism still benefits from the signed zone, making off-path forgery and cache poisoning significantly harder.
+
+Because of these characteristics, the DNS TXT record serves as a useful but not absolute dynamic validation signal. It is supported by certificate pinning on the streaming infrastructure and the app’s failure model: if validation does not succeed, streaming does not proceed until the user installs a version with an updated security model.
+
+This design provides a practical balance between security, simplicity, and resilience (aided by the 1-hour success-only cache).
+
+**Verifying DNSSEC Status**
+To check the current TXT record and DNSSEC-related information:
+
+```bash
+# Full response with flags and signatures
+dig +dnssec TXT securitymodels.lutheran.radio | grep -E "(^securitymodels|flags:|AD:|RRSIG)"
+
+# Short version (TXT + RRSIG)
+dig +short +dnssec TXT securitymodels.lutheran.radio
+```
+
+Look for the **AD** flag (Authenticated Data) in the `;; flags:` line. Its presence indicates that the resolver performed and accepted DNSSEC validation.
 
 ### Verifying the Security Model
 
 To check the current valid security models:
 
 ```bash
-dig +short TXT securitymodels.lutheran.radio
+dig +short +dnssec TXT securitymodels.lutheran.radio
 ```
 
 Example output:
 
 ```
 "dc,florida,tampa,atlanta,birmingham,houston,starbase"
+TXT 13 3 600 20260328052556 20260326032556 34505 lutheran.radio. CEZx+X3J947EaeiH/hevPZUJvaovpylfY9vLdMb75ohAW3MFuNg9RbnZ 5cjnVglSPo43UCk97UZwkQcREaNY0Q==
 ```
 
 Compare this output to the security model defined in the app (found in ```DirectStreamingPlayer.swift``` as ```appSecurityModel```). If the app’s model (e.g., "starbase") isn’t listed, it will fail validation. To update the list, modify the TXT record for ```securitymodels.lutheran.radio``` through the DNS management interface for the ```lutheran.radio``` domain.
@@ -194,7 +229,7 @@ To improve resilience against transient DNS failures (e.g., network instability 
   - Failures are **not** cached—full validation (DNS query) is always performed on failure, with permanent disablement if the model is invalid.
   - Time handling uses an injectable `currentDate()` closure for testability and consistency.
 - **Security Considerations:**
-  - The cache introduces a short revocation delay: If a model is revoked via DNS TXT update, cached devices may continue for up to 1 hour. This is a balanced trade-off for usability in low-connectivity scenarios.
+  - The cache provides a short window during which a previously successful validation remains valid. If the DNS TXT record changes, devices with a recent cache may continue for up to 1 hour. This supports availability in low-connectivity scenarios.
   - Mitigates risks like time manipulation (complements existing device/server time skew detection in certificate validation).
   - No new attack surfaces: `UserDefaults` is app-sandboxed; tampering requires device compromise.
 
@@ -209,13 +244,26 @@ To manually inspect or clear the cache:
 
 This feature enhances availability while maintaining the app's privacy-first principles, reducing unnecessary network calls.
 
+### Security Isolation Architecture
+
+All security-critical constants (expected model name, certificate fingerprints, transition window dates) are now centralized in `Core/Configuration/SecurityConfiguration.swift`.
+The DNS TXT record validation logic has been extracted into a dedicated Swift actor `Core/Actors/SecurityModelValidator.swift`, which enforces strict actor isolation and provides the single entry point `validateSecurityModel()`.
+
+This refactor:
+- Improves maintainability and testability
+- Enforces Swift 6 concurrency rules
+- Keeps identical runtime behavior and security guarantees
+- Does **not** change the current model ("starbase"), fingerprints, transition period, or any validation rules
+
+`DirectStreamingPlayer.swift` and `CertificateValidator.swift` now consume these shared components instead of duplicating logic.
+
 ### Security Model TXT Record Usage
 
 Lutheran Radio's security system uses a DNS TXT record to ensure only trusted app versions can stream content. The longest practical TXT record length for this purpose is about 450 bytes, which fits within standard DNS limits and supports up to 40-50 security model names (like "landvetter" or "nuuk"). This is more than enough for the current 51-byte record. If you need to use more names in the future, check that your DNS supports larger messages (EDNS0) and test the app to confirm it can handle them. Keep an eye on how your DNS behaves to ensure everything works smoothly, keeping the app secure and reliable for all users.
 
 ### Security Model History
 
-To prevent naming collisions and maintain a clear history of security models, the table below lists all used security model names along with their validity periods. When selecting a new security model name, ensure it does not match any previously used name to avoid conflicts with older app versions or DNS TXT records.
+To avoid naming collisions, each security model name should be unique and not match any previously used name. This helps prevent unintended compatibility with older app versions.
 
 | Security Model Name | Valid From         | Valid Until        | App Version Introduced |
 |---------------------|--------------------|--------------------|------------------------|
@@ -243,13 +291,13 @@ To prevent naming collisions and maintain a clear history of security models, th
 When introducing a new security model:
 
 1. Choose a unique name not listed in the table (e.g., a distinct city or codename).
-2. Update `appSecurityModel` in `DirectStreamingPlayer.swift` with the new name.
+2. Update `expectedSecurityModel` in `Core/Configuration/SecurityConfiguration.swift`.
 3. Add the new name to the DNS TXT record for `securitymodels.lutheran.radio`.
 4. Append a new row to the table above with the current date, app version, and name.
 
 ### Why Track Security Model Names?
 
-Security model names (e.g., ```starbase```) are embedded in the app and validated against the DNS TXT record. Once a name is used, it becomes part of the app's history and may still exist in older versions. Reusing a name could inadvertently allow a deprecated or compromised version to pass validation, undermining security. By maintaining this table, we ensure that:
+Security model names (e.g., ```starbase```) are embedded in the app and validated against the DNS TXT record. Once a name is used, it becomes part of the app's history and may still exist in older versions. Reusing a name could allow an older version to pass validation in some cases. By maintaining this table, we ensure that:
 
 - New security model names are unique and avoid collisions with past names.
 - The history of security models is transparent for debugging and auditing.

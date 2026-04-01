@@ -25,13 +25,13 @@ struct LiveActivityTogglePlaybackIntent: AppIntent {
         #endif
         
         let manager = SharedPlayerManager.shared
-        let state = manager.loadSharedState()
+        let state = manager.loadSharedState()  // assuming already nonisolated
         let isCurrentlyPlaying = state.isPlaying
         
         if isCurrentlyPlaying {
-            manager.stop()
+            await manager.stop()           // ← await, no completion
         } else {
-            manager.play { _ in }
+            try await manager.play()       // ← try await, no completion
         }
         
         #if DEBUG
@@ -56,13 +56,13 @@ struct LutheranRadioLiveActivityTogglePlaybackIntent: AppIntent {
         #endif
         
         let manager = SharedPlayerManager.shared
-        let state = manager.loadSharedState()
+        let state = manager.loadSharedState()           // should already be nonisolated
         let isCurrentlyPlaying = state.isPlaying
         
         if isCurrentlyPlaying {
-            manager.stop()
+            await manager.stop()                        // ← just await, no closure
         } else {
-            manager.play { _ in }
+            try await manager.play()                    // ← try await, no closure
         }
         
         #if DEBUG
@@ -104,7 +104,7 @@ struct LiveActivitySwitchStreamIntent: AppIntent {
             return .result()
         }
         
-        manager.switchToStream(targetStream)
+        await manager.switchToStream(targetStream)
         
         #if DEBUG
         print("🔗 LiveActivitySwitchStreamIntent completed for \(targetStream.language)")

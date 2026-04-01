@@ -19,13 +19,19 @@ It is live on the App Store: https://apps.apple.com/fi/app/lutheran-radio/id6738
 
 ## Non-Negotiable Rules (Violating any = immediate rejection)
 
-1. **Security Model is Non-Negotiable**
-   - Current `appSecurityModel = "starbase"` (DirectStreamingPlayer.swift)
-   - Never change, remove, or comment out DNS TXT validation against `securitymodels.lutheran.radio`
+1. **Security Model**
+   - Current `expectedSecurityModel = "starbase"` (Core/Configuration/SecurityConfiguration.swift)
+   - Do not change, remove, or comment out DNS TXT validation against `securitymodels.lutheran.radio`
    - Never bypass full-certificate fingerprint pinning (`CC:F7:8E:09:EF:F3:3D:9A:5D:8B:B0:5C:74:28:0D:F6:BE:14:1C:C4:47:F9:69:C2:90:2C:43:97:66:8B:3D:CC`)
    - Never weaken SPKI pinning in Info.plist
    - Never disable device-time vs server-time skew check (>5 min = no leniency)
    - Never remove MIE/EMTE hardened runtime entitlements
+
+   **DNS TXT Validation Specifics**
+   - The `securitymodels.lutheran.radio` zone uses DNSSEC with signed delegation (visible RRSIG records).
+   - The app currently calls `DNSServiceQueryRecord` **without** `kDNSServiceFlagsValidate` (or `kDNSServiceFlagsValidateOptional`), so it does **not** perform client-side DNSSEC validation.
+   - Always consult the "Why DNS TXT Records?" section in `README.md` for the latest DNSSEC status, AD flag behavior, and verification commands.
+   - Any change touching DNS validation must preserve or strengthen the documented security properties.
 
 2. **Build & Test Gate**
    - Every single change must keep these commands green:
@@ -44,10 +50,10 @@ It is live on the App Store: https://apps.apple.com/fi/app/lutheran-radio/id6738
    - All 18 languages must remain supported.
 
 4. **iOS 26+ Only**
-   - Target iOS 26.1 minimum.
-   - Minimum Xcode 26+ for MIE/EMTE support and full Swift 6 compatibility.
-   - Use modern APIs (Swift 6 concurrency, Observation, etc.).
-   - Leverage Memory Integrity Enforcement (MIE) and Enhanced Memory Tagging Extension (EMTE) where possible.
+   - Minimum deployment target is **iOS 26.2** (no exceptions).
+   - Required for full **EMTE + MIE** hardware-backed memory protections.
+   - Requires Xcode 26+ for proper MIE/EMTE support and Swift 6 mode.
+   - Prefer modern APIs and leverage Memory Integrity Enforcement wherever possible.
 
 ## Tech Stack & Architecture
 
@@ -60,18 +66,21 @@ It is live on the App Store: https://apps.apple.com/fi/app/lutheran-radio/id6738
   * ATS + NSPinnedDomains in Info.plist
   * DNS TXT security model validation (1-hour cache in UserDefaults)
   * MIE/EMTE: Enabled via hardened runtime entitlements (requires Xcode 26+ for build support)
+- Security logic is now isolated into the `Core/` module (`Core/Configuration/` and `Core/Actors/`) using Swift actors and strict concurrency for better isolation, testability, and maintainability. All security decisions flow through `SecurityConfiguration` and `SecurityModelValidator`.
 - **Tests**: Unit + UI tests in dedicated targets
 - **Scripts**: Minimal Python (1%) — treat as build helpers only
 
 ### Key Files You Must Know Intimately
 
-| File | Responsibility | Critical Notes |
-|------|----------------|---------------|
-| `DirectStreamingPlayer.swift` | Main audio engine + security model validation | Contains `appSecurityModel` constant |
-| `CertificateValidator.swift` | Full certificate pinning + transition logic (Jul 27 – Aug 26 2026) | 10-minute cache |
-| `Info.plist` | ATS pinning (SPKI + domain) | Never edit without updating validator |
-| `LutheranRadioWidget/` | Home-screen widget | Must respect same security rules |
-| `docs/` | All architecture & security decision records | Read before any major change |
+| File                                              | Responsibility                                                                 | Critical Notes                                                                 |
+|---------------------------------------------------|--------------------------------------------------------------------------------|--------------------------------------------------------------------------------|
+| `DirectStreamingPlayer.swift`                     | Main audio engine + consumes shared security validation                        | No longer contains `appSecurityModel` constant                                 |
+| `CertificateValidator.swift`                      | Full certificate pinning + transition logic (Jul 27 – Aug 26 2026)             | 10-minute cache; uses shared `SecurityConfiguration`                           |
+| `Core/Configuration/SecurityConfiguration.swift`  | Centralized security policy: expected model, fingerprints, transition dates    | Single source of truth for all pinned values and model name                    |
+| `Core/Actors/SecurityModelValidator.swift`        | Actor-isolated DNS TXT security model validation                               | New primary validator; uses `dns_sd.h` + 1-hour cache in UserDefaults          |
+| `Info.plist`                                      | ATS pinning (SPKI + domain)                                                    | Never edit without updating `SecurityConfiguration` and validator              |
+| `LutheranRadioWidget/`                            | Home-screen widget                                                             | Must respect same security rules via shared `Core` module                      |
+| `docs/`                                           | All architecture & security decision records                                   | Read before any major change                                                   |
 
 ## Development Workflow (Always Follow)
 
@@ -94,7 +103,7 @@ It is live on the App Store: https://apps.apple.com/fi/app/lutheran-radio/id6738
 
 ## Security Model History Reference (Do Not Modify – See README.md)
 
-The complete security model history is archived in README.md, which serves as the source of truth. Refer to it for the full table of past and current models, including validity periods and app versions.
+The complete security model history is maintained in the Security Model History table in README.md, which serves as the source of truth. Refer to it for the full table of past and current models, including validity periods and app versions.
 
 Current model = **starbase**
 
@@ -124,7 +133,7 @@ Operate in full agentic mode at all times:
 
 ## Common Pitfalls
 
-- SSL Certificate Check: When verifying SSL certificate functionality or connectivity on the remote server, if you receive a "403 Access Forbidden" response, it is likely because the current security model (e.g., appSecurityModel = "starbase" in DirectStreamingPlayer.swift) was not embedded in the URL. This is not a server-side issue but a deliberate part of the security protocol. Always ensure the security model is included in the URL query when performing such checks or tests. Refer to DirectStreamingPlayer.swift for examples of proper URL construction.
+- SSL Certificate Check: When verifying SSL certificate functionality or connectivity on the remote server, if you receive a "403 Access Forbidden" response, it is likely because the security model was not included in the URL. This is expected behavior as part of the security protocol. Always ensure the security model is included in the URL query when performing such checks or tests. Refer to DirectStreamingPlayer.swift for examples of proper URL construction.
 
 ## Agent Compatibility Notes
 - **Claude / Cursor / Windsurf**: Load this file as Project Instructions / custom system prompt.

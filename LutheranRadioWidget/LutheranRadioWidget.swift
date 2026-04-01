@@ -649,13 +649,13 @@ struct WidgetToggleRadioIntent: AppIntent {
         #endif
         
         let manager = SharedPlayerManager.shared
-        let state = manager.loadSharedState()
+        let state = manager.loadSharedState()  // already nonisolated → safe
         let isCurrentlyPlaying = state.isPlaying
         
         if isCurrentlyPlaying {
-            manager.stop()
+            await manager.stop()           // ← await, no closure
         } else {
-            manager.play { _ in }
+            try await manager.play()       // ← try await, no closure
         }
         
         // NEW: Immediate refresh for user action
@@ -719,7 +719,7 @@ struct SwitchStreamIntent: AppIntent {
         }
         
         // CRITICAL FIX: Execute the stream switch with proper language parameter
-        manager.switchToStream(targetStream)
+        await manager.switchToStream(targetStream)
         
         #if DEBUG
         print("🔗 SwitchStreamIntent completed for \(targetStream.language)")
