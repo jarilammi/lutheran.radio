@@ -1220,16 +1220,35 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         asset.resourceLoader.setDelegate(self, queue: .main)
 
         let playerItem = AVPlayerItem(asset: asset)
+        self.playerItem = playerItem
 
         if self.player == nil {
             self.player = AVPlayer(playerItem: playerItem)
         } else {
             self.player?.replaceCurrentItem(with: playerItem)
         }
-        self.playerItem = playerItem
 
-        setupPlaybackObservers()
-
+        // === CRITICAL: Activate the audio session before playback ===
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playback,
+                                   mode: .default,
+                                   options: [.allowAirPlay, .defaultToSpeaker])  // adjust options if needed
+            
+            try session.setActive(true)
+            
+            #if DEBUG
+            print("🔊 [MainActor] AVAudioSession activated successfully (.playback)")
+            #endif
+        } catch {
+            #if DEBUG
+            print("❌ [MainActor] Failed to activate AVAudioSession: \(error.localizedDescription)")
+            #endif
+            // Decide later whether to throw or continue (continuing often still "works" but may be silent)
+            // For a radio app, maybe log and proceed, or notify the caller.
+        }
+        // ========================================================
+        
         self.player?.play()
 
         #if DEBUG
@@ -1530,27 +1549,37 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     
     // MARK: - Stream Switching (now the single source of truth)
     func setStream(to stream: Stream) async {
-        guard !isSwitchingStream else {
-            #if DEBUG
-            print("⚠️ Stream switch already in progress, skipping")
-            #endif
-            return
-        }
-        
-        isSwitchingStream = true
-        defer { isSwitchingStream = false }
-        
+        let previousLanguage = selectedStream.languageCode ?? "nil"
+        let newLanguage = stream.languageCode ?? "??"
+
         #if DEBUG
-        print("ATOMIC STREAM SWITCH: \(selectedStream.languageCode ?? "??") → \(stream.languageCode ?? "??")")
+        print("ATOMIC STREAM SWITCH: \(previousLanguage) → \(newLanguage)")
         #endif
-        
-        // Clean stop first (security extraction untouched)
-        await stop()
-        
-        // Update model + save
-        selectedStream = stream
-        await SharedPlayerManager.shared.saveCurrentState()
-        
+
+        // === FIXED: Only stop if it's a REAL different-stream switch ===
+        if previousLanguage != newLanguage {
+            #if DEBUG
+            print("🔄 Real stream switch detected (\(previousLanguage) → \(newLanguage)) – performing clean stop")
+            #endif
+
+            isSwitchingStream = true
+            defer { isSwitchingStream = false }
+
+            await stop()
+
+            // Update model + save
+            selectedStream = stream
+            await SharedPlayerManager.shared.saveCurrentState()
+        } else {
+            #if DEBUG
+            print("🔄 Same stream or initial playback (\(newLanguage)) – skipping stop()")
+            #endif
+
+            // Still update/save in case this is the very first playback
+            selectedStream = stream
+            await SharedPlayerManager.shared.saveCurrentState()
+        }
+
         // Security validation (left completely untouched)
         guard await SecurityModelValidator.shared.validateSecurityModel() else {
             #if DEBUG
@@ -1562,31 +1591,43 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             )
             return
         }
-        
-        // Success path – minimal reliable AVFoundation sequence on MainActor
+
+        // Success path – reliable AVFoundation sequence
         await MainActor.run {
             let newItem = AVPlayerItem(url: stream.url)
-            self.player?.replaceCurrentItem(with: newItem)
             
-            // Critical minimal fix: use .play() directly + ensure rate after a tiny settle time
+            self.player?.replaceCurrentItem(with: newItem)
+            self.playerItem = newItem   // critical
+            
+            // Do NOT call addObservers() here anymore — let createAndStartPlayer or a single setup handle it
+            
+            do {
+                let session = AVAudioSession.sharedInstance()
+                try session.setActive(true)
+            } catch {
+                #if DEBUG
+                print("⚠️ Could not reactivate AVAudioSession: \(error)")
+                #endif
+            }
+
             self.player?.play()
             self.player?.rate = 1.0
-            
+
             #if DEBUG
-            print("▶️ AVPlayer started via .play() + rate=1.0 on main thread after security validation")
+            print("▶️ AVPlayer started via .play() + rate=1.0")
             #endif
         }
-        
-        // Small delay outside MainActor.run to let AVPlayerItem status settle (common reliable pattern)
-        try? await Task.sleep(for: .milliseconds(100))
-        
+
+        try? await Task.sleep(for: .milliseconds(200))
+
         #if DEBUG
         print("Stream switch succeeded → playback resumed for \(stream.language)")
         #endif
-        
-        // Notify UI colors / button state
+
+        // Notify UI (this is now mostly redundant because the observer will do it,
+        // but it doesn't hurt as a fallback)
         safeOnStatusChange(isPlaying: true, status: "")
-        
+
         // Final save
         Task {
             await SharedPlayerManager.shared.saveCurrentState()
@@ -1613,7 +1654,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     private func startPlaybackWithFallback(fallbackServers: [Server], completion: @escaping BoolCompletion) {
         DispatchQueue.main.async { [weak self] in
             guard let self else {
-                completion(false);
+                completion(false)
                 return
             }
             
@@ -1666,11 +1707,19 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                     self.metadataOutput?.setDelegate(self, queue: DispatchQueue.main)
                     self.playerItem?.add(self.metadataOutput!)
                     
-                    // CRITICAL: Ensure play() happens on MainActor (this was the main cause of "stream does not play")
-                    MainActor.assumeIsolated {
+                    // FIXED: Use Task { @MainActor in } + explicit play() on main + small delay for resource loader
+                    Task { @MainActor in
                         self.player?.play()
+                        // Tiny safe delay helps when resourceLoader is involved
+                        try? await Task.sleep(for: .milliseconds(100))
+                        self.player?.play()   // second call is harmless and often needed
                     }
+                    
                     self.hasStartedPlaying = true
+                    
+                    #if DEBUG
+                    print("✅ PlayerItem readyToPlay – calling play() on MainActor")
+                    #endif
                     
                 case .failed:
                     tempStatusObserver?.invalidate()
@@ -1680,6 +1729,9 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                     
                     #if DEBUG
                     print("❌ PlayerItem failed with server \(self.currentSelectedServer.name) after \(age)s")
+                    if let error = item.error {
+                        print("   Error: \(error)")
+                    }
                     #endif
                     
                     if !fallbackServers.isEmpty {
@@ -1696,7 +1748,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 }
             }
             
-            // Schedule the fallback timeout
+            // Schedule the fallback timeout (unchanged)
             let timeout: TimeInterval = isLowEfficiencyMode ? 15 : 10
             let workItem = DispatchWorkItem { [weak self] in
                 guard let self, self.playerItem?.status != .readyToPlay else { return }
@@ -1749,40 +1801,53 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         }, completion: { _ in })
     }
     
-    // FIXED: Simplified status observer that doesn't conflict with SSL protection
+    // FIXED: Simplified + robust status observer (works with security isolation + MainActor)
     private func addObservers() {
         audioQueue.async { [weak self] in
             guard let self = self else { return }
             
-            // Clear existing observations
+            #if DEBUG
+            print("🧹 addObservers() called — clearing old ones")
+            #endif
+            
+            // Clear existing first (safe even if called multiple times)
             self.playerItemObservations.forEach { $0.invalidate() }
             self.playerItemObservations.removeAll()
             
-            guard let playerItem = self.playerItem else { return }
+            guard let playerItem = self.playerItem else {
+                #if DEBUG
+                print("⚠️ addObservers: No playerItem yet")
+                #endif
+                return
+            }
             
-            // Status observer (unchanged logic)
+            // Status observer — now actively handles .readyToPlay (critical for initial playback)
             let statusObs = playerItem.observe(\.status, options: [.new, .initial]) { [weak self] item, _ in
                 guard let self = self else { return }
                 DispatchQueue.main.async {
                     #if DEBUG
-                    print("🎵 Player item status: \(item.status.rawValue)")
+                    print("🎵 Player item status changed: \(item.status.rawValue) (readyToPlay=1, failed=2)")
                     #endif
+                    
                     guard self.delegate != nil else { return }
                     
                     switch item.status {
                     case .readyToPlay:
-                        // Don't interfere with SSL protection - let startPlaybackWithFallback handle it
-                        break
+                        #if DEBUG
+                        print("✅ Item readyToPlay → starting playback")
+                        #endif
+                        self.player?.play()
+                        self.player?.rate = 1.0
+                        self.safeOnStatusChange(isPlaying: true, status: String(localized: "status_playing"))
+                        self.stopBufferingTimer()
+                        self.hasStartedPlaying = true
                         
                     case .failed:
-                        // Only handle if this isn't managed by startPlaybackWithFallback
-                        if self.hasStartedPlaying {
-                            self.lastError = item.error
-                            let errorType = StreamErrorType.from(error: item.error)
-                            self.hasPermanentError = errorType.isPermanent
-                            self.safeOnStatusChange(isPlaying: false, status: errorType.statusString)
-                            self.stop()
-                        }
+                        self.lastError = item.error
+                        let errorType = StreamErrorType.from(error: item.error)
+                        self.hasPermanentError = errorType.isPermanent
+                        self.safeOnStatusChange(isPlaying: false, status: errorType.statusString)
+                        self.stop()
                         
                     case .unknown:
                         if self.hasStartedPlaying {
@@ -1795,16 +1860,16 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             }
             self.playerItemObservations.append(statusObs)
             #if DEBUG
-            print("🧹 Added status observer")
+            print("🧹 Added robust status observer")
             #endif
             
-            // Buffer observers (migrated to closures)
+            // Keep the existing buffer observers (they are still useful)
             let bufferEmptyObs = playerItem.observe(\.isPlaybackBufferEmpty, options: [.new]) { [weak self] item, change in
                 guard let self = self, let newValue = change.newValue, newValue else { return }
                 DispatchQueue.main.async {
                     if let error = item.error as NSError?, error.domain == "AVFoundationErrorDomain" {
                         #if DEBUG
-                        print("🎵 Buffer empty with AVFoundation error detected, attempting recovery")
+                        print("🎵 Buffer empty with error — attempting recovery")
                         #endif
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                             self.recreatePlayerItem()
@@ -1824,16 +1889,16 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                         self.player?.play()
                         self.safeOnStatusChange(isPlaying: true, status: String(localized: "status_playing"))
                         self.stopBufferingTimer()
-                    } else if !newValue && self.player?.rate == 0 {
+                    } else if !newValue && (self.player?.rate ?? 0) == 0 {
                         let stalledDelay: TimeInterval = self.isLowEfficiencyMode ? 20.0 : 10.0
                         DispatchQueue.main.asyncAfter(deadline: .now() + stalledDelay) { [weak self] in
                             guard let self = self,
                                   let currentItem = self.playerItem,
                                   currentItem == item,
                                   !currentItem.isPlaybackLikelyToKeepUp,
-                                  self.player?.rate == 0 else { return }
+                                  (self.player?.rate ?? 0) == 0 else { return }
                             #if DEBUG
-                            print("🔄 Stalled playback detected, attempting recovery")
+                            print("🔄 Stalled — attempting recovery")
                             #endif
                             self.recreatePlayerItem()
                         }
@@ -1851,16 +1916,17 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 }
             }
             self.playerItemObservations.append(bufferFullObs)
+            
             #if DEBUG
             print("🧹 Added buffer observers")
             #endif
             
-            // Time observer (unchanged)
+            // Time observer (kept as-is)
             let interval = CMTime(seconds: 1.0, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
             if let player = self.player, self.timeObserver == nil {
                 self.timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] _ in
                     guard let self = self, self.delegate != nil else { return }
-                    if self.player?.rate ?? 0 > 0 {
+                    if (self.player?.rate ?? 0) > 0 {
                         self.safeOnStatusChange(isPlaying: true, status: String(localized: "status_playing"))
                     }
                 }
