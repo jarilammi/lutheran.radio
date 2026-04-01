@@ -1179,55 +1179,85 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// - Throws: Only critical unrecoverable errors (rare).
     @MainActor
     func play() async -> Bool {
+        guard !isCurrentlyAttemptingPlayback else {
+            #if DEBUG
+            print("⚠️ [Playback Guard] Already attempting playback — ignoring duplicate call")
+            #endif
+            return false
+        }
+
         isCurrentlyAttemptingPlayback = true
         defer { isCurrentlyAttemptingPlayback = false }
-
-        #if DEBUG
-        print("🔊 [Playback Start] async play() entered — attemptingPlayback flag set to true")
-        #endif
 
         safeOnStatusChange(isPlaying: true, status: String(localized: "status_connecting"))
         SharedPlayerManager.shared.saveFireAndForget()
 
         let isValid = await SecurityModelValidator.shared.isCurrentlyValid()
-
-        #if DEBUG
-        print("🔒 [Playback Start] Validation result: \(isValid)")
-        #endif
-
         guard isValid else {
             let isPermanent = await SecurityModelValidator.shared.isPermanentlyInvalid
             let statusKey = isPermanent ? "status_security_failed" : "status_no_internet"
-
-            #if DEBUG
-            print("❌ [Playback Start] Validation failed — \(isPermanent ? "permanent" : "transient")")
-            #endif
-
-            let localizedStatus = String(localized: String.LocalizationValue(statusKey))
-            safeOnStatusChange(isPlaying: false, status: localizedStatus)
+            safeOnStatusChange(isPlaying: false, status: String(localized: String.LocalizationValue(statusKey)))
             SharedPlayerManager.shared.saveFireAndForget()
-
             return false
         }
+        
+        #if DEBUG
+        print("✅ Security validation passed — creating player for \(selectedStream.languageCode)")
+        #endif
+        
+        let streamURL = selectedStream.url
+        await createAndStartPlayer(for: streamURL)
+
+        await SharedPlayerManager.shared.saveCurrentState()
+        return true
+    }
+    
+    // MARK: - Main-Actor-Bound Player Creation (Swift 6 safe)
+
+    @MainActor
+    private func createAndStartPlayer(for url: URL) async {
+        let asset = AVURLAsset(url: url)
+        asset.resourceLoader.setDelegate(self, queue: .main)
+
+        let playerItem = AVPlayerItem(asset: asset)
+
+        if self.player == nil {
+            self.player = AVPlayer(playerItem: playerItem)
+        } else {
+            self.player?.replaceCurrentItem(with: playerItem)
+        }
+        self.playerItem = playerItem
+
+        setupPlaybackObservers()
+
+        self.player?.play()
 
         #if DEBUG
-        print("✅ [Playback Start] Security validation passed — proceeding to async setup")
+        print("▶️ [MainActor] AVPlayer created + play() called for \(url.lastPathComponent ?? url.absoluteString)")
         #endif
 
-        // Critical: All AVPlayer work must be on MainActor
-        let setupSucceeded = await performOptimalServerSelectionAndFullPlaybackSetup()
-
-        if setupSucceeded {
-            await SharedPlayerManager.shared.saveCurrentState()
-            #if DEBUG
-            print("▶️ [Playback Start] Setup succeeded — playback initiated")
-            #endif
+        // Do NOT call notifyMainApp here — let SharedPlayerManager do it
+    }
+    
+    @MainActor
+    private func preparePlayerItem(for url: URL) async {
+        let asset = AVURLAsset(url: url)
+        asset.resourceLoader.setDelegate(self, queue: .main)
+        
+        let playerItem = AVPlayerItem(asset: asset)
+        
+        if self.player == nil {
+            self.player = AVPlayer(playerItem: playerItem)
         } else {
-            safeOnStatusChange(isPlaying: false, status: String(localized: "status_stream_unavailable"))
-            SharedPlayerManager.shared.saveFireAndForget()
+            self.player?.replaceCurrentItem(with: playerItem)
         }
-
-        return setupSucceeded
+        self.playerItem = playerItem
+        
+        setupPlaybackObservers()
+        
+        #if DEBUG
+        print("🔄 [MainActor] Player item prepared (no auto-play) for \(url.lastPathComponent ?? url.absoluteString)")
+        #endif
     }
 
     // MARK: - Playback Setup (MainActor preferred path)
@@ -1433,24 +1463,18 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         let wasPlaying = isPlaying
         
         await stop()
-        
         resetTransientErrors()
-        await setStream(to: stream)
+        selectedStream = stream          // model update first
+        
+        // Always prepare the new stream (even if not playing)
+        let url = selectedStream.url
+        await preparePlayerItem(for: url)
         
         if wasPlaying {
-            do {
-                try await play()
-                
-                #if DEBUG
-                print("Direct stream switch succeeded for \(stream.language)")
-                #endif
-            } catch {
-                #if DEBUG
-                print("Direct stream switch failed for \(stream.language): \(error)")
-                #endif
-                // Optionally restore previous stream / show error UI
-            }
+            _ = await play()
         }
+        
+        await SharedPlayerManager.shared.saveCurrentState()
     }
     
     private func playWithServer(fallbackServers: [Server], completion: @escaping BoolCompletion) {

@@ -70,39 +70,28 @@ actor SharedPlayerManager {
 
     /// Public async entry point for playing — safe to call from anywhere
     public func play() async {
-        // 1. Security / validation check first (important!)
         let validated = await validatePlaybackRequest()
-        guard validated else {
-            #if DEBUG
-            print("🔒 Playback request rejected by validation")
-            #endif
-            return
-        }
+        guard validated else { return }
 
         if isRunningInWidget() {
-            // Widget path — instant UI feedback + schedule action for main app
             handleWidgetPlay()
             return
         }
 
-        // Main app path only from here
+        // Main app path — player is now guaranteed @MainActor
         do {
-            // 2. Call the real player and await the actual result
             let success = await DirectStreamingPlayer.shared.play()
             
             if success {
-                // 3. Only on real success: save state + notify
                 await saveCurrentStateAfterSuccess()
             } else {
-                // 4. On explicit failure: still save error state
                 await saveCurrentState()
             }
-            
         } catch {
             #if DEBUG
             print("❌ SharedPlayerManager.play() failed: \(error)")
             #endif
-            await saveCurrentState()   // save error state
+            await saveCurrentState()
         }
     }
     
