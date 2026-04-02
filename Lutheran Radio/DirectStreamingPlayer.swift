@@ -2034,19 +2034,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         print("🛑 FORCE STOPPING ALL PLAYBACK - isSwitchingStream: \(String(describing: isSwitchingStream)), attemptingPlayback: \(isCurrentlyAttemptingPlayback)")
         #endif
         
-        // Existing guards (keep all of them)
+        // === EXISTING GUARDS - DO NOT REMOVE OR MERGE THESE ===
         if isCurrentlyAttemptingPlayback {
-            #if DEBUG
-            print("⚠️ [Stop Guard] Skipping aggressive stop during playback startup attempt (even switch)")
-            #endif
-            loadingTimeoutWorkItem?.cancel()
-            fallbackWorkItem?.cancel()
-            pendingPlaybackWorkItem?.cancel()
-            retryWorkItem?.cancel()
-            return
-        }
-        
-        if isCurrentlyAttemptingPlayback && (isSwitchingStream == nil || isSwitchingStream == false) {
             #if DEBUG
             print("⚠️ [Stop Guard] Skipping aggressive stop during playback startup attempt")
             #endif
@@ -2056,7 +2045,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             retryWorkItem?.cancel()
             return
         }
-
+        
         loadingTimeoutWorkItem?.cancel()
         currentLoadingDelegate?.loadingRequest.finishLoading(with: URLError(.cancelled))
         currentLoadingDelegate = nil
@@ -2068,25 +2057,29 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         fallbackWorkItem = nil
         pendingPlaybackWorkItem?.cancel()
         pendingPlaybackWorkItem = nil
-
+        
         let effectiveSwitching = isSwitchingStream ?? self.isSwitchingStream
         let isUserInitiatedPause = !silent && !effectiveSwitching
         
-        // === CRITICAL PlayerVisualState handling ===
-        Task { @MainActor in
+        // === CRITICAL: Set visual state FIRST ===
+        Task {
             if isUserInitiatedPause {
-                await self.markAsUserPaused()          // ← Clean call via extension
+                await self.markAsUserPaused()
+                #if DEBUG
+                print("🎯 markAsUserPaused() called – visualState set to .userPaused")
+                #endif
             }
-            // For silent switches / internal stops we leave the previous visual state untouched
             
-            // Perform the actual AVPlayer stop
-            performActualStop(
-                completion: completion,
-                silent: silent || effectiveSwitching,
-                effectiveSwitching: effectiveSwitching
-            )
+            // Perform the actual stop on the main actor
+            await MainActor.run {
+                performActualStop(
+                    completion: completion,
+                    silent: silent || effectiveSwitching,
+                    effectiveSwitching: effectiveSwitching
+                )
+            }
             
-            // Persist everything
+            // Persist after everything
             await SharedPlayerManager.shared.saveCurrentState()
         }
     }
@@ -3142,14 +3135,22 @@ extension DirectStreamingPlayer {
     }
 
     /// Marks the current intent as user-initiated pause.
-    /// This should be called from user-facing pause paths (button, remote command, etc.).
+    /// This should be called from all user-facing pause paths (button, widget, remote commands, Darwin notifications, etc.).
     func markAsUserPaused() async {
-        await SharedPlayerManager.shared.stop()   // Uses the public stop() which sets .userPaused internally
+        await SharedPlayerManager.shared.setUserPaused()
+        
+        #if DEBUG
+        print("🎯 markAsUserPaused() called – currentVisualState = .userPaused")
+        #endif
     }
 
     /// Marks the current intent as actively playing.
-    /// Call this after a successful manual or auto-resume.
+    /// Call this after a successful manual play or auto-resume (e.g. after AVPlayer starts with rate == 1.0).
     func markAsPlaying() async {
-        await SharedPlayerManager.shared.play()   // Uses the public play() which sets .playing internally
+        await SharedPlayerManager.shared.setPlaying()
+        
+        #if DEBUG
+        print("▶️ markAsPlaying() called – currentVisualState = .playing")
+        #endif
     }
 }

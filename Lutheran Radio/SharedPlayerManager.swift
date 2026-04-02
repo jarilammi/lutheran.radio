@@ -192,6 +192,22 @@ actor SharedPlayerManager {
         notifyMainApp(action: "play")
     }
     
+    // MARK: - PlayerVisualState Management
+
+    /// Sets the visual state to .userPaused and persists it.
+    /// This is the canonical way to record user-initiated pause intent.
+    func setUserPaused() async {
+        currentVisualState = .userPaused
+        await saveCurrentState()
+    }
+
+    /// Sets the visual state to .playing and persists it.
+    /// Call after successful playback start/resume.
+    func setPlaying() async {
+        currentVisualState = .playing
+        await saveCurrentState()
+    }
+    
     // MARK: - PlayerVisualState Persistence
 
     private func saveVisualState() {

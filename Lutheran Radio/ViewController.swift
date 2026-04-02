@@ -2810,25 +2810,24 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
 
 // MARK: - Public Methods for URL Scheme Handling
 extension ViewController {
-    
+
     /// Public method to start playback (callable from SceneDelegate)
-    /// - Note: Async to main; resets permanent errors.
     public func handlePlayAction() {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            self.hasPermanentPlaybackError = false
-            self.startPlayback()
+        Task { @MainActor in
+            await DirectStreamingPlayer.shared.markAsPlaying()
+            await DirectStreamingPlayer.shared.play()
         }
     }
-    
+
     /// Public method to pause playback (callable from SceneDelegate)
     public func handlePauseAction() {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            self.pausePlayback()
+        Task { @MainActor in
+            await DirectStreamingPlayer.shared.markAsUserPaused()
+            await DirectStreamingPlayer.shared.stop()
+            updateUI(for: .userPaused)
         }
     }
-    
+
     /// Public method to switch to a specific language stream (callable from SceneDelegate).
     /// - Parameter languageCode: The ISO language code to switch to (e.g., "en", "de", "fi", "sv", "et").
     public func handleSwitchToLanguage(_ languageCode: String) {
@@ -2845,97 +2844,76 @@ extension ViewController {
                 return
             }
             
-            self.selectedStreamIndex = targetIndex
-            self.updateBackground(for: targetStream)
-            self.streamingPlayer.isSwitchingStream = true
+            selectedStreamIndex = targetIndex
+            updateBackground(for: targetStream)
+            streamingPlayer.isSwitchingStream = true
             
             #if DEBUG
             print("🛑 Starting silent stop for switch to \(languageCode)")
             #endif
-            await self.streamingPlayer.stop(isSwitchingStream: true, silent: true)
+            await streamingPlayer.stop(isSwitchingStream: true, silent: true)
             
             #if DEBUG
             print("🎵 Playing tuning sound")
             #endif
             await withCheckedContinuation { continuation in
-                self.playTuningSound {
+                playTuningSound {
                     continuation.resume()
                 }
             }
             
-            self.streamingPlayer.resetTransientErrors()
+            streamingPlayer.resetTransientErrors()
             
             #if DEBUG
             print("📡 Setting stream to: \(targetStream.language)")
             #endif
-            await self.streamingPlayer.setStream(to: targetStream)
+            await streamingPlayer.setStream(to: targetStream)
             updateUserDefaultsForStream(targetStream)
-            self.hasPermanentPlaybackError = false
+            hasPermanentPlaybackError = false
             
             // UI update
             let indexPath = IndexPath(item: targetIndex, section: 0)
-            self.languageCollectionView.selectItem(at: indexPath, animated: true, scrollPosition: .centeredHorizontally)
-            self.updateSelectionIndicator(to: targetIndex)
+            languageCollectionView.selectItem(at: indexPath, animated: true, scrollPosition: .centeredHorizontally)
+            updateSelectionIndicator(to: targetIndex)
             
-            // === CRITICAL: Robust playback start ===
-            if !self.isManualPause {
+            // === CRITICAL: Robust playback start after switch ===
+            if !isManualPause {
                 #if DEBUG
                 print("▶️ Starting playback after switch")
                 #endif
                 
-                // Small delay to let AVPlayerItem settle after setStream
+                // Small delay to let AVPlayerItem settle
                 try? await Task.sleep(for: .seconds(0.5))
                 
-                do {
-                    try await SharedPlayerManager.shared.play()
-                    #if DEBUG
-                    print("✅ SharedPlayerManager.play() succeeded for \(languageCode)")
-                    #endif
-                    
-                    // Extra safety check — sometimes play() returns success but state doesn't update immediately
-                    try? await Task.sleep(for: .seconds(0.7))
-                    let finalState = SharedPlayerManager.shared.loadSharedState()
-                    if !finalState.isPlaying {
-                        #if DEBUG
-                        print("⚠️ State still not playing after play() — retrying once")
-                        #endif
-                        try? await SharedPlayerManager.shared.play()
-                    }
-                } catch {
-                    #if DEBUG
-                    print("❌ Failed to start playback after switch to \(languageCode): \(error)")
-                    #endif
-                    
-                    // Optional: one retry with longer delay
-                    try? await Task.sleep(for: .seconds(1.0))
-                    try? await SharedPlayerManager.shared.play()
-                }
+                await handlePlayAction()   // Uses new path with markAsPlaying()
+                
             } else {
                 #if DEBUG
                 print("⏸️ Manual pause active — skipping auto-play after switch")
                 #endif
+                // Still update UI to paused state
+                updateUI(for: .userPaused)
             }
             
-            self.streamingPlayer.isSwitchingStream = false
+            streamingPlayer.isSwitchingStream = false
             
             #if DEBUG
             print("✅ handleSwitchToLanguage completed for \(languageCode)")
             #endif
             
-            // Final widget refresh (only once)
-            self.saveStateForWidget()
+            saveStateForWidget()
             WidgetCenter.shared.reloadAllTimelines()
         }
     }
-    
+
     /// Public method to toggle play/pause state
+    /// (callable from SceneDelegate, remote commands, Control Center, etc.)
     public func handleTogglePlayback() {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            if self.isPlaying {
-                self.handlePauseAction()
+        Task { @MainActor in
+            if await DirectStreamingPlayer.shared.isPlaying {
+                await handlePauseAction()
             } else {
-                self.handlePlayAction()
+                await handlePlayAction()
             }
         }
     }
