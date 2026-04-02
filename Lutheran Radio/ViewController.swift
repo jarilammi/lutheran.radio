@@ -1594,11 +1594,25 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         saveStateForWidget()
     }
     
+    private func updateUI(for visualState: PlayerVisualState) {
+        switch visualState {
+        case .userPaused:
+            statusLabel.text = String(localized: "status_paused")
+            
+        case .playing:
+            statusLabel.text = String(localized: "status_playing")
+            
+        case .prePlay, .error:
+            statusLabel.text = ""   // or appropriate fallback
+        }
+        
+        statusLabel.backgroundColor = visualState.backgroundColor
+        statusLabel.textColor = visualState.textColor
+        updatePlayPauseButton(isPlaying: visualState.isActivelyPlaying)
+    }
+    
     private func updateUIForPausedState() {
-        statusLabel.text = String(localized: "status_paused")
-        statusLabel.backgroundColor = .systemGray
-        statusLabel.textColor = .white
-        updatePlayPauseButton(isPlaying: false)
+        updateUI(for: .userPaused)
     }
     
     @objc private func volumeChanged(_ sender: UISlider) {
