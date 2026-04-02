@@ -1179,6 +1179,16 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// - Throws: Only critical unrecoverable errors (rare).
     @MainActor
     func play() async -> Bool {
+        // === CRITICAL GUARD: Respect PlayerVisualState user intent ===
+        // This prevents "play-on-pause resurrection" after user explicitly pauses
+        guard await shouldAutoPlayOrResume else {
+            #if DEBUG
+            print("🚫 [Play Guard] Blocked resurrection — currentVisualState is .userPaused")
+            #endif
+            safeOnStatusChange(isPlaying: false, status: "UserPaused")
+            return false
+        }
+
         guard !isCurrentlyAttemptingPlayback else {
             #if DEBUG
             print("⚠️ [Playback Guard] Already attempting playback — ignoring duplicate call")
@@ -1216,6 +1226,17 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
 
     @MainActor
     private func createAndStartPlayer(for url: URL) async {
+        // === DEEP CRITICAL GUARD: Respect PlayerVisualState user intent ===
+        // This catches all internal/resume paths that bypass the public play() method
+        // (stream switches, tuning sound completion, audio session reactivation, etc.)
+        guard await shouldAutoPlayOrResume else {
+            #if DEBUG
+            print("🚫 [Deep Play Guard] Blocked AVPlayer creation/resume — currentVisualState is .userPaused")
+            #endif
+            safeOnStatusChange(isPlaying: false, status: "UserPaused")
+            return
+        }
+
         let asset = AVURLAsset(url: url)
         asset.resourceLoader.setDelegate(self, queue: .main)
 
@@ -1232,8 +1253,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         do {
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.playback,
-                                   mode: .default,
-                                   options: [.allowAirPlay, .defaultToSpeaker])  // adjust options if needed
+                                    mode: .default,
+                                    options: [.allowAirPlay, .defaultToSpeaker])
             
             try session.setActive(true)
             
@@ -1244,8 +1265,6 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             #if DEBUG
             print("❌ [MainActor] Failed to activate AVAudioSession: \(error.localizedDescription)")
             #endif
-            // Decide later whether to throw or continue (continuing often still "works" but may be silent)
-            // For a radio app, maybe log and proceed, or notify the caller.
         }
         // ========================================================
         

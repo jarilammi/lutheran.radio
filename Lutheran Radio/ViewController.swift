@@ -509,18 +509,26 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         Task { @MainActor [weak self] in
             guard let self else { return }
             
-            // Set the initial stream asynchronously (this was causing the error)
+            // Set the initial stream asynchronously
             await self.streamingPlayer.setStream(to: DirectStreamingPlayer.availableStreams[initialIndex])
             
             self.updateUserDefaultsLanguage(DirectStreamingPlayer.availableStreams[initialIndex].languageCode)
             self.updateBackground(for: DirectStreamingPlayer.availableStreams[initialIndex])
             
-            // Play special tuning sound, then auto-play if appropriate
+            // Play special tuning sound first
             await self.playSpecialTuningSound()
             
-            guard self.hasInternetConnection && !self.isManualPause else {
+            // NEW: Respect PlayerVisualState — do not auto-resume if user explicitly paused
+            guard await self.streamingPlayer.shouldAutoPlayOrResume else {
                 #if DEBUG
-                print("📱 Skipped auto-play: no internet or manually paused")
+                print("🚫 [Tuning Guard] Blocked auto-playback after tuning sound — currentVisualState is .userPaused")
+                #endif
+                return
+            }
+            
+            guard self.hasInternetConnection else {
+                #if DEBUG
+                print("📱 Skipped auto-play: no internet")
                 #endif
                 return
             }
@@ -1108,18 +1116,46 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             #endif
             return
         }
+        
         guard let userInfo = notification.userInfo,
               let typeValue = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
               let type = AVAudioSession.InterruptionType(rawValue: typeValue) else { return }
+        
         switch type {
         case .began:
-            if isPlaying { stopPlayback() }
-            stopTuningSound() // Stop tuning sound during interruption
+            if isPlaying {
+                stopPlayback()
+            }
+            stopTuningSound()
+            
         case .ended:
             guard let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt else { return }
             let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
+            
+            // Always try to reactivate the session
             try? AVAudioSession.sharedInstance().setActive(true, options: .notifyOthersOnDeactivation)
-            if options.contains(.shouldResume) && !isManualPause { startPlayback() }
+            
+            // === CRITICAL GUARD: Respect PlayerVisualState user intent ===
+            // This prevents the most common "play-on-pause resurrection" after phone calls, Siri, etc.
+            if options.contains(.shouldResume) {
+                Task { @MainActor in
+                    guard await streamingPlayer.shouldAutoPlayOrResume else {
+                        #if DEBUG
+                        print("🚫 [Interruption Guard] Blocked auto-resume after interruption — currentVisualState is .userPaused")
+                        #endif
+                        
+                        self.updateUIForPausedState()
+                        return
+                    }
+                    
+                    #if DEBUG
+                    print("▶️ [Interruption Guard] Allowed resume after interruption")
+                    #endif
+                    
+                    await self.startPlayback()
+                }
+            }
+            
         @unknown default:
             break
         }
@@ -1334,88 +1370,100 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     // MARK: - Playback Control Methods
     /// Starts audio playback with network checks and security validation.
     /// - Note: Debounces rapid calls and handles retries on transient errors.
-    /// - Warning: Does not play if no internet or manual pause is active.
     private func startPlayback() {
-        if !hasInternetConnection {
-            updateUIForNoInternet()
+        // === CRITICAL GUARD: Respect explicit user pause intent ===
+        // This prevents resurrection from tuning sound completion, language switches,
+        // and any other call site that routes through startPlayback()
+        Task { @MainActor in
+            guard await streamingPlayer.shouldAutoPlayOrResume else {
+                #if DEBUG
+                print("🚫 [StartPlayback Guard] Blocked resurrection — currentVisualState is .userPaused")
+                #endif
+                self.updateUIForPausedState()
+                return
+            }
+
+            // Original logic continues only if we are allowed to play
+            if !hasInternetConnection {
+                updateUIForNoInternet()
+                stopTuningSound()
+                performActiveConnectivityCheck()
+                return
+            }
+            
+            let now = Date()
+            if let lastAttempt = lastPlaybackAttempt,
+               now.timeIntervalSince(lastAttempt) < 0.5,
+               let lastFailedServer = streamingPlayer.lastFailedServer,
+               lastFailedServer == streamingPlayer.selectedServerInfo.name {
+                #if DEBUG
+                print("📱 Debouncing failed server \(lastFailedServer), time since last: \(now.timeIntervalSince(lastAttempt))s")
+                #endif
+                return
+            }
+            lastPlaybackAttempt = now
+            
             stopTuningSound()
-            performActiveConnectivityCheck()
-            return
-        }
-        
-        let now = Date()
-        if let lastAttempt = lastPlaybackAttempt,
-           now.timeIntervalSince(lastAttempt) < 0.5,
-           let lastFailedServer = streamingPlayer.lastFailedServer,
-           lastFailedServer == streamingPlayer.selectedServerInfo.name {
-            #if DEBUG
-            print("📱 Debouncing failed server \(lastFailedServer), time since last: \(now.timeIntervalSince(lastAttempt))s")
-            #endif
-            return
-        }
-        lastPlaybackAttempt = now
-        
-        stopTuningSound()
-        
-        pendingPlaybackWorkItem?.cancel()
-        
-        let workItem = DispatchWorkItem { [weak self] in
-            guard let self else { return }
             
-            isManualPause = false
-            statusLabel.text = String(localized: "status_connecting")
-            statusLabel.backgroundColor = .systemYellow
-            statusLabel.textColor = .black
+            pendingPlaybackWorkItem?.cancel()
             
-            Task { @MainActor in
-                let isValid = await SecurityModelValidator.shared.validateSecurityModel()
+            let workItem = DispatchWorkItem { [weak self] in
+                guard let self else { return }
                 
-                if isValid {
-                    await self.streamingPlayer.resetTransientErrors()
+                isManualPause = false
+                statusLabel.text = String(localized: "status_connecting")
+                statusLabel.backgroundColor = .systemYellow
+                statusLabel.textColor = .black
+                
+                Task { @MainActor in
+                    let isValid = await SecurityModelValidator.shared.validateSecurityModel()
                     
-                    // FIXED: Modern async/await version (no trailing closure)
-                    let success = await self.streamingPlayer.play()
-                    
-                    if success {
-                        self.isPlaying = true
-                        self.updatePlayPauseButton(isPlaying: true)
-                        self.statusLabel.text = String(localized: "status_playing")
-                        self.statusLabel.backgroundColor = .systemGreen
+                    if isValid {
+                        await self.streamingPlayer.resetTransientErrors()
+                        
+                        let success = await self.streamingPlayer.play()
+                        
+                        if success {
+                            self.isPlaying = true
+                            self.updatePlayPauseButton(isPlaying: true)
+                            self.statusLabel.text = String(localized: "status_playing")
+                            self.statusLabel.backgroundColor = .systemGreen
+                        } else {
+                            let isPermanent = await SecurityModelValidator.shared.isPermanentlyInvalid
+                            
+                            if isPermanent {
+                                self.hasPermanentPlaybackError = true
+                                self.statusLabel.text = String(localized: "status_stream_unavailable")
+                                self.statusLabel.backgroundColor = .systemOrange
+                                self.statusLabel.textColor = .white
+                            } else {
+                                self.attemptPlaybackWithRetry(attempt: 1, maxAttempts: 3)
+                            }
+                        }
                     } else {
                         let isPermanent = await SecurityModelValidator.shared.isPermanentlyInvalid
                         
+                        self.statusLabel.text = isPermanent
+                            ? String(localized: "status_security_failed")
+                            : String(localized: "status_no_internet")
+                        
+                        self.statusLabel.backgroundColor = isPermanent ? .systemRed : .systemGray
+                        self.statusLabel.textColor = .white
+                        
+                        self.hasPermanentPlaybackError = isPermanent
+                        
                         if isPermanent {
-                            self.hasPermanentPlaybackError = true
-                            self.statusLabel.text = String(localized: "status_stream_unavailable")
-                            self.statusLabel.backgroundColor = .systemOrange
-                            self.statusLabel.textColor = .white
-                        } else {
-                            self.attemptPlaybackWithRetry(attempt: 1, maxAttempts: 3)
+                            self.showSecurityModelAlert()
                         }
-                    }
-                } else {
-                    let isPermanent = await SecurityModelValidator.shared.isPermanentlyInvalid
-                    
-                    self.statusLabel.text = isPermanent
-                        ? String(localized: "status_security_failed")
-                        : String(localized: "status_no_internet")
-                    
-                    self.statusLabel.backgroundColor = isPermanent ? .systemRed : .systemGray
-                    self.statusLabel.textColor = .white
-                    
-                    self.hasPermanentPlaybackError = isPermanent
-                    
-                    if isPermanent {
-                        self.showSecurityModelAlert()
                     }
                 }
             }
+            
+            pendingPlaybackWorkItem = workItem
+            DispatchQueue.main.async(execute: workItem)
+            
+            saveStateForWidget()
         }
-        
-        pendingPlaybackWorkItem = workItem
-        DispatchQueue.main.async(execute: workItem)
-        
-        saveStateForWidget()
     }
     
     private func attemptPlaybackWithRetry(attempt: Int, maxAttempts: Int) {
@@ -1507,8 +1555,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     }
     
     /// Pauses playback and updates UI/status.
-    /// - Note: Sets manual pause flag; saves state for widgets.
-    /// - SeeAlso: `startPlayback()` for resumption logic.
+    /// - Note: Sets manual pause flag and routes through SharedPlayerManager to ensure .userPaused state is set.
     private func pausePlayback() {
         #if DEBUG
         print("📱 pausePlayback called from: \(Thread.callStackSymbols[1])")
@@ -1516,17 +1563,20 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         
         isManualPause = true
         hasEverPlayed = false
-        streamingPlayer.stop { [weak self] in
-            guard let self = self else { return }
+        
+        // Route through the shared manager so .userPaused is properly set and persisted
+        Task { @MainActor in
+            await SharedPlayerManager.shared.stop()
             
-            // Hop to main queue for UI and isolated state updates
-            DispatchQueue.main.async {
-                self.isPlaying = false
-                self.updatePlayPauseButton(isPlaying: false)
-                self.updateStatusLabel(text: String(localized: "status_paused"), backgroundColor: .systemGray, textColor: .white)
-                self.updateNowPlayingInfo()
-                self.saveStateForWidget()
-            }
+            self.isPlaying = false
+            self.updatePlayPauseButton(isPlaying: false)
+            self.updateUIForPausedState()
+            self.updateNowPlayingInfo()
+            self.saveStateForWidget()
+            
+            #if DEBUG
+            print("✅ pausePlayback completed — .userPaused state set")
+            #endif
         }
     }
     
@@ -1534,10 +1584,21 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         #if DEBUG
         print("📱 stopPlayback called from: \(Thread.callStackSymbols[1])")
         #endif
+        
+        // For internal stops we usually want to keep the previous intent (e.g. during stream switch)
+        // So we call the low-level stop without forcing .userPaused
         streamingPlayer.stop()
+        
         isPlaying = false
         updatePlayPauseButton(isPlaying: false)
         saveStateForWidget()
+    }
+    
+    private func updateUIForPausedState() {
+        statusLabel.text = String(localized: "status_paused")
+        statusLabel.backgroundColor = .systemGray
+        statusLabel.textColor = .white
+        updatePlayPauseButton(isPlaying: false)
     }
     
     @objc private func volumeChanged(_ sender: UISlider) {
@@ -2341,7 +2402,24 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         Task { @MainActor [weak self] in
             guard let self else { return }
             
-            // 1. Stop the current stream (assuming it has a completion handler)
+            // === CRITICAL GUARD: Respect user pause intent during stream switch ===
+            // This prevents resurrection when switching languages after user has paused
+            guard await streamingPlayer.shouldAutoPlayOrResume else {
+                #if DEBUG
+                print("🚫 [Switch Guard] Blocked resume during stream switch — currentVisualState is .userPaused")
+                #endif
+                
+                self.updatePlayPauseButton(isPlaying: false)
+                self.statusLabel.text = String(localized: "status_paused")
+                self.statusLabel.backgroundColor = .systemGray
+                return
+            }
+            
+            #if DEBUG
+            print("▶️ [Switch Guard] Allowed resume during stream switch")
+            #endif
+            
+            // 1. Stop the current stream
             await withCheckedContinuation { continuation in
                 streamingPlayer.stop {
                     continuation.resume()
@@ -2356,8 +2434,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                         return
                     }
                     
-                    // All the work that was inside the old nested closures
-                    Task { @MainActor in   // Inner Task because setStream/startPlayback are async
+                    Task { @MainActor in
                         await self.streamingPlayer.setStream(to: stream)
                         
                         self.streamingPlayer.resetTransientErrors()
@@ -2366,11 +2443,11 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                         
                         self.saveStateForWidget()
                         
-                        // MINIMAL CHANGE: Use central manager instead of direct startPlayback
-                        // This makes stream switching also go through SharedPlayerManager
                         #if DEBUG
                         print("🔄 completeStreamSwitch → calling SharedPlayerManager.play()")
                         #endif
+                        
+                        // Now safe to call play() because we passed the guard
                         await SharedPlayerManager.shared.play()
                         
                         self.updateSelectionIndicator(to: index)
