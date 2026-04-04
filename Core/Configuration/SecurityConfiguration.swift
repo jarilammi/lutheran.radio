@@ -15,8 +15,20 @@ public struct SecurityConfiguration {
     /// Must match one of the comma-separated values in the TXT record.
     public let expectedSecurityModel: String = "starbase"
     
-    /// Domain queried for TXT record containing valid models (comma-separated).
-    let txtRecordDomain: String = "securitymodels.lutheran.radio"
+    /// Primary domain queried for TXT record containing valid models (comma-separated).
+    let primarySecurityModelDomain: String = "securitymodels.lutheran.radio"
+    
+    /// Backup domain for redundancy (different TLD).
+    let backupSecurityModelDomain: String = "securitymodels.lutheranradio.sk"
+    
+    /// All domains in priority order (primary → backup)
+    /// Computed property to avoid Swift property initializer ordering issues.
+    var securityModelDomains: [String] {
+        [
+            primarySecurityModelDomain,
+            backupSecurityModelDomain
+        ]
+    }
     
     /// Cache duration for successful security model validation results.
     /// After this interval, re-query the TXT record.

@@ -54,6 +54,7 @@ public actor SecurityModelValidator {
         #if DEBUG
         print("🔒 SecurityModelValidator.validateSecurityModel() started")
         #endif
+
         guard !Task.isCancelled else {
             #if DEBUG
             print("🔒 Task cancelled")
@@ -61,36 +62,60 @@ public actor SecurityModelValidator {
             return false
         }
 
+        // Cache check (one hour)
         if let last = lastValidationTime ?? UserDefaults.standard.object(forKey: userDefaultsKey) as? Date,
            currentDate().timeIntervalSince(last) < config.modelCacheDuration {
             validationState = .success
             return true
         }
 
-        do {
-            let validModels = try await queryTXTRecord(for: config.txtRecordDomain)
-            let isValid = validModels.contains(config.expectedSecurityModel.lowercased())
+        // Try primary first, then backup on transient failure only
+        for domain in config.securityModelDomains {
+            do {
+                let validModels = try await queryTXTRecord(for: domain)
+                let isValid = validModels.contains(config.expectedSecurityModel.lowercased())
 
-            let now = currentDate()
-            if isValid {
-                lastValidationTime = now
-                UserDefaults.standard.set(now, forKey: userDefaultsKey)
-                validationState = .success
-                return true
-            } else {
-                validationState = .failedPermanent
+                let now = currentDate()
+
+                if isValid {
+                    // Success on this domain → cache and return success
+                    lastValidationTime = now
+                    UserDefaults.standard.set(now, forKey: userDefaultsKey)
+                    validationState = .success
+                    
+                    #if DEBUG
+                    print("🔒 SecurityModelValidator] Success via domain: \(domain)")
+                    #endif
+                    
+                    return true
+                } else {
+                    // Model explicitly not allowed → treat as permanent denial
+                    // Do NOT try backup (authoritative failure)
+                    validationState = .failedPermanent
+                    
+                    #if DEBUG
+                    print("🔒 SecurityModelValidator] Permanent failure: '\(config.expectedSecurityModel)' not in TXT record from \(domain)")
+                    #endif
+                    
+                    return false
+                }
+            } catch {
+                // Transient error (network, DNS failure, timeout, etc.) → try next domain
                 #if DEBUG
-                print("🔒 SecurityModelValidator] Permanent failure: '\(config.expectedSecurityModel)' not in DNS TXT")
+                print("🔒 SecurityModelValidator] Transient DNS error on \(domain): \(error)")
                 #endif
-                return false
+                
+                // Continue to backup domain
+                continue
             }
-        } catch {
-            #if DEBUG
-            print("🔒 SecurityModelValidator] Transient DNS error: \(error)")
-            #endif
-            validationState = .failedTransient
-            return false
         }
+
+        // If we reach here, both domains failed with transient errors
+        validationState = .failedTransient
+        #if DEBUG
+        print("🔒 SecurityModelValidator] All domains failed with transient errors")
+        #endif
+        return false
     }
 
     public var currentState: ValidationState {
