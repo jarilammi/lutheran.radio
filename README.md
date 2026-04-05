@@ -154,8 +154,9 @@ The app enables additional MIE options for stricter memory protections:
 
 The app performs security model validation to confirm that the version in use matches an approved security implementation before streaming content. This protects against compromised or obsolete app versions.
 
-1. **Domain:** ```securitymodels.lutheran.radio```
-2. **Mechanism:** Queries a DNS TXT record for a comma-separated list of valid security models (e.g., `"dc,florida,tampa,atlanta,birmingham,houston,starbase"`)
+1. **Primary domain:** `securitymodels.lutheran.radio`
+   **Backup domain:** `securitymodels.lutheranradio.sk` (smart fallback)
+2. **Mechanism:** Queries DNS TXT records from the ordered list of domains. On success (expected model present), caches result for 1 hour. Permanent failure aborts immediately; transient errors trigger fallback to the backup domain only.
 3. **Pinned Value:** Defined in `Core/Configuration/SecurityConfiguration.swift` as `expectedSecurityModel` (currently `"starbase"`)
 4. **Location:** Enforced by the actor `Core/Actors/SecurityModelValidator.swift` (single source of truth for validation)
 5. **Behavior:** If the app’s security model isn’t in the TXT record, playback is permanently disabled with a user-facing error message

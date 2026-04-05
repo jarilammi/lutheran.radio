@@ -15,7 +15,7 @@ The `Core` module is the central, isolated foundation of **lutheran.radio**. It 
 - Non-negotiable security parameters — any deviation from these values is treated as a hard failure.
 
 ### SecurityModelValidator
-- `@MainActor`-isolated actor responsible for DNS TXT record validation against `securitymodels.lutheran.radio`.
+- `@MainActor`-isolated actor responsible for DNS TXT record validation against the ordered list of security model domains (`securitymodels.lutheran.radio` primary + `securitymodels.lutheranradio.sk` backup) with smart fallback on transient errors.
 - Handles caching (1-hour TTL), transient vs. permanent failures, and safe bridging for C callbacks.
 - Used by `DirectStreamingPlayer` and other components instead of scattered local security state.
 
