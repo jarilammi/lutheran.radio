@@ -99,6 +99,12 @@
             "value" : "%1$@ %2$@"
           }
         },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -203,6 +209,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "🇩🇪 Duiskkagiella"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "🇩🇪 Nemčina"
           }
         },
         "sv" : {
@@ -311,6 +323,12 @@
             "value" : "🇪🇪 Esttegiella"
           }
         },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "🇪🇪 Estónčina"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -415,6 +433,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "🇫🇮 Suomagiella"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "🇫🇮 Fínčina"
           }
         },
         "sv" : {
@@ -523,6 +547,12 @@
             "value" : "🇸🇪 Ruoŧagiella"
           }
         },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "🇸🇪 Švédčina"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -627,6 +657,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "🇺🇸 Eŋgelasgiella"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "🇺🇸 Angličtina"
           }
         },
         "sv" : {
@@ -735,6 +771,12 @@
             "value" : "Duppalbáhccehálddu láigge ávdnasaččat jođačájeheaddji"
           }
         },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dvojitým klepnutím vyberte zvukové výstupné zariadenie"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -839,6 +881,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Čájeha dieđuid dálá radio prográmma birra"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zobrazuje informácie o aktuálnom programe rádia"
           }
         },
         "sv" : {
@@ -947,6 +995,12 @@
             "value" : "Sirdá radiodálkkodaga čuojahan ja geahččan"
           }
         },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spustí alebo pozastaví prehrávanie rozhlasového streamu"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1053,6 +1107,12 @@
             "value" : "Sáđđá čuojahanvolyyma"
           }
         },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Upravuje hlasitosť prehrávania"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1154,6 +1214,12 @@
           }
         },
         "se" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AirPlay"
+          }
+        },
+        "sk" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AirPlay"
@@ -1266,6 +1332,12 @@
             "value" : "Bissat"
           }
         },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pozastaviť"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1370,6 +1442,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Čájeheaddji"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prehrať"
           }
         },
         "sv" : {
@@ -1478,6 +1556,12 @@
             "value" : "Duppalbáhccehálddu láigge ávdnasaččat čájeheaddji radio jođa"
           }
         },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dvojitým klepnutím spustíte alebo pozastavíte rozhlasový stream"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1582,6 +1666,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Jođa"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hlasitosť"
           }
         },
         "sv" : {
@@ -1690,6 +1780,12 @@
             "value" : "%d proseantta"
           }
         },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d percent"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1794,6 +1890,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Filtii"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zlyhalo"
           }
         },
         "sv" : {
@@ -1902,6 +2004,12 @@
             "value" : "Joatkke"
           }
         },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pokračovať"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2006,6 +2114,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Fas"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skúsiť znova"
           }
         },
         "sv" : {
@@ -2114,6 +2228,12 @@
             "value" : "Lutheran Radio widgeta heivehusat."
           }
         },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Konfigurácia widgetu Lutheran Radio."
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2218,6 +2338,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Heivet Lutheran Radio stivrenwidget."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nakonfigurujte ovládací widget Lutheran Radio."
           }
         },
         "sv" : {
@@ -2326,6 +2452,12 @@
             "value" : "Heivet Lutheran Radio ${preferredLanguage} gielas"
           }
         },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nakonfigurujte Lutheran Radio pre ${preferredLanguage}"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2430,6 +2562,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Laktaneapmi filtii"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chyba pripojenia"
           }
         },
         "sv" : {
@@ -2538,6 +2676,12 @@
             "value" : "Stivrenheivehusat"
           }
         },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Konfigurácia ovládania"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2644,6 +2788,12 @@
             "value" : "Stivret Lutheran Radio čuojahan ja čájet dálá kanála."
           }
         },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ovládajte prehrávanie Lutheran Radio a zobrazte aktuálnu stanicu."
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2748,6 +2898,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Stivret čuojahan ja gaskkal gielladálkkodat."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ovládajte prehrávanie a prepínajte medzi jazykovými streamami."
           }
         },
         "sv" : {
@@ -2857,6 +3013,12 @@
             "value" : "Nakkutit hárdu"
           }
         },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Znížiť hlasitosť"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2963,6 +3125,12 @@
             "value" : "Standárda gielladálkkodat geavahit"
           }
         },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Predvolený jazykový stream"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3067,6 +3235,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ale čájet ođđasit"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nabudúce nezobrazovať"
           }
         },
         "sv" : {
@@ -3176,6 +3350,12 @@
             "value" : "Bassiidit hárdu"
           }
         },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zvýšiť hlasitosť"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3280,6 +3460,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Čuoja"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prehráva sa"
           }
         },
         "sv" : {
@@ -3388,6 +3574,12 @@
             "value" : "Giella"
           }
         },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jazyk"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3494,6 +3686,12 @@
             "value" : "Giellakoda"
           }
         },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kód jazyka"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3598,6 +3796,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Gielladálkkodat gosa sirdit"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jazykový stream, na ktorý sa prepnúť"
           }
         },
         "sv" : {
@@ -3707,6 +3911,12 @@
             "value" : "Eŋgelasgiella"
           }
         },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Angličtina"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3812,6 +4022,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Esttegiella"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estónčina"
           }
         },
         "sv" : {
@@ -3921,6 +4137,12 @@
             "value" : "Suomagiella"
           }
         },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fínčina"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4026,6 +4248,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Duiskkagiella"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nemčina"
           }
         },
         "sv" : {
@@ -4135,6 +4363,12 @@
             "value" : "Ruoŧagiella"
           }
         },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Švédčina"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4239,6 +4473,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "SUORGA"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "NAŽIVO"
           }
         },
         "sv" : {
@@ -4347,6 +4587,12 @@
             "value" : "Dušše báikkálaš"
           }
         },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Len lokálne"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4453,6 +4699,12 @@
             "value" : "Lutheran Radio suorga sáddaneapmi"
           }
         },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio – živý stream"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4555,6 +4807,12 @@
           }
         },
         "se" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "sk" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio"
@@ -4666,6 +4924,12 @@
             "value" : "Prográmma geavaha mobiila dáhta, mii sáhttá dahkat geavaheami ovddas guoskkašumiid vuođul."
           }
         },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aplikácia používa mobilné dáta, čo môže podľa vášho tarifu znamenať dodatočné náklady."
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4770,6 +5034,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mobiila dáhta geavaheapmi"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Použitie mobilných dát"
           }
         },
         "sv" : {
@@ -4878,6 +5148,12 @@
             "value" : "Eai gávdno čuojanasadieđut"
           }
         },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Žiadne informácie o skladbe"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4982,6 +5258,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dál čuoja"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Práve hrá"
           }
         },
         "sv" : {
@@ -5090,6 +5372,12 @@
             "value" : "Buorre"
           }
         },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5194,6 +5482,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Raba appa vuosttaš"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Najprv otvorte aplikáciu"
           }
         },
         "sv" : {
@@ -5302,6 +5596,12 @@
             "value" : "Čuojat"
           }
         },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prehrať"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5406,6 +5706,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Čuoja vai boddjo Lutheran Radio."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prehrať alebo pozastaviť Lutheran Radio."
           }
         },
         "sv" : {
@@ -5514,6 +5820,12 @@
             "value" : "Áhči giella"
           }
         },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uprednostňovaný jazyk"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5618,6 +5930,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sirdit veara gielladálkkodat."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rýchlo prepnite na iný jazykový stream."
           }
         },
         "sv" : {
@@ -5726,6 +6044,12 @@
             "value" : "Sáhtti"
           }
         },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pripravené"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5830,6 +6154,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sáhtti čuojahit"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pripravené na prehrávanie"
           }
         },
         "sv" : {
@@ -5938,6 +6268,12 @@
             "value" : "Ii sáhte álggit čuojahan go sihkarvuohtačielggadeapmi ii lihkos. Dárkkis interneahttačatnosa ja áddeštá ahte applikašuvdna lea ođđasit. Jos váttisvuohta joatka, álggat applikašuvnna ođđasit ja geahča ođđasit."
           }
         },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prehrávanie sa nepodarilo spustiť kvôli zlyhaniu bezpečnostnej validácie. Skontrolujte internetové pripojenie a uistite sa, že máte najnovšiu verziu aplikácie. Ak problém pretrváva, reštartujte aplikáciu a skúste to znova."
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6042,6 +6378,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sihkarvuohtačielggadeapmi ii lihkostuvvan"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bezpečnostná validácia zlyhala"
           }
         },
         "sv" : {
@@ -6150,6 +6492,12 @@
             "value" : "Streaming-serverat leat ođasmahttán iežaset SSL-duođaštusat. App doaibmá ovttaoaivvildanvuogis. Ođasmahte ođasmosá verošuvdnii go lea oažžumis, buoremus sihkkarvuođa dihtii."
           }
         },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Streamovacie servery obnovili svoje SSL certifikáty. Aplikácia pracuje v kompatibilnom režime. Aktualizujte na najnovšiu verziu, keď bude dostupná, pre optimálnu bezpečnosť."
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6254,6 +6602,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Duođaštus ođasmahttojuvvon"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Certifikát bol aktualizovaný"
           }
         },
         "sv" : {
@@ -6362,6 +6716,12 @@
             "value" : "Álggat vai bisán Lutheran Radio čuojahan."
           }
         },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spustiť alebo zastaviť prehrávanie Lutheran Radio."
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6466,6 +6826,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Álggat čuojahan"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Začať prehrávanie"
           }
         },
         "sv" : {
@@ -6574,6 +6940,12 @@
             "value" : "Álggat čuojahan sirdemis maŋŋá"
           }
         },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Po prepnutí spustiť prehrávanie"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6678,6 +7050,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Buffere"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Načítava sa"
           }
         },
         "sv" : {
@@ -6786,6 +7164,12 @@
             "value" : "Laktáde"
           }
         },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pripája sa"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6892,6 +7276,12 @@
             "value" : "Ii oktavuohta"
           }
         },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offline"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6996,6 +7386,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Boddjo"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pozastavené"
           }
         },
         "sv" : {
@@ -7106,6 +7502,12 @@
             "value" : "Čuovvoluvvon – Golahallan lea barggus"
           }
         },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pozastavené – aktívny hovor"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7211,6 +7613,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Čuojaheapmi filtii: %@"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prehrávanie zlyhalo: %@"
           }
         },
         "sv" : {
@@ -7319,6 +7727,12 @@
             "value" : "Čuoja"
           }
         },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prehráva sa"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7423,6 +7837,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sihkarvuohta"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bezpečnosť"
           }
         },
         "sv" : {
@@ -7531,6 +7951,12 @@
             "value" : "SSL duođaštus ođasmahttojuvvon - ođasmahte app-a farggamusat"
           }
         },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SSL certifikát obnovený – čoskoro aktualizujte aplikáciu"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7635,6 +8061,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bisánan"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zastavené"
           }
         },
         "sv" : {
@@ -7743,6 +8175,12 @@
             "value" : "Ii sádde"
           }
         },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vypnuté"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7847,6 +8285,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Báras"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zariadenie sa prehrieva"
           }
         },
         "sv" : {
@@ -7955,6 +8399,12 @@
             "value" : "Sáddaneapmi ii leat dálkeddji olamuttus. Geahčal ođđasit maŋŋá."
           }
         },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vysielanie je dočasne nedostupné. Skúste to prosím neskôr."
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8059,6 +8509,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sáddaneapmi ii leat olamuttus"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vysielanie nie je dostupné"
           }
         },
         "sv" : {
@@ -8167,6 +8623,12 @@
             "value" : "Rievdat Lutheran Radio giela"
           }
         },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zmeniť jazyk Lutheran Radio"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8271,6 +8733,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Rievdat dálkkodata"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prepnúť stream"
           }
         },
         "sv" : {
@@ -8379,6 +8847,12 @@
             "value" : "Rievdat ${language} giellii"
           }
         },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prepnúť na ${language}"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8483,6 +8957,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Rievdat ${language} giellii ja álggit čuojahan"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prepnúť na ${language} a začať prehrávanie"
           }
         },
         "sv" : {
@@ -8591,6 +9071,12 @@
             "value" : "Rievdat eará gielladálkkodahkii Live-aktiivvuođas."
           }
         },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prepnúť na iný jazykový stream z Live Activity."
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8695,6 +9181,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Rievdat eará gielladálkkodahkii."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prepnúť na iný jazykový stream."
           }
         },
         "sv" : {
@@ -8805,6 +9297,12 @@
             "value" : "Sirdásii %@ -ii"
           }
         },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prepnuté na %@"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8909,6 +9407,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Deaddil rabastit"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Klepnite na otvorenie"
           }
         },
         "sv" : {
@@ -9017,6 +9521,12 @@
             "value" : "Rievdat Lutheran Radio"
           }
         },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prepnúť Lutheran Radio"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9123,6 +9633,12 @@
             "value" : "Rievdat Lutheran Radio čuojahan"
           }
         },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prepnúť prehrávanie Lutheran Radio"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9227,6 +9743,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Rievdat čuojahan/bisán Live-aktiivvuođas."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prepnúť play/pause z Live Activity."
           }
         },
         "sv" : {
@@ -9336,6 +9858,12 @@
             "value" : "Rievdat čuojahan"
           }
         },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prepnúť prehrávanie"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9442,6 +9970,12 @@
             "value" : "Hárdu lea settet %d %-ii"
           }
         },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hlasitosť nastavená na %d percent"
+          }
+        },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9546,6 +10080,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Widget heivehusat"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Konfigurácia widgetu"
           }
         },
         "sv" : {
