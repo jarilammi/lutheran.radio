@@ -28,6 +28,7 @@ The app is fully localized in the following languages:
 - Polish (pl)
 - Russian (ru)
 - Northern Sami (se)
+- Slovak (sk)
 - Swedish (sv)
 
 </td>
