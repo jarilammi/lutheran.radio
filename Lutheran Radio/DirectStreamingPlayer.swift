@@ -1179,6 +1179,16 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// - Throws: Only critical unrecoverable errors (rare).
     @MainActor
     func play() async -> Bool {
+        // === CRITICAL GUARD: Respect PlayerVisualState user intent ===
+        // This prevents "play-on-pause resurrection" after user explicitly pauses
+        guard await shouldAutoPlayOrResume else {
+            #if DEBUG
+            print("🚫 [Play Guard] Blocked resurrection — currentVisualState is .userPaused")
+            #endif
+            safeOnStatusChange(isPlaying: false, status: "UserPaused")
+            return false
+        }
+
         guard !isCurrentlyAttemptingPlayback else {
             #if DEBUG
             print("⚠️ [Playback Guard] Already attempting playback — ignoring duplicate call")
@@ -1216,6 +1226,17 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
 
     @MainActor
     private func createAndStartPlayer(for url: URL) async {
+        // === DEEP CRITICAL GUARD: Respect PlayerVisualState user intent ===
+        // This catches all internal/resume paths that bypass the public play() method
+        // (stream switches, tuning sound completion, audio session reactivation, etc.)
+        guard await shouldAutoPlayOrResume else {
+            #if DEBUG
+            print("🚫 [Deep Play Guard] Blocked AVPlayer creation/resume — currentVisualState is .userPaused")
+            #endif
+            safeOnStatusChange(isPlaying: false, status: "UserPaused")
+            return
+        }
+
         let asset = AVURLAsset(url: url)
         asset.resourceLoader.setDelegate(self, queue: .main)
 
@@ -1232,8 +1253,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         do {
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.playback,
-                                   mode: .default,
-                                   options: [.allowAirPlay, .defaultToSpeaker])  // adjust options if needed
+                                    mode: .default,
+                                    options: [.allowAirPlay, .defaultToSpeaker])
             
             try session.setActive(true)
             
@@ -1244,8 +1265,6 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             #if DEBUG
             print("❌ [MainActor] Failed to activate AVAudioSession: \(error.localizedDescription)")
             #endif
-            // Decide later whether to throw or continue (continuing often still "works" but may be silent)
-            // For a radio app, maybe log and proceed, or notify the caller.
         }
         // ========================================================
         
@@ -2005,9 +2024,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// Stops playback and cleans up resources.
     /// - Parameters:
     ///   - completion: Optional completion handler called after stopping.
-    ///   - isSwitchingStream: If `true`, treats this as a stream switch, suppressing "stopped" status updates unless explicitly overridden. Defaults to the instance’s `isSwitchingStream` flag.
-    ///   - silent: If `true`, skips all status updates to avoid UI flicker (e.g., during internal resets or stream switches).
-    /// - Note: When `isSwitchingStream` or `silent` is `true`, the "status_stopped" update is suppressed to prevent misleading UI changes during stream transitions. Calls `performActualStop` with an effective switching flag to handle status suppression.
+    ///   - isSwitchingStream: If `true`, treats this as a stream switch, suppressing "stopped" status updates.
+    ///   - silent: If `true`, skips all status updates to avoid UI flicker.
     func stop(completion: (@MainActor @Sendable () -> Void)? = nil,
               isSwitchingStream: Bool? = nil,
               silent: Bool = false) {
@@ -2016,10 +2034,10 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         print("🛑 FORCE STOPPING ALL PLAYBACK - isSwitchingStream: \(String(describing: isSwitchingStream)), attemptingPlayback: \(isCurrentlyAttemptingPlayback)")
         #endif
         
-        // WIDER GUARD: protect startup even during atomic switch
+        // === EXISTING GUARDS - DO NOT REMOVE OR MERGE THESE ===
         if isCurrentlyAttemptingPlayback {
             #if DEBUG
-            print("⚠️ [Stop Guard] Skipping aggressive stop during playback startup attempt (even switch)")
+            print("⚠️ [Stop Guard] Skipping aggressive stop during playback startup attempt")
             #endif
             loadingTimeoutWorkItem?.cancel()
             fallbackWorkItem?.cancel()
@@ -2028,20 +2046,6 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             return
         }
         
-        // NEW: Critical guard — protect startup path from aggressive stop
-        if isCurrentlyAttemptingPlayback && (isSwitchingStream == nil || isSwitchingStream == false) {
-            #if DEBUG
-            print("⚠️ [Stop Guard] Skipping aggressive stop during playback startup attempt")
-            #endif
-            
-            // Still cancel pending timers/work items, but do NOT clear player resources
-            loadingTimeoutWorkItem?.cancel()
-            fallbackWorkItem?.cancel()
-            pendingPlaybackWorkItem?.cancel()
-            retryWorkItem?.cancel()
-            return
-        }
-
         loadingTimeoutWorkItem?.cancel()
         currentLoadingDelegate?.loadingRequest.finishLoading(with: URLError(.cancelled))
         currentLoadingDelegate = nil
@@ -2053,17 +2057,29 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         fallbackWorkItem = nil
         pendingPlaybackWorkItem?.cancel()
         pendingPlaybackWorkItem = nil
-
+        
         let effectiveSwitching = isSwitchingStream ?? self.isSwitchingStream
+        let isUserInitiatedPause = !silent && !effectiveSwitching
         
-        performActualStop(
-            completion: completion,
-            silent: silent || effectiveSwitching,
-            effectiveSwitching: effectiveSwitching
-        )
-        
-        // Final state save
+        // === CRITICAL: Set visual state FIRST ===
         Task {
+            if isUserInitiatedPause {
+                await self.markAsUserPaused()
+                #if DEBUG
+                print("🎯 markAsUserPaused() called – visualState set to .userPaused")
+                #endif
+            }
+            
+            // Perform the actual stop on the main actor
+            await MainActor.run {
+                performActualStop(
+                    completion: completion,
+                    silent: silent || effectiveSwitching,
+                    effectiveSwitching: effectiveSwitching
+                )
+            }
+            
+            // Persist after everything
             await SharedPlayerManager.shared.saveCurrentState()
         }
     }
@@ -3103,5 +3119,38 @@ private extension DirectStreamingPlayer {
         request.setValue("keep-alive", forHTTPHeaderField: "Connection")
         request.setValue("audio/mpeg", forHTTPHeaderField: "Accept")
         return request
+    }
+}
+
+// MARK: - PlayerVisualState Integration
+
+extension DirectStreamingPlayer {
+
+    /// Returns whether we are allowed to automatically start or resume playback
+    /// according to the user's explicit intent stored in SharedPlayerManager.
+    var shouldAutoPlayOrResume: Bool {
+        get async {
+            await SharedPlayerManager.shared.currentVisualState.shouldAutoPlayOrResume
+        }
+    }
+
+    /// Marks the current intent as user-initiated pause.
+    /// This should be called from all user-facing pause paths (button, widget, remote commands, Darwin notifications, etc.).
+    func markAsUserPaused() async {
+        await SharedPlayerManager.shared.setUserPaused()
+        
+        #if DEBUG
+        print("🎯 markAsUserPaused() called – currentVisualState = .userPaused")
+        #endif
+    }
+
+    /// Marks the current intent as actively playing.
+    /// Call this after a successful manual play or auto-resume (e.g. after AVPlayer starts with rate == 1.0).
+    func markAsPlaying() async {
+        await SharedPlayerManager.shared.setPlaying()
+        
+        #if DEBUG
+        print("▶️ markAsPlaying() called – currentVisualState = .playing")
+        #endif
     }
 }

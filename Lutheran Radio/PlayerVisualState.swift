@@ -8,28 +8,36 @@
 import Foundation
 import UIKit
 
-/// Single source of truth for all playback UI colors.
-/// Pre-play = always yellow, pause/stop = always grey (exactly what you asked for).
-/// Apple-idiomatic, fully testable, dark-mode safe.
-enum PlayerVisualState {
-    case prePlay        // Initial load / connecting / never played yet
-    case playing
-    case inactive       // User paused OR stopped — grey
-    case error          // Security failure
+/// Single source of truth for playback UI **and** intent.
+///
+/// - prePlay:     yellow, auto-plays on first launch only
+/// - playing:     green
+/// - userPaused:  grey, NEVER auto-resumes (this is the resurrection protection)
+/// - error:       red
+///
+/// This version makes .userPaused "sticky" after any manual interaction.
+enum PlayerVisualState: Codable, Equatable {
+    
+    case prePlay        // Initial load / connecting / never played yet → yellow, should auto-play
+    case playing        // Actively playing → green
+    case userPaused     // Explicit user pause/stop → grey, NEVER auto-resume
+    case error          // Security failure → red
+    
+    // MARK: - Visual properties
     
     var backgroundColor: UIColor {
         switch self {
         case .prePlay:     return .systemYellow
         case .playing:     return .systemGreen
-        case .inactive:    return .systemGray
+        case .userPaused:  return .systemGray
         case .error:       return .systemRed
         }
     }
     
     var textColor: UIColor {
         switch self {
-        case .prePlay, .inactive: return .label
-        case .playing, .error:    return .white
+        case .prePlay, .userPaused: return .label
+        case .playing, .error:      return .white
         }
     }
     
@@ -37,14 +45,38 @@ enum PlayerVisualState {
         switch self {
         case .prePlay:     return .systemYellow
         case .playing:     return .systemGreen
-        case .inactive:    return .secondaryLabel   // beautiful subtle grey
+        case .userPaused:  return .secondaryLabel
         case .error:       return .systemRed
+        }
+    }
+    
+    // MARK: - Semantic properties (key to fixing "play on pause")
+    
+    /// True only when audio is actively playing
+    var isActivelyPlaying: Bool {
+        self == .playing
+    }
+    
+    /// Single source of truth.
+    /// Returns false for .userPaused and .error — this blocks ALL resurrection paths
+    /// (viewDidAppear, completeStreamSwitch, widget callbacks, etc.)
+    var shouldAutoPlayOrResume: Bool {
+        switch self {
+        case .prePlay, .playing:
+            return true
+        case .userPaused, .error:
+            return false
         }
     }
 }
 
+// MARK: - State mapping
+
 extension PlayerVisualState {
-    /// Maps your existing PlayerStatus + flags → visual state
+    /// Maps PlayerStatus + flags → visual state with strict "userPaused is sticky" rule.
+    ///
+    /// Once the user has manually paused (or ever played), we lock into .userPaused
+    /// until they explicitly tap Play again. This prevents the yellow resurrection.
     static func from(
         status: PlayerStatus,
         isManualPause: Bool,
@@ -56,16 +88,20 @@ extension PlayerVisualState {
             return .playing
             
         case .connecting:
-            return .prePlay
+            // Only show prePlay on true first launch (never played before)
+            return hasEverPlayed ? .userPaused : .prePlay
             
         case .security:
             return .error
             
         case .paused, .stopped:
-            // THIS IS THE RULE YOU WANTED
-            // Never played yet or user-initiated pause/stop → grey
-            // Otherwise stay yellow until first play
-            return (isManualPause || !hasEverPlayed) ? .inactive : .prePlay
+            // 🔥 CRITICAL CHANGE:
+            // Once user has ever interacted (paused or played), stay in userPaused.
+            // Only true initial state (never played) stays prePlay.
+            if isManualPause || hasEverPlayed {
+                return .userPaused
+            }
+            return .prePlay   // only for brand-new launch
         }
     }
 }

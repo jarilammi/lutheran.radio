@@ -67,16 +67,28 @@ actor SharedPlayerManager {
         return DirectStreamingPlayer.availableStreams
     }
     
+    // Single source of truth for playback intent (UI + widget + Live Activity)
+    // This prevents the "play on pause" resurrection bug when set synchronously to .userPaused
+    var currentVisualState: PlayerVisualState = .prePlay
+    
     // MARK: - Public API
 
     /// Public async entry point for playing — safe to call from anywhere
     public func play() async {
         #if DEBUG
-        print("🚀 SharedPlayerManager.play() ENTERED")
+        print("🚀 SharedPlayerManager.play() ENTERED – currentVisualState = \(currentVisualState)")
         #endif
 
-        let isValid = await SecurityModelValidator.shared.validateSecurityModel()
+        // SINGLE SOURCE OF TRUTH — this kills resurrection in ALL paths
+        if !currentVisualState.shouldAutoPlayOrResume {
+            #if DEBUG
+            print("🛡️ Blocked play() – currentVisualState = \(currentVisualState) (resurrection prevented)")
+            #endif
+            return
+        }
 
+        let isValid = await SecurityModelValidator.shared.validateSecurityModel()
+        
         #if DEBUG
         print("🔐 SecurityModelValidator returned: \(isValid)")
         if !isValid {
@@ -89,9 +101,6 @@ actor SharedPlayerManager {
         guard isValid else { return }
 
         if isRunningInWidget() {
-            #if DEBUG
-            print("📱 Running in widget → calling handleWidgetPlay()")
-            #endif
             handleWidgetPlay()
             return
         }
@@ -111,18 +120,38 @@ actor SharedPlayerManager {
     
     /// Public async entry point for stopping playback
     public func stop() async {
+        #if DEBUG
+        print("🚀 SharedPlayerManager.stop() ENTERED – currentVisualState = \(currentVisualState)")
+        #endif
+
+        // 🔥 CRITICAL FIX: Lock .userPaused IMMEDIATELY at the very top
+        // This closes the race window that causes resurrection after pause
+        currentVisualState = .userPaused
+        saveVisualState()   // persist early so widgets, Live Activity, and Darwin notifications see the new state
+
+        #if DEBUG
+        print("🛡️ userPaused locked immediately in stop() (resurrection protection active)")
+        #endif
+
         if isRunningInWidget() {
             handleWidgetStop()
             return
         }
-        
+
         // Main app path
         DirectStreamingPlayer.shared.stop()
+        DirectStreamingPlayer.shared.player?.replaceCurrentItem(with: nil)
         
         // Always save after stop
         await saveCurrentState()
         
+        // Note: saveVisualState() already called early above — no need to duplicate
+        
         notifyMainApp(action: "pause")
+        
+        #if DEBUG
+        print("🛑 stop() completed – visualState locked to .userPaused")
+        #endif
     }
 
     // MARK: - Private Helpers for play()
@@ -181,26 +210,74 @@ actor SharedPlayerManager {
         notifyMainApp(action: "play")
     }
     
-    // MARK: - Private Helpers for stop()
+    // MARK: - PlayerVisualState Management
+
+    /// Call this when the user explicitly taps Play.
+    /// Clears the .userPaused intent so the guard in play() will allow playback.
+    func setUserIntentToPlay() async {
+        currentVisualState = .prePlay   // or .playing if you prefer
+        saveVisualState()
+        await saveCurrentState()
+    }
     
+    /// Sets the visual state to .userPaused and persists it.
+    /// This is the canonical way to record user-initiated pause intent.
+    func setUserPaused() async {
+        currentVisualState = .userPaused
+        saveVisualState()
+        await saveCurrentState()
+    }
+
+    /// Sets the visual state to .playing and persists it.
+    /// Call after successful playback start/resume.
+    func setPlaying() async {
+        currentVisualState = .playing
+        await saveCurrentState()
+    }
+    
+    // MARK: - PlayerVisualState Persistence
+
+    private func saveVisualState() {
+        let encoder = JSONEncoder()
+        if let data = try? encoder.encode(currentVisualState) {
+            sharedDefaults?.set(data, forKey: "playerVisualState")
+            sharedDefaults?.synchronize()   // Safe and cheap for widget/extension sync
+        }
+    }
+
+    private func loadVisualState() -> PlayerVisualState {
+        guard let data = sharedDefaults?.data(forKey: "playerVisualState"),
+              let decoded = try? JSONDecoder().decode(PlayerVisualState.self, from: data) else {
+            return .prePlay   // safe fallback
+        }
+        return decoded
+    }
+    
+    // MARK: - Private Helpers for stop()
+
     private func handleWidgetStop() {
-        // Instant visual feedback for widget
+        // Instant visual feedback for widget using the new authoritative state
         let now = Date().timeIntervalSince1970
         sharedDefaults?.set(now, forKey: "lastUpdateTime")
         sharedDefaults?.set(true, forKey: "isInstantFeedback")
-        // instantFeedbackTime and language are optional for stop, but added for consistency
         sharedDefaults?.set(now, forKey: "instantFeedbackTime")
         sharedDefaults?.set(sharedDefaults?.string(forKey: "currentLanguage") ?? "en",
                             forKey: "instantFeedbackLanguage")
         
+        // CRITICAL: Set the paused state synchronously for widget path
+        currentVisualState = .userPaused
+        
+        // Persist the full visual state so widget / Live Activity read the correct paused intent
+        saveVisualState()
+        
         scheduleWidgetAction(action: "pause")
         notifyMainApp(action: "pause")
         
-        // Small delay + optimistic widget refresh
+        // Small delay + optimistic widget refresh using correct paused state
         Task {
             try? await Task.sleep(for: .seconds(0.5))
             let optimisticState = WidgetState(
-                isPlaying: false,
+                isPlaying: false,                    // keep for backward compatibility for now
                 currentLanguage: sharedDefaults?.string(forKey: "currentLanguage") ?? "en",
                 hasError: false
             )
