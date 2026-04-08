@@ -78,7 +78,15 @@ actor SharedPlayerManager {
         #if DEBUG
         print("🚀 SharedPlayerManager.play() ENTERED")
         #endif
-
+        
+        // 🔥 CRITICAL PlayerVisualState integration (prevents resurrection)
+        if !currentVisualState.shouldAutoPlayOrResume {
+            #if DEBUG
+            print("🛡️ [SharedPlayerManager] play() blocked by .userPaused")
+            #endif
+            return
+        }
+        
         let isValid = await SecurityModelValidator.shared.validateSecurityModel()
 
         #if DEBUG
@@ -127,11 +135,11 @@ actor SharedPlayerManager {
         // This prevents the "play on pause" resurrection
         currentVisualState = .userPaused
         
-        // Always save after stop
-        await saveCurrentState()
-        
         // Also persist the new visual state for widgets / Live Activities
         saveVisualState()
+        
+        // Always save after stop
+        await saveCurrentState()
         
         notifyMainApp(action: "pause")
     }
@@ -194,10 +202,19 @@ actor SharedPlayerManager {
     
     // MARK: - PlayerVisualState Management
 
+    /// Call this when the user explicitly taps Play.
+    /// Clears the .userPaused intent so the guard in play() will allow playback.
+    func setUserIntentToPlay() async {
+        currentVisualState = .prePlay   // or .playing if you prefer
+        saveVisualState()
+        await saveCurrentState()
+    }
+    
     /// Sets the visual state to .userPaused and persists it.
     /// This is the canonical way to record user-initiated pause intent.
     func setUserPaused() async {
         currentVisualState = .userPaused
+        saveVisualState()
         await saveCurrentState()
     }
 
