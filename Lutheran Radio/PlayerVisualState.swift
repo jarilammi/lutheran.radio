@@ -13,10 +13,10 @@ import UIKit
 /// Now prevents the "play on pause" resurrection bug across app, widget, and Live Activity.
 enum PlayerVisualState: Codable, Equatable {
     
-    case prePlay        // Initial load / connecting / never played yet
-    case playing        // Actively playing
-    case userPaused     // Explicit user pause/stop — grey, do NOT auto-resume
-    case error          // Security failure
+    case prePlay        // Initial load / connecting / never played yet → yellow, should auto-play
+    case playing        // Actively playing → green
+    case userPaused     // Explicit user pause → grey, NEVER auto-resume
+    case error          // Security failure → red
     
     // MARK: - Visual properties
     
@@ -52,10 +52,15 @@ enum PlayerVisualState: Codable, Equatable {
         self == .playing
     }
     
-    /// Should the player be allowed to start/resume automatically?
-    /// We block auto-play if user explicitly paused.
+    /// Should we allow automatic playback or resume?
+    /// This is the key protection against the resurrection bug.
     var shouldAutoPlayOrResume: Bool {
-        self == .playing || self == .prePlay
+        switch self {
+        case .prePlay, .playing:
+            return true
+        case .userPaused, .error:
+            return false
+        }
     }
 }
 
@@ -80,9 +85,11 @@ extension PlayerVisualState {
             return .error
             
         case .paused, .stopped:
-            // Explicit user pause/stop → userPaused (grey + no auto-resume)
-            // Never played yet → still prePlay (yellow)
-            return (isManualPause || !hasEverPlayed) ? .userPaused : .prePlay
+            // Key logic: userPaused takes priority over prePlay once user has interacted
+            if isManualPause {
+                return .userPaused
+            }
+            return hasEverPlayed ? .userPaused : .prePlay
         }
     }
 }

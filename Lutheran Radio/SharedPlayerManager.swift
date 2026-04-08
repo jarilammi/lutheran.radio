@@ -76,19 +76,19 @@ actor SharedPlayerManager {
     /// Public async entry point for playing — safe to call from anywhere
     public func play() async {
         #if DEBUG
-        print("🚀 SharedPlayerManager.play() ENTERED")
+        print("🚀 SharedPlayerManager.play() ENTERED – currentVisualState = \(currentVisualState)")
         #endif
-        
-        // 🔥 CRITICAL PlayerVisualState integration (prevents resurrection)
+
+        // SINGLE SOURCE OF TRUTH — this kills resurrection in ALL paths
         if !currentVisualState.shouldAutoPlayOrResume {
             #if DEBUG
-            print("🛡️ [SharedPlayerManager] play() blocked by .userPaused")
+            print("🛡️ Blocked play() – currentVisualState = \(currentVisualState) (resurrection prevented)")
             #endif
             return
         }
-        
-        let isValid = await SecurityModelValidator.shared.validateSecurityModel()
 
+        let isValid = await SecurityModelValidator.shared.validateSecurityModel()
+        
         #if DEBUG
         print("🔐 SecurityModelValidator returned: \(isValid)")
         if !isValid {
@@ -101,9 +101,6 @@ actor SharedPlayerManager {
         guard isValid else { return }
 
         if isRunningInWidget() {
-            #if DEBUG
-            print("📱 Running in widget → calling handleWidgetPlay()")
-            #endif
             handleWidgetPlay()
             return
         }
@@ -128,18 +125,19 @@ actor SharedPlayerManager {
             return
         }
         
-        // Main app path
-        DirectStreamingPlayer.shared.stop()
-        
         // CRITICAL: Update visual state SYNCHRONOUSLY before any async work
         // This prevents the "play on pause" resurrection
         currentVisualState = .userPaused
         
-        // Also persist the new visual state for widgets / Live Activities
-        saveVisualState()
+        // Main app path
+        DirectStreamingPlayer.shared.stop()
+        DirectStreamingPlayer.shared.player?.replaceCurrentItem(with: nil)
         
         // Always save after stop
         await saveCurrentState()
+        
+        // Also persist the new visual state for widgets / Live Activities
+        saveVisualState()
         
         notifyMainApp(action: "pause")
     }

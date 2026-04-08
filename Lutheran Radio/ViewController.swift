@@ -614,7 +614,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {  // Increased delay for more stability
+        // Layout / UI setup (keep your existing code)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             self.updateSelectionIndicator(to: self.selectedStreamIndex, isInitial: true)
         }
         
@@ -630,30 +631,45 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 guard let self = self else { return }
                 let indexPath = IndexPath(item: initialIndex, section: 0)
                 self.languageCollectionView.selectItem(at: indexPath, animated: false, scrollPosition: .centeredHorizontally)
-                // Ensure indicator stays put
                 self.updateSelectionIndicator(to: initialIndex, isInitial: true)
             }
         }
         
         // ───────────────────────────────────────────────────────────────────
-        // Trigger playback through the central actor after security refactor
-        // This ensures initial launch always goes through SharedPlayerManager
-        // ViewController.swift – viewDidAppear
+        // SAFE playback trigger in viewDidAppear
+        // Only auto-plays on first launch (prePlay) or when already playing.
+        // Explicit userPaused is respected — no resurrection.
+        // ───────────────────────────────────────────────────────────────────
         Task { @MainActor in
             let visualState = await SharedPlayerManager.shared.currentVisualState
-            if visualState.shouldAutoPlayOrResume {
+            
+            #if DEBUG
+            print("🔥 ViewController.viewDidAppear → currentVisualState = \(visualState)")
+            #endif
+            
+            switch visualState {
+            case .prePlay:                    // First launch / never played yet
                 #if DEBUG
-                print("🔥 ViewController.viewDidAppear → triggering SharedPlayerManager.play()")
+                print("🔥 ViewController.viewDidAppear → triggering SharedPlayerManager.play() (initial launch)")
                 #endif
                 await SharedPlayerManager.shared.play()
-            } else {
-                // optional, keeps UI in sync if we were paused
+                
+            case .playing:                    // Already playing (e.g. returning from background)
+                #if DEBUG
+                print("🔥 ViewController.viewDidAppear → already playing, no action needed")
+                #endif
+                self.updateSelectionIndicator(to: self.selectedStreamIndex, isInitial: false)
+                
+            case .userPaused, .error:         // Explicit pause or error → DO NOT auto-play
+                #if DEBUG
+                print("🔥 ViewController.viewDidAppear → \(visualState) → SKIPPING auto-play (resurrection prevented)")
+                #endif
+                // Keep UI in sync (grey button, correct selection)
                 await MainActor.run {
                     self.updateSelectionIndicator(to: self.selectedStreamIndex, isInitial: false)
                 }
             }
         }
-        // ───────────────────────────────────────────────────────────────────
     }
     
     override func viewDidDisappear(_ animated: Bool) {
@@ -2425,11 +2441,16 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         Task { @MainActor [weak self] in
             guard let self else { return }
             
-            // === CRITICAL GUARD: Respect user pause intent during stream switch ===
             let visualState = await SharedPlayerManager.shared.currentVisualState
+            
+            #if DEBUG
+            print("🔄 completeStreamSwitch started – currentVisualState = \(visualState), stream = \(stream.languageCode)")
+            #endif
+            
+            // === STRONG GUARD: Never auto-resume if user explicitly paused ===
             guard visualState.shouldAutoPlayOrResume else {
                 #if DEBUG
-                print("🚫 [Switch Guard] Blocked resume during stream switch — currentVisualState is .userPaused")
+                print("🚫 [completeStreamSwitch] Blocked — userPaused, no auto-resume")
                 #endif
                 
                 self.updatePlayPauseButton(isPlaying: false)
@@ -2440,17 +2461,17 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             }
             
             #if DEBUG
-            print("▶️ [Switch Guard] Allowed resume during stream switch")
+            print("▶️ [completeStreamSwitch] Allowed resume during stream switch")
             #endif
             
-            // 1. Stop the current stream
+            // 1. Clean stop current playback
             await withCheckedContinuation { continuation in
                 streamingPlayer.stop {
                     continuation.resume()
                 }
             }
             
-            // 2. Play tuning sound
+            // 2. Play tuning sound + switch stream
             await withCheckedContinuation { continuation in
                 self.playTuningSound { [weak self] in
                     guard let self else {
@@ -2459,36 +2480,32 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                     }
                     
                     Task { @MainActor in
-                        await self.streamingPlayer.setStream(to: stream)
-                        
-                        self.streamingPlayer.resetTransientErrors()
-                        self.updateUserDefaultsLanguage(stream.languageCode)
-                        self.hasPermanentPlaybackError = false
-                        
-                        self.saveStateForWidget()
-                        
-                        #if DEBUG
-                        print("🔄 completeStreamSwitch → calling SharedPlayerManager.play()")
-                        #endif
-                        
-                        // 🔥 CRITICAL: Re-check visual state right before play()
-                        // This closes the final resurrection path after tuning sound
-                        let finalVisualState = await SharedPlayerManager.shared.currentVisualState
-                        guard finalVisualState.shouldAutoPlayOrResume else {
+                        // Final safety check RIGHT BEFORE any play() call
+                        let finalState = await SharedPlayerManager.shared.currentVisualState
+                        guard finalState.shouldAutoPlayOrResume else {
                             #if DEBUG
                             print("🛡️ [completeStreamSwitch] Blocked play() after tuning sound — userPaused")
                             #endif
+                            
+                            await self.streamingPlayer.setStream(to: stream)   // still switch the stream
                             self.updateSelectionIndicator(to: index)
                             continuation.resume()
                             return
                         }
                         
+                        #if DEBUG
+                        print("🔄 completeStreamSwitch → calling SharedPlayerManager.play()")
+                        #endif
+                        
+                        await self.streamingPlayer.setStream(to: stream)
+                        self.streamingPlayer.resetTransientErrors()
+                        self.updateUserDefaultsLanguage(stream.languageCode)
+                        self.hasPermanentPlaybackError = false
+                        
+                        // Let the central play() handle everything (including its own guard)
                         await SharedPlayerManager.shared.play()
                         
                         self.updateSelectionIndicator(to: index)
-                        
-                        // Final safety save
-                        try? await Task.sleep(for: .seconds(0.5))
                         self.saveStateForWidget()
                         
                         #if DEBUG
