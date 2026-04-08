@@ -9,13 +9,18 @@ import Foundation
 import UIKit
 
 /// Single source of truth for playback UI **and** intent.
-/// Pre-play = always yellow, user pause/stop = always grey.
-/// Now prevents the "play on pause" resurrection bug across app, widget, and Live Activity.
+///
+/// - prePlay:     yellow, auto-plays on first launch only
+/// - playing:     green
+/// - userPaused:  grey, NEVER auto-resumes (this is the resurrection protection)
+/// - error:       red
+///
+/// This version makes .userPaused "sticky" after any manual interaction.
 enum PlayerVisualState: Codable, Equatable {
     
     case prePlay        // Initial load / connecting / never played yet → yellow, should auto-play
     case playing        // Actively playing → green
-    case userPaused     // Explicit user pause → grey, NEVER auto-resume
+    case userPaused     // Explicit user pause/stop → grey, NEVER auto-resume
     case error          // Security failure → red
     
     // MARK: - Visual properties
@@ -52,8 +57,9 @@ enum PlayerVisualState: Codable, Equatable {
         self == .playing
     }
     
-    /// Should we allow automatic playback or resume?
-    /// This is the key protection against the resurrection bug.
+    /// Single source of truth.
+    /// Returns false for .userPaused and .error — this blocks ALL resurrection paths
+    /// (viewDidAppear, completeStreamSwitch, widget callbacks, etc.)
     var shouldAutoPlayOrResume: Bool {
         switch self {
         case .prePlay, .playing:
@@ -67,7 +73,10 @@ enum PlayerVisualState: Codable, Equatable {
 // MARK: - State mapping
 
 extension PlayerVisualState {
-    /// Maps your existing PlayerStatus + flags → visual state
+    /// Maps PlayerStatus + flags → visual state with strict "userPaused is sticky" rule.
+    ///
+    /// Once the user has manually paused (or ever played), we lock into .userPaused
+    /// until they explicitly tap Play again. This prevents the yellow resurrection.
     static func from(
         status: PlayerStatus,
         isManualPause: Bool,
@@ -79,17 +88,20 @@ extension PlayerVisualState {
             return .playing
             
         case .connecting:
-            return .prePlay
+            // Only show prePlay on true first launch (never played before)
+            return hasEverPlayed ? .userPaused : .prePlay
             
         case .security:
             return .error
             
         case .paused, .stopped:
-            // Key logic: userPaused takes priority over prePlay once user has interacted
-            if isManualPause {
+            // 🔥 CRITICAL CHANGE:
+            // Once user has ever interacted (paused or played), stay in userPaused.
+            // Only true initial state (never played) stays prePlay.
+            if isManualPause || hasEverPlayed {
                 return .userPaused
             }
-            return hasEverPlayed ? .userPaused : .prePlay
+            return .prePlay   // only for brand-new launch
         }
     }
 }

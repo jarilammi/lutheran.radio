@@ -2015,26 +2015,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             tuningPlayer?.prepareToPlay()
             let didPlay = tuningPlayer?.play() ?? false
             
-            // Optimistic UI during tuning sound – masks latency perfectly
-            DispatchQueue.main.async { [weak self] in
-                let manager = SharedPlayerManager.shared
-                let state = manager.loadSharedState()
-                let currentStream = manager.availableStreams.first(where: { $0.languageCode == state.currentLanguage }) ?? manager.availableStreams[0]
-                
-                self?.updatePlayPauseButton(isPlaying: true, animated: true)
-                
-                if !state.isPlaying {
-                    self?.safeUpdateStatusLabel(
-                        text: String(localized: "status_connecting"),
-                        backgroundColor: .systemYellow,
-                        textColor: .label,
-                        isPermanentError: false
-                    )
-                }
-            }
-            
             isTuningSoundPlaying = didPlay
             hasPlayedSpecialTuningSound = true // Mark as played
+            
             #if DEBUG
             if didPlay {
                 print("🎵 Special tuning sound started playing")
@@ -2042,12 +2025,36 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 print("❌ Failed to start special tuning sound")
             }
             #endif
+            
+            // ─────────────────────────────────────────────────────────────
+            // CRITICAL: Do NOT optimistically set "playing" UI here anymore
+            // We let the central SharedPlayerManager + PlayerVisualState decide
+            // This prevents overriding .userPaused with yellow/prePlay
+            // ─────────────────────────────────────────────────────────────
+            
             if didPlay {
-                // Call completion after sound duration (2 seconds)
                 DispatchQueue.main.asyncAfter(deadline: .now() + (tuningPlayer?.duration ?? 2.0)) {
                     #if DEBUG
                     print("🎵 Special tuning sound should have finished")
                     #endif
+                    
+                    // Optional extra safety: re-check state before continuing
+                    Task { @MainActor in
+                        let visualState = await SharedPlayerManager.shared.currentVisualState
+                        #if DEBUG
+                        print("🔄 Tuning finished → visualState = \(visualState)")
+                        #endif
+                        
+                        if visualState.shouldAutoPlayOrResume {
+                            await SharedPlayerManager.shared.play()
+                        } else {
+                            #if DEBUG
+                            print("🛡️ Skipping auto-play after tuning — userPaused protected")
+                            #endif
+                            self.updatePlayPauseButton(isPlaying: false)
+                        }
+                    }
+                    
                     completion?()
                 }
             } else {
@@ -2058,7 +2065,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             print("❌ Error loading special tuning sound: \(error.localizedDescription)")
             #endif
             completion?()
-            return
         }
     }
     

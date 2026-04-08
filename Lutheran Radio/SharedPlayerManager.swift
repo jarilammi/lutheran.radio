@@ -120,15 +120,24 @@ actor SharedPlayerManager {
     
     /// Public async entry point for stopping playback
     public func stop() async {
+        #if DEBUG
+        print("🚀 SharedPlayerManager.stop() ENTERED – currentVisualState = \(currentVisualState)")
+        #endif
+
+        // 🔥 CRITICAL FIX: Lock .userPaused IMMEDIATELY at the very top
+        // This closes the race window that causes resurrection after pause
+        currentVisualState = .userPaused
+        saveVisualState()   // persist early so widgets, Live Activity, and Darwin notifications see the new state
+
+        #if DEBUG
+        print("🛡️ userPaused locked immediately in stop() (resurrection protection active)")
+        #endif
+
         if isRunningInWidget() {
             handleWidgetStop()
             return
         }
-        
-        // CRITICAL: Update visual state SYNCHRONOUSLY before any async work
-        // This prevents the "play on pause" resurrection
-        currentVisualState = .userPaused
-        
+
         // Main app path
         DirectStreamingPlayer.shared.stop()
         DirectStreamingPlayer.shared.player?.replaceCurrentItem(with: nil)
@@ -136,10 +145,13 @@ actor SharedPlayerManager {
         // Always save after stop
         await saveCurrentState()
         
-        // Also persist the new visual state for widgets / Live Activities
-        saveVisualState()
+        // Note: saveVisualState() already called early above — no need to duplicate
         
         notifyMainApp(action: "pause")
+        
+        #if DEBUG
+        print("🛑 stop() completed – visualState locked to .userPaused")
+        #endif
     }
 
     // MARK: - Private Helpers for play()
