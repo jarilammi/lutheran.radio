@@ -2546,27 +2546,54 @@ extension DirectStreamingPlayer {
                     
                 case .ended:
                     #if DEBUG
-                    print("🔊 [AudioSession] Interruption ended")
+                    print("🔊 [AudioSession] Interruption ended — options.contains(.shouldResume): \(options.contains(.shouldResume))")
                     #endif
-                    if options.contains(.shouldResume) && self.wasPlayingBeforeInterruption && !self.isSwitchingStream {
-                        Task.detached(priority: .userInitiated) {
-                            try? await Task.sleep(for: .milliseconds(100))
-                            await MainActor.run { [weak self] in
-                                guard let self else { return }
-                                self.player?.play()
-                                if self.isPlaying {  // Guard delegate
-                                    self.delegate?.onStatusChange(.playing, nil)
-                                }
-                                
-                                // Persist resumed state — non-blocking
-                                Task {
-                                    await SharedPlayerManager.shared.saveCurrentState()
-                                }
-                            }
-                        }
-                    }
+                    
+                    // Reset flags immediately
                     self.isHandlingInterruption = false
                     self.wasPlayingBeforeInterruption = false
+                    
+                    guard options.contains(.shouldResume) else {
+                        #if DEBUG
+                        print("🔊 [AudioSession] No .shouldResume — doing nothing")
+                        #endif
+                        return
+                    }
+                    
+                    // === CRITICAL: Respect the new PlayerVisualState resurrection suppression ===
+                    // This uses the helper from the most recent commit on the branch
+                    Task { @MainActor [weak self] in
+                        guard let self else { return }
+                        
+                        await SharedPlayerManager.shared.restoreVisualStateRespectingUserIntent()
+                        
+                        if case .playing = await SharedPlayerManager.shared.currentVisualState {
+                            #if DEBUG
+                            print("▶️ [AudioSession] Resurrection allowed — resuming playback")
+                            #endif
+                            
+                            // Small delay helps AVPlayer settle after interruption
+                            try? await Task.sleep(for: .milliseconds(100))
+                            
+                            self.player?.play()
+                            
+                            if self.isPlaying {
+                                self.delegate?.onStatusChange(.playing, nil)
+                            }
+                            
+                            await self.markAsPlaying()
+                            
+                            // Persist resumed state — non-blocking
+                            Task {
+                                await SharedPlayerManager.shared.saveCurrentState()
+                            }
+                        } else {
+                            #if DEBUG
+                            print("🚫 [AudioSession] Resurrection suppressed — user intent remains .userPaused")
+                            #endif
+                            self.safeOnStatusChange(isPlaying: false, status: "UserPaused")
+                        }
+                    }
                     
                 default:
                     // Fallback for unknown cases (exhaustive without @unknown)
