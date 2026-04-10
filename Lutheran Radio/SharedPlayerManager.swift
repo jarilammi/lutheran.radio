@@ -213,9 +213,9 @@ actor SharedPlayerManager {
     // MARK: - PlayerVisualState Management
 
     /// Call this when the user explicitly taps Play.
-    /// Clears the .userPaused intent so the guard in play() will allow playback.
+    /// Clears the .userPaused intent so playback is allowed.
     func setUserIntentToPlay() async {
-        currentVisualState = .prePlay   // or .playing if you prefer
+        currentVisualState = .playing
         saveVisualState()
         await saveCurrentState()
     }
@@ -227,30 +227,53 @@ actor SharedPlayerManager {
         saveVisualState()
         await saveCurrentState()
     }
-
+    
     /// Sets the visual state to .playing and persists it.
     /// Call after successful playback start/resume.
     func setPlaying() async {
         currentVisualState = .playing
+        saveVisualState()
         await saveCurrentState()
     }
     
-    // MARK: - PlayerVisualState Persistence
+    // MARK: - PlayerVisualState Persistence & Restoration
 
     private func saveVisualState() {
         let encoder = JSONEncoder()
         if let data = try? encoder.encode(currentVisualState) {
             sharedDefaults?.set(data, forKey: "playerVisualState")
-            sharedDefaults?.synchronize()   // Safe and cheap for widget/extension sync
+            sharedDefaults?.synchronize()   // Safe for widget/extension sync
         }
     }
 
     private func loadVisualState() -> PlayerVisualState {
         guard let data = sharedDefaults?.data(forKey: "playerVisualState"),
               let decoded = try? JSONDecoder().decode(PlayerVisualState.self, from: data) else {
-            return .prePlay   // safe fallback
+            return .prePlay   // safe fallback for first launch
         }
         return decoded
+    }
+
+    /// Safe restoration – ALWAYS respects .userPaused and blocks resurrection.
+    /// Call this on:
+    /// - App/scene foreground
+    /// - AVAudioSession interruption .shouldResume
+    /// - Widget timeline reload
+    /// - Any other system resume signal
+    func restoreVisualStateRespectingUserIntent() async {
+        let loaded = loadVisualState()
+        
+        // This is the key line that finally stops the bug
+        currentVisualState = PlayerVisualState.suppressResurrectionIfNeeded(currentState: loaded)
+        
+        saveVisualState()
+        await saveCurrentState()
+        
+        if currentVisualState.mustSuppressResurrection {
+            print("🔒 Resurrection suppressed — userPaused is sticky")
+        } else if currentVisualState.shouldAutoPlayOrResume {
+            print("▶️ Allowed to resume playback")
+        }
     }
     
     // MARK: - Private Helpers for stop()
