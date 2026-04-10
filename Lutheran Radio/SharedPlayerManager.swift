@@ -74,10 +74,28 @@ actor SharedPlayerManager {
     // MARK: - Public API
 
     /// Public async entry point for playing — safe to call from anywhere
-    public func play() async {
+    func play() async {
+        let state = currentVisualState
+        
         #if DEBUG
-        print("🚀 SharedPlayerManager.play() ENTERED – currentVisualState = \(currentVisualState)")
+        print("🚀 SharedPlayerManager.play() ENTERED – currentVisualState = \(state)")
         #endif
+        
+        // Explicit first-launch allowance + resurrection block
+        if state.mustSuppressResurrection {
+            #if DEBUG
+            print("⛔️ Blocked: mustSuppressResurrection = true")
+            #endif
+            return
+        }
+        
+        // Allow .prePlay on first launch, .playing if already active
+        guard state == .prePlay || state == .playing || state.shouldAutoPlayOrResume else {
+            #if DEBUG
+            print("⛔️ Blocked in play(): state = \(state)")
+            #endif
+            return
+        }
 
         // SINGLE SOURCE OF TRUTH — this kills resurrection in ALL paths
         if !currentVisualState.shouldAutoPlayOrResume {
@@ -116,6 +134,29 @@ actor SharedPlayerManager {
         print("💾 Saving current state after stream setup")
         #endif
         await saveCurrentState()
+    }
+    
+    // MARK: - User Intent State Management
+
+    /// Explicitly records that the user performed a manual pause or stop.
+    /// This locks .userPaused so resurrection paths are blocked.
+    func markAsUserPaused() async {
+        #if DEBUG
+        print("🔒 markAsUserPaused() called – forcing .userPaused to block resurrection")
+        #endif
+        
+        // We are inside the actor, so mutation is allowed
+        currentVisualState = .userPaused
+        
+        // Persist the locked state (use whatever your real method is called)
+        await saveCurrentState()          // ← change name if yours is different (e.g. saveState(), persistState())
+        
+        // Update UI / nowPlaying / widget
+        // await updateNowPlayingInfo()
+        
+        #if DEBUG
+        print("✅ Visual state locked to .userPaused")
+        #endif
     }
     
     /// Public async entry point for stopping playback

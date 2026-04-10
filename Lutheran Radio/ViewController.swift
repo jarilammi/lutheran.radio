@@ -422,13 +422,12 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         // Register for preferred content size category changes
         registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) { [weak self] (controller: Self, previousTraitCollection: UITraitCollection) in
             guard let self else { return }
-            // Reapply attributes with new font size (prevents "sending 'self'" data race)
             self.updateMetadataLabel(
                 text: self.metadataLabel.text ?? String(localized: "no_track_info")
             )
         }
         
-        configureAudioSession() // Configure audio session
+        configureAudioSession()
         
         // Initialize haptic engine early if hardware supports haptics
         if CHHapticEngine.capabilitiesForHardware().supportsHaptics {
@@ -496,7 +495,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         setupBackgroundParallax()
         
         // Energy Efficiency Optimizations (iOS 26)
-        updateForEnergyEfficiency()  // Initial check
+        updateForEnergyEfficiency()
         
         NotificationCenter.default.addObserver(
             self,
@@ -509,37 +508,37 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         Task { @MainActor [weak self] in
             guard let self else { return }
             
-            // Set the initial stream asynchronously
             await self.streamingPlayer.setStream(to: DirectStreamingPlayer.availableStreams[initialIndex])
             
             self.updateUserDefaultsLanguage(DirectStreamingPlayer.availableStreams[initialIndex].languageCode)
             self.updateBackground(for: DirectStreamingPlayer.availableStreams[initialIndex])
             
-            // Play special tuning sound first
+            // Tuning sound (now plays fully)
             await self.playSpecialTuningSound()
             
-            // NEW: Respect PlayerVisualState — do not auto-resume if user explicitly paused
-            guard await self.streamingPlayer.shouldAutoPlayOrResume else {
+            let visualState = await SharedPlayerManager.shared.currentVisualState
+            #if DEBUG
+            print("🔄 After tuning — visualState = \(visualState)")
+            #endif
+            
+            guard visualState == .prePlay || visualState.shouldAutoPlayOrResume else {
                 #if DEBUG
-                print("🚫 [Tuning Guard] Blocked auto-playback after tuning sound — currentVisualState is .userPaused")
+                print("🛡️ Blocked initial playback — state = \(visualState)")
                 #endif
                 return
             }
             
-            guard self.hasInternetConnection else {
-                #if DEBUG
-                print("📱 Skipped auto-play: no internet")
-                #endif
-                return
-            }
+            guard self.hasInternetConnection else { return }
             
             #if DEBUG
-            print("📱 Starting auto-playback after tuning sound - cancelling any pending stops")
+            print("🚀 Starting initial stream playback after tuning (single source)")
             #endif
             
             self.streamingPlayer.cancelPendingSSLProtection()
             self.streamingPlayer.resetTransientErrors()
-            await self.startPlayback()
+            
+            // ONE central call — no more startPlayback() duplication
+            await SharedPlayerManager.shared.play()
             self.restoreVolume()
         }
     }
@@ -1997,74 +1996,67 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         }
         
         do {
-            // Configure and activate audio session
             let audioSession = AVAudioSession.sharedInstance()
-            try audioSession.setCategory(.playback, mode: .default, options: [])
+            // More robust session setup (prevents conflicts with main AVPlayer)
+            try audioSession.setCategory(.playback,
+                                        mode: .default,
+                                        options: [.allowAirPlay, .allowBluetooth])
             try audioSession.setActive(true)
+            
             #if DEBUG
             print("🔊 Audio session activated for special tuning sound")
             #endif
             
+            // Strong reference - critical to prevent sound cut-off
             tuningPlayer = try AVAudioPlayer(contentsOf: tuningURL)
             tuningPlayer?.delegate = self
-            tuningPlayer?.volume = preferredVolume()  // Set persistent volume
+            tuningPlayer?.volume = preferredVolume()
+            
             #if DEBUG
             print("🎵 Set special tuning sound volume to \(tuningPlayer?.volume ?? -1.0)")
             #endif
+            
             tuningPlayer?.numberOfLoops = 0
             tuningPlayer?.prepareToPlay()
-            let didPlay = tuningPlayer?.play() ?? false
             
+            // CRITICAL: Never trigger playback after tuning sound.
+            // Initial playback is handled only via viewDidAppear + SharedPlayerManager.
+            // Resurrection is fully blocked by PlayerVisualState.mustSuppressResurrection.
+            
+            let didPlay = tuningPlayer?.play() ?? false
             isTuningSoundPlaying = didPlay
-            hasPlayedSpecialTuningSound = true // Mark as played
+            hasPlayedSpecialTuningSound = true
             
             #if DEBUG
-            if didPlay {
-                print("🎵 Special tuning sound started playing")
-            } else {
-                print("❌ Failed to start special tuning sound")
-            }
+            print(didPlay ? "🎵 Special tuning sound started playing" : "❌ Failed to start special tuning sound")
             #endif
             
-            // ─────────────────────────────────────────────────────────────
-            // CRITICAL: Do NOT optimistically set "playing" UI here anymore
-            // We let the central SharedPlayerManager + PlayerVisualState decide
-            // This prevents overriding .userPaused with yellow/prePlay
-            // ─────────────────────────────────────────────────────────────
-            
+            // CRITICAL: Tuning sound no longer controls playback or state.
+            // All decisions go through SharedPlayerManager + PlayerVisualState in viewDidLoad.
             if didPlay {
+                // Keep strong reference during playback
+                let retainedPlayer = tuningPlayer
+                
                 DispatchQueue.main.asyncAfter(deadline: .now() + (tuningPlayer?.duration ?? 2.0)) {
                     #if DEBUG
                     print("🎵 Special tuning sound should have finished")
                     #endif
                     
-                    // Optional extra safety: re-check state before continuing
+                    // Just clean up — NO visualState checks, NO play() calls
                     Task { @MainActor in
-                        let visualState = await SharedPlayerManager.shared.currentVisualState
-                        #if DEBUG
-                        print("🔄 Tuning finished → visualState = \(visualState)")
-                        #endif
-                        
-                        if visualState.shouldAutoPlayOrResume {
-                            await SharedPlayerManager.shared.play()
-                        } else {
-                            #if DEBUG
-                            print("🛡️ Skipping auto-play after tuning — userPaused protected")
-                            #endif
-                            self.updatePlayPauseButton(isPlaying: false)
-                        }
+                        self.tuningPlayer = nil
+                        self.isTuningSoundPlaying = false
                     }
-                    
-                    completion?()
                 }
             } else {
-                completion?()
+                self.tuningPlayer = nil
             }
         } catch {
             #if DEBUG
             print("❌ Error loading special tuning sound: \(error.localizedDescription)")
             #endif
             completion?()
+            self.tuningPlayer = nil
         }
     }
     
@@ -2150,14 +2142,13 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     }
     
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-        // nonisolated because AVAudioPlayerDelegate can be called off-main
-        // We hop to MainActor for UI/property access
         Task { @MainActor in
             #if DEBUG
             print("🎵 Tuning sound finished playing, success: \(flag)")
             #endif
             isTuningSoundPlaying = false
-            tuningPlayer = nil
+            // Do NOT set tuningPlayer = nil immediately
+            // tuningPlayer = nil
         }
     }
     
