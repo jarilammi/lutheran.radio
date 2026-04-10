@@ -537,7 +537,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             self.streamingPlayer.cancelPendingSSLProtection()
             self.streamingPlayer.resetTransientErrors()
             
-            // ONE central call — no more startPlayback() duplication
+            // ONE central call — tuning sound has already finished.
+            // viewDidAppear will NOT trigger another play() for .prePlay.
             await SharedPlayerManager.shared.play()
             self.restoreVolume()
         }
@@ -635,9 +636,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         }
         
         // ───────────────────────────────────────────────────────────────────
-        // SAFE playback trigger in viewDidAppear
-        // Only auto-plays on first launch (prePlay) or when already playing.
-        // Explicit userPaused is respected — no resurrection.
+        // SAFE playback trigger in viewDidAppear — ONLY for resurrection cases
+        // NO auto-play on cold launch (prePlay). That is handled in viewDidLoad after tuning.
         // ───────────────────────────────────────────────────────────────────
         Task { @MainActor in
             let visualState = await SharedPlayerManager.shared.currentVisualState
@@ -647,62 +647,27 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             #endif
             
             switch visualState {
-            case .prePlay:                    // First launch / never played yet
+            case .prePlay:
                 #if DEBUG
-                print("🔥 ViewController.viewDidAppear → triggering SharedPlayerManager.play() (initial launch)")
+                print("🔥 ViewController.viewDidAppear → prePlay on cold launch → SKIPPING (handled in viewDidLoad after tuning)")
                 #endif
-                await SharedPlayerManager.shared.play()
+                // Do nothing — playback already started from viewDidLoad Task
                 
-            case .playing:                    // Already playing (e.g. returning from background)
+            case .playing:
                 #if DEBUG
                 print("🔥 ViewController.viewDidAppear → already playing, no action needed")
                 #endif
                 self.updateSelectionIndicator(to: self.selectedStreamIndex, isInitial: false)
                 
-            case .userPaused, .error:         // Explicit pause or error → DO NOT auto-play
+            case .userPaused, .error:
                 #if DEBUG
                 print("🔥 ViewController.viewDidAppear → \(visualState) → SKIPPING auto-play (resurrection prevented)")
                 #endif
-                // Keep UI in sync (grey button, correct selection)
                 await MainActor.run {
                     self.updateSelectionIndicator(to: self.selectedStreamIndex, isInitial: false)
                 }
             }
         }
-    }
-    
-    override func viewDidDisappear(_ animated: Bool) {
-        super.viewDidDisappear(animated)
-        // Remove notification observers early to prevent them from firing during deallocation
-        NotificationCenter.default.removeObserver(self, name: AVAudioSession.interruptionNotification, object: nil)
-        NotificationCenter.default.removeObserver(self, name: AVAudioSession.routeChangeNotification, object: nil)
-        
-        // All non-Sendable cleanup – Apple-recommended (2026)
-        isDeallocating = true
-        
-        streamingPlayer.clearCallbacks()
-        
-        connectivityCheckTimer?.invalidate()
-        connectivityCheckTimer = nil
-        streamSwitchWorkItem?.cancel()
-        streamSwitchWorkItem = nil
-        tuningPlayer?.stop()
-        tuningPlayer = nil
-        isTuningSoundPlaying = false
-        
-        networkMonitor?.pathUpdateHandler = nil
-        networkMonitorHandler = nil
-        networkMonitor?.cancel()
-        networkMonitor = nil
-        
-        // Also remove the other NotificationCenter observers here (idempotent)
-        NotificationCenter.default.removeObserver(self, name: UIApplication.didReceiveMemoryWarningNotification, object: nil)
-        NotificationCenter.default.removeObserver(self, name: Notification.Name("NSProcessInfoPowerStateDidChangeNotification"), object: nil)
-        // ← REMOVED: .streamSwitchCompleted observer (no longer exists or needed)
-        
-        #if DEBUG
-        print("🧹 ViewController cleanup completed in viewDidDisappear")
-        #endif
     }
     
     /// Configures the audio session for background playback.

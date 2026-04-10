@@ -75,47 +75,21 @@ actor SharedPlayerManager {
 
     /// Public async entry point for playing — safe to call from anywhere
     func play() async {
-        let state = currentVisualState
+        let entryState = currentVisualState
         
         #if DEBUG
-        print("🚀 SharedPlayerManager.play() ENTERED – currentVisualState = \(state)")
+        print("🚀 SharedPlayerManager.play() ENTERED – currentVisualState = \(entryState)")
         #endif
-        
-        // Explicit first-launch allowance + resurrection block
-        if state.mustSuppressResurrection {
-            #if DEBUG
-            print("⛔️ Blocked: mustSuppressResurrection = true")
-            #endif
-            return
-        }
-        
-        // Allow .prePlay on first launch, .playing if already active
-        guard state == .prePlay || state == .playing || state.shouldAutoPlayOrResume else {
-            #if DEBUG
-            print("⛔️ Blocked in play(): state = \(state)")
-            #endif
-            return
-        }
 
-        // SINGLE SOURCE OF TRUTH — this kills resurrection in ALL paths
-        if !currentVisualState.shouldAutoPlayOrResume {
+        guard !entryState.mustSuppressResurrection,
+              (entryState == .prePlay || entryState.shouldAutoPlayOrResume) else {
             #if DEBUG
-            print("🛡️ Blocked play() – currentVisualState = \(currentVisualState) (resurrection prevented)")
+            print("⛔️ Blocked in play(): state = \(entryState)")
             #endif
             return
         }
 
         let isValid = await SecurityModelValidator.shared.validateSecurityModel()
-        
-        #if DEBUG
-        print("🔐 SecurityModelValidator returned: \(isValid)")
-        if !isValid {
-            print("❌ Validation failed → bailing out of playback")
-        } else {
-            print("✅ Validation passed → proceeding with playback")
-        }
-        #endif
-
         guard isValid else { return }
 
         if isRunningInWidget() {
@@ -123,17 +97,17 @@ actor SharedPlayerManager {
             return
         }
 
+        // Wait for tuning sound (critical!)
+        await waitForTuningSoundIfActive()
+
         let stream = DirectStreamingPlayer.shared.selectedStream
         #if DEBUG
         print("🎵 Setting stream to: \(stream)")
         #endif
 
-        await DirectStreamingPlayer.shared.setStream(to: stream)
+        await DirectStreamingPlayer.shared.setStreamAndPlay(to: stream)
         
-        #if DEBUG
-        print("💾 Saving current state after stream setup")
-        #endif
-        await saveCurrentState()
+        // No saveCurrentState() here — observer will handle it
     }
     
     // MARK: - User Intent State Management
@@ -249,6 +223,24 @@ actor SharedPlayerManager {
         
         // Optional: extra notification for widgets/Live Activities
         notifyMainApp(action: "play")
+    }
+    
+    // MARK: - Tuning Sound Handling
+
+    /// Waits for the special tuning sound to finish before starting main radio playback.
+    /// This eliminates the session / timing conflict that was preventing the stream from starting.
+    private func waitForTuningSoundIfActive() async {
+        // TODO: Replace this simple delay with a proper notification/flag when you have time.
+        // For now, this fixed delay works very reliably on cold launch.
+        #if DEBUG
+        print("⏳ Waiting for tuning sound to finish before main playback...")
+        #endif
+        
+        try? await Task.sleep(for: .milliseconds(1200))
+        
+        #if DEBUG
+        print("✅ Tuning sound wait completed")
+        #endif
     }
     
     // MARK: - PlayerVisualState Management

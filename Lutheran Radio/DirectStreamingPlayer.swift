@@ -1566,7 +1566,10 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         playWithServer(fallbackServers: Array(fallbackServers.dropFirst()), completion: completion)
     }
     
-    // MARK: - Stream Switching (now the single source of truth)
+    // MARK: - Stream Switching (Single Source of Truth)
+
+    /// Updates the selected stream model and prepares the player.
+    /// Does NOT start playback — call `play()` afterwards if needed.
     func setStream(to stream: Stream) async {
         let previousLanguage = selectedStream.languageCode ?? "nil"
         let newLanguage = stream.languageCode ?? "??"
@@ -1575,82 +1578,93 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         print("ATOMIC STREAM SWITCH: \(previousLanguage) → \(newLanguage)")
         #endif
 
-        // === FIXED: Only stop if it's a REAL different-stream switch ===
         if previousLanguage != newLanguage {
             #if DEBUG
-            print("🔄 Real stream switch detected (\(previousLanguage) → \(newLanguage)) – performing clean stop")
+            print("🔄 Real stream switch detected – performing clean stop")
             #endif
 
             isSwitchingStream = true
             defer { isSwitchingStream = false }
 
-            await stop()
-
-            // Update model + save
-            selectedStream = stream
-            await SharedPlayerManager.shared.saveCurrentState()
+            await stop()                    // clean stop only on real change
         } else {
             #if DEBUG
             print("🔄 Same stream or initial playback (\(newLanguage)) – skipping stop()")
             #endif
-
-            // Still update/save in case this is the very first playback
-            selectedStream = stream
-            await SharedPlayerManager.shared.saveCurrentState()
         }
 
-        // Security validation (left completely untouched)
-        guard await SecurityModelValidator.shared.validateSecurityModel() else {
-            #if DEBUG
-            print("❌ Security validation failed after stream switch")
-            #endif
-            safeOnStatusChange(
-                isPlaying: false,
-                status: NSLocalizedString("status_stream_unavailable", comment: "")
-            )
-            return
-        }
+        // Update model
+        selectedStream = stream
 
-        // Success path – reliable AVFoundation sequence
+        // Prepare the AVPlayerItem on MainActor
         await MainActor.run {
             let newItem = AVPlayerItem(url: stream.url)
-            
+            newItem.preferredForwardBufferDuration = 10.0   // Helps radio streams
+
             self.player?.replaceCurrentItem(with: newItem)
-            self.playerItem = newItem   // critical
+            self.playerItem = newItem
+        }
+
+        #if DEBUG
+        print("✅ Stream model updated and AVPlayerItem replaced for \(stream.language)")
+        #endif
+    }
+
+    /// Full atomic "switch stream + start playing" — this is what SharedPlayerManager should call
+    func setStreamAndPlay(to stream: Stream) async {
+        await setStream(to: stream)
+
+        // Now safely start playback
+        await startPlayback()
+    }
+    
+    private func ensurePlayerExists() {
+        if self.player == nil {
+            #if DEBUG
+            print("🎵 Creating new AVPlayer instance")
+            #endif
             
-            // Do NOT call addObservers() here anymore — let createAndStartPlayer or a single setup handle it
+            let newPlayer = AVPlayer()
+            newPlayer.automaticallyWaitsToMinimizeStalling = true
+            self.player = newPlayer
             
+            // Optional: Set volume from your slider
+            // newPlayer.volume = Float(currentVolume)
+        }
+    }
+
+    /// Private: Actually starts the player + handles session
+    private func startPlayback() async {
+        await MainActor.run {
+            ensurePlayerExists()
+            
+            guard let player = self.player else {
+                #if DEBUG
+                print("❌ No AVPlayer instance available")
+                #endif
+                return
+            }
+
             do {
                 let session = AVAudioSession.sharedInstance()
+                try session.setCategory(.playback, mode: .default, options: [])
                 try session.setActive(true)
             } catch {
                 #if DEBUG
-                print("⚠️ Could not reactivate AVAudioSession: \(error)")
+                print("⚠️ Audio session activation failed: \(error)")
                 #endif
             }
 
-            self.player?.play()
-            self.player?.rate = 1.0
+            player.play()
+            player.rate = 1.0
 
             #if DEBUG
             print("▶️ AVPlayer started via .play() + rate=1.0")
             #endif
         }
 
-        try? await Task.sleep(for: .milliseconds(200))
-
-        #if DEBUG
-        print("Stream switch succeeded → playback resumed for \(stream.language)")
-        #endif
-
-        // Notify UI (this is now mostly redundant because the observer will do it,
-        // but it doesn't hurt as a fallback)
-        safeOnStatusChange(isPlaying: true, status: "")
-
-        // Final save
-        Task {
-            await SharedPlayerManager.shared.saveCurrentState()
-        }
+        // Do NOT save state or notify "playing = true" here.
+        // Let the KVO / timeControlStatus observer do that when it really starts.
     }
     
     private func startBufferingTimer() {
