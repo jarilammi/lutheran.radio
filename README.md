@@ -50,14 +50,14 @@ This ensures every single change respects the same non-negotiable security model
 
 ### Prerequisites
  - Xcode 26+ (Swift 6)
- - iOS 26.2 simulator
+ - iOS 26.4 simulator
 
 To ensure a smooth development experience, follow these steps before contributing:
 
-1. **Verify Project Build:** Confirm the project builds successfully with: ```xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.2 -destination 'platform=iOS Simulator,OS=26.2,name=iPhone 17' clean build```
+1. **Verify Project Build:** Confirm the project builds successfully with: ```xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.4 -destination 'platform=iOS Simulator,OS=26.4,name=iPhone 17' clean build```
    Ensure the output includes: **```** BUILD SUCCEEDED **```**
 
-2. **Run Test Suite:** Validate the test suite passes with: ```xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.2 -destination 'platform=iOS Simulator,OS=26.2,name=iPhone 17' clean test```
+2. **Run Test Suite:** Validate the test suite passes with: ```xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.4 -destination 'platform=iOS Simulator,OS=26.4,name=iPhone 17' clean test```
    Check that the output includes: **```** TEST SUCCEEDED **```**
 
 By verifying these steps on your local machine, you'll help maintain a consistent development environment for the project.

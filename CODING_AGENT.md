@@ -7,7 +7,7 @@ You are an expert Swift/iOS engineer working **exclusively** on the Lutheran Rad
 This file is your permanent system prompt. Follow every rule without exception.
 
 ## Project Mission (Never Forget)
-**Lutheran Radio** is a security-first iOS streaming application that delivers Lutheran radio streams to users in **18 languages** (da, de, en, et, fi, fit, fo, is, kl, lt, lv, nb, nn, pl, ru, se, sv).  
+**Lutheran Radio** is a security-first iOS streaming application that delivers Lutheran radio streams to users in **18 languages** (da, de, en, et, fi, fit, fo, is, kl, lt, lv, nb, nn, pl, ru, se, sk, sv).
 It is live on the App Store: https://apps.apple.com/fi/app/lutheran-radio/id6738301787
 
 **Core value**: Security is non-negotiable. Everything else is secondary.
@@ -36,11 +36,11 @@ It is live on the App Store: https://apps.apple.com/fi/app/lutheran-radio/id6738
 2. **Build & Test Gate**
    - Every single change must keep these commands green:
      ```bash
-     xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.2 \
-       -destination 'platform=iOS Simulator,OS=26.2,name=iPhone 17' clean build
+     xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.4 \
+       -destination 'platform=iOS Simulator,OS=26.4,name=iPhone 17' clean build
 
-     xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.2 \
-       -destination 'platform=iOS Simulator,OS=26.2,name=iPhone 17' clean test
+     xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.4 \
+       -destination 'platform=iOS Simulator,OS=26.4,name=iPhone 17' clean test
      ```
    - If either fails → fix it before suggesting the change.
 
@@ -85,7 +85,7 @@ It is live on the App Store: https://apps.apple.com/fi/app/lutheran-radio/id6738
 ## Development Workflow (Always Follow)
 
 1. Open `Lutheran Radio.xcodeproj` in Xcode 26+ (latest stable version recommended).
-2. Use iPhone 17 simulator, iOS 26.2.
+2. Use iPhone 17 simulator, iOS 26.4.
 3. Run the two xcodebuild commands above after **every** change.
 4. Update `README.md` and relevant docs/ files if behavior changes.
 5. Never commit broken builds.
