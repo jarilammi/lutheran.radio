@@ -78,18 +78,34 @@ actor SharedPlayerManager {
         let entryState = currentVisualState
         
         #if DEBUG
-        print("🚀 SharedPlayerManager.play() ENTERED – currentVisualState = \(entryState)")
+        print("🎵 SharedPlayerManager.play() ENTERED – currentVisualState = \(entryState)")
         #endif
 
-        guard !entryState.mustSuppressResurrection,
-              (entryState == .prePlay || entryState.shouldAutoPlayOrResume) else {
+        // === NEW LOGIC ===
+        // Only block resurrection if we are in a "paused by user" state
+        // Allow play in .prePlay (cold launch / after tuning) and when user explicitly wants to play
+        let shouldBlockResurrection = entryState.mustSuppressResurrection
+            && entryState != .prePlay                     // ← Critical: allow initial play
+            && !entryState.shouldAutoPlayOrResume
+        
+        if shouldBlockResurrection {
             #if DEBUG
-            print("⛔️ Blocked in play(): state = \(entryState)")
+            print("⛔️ Resurrection blocked by user pause – ignoring automatic resume")
             #endif
             return
         }
 
         let isValid = await SecurityModelValidator.shared.validateSecurityModel()
+        
+        #if DEBUG
+        print("🔐 SecurityModelValidator returned: \(isValid)")
+        if !isValid {
+            print("❌ Validation failed → bailing out of playback")
+        } else {
+            print("✅ Validation passed → proceeding with playback")
+        }
+        #endif
+        
         guard isValid else { return }
 
         if isRunningInWidget() {
