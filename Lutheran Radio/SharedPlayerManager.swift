@@ -74,15 +74,23 @@ actor SharedPlayerManager {
     // MARK: - Public API
 
     /// Public async entry point for playing — safe to call from anywhere
-    public func play() async {
+    func play() async {
+        let entryState = currentVisualState
+        
         #if DEBUG
-        print("🚀 SharedPlayerManager.play() ENTERED – currentVisualState = \(currentVisualState)")
+        print("🎵 SharedPlayerManager.play() ENTERED – currentVisualState = \(entryState)")
         #endif
 
-        // SINGLE SOURCE OF TRUTH — this kills resurrection in ALL paths
-        if !currentVisualState.shouldAutoPlayOrResume {
+        // === NEW LOGIC ===
+        // Only block resurrection if we are in a "paused by user" state
+        // Allow play in .prePlay (cold launch / after tuning) and when user explicitly wants to play
+        let shouldBlockResurrection = entryState.mustSuppressResurrection
+            && entryState != .prePlay                     // ← Critical: allow initial play
+            && !entryState.shouldAutoPlayOrResume
+        
+        if shouldBlockResurrection {
             #if DEBUG
-            print("🛡️ Blocked play() – currentVisualState = \(currentVisualState) (resurrection prevented)")
+            print("⛔️ Resurrection blocked by user pause – ignoring automatic resume")
             #endif
             return
         }
@@ -97,7 +105,7 @@ actor SharedPlayerManager {
             print("✅ Validation passed → proceeding with playback")
         }
         #endif
-
+        
         guard isValid else { return }
 
         if isRunningInWidget() {
@@ -105,17 +113,40 @@ actor SharedPlayerManager {
             return
         }
 
+        // Wait for tuning sound (critical!)
+        await waitForTuningSoundIfActive()
+
         let stream = DirectStreamingPlayer.shared.selectedStream
         #if DEBUG
         print("🎵 Setting stream to: \(stream)")
         #endif
 
-        await DirectStreamingPlayer.shared.setStream(to: stream)
+        await DirectStreamingPlayer.shared.setStreamAndPlay(to: stream)
+        
+        // No saveCurrentState() here — observer will handle it
+    }
+    
+    // MARK: - User Intent State Management
+
+    /// Explicitly records that the user performed a manual pause or stop.
+    /// This locks .userPaused so resurrection paths are blocked.
+    func markAsUserPaused() async {
+        #if DEBUG
+        print("🔒 markAsUserPaused() called – forcing .userPaused to block resurrection")
+        #endif
+        
+        // We are inside the actor, so mutation is allowed
+        currentVisualState = .userPaused
+        
+        // Persist the locked state (use whatever your real method is called)
+        await saveCurrentState()          // ← change name if yours is different (e.g. saveState(), persistState())
+        
+        // Update UI / nowPlaying / widget
+        // await updateNowPlayingInfo()
         
         #if DEBUG
-        print("💾 Saving current state after stream setup")
+        print("✅ Visual state locked to .userPaused")
         #endif
-        await saveCurrentState()
     }
     
     /// Public async entry point for stopping playback
@@ -210,12 +241,30 @@ actor SharedPlayerManager {
         notifyMainApp(action: "play")
     }
     
+    // MARK: - Tuning Sound Handling
+
+    /// Waits for the special tuning sound to finish before starting main radio playback.
+    /// This eliminates the session / timing conflict that was preventing the stream from starting.
+    private func waitForTuningSoundIfActive() async {
+        // TODO: Replace this simple delay with a proper notification/flag when you have time.
+        // For now, this fixed delay works very reliably on cold launch.
+        #if DEBUG
+        print("⏳ Waiting for tuning sound to finish before main playback...")
+        #endif
+        
+        try? await Task.sleep(for: .milliseconds(1200))
+        
+        #if DEBUG
+        print("✅ Tuning sound wait completed")
+        #endif
+    }
+    
     // MARK: - PlayerVisualState Management
 
     /// Call this when the user explicitly taps Play.
-    /// Clears the .userPaused intent so the guard in play() will allow playback.
+    /// Clears the .userPaused intent so playback is allowed.
     func setUserIntentToPlay() async {
-        currentVisualState = .prePlay   // or .playing if you prefer
+        currentVisualState = .playing
         saveVisualState()
         await saveCurrentState()
     }
@@ -227,30 +276,53 @@ actor SharedPlayerManager {
         saveVisualState()
         await saveCurrentState()
     }
-
+    
     /// Sets the visual state to .playing and persists it.
     /// Call after successful playback start/resume.
     func setPlaying() async {
         currentVisualState = .playing
+        saveVisualState()
         await saveCurrentState()
     }
     
-    // MARK: - PlayerVisualState Persistence
+    // MARK: - PlayerVisualState Persistence & Restoration
 
     private func saveVisualState() {
         let encoder = JSONEncoder()
         if let data = try? encoder.encode(currentVisualState) {
             sharedDefaults?.set(data, forKey: "playerVisualState")
-            sharedDefaults?.synchronize()   // Safe and cheap for widget/extension sync
+            sharedDefaults?.synchronize()   // Safe for widget/extension sync
         }
     }
 
     private func loadVisualState() -> PlayerVisualState {
         guard let data = sharedDefaults?.data(forKey: "playerVisualState"),
               let decoded = try? JSONDecoder().decode(PlayerVisualState.self, from: data) else {
-            return .prePlay   // safe fallback
+            return .prePlay   // safe fallback for first launch
         }
         return decoded
+    }
+
+    /// Safe restoration – ALWAYS respects .userPaused and blocks resurrection.
+    /// Call this on:
+    /// - App/scene foreground
+    /// - AVAudioSession interruption .shouldResume
+    /// - Widget timeline reload
+    /// - Any other system resume signal
+    func restoreVisualStateRespectingUserIntent() async {
+        let loaded = loadVisualState()
+        
+        // This is the key line that finally stops the bug
+        currentVisualState = PlayerVisualState.suppressResurrectionIfNeeded(currentState: loaded)
+        
+        saveVisualState()
+        await saveCurrentState()
+        
+        if currentVisualState.mustSuppressResurrection {
+            print("🔒 Resurrection suppressed — userPaused is sticky")
+        } else if currentVisualState.shouldAutoPlayOrResume {
+            print("▶️ Allowed to resume playback")
+        }
     }
     
     // MARK: - Private Helpers for stop()

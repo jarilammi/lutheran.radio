@@ -68,6 +68,12 @@ enum PlayerVisualState: Codable, Equatable {
             return false
         }
     }
+    
+    // NEW: Explicit resurrection block – call this whenever the system wants to resume
+    /// Returns true if we must force a pause because the user explicitly paused earlier.
+    var mustSuppressResurrection: Bool {
+        self == .userPaused || self == .error
+    }
 }
 
 // MARK: - State mapping
@@ -103,5 +109,15 @@ extension PlayerVisualState {
             }
             return .prePlay   // only for brand-new launch
         }
+    }
+    
+    // NEW helper – call from DirectStreamingPlayer whenever a resurrection event occurs
+    /// Use this when AVAudioSession interruption ended with .shouldResume,
+    /// when app returns from background, or any other system resume signal.
+    static func suppressResurrectionIfNeeded(currentState: PlayerVisualState) -> PlayerVisualState {
+        if currentState.mustSuppressResurrection {
+            return .userPaused
+        }
+        return currentState
     }
 }
