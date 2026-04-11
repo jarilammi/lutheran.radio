@@ -42,6 +42,7 @@ actor SharedPlayerManager {
     // Add initialization tracking
     private let appLaunchTime = Date()
     private let initializationSettlingPeriod: TimeInterval = 5.0
+    private var initialPlaybackHasRun = false
     
     nonisolated func isRunningInWidget() -> Bool {
         // Example common implementations – use yours
@@ -81,9 +82,24 @@ actor SharedPlayerManager {
         print("🎵 SharedPlayerManager.play() ENTERED – currentVisualState = \(entryState)")
         #endif
 
-        // === NEW LOGIC ===
+        // === ONE-SHOT GUARD FOR COLD LAUNCH INITIAL PLAYBACK ===
+        // Prevents the duplicate play() calls you saw in the logs (tuning → play → tuning finished → play again)
+        if entryState == .prePlay {
+            if initialPlaybackHasRun {
+                #if DEBUG
+                print("SharedPlayerManager.play() – skipping duplicate initial playback on cold launch")
+                #endif
+                return
+            } else {
+                initialPlaybackHasRun = true
+                #if DEBUG
+                print("SharedPlayerManager.play() – this is the first cold-launch play call, proceeding")
+                #endif
+            }
+        }
+
+        // === EXISTING RESURRECTION BLOCKING LOGIC ===
         // Only block resurrection if we are in a "paused by user" state
-        // Allow play in .prePlay (cold launch / after tuning) and when user explicitly wants to play
         let shouldBlockResurrection = entryState.mustSuppressResurrection
             && entryState != .prePlay                     // ← Critical: allow initial play
             && !entryState.shouldAutoPlayOrResume
