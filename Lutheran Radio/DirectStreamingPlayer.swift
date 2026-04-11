@@ -1644,7 +1644,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 #endif
                 return
             }
-
+            
             do {
                 let session = AVAudioSession.sharedInstance()
                 try session.setCategory(.playback, mode: .default, options: [])
@@ -1654,17 +1654,36 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 print("⚠️ Audio session activation failed: \(error)")
                 #endif
             }
-
+            
+            // Force immediate playback attempt for live streams
             player.play()
             player.rate = 1.0
-
+            
             #if DEBUG
             print("▶️ AVPlayer started via .play() + rate=1.0")
             #endif
+            
+            // Extra nudge for live radio streams — forces the player to start consuming data immediately
+            if let item = player.currentItem {
+                item.preferredForwardBufferDuration = 15.0   // generous for radio
+            }
+            
+            // Also try the more aggressive "play immediately" variant (helps when buffering is slow)
+            player.playImmediately(atRate: 1.0)
+            
+            #if DEBUG
+            print("▶️ AVPlayer playImmediately(atRate: 1.0) called")
+            #endif
         }
-
-        // Do NOT save state or notify "playing = true" here.
-        // Let the KVO / timeControlStatus observer do that when it really starts.
+        
+        // Persist the playing state (your existing method)
+        await SharedPlayerManager.shared.setPlaying()
+        
+        #if DEBUG
+        print("✅ Requested playing state update via SharedPlayerManager (initial auto-play)")
+        #endif
+        
+        // KVO observer still handles confirmation
     }
     
     private func startBufferingTimer() {
