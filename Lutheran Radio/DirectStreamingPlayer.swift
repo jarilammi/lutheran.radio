@@ -531,6 +531,9 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         }
     }
     
+    private var initialPlaybackRetryCount = 0
+    private let maxInitialRetries = 2
+    
     var isPlaying: Bool {
         return (player?.rate ?? 0) > 0 && player?.currentItem?.status == .readyToPlay
     }
@@ -1674,6 +1677,13 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             #if DEBUG
             print("▶️ AVPlayer playImmediately(atRate: 1.0) called")
             #endif
+            
+            // Lightweight safety net for cold launch only
+            Task { @MainActor in
+                if await SharedPlayerManager.shared.currentVisualState == .prePlay {
+                    self.scheduleColdLaunchSafetyNet()
+                }
+            }
         }
         
         // Persist the playing state (your existing method)
@@ -1888,6 +1898,9 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                         #if DEBUG
                         print("✅ Item readyToPlay → starting playback")
                         #endif
+                        
+                        self.initialPlaybackRetryCount = 0
+                        
                         self.player?.play()
                         self.player?.rate = 1.0
                         self.safeOnStatusChange(isPlaying: true, status: String(localized: "status_playing"))
@@ -1898,6 +1911,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                         self.lastError = item.error
                         let errorType = StreamErrorType.from(error: item.error)
                         self.hasPermanentError = errorType.isPermanent
+                        
+                        // Permanent error path (transient retries will be added in a follow-up)
                         self.safeOnStatusChange(isPlaying: false, status: errorType.statusString)
                         self.stop()
                         
@@ -1986,6 +2001,31 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 #if DEBUG
                 print("🧹 Added time observer")
                 #endif
+            }
+        }
+    }
+    
+    // MARK: - Cold Launch Safety Net
+    @MainActor
+    private func scheduleColdLaunchSafetyNet() {
+        guard initialPlaybackRetryCount < maxInitialRetries else { return }
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { [weak self] in
+            guard let self = self else { return }
+            
+            Task { @MainActor in
+                let isPrePlay = await SharedPlayerManager.shared.currentVisualState == .prePlay
+                let isActuallyPlaying = (self.player?.rate ?? 0) > 0.1 &&
+                self.currentItemStatus == .readyToPlay
+                
+                if isPrePlay && !isActuallyPlaying {
+                    self.initialPlaybackRetryCount += 1
+                    #if DEBUG
+                    print("🔄 Cold-launch safety net: no playback detected after 5s – retry \(self.initialPlaybackRetryCount)/\(self.maxInitialRetries)")
+                    #endif
+                    
+                    self.recreatePlayerItem()
+                }
             }
         }
     }
