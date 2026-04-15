@@ -1666,34 +1666,145 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             print("▶️ AVPlayer started via .play() + rate=1.0")
             #endif
             
-            // Extra nudge for live radio streams — forces the player to start consuming data immediately
-            if let item = player.currentItem {
-                item.preferredForwardBufferDuration = 15.0   // generous for radio
+            
+            // CRITICAL: Cold-launch race fix — guarantee an AVPlayerItem exists immediately after new AVPlayer()
+            if player.currentItem == nil {
+                #if DEBUG
+                print("🔧 [DirectStreamingPlayer] cold-launch: no currentItem after AVPlayer init → attaching fresh item")
+                #endif
+                
+                // Use the same URL that was just set in the stream model update
+                // (works for both normal and ICY loader paths)
+                let url = selectedStream.url          // ← this is your stream model property
+                let newItem = AVPlayerItem(url: url)
+                newItem.preferredForwardBufferDuration = 15.0
+                player.replaceCurrentItem(with: newItem)
+                
+                #if DEBUG
+                print("🔧 [DirectStreamingPlayer] attached fresh AVPlayerItem for cold launch")
+                #endif
             }
             
-            // Also try the more aggressive "play immediately" variant (helps when buffering is slow)
+            // Critical for live radio cold starts
+            player.automaticallyWaitsToMinimizeStalling = false
+            
             player.playImmediately(atRate: 1.0)
             
             #if DEBUG
-            print("▶️ AVPlayer playImmediately(atRate: 1.0) called")
+            print("🔊 [DirectStreamingPlayer] playImmediately called — timeControlStatus: \(player.timeControlStatus.rawValue), rate: \(player.rate), item.status: \(player.currentItem?.status.rawValue ?? -1)")
             #endif
-            
-            // Lightweight safety net for cold launch only
-            Task { @MainActor in
-                if await SharedPlayerManager.shared.currentVisualState == .prePlay {
-                    self.scheduleColdLaunchSafetyNet()
+        }
+        
+        // Small head-start for custom ICY resource loader on cold launch
+        try? await Task.sleep(for: .milliseconds(400))
+        
+        await MainActor.run {
+            guard let player = self.player else { return }
+            player.playImmediately(atRate: 1.0)
+            #if DEBUG
+            print("🔊 [DirectStreamingPlayer] post-head-start playImmediately called")
+            #endif
+        }
+        
+        // Staggered cold-launch nudges
+        let nudgeDelays: [TimeInterval] = [1.8, 4.0, 7.0]
+        
+        for (index, delay) in nudgeDelays.enumerated() {
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(delay))
+                
+                guard let self, let strongPlayer = self.player else { return }
+                
+                #if DEBUG
+                let reasonStr = strongPlayer.reasonForWaitingToPlay?.rawValue ?? "none"
+                print("🔍 [DirectStreamingPlayer] nudge\(index + 1) (\(delay)s) — status: \(strongPlayer.timeControlStatus.rawValue), rate: \(strongPlayer.rate), reason: \(reasonStr)")
+                #endif
+                
+                if strongPlayer.timeControlStatus != .playing {
+                    #if DEBUG
+                    print("🔄 [DirectStreamingPlayer] nudge\(index + 1): still not playing → forcing play()")
+                    #endif
+                    strongPlayer.play()
+                    strongPlayer.rate = 1.0
+                    strongPlayer.playImmediately(atRate: 1.0)
                 }
             }
         }
         
-        // Persist the playing state (your existing method)
+        // FINAL RECOVERY STEP — re-replace AVPlayerItem after loader had time to warm up
+        // This is the key fix for persistent AVPlayerWaitingWithNoItemToPlayReason on cold launch with custom ICY loader
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(6.5))
+            
+            guard let self, let strongPlayer = self.player else { return }
+            guard let currentItem = strongPlayer.currentItem,
+                  let urlAsset = currentItem.asset as? AVURLAsset else {
+                #if DEBUG
+                print("⚠️ [DirectStreamingPlayer] final recovery: could not get URL from current item")
+                #endif
+                return
+            }
+            
+            #if DEBUG
+            print("🔄 [DirectStreamingPlayer] final cold-launch recovery: re-replacing AVPlayerItem + play")
+            #endif
+            
+            let newItem = AVPlayerItem(url: urlAsset.url)
+            newItem.preferredForwardBufferDuration = 15.0
+            
+            strongPlayer.replaceCurrentItem(with: newItem)
+            
+            try? await Task.sleep(for: .milliseconds(400))
+            
+            strongPlayer.automaticallyWaitsToMinimizeStalling = false
+            strongPlayer.play()
+            strongPlayer.rate = 1.0
+            strongPlayer.playImmediately(atRate: 1.0)
+        }
+        
+        // Observe timeControlStatus
+        await MainActor.run {
+            guard let player = self.player else { return }
+            player.observe(\.timeControlStatus, options: [.new]) { observedPlayer, _ in
+                #if DEBUG
+                print("📊 [DirectStreamingPlayer] timeControlStatus → \(observedPlayer.timeControlStatus.rawValue) (rate: \(observedPlayer.rate))")
+                #endif
+            }
+        }
+        
+        // .readyToPlay observer
+        await MainActor.run {
+            guard let player = self.player, let item = player.currentItem else { return }
+            item.observe(\.status, options: [.new]) { [weak self] observedItem, _ in
+                if observedItem.status == .readyToPlay {
+                    #if DEBUG
+                    print("🔄 [DirectStreamingPlayer] item.status → .readyToPlay → forcing play()")
+                    #endif
+                    self?.player?.play()
+                } else if observedItem.status == .failed {
+                    #if DEBUG
+                    print("❌ [DirectStreamingPlayer] item.status → .failed: \(observedItem.error?.localizedDescription ?? "")")
+                    #endif
+                }
+            }
+        }
+        
+        // Lightweight safety net for cold launch only
+        Task { @MainActor in
+            if await SharedPlayerManager.shared.currentVisualState == .prePlay {
+                #if DEBUG
+                print("🛡️ [DirectStreamingPlayer] scheduling cold-launch safety net (2.0s)")
+                #endif
+                self.scheduleColdLaunchSafetyNet()
+            }
+        }
+        
+        // Persist the playing state
         await SharedPlayerManager.shared.setPlaying()
         
         #if DEBUG
         print("✅ Requested playing state update via SharedPlayerManager (initial auto-play)")
         #endif
-        
-        // KVO observer still handles confirmation
     }
     
     private func startBufferingTimer() {
