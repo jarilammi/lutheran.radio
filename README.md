@@ -172,7 +172,7 @@ The `lutheran.radio` zone, including the `securitymodels` subdomain, is protecte
 
 When queried with the DO (DNSSEC OK) bit set (e.g. `dig +dnssec`), the response includes:
 - The TXT record containing the comma-separated list of valid models:
-  `"dc,florida,tampa,atlanta,birmingham,houston,starbase"`
+  `"houston,starbase"`
 - An accompanying **RRSIG** signature.
 
 In the current observed responses, the **AD (Authenticated Data)** flag is **not** set (`;; flags: qr rd ra`), indicating that the recursive resolver did not perform (or did not assert) full DNSSEC validation when answering the query.
@@ -261,7 +261,7 @@ This refactor:
 
 ### Security Model TXT Record Usage
 
-Lutheran Radio's security system uses a DNS TXT record to ensure only trusted app versions can stream content. The longest practical TXT record length for this purpose is about 450 bytes, which fits within standard DNS limits and supports up to 40-50 security model names (like "landvetter" or "nuuk"). This is more than enough for the current 51-byte record. If you need to use more names in the future, check that your DNS supports larger messages (EDNS0) and test the app to confirm it can handle them. Keep an eye on how your DNS behaves to ensure everything works smoothly, keeping the app secure and reliable for all users.
+Lutheran Radio's security system uses a DNS TXT record to ensure only trusted app versions can stream content. The longest practical TXT record length for this purpose is about 450 bytes, which fits within standard DNS limits and supports up to 40-50 security model names (like "landvetter" or "nuuk"). This is more than enough for the current 17-byte record. If you need to use more names in the future, check that your DNS supports larger messages (EDNS0) and test the app to confirm it can handle them. Keep an eye on how your DNS behaves to ensure everything works smoothly, keeping the app secure and reliable for all users.
 
 ### Security Model History
 
@@ -275,11 +275,11 @@ To avoid naming collisions, each security model name should be unique and not ma
 | `landvetter`        | June 1, 2025       | July 26, 2025      | 1.1.2                  |
 | `nuuk`              | June 15, 2025      | July 26, 2025      | 1.2.1                  |
 | `stjohns`           | July 22, 2025      | August 20, 2025    | 1.2.3                  |
-| `dc`                | July 27, 2025      | (ongoing)          | 1.2.4                  |
-| `florida`           | August 24, 2025    | (ongoing)          | 1.2.7                  |
-| `tampa`             | August 31, 2025    | (ongoing)          | 1.2.8                  |
-| `atlanta`           | October 6, 2025    | (ongoing)          | 26.0.1                 |
-| `birmingham`        | November 9, 2025   | (ongoing)          | 26.0.2                 |
+| `dc`                | July 27, 2025      | April 18, 2026     | 1.2.4                  |
+| `florida`           | August 24, 2025    | April 18, 2026     | 1.2.7                  |
+| `tampa`             | August 31, 2025    | April 18, 2026     | 1.2.8                  |
+| `atlanta`           | October 6, 2025    | April 18, 2026     | 26.0.1                 |
+| `birmingham`        | November 9, 2025   | April 18, 2026     | 26.0.2                 |
 | `houston`           | March 3, 2026      | (ongoing)          | 26.3.0                 |
 | `starbase`          | (pending)          | (pending)          | (pending)              |
 
