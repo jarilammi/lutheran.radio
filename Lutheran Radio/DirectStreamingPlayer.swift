@@ -1622,7 +1622,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             isSwitchingStream = true
             defer { isSwitchingStream = false }
 
-            await stop(isSwitchingStream: true, silent: true)
+            // Updated: use semantic reason instead of isSwitchingStream flag
+            await stop(reason: .streamSwitch, silent: true)
         } else {
             #if DEBUG
             print("🔄 Same stream or initial playback (\(newLanguage)) – skipping stop()")
@@ -2190,16 +2191,21 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     }
     
     /// Stops playback and cleans up resources.
+    ///
     /// - Parameters:
+    ///   - reason: Why we are stopping. This is now the single source of truth for user intent.
+    ///             `.userAction` → sticky `.userPaused`
+    ///             `.streamSwitch`, `.interruption`, `.error` → preserve play intent
     ///   - completion: Optional completion handler called after stopping.
-    ///   - isSwitchingStream: If `true`, treats this as a stream switch, suppressing "stopped" status updates.
-    ///   - silent: If `true`, skips all status updates to avoid UI flicker.
-    func stop(completion: (@MainActor @Sendable () -> Void)? = nil,
-              isSwitchingStream: Bool? = nil,
-              silent: Bool = false) {
+    ///   - silent: If `true`, skips status updates / UI flicker (exactly as it behaved in recent commits).
+    func stop(
+        reason: StopReason = .userAction,
+        completion: (@MainActor @Sendable () -> Void)? = nil,
+        silent: Bool = false
+    ) {
         
         #if DEBUG
-        print("🛑 FORCE STOPPING ALL PLAYBACK - isSwitchingStream: \(String(describing: isSwitchingStream)), attemptingPlayback: \(isCurrentlyAttemptingPlayback)")
+        print("🛑 FORCE STOPPING ALL PLAYBACK - reason: \(reason), silent: \(silent), attemptingPlayback: \(isCurrentlyAttemptingPlayback)")
         #endif
         
         // === EXISTING GUARDS - DO NOT REMOVE OR MERGE THESE ===
@@ -2226,28 +2232,27 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         pendingPlaybackWorkItem?.cancel()
         pendingPlaybackWorkItem = nil
         
-        let effectiveSwitching = isSwitchingStream ?? self.isSwitchingStream
-        let isUserInitiatedPause = !silent && !effectiveSwitching
-        
-        // === CRITICAL: Set visual state FIRST ===
+        // === CRITICAL: Set visual state based on reason + silent (respects recent commit semantics) ===
         Task {
-            if isUserInitiatedPause {
+            if reason == .userAction && !silent {
                 await self.markAsUserPaused()
                 #if DEBUG
                 print("🎯 markAsUserPaused() called – visualState set to .userPaused")
                 #endif
             }
+            // .streamSwitch / .interruption / .error intentionally skip markAsUserPaused()
+            // → this is what eliminates the markAsPlaying() hack forever
             
             // Perform the actual stop on the main actor
             await MainActor.run {
                 performActualStop(
+                    reason: reason,
                     completion: completion,
-                    silent: silent || effectiveSwitching,
-                    effectiveSwitching: effectiveSwitching
+                    silent: silent
                 )
             }
             
-            // Persist after everything
+            // Persist after everything (unchanged)
             await SharedPlayerManager.shared.saveCurrentState()
         }
     }
@@ -2258,23 +2263,23 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     ///   - silent: If `true`, skips all status updates to avoid UI flicker.
     ///   - effectiveSwitching: If `true`, suppresses "status_stopped" updates during stream switches.
     /// - Note: Combines `silent` and `effectiveSwitching` into `effectiveSilent`. All main-thread work is now explicitly isolated.
-    private func performActualStop(completion: (@MainActor () -> Void)? = nil,
-                                   silent: Bool = false,
-                                   effectiveSwitching: Bool) {
+    private func performActualStop(
+        reason: StopReason,
+        completion: (@MainActor () -> Void)? = nil,
+        silent: Bool = false
+    ) {
         clearSSLProtectionTimer()
         isSSLHandshakeComplete = true
         hasStartedPlaying = false
         
-        // Security validation is now handled on-demand via SecurityModelValidator.shared (unchanged)
-        
-        let effectiveSilent = silent || effectiveSwitching
+        // Derive effectiveSilent exactly as before, but now driven by reason
+        // (preserves all recent-commit behaviour for silent + stream switches)
+        let effectiveSilent = silent || (reason != .userAction)
         
         if isDeallocating {
             stopSynchronously()
             if let completion = completion {
-                MainActor.assumeIsolated {
-                    completion()
-                }
+                MainActor.assumeIsolated { completion() }
             }
             return
         }
@@ -2283,49 +2288,42 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             guard let self, !self.isDeallocating else {
                 if let completion = completion {
                     DispatchQueue.main.async {
-                        MainActor.assumeIsolated {
-                            completion()
-                        }
+                        MainActor.assumeIsolated { completion() }
                     }
                 }
                 return
             }
             
             #if DEBUG
-            print("🛑 Stopping playback")
+            print("🛑 Stopping playback (reason: \(reason), effectiveSilent: \(effectiveSilent))")
             #endif
             
             guard self.player != nil || self.playerItem != nil else {
-                if !silent {
+                if !effectiveSilent {
                     DispatchQueue.main.async {
                         MainActor.assumeIsolated {
-                            if !effectiveSilent {
-                                self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_stopped"))
-                            }
+                            self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_stopped"))
                             completion?()
                         }
                     }
                 } else if let completion = completion {
                     DispatchQueue.main.async {
-                        MainActor.assumeIsolated {
-                            completion()
-                        }
+                        MainActor.assumeIsolated { completion() }
                     }
                 }
                 #if DEBUG
-                print("🛑 Playback already stopped, skipping cleanup (silent/effectiveSilent: \(effectiveSilent))")
+                print("🛑 Playback already stopped, skipping cleanup (reason: \(reason))")
                 #endif
                 return
             }
             
-            // Pause operations
+            // Pause + cleanup (exactly your original code, unchanged)
             self.executeAudioOperation({
                 self.player?.pause()
                 self.player?.rate = 0.0
                 return ""
             }, completion: { _ in })
             
-            // Cleanup (unchanged)
             self.activeResourceLoaders.forEach { (_, delegate) in
                 delegate.cancel()
             }
@@ -2346,27 +2344,23 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             self.removeObserversImplementation()
             self.playerItem = nil
             
-            if !silent {
+            if !effectiveSilent {
                 DispatchQueue.main.async {
                     MainActor.assumeIsolated {
-                        if !effectiveSilent {
-                            self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_stopped"))
-                        }
+                        self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_stopped"))
                         completion?()
                     }
                 }
             } else if let completion = completion {
                 DispatchQueue.main.async {
-                    MainActor.assumeIsolated {
-                        completion()
-                    }
+                    MainActor.assumeIsolated { completion() }
                 }
             }
             
             self.stopBufferingTimer()
             
             #if DEBUG
-            print("🛑 Playback stopped, playerItem and resource loaders cleared")
+            print("🛑 Playback stopped, playerItem and resource loaders cleared (reason: \(reason))")
             #endif
         }
     }

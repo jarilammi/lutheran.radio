@@ -76,6 +76,18 @@ enum PlayerVisualState: Codable, Equatable {
     }
 }
 
+// MARK: - Stop Reason
+
+/// Why we are stopping playback.
+/// This lets us preserve user intent during stream switches
+/// instead of blindly setting `.userPaused`.
+enum StopReason {
+    case userAction          // explicit pause button → become sticky .userPaused
+    case streamSwitch        // language change → keep playing intent
+    case interruption        // background / call / AirPlay / etc.
+    case error               // security failure, network loss, etc.
+}
+
 // MARK: - State mapping
 
 extension PlayerVisualState {

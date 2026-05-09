@@ -2442,11 +2442,11 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             // 1. Clean stop current playback
             await withCheckedContinuation { continuation in
                 streamingPlayer.stop(
+                    reason: .streamSwitch,          // ← NEW: semantic reason
                     completion: {
                         continuation.resume()
                     },
-                    isSwitchingStream: true,
-                    silent: true               // ← suppresses markAsUserPaused + status spam
+                    silent: true                    // ← still does exactly what it did before
                 )
             }
             
@@ -2574,7 +2574,10 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 self.streamingPlayer.isSwitchingStream = true
                 
                 // 1. Stop current playback cleanly
-                await self.streamingPlayer.stop(isSwitchingStream: true, silent: true)
+                await self.streamingPlayer.stop(
+                    reason: .streamSwitch,      // ← NEW: semantic reason (replaces isSwitchingStream:)
+                    silent: true                // ← kept exactly as before
+                )
                 
                 // 2. Find target
                 guard let targetStream = DirectStreamingPlayer.availableStreams.first(where: { $0.languageCode == languageCode }),
@@ -2883,7 +2886,12 @@ extension ViewController {
             #if DEBUG
             print("🛑 Starting silent stop for switch to \(languageCode)")
             #endif
-            await streamingPlayer.stop(isSwitchingStream: true, silent: true)
+            
+            // Updated: use semantic reason (no more isSwitchingStream flag)
+            await streamingPlayer.stop(
+                reason: .streamSwitch,      // ← NEW
+                silent: true                // ← kept exactly as before
+            )
             
             #if DEBUG
             print("🎵 Playing tuning sound")
