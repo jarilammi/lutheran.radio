@@ -1375,39 +1375,70 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
 
     @MainActor
     private func setupPlaybackObservers() {
-        // Invalidate old ones first to avoid leaks/duplicates
+        // Invalidate old ones first
         rateObserver?.invalidate()
         statusObserver?.invalidate()
 
-        rateObserver = player?.observe(\.rate, options: [.new]) { [weak self] player, _ in
-            guard let self else { return }
-            #if DEBUG
-            print("🔊 [KVO] Rate changed to \(player.rate)")
-            #endif
-            if player.rate > 0 {
-                self.safeOnStatusChange(isPlaying: true, status: String(localized: "status_playing"))
-            } else {
-                self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_stopped"))
+        #if DEBUG
+        print("🛠️ [DirectStreamingPlayer] setupPlaybackObservers() — setting up Swift-6-safe observers")
+        #endif
+
+        // === PRIMARY OBSERVER: Use timeControlStatus (this is the correct way) ===
+        rateObserver = player?.observe(\.timeControlStatus, options: [.initial, .new]) { [weak self] observedPlayer, _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+
+                #if DEBUG
+                print("🔄 [KVO] timeControlStatus → \(observedPlayer.timeControlStatus.rawValue) | rate: \(observedPlayer.rate)")
+                #endif
+
+                switch observedPlayer.timeControlStatus {
+                case .playing:
+                    self.safeOnStatusChange(isPlaying: true, status: String(localized: "status_playing"))
+                    self.hasStartedPlaying = true
+                    self.stopBufferingTimer()
+
+                case .paused:
+                    // Only treat as stopped if rate is actually zero
+                    if observedPlayer.rate == 0.0 {
+                        self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_stopped"))
+                    }
+
+                case .waitingToPlayAtSpecifiedRate:
+                    // Normal transient state for live streams — do NOT force "stopped"
+                    self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_buffering"))
+
+                @unknown default:
+                    break
+                }
+
+                await SharedPlayerManager.shared.saveCurrentState()
             }
-            Task { await SharedPlayerManager.shared.saveCurrentState() }
         }
 
+        // Keep item status observer but make it safer
         statusObserver = player?.currentItem?.observe(\.status, options: [.new]) { [weak self] item, _ in
-            guard let self else { return }
-            #if DEBUG
-            print("🔊 [KVO] Item status → \(item.status.rawValue)")
-            #endif
-            switch item.status {
-            case .readyToPlay:
-                self.safeOnStatusChange(isPlaying: true, status: String(localized: "status_playing"))
-            case .failed:
-                self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_stream_unavailable"))
-                if let error = item.error {
-                    self.handlePlaybackError(error)
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                #if DEBUG
+                print("🔊 [KVO] Item status → \(item.status.rawValue)")
+                #endif
+
+                switch item.status {
+                case .readyToPlay:
+                    self.safeOnStatusChange(isPlaying: true, status: String(localized: "status_playing"))
+                    self.stopBufferingTimer()
+                case .failed:
+                    self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_stream_unavailable"))
+                    if let error = item.error {
+                        self.handlePlaybackError(error)
+                    }
+                default:
+                    break
                 }
-            default: break
+
+                await SharedPlayerManager.shared.saveCurrentState()
             }
-            Task { await SharedPlayerManager.shared.saveCurrentState() }
         }
     }
 
@@ -1454,6 +1485,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 // 3. Replace current item and start playback (on MainActor)
                 self.player?.replaceCurrentItem(with: newItem)
                 self.playerItem = newItem
+                self.setupPlaybackObservers()
 
                 #if DEBUG
                 print("🔊 [Playback Start] replaceCurrentItem called")
@@ -1514,6 +1546,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             let newItem = AVPlayerItem(url: url)
             self.player?.replaceCurrentItem(with: newItem)
             self.player?.rate = 1.0
+            self.setupPlaybackObservers()
             
             #if DEBUG
             print("▶️ AVPlayer rate set to 1.0 from switchToStream on main thread")
@@ -1606,6 +1639,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
 
             self.player?.replaceCurrentItem(with: newItem)
             self.playerItem = newItem
+            self.setupPlaybackObservers()
         }
 
         #if DEBUG
@@ -1679,6 +1713,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 let newItem = AVPlayerItem(url: url)
                 newItem.preferredForwardBufferDuration = 15.0
                 player.replaceCurrentItem(with: newItem)
+                self.setupPlaybackObservers()
                 
                 #if DEBUG
                 print("🔧 [DirectStreamingPlayer] attached fresh AVPlayerItem for cold launch")
@@ -1731,12 +1766,20 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             }
         }
         
-        // FINAL RECOVERY STEP — re-replace AVPlayerItem after loader had time to warm up
-        // This is the key fix for persistent AVPlayerWaitingWithNoItemToPlayReason on cold launch with custom ICY loader
+        // FINAL RECOVERY STEP — ONLY run if the player is NOT already playing
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(6.5))
             
             guard let self, let strongPlayer = self.player else { return }
+            
+            // NEW: only recover if we are still stuck
+            if strongPlayer.timeControlStatus == .playing {
+                #if DEBUG
+                print("✅ [DirectStreamingPlayer] final recovery skipped — already playing")
+                #endif
+                return
+            }
+            
             guard let currentItem = strongPlayer.currentItem,
                   let urlAsset = currentItem.asset as? AVURLAsset else {
                 #if DEBUG
@@ -1753,6 +1796,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             newItem.preferredForwardBufferDuration = 15.0
             
             strongPlayer.replaceCurrentItem(with: newItem)
+            self.setupPlaybackObservers()
             
             try? await Task.sleep(for: .milliseconds(400))
             
@@ -1852,86 +1896,26 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             
             if self.player == nil {
                 self.player = AVPlayer(playerItem: self.playerItem)
+                self.setupPlaybackObservers()
             } else {
                 self.player?.replaceCurrentItem(with: self.playerItem)
+                self.setupPlaybackObservers()
             }
             
-            self.addObservers()
-            
-            var tempStatusObserver: NSKeyValueObservation?
-            tempStatusObserver = self.playerItem?.observe(\.status, options: [.new]) { [weak self] item, _ in
-                guard let self else { return }
-                let age = Date().timeIntervalSince(connectionStartTime)
-                
-                switch item.status {
-                case .readyToPlay:
-                    tempStatusObserver?.invalidate()
-                    self.clearSSLProtectionTimer(for: connectionId)
-                    self.fallbackWorkItem?.cancel()
-                    self.fallbackWorkItem = nil
-                    
-                    self.markSSLHandshakeComplete(for: connectionId)
-                    self.isSSLHandshakeComplete = true
-                    
-                    self.serverFailureCount[self.currentSelectedServer.name] = 0
-                    self.lastFailedServerName = nil
-                    
-                    self.metadataOutput = AVPlayerItemMetadataOutput(identifiers: nil)
-                    self.metadataOutput?.setDelegate(self, queue: DispatchQueue.main)
-                    self.playerItem?.add(self.metadataOutput!)
-                    
-                    // FIXED: Use Task { @MainActor in } + explicit play() on main + small delay for resource loader
-                    Task { @MainActor in
-                        self.player?.play()
-                        // Tiny safe delay helps when resourceLoader is involved
-                        try? await Task.sleep(for: .milliseconds(100))
-                        self.player?.play()   // second call is harmless and often needed
-                    }
-                    
-                    self.hasStartedPlaying = true
-                    
-                    #if DEBUG
-                    print("✅ PlayerItem readyToPlay – calling play() on MainActor")
-                    #endif
-                    
-                case .failed:
-                    tempStatusObserver?.invalidate()
-                    self.clearSSLProtectionTimer(for: connectionId)
-                    self.fallbackWorkItem?.cancel()
-                    self.fallbackWorkItem = nil
-                    
-                    #if DEBUG
-                    print("❌ PlayerItem failed with server \(self.currentSelectedServer.name) after \(age)s")
-                    if let error = item.error {
-                        print("   Error: \(error)")
-                    }
-                    #endif
-                    
-                    if !fallbackServers.isEmpty {
-                        self.tryNextServer(fallbackServers: fallbackServers, completion: completion)
-                    } else {
-                        self.safeOnStatusChange(isPlaying: false, status: String(localized: String.LocalizationValue("status_stream_unavailable")))
-                        completion(false)
-                    }
-                    
-                case .unknown:
-                    break
-                @unknown default:
-                    break
-                }
-            }
-            
-            // Schedule the fallback timeout (unchanged)
+            // === Fallback timeout ===
             let timeout: TimeInterval = isLowEfficiencyMode ? 15 : 10
             let workItem = DispatchWorkItem { [weak self] in
-                guard let self, self.playerItem?.status != .readyToPlay else { return }
-                tempStatusObserver?.invalidate()
-                let age = Date().timeIntervalSince(connectionStartTime)
+                guard let self,
+                      self.playerItem?.status != .readyToPlay else { return }
+                
                 #if DEBUG
+                let age = Date().timeIntervalSince(connectionStartTime)
                 print("❌ Fallback timeout reached after \(age)s with server \(self.currentSelectedServer.name)")
                 #endif
+                
                 self.clearSSLProtectionTimer(for: connectionId)
                 self.fallbackWorkItem = nil
+                
                 if !fallbackServers.isEmpty {
                     self.tryNextServer(fallbackServers: fallbackServers, completion: completion)
                 } else {
