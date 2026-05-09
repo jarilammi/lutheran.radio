@@ -1622,7 +1622,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             isSwitchingStream = true
             defer { isSwitchingStream = false }
 
-            await stop()                    // clean stop only on real change
+            await stop(isSwitchingStream: true, silent: true)
         } else {
             #if DEBUG
             print("🔄 Same stream or initial playback (\(newLanguage)) – skipping stop()")
@@ -1635,7 +1635,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         // Prepare the AVPlayerItem on MainActor
         await MainActor.run {
             let newItem = AVPlayerItem(url: stream.url)
-            newItem.preferredForwardBufferDuration = 10.0   // Helps radio streams
+            newItem.preferredForwardBufferDuration = 10.0
 
             self.player?.replaceCurrentItem(with: newItem)
             self.playerItem = newItem

@@ -495,6 +495,15 @@ extension SharedPlayerManager {
     }
     
     private func performActualSave(_ state: (isPlaying: Bool, currentLanguage: String, hasError: Bool), at time: Date) {
+        // Suppress rapid successive saves during language/stream switches
+        if let lastUpdate = sharedDefaults?.double(forKey: "lastUpdateTime"),
+           Date().timeIntervalSince1970 - lastUpdate < 5.0 {
+            #if DEBUG
+            print("🔇 Skipping rapid state save (stream switch in progress)")
+            #endif
+            return
+        }
+        
         sharedDefaults?.set(state.isPlaying, forKey: "isPlaying")
         sharedDefaults?.set(state.currentLanguage, forKey: "currentLanguage")
         sharedDefaults?.set(state.hasError, forKey: "hasError")
