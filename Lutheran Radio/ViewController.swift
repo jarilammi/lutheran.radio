@@ -2409,8 +2409,11 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             print("🔄 completeStreamSwitch started – currentVisualState = \(visualState), stream = \(stream.languageCode)")
             #endif
             
+            // Capture the original intent BEFORE stop() or any state mutation
+            let wasPlayingBeforeSwitch = visualState.shouldAutoPlayOrResume
+            
             // === STRONG GUARD: Never auto-resume if user explicitly paused ===
-            guard visualState.shouldAutoPlayOrResume else {
+            guard wasPlayingBeforeSwitch else {
                 #if DEBUG
                 print("🚫 [completeStreamSwitch] Blocked — userPaused, no auto-resume")
                 #endif
@@ -2423,7 +2426,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             }
             
             #if DEBUG
-            print("▶️ [completeStreamSwitch] Allowed resume during stream switch")
+            print("▶️ [completeStreamSwitch] Allowed resume during stream switch (was playing)")
             #endif
             
             // 1. Clean stop current playback
@@ -2442,21 +2445,20 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                     }
                     
                     Task { @MainActor in
-                        // Final safety check RIGHT BEFORE any play() call
-                        let finalState = await SharedPlayerManager.shared.currentVisualState
-                        guard finalState.shouldAutoPlayOrResume else {
+                        // Final decision based on ORIGINAL intent
+                        guard wasPlayingBeforeSwitch else {
                             #if DEBUG
-                            print("🛡️ [completeStreamSwitch] Blocked play() after tuning sound — userPaused")
+                            print("🛡️ [completeStreamSwitch] Blocked play() after tuning sound — was not playing before switch")
                             #endif
                             
-                            await self.streamingPlayer.setStream(to: stream)   // still switch the stream
+                            await self.streamingPlayer.setStream(to: stream)
                             self.updateSelectionIndicator(to: index)
                             continuation.resume()
                             return
                         }
                         
                         #if DEBUG
-                        print("🔄 completeStreamSwitch → calling SharedPlayerManager.play()")
+                        print("🔄 completeStreamSwitch → calling SharedPlayerManager.play() after tuning")
                         #endif
                         
                         await self.streamingPlayer.setStream(to: stream)
@@ -2464,8 +2466,14 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                         self.updateUserDefaultsLanguage(stream.languageCode)
                         self.hasPermanentPlaybackError = false
                         
-                        // Let the central play() handle everything (including its own guard)
+                        // CRITICAL FIX: Reset the userPaused state that stop() just set
+                        await DirectStreamingPlayer.shared.markAsPlaying()
+                        
+                        // Let the central play() handle everything
                         await SharedPlayerManager.shared.play()
+                        
+                        // Give KVO / player one cycle to settle before final widget update
+                        await Task.yield()
                         
                         self.updateSelectionIndicator(to: index)
                         self.saveStateForWidget()
