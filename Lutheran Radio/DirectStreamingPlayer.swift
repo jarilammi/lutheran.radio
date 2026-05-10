@@ -1774,6 +1774,11 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         #endif
     }
     
+    func isActuallyPlaying() -> Bool {
+        guard let player = self.player else { return false }
+        return player.timeControlStatus == .playing && player.rate > 0.0
+    }
+    
     private func startBufferingTimer() {
         stopBufferingTimer()
         bufferingTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: false) { [weak self] _ in

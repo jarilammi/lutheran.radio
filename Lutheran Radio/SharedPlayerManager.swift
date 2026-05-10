@@ -82,7 +82,6 @@ actor SharedPlayerManager {
 
         // ──────────────────────────────────────────────────────────────
         // CENTRAL RESURRECTION PROTECTION — single source of truth
-        // Blocks EVERY resurrection path after .userPaused (first pause, background resume, widget, etc.)
         guard currentVisualState.shouldAutoPlayOrResume else {
             #if DEBUG
             print("🔒 [SharedPlayerManager] play() BLOCKED — currentVisualState = \(currentVisualState) (userPaused or error lock active)")
@@ -90,6 +89,14 @@ actor SharedPlayerManager {
             return
         }
         // ──────────────────────────────────────────────────────────────
+
+        // NEW: Prevent re-entrancy loop from recovery tasks (post-head-start + nudges)
+        if currentVisualState == .playing {
+            #if DEBUG
+            print("✅ SharedPlayerManager.play() — already .playing, skipping redundant call (recovery loop prevented)")
+            #endif
+            return
+        }
 
         // === ONE-SHOT GUARD FOR COLD LAUNCH INITIAL PLAYBACK ===
         if currentVisualState == .prePlay {
@@ -135,6 +142,40 @@ actor SharedPlayerManager {
         await DirectStreamingPlayer.shared.setStreamAndPlay(to: stream)
         
         // No saveCurrentState() here — observer will handle it
+    }
+    
+    // MARK: - Resurrection (still respects SSOT)
+
+    /// Safe resurrection entry point used by DirectStreamingPlayer recovery logic.
+    /// Allows technical recovery (hiccups) even when visualState = .playing.
+    func attemptResurrectionIfAllowed() async {
+        #if DEBUG
+        print("🚀 SharedPlayerManager.attemptResurrectionIfAllowed() – currentVisualState = \(currentVisualState)")
+        #endif
+
+        guard currentVisualState.shouldAutoPlayOrResume else {
+            #if DEBUG
+            print("🔒 [SharedPlayerManager] resurrection BLOCKED by visualState = \(currentVisualState)")
+            #endif
+            return
+        }
+
+        // Light check — if the player is already playing, do nothing
+        if DirectStreamingPlayer.shared.isActuallyPlaying() {
+            #if DEBUG
+            print("✅ SharedPlayerManager: already actually playing — skipping redundant recovery")
+            #endif
+            return
+        }
+
+        #if DEBUG
+        print("🔄 Resurrection proceeding — player is stalled, forcing light recovery")
+        #endif
+
+        // Light recovery: just force the existing player back to life (no full validation/tuning/stream switch)
+        await MainActor.run {
+            DirectStreamingPlayer.shared.player?.playImmediately(atRate: 1.0)
+        }
     }
     
     // MARK: - User Intent State Management
