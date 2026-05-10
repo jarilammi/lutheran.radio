@@ -76,15 +76,30 @@ actor SharedPlayerManager {
 
     /// Public async entry point for playing — safe to call from anywhere
     func play() async {
-        let entryState = currentVisualState
-        
         #if DEBUG
-        print("🎵 SharedPlayerManager.play() ENTERED – currentVisualState = \(entryState)")
+        print("🎵 SharedPlayerManager.play() ENTERED – currentVisualState = \(currentVisualState)")
         #endif
 
+        // ──────────────────────────────────────────────────────────────
+        // CENTRAL RESURRECTION PROTECTION — single source of truth
+        guard currentVisualState.shouldAutoPlayOrResume else {
+            #if DEBUG
+            print("🔒 [SharedPlayerManager] play() BLOCKED — currentVisualState = \(currentVisualState) (userPaused or error lock active)")
+            #endif
+            return
+        }
+        // ──────────────────────────────────────────────────────────────
+
+        // NEW: Prevent re-entrancy loop from recovery tasks (post-head-start + nudges)
+        if currentVisualState == .playing {
+            #if DEBUG
+            print("✅ SharedPlayerManager.play() — already .playing, skipping redundant call (recovery loop prevented)")
+            #endif
+            return
+        }
+
         // === ONE-SHOT GUARD FOR COLD LAUNCH INITIAL PLAYBACK ===
-        // Prevents the duplicate play() calls you saw in the logs (tuning → play → tuning finished → play again)
-        if entryState == .prePlay {
+        if currentVisualState == .prePlay {
             if initialPlaybackHasRun {
                 #if DEBUG
                 print("SharedPlayerManager.play() – skipping duplicate initial playback on cold launch")
@@ -96,19 +111,6 @@ actor SharedPlayerManager {
                 print("SharedPlayerManager.play() – this is the first cold-launch play call, proceeding")
                 #endif
             }
-        }
-
-        // === EXISTING RESURRECTION BLOCKING LOGIC ===
-        // Only block resurrection if we are in a "paused by user" state
-        let shouldBlockResurrection = entryState.mustSuppressResurrection
-            && entryState != .prePlay                     // ← Critical: allow initial play
-            && !entryState.shouldAutoPlayOrResume
-        
-        if shouldBlockResurrection {
-            #if DEBUG
-            print("⛔️ Resurrection blocked by user pause – ignoring automatic resume")
-            #endif
-            return
         }
 
         let isValid = await SecurityModelValidator.shared.validateSecurityModel()
@@ -140,6 +142,40 @@ actor SharedPlayerManager {
         await DirectStreamingPlayer.shared.setStreamAndPlay(to: stream)
         
         // No saveCurrentState() here — observer will handle it
+    }
+    
+    // MARK: - Resurrection (still respects SSOT)
+
+    /// Safe resurrection entry point used by DirectStreamingPlayer recovery logic.
+    /// Allows technical recovery (hiccups) even when visualState = .playing.
+    func attemptResurrectionIfAllowed() async {
+        #if DEBUG
+        print("🚀 SharedPlayerManager.attemptResurrectionIfAllowed() – currentVisualState = \(currentVisualState)")
+        #endif
+
+        guard currentVisualState.shouldAutoPlayOrResume else {
+            #if DEBUG
+            print("🔒 [SharedPlayerManager] resurrection BLOCKED by visualState = \(currentVisualState)")
+            #endif
+            return
+        }
+
+        // Light check — if the player is already playing, do nothing
+        if DirectStreamingPlayer.shared.isActuallyPlaying() {
+            #if DEBUG
+            print("✅ SharedPlayerManager: already actually playing — skipping redundant recovery")
+            #endif
+            return
+        }
+
+        #if DEBUG
+        print("🔄 Resurrection proceeding — player is stalled, forcing light recovery")
+        #endif
+
+        // Light recovery: just force the existing player back to life (no full validation/tuning/stream switch)
+        await MainActor.run {
+            DirectStreamingPlayer.shared.player?.playImmediately(atRate: 1.0)
+        }
     }
     
     // MARK: - User Intent State Management
