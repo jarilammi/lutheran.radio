@@ -1561,13 +1561,18 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         isManualPause = true
         hasEverPlayed = false
         
+        // === CRITICAL: Cancel any pending "connecting" UI work item ===
+        // This prevents the yellow "connecting" label from appearing after pause
+        pendingPlaybackWorkItem?.cancel()
+        pendingPlaybackWorkItem = nil
+        
         // Route through the shared manager so .userPaused is properly set and persisted
         Task { @MainActor in
             await SharedPlayerManager.shared.stop()
             
             self.isPlaying = false
             self.updatePlayPauseButton(isPlaying: false)
-            self.updateUIForPausedState()
+            self.updateUIForPausedState()   // now guaranteed to win
             self.updateNowPlayingInfo()
             self.saveStateForWidget()
             
@@ -1577,18 +1582,29 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         }
     }
     
+    // MARK: - Manual Pause (user tap)
     private func stopPlayback() {
         #if DEBUG
         print("📱 stopPlayback called from: \(Thread.callStackSymbols[1])")
         #endif
         
-        // For internal stops we usually want to keep the previous intent (e.g. during stream switch)
-        // So we call the low-level stop without forcing .userPaused
-        streamingPlayer.stop()
+        isManualPause = true
+        pendingPlaybackWorkItem?.cancel()
+        pendingPlaybackWorkItem = nil
         
-        isPlaying = false
-        updatePlayPauseButton(isPlaying: false)
-        saveStateForWidget()
+        Task { @MainActor in
+            await SharedPlayerManager.shared.stop()
+            
+            self.isPlaying = false
+            self.updatePlayPauseButton(isPlaying: false)
+            self.updateUIForPausedState()          // ← syncs directly from currentVisualState
+            self.updateNowPlayingInfo()
+            self.saveStateForWidget()
+            
+            #if DEBUG
+            print("🛑 stopPlayback completed – visualState locked to .userPaused")
+            #endif
+        }
     }
     
     private func updateUI(for visualState: PlayerVisualState) {

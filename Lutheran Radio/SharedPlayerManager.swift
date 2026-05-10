@@ -76,15 +76,23 @@ actor SharedPlayerManager {
 
     /// Public async entry point for playing — safe to call from anywhere
     func play() async {
-        let entryState = currentVisualState
-        
         #if DEBUG
-        print("🎵 SharedPlayerManager.play() ENTERED – currentVisualState = \(entryState)")
+        print("🎵 SharedPlayerManager.play() ENTERED – currentVisualState = \(currentVisualState)")
         #endif
 
+        // ──────────────────────────────────────────────────────────────
+        // CENTRAL RESURRECTION PROTECTION — single source of truth
+        // Blocks EVERY resurrection path after .userPaused (first pause, background resume, widget, etc.)
+        guard currentVisualState.shouldAutoPlayOrResume else {
+            #if DEBUG
+            print("🔒 [SharedPlayerManager] play() BLOCKED — currentVisualState = \(currentVisualState) (userPaused or error lock active)")
+            #endif
+            return
+        }
+        // ──────────────────────────────────────────────────────────────
+
         // === ONE-SHOT GUARD FOR COLD LAUNCH INITIAL PLAYBACK ===
-        // Prevents the duplicate play() calls you saw in the logs (tuning → play → tuning finished → play again)
-        if entryState == .prePlay {
+        if currentVisualState == .prePlay {
             if initialPlaybackHasRun {
                 #if DEBUG
                 print("SharedPlayerManager.play() – skipping duplicate initial playback on cold launch")
@@ -96,19 +104,6 @@ actor SharedPlayerManager {
                 print("SharedPlayerManager.play() – this is the first cold-launch play call, proceeding")
                 #endif
             }
-        }
-
-        // === EXISTING RESURRECTION BLOCKING LOGIC ===
-        // Only block resurrection if we are in a "paused by user" state
-        let shouldBlockResurrection = entryState.mustSuppressResurrection
-            && entryState != .prePlay                     // ← Critical: allow initial play
-            && !entryState.shouldAutoPlayOrResume
-        
-        if shouldBlockResurrection {
-            #if DEBUG
-            print("⛔️ Resurrection blocked by user pause – ignoring automatic resume")
-            #endif
-            return
         }
 
         let isValid = await SecurityModelValidator.shared.validateSecurityModel()
