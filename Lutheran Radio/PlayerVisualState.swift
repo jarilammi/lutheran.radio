@@ -36,8 +36,10 @@ enum PlayerVisualState: Codable, Equatable {
     
     var textColor: UIColor {
         switch self {
-        case .prePlay, .userPaused: return .label
-        case .playing, .error:      return .white
+        case .prePlay, .userPaused, .playing:
+            return .label          // best readability on yellow / gray / green
+        case .error:
+            return .white          // white on red/error background is standard
         }
     }
     
