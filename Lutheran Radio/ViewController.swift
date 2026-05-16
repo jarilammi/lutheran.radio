@@ -1133,7 +1133,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                         print("🚫 [Interruption Guard] Blocked auto-resume after interruption — currentVisualState is .userPaused")
                         #endif
                         
-                        self.updateUIForPausedState()
+                        updateUI(for: .userPaused)
                         return
                     }
                     
@@ -1376,7 +1376,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 #if DEBUG
                 print("🚫 [StartPlayback Guard] Blocked resurrection — currentVisualState is .userPaused")
                 #endif
-                self.updateUIForPausedState()
+                updateUI(for: .userPaused)
                 return
             }
 
@@ -1555,77 +1555,63 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     /// - Note: Sets manual pause flag and routes through SharedPlayerManager to ensure .userPaused state is set.
     private func pausePlayback() {
         #if DEBUG
-        print("📱 pausePlayback called from: \(Thread.callStackSymbols[1])")
+        print("📱 pausePlayback called")
         #endif
         
-        isManualPause = true
-        hasEverPlayed = false
-        
-        // === CRITICAL: Cancel any pending "connecting" UI work item ===
-        // This prevents the yellow "connecting" label from appearing after pause
-        pendingPlaybackWorkItem?.cancel()
-        pendingPlaybackWorkItem = nil
-        
-        // Route through the shared manager so .userPaused is properly set and persisted
         Task { @MainActor in
             await SharedPlayerManager.shared.stop()
-            
-            self.isPlaying = false
-            self.updatePlayPauseButton(isPlaying: false)
-            self.updateUIForPausedState()   // now guaranteed to win
+            let newState = await SharedPlayerManager.shared.currentVisualState
+            self.updateUI(for: newState)
             self.updateNowPlayingInfo()
             self.saveStateForWidget()
-            
-            #if DEBUG
-            print("✅ pausePlayback completed — .userPaused state set")
-            #endif
         }
     }
     
     // MARK: - Manual Pause (user tap)
     private func stopPlayback() {
         #if DEBUG
-        print("📱 stopPlayback called from: \(Thread.callStackSymbols[1])")
+        print("🛑 stopPlayback called")
         #endif
-        
-        isManualPause = true
-        pendingPlaybackWorkItem?.cancel()
-        pendingPlaybackWorkItem = nil
         
         Task { @MainActor in
             await SharedPlayerManager.shared.stop()
-            
-            self.isPlaying = false
-            self.updatePlayPauseButton(isPlaying: false)
-            self.updateUIForPausedState()          // ← syncs directly from currentVisualState
+            let newState = await SharedPlayerManager.shared.currentVisualState
+            self.updateUI(for: newState)
             self.updateNowPlayingInfo()
             self.saveStateForWidget()
-            
-            #if DEBUG
-            print("🛑 stopPlayback completed – visualState locked to .userPaused")
-            #endif
         }
     }
     
+    @MainActor
     private func updateUI(for visualState: PlayerVisualState) {
+        // Text
         switch visualState {
-        case .userPaused:
-            statusLabel.text = String(localized: "status_paused")
-            
         case .playing:
             statusLabel.text = String(localized: "status_playing")
-            
-        case .prePlay, .error:
-            statusLabel.text = ""   // or appropriate fallback
+        case .userPaused:
+            statusLabel.text = String(localized: "status_paused")
+        case .prePlay:
+            statusLabel.text = String(localized: "status_connecting")  // or "" / "Ready to play"
+        case .error:
+            statusLabel.text = String(localized: "status_security_failed")
         }
         
+        // Colors from the enum (this is now the only source of truth)
         statusLabel.backgroundColor = visualState.backgroundColor
         statusLabel.textColor = visualState.textColor
-        updatePlayPauseButton(isPlaying: visualState.isActivelyPlaying)
-    }
-    
-    private func updateUIForPausedState() {
-        updateUI(for: .userPaused)
+        
+        // Button image + tint (critical for grey userPaused look)
+        let config = UIImage.SymbolConfiguration(pointSize: 24, weight: .bold)
+        let imageName = visualState.isActivelyPlaying ? "pause.fill" : "play.fill"
+        playPauseButton.setImage(UIImage(systemName: imageName, withConfiguration: config), for: .normal)
+        playPauseButton.tintColor = visualState.buttonTintColor
+        
+        // Optional: accessibility
+        statusLabel.accessibilityLabel = statusLabel.text
+        
+        #if DEBUG
+        print("🔥 ViewController.updateUI → applied \(visualState) (bg=\(visualState.backgroundColor), tint=\(visualState.buttonTintColor))")
+        #endif
     }
     
     @objc private func volumeChanged(_ sender: UISlider) {
@@ -2444,9 +2430,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 #if DEBUG
                 print("🚫 [completeStreamSwitch] Blocked — userPaused, no auto-resume")
                 #endif
-                self.updatePlayPauseButton(isPlaying: false)
-                self.statusLabel.text = String(localized: "status_paused")
-                self.statusLabel.backgroundColor = .systemGray
+                
+                // ← SINGLE SOURCE OF TRUTH
+                self.updateUI(for: .userPaused)
                 self.updateSelectionIndicator(to: index)
                 return
             }
@@ -2458,11 +2444,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             // 1. Clean stop current playback
             await withCheckedContinuation { continuation in
                 streamingPlayer.stop(
-                    reason: .streamSwitch,          // ← NEW: semantic reason
-                    completion: {
-                        continuation.resume()
-                    },
-                    silent: true                    // ← still does exactly what it did before
+                    reason: .streamSwitch,
+                    completion: { continuation.resume() },
+                    silent: true
                 )
             }
             
@@ -2591,8 +2575,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 
                 // 1. Stop current playback cleanly
                 await self.streamingPlayer.stop(
-                    reason: .streamSwitch,      // ← NEW: semantic reason (replaces isSwitchingStream:)
-                    silent: true                // ← kept exactly as before
+                    reason: .streamSwitch,
+                    silent: true
                 )
                 
                 // 2. Find target
@@ -2621,14 +2605,17 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 try? await Task.sleep(for: .seconds(0.6))
                 
                 let visualState = await SharedPlayerManager.shared.currentVisualState
+                
                 guard visualState.shouldAutoPlayOrResume else {
                     #if DEBUG
-                    print("🛡️ [Widget Switch] Blocked auto-play — currentVisualState is .userPaused")
+                    print("🛡️ [Widget Switch] Blocked auto-play — currentVisualState is \(visualState)")
                     #endif
+                    
                     self.streamingPlayer.isSwitchingStream = false
-                    self.updatePlayPauseButton(isPlaying: false)
-                    self.statusLabel.text = String(localized: "status_paused")
-                    self.statusLabel.backgroundColor = .systemGray
+                    
+                    // ← SINGLE SOURCE OF TRUTH
+                    self.updateUI(for: visualState)
+                    
                     self.saveStateForWidget()
                     WidgetCenter.shared.reloadAllTimelines()
                     await SharedPlayerManager.shared.clearPendingAction(actionId: actionId)
@@ -2636,7 +2623,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 }
                 
                 // Only reach here if we are allowed to resume
-                let state = SharedPlayerManager.shared.loadSharedState()
+                let state = await SharedPlayerManager.shared.loadSharedState()   // ← added missing await
                 if !state.isPlaying {
                     #if DEBUG
                     print("▶️ Attempting to start playback after switch (state: playing=\(state.isPlaying), lang=\(state.currentLanguage))")
@@ -2648,17 +2635,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                         #if DEBUG
                         print("✅ SharedPlayerManager.play() succeeded")
                         #endif
-                        
-                        // Optional: wait a bit and verify actual AVPlayer status
-                        try? await Task.sleep(for: .seconds(0.8))
-                        let finalState = SharedPlayerManager.shared.loadSharedState()
-                        if !finalState.isPlaying {
-                            #if DEBUG
-                            print("⚠️ play() returned success but state still shows not playing — forcing retry")
-                            #endif
-                            try? await SharedPlayerManager.shared.play()
-                        }
-                        
                     } catch {
                         #if DEBUG
                         print("❌ SharedPlayerManager.play() failed: \(error.localizedDescription)")
@@ -2670,11 +2646,11 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                     #endif
                 }
                 
-                // 7. Widget refresh (once, at the end)
+                // 7. Widget refresh
                 self.saveStateForWidget()
                 WidgetCenter.shared.reloadAllTimelines()
                 
-                // 8. Clear pending action from actor
+                // 8. Clear pending action
                 await SharedPlayerManager.shared.clearPendingAction(actionId: actionId)
                 
                 self.streamingPlayer.isSwitchingStream = false
@@ -3054,44 +3030,52 @@ extension ViewController {
         Task { @MainActor in
             let manager = SharedPlayerManager.shared
             
-            // Safely read current visual state and shared state (actor-isolated)
+            // Single source of truth
             let currentVisualState = await manager.currentVisualState
             let sharedState = await manager.loadSharedState()
             
-            if currentVisualState == .userPaused || sharedState.isPlaying {
-                // === PAUSE ===
-                self.updatePlayPauseButton(isPlaying: false)
-                self.safeUpdateStatusLabel(text: String(localized: "status_paused"),
-                                          backgroundColor: .systemYellow,
-                                          textColor: .label,
-                                          isPermanentError: false)
+            #if DEBUG
+            print("🔥 togglePlayback() called → currentVisualState = \(currentVisualState), shared.isPlaying = \(sharedState.isPlaying)")
+            #endif
+            
+            if currentVisualState == .userPaused || currentVisualState.isActivelyPlaying || sharedState.isPlaying {
+                // === PAUSE PATH ===
+                #if DEBUG
+                print("🔥 → PAUSE path")
+                #endif
                 
-                await SharedPlayerManager.shared.stop()   // this already sets .userPaused
+                await manager.stop()   // ← this locks .userPaused
                 self.playHapticFeedback(style: .medium)
                 
-            } else {
-                // === PLAY – explicit user intent ===
-                // Clear any previous user-paused state so the guard in play() allows it
-                await manager.setUserIntentToPlay()       // ← clears .userPaused
+                let newState = await manager.currentVisualState
+                self.updateUI(for: newState)              // ← this is what makes it grey
                 
-                self.updatePlayPauseButton(isPlaying: true)
-                self.safeUpdateStatusLabel(text: String(localized: "status_connecting"),
-                                          backgroundColor: .systemYellow,
-                                          textColor: .label,
-                                          isPermanentError: false)
+                #if DEBUG
+                print("✅ Pause complete → applied \(newState)")
+                #endif
+                
+            } else {
+                // === PLAY PATH ===
+                #if DEBUG
+                print("🔥 → PLAY path")
+                #endif
+                
+                await manager.setUserIntentToPlay()
+                self.playHapticFeedback(style: .heavy)
                 
                 do {
-                    try await SharedPlayerManager.shared.play()
-                    self.playHapticFeedback(style: .heavy)
-                    // Success → onStatusChange(.playing) or delegate will update final UI
+                    try await manager.play()
+                    let newState = await manager.currentVisualState
+                    self.updateUI(for: newState)
+                    #if DEBUG
+                    print("✅ Play complete → applied \(newState)")
+                    #endif
                 } catch {
-                    // Failure → revert UI
-                    self.updatePlayPauseButton(isPlaying: false)
-                    self.safeUpdateStatusLabel(text: String(localized: "status_stopped"),
-                                              backgroundColor: .systemRed,
-                                              textColor: .white,
-                                              isPermanentError: false)
-                    self.playHapticFeedback(style: .heavy)
+                    let errorState = await manager.currentVisualState
+                    self.updateUI(for: errorState)
+                    #if DEBUG
+                    print("❌ Play failed → applied \(errorState)")
+                    #endif
                 }
             }
         }
