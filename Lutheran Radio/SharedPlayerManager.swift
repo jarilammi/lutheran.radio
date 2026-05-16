@@ -179,7 +179,25 @@ actor SharedPlayerManager {
     }
     
     // MARK: - User Intent State Management
-
+    
+    /// Reset to `.prePlay` (and clear the cold-launch one-shot guard) so that
+    /// a real language/stream switch behaves **exactly** like the initial
+    /// cold-launch playback path.
+    ///
+    /// Called **only** from `completeStreamSwitch` (and widget switch paths if needed later).
+    /// This is the single place we intentionally bypass the `.playing` guard in `play()`
+    /// while preserving `.userPaused` resurrection protection everywhere else.
+    func resetToPrePlayForNewStream() async {
+        currentVisualState = .prePlay
+        initialPlaybackHasRun = false
+        saveVisualState()
+        await saveCurrentState()
+        
+        #if DEBUG
+        print("🔄 [SharedPlayerManager] resetToPrePlayForNewStream() — state reset to .prePlay for atomic stream switch")
+        #endif
+    }
+    
     /// Explicitly records that the user performed a manual pause or stop.
     /// This locks .userPaused so resurrection paths are blocked.
     func markAsUserPaused() async {

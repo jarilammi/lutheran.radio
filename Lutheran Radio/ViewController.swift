@@ -2355,6 +2355,16 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             print("🔄 completeStreamSwitch started – currentVisualState = \(visualState), stream = \(stream.languageCode)")
             #endif
             
+            // 🔥 CRITICAL: Always update the underlying stream model, even when .userPaused.
+            // Now switching while paused correctly prepares the new language for the next manual play().
+            await self.streamingPlayer.setStream(to: stream)
+            self.streamingPlayer.resetTransientErrors()
+            self.hasPermanentPlaybackError = false
+            
+            #if DEBUG
+            print("🔄 [completeStreamSwitch] Updated stream model to \(stream.languageCode) (works for both playing and userPaused)")
+            #endif
+            
             // Capture the original intent BEFORE any stop() or state mutation
             let wasPlayingBeforeSwitch = visualState.shouldAutoPlayOrResume
             
@@ -2410,6 +2420,13 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                         self.streamingPlayer.resetTransientErrors()
                         self.updateUserDefaultsLanguage(stream.languageCode)
                         self.hasPermanentPlaybackError = false
+                        
+                        // 🔥 CRITICAL FIX for stream switching after PlayerVisualState refactor
+                        // Reset visual state to .prePlay so SharedPlayerManager.play() executes
+                        // the full cold-launch path (bypasses the .playing skip guard).
+                        // Also gives immediate yellow "connecting" UI feedback during the atomic switch.
+                        await SharedPlayerManager.shared.resetToPrePlayForNewStream()
+                        self.updateUI(for: .prePlay)
                         
                         await SharedPlayerManager.shared.play()
                         await Task.yield()
