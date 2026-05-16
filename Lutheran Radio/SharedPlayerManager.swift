@@ -312,11 +312,26 @@ actor SharedPlayerManager {
     }
     
     // MARK: - PlayerVisualState Management
-
-    /// Call this when the user explicitly taps Play.
-    /// Clears the .userPaused intent so playback is allowed.
+    
+    /// Called only when the user taps the play button (or widget play action).
+    /// Clears the .userPaused lock so resume is allowed.
+    /// Resets the cold-launch guard ONLY for manual resumes.
     func setUserIntentToPlay() async {
-        currentVisualState = .playing
+        #if DEBUG
+        print("🎯 setUserIntentToPlay() called – clearing .userPaused lock")
+        #endif
+        
+        if currentVisualState == .userPaused {
+            currentVisualState = .prePlay
+            
+            // This is the critical line: allow resume without breaking cold-launch protection
+            initialPlaybackHasRun = false
+            
+            #if DEBUG
+            print("🎯 setUserIntentToPlay() → reset initialPlaybackHasRun = false (resume now allowed)")
+            #endif
+        }
+        
         saveVisualState()
         await saveCurrentState()
     }

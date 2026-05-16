@@ -760,75 +760,17 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         }
     }
     
-    // MARK: - Enhanced Status Change Handling
+    // MARK: - Streaming Callbacks (metadata only)
+    //
+    // IMPORTANT: The old onStatusChange closure has been completely removed.
+    // It was the last piece overriding updateUI(for:) with .systemYellow after pause.
+    // Status changes are now handled exclusively by StreamingPlayerDelegate.onStatusChange(_:reason:)
+    // which calls updateUI(for:) — making PlayerVisualState the single source of truth.
+    //
+    // We only keep onMetadataChange because it still does useful non-conflicting work
+    // (speaker photo + metadata label + Now Playing info).
+    
     private func setupStreamingCallbacks() {
-        streamingPlayer.onStatusChange = { [weak self] isPlaying, statusText in
-            guard let self = self else {
-                #if DEBUG
-                print("📱 onStatusChange: ViewController is nil, skipping callback")
-                #endif
-                return
-            }
-            
-            // Non-UI updates (safe on background if properties are nonisolated)
-            self.isPlaying = isPlaying
-            
-            // Hop to main for UI and isolated state
-            DispatchQueue.main.async {
-                self.updatePlayPauseButton(isPlaying: isPlaying)
-                self.saveStateForWidget()
-                
-                if isPlaying {
-                    self.statusLabel.text = String(localized: "status_playing")
-                    self.statusLabel.backgroundColor = .systemGreen
-                    self.statusLabel.textColor = .black
-                    self.playPauseButton.accessibilityLabel = String(localized: "accessibility_label_play_pause")
-                } else {
-                    self.statusLabel.text = statusText
-                    self.playPauseButton.accessibilityLabel = String(localized: "accessibility_label_play")
-                    
-                    if statusText == String(localized: "status_security_failed") {
-                        self.hasPermanentPlaybackError = true
-                        self.isManualPause = true
-                        self.statusLabel.backgroundColor = .systemRed
-                        self.statusLabel.textColor = .white
-                        self.showSecurityModelAlert()
-                        
-                    } else if statusText == String(localized: "status_ssl_transition") {
-                        self.statusLabel.backgroundColor = .systemOrange
-                        self.statusLabel.textColor = .white
-                        self.showSSLTransitionAlert()
-                        
-                    } else if statusText == String(localized: "status_no_internet") {
-                        self.statusLabel.backgroundColor = .systemGray
-                        self.statusLabel.textColor = .white
-                        self.updateUIForNoInternet()
-                        
-                    } else if statusText == String(localized: "status_stream_unavailable") {
-                        self.statusLabel.backgroundColor = .systemOrange
-                        self.statusLabel.textColor = .white
-                        if self.presentedViewController == nil {
-                            let alert = UIAlertController(
-                                title: String(localized: "stream_unavailable_title"),
-                                message: String(localized: "stream_unavailable_message"),
-                                preferredStyle: .alert
-                            )
-                            alert.addAction(UIAlertAction(title: String(localized: "alert_retry"), style: .default) { _ in
-                                self.hasPermanentPlaybackError = false
-                                self.startPlayback()
-                            })
-                            alert.addAction(UIAlertAction(title: String(localized: "ok"), style: .cancel, handler: nil))
-                            self.present(alert, animated: true)
-                        }
-                    } else {
-                        self.statusLabel.backgroundColor = self.isManualPause ? .systemGray : .systemYellow
-                        self.statusLabel.textColor = .black
-                    }
-                }
-                self.updateNowPlayingInfo()
-            }
-        }
-        
         streamingPlayer.onMetadataChange = { [weak self] metadata in
             guard let self = self else {
                 #if DEBUG
@@ -841,7 +783,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             var potentialNames: [String]? = nil
             if let metadata = metadata {
                 do {
-                    let regex = try NSRegularExpression(pattern: "\\b[A-Z][a-z]+(?:\\s[A-Z][a-z]+)*\\b")  // Tighten if needed, e.g., add length min
+                    let regex = try NSRegularExpression(pattern: "\\b[A-Z][a-z]+(?:\\s[A-Z][a-z]+)*\\b")
                     let matches = regex.matches(in: metadata, range: NSRange(metadata.startIndex..., in: metadata))
                     potentialNames = matches.compactMap { match in
                         Range(match.range, in: metadata).map { String(metadata[$0]) }
@@ -853,7 +795,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 }
             }
             
-            // Hop to main for UI updates
+            // Hop to main for UI updates only
             DispatchQueue.main.async {
                 if let metadata = metadata {
                     self.metadataLabel.text = metadata
@@ -863,19 +805,14 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                     let matchedSpeaker = potentialNames?.first(where: { specificSpeakers.contains($0) })
                     
                     if let speaker = matchedSpeaker,
-                       let imagePath = Bundle.main.path(forResource: speaker.lowercased().replacingOccurrences(of: " ", with: "_") + "_photo", ofType: "png"),  // Assume png; adjust
+                       let imagePath = Bundle.main.path(forResource: speaker.lowercased().replacingOccurrences(of: " ", with: "_") + "_photo", ofType: "png"),
                        let image = UIImage(contentsOfFile: imagePath) {
                         UIView.transition(with: self.speakerImageView, duration: 0.3, options: .transitionCrossDissolve, animations: {
                             self.speakerImageView.image = image
                             self.speakerImageView.isHidden = false
                             self.speakerImageHeightConstraint.constant = 100
                             self.speakerImageView.accessibilityLabel = "Photo of \(speaker)"
-                        }, completion: { _ in
-                            #if DEBUG
-                            print("Speaker image frame: \(self.speakerImageView.frame)")
-                            print("Language collection view frame: \(self.languageCollectionView.frame)")
-                            #endif
-                        })
+                        }, completion: nil)
                     } else if potentialNames?.contains("Lutheran Radio") == true,
                               let imagePath = Bundle.main.path(forResource: "radio-placeholder", ofType: "png"),
                               let image = UIImage(contentsOfFile: imagePath) {
@@ -884,12 +821,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                             self.speakerImageView.isHidden = false
                             self.speakerImageHeightConstraint.constant = 100
                             self.speakerImageView.accessibilityLabel = "Lutheran Radio Logo"
-                        }, completion: { _ in
-                            #if DEBUG
-                            print("Speaker image frame: \(self.speakerImageView.frame)")
-                            print("Language collection view frame: \(self.languageCollectionView.frame)")
-                            #endif
-                        })
+                        }, completion: nil)
                     } else {
                         self.speakerImageView.isHidden = true
                     }
@@ -1604,7 +1536,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         let config = UIImage.SymbolConfiguration(pointSize: 24, weight: .bold)
         let imageName = visualState.isActivelyPlaying ? "pause.fill" : "play.fill"
         playPauseButton.setImage(UIImage(systemName: imageName, withConfiguration: config), for: .normal)
-        playPauseButton.tintColor = visualState.buttonTintColor
+        // Optional but VERY nice — button tint now follows the state too
+        // playPauseButton.tintColor = visualState.buttonTintColor
         
         // Optional: accessibility
         statusLabel.accessibilityLabel = statusLabel.text
@@ -3038,7 +2971,7 @@ extension ViewController {
             print("🔥 togglePlayback() called → currentVisualState = \(currentVisualState), shared.isPlaying = \(sharedState.isPlaying)")
             #endif
             
-            if currentVisualState == .userPaused || currentVisualState.isActivelyPlaying || sharedState.isPlaying {
+            if currentVisualState.isActivelyPlaying || sharedState.isPlaying {
                 // === PAUSE PATH ===
                 #if DEBUG
                 print("🔥 → PAUSE path")
@@ -3048,16 +2981,16 @@ extension ViewController {
                 self.playHapticFeedback(style: .medium)
                 
                 let newState = await manager.currentVisualState
-                self.updateUI(for: newState)              // ← this is what makes it grey
+                self.updateUI(for: newState)
                 
                 #if DEBUG
                 print("✅ Pause complete → applied \(newState)")
                 #endif
                 
             } else {
-                // === PLAY PATH ===
+                // === PLAY / RESUME PATH (this is where .userPaused now correctly lands) ===
                 #if DEBUG
-                print("🔥 → PLAY path")
+                print("🔥 → PLAY / RESUME path")
                 #endif
                 
                 await manager.setUserIntentToPlay()
@@ -3201,38 +3134,46 @@ extension ViewController: StreamingPlayerDelegate {
     /// Marked nonisolated + explicit MainActor hop to satisfy strict concurrency.
     nonisolated func onStatusChange(_ status: PlayerStatus, _ reason: String?) {
         Task { @MainActor in
-            let visualState = PlayerVisualState.from(
-                status: status,
-                isManualPause: isManualPause,
-                hasEverPlayed: hasEverPlayed
-            )
+            // SINGLE SOURCE OF TRUTH — always pull latest locked state
+            let visualState = await SharedPlayerManager.shared.currentVisualState
             
-            let statusText: String = {
-                switch status {
-                case .playing:     return String(localized: "status_playing")
-                case .paused:      return (reason == "Interruption")
-                    ? String(localized: "status_paused_call")
-                    : String(localized: "status_paused")
-                case .stopped:     return String(localized: "status_stopped")
-                case .connecting:  return String(localized: "status_connecting")
-                case .security:    return String(localized: "status_security_failed")
-                @unknown default:  return "Unknown state"
+            #if DEBUG
+            print("🔥 StreamingPlayerDelegate.onStatusChange → \(status) (reason: \(reason ?? "nil")) → visualState \(visualState)")
+            #endif
+            
+            // First apply the normal UI from PlayerVisualState (icon + basic label)
+            self.updateUI(for: visualState)
+            
+            // These now run *after* updateUI so they can override the label color/alerts when needed
+            if let reason = reason {
+                if reason == String(localized: "status_ssl_transition") {
+                    self.statusLabel.backgroundColor = .systemOrange
+                    self.statusLabel.textColor = .white
+                    self.showSSLTransitionAlert()
+                    
+                } else if reason == String(localized: "status_no_internet") {
+                    self.statusLabel.backgroundColor = .systemGray
+                    self.statusLabel.textColor = .white
+                    self.updateUIForNoInternet()
+                    
+                } else if reason == String(localized: "status_stream_unavailable") {
+                    self.statusLabel.backgroundColor = .systemOrange
+                    self.statusLabel.textColor = .white
+                    if self.presentedViewController == nil {
+                        let alert = UIAlertController(
+                            title: String(localized: "stream_unavailable_title"),
+                            message: String(localized: "stream_unavailable_message"),
+                            preferredStyle: .alert
+                        )
+                        alert.addAction(UIAlertAction(title: String(localized: "alert_retry"), style: .default) { _ in
+                            self.hasPermanentPlaybackError = false
+                            self.startPlayback()
+                        })
+                        alert.addAction(UIAlertAction(title: String(localized: "ok"), style: .cancel, handler: nil))
+                        self.present(alert, animated: true)
+                    }
                 }
-            }()
-            
-            safeUpdateStatusLabel(
-                text: statusText,
-                backgroundColor: visualState.backgroundColor,
-                textColor: visualState.textColor,
-                isPermanentError: status == .security
-            )
-            
-            let showPauseIcon = status == .playing ||
-            (status == .paused && reason == "Interruption")
-            updatePlayPauseButton(isPlaying: showPauseIcon)
-            
-            // Optional but VERY nice — button tint now follows the state too
-            // playPauseButton.tintColor = visualState.buttonTintColor
+            }
             
             // Update flag
             if status == .playing {
