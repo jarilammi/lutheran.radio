@@ -576,8 +576,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                !hasPermanentError
     }
     
-    #if DEBUG
     var player: AVPlayer?
+    #if DEBUG
     var playerItem: AVPlayerItem?
     var metadataOutput: AVPlayerItemMetadataOutput?
     // Audio processing at highest priority
@@ -590,7 +590,6 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     // Keep playbackQueue for compatibility, but redirect to audioQueue
     let playbackQueue = DispatchQueue(label: "radio.lutheran.playback", qos: .userInteractive)
     #else
-    private var player: AVPlayer?
     private var playerItem: AVPlayerItem?
     private var metadataOutput: AVPlayerItemMetadataOutput?
     // Audio processing at highest priority
