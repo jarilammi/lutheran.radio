@@ -10,12 +10,12 @@ import XCTest
 
 /// Protocol that our mock will implement to match DirectStreamingPlayer interface
 protocol StreamingPlayerProtocol {
-    func play(completion: @escaping (Bool) -> Void)
-    func stop(completion: (() -> Void)?)
+    func play(completion: @escaping @Sendable (Bool) -> Void)
+    func stop(completion: (@Sendable () -> Void)?)
     func setStream(to stream: DirectStreamingPlayer.Stream)
     func setVolume(_ volume: Float)
     func setDelegate(_ delegate: AnyObject?)
-    func validateSecurityModelAsync(completion: @escaping (Bool) -> Void)
+    func validateSecurityModelAsync(completion: @escaping @Sendable (Bool) -> Void)
     func resetTransientErrors()
     func isLastErrorPermanent() -> Bool
     func clearCallbacks()
@@ -68,7 +68,7 @@ final class MockStreamingPlayer: StreamingPlayerProtocol, @unchecked Sendable {
         selectedStream = DirectStreamingPlayer.availableStreams[0]
     }
     
-    func play(completion: @escaping (Bool) -> Void) {
+    func play(completion: @escaping @Sendable (Bool) -> Void) {
         playCalled = true
         let success = _shouldSimulateSuccess.value
         
@@ -78,8 +78,8 @@ final class MockStreamingPlayer: StreamingPlayerProtocol, @unchecked Sendable {
             completion(success)
         }
     }
-    
-    func stop(completion: (() -> Void)? = nil) {
+
+    func stop(completion: (@Sendable () -> Void)? = nil) {
         stopCalled = true
         DispatchQueue.main.async {
             self.onStatusChange?(false, "Stopped")
@@ -100,7 +100,7 @@ final class MockStreamingPlayer: StreamingPlayerProtocol, @unchecked Sendable {
         // Mock implementation
     }
     
-    func validateSecurityModelAsync(completion: @escaping (Bool) -> Void) {
+    func validateSecurityModelAsync(completion: @escaping @Sendable (Bool) -> Void) {
         DispatchQueue.main.async {
             completion(true)
         }
@@ -294,43 +294,32 @@ final class Lutheran_RadioTests: XCTestCase {
         try super.tearDownWithError()
     }
     
-    func testPlayPauseButtonTogglesPlaybackState() {
+    @MainActor
+    func testPlayPauseButtonTogglesPlaybackState() async {
         // Setup
         mockPlayer.reset()
         mockPlayer.simulateSuccessfulPlayback()
         
-        // Test playing
-        let playExpectation = XCTestExpectation(description: "Play should complete successfully")
-        
         XCTAssertFalse(testViewController.isPlaying, "Should start in non-playing state")
         
+        // Test playing
         testViewController.playPauseTapped()
         
-        // Wait for async completion
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-            guard let strongSelf = self else {
-                XCTFail("Self was deallocated")
-                return
-            }
-            
-            XCTAssertTrue(strongSelf.mockPlayer.playCalled, "Play should have been called")
-            XCTAssertTrue(strongSelf.testViewController.isPlaying, "Should be in playing state after successful playback")
-            
-            // Now test pausing
-            strongSelf.mockPlayer.reset()
-            
-            strongSelf.testViewController.playPauseTapped() // This should pause since we're currently playing
-            
-            // Wait for stop to complete
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                XCTAssertTrue(strongSelf.mockPlayer.stopCalled, "Stop should have been called")
-                XCTAssertFalse(strongSelf.testViewController.isPlaying, "Should not be in playing state after pause")
-                
-                playExpectation.fulfill()
-            }
-        }
+        // Wait for async playback to complete (replaces the old asyncAfter + expectation)
+        try? await Task.sleep(for: .milliseconds(250))
         
-        wait(for: [playExpectation], timeout: 2.0)
+        XCTAssertTrue(mockPlayer.playCalled, "Play should have been called")
+        XCTAssertTrue(testViewController.isPlaying, "Should be in playing state after successful playback")
+        
+        // Now test pausing
+        mockPlayer.reset()
+        testViewController.playPauseTapped()
+        
+        // Wait for stop to complete
+        try? await Task.sleep(for: .milliseconds(250))
+        
+        XCTAssertTrue(mockPlayer.stopCalled, "Stop should have been called")
+        XCTAssertFalse(testViewController.isPlaying, "Should not be in playing state after pause")
     }
     
     func testVolumeSliderChangesVolume() {
