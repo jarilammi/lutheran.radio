@@ -574,7 +574,7 @@ class MockLoadingRequest: LoadingRequestProtocol {
 }
 
 /// Debug version with extensive logging
-class TestableStreamingSessionDelegate: NSObject, URLSessionDataDelegate, SessionDelegateProtocol {
+final class TestableStreamingSessionDelegate: NSObject, URLSessionDataDelegate, SessionDelegateProtocol {
     var session: URLSession?
     var dataTask: URLSessionDataTask?
     var onError: ((Error) -> Void)?
@@ -709,7 +709,7 @@ private class SimpleResourceLoaderDelegate: NSObject, AVAssetResourceLoaderDeleg
 }
 
 /// Mock authentication challenge sender
-class MockURLAuthenticationChallengeSender: NSObject, URLAuthenticationChallengeSender {
+final class MockURLAuthenticationChallengeSender: NSObject, URLAuthenticationChallengeSender {
     func use(_ credential: URLCredential, for challenge: URLAuthenticationChallenge) {
         // Mock implementation
     }
