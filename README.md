@@ -50,7 +50,7 @@ This ensures every single change respects the same non-negotiable security model
 
 ### Prerequisites
  - Xcode 26+ (Swift 6)
- - iOS 26.4 simulator
+ - iOS 26.5 simulator
 
 To ensure a smooth development experience, follow these steps before contributing:
 
@@ -58,6 +58,9 @@ To ensure a smooth development experience, follow these steps before contributin
    Ensure the output includes: **```** BUILD SUCCEEDED **```**
 
 2. **Run Test Suite:** Validate the test suite passes with: ```xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.5 -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17' clean test```
+   Check that the output includes: **```** TEST SUCCEEDED **```**
+
+3. **Run Core Module Tests Only (Fast Path):** When working on security, networking, or the Core framework, use this much faster command: ```xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.5 -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17' clean test -testPlan Core```
    Check that the output includes: **```** TEST SUCCEEDED **```**
 
 By verifying these steps on your local machine, you'll help maintain a consistent development environment for the project.
@@ -281,7 +284,7 @@ To avoid naming collisions, each security model name should be unique and not ma
 | `atlanta`           | October 6, 2025    | April 18, 2026     | 26.0.1                 |
 | `birmingham`        | November 9, 2025   | April 18, 2026     | 26.0.2                 |
 | `houston`           | March 3, 2026      | (ongoing)          | 26.3.0                 |
-| `starbase`          | (pending)          | (pending)          | (pending)              |
+| `starbase`          | May 19, 2026       | (ongoing)          | 26.5.0                 |
 
 **Notes:**
 - **Valid From:** The date when the security model was first published to the App Store.

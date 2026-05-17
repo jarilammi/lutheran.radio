@@ -80,10 +80,12 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
     
     /// Convenience initializer for **tests only**.
     /// Allows injecting a mock `currentDate` to test transition window logic and time-skew detection.
+    #if DEBUG
     public init(currentDate: @escaping @Sendable () -> Date = { Date() }) {
         self.currentDate = currentDate
         super.init()
     }
+    #endif
     
     /// Injectable closure for the current date, used for testing time-dependent logic (e.g., transition periods).
     ///
