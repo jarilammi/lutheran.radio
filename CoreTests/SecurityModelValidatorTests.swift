@@ -12,12 +12,19 @@ import Foundation
 @Suite("SecurityModelValidator Tests")
 struct SecurityModelValidatorTests {
     
+    // MARK: - Helper (runs when you call it)
+    private func resetValidator() async {
+        await SecurityModelValidator.shared.resetTransientState()
+    }
+    
     // ------------------------------------------------------------------------
     // Smoke test: can we even create and call the public validation method?
     // (If initializer is inaccessible → this will fail compilation → needs access fix)
     // ------------------------------------------------------------------------
     @Test("Validation runs without crashing (real DNS)")
     func validationRuns() async {
+        await resetValidator()
+        
         let validator = SecurityModelValidator.shared
         
         let isValid = await validator.validateSecurityModel()
@@ -30,15 +37,33 @@ struct SecurityModelValidatorTests {
     // ------------------------------------------------------------------------
     @Test("State transitions after validation call")
     func stateAfterValidation() async {
+        await resetValidator()                    // ensure clean starting point
+        
         let validator = SecurityModelValidator.shared
         
         let initialState = await validator.currentState
-        #expect(initialState == .pending)  // assume .pending is public enum case
+        // We cannot guarantee .pending because the singleton may already be successful
+        #expect(
+            initialState == .pending || initialState == .success,
+            "Should start as .pending or already be successfully validated (singleton)"
+        )
         
-        _ = await validator.validateSecurityModel()  // trigger real lookup
+        let isValid = await validator.validateSecurityModel()
         
         let finalState = await validator.currentState
-        #expect(finalState == .success || finalState == .failedPermanent || finalState == .failedTransient)
+        
+        #expect(
+            finalState == .success ||
+            finalState == .failedPermanent ||
+            finalState == .failedTransient,
+            "After validation we must be in a terminal state"
+        )
+        
+        if isValid {
+            #expect(finalState == .success)
+        } else {
+            #expect(finalState == .failedPermanent || finalState == .failedTransient)
+        }
     }
     
     // ------------------------------------------------------------------------
@@ -46,6 +71,8 @@ struct SecurityModelValidatorTests {
     // ------------------------------------------------------------------------
     @Test("Reset transient state")
     func resetTransient() async {
+        await resetValidator()
+        
         let validator = SecurityModelValidator.shared
         
         // Call validation first (may set transient failure if DNS bad)
@@ -69,6 +96,8 @@ struct SecurityModelValidatorTests {
     // ------------------------------------------------------------------------
     @Test("Permanent invalid flag")
     func permanentFlag() async {
+        await resetValidator()
+        
         let validator = SecurityModelValidator.shared
         
         _ = await validator.validateSecurityModel()
