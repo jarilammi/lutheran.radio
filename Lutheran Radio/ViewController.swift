@@ -1210,21 +1210,23 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     private func setupBackgroundAudioControls() {
         let commandCenter = MPRemoteCommandCenter.shared()
-        [commandCenter.playCommand, commandCenter.pauseCommand, commandCenter.togglePlayPauseCommand, commandCenter.stopCommand].forEach { $0.removeTarget(nil) }
+        [commandCenter.playCommand, commandCenter.pauseCommand, commandCenter.togglePlayPauseCommand, commandCenter.stopCommand].forEach { $0?.removeTarget(nil) }
         
-        // Play / Resume from lockscreen / Control Center
+        // Play from lockscreen / Control Center
         commandCenter.playCommand.isEnabled = true
         commandCenter.playCommand.addTarget { [weak self] _ -> MPRemoteCommandHandlerStatus in
-            guard let self = self else { return .commandFailed }
-            
+            guard let self else { return .commandFailed }
             #if DEBUG
-            print("📱 playCommand: lockscreen Play tapped → forcing resume")
+            print("playCommand: lockscreen/Control Center Play tapped → userRequestedPlay")
             #endif
-            
             Task { @MainActor in
-                // This is the key: explicitly allow resume when user taps Play on lockscreen
-                await SharedPlayerManager.shared.resetToPrePlayForNewStream()
-                self.startPlayback()
+                await SharedPlayerManager.shared.userRequestedPlay()
+                
+                // Refresh UI + Now Playing exactly like togglePlayback does
+                let newState = await SharedPlayerManager.shared.currentVisualState
+                self.updateUI(for: newState)
+                self.updateNowPlayingInfo()
+                self.saveStateForWidget()
             }
             return .success
         }
@@ -1232,27 +1234,84 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         // Pause from lockscreen / Control Center
         commandCenter.pauseCommand.isEnabled = true
         commandCenter.pauseCommand.addTarget { [weak self] _ -> MPRemoteCommandHandlerStatus in
-            guard let self = self else { return .commandFailed }
-            DispatchQueue.main.async { self.pausePlayback() }
-            return .success
-        }
-        
-        // Toggle (most common on Control Center)
-        commandCenter.togglePlayPauseCommand.isEnabled = true
-        commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ -> MPRemoteCommandHandlerStatus in
-            guard let self = self else { return .commandFailed }
-            DispatchQueue.main.async {
-                if self.isPlaying {
-                    self.pausePlayback()
-                } else {
-                    Task { @MainActor in
-                        await SharedPlayerManager.shared.resetToPrePlayForNewStream()
-                        self.startPlayback()
-                    }
-                }
+            guard let self else { return .commandFailed }
+            #if DEBUG
+            print("pauseCommand: lockscreen/Control Center Pause tapped")
+            #endif
+            Task { @MainActor in
+                await SharedPlayerManager.shared.stop()
+                let newState = await SharedPlayerManager.shared.currentVisualState
+                self.updateUI(for: newState)
+                self.updateNowPlayingInfo()
+                self.saveStateForWidget()
             }
             return .success
         }
+        
+        // Toggle (most common on Control Center, CarPlay, etc.)
+        commandCenter.togglePlayPauseCommand.isEnabled = true
+        commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ -> MPRemoteCommandHandlerStatus in
+            guard let self else { return .commandFailed }
+            #if DEBUG
+            print("togglePlayPauseCommand: received → using same logic as in-app toggle")
+            #endif
+            Task { @MainActor in
+                let manager = SharedPlayerManager.shared
+                let currentVisualState = await manager.currentVisualState
+                let sharedState = await manager.loadSharedState()
+                
+                if currentVisualState.isActivelyPlaying || sharedState.isPlaying {
+                    await manager.stop()
+                } else {
+                    await manager.userRequestedPlay()
+                }
+                
+                let newState = await manager.currentVisualState
+                self.updateUI(for: newState)
+                self.updateNowPlayingInfo()
+                self.saveStateForWidget()
+            }
+            return .success
+        }
+        
+        // Stop (kept for completeness)
+        commandCenter.stopCommand.isEnabled = true
+        commandCenter.stopCommand.addTarget { [weak self] _ -> MPRemoteCommandHandlerStatus in
+            guard let self else { return .commandFailed }
+            Task { @MainActor in
+                await SharedPlayerManager.shared.stop()
+                let newState = await SharedPlayerManager.shared.currentVisualState
+                self.updateUI(for: newState)
+                self.updateNowPlayingInfo()
+                self.saveStateForWidget()
+            }
+            return .success
+        }
+    }
+    
+    // MARK: - User-Initiated Playback (single source of truth)
+    // All in-app buttons, lockscreen, Control Center, handleTogglePlayback(), widgets, etc. now go through here.
+    // This guarantees perfect sync with PlayerVisualState after the recent refactor.
+    @MainActor
+    private func handleUserTogglePlayback() async {
+        let manager = SharedPlayerManager.shared
+        let visualState = await manager.currentVisualState
+        
+        if visualState.isActivelyPlaying {
+            // User wants to pause
+            await manager.stop()
+            self.isPlaying = false
+        } else {
+            // User explicitly wants to play → bypass resurrection protection
+            await manager.userRequestedPlay()
+            self.isPlaying = true
+        }
+        
+        // Refresh everything
+        let newState = await manager.currentVisualState
+        self.updateUI(for: newState)
+        self.updateNowPlayingInfo()
+        self.saveStateForWidget()
     }
     
     private func updateNowPlayingInfo(title: String? = nil) {

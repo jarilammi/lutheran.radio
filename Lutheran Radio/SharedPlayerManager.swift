@@ -198,6 +198,25 @@ actor SharedPlayerManager {
         #endif
     }
     
+    // MARK: - Explicit User Play
+    /// Called whenever the *user* explicitly taps Play (in-app button, lockscreen, Control Center, widgets, CarPlay…).
+    /// This **exactly** mirrors the PLAY branch in `togglePlayback()` so there is zero behavioral difference.
+    func userRequestedPlay() async {
+        #if DEBUG
+        print("SharedPlayerManager.userRequestedPlay() — setUserIntentToPlay + play() for explicit user intent")
+        #endif
+        
+        await setUserIntentToPlay()
+        
+        do {
+            try await play()
+        } catch {
+            #if DEBUG
+            print("❌ userRequestedPlay failed: \(error)")
+            #endif
+        }
+    }
+    
     /// Explicitly records that the user performed a manual pause or stop.
     /// This locks .userPaused so resurrection paths are blocked.
     func markAsUserPaused() async {
