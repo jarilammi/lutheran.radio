@@ -157,6 +157,15 @@ actor SharedPlayerManager {
         // No saveCurrentState() here — observer will handle it
     }
     
+    func setSecurityLocked() async {
+        self.currentVisualState = .securityLocked
+        await self.saveCurrentState()
+        
+        #if DEBUG
+        print("✅ Security lock applied from server 403 response")
+        #endif
+    }
+    
     // MARK: - Resurrection (still respects SSOT)
 
     /// Safe resurrection entry point used by DirectStreamingPlayer recovery logic.

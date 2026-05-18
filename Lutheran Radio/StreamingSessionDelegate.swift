@@ -120,6 +120,26 @@ final class StreamingSessionDelegate: NSObject, URLSessionDataDelegate, URLSessi
             return
         }
         let statusCode = httpResponse.statusCode
+        
+        // 🔥 SERVER-SIDE SECURITY LOCK: Permanent failure when server returns 403 on ?security_model=
+        if statusCode == 403,
+           let requestURL = self.loadingRequest.request.url,
+           requestURL.query?.contains("security_model=") == true {
+
+            #if DEBUG
+            print("🔒 Server returned 403 on security_model= URL → PERMANENT security failure")
+            #endif
+
+            Task { @MainActor in
+                await SharedPlayerManager.shared.setSecurityLocked()
+            }
+
+            // Cleanly abort this loading request (same behaviour as other 4xx/5xx)
+            loadingRequest.finishLoading(with: URLError(.badServerResponse))
+            completionHandler(.cancel)
+            return
+        }
+        
         if (400...599).contains(statusCode) {
             let error: URLError.Code = statusCode == 404 ? .fileDoesNotExist : .badServerResponse
             onError?(URLError(error))
