@@ -1315,40 +1315,49 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     }
     
     private func updateNowPlayingInfo(title: String? = nil) {
-        // Suppress during language/stream switches to avoid vivid placeholder spam
-        if let lastSwitch = lastStreamSwitchTime, Date().timeIntervalSince(lastSwitch) < 5.0 {
-            #if DEBUG
-            print("🔇 Skipping nowPlayingInfo update – stream switch in progress")
-            #endif
-            return
-        }
+        #if DEBUG
+        print("🔄 updateNowPlayingInfo called with title: \(title ?? "nil") | thread: \(Thread.isMainThread ? "main" : "background")")
+        #endif
         
+        // === LIVE ICY METADATA ALWAYS WINS ===
+        let liveMetadata = DirectStreamingPlayer.shared.currentMetadata
+        let finalTitle = liveMetadata ?? (title ?? "Lutheran Radio")
+        
+        #if DEBUG
+        if let liveMetadata {
+            print("📻 ✅ Using LIVE ICY metadata: \(liveMetadata)")
+        }
+        print("🔄 updateNowPlayingInfo called with finalTitle: \(finalTitle) | thread: \(Thread.isMainThread ? "main" : "background")")
+        #endif
+
         var info: [String: Any] = [
-            MPMediaItemPropertyTitle: title ?? "Lutheran Radio",
+            MPMediaItemPropertyTitle: finalTitle,
             MPMediaItemPropertyArtist: "Lutheran Radio",
             MPNowPlayingInfoPropertyIsLiveStream: true,
             MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
             MPMediaItemPropertyMediaType: MPMediaType.anyAudio.rawValue
         ]
         
-        // Load image thread-safely (using bundle path to avoid UI assumptions)
+        // (Bundle path + contentsOfFile was used deliberately for thread-safety)
         if let imagePath = Bundle.main.path(forResource: "radio-placeholder", ofType: nil),
            let image = UIImage(contentsOfFile: imagePath) {
-            let artwork = MPMediaItemArtwork(boundsSize: image.size) { size in
-                // This closure may run on background; resize if needed (example)
-                UIGraphicsBeginImageContextWithOptions(size, false, 0.0)
-                image.draw(in: CGRect(origin: .zero, size: size))
-                let resizedImage = UIGraphicsGetImageFromCurrentImageContext()
-                UIGraphicsEndImageContext()
-                return resizedImage ?? image
-            }
+            let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
             info[MPMediaItemPropertyArtwork] = artwork
+            
+            #if DEBUG
+            print("✅ Speaker logo loaded successfully (bundle path + minimal closure)")
+            #endif
         } else {
             print("🔴 Failed to load placeholder image")
         }
         
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-        print("🔄 Updated nowPlayingInfo on thread: \(Thread.isMainThread ? "main" : "background")")
+        // Always update on main thread (safe + matches modern best practice)
+        DispatchQueue.main.async {
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+            #if DEBUG
+            print("🔄 Updated nowPlayingInfo on main thread [final title: \(finalTitle)]")
+            #endif
+        }
     }
     
     private func updateUIForNoInternet() {
@@ -3056,7 +3065,8 @@ extension ViewController {
             print("🔥 togglePlayback() called → currentVisualState = \(currentVisualState), shared.isPlaying = \(sharedState.isPlaying)")
             #endif
             
-            if currentVisualState.isActivelyPlaying || sharedState.isPlaying {
+            // MINIMAL CHANGE: respect visualState first (fixes desync where visual = .userPaused but shared.isPlaying = true)
+            if currentVisualState.isActivelyPlaying {
                 // === PAUSE PATH ===
                 #if DEBUG
                 print("🔥 → PAUSE path")
