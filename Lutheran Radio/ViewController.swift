@@ -772,7 +772,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     private func setupStreamingCallbacks() {
         streamingPlayer.onMetadataChange = { [weak self] metadata in
-            guard let self = self else {
+            guard let self else {
                 #if DEBUG
                 print("📱 onMetadataChange: ViewController is nil, skipping callback")
                 #endif
@@ -780,7 +780,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             }
             
             // Process metadata on background (regex is cheap and thread-safe)
-            var potentialNames: [String]? = nil
+            var potentialNames: [String] = []
             if let metadata = metadata {
                 do {
                     let regex = try NSRegularExpression(pattern: "\\b[A-Z][a-z]+(?:\\s[A-Z][a-z]+)*\\b")
@@ -802,27 +802,31 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                     self.updateNowPlayingInfo(title: metadata)
                     
                     let specificSpeakers = Set(["Jari Lammi"])
-                    let matchedSpeaker = potentialNames?.first(where: { specificSpeakers.contains($0) })
+                    let matchedSpeaker = potentialNames.first(where: { specificSpeakers.contains($0) })
                     
                     if let speaker = matchedSpeaker,
-                       let imagePath = Bundle.main.path(forResource: speaker.lowercased().replacingOccurrences(of: " ", with: "_") + "_photo", ofType: "png"),
-                       let image = UIImage(contentsOfFile: imagePath) {
+                       let speakerImage = UIImage(named: "\(speaker.lowercased().replacingOccurrences(of: " ", with: "_"))_photo") {
+                        
+                        // Photo of the speaker
                         UIView.transition(with: self.speakerImageView, duration: 0.3, options: .transitionCrossDissolve, animations: {
-                            self.speakerImageView.image = image
+                            self.speakerImageView.image = speakerImage
                             self.speakerImageView.isHidden = false
                             self.speakerImageHeightConstraint.constant = 100
                             self.speakerImageView.accessibilityLabel = "Photo of \(speaker)"
                         }, completion: nil)
-                    } else if potentialNames?.contains("Lutheran Radio") == true,
-                              let imagePath = Bundle.main.path(forResource: "radio-placeholder", ofType: "png"),
-                              let image = UIImage(contentsOfFile: imagePath) {
+                        
+                    } else if let placeholderImage = UIImage(named: "radio-placeholder") {
+                        // DEFAULT: always show station logo for everything else
                         UIView.transition(with: self.speakerImageView, duration: 0.3, options: .transitionCrossDissolve, animations: {
-                            self.speakerImageView.image = image
+                            self.speakerImageView.image = placeholderImage
                             self.speakerImageView.isHidden = false
                             self.speakerImageHeightConstraint.constant = 100
                             self.speakerImageView.accessibilityLabel = "Lutheran Radio Logo"
                         }, completion: nil)
                     } else {
+                        #if DEBUG
+                        print("🔴 Still failed to load radio-placeholder from Assets.xcassets")
+                        #endif
                         self.speakerImageView.isHidden = true
                     }
                 } else {
