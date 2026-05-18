@@ -375,6 +375,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     private let minPlaybackInterval: TimeInterval = 1.0 // 1 second
     private var isDeallocating = false // Flag to prevent operations during deallocation
     private var hasPlayedSpecialTuningSound = false // Flag to ensure special sound plays only once
+    private var hasShownSecurityAlert = false // Flag to ensure security alert is shown only once
     
     // Testable accessors
     @objc var isPlayingState: Bool {
@@ -1388,10 +1389,23 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     /// Starts audio playback with network checks and security validation.
     /// - Note: Debounces rapid calls and handles retries on transient errors.
     private func startPlayback() {
+        Task { @MainActor in
+            // 🔥 NEW: Special handling for permanent security lock
+            // This makes sure the alert appears even after SharedPlayerManager
+            // has already set .securityLocked
+            let currentState = await SharedPlayerManager.shared.currentVisualState
+            if currentState == .securityLocked {
+                #if DEBUG
+                print("🔒 startPlayback() detected existing .securityLocked — showing alert")
+                #endif
+                self.updateUI(for: .securityLocked)
+                self.showSecurityModelAlert()
+                return
+            }
+            
         // === CRITICAL GUARD: Respect explicit user pause intent ===
         // This prevents resurrection from tuning sound completion, language switches,
         // and any other call site that routes through startPlayback()
-        Task { @MainActor in
             guard await streamingPlayer.shouldAutoPlayOrResume else {
                 #if DEBUG
                 print("🚫 [StartPlayback Guard] Blocked resurrection — currentVisualState is .userPaused")
@@ -1606,6 +1620,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     @MainActor
     private func updateUI(for visualState: PlayerVisualState) {
+        
         // Text
         switch visualState {
         case .playing:
@@ -1613,23 +1628,30 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         case .userPaused:
             statusLabel.text = String(localized: "status_paused")
         case .prePlay:
-            statusLabel.text = String(localized: "status_connecting")  // or "" / "Ready to play"
+            statusLabel.text = String(localized: "status_connecting")
         case .securityLocked:
             statusLabel.text = String(localized: "status_security_failed")
+            
+            // 🔥 Alert lives here — most convenient place
+            if !hasShownSecurityAlert {
+                hasShownSecurityAlert = true
+                showSecurityModelAlert()
+            }
         }
         
         // Colors from the enum (this is now the only source of truth)
         statusLabel.backgroundColor = visualState.backgroundColor
         statusLabel.textColor = visualState.textColor
         
-        // Button image + tint (critical for grey userPaused look)
+        // Button image
         let config = UIImage.SymbolConfiguration(pointSize: 24, weight: .bold)
         let imageName = visualState.isActivelyPlaying ? "pause.fill" : "play.fill"
         playPauseButton.setImage(UIImage(systemName: imageName, withConfiguration: config), for: .normal)
+        
         // Optional but VERY nice — button tint now follows the state too
         // playPauseButton.tintColor = visualState.buttonTintColor
         
-        // Optional: accessibility
+        // Accessibility
         statusLabel.accessibilityLabel = statusLabel.text
         
         #if DEBUG
