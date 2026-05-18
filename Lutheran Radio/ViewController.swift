@@ -311,7 +311,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     private var processedImageCache = NSCache<NSString, UIImage>()
     private let cacheQueue = DispatchQueue(label: "radio.lutheran.imageCache", qos: .utility)
     
-    private var backgroundConstraints: [NSLayoutConstraint] = []
     private var selectedStreamIndex: Int = 0
     private var isRotating = false
     private var lastRotationTime: Date? // To debounce rapid rotations
@@ -1895,13 +1894,13 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     private func setupUI() {
         view.addSubview(backgroundImageView)
-        backgroundConstraints = [
+        // ✅ Modern + cleaner: activate directly, no unnecessary stored array
+        NSLayoutConstraint.activate([
             backgroundImageView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: -20),
             backgroundImageView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: 20),
             backgroundImageView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: -20),
             backgroundImageView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: 20)
-        ]
-        NSLayoutConstraint.activate(backgroundConstraints)
+        ])
         backgroundImageView.layer.zPosition = -1
         
         view.addSubview(titleLabel)
