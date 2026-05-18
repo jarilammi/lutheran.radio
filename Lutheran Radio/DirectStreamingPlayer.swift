@@ -2519,21 +2519,32 @@ extension Sequence where Element: Hashable {
 // MARK: - Metadata Handling
 extension DirectStreamingPlayer: AVPlayerItemMetadataOutputPushDelegate {
     func metadataOutput(_ output: AVPlayerItemMetadataOutput,
-                       didOutputTimedMetadataGroups groups: [AVTimedMetadataGroup],
-                       from track: AVPlayerItemTrack?) {
+                        didOutputTimedMetadataGroups groups: [AVTimedMetadataGroup],
+                        from track: AVPlayerItemTrack?) {
         guard delegate != nil else { return }
         
-        guard let item = groups.first?.items.first,
-              let value = item.value(forKeyPath: "stringValue") as? String,
-              !value.isEmpty else { return }
+        guard let item = groups.first?.items.first else { return }
         
-        let streamTitle = (item.identifier == AVMetadataIdentifier("icy/StreamTitle") ||
-                       (item.key as? String) == "StreamTitle") ? value : nil
+        let value = item.stringValue ?? (item.value(forKeyPath: "stringValue") as? String)
+        guard let title = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !title.isEmpty else { return }
+        
+        // More robust ICY StreamTitle detection
+        let isStreamTitle = (item.identifier?.rawValue.localizedCaseInsensitiveContains("streamtitle") == true) ||
+        (item.identifier?.rawValue == "icy/StreamTitle") ||
+        (item.key as? String) == "StreamTitle"
+        
+        let streamTitle = isStreamTitle ? title : nil
         
         // Store metadata locally for Live Activities
         self.currentMetadata = streamTitle
-        
         safeOnMetadataChange(metadata: streamTitle)
+        
+        #if DEBUG
+        if let streamTitle {
+            print("📻 ✅ Using LIVE ICY metadata: \(streamTitle)")
+        }
+        #endif
     }
 }
 
