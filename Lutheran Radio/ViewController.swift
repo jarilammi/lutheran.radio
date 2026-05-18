@@ -3078,6 +3078,9 @@ extension ViewController {
                 print("🔥 → PLAY / RESUME path")
                 #endif
                 
+                // MINIMAL CHANGE: immediately mark as .prePlay so UI shows "Connecting..." instantly
+                self.updateUI(for: .prePlay)
+                
                 await manager.setUserIntentToPlay()
                 self.playHapticFeedback(style: .heavy)
                 
