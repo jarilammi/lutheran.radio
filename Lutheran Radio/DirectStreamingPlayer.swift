@@ -1452,6 +1452,17 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 await SharedPlayerManager.shared.saveCurrentState()
             }
         }
+        
+        // === METADATA OUTPUT FOR ICY STREAMTITLE ===
+        if let currentItem = player?.currentItem {
+            let metadataOutput = AVPlayerItemMetadataOutput(identifiers: nil)
+            metadataOutput.setDelegate(self, queue: DispatchQueue.main)
+            currentItem.add(metadataOutput)
+            
+            #if DEBUG
+            print("📻 [DirectStreamingPlayer] Attached AVPlayerItemMetadataOutput for ICY metadata")
+            #endif
+        }
     }
 
     // MARK: - Stream Switching (the simpler fallback)
