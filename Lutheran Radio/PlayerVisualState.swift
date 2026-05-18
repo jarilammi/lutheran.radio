@@ -21,7 +21,7 @@ enum PlayerVisualState: Codable, Equatable {
     case prePlay        // Initial load / connecting / never played yet → yellow, should auto-play
     case playing        // Actively playing → green
     case userPaused     // Explicit user pause/stop → grey, NEVER auto-resume
-    case error          // Security failure → red
+    case securityLocked // Security failure → red
     
     // MARK: - Visual properties
     
@@ -30,7 +30,7 @@ enum PlayerVisualState: Codable, Equatable {
         case .prePlay:     return .systemYellow
         case .playing:     return .systemGreen
         case .userPaused:  return .systemGray
-        case .error:       return .systemRed
+        case .securityLocked:       return .systemRed
         }
     }
     
@@ -38,7 +38,7 @@ enum PlayerVisualState: Codable, Equatable {
         switch self {
         case .prePlay, .userPaused, .playing:
             return .label          // best readability on yellow / gray / green
-        case .error:
+        case .securityLocked:
             return .white          // white on red/error background is standard
         }
     }
@@ -48,7 +48,7 @@ enum PlayerVisualState: Codable, Equatable {
         case .prePlay:     return .systemYellow
         case .playing:     return .systemGreen
         case .userPaused:  return .secondaryLabel
-        case .error:       return .systemRed
+        case .securityLocked:       return .systemRed
         }
     }
     
@@ -66,7 +66,7 @@ enum PlayerVisualState: Codable, Equatable {
         switch self {
         case .prePlay, .playing:
             return true
-        case .userPaused, .error:
+        case .userPaused, .securityLocked:
             return false
         }
     }
@@ -74,7 +74,7 @@ enum PlayerVisualState: Codable, Equatable {
     // NEW: Explicit resurrection block – call this whenever the system wants to resume
     /// Returns true if we must force a pause because the user explicitly paused earlier.
     var mustSuppressResurrection: Bool {
-        self == .userPaused || self == .error
+        self == .userPaused || self == .securityLocked
     }
 }
 
@@ -112,7 +112,7 @@ extension PlayerVisualState {
             return hasEverPlayed ? .userPaused : .prePlay
             
         case .security:
-            return .error
+            return .securityLocked
             
         case .paused, .stopped:
             // 🔥 CRITICAL CHANGE:

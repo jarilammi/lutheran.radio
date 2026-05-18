@@ -658,7 +658,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 #endif
                 self.updateSelectionIndicator(to: self.selectedStreamIndex, isInitial: false)
                 
-            case .userPaused, .error:
+            case .userPaused, .securityLocked:
                 #if DEBUG
                 print("🔥 ViewController.viewDidAppear → \(visualState) → SKIPPING auto-play (resurrection prevented)")
                 #endif
@@ -1614,7 +1614,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             statusLabel.text = String(localized: "status_paused")
         case .prePlay:
             statusLabel.text = String(localized: "status_connecting")  // or "" / "Ready to play"
-        case .error:
+        case .securityLocked:
             statusLabel.text = String(localized: "status_security_failed")
         }
         
