@@ -161,7 +161,7 @@ The app performs security model validation to confirm that the version in use ma
 1. **Primary domain:** `securitymodels.lutheran.radio`
    **Backup domain:** `securitymodels.lutheranradio.sk` (smart fallback)
 2. **Mechanism:** Queries DNS TXT records from the ordered list of domains. On success (expected model present), caches result for 1 hour. Permanent failure aborts immediately; transient errors trigger fallback to the backup domain only.
-3. **Pinned Value:** Defined in `Core/Configuration/SecurityConfiguration.swift` as `expectedSecurityModel` (currently `"starbase"`)
+3. **Pinned Value:** Defined in `Core/Configuration/SecurityConfiguration.swift` as `expectedSecurityModel` (currently `"fredericksburg"`)
 4. **Location:** Enforced by the actor `Core/Actors/SecurityModelValidator.swift` (single source of truth for validation)
 5. **Behavior:** If the app’s security model isn’t in the TXT record, playback is permanently disabled with a user-facing error message
 
@@ -175,7 +175,7 @@ The `lutheran.radio` zone, including the `securitymodels` subdomain, is protecte
 
 When queried with the DO (DNSSEC OK) bit set (e.g. `dig +dnssec`), the response includes:
 - The TXT record containing the comma-separated list of valid models:
-  `"houston,starbase"`
+  `"houston,starbase,fredericksburg"`
 - An accompanying **RRSIG** signature.
 
 In the current observed responses, the **AD (Authenticated Data)** flag is **not** set (`;; flags: qr rd ra`), indicating that the recursive resolver did not perform (or did not assert) full DNSSEC validation when answering the query.
@@ -219,7 +219,7 @@ Example output:
 TXT 13 3 600 20260328052556 20260326032556 34505 lutheran.radio. CEZx+X3J947EaeiH/hevPZUJvaovpylfY9vLdMb75ohAW3MFuNg9RbnZ 5cjnVglSPo43UCk97UZwkQcREaNY0Q==
 ```
 
-Compare this output to the security model defined in the app (found in ```DirectStreamingPlayer.swift``` as ```appSecurityModel```). If the app’s model (e.g., "starbase") isn’t listed, it will fail validation. To update the list, modify the TXT record for ```securitymodels.lutheran.radio``` through the DNS management interface for the ```lutheran.radio``` domain.
+Compare this output to the security model defined in the app (found in ```DirectStreamingPlayer.swift``` as ```appSecurityModel```). If the app’s model (e.g., "fredericksburg") isn’t listed, it will fail validation. To update the list, modify the TXT record for ```securitymodels.lutheran.radio``` through the DNS management interface for the ```lutheran.radio``` domain.
 
 ### Security Model Validation Cache
 
@@ -258,13 +258,13 @@ This refactor:
 - Improves maintainability and testability
 - Enforces Swift 6 concurrency rules
 - Keeps identical runtime behavior and security guarantees
-- Does **not** change the current model ("starbase"), fingerprints, transition period, or any validation rules
+- Does **not** change the current model ("fredericksburg"), fingerprints, transition period, or any validation rules
 
 `DirectStreamingPlayer.swift` and `CertificateValidator.swift` now consume these shared components instead of duplicating logic.
 
 ### Security Model TXT Record Usage
 
-Lutheran Radio's security system uses a DNS TXT record to ensure only trusted app versions can stream content. The longest practical TXT record length for this purpose is about 450 bytes, which fits within standard DNS limits and supports up to 40-50 security model names (like "landvetter" or "nuuk"). This is more than enough for the current 17-byte record. If you need to use more names in the future, check that your DNS supports larger messages (EDNS0) and test the app to confirm it can handle them. Keep an eye on how your DNS behaves to ensure everything works smoothly, keeping the app secure and reliable for all users.
+Lutheran Radio's security system uses a DNS TXT record to ensure only trusted app versions can stream content. The longest practical TXT record length for this purpose is about 450 bytes, which fits within standard DNS limits and supports up to 40-50 security model names (like "landvetter" or "nuuk"). This is more than enough for the current 32-byte record. If you need to use more names in the future, check that your DNS supports larger messages (EDNS0) and test the app to confirm it can handle them. Keep an eye on how your DNS behaves to ensure everything works smoothly, keeping the app secure and reliable for all users.
 
 ### Security Model History
 
@@ -285,6 +285,7 @@ To avoid naming collisions, each security model name should be unique and not ma
 | `birmingham`        | November 9, 2025   | April 18, 2026     | 26.0.2                 |
 | `houston`           | March 3, 2026      | (ongoing)          | 26.3.0                 |
 | `starbase`          | May 18, 2026       | (ongoing)          | 26.5.0                 |
+| `fredericksburg`    | (pending)          | (pending)          | 26.5.1                 |
 
 **Notes:**
 - **Valid From:** The date when the security model was first published to the App Store.
@@ -302,7 +303,7 @@ When introducing a new security model:
 
 ### Why Track Security Model Names?
 
-Security model names (e.g., ```starbase```) are embedded in the app and validated against the DNS TXT record. Once a name is used, it becomes part of the app's history and may still exist in older versions. Reusing a name could allow an older version to pass validation in some cases. By maintaining this table, we ensure that:
+Security model names (e.g., ```fredericksburg```) are embedded in the app and validated against the DNS TXT record. Once a name is used, it becomes part of the app's history and may still exist in older versions. Reusing a name could allow an older version to pass validation in some cases. By maintaining this table, we ensure that:
 
 - New security model names are unique and avoid collisions with past names.
 - The history of security models is transparent for debugging and auditing.
