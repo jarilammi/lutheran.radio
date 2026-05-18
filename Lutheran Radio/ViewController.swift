@@ -1322,11 +1322,11 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         #if DEBUG
         print("🔄 updateNowPlayingInfo called with title: \(title ?? "nil") | thread: \(Thread.isMainThread ? "main" : "background")")
         #endif
-        
+
         // === LIVE ICY METADATA ALWAYS WINS ===
         let liveMetadata = DirectStreamingPlayer.shared.currentMetadata
         let finalTitle = liveMetadata ?? (title ?? "Lutheran Radio")
-        
+
         #if DEBUG
         if let liveMetadata {
             print("📻 ✅ Using LIVE ICY metadata: \(liveMetadata)")
@@ -1341,21 +1341,20 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
             MPMediaItemPropertyMediaType: MPMediaType.anyAudio.rawValue
         ]
-        
-        // (Bundle path + contentsOfFile was used deliberately for thread-safety)
-        if let imagePath = Bundle.main.path(forResource: "radio-placeholder", ofType: nil),
-           let image = UIImage(contentsOfFile: imagePath) {
-            let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+
+        // ✅ FIXED: Use asset catalog (thread-safe + supports light/dark variants)
+        if let artwork = Self.placeholderArtwork {
             info[MPMediaItemPropertyArtwork] = artwork
-            
             #if DEBUG
-            print("✅ Speaker logo loaded successfully (bundle path + minimal closure)")
+            print("✅ Speaker logo loaded successfully")
             #endif
         } else {
+            #if DEBUG
             print("🔴 Failed to load placeholder image")
+            #endif
         }
-        
-        // Always update on main thread (safe + matches modern best practice)
+
+        // Always update on main thread
         DispatchQueue.main.async {
             MPNowPlayingInfoCenter.default().nowPlayingInfo = info
             #if DEBUG
@@ -1363,6 +1362,17 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             #endif
         }
     }
+
+    // MARK: - Static placeholder (one-time creation, huge performance win)
+
+    private static let placeholderArtwork: MPMediaItemArtwork? = {
+        guard let image = UIImage(named: "radio-placeholder") else {
+            // This will only print once at app launch if something is still wrong
+            print("🔴 CRITICAL: Could not load radio-placeholder from Assets.xcassets")
+            return nil
+        }
+        return MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+    }()
     
     private func updateUIForNoInternet() {
         safeUpdateStatusLabel(
