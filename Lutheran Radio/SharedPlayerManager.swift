@@ -124,7 +124,20 @@ actor SharedPlayerManager {
         }
         #endif
         
-        guard isValid else { return }
+        guard isValid else {
+            #if DEBUG
+            print("🔒 Permanent security validation failure — locking UI to .securityLocked")
+            #endif
+            
+            // Direct mutation inside the actor (this is allowed and correct)
+            self.currentVisualState = .securityLocked
+            await self.saveCurrentState()
+            
+            #if DEBUG
+            print("✅ Security lock applied – currentVisualState is now .securityLocked")
+            #endif
+            return
+        }
 
         if isRunningInWidget() {
             handleWidgetPlay()

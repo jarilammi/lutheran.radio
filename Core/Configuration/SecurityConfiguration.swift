@@ -13,7 +13,7 @@ public struct SecurityConfiguration {
     
     /// The embedded security model this app build enforces.
     /// Must match one of the comma-separated values in the TXT record.
-    public let expectedSecurityModel: String = "starbase"
+    public let expectedSecurityModel: String = "fredericksburg"
     
     /// Primary domain queried for TXT record containing valid models (comma-separated).
     let primarySecurityModelDomain: String = "securitymodels.lutheran.radio"

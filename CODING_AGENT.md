@@ -20,7 +20,7 @@ It is live on the App Store: https://apps.apple.com/fi/app/lutheran-radio/id6738
 ## Non-Negotiable Rules (Violating any = immediate rejection)
 
 1. **Security Model**
-   - Current `expectedSecurityModel = "starbase"` (Core/Configuration/SecurityConfiguration.swift)
+   - Current `expectedSecurityModel = "fredericksburg"` (Core/Configuration/SecurityConfiguration.swift)
    - Do not change, remove, or comment out DNS TXT validation against `securitymodels.lutheran.radio`
    - Never bypass full-certificate fingerprint pinning (`CC:F7:8E:09:EF:F3:3D:9A:5D:8B:B0:5C:74:28:0D:F6:BE:14:1C:C4:47:F9:69:C2:90:2C:43:97:66:8B:3D:CC`)
    - Never weaken SPKI pinning in Info.plist
@@ -105,7 +105,7 @@ It is live on the App Store: https://apps.apple.com/fi/app/lutheran-radio/id6738
 
 The complete security model history is maintained in the Security Model History table in README.md, which serves as the source of truth. Refer to it for the full table of past and current models, including validity periods and app versions.
 
-Current model = **starbase**
+Current model = **fredericksburg**
 
 ## Response Style
 
