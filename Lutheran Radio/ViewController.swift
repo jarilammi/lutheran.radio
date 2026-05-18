@@ -311,7 +311,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     private var processedImageCache = NSCache<NSString, UIImage>()
     private let cacheQueue = DispatchQueue(label: "radio.lutheran.imageCache", qos: .utility)
     
-    private var backgroundConstraints: [NSLayoutConstraint] = []
     private var selectedStreamIndex: Int = 0
     private var isRotating = false
     private var lastRotationTime: Date? // To debounce rapid rotations
@@ -772,7 +771,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     private func setupStreamingCallbacks() {
         streamingPlayer.onMetadataChange = { [weak self] metadata in
-            guard let self = self else {
+            guard let self else {
                 #if DEBUG
                 print("📱 onMetadataChange: ViewController is nil, skipping callback")
                 #endif
@@ -780,7 +779,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             }
             
             // Process metadata on background (regex is cheap and thread-safe)
-            var potentialNames: [String]? = nil
+            var potentialNames: [String] = []
             if let metadata = metadata {
                 do {
                     let regex = try NSRegularExpression(pattern: "\\b[A-Z][a-z]+(?:\\s[A-Z][a-z]+)*\\b")
@@ -802,27 +801,31 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                     self.updateNowPlayingInfo(title: metadata)
                     
                     let specificSpeakers = Set(["Jari Lammi"])
-                    let matchedSpeaker = potentialNames?.first(where: { specificSpeakers.contains($0) })
+                    let matchedSpeaker = potentialNames.first(where: { specificSpeakers.contains($0) })
                     
                     if let speaker = matchedSpeaker,
-                       let imagePath = Bundle.main.path(forResource: speaker.lowercased().replacingOccurrences(of: " ", with: "_") + "_photo", ofType: "png"),
-                       let image = UIImage(contentsOfFile: imagePath) {
+                       let speakerImage = UIImage(named: "\(speaker.lowercased().replacingOccurrences(of: " ", with: "_"))_photo") {
+                        
+                        // Photo of the speaker
                         UIView.transition(with: self.speakerImageView, duration: 0.3, options: .transitionCrossDissolve, animations: {
-                            self.speakerImageView.image = image
+                            self.speakerImageView.image = speakerImage
                             self.speakerImageView.isHidden = false
                             self.speakerImageHeightConstraint.constant = 100
                             self.speakerImageView.accessibilityLabel = "Photo of \(speaker)"
                         }, completion: nil)
-                    } else if potentialNames?.contains("Lutheran Radio") == true,
-                              let imagePath = Bundle.main.path(forResource: "radio-placeholder", ofType: "png"),
-                              let image = UIImage(contentsOfFile: imagePath) {
+                        
+                    } else if let placeholderImage = UIImage(named: "radio-placeholder") {
+                        // DEFAULT: always show station logo for everything else
                         UIView.transition(with: self.speakerImageView, duration: 0.3, options: .transitionCrossDissolve, animations: {
-                            self.speakerImageView.image = image
+                            self.speakerImageView.image = placeholderImage
                             self.speakerImageView.isHidden = false
                             self.speakerImageHeightConstraint.constant = 100
                             self.speakerImageView.accessibilityLabel = "Lutheran Radio Logo"
                         }, completion: nil)
                     } else {
+                        #if DEBUG
+                        print("🔴 Still failed to load radio-placeholder from Assets.xcassets")
+                        #endif
                         self.speakerImageView.isHidden = true
                     }
                 } else {
@@ -1315,41 +1318,60 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     }
     
     private func updateNowPlayingInfo(title: String? = nil) {
-        // Suppress during language/stream switches to avoid vivid placeholder spam
-        if let lastSwitch = lastStreamSwitchTime, Date().timeIntervalSince(lastSwitch) < 5.0 {
-            #if DEBUG
-            print("🔇 Skipping nowPlayingInfo update – stream switch in progress")
-            #endif
-            return
+        #if DEBUG
+        print("🔄 updateNowPlayingInfo called with title: \(title ?? "nil") | thread: \(Thread.isMainThread ? "main" : "background")")
+        #endif
+
+        // === LIVE ICY METADATA ALWAYS WINS ===
+        let liveMetadata = DirectStreamingPlayer.shared.currentMetadata
+        let finalTitle = liveMetadata ?? (title ?? "Lutheran Radio")
+
+        #if DEBUG
+        if let liveMetadata {
+            print("📻 ✅ Using LIVE ICY metadata: \(liveMetadata)")
         }
-        
+        print("🔄 updateNowPlayingInfo called with finalTitle: \(finalTitle) | thread: \(Thread.isMainThread ? "main" : "background")")
+        #endif
+
         var info: [String: Any] = [
-            MPMediaItemPropertyTitle: title ?? "Lutheran Radio",
+            MPMediaItemPropertyTitle: finalTitle,
             MPMediaItemPropertyArtist: "Lutheran Radio",
             MPNowPlayingInfoPropertyIsLiveStream: true,
             MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
             MPMediaItemPropertyMediaType: MPMediaType.anyAudio.rawValue
         ]
-        
-        // Load image thread-safely (using bundle path to avoid UI assumptions)
-        if let imagePath = Bundle.main.path(forResource: "radio-placeholder", ofType: nil),
-           let image = UIImage(contentsOfFile: imagePath) {
-            let artwork = MPMediaItemArtwork(boundsSize: image.size) { size in
-                // This closure may run on background; resize if needed (example)
-                UIGraphicsBeginImageContextWithOptions(size, false, 0.0)
-                image.draw(in: CGRect(origin: .zero, size: size))
-                let resizedImage = UIGraphicsGetImageFromCurrentImageContext()
-                UIGraphicsEndImageContext()
-                return resizedImage ?? image
-            }
+
+        // ✅ FIXED: Use asset catalog (thread-safe + supports light/dark variants)
+        if let artwork = Self.placeholderArtwork {
             info[MPMediaItemPropertyArtwork] = artwork
+            #if DEBUG
+            print("✅ Speaker logo loaded successfully")
+            #endif
         } else {
+            #if DEBUG
             print("🔴 Failed to load placeholder image")
+            #endif
         }
-        
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-        print("🔄 Updated nowPlayingInfo on thread: \(Thread.isMainThread ? "main" : "background")")
+
+        // Always update on main thread
+        DispatchQueue.main.async {
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+            #if DEBUG
+            print("🔄 Updated nowPlayingInfo on main thread [final title: \(finalTitle)]")
+            #endif
+        }
     }
+
+    // MARK: - Static placeholder (one-time creation, huge performance win)
+
+    private static let placeholderArtwork: MPMediaItemArtwork? = {
+        guard let image = UIImage(named: "radio-placeholder") else {
+            // This will only print once at app launch if something is still wrong
+            print("🔴 CRITICAL: Could not load radio-placeholder from Assets.xcassets")
+            return nil
+        }
+        return MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+    }()
     
     private func updateUIForNoInternet() {
         safeUpdateStatusLabel(
@@ -1872,13 +1894,13 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     private func setupUI() {
         view.addSubview(backgroundImageView)
-        backgroundConstraints = [
+        // ✅ Modern + cleaner: activate directly, no unnecessary stored array
+        NSLayoutConstraint.activate([
             backgroundImageView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: -20),
             backgroundImageView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: 20),
             backgroundImageView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: -20),
             backgroundImageView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: 20)
-        ]
-        NSLayoutConstraint.activate(backgroundConstraints)
+        ])
         backgroundImageView.layer.zPosition = -1
         
         view.addSubview(titleLabel)
@@ -3056,7 +3078,8 @@ extension ViewController {
             print("🔥 togglePlayback() called → currentVisualState = \(currentVisualState), shared.isPlaying = \(sharedState.isPlaying)")
             #endif
             
-            if currentVisualState.isActivelyPlaying || sharedState.isPlaying {
+            // MINIMAL CHANGE: respect visualState first (fixes desync where visual = .userPaused but shared.isPlaying = true)
+            if currentVisualState.isActivelyPlaying {
                 // === PAUSE PATH ===
                 #if DEBUG
                 print("🔥 → PAUSE path")
@@ -3077,6 +3100,9 @@ extension ViewController {
                 #if DEBUG
                 print("🔥 → PLAY / RESUME path")
                 #endif
+                
+                // MINIMAL CHANGE: immediately mark as .prePlay so UI shows "Connecting..." instantly
+                self.updateUI(for: .prePlay)
                 
                 await manager.setUserIntentToPlay()
                 self.playHapticFeedback(style: .heavy)
