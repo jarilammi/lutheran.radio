@@ -2261,11 +2261,22 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     }
     
     // MARK: - Selection Indicator
-    private func updateSelectionIndicator(to index: Int, isInitial: Bool = false) {
+    private func updateSelectionIndicator(to index: Int, isInitial: Bool = false, caller: String = #function) {
+        // SINGLE SOURCE OF TRUTH
+        // • During normal operation (pause, play, network hiccups, etc.) → always use selectedStreamIndex
+        // • Only on true initial load → accept the passed index
+        let targetIndex = isInitial ? index : selectedStreamIndex
+        
+        // Safety guard
+        let safeIndex = min(max(targetIndex, 0), DirectStreamingPlayer.availableStreams.count - 1)
+        
+        print("📱 updateSelectionIndicator: Moving to index=\(safeIndex) (selectedStreamIndex=\(selectedStreamIndex), isInitial=\(isInitial), caller=\(caller))")
+        
         guard !isDeallocating else { return }
-        guard index >= 0 && index < DirectStreamingPlayer.availableStreams.count else {
+        
+        guard safeIndex >= 0 && safeIndex < DirectStreamingPlayer.availableStreams.count else {
             #if DEBUG
-            print("📱 updateSelectionIndicator: Invalid index \(index), streams count=\(DirectStreamingPlayer.availableStreams.count)")
+            print("📱 updateSelectionIndicator: Invalid index \(safeIndex), streams count=\(DirectStreamingPlayer.availableStreams.count)")
             #endif
             return
         }
@@ -2284,7 +2295,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             ])
         }
         
-        let indexPath = IndexPath(item: index, section: 0)
+        let indexPath = IndexPath(item: safeIndex, section: 0)
         
         languageCollectionView.layoutIfNeeded() // Ensure latest layout
         
@@ -2299,7 +2310,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             cellCenterX = max(minX, min(maxX, cellCenterX))
             
             #if DEBUG
-            print("📱 updateSelectionIndicator: Moving to index=\(index), cellCenterX=\(cellCenterX), cellFrame=\(cellFrame), collectionViewBounds=\(languageCollectionView.bounds), isInitial=\(isInitial), caller=\(Thread.callStackSymbols[1])")
+            print("📱 updateSelectionIndicator: Moving to index=\(safeIndex), cellCenterX=\(cellCenterX), cellFrame=\(cellFrame), collectionViewBounds=\(languageCollectionView.bounds), isInitial=\(isInitial), caller=\(Thread.callStackSymbols[1])")
             #endif
             
             // Skip animation if collection view isn't fully laid out
@@ -2335,7 +2346,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             }
         }
     }
-    
     // MARK: - UIPickerView DataSource
     func numberOfComponents(in pickerView: UIPickerView) -> Int { 1 }
     
@@ -3108,6 +3118,12 @@ extension ViewController {
                 #endif
                 
                 await manager.stop()   // ← this locks .userPaused
+                
+                // stabilizes the tuning indicator after AVPlayer teardown storm
+                self.updateSelectionIndicator(to: self.selectedStreamIndex,
+                                            isInitial: false,
+                                            caller: "post-pause-stabilize")
+                
                 self.playHapticFeedback(style: .medium)
                 
                 let newState = await manager.currentVisualState
