@@ -2270,7 +2270,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         // Safety guard
         let safeIndex = min(max(targetIndex, 0), DirectStreamingPlayer.availableStreams.count - 1)
         
+        #if DEBUG
         print("📱 updateSelectionIndicator: Moving to index=\(safeIndex) (selectedStreamIndex=\(selectedStreamIndex), isInitial=\(isInitial), caller=\(caller))")
+        #endif
         
         guard !isDeallocating else { return }
         
@@ -2411,9 +2413,15 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             return
         }
         
+        let newIndex = indexPath.item
+        
         #if DEBUG
-        print("📱 collectionView:didSelectItemAt called for index \(indexPath.item)")
+        print("📱 collectionView:didSelectItemAt called for index \(newIndex)")
         #endif
+        
+        // INSTANT TUNING INDICATOR MOVEMENT — works whether playing or paused
+        selectedStreamIndex = newIndex
+        updateSelectionIndicator(to: newIndex, isInitial: false, caller: "didSelectItemAt")
         
         // Debounce stream switch
         let now = Date()
@@ -2428,7 +2436,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         streamSwitchWorkItem?.cancel()
         let workItem = DispatchWorkItem { [weak self] in
             guard let self = self else { return }
-            let stream = DirectStreamingPlayer.availableStreams[indexPath.item]
+            let stream = DirectStreamingPlayer.availableStreams[newIndex]  // use newIndex instead of indexPath.item
             updateBackground(for: stream)
             
             // Wait for tuning sound to complete if playing
@@ -2438,10 +2446,10 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 #endif
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
                     guard let self = self else { return }
-                    self.completeStreamSwitch(stream: stream, index: indexPath.item)
+                    self.completeStreamSwitch(stream: stream, index: newIndex)
                 }
             } else {
-                self.completeStreamSwitch(stream: stream, index: indexPath.item)
+                self.completeStreamSwitch(stream: stream, index: newIndex)
             }
         }
         streamSwitchWorkItem = workItem
