@@ -13,6 +13,7 @@ Listen to Lutheran Radio on iOS.
 
 The app is fully localized in the following languages:
 - Danish (da)
+- Gagauz (gag)
 - German (de)
 - English (en)
 - Estonian (et)
