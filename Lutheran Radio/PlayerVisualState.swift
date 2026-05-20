@@ -10,49 +10,53 @@ import UIKit
 
 /// Single source of truth for playback UI **and** intent.
 ///
-/// - prePlay:     yellow, auto-plays on first launch only
-/// - playing:     green
-/// - userPaused:  grey, NEVER auto-resumes (this is the resurrection protection)
-/// - error:       red
+/// - prePlay:        yellow, auto-plays on first launch only
+/// - playing:        green
+/// - userPaused:     grey, NEVER auto-resumes
+/// - thermalPaused:  amber, device is overheating (blocks auto-resume)
+/// - securityLocked: red
 ///
 /// This version makes .userPaused "sticky" after any manual interaction.
 enum PlayerVisualState: Codable, Equatable {
     
-    case prePlay        // Initial load / connecting / never played yet → yellow, should auto-play
-    case playing        // Actively playing → green
-    case userPaused     // Explicit user pause/stop → grey, NEVER auto-resume
-    case securityLocked // Security failure → red
+    case prePlay            // Initial load / connecting / never played yet → yellow
+    case playing            // Actively playing → green
+    case userPaused         // Explicit user pause/stop → grey (sticky)
+    case thermalPaused      // Device overheating → amber/orange warning
+    case securityLocked     // Security / certificate failure → red
     
     // MARK: - Visual properties
     
     var backgroundColor: UIColor {
         switch self {
-        case .prePlay:     return .systemYellow
-        case .playing:     return .systemGreen
-        case .userPaused:  return .systemGray
-        case .securityLocked:       return .systemRed
+        case .prePlay:        return .systemYellow
+        case .playing:        return .systemGreen
+        case .userPaused:     return .systemGray
+        case .thermalPaused:  return .systemOrange
+        case .securityLocked: return .systemRed
         }
     }
     
     var textColor: UIColor {
         switch self {
-        case .prePlay, .userPaused, .playing:
-            return .label          // best readability on yellow / gray / green
+        case .prePlay, .userPaused, .playing, .thermalPaused:
+            return .label
         case .securityLocked:
-            return .white          // white on red/error background is standard
+            return .white
         }
     }
     
     var buttonTintColor: UIColor {
         switch self {
-        case .prePlay:     return .systemYellow
-        case .playing:     return .systemGreen
-        case .userPaused:  return .secondaryLabel
-        case .securityLocked:       return .systemRed
+        case .prePlay:        return .systemYellow
+        case .playing:        return .systemGreen
+        case .userPaused:     return .secondaryLabel
+        case .thermalPaused:  return .systemOrange
+        case .securityLocked: return .systemRed
         }
     }
     
-    // MARK: - Semantic properties (key to fixing "play on pause")
+    // MARK: - Semantic properties
     
     /// True only when audio is actively playing
     var isActivelyPlaying: Bool {
@@ -66,15 +70,13 @@ enum PlayerVisualState: Codable, Equatable {
         switch self {
         case .prePlay, .playing:
             return true
-        case .userPaused, .securityLocked:
+        case .userPaused, .thermalPaused, .securityLocked:
             return false
         }
     }
     
-    // NEW: Explicit resurrection block – call this whenever the system wants to resume
-    /// Returns true if we must force a pause because the user explicitly paused earlier.
     var mustSuppressResurrection: Bool {
-        self == .userPaused || self == .securityLocked
+        self == .userPaused || self == .thermalPaused || self == .securityLocked
     }
 }
 

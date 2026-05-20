@@ -659,7 +659,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 #endif
                 self.updateSelectionIndicator(to: self.selectedStreamIndex, isInitial: false)
                 
-            case .userPaused, .securityLocked:
+            case .userPaused, .thermalPaused, .securityLocked:
                 #if DEBUG
                 print("🔥 ViewController.viewDidAppear → \(visualState) → SKIPPING auto-play (resurrection prevented)")
                 #endif
@@ -1627,6 +1627,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             statusLabel.text = String(localized: "status_playing")
         case .userPaused:
             statusLabel.text = String(localized: "status_paused")
+        case .thermalPaused:
+            statusLabel.text = String(localized: "status_thermal_paused")
         case .prePlay:
             statusLabel.text = String(localized: "status_connecting")
         case .securityLocked:
