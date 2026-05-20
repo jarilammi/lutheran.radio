@@ -1009,43 +1009,37 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         ) { [weak self] _ in
             guard let self else { return }
             
-            let currentState = ProcessInfo.processInfo.thermalState
+            let thermalState = ProcessInfo.processInfo.thermalState
             
-            if currentState == .critical || currentState == .serious {
-                // Pause if device temperature critical or serious
+            // ── Device overheating ─────────────────────────────────────
+            if thermalState == .serious || thermalState == .critical {
                 if self.isPlaying {
                     self.wasPlayingBeforeThermal = true
                     
                     Task { @MainActor in
                         await self.stop()
-                        self.safeOnStatusChange(
-                            isPlaying: false,
-                            status: String(localized: String.LocalizationValue(stringLiteral: "status_thermal_paused"))
-                        )
+                        await SharedPlayerManager.shared.setVisualState(.thermalPaused)
                     }
                 }
-            } else if self.wasPlayingBeforeThermal &&
-                      (currentState == .nominal || currentState == .fair) {
-                // Resume when the device has actually cooled down to a safe temperature
+                return
+            }
+            
+            // ── Device cooled down again ───────────────────────────────
+            if self.wasPlayingBeforeThermal &&
+               (thermalState == .nominal || thermalState == .fair) {
+                
                 self.wasPlayingBeforeThermal = false
                 
                 Task { @MainActor in
+                    // Set visual state *before* play() so UI turns green immediately
+                    await SharedPlayerManager.shared.setVisualState(.playing)
+                    
                     do {
                         try await self.play()
-                        // If play() returns success Bool, you can use it:
-                        // let success = try await self.play()
-                        // then conditionally update status
-                        
-                        self.safeOnStatusChange(
-                            isPlaying: true,
-                            status: String(localized: String.LocalizationValue(stringLiteral: "status_playing"))
-                        )
+                        // updateUI(for:) will now automatically handle "status_playing"
                     } catch {
-                        self.safeOnStatusChange(
-                            isPlaying: false,
-                            status: String(localized: String.LocalizationValue(stringLiteral: "status_stream_unavailable"))
-                        )
                         print("Thermal resume play failed: \(error)")
+                        await SharedPlayerManager.shared.setVisualState(.userPaused)
                     }
                 }
             }

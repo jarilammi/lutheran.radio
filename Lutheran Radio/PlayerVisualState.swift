@@ -75,8 +75,12 @@ enum PlayerVisualState: Codable, Equatable {
         }
     }
     
+    var shouldAutoResumeOnThermalRecovery: Bool {
+        self == .thermalPaused
+    }
+    
     var mustSuppressResurrection: Bool {
-        self == .userPaused || self == .thermalPaused || self == .securityLocked
+        self == .userPaused || self == .securityLocked
     }
 }
 

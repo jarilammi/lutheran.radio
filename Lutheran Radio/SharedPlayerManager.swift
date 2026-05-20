@@ -72,6 +72,14 @@ actor SharedPlayerManager {
     // This prevents the "play on pause" resurrection bug when set synchronously to .userPaused
     var currentVisualState: PlayerVisualState = .prePlay
     
+    /// Safe, single entry point to change the visual state from anywhere.
+    /// (Notification handlers, MainActor, background tasks, etc.)
+    func setVisualState(_ state: PlayerVisualState) async {
+        self.currentVisualState = state
+        // Any existing didSet / observers / widget / Live Activity updates
+        // that you already have will still run here.
+    }
+    
     // MARK: - Public API
 
     /// Public async entry point for playing — safe to call from anywhere
