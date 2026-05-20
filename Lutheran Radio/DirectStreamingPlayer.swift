@@ -241,7 +241,6 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         ProcessInfo.processInfo.isLowPowerModeEnabled
     }
     private var thermalObserver: NSObjectProtocol?
-    private var wasPlayingBeforeThermal = false
     
     // Public accessors for ViewController
     var lastFailedServer: String? { return lastFailedServerName }
@@ -1014,8 +1013,6 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             // ── Device overheating ─────────────────────────────────────
             if thermalState == .serious || thermalState == .critical {
                 if self.isPlaying {
-                    self.wasPlayingBeforeThermal = true
-                    
                     Task { @MainActor in
                         await self.stop()
                         await SharedPlayerManager.shared.setVisualState(.thermalPaused)
@@ -1025,21 +1022,21 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             }
             
             // ── Device cooled down again ───────────────────────────────
-            if self.wasPlayingBeforeThermal &&
-               (thermalState == .nominal || thermalState == .fair) {
-                
-                self.wasPlayingBeforeThermal = false
-                
+            if thermalState == .nominal || thermalState == .fair {
                 Task { @MainActor in
-                    // Set visual state *before* play() so UI turns green immediately
-                    await SharedPlayerManager.shared.setVisualState(.playing)
-                    
-                    do {
-                        try await self.play()
-                        // updateUI(for:) will now automatically handle "status_playing"
-                    } catch {
-                        print("Thermal resume play failed: \(error)")
-                        await SharedPlayerManager.shared.setVisualState(.userPaused)
+                    // Use the state machine instead of a manual flag
+                    if await SharedPlayerManager.shared.currentVisualState.shouldAutoResumeOnThermalRecovery {
+                        // Set visual state *before* play() so UI turns green immediately
+                        await SharedPlayerManager.shared.setVisualState(.playing)
+                        
+                        do {
+                            try await self.play()
+                        } catch {
+                            #if DEBUG
+                            print("Thermal resume play failed: \(error)")
+                            #endif
+                            await SharedPlayerManager.shared.setVisualState(.userPaused)
+                        }
                     }
                 }
             }
