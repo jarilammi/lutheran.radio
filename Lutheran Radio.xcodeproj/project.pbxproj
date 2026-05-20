@@ -22,6 +22,7 @@
 		B785EBA22E673D2F0034C286 /* CoreHaptics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B785EBA12E673D2F0034C286 /* CoreHaptics.framework */; };
 		B7AFC6E22CCD7DD900BDDD83 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B7AFC6E12CCD7DD900BDDD83 /* AVFoundation.framework */; };
 		B7D26EFC2F6E6EFF003568F0 /* Core.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7D26EF72F6E6EFF003568F0 /* Core.swift */; };
+		B7D5BF9C2FBE1BF00006D803 /* LutheranRadioWidgetExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = B757A77C2DEF7B5C00FF90FC /* LutheranRadioWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		B7E3FCED2F6FC2E0001A2BD9 /* Core.xctestplan in Resources */ = {isa = PBXBuildFile; fileRef = B7E3FCEC2F6FC2E0001A2BD9 /* Core.xctestplan */; };
 /* End PBXBuildFile section */
 
@@ -68,6 +69,13 @@
 			remoteGlobalIDString = B7AFC6AB2CCD7D0A00BDDD83;
 			remoteInfo = "Lutheran Radio";
 		};
+		B7D5BF9D2FBE1CA90006D803 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = B7AFC6A42CCD7D0A00BDDD83 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B757A77B2DEF7B5C00FF90FC;
+			remoteInfo = LutheranRadioWidgetExtension;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -81,6 +89,17 @@
 			);
 			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B7D5BF992FBE19C30006D803 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 8;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				B7D5BF9C2FBE1BF00006D803 /* LutheranRadioWidgetExtension.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 1;
 		};
 /* End PBXCopyFilesBuildPhase section */
 
@@ -400,10 +419,12 @@
 				B7AFC6A92CCD7D0A00BDDD83 /* Frameworks */,
 				B7AFC6AA2CCD7D0A00BDDD83 /* Resources */,
 				B77E54372F6E6A6700A055DA /* Embed Frameworks */,
+				B7D5BF992FBE19C30006D803 /* Embed App Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				B7D5BF9E2FBE1CA90006D803 /* PBXTargetDependency */,
 				B77E544C2F6E6BDA00A055DA /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
@@ -665,6 +686,11 @@
 			isa = PBXTargetDependency;
 			target = B7AFC6AB2CCD7D0A00BDDD83 /* Lutheran Radio */;
 			targetProxy = B7AFC6CD2CCD7D0C00BDDD83 /* PBXContainerItemProxy */;
+		};
+		B7D5BF9E2FBE1CA90006D803 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B757A77B2DEF7B5C00FF90FC /* LutheranRadioWidgetExtension */;
+			targetProxy = B7D5BF9D2FBE1CA90006D803 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
