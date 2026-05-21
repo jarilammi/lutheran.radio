@@ -10,7 +10,8 @@ import WidgetKit
 import SwiftUI
 import AppIntents
 
-// MARK: - Live Activity Intents
+// MARK: - Live Activity Intents (updated for SSOT + Swift 6)
+
 struct LiveActivityTogglePlaybackIntent: AppIntent {
     nonisolated static var title: LocalizedStringResource {
         "Toggle Lutheran Radio Playback"
@@ -21,52 +22,20 @@ struct LiveActivityTogglePlaybackIntent: AppIntent {
     
     func perform() async throws -> some IntentResult {
         #if DEBUG
-        print("LiveActivityTogglePlaybackIntent.perform called")
+        print("🔗 LiveActivityTogglePlaybackIntent.perform called")
         #endif
         
         let manager = SharedPlayerManager.shared
-        let state = manager.loadSharedState()  // assuming already nonisolated
-        let isCurrentlyPlaying = state.isPlaying
+        let visualState = await manager.currentVisualState   // ✅ Safe actor access
         
-        if isCurrentlyPlaying {
-            await manager.stop()           // ← await, no completion
+        if visualState.isActivelyPlaying {
+            await manager.stop()
         } else {
-            try await manager.play()       // ← try await, no completion
+            try await manager.play()
         }
         
         #if DEBUG
-        print("LiveActivityTogglePlaybackIntent completed")
-        #endif
-        
-        return .result()
-    }
-}
-
-struct LutheranRadioLiveActivityTogglePlaybackIntent: AppIntent {
-    nonisolated static var title: LocalizedStringResource {
-        "Toggle Lutheran Radio Playback"
-    }
-    nonisolated static var description: IntentDescription {
-        IntentDescription("Toggle play/pause from Live Activity.")
-    }
-    
-    func perform() async throws -> some IntentResult {
-        #if DEBUG
-        print("LutheranRadioLiveActivityTogglePlaybackIntent.perform called")
-        #endif
-        
-        let manager = SharedPlayerManager.shared
-        let state = manager.loadSharedState()           // should already be nonisolated
-        let isCurrentlyPlaying = state.isPlaying
-        
-        if isCurrentlyPlaying {
-            await manager.stop()                        // ← just await, no closure
-        } else {
-            try await manager.play()                    // ← try await, no closure
-        }
-        
-        #if DEBUG
-        print("LutheranRadioLiveActivityTogglePlaybackIntent completed")
+        print("🔗 LiveActivityTogglePlaybackIntent completed – visualState was \(visualState)")
         #endif
         
         return .result()
@@ -85,7 +54,6 @@ struct LiveActivitySwitchStreamIntent: AppIntent {
     var languageCode: String
     
     init() {}
-    
     init(languageCode: String) {
         self.languageCode = languageCode
     }
@@ -114,27 +82,36 @@ struct LiveActivitySwitchStreamIntent: AppIntent {
     }
 }
 
+// MARK: - Live Activity Helpers (file-private)
+
+private func getStatusColor(_ state: LutheranRadioLiveActivityAttributes.ContentState) -> Color {
+    switch state.visualState {
+    case .thermalPaused: return .orange
+    case .securityLocked: return .red
+    case .playing:       return .green
+    default:             return .gray
+    }
+}
+
+// MARK: - Live Activity Widget
+
 struct LutheranRadioLiveActivityWidget: Widget {
     let kind: String = "LutheranRadioLiveActivity"
 
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: LutheranRadioLiveActivityAttributes.self) { context in
-            // Lock Screen view
             LockScreenLiveActivityView(context: context)
         } dynamicIsland: { context in
-            // Enhanced Dynamic Island - Local updates only, maximum privacy
             DynamicIsland {
-                // Expanded view - Rich controls and info
                 DynamicIslandExpandedRegion(.leading) {
                     HStack(spacing: 8) {
-                        // Animated radio icon
                         ZStack {
                             Circle()
-                                .fill(context.state.isPlaying ? Color.green.opacity(0.2) : Color.gray.opacity(0.2))
+                                .fill(context.state.visualState == .playing ? Color.green.opacity(0.2) : Color.gray.opacity(0.2))
                                 .frame(width: 32, height: 32)
                             
                             Image(systemName: "radio")
-                                .foregroundColor(context.state.isPlaying ? .green : .white)
+                                .foregroundColor(context.state.visualState.buttonTintColor.swiftUIColor)
                                 .font(.system(size: 16, weight: .medium))
                         }
                         
@@ -153,8 +130,7 @@ struct LutheranRadioLiveActivityWidget: Widget {
                                     .foregroundColor(.secondary)
                             }
                             
-                            // Live indicator when playing
-                            if context.state.isPlaying {
+                            if context.state.visualState.isActivelyPlaying {
                                 HStack(spacing: 2) {
                                     Circle()
                                         .fill(Color.red)
@@ -168,25 +144,24 @@ struct LutheranRadioLiveActivityWidget: Widget {
                         }
                     }
                 }
+                
                 DynamicIslandExpandedRegion(.trailing) {
                     VStack(spacing: 8) {
-                        // Main play/pause with enhanced visual feedback
-                        Button(intent: LutheranRadioLiveActivityTogglePlaybackIntent()) {
+                        Button(intent: LiveActivityTogglePlaybackIntent()) {
                             ZStack {
                                 Circle()
-                                    .fill(context.state.isPlaying ? Color.orange.opacity(0.2) : Color.blue.opacity(0.2))
+                                    .fill(context.state.visualState.buttonTintColor.swiftUIColor.opacity(0.2))
                                     .frame(width: 44, height: 44)
                                 
-                                Image(systemName: context.state.isPlaying ? "pause.fill" : "play.fill")
+                                Image(systemName: context.state.visualState.isActivelyPlaying ? "pause.fill" : "play.fill")
                                     .font(.title3)
                                     .fontWeight(.semibold)
-                                    .foregroundColor(context.state.isPlaying ? .orange : .blue)
+                                    .foregroundColor(context.state.visualState.buttonTintColor.swiftUIColor)
                             }
                         }
                         .buttonStyle(.plain)
                         
-                        // Audio visualization when playing
-                        if context.state.isPlaying {
+                        if context.state.visualState.isActivelyPlaying {
                             HStack(spacing: 2) {
                                 ForEach(0..<3, id: \.self) { index in
                                     RoundedRectangle(cornerRadius: 1)
@@ -198,9 +173,9 @@ struct LutheranRadioLiveActivityWidget: Widget {
                         }
                     }
                 }
+                
                 DynamicIslandExpandedRegion(.center) {
                     VStack(spacing: 6) {
-                        // Current content display
                         if let metadata = context.state.currentMetadata, !metadata.isEmpty {
                             VStack(spacing: 2) {
                                 Text(LocalizedStringKey("Now Playing"))
@@ -220,9 +195,9 @@ struct LutheranRadioLiveActivityWidget: Widget {
                                 Text(context.state.streamStatus)
                                     .font(.caption)
                                     .fontWeight(.medium)
-                                    .foregroundColor(context.state.isPlaying ? .green : .secondary)
+                                    .foregroundColor(context.state.visualState.textColor.swiftUIColor)
                                 
-                                if context.state.isPlaying {
+                                if context.state.visualState.isActivelyPlaying {
                                     Text(LocalizedStringKey("Lutheran Radio Live Stream"))
                                         .font(.system(size: 10))
                                         .foregroundColor(.secondary)
@@ -230,7 +205,6 @@ struct LutheranRadioLiveActivityWidget: Widget {
                             }
                         }
                         
-                        // Enhanced language switcher with visual feedback
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 12) {
                                 ForEach(getAlternativeStreams(current: context.state.currentStreamLanguage), id: \.self) { langCode in
@@ -254,9 +228,9 @@ struct LutheranRadioLiveActivityWidget: Widget {
                         }
                     }
                 }
+                
                 DynamicIslandExpandedRegion(.bottom) {
                     HStack {
-                        // Connection status indicator
                         HStack(spacing: 4) {
                             Circle()
                                 .fill(getStatusColor(context.state))
@@ -268,8 +242,7 @@ struct LutheranRadioLiveActivityWidget: Widget {
                         
                         Spacer()
                         
-                        // Enhanced audio visualization
-                        if context.state.isPlaying {
+                        if context.state.visualState.isActivelyPlaying {
                             HStack(spacing: 1) {
                                 ForEach(0..<5, id: \.self) { index in
                                     RoundedRectangle(cornerRadius: 0.5)
@@ -288,7 +261,6 @@ struct LutheranRadioLiveActivityWidget: Widget {
                                 }
                             }
                         } else {
-                            // Privacy indicator when not playing
                             HStack(spacing: 2) {
                                 Image(systemName: "lock.fill")
                                     .font(.system(size: 8))
@@ -301,20 +273,18 @@ struct LutheranRadioLiveActivityWidget: Widget {
                     }
                 }
             } compactLeading: {
-                // Enhanced compact leading view
                 HStack(spacing: 2) {
                     ZStack {
                         Circle()
-                            .fill(context.state.isPlaying ? Color.green.opacity(0.2) : Color.gray.opacity(0.2))
+                            .fill(context.state.visualState.isActivelyPlaying ? Color.green.opacity(0.2) : Color.gray.opacity(0.2))
                             .frame(width: 20, height: 20)
                         
                         Image(systemName: "radio")
                             .font(.system(size: 10, weight: .medium))
-                            .foregroundColor(context.state.isPlaying ? .green : .white)
+                            .foregroundColor(context.state.visualState.buttonTintColor.swiftUIColor)
                     }
                     
-                    if context.state.isPlaying {
-                        // Mini audio bars
+                    if context.state.visualState.isActivelyPlaying {
                         HStack(spacing: 1) {
                             ForEach(0..<2, id: \.self) { index in
                                 RoundedRectangle(cornerRadius: 0.5)
@@ -326,27 +296,25 @@ struct LutheranRadioLiveActivityWidget: Widget {
                     }
                 }
             } compactTrailing: {
-                // Enhanced compact trailing view
                 Button(intent: LiveActivityTogglePlaybackIntent()) {
                     ZStack {
                         Circle()
-                            .fill(context.state.isPlaying ? Color.orange.opacity(0.3) : Color.blue.opacity(0.3))
+                            .fill(context.state.visualState.buttonTintColor.swiftUIColor.opacity(0.3))
                             .frame(width: 20, height: 20)
                         
-                        Image(systemName: context.state.isPlaying ? "pause.fill" : "play.fill")
+                        Image(systemName: context.state.visualState.isActivelyPlaying ? "pause.fill" : "play.fill")
                             .font(.system(size: 10, weight: .semibold))
-                            .foregroundColor(context.state.isPlaying ? .orange : .blue)
+                            .foregroundColor(context.state.visualState.buttonTintColor.swiftUIColor)
                     }
                 }
                 .buttonStyle(.plain)
             } minimal: {
-                // Enhanced minimal view with status indication
                 ZStack {
                     Circle()
                         .fill(getStatusColor(context.state).opacity(0.3))
                         .frame(width: 18, height: 18)
                     
-                    if context.state.isPlaying {
+                    if context.state.visualState.isActivelyPlaying {
                         Image(systemName: "play.fill")
                             .font(.system(size: 8, weight: .bold))
                             .foregroundColor(.green)
@@ -360,14 +328,15 @@ struct LutheranRadioLiveActivityWidget: Widget {
         }
     }
     
-    // Enhanced helper functions for privacy-first Live Activity
+    // MARK: - Helpers
+    
     private func getLanguageName(_ code: String) -> String {
         switch code {
-        case "en": return "English"
-        case "de": return "German"
-        case "fi": return "Finnish"
-        case "sv": return "Swedish"
-        case "et": return "Estonian"
+        case "en": return String(localized: "language_english")
+        case "de": return String(localized: "language_german")
+        case "fi": return String(localized: "language_finnish")
+        case "sv": return String(localized: "language_swedish")
+        case "et": return String(localized: "language_estonian")
         default: return "Unknown"
         }
     }
@@ -389,23 +358,22 @@ struct LutheranRadioLiveActivityWidget: Widget {
     }
     
     private func getStatusColor(_ state: LutheranRadioLiveActivityAttributes.ContentState) -> Color {
-        if state.streamStatus.contains("Error") {
-            return .red
-        } else if state.isPlaying {
-            return .green
-        } else {
-            return .gray
+        switch state.visualState {
+        case .thermalPaused: return .orange
+        case .securityLocked: return .red
+        case .playing:       return .green
+        default:             return .gray
         }
     }
 }
 
 // MARK: - Lock Screen View
+
 struct LockScreenLiveActivityView: View {
     let context: ActivityViewContext<LutheranRadioLiveActivityAttributes>
     
     var body: some View {
         VStack(spacing: 12) {
-            // Header with app name and current stream
             HStack {
                 Image(systemName: "radio")
                     .foregroundColor(.white)
@@ -418,7 +386,6 @@ struct LockScreenLiveActivityView: View {
                     .foregroundColor(.secondary)
             }
             
-            // Current metadata or status
             if let metadata = context.state.currentMetadata, !metadata.isEmpty {
                 Text(metadata)
                     .font(.subheadline)
@@ -428,12 +395,10 @@ struct LockScreenLiveActivityView: View {
             } else {
                 Text(context.state.streamStatus)
                     .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(context.state.visualState.textColor.swiftUIColor)
             }
             
-            // Controls section
             HStack(spacing: 20) {
-                // Language quick switches (first 3 alternatives)
                 ForEach(getAlternativeStreams(current: context.state.currentStreamLanguage).prefix(3), id: \.self) { langCode in
                     Button(intent: LiveActivitySwitchStreamIntent(languageCode: langCode)) {
                         VStack(spacing: 2) {
@@ -449,13 +414,12 @@ struct LockScreenLiveActivityView: View {
                 
                 Spacer()
                 
-                // Main play/pause button
                 Button(intent: LiveActivityTogglePlaybackIntent()) {
                     VStack(spacing: 4) {
-                        Image(systemName: context.state.isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                        Image(systemName: context.state.visualState.isActivelyPlaying ? "pause.circle.fill" : "play.circle.fill")
                             .font(.largeTitle)
-                            .foregroundColor(context.state.isPlaying ? .orange : .green)
-                        Text(context.state.isPlaying ? LocalizedStringKey("status_paused") : LocalizedStringKey("Play"))
+                            .foregroundColor(context.state.visualState.buttonTintColor.swiftUIColor)
+                        Text(context.state.visualState.isActivelyPlaying ? LocalizedStringKey("status_paused") : LocalizedStringKey("Play"))
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
@@ -463,16 +427,15 @@ struct LockScreenLiveActivityView: View {
                 .buttonStyle(.plain)
             }
             
-            // Status indicator
             HStack {
                 Circle()
-                    .fill(context.state.isPlaying ? Color.green : Color.gray)
+                    .fill(getStatusColor(context.state))
                     .frame(width: 8, height: 8)
                 Text(context.state.streamStatus)
                     .font(.caption)
                     .foregroundColor(.secondary)
                 Spacer()
-                if context.state.isPlaying {
+                if context.state.visualState.isActivelyPlaying {
                     HStack(spacing: 1) {
                         ForEach(0..<4, id: \.self) { index in
                             Rectangle()

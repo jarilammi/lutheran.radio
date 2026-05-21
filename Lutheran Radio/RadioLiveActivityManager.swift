@@ -34,7 +34,7 @@ class RadioLiveActivityManager: ObservableObject {
     
     // MARK: - Privacy-First Live Activity Management
 
-    func startActivity() {
+    func startActivity() async {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else {
             #if DEBUG
             print("🔴 Live Activities are not enabled by user")
@@ -42,7 +42,6 @@ class RadioLiveActivityManager: ObservableObject {
             return
         }
         
-        // End existing activity if one exists
         endActivity()
         
         let manager = SharedPlayerManager.shared
@@ -54,10 +53,13 @@ class RadioLiveActivityManager: ObservableObject {
             startTime: Date()
         )
         
+        // ✅ Safe actor access (now allowed because function is async)
+        let visualState = await manager.currentVisualState
+        
         let initialContentState = LutheranRadioLiveActivityAttributes.ContentState(
-            isPlaying: state.isPlaying,
+            visualState: visualState,
             currentMetadata: getCurrentMetadata(),
-            streamStatus: getStreamStatus(isPlaying: state.isPlaying, hasError: state.hasError),
+            streamStatus: getStreamStatus(visualState: visualState, hasError: state.hasError),
             lastUpdated: Date(),
             currentStreamLanguage: currentStream.languageCode,
             currentStreamFlag: currentStream.flag
@@ -92,10 +94,13 @@ class RadioLiveActivityManager: ObservableObject {
         let state = manager.loadSharedState()
         let currentStream = manager.availableStreams.first(where: { $0.languageCode == state.currentLanguage }) ?? manager.availableStreams[0]
         
+        // NEW: Use visualState (SSOT) + await
+        let visualState = await manager.currentVisualState
+        
         let updatedContentState = LutheranRadioLiveActivityAttributes.ContentState(
-            isPlaying: state.isPlaying,
+            visualState: visualState,                                      // ← changed
             currentMetadata: getCurrentMetadata(),
-            streamStatus: getStreamStatus(isPlaying: state.isPlaying, hasError: state.hasError),
+            streamStatus: getStreamStatus(visualState: visualState, hasError: state.hasError),
             lastUpdated: Date(),
             currentStreamLanguage: currentStream.languageCode,
             currentStreamFlag: currentStream.flag
@@ -105,7 +110,7 @@ class RadioLiveActivityManager: ObservableObject {
         await safeActivity.update(.init(state: updatedContentState, staleDate: nil))
         
         #if DEBUG
-        print("🔴 Live Activity updated locally: playing=\(state.isPlaying)")
+        print("🔴 Live Activity updated locally: visualState=\(visualState)")
         #endif
     }
 
@@ -125,7 +130,7 @@ class RadioLiveActivityManager: ObservableObject {
             let currentStream = manager.availableStreams.first(where: { $0.languageCode == state.currentLanguage }) ?? manager.availableStreams[0]
             
             let finalContentState = LutheranRadioLiveActivityAttributes.ContentState(
-                isPlaying: false,
+                visualState: .userPaused,                                  // ← changed (stopped = userPaused)
                 currentMetadata: nil,
                 streamStatus: "Stopped",
                 lastUpdated: Date(),
@@ -198,10 +203,12 @@ class RadioLiveActivityManager: ObservableObject {
         return nil
     }
     
-    private func getStreamStatus(isPlaying: Bool, hasError: Bool) -> String {
+    private func getStreamStatus(visualState: PlayerVisualState, hasError: Bool) -> String {
         if hasError {
             return "Connection Error"
-        } else if isPlaying {
+        } else if visualState == .thermalPaused {
+            return String(localized: "status_thermal_paused") ?? "Thermal pause"
+        } else if visualState.isActivelyPlaying {
             return "Live"
         } else {
             return "Ready"
@@ -254,7 +261,9 @@ extension RadioLiveActivityManager {
         let state = manager.loadSharedState()
         
         if state.isPlaying && currentActivity == nil {
-            startActivity()
+            Task {   // ← wrap in Task because startActivity is now async
+                await startActivity()
+            }
         }
     }
     
