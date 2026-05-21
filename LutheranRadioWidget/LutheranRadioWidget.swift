@@ -562,45 +562,57 @@ struct LargeWidgetView: View {
  * - Graceful error handling
  * - Immediate user feedback
  */
-struct WidgetToggleRadioIntent: AppIntent {
-    nonisolated static var title: LocalizedStringResource {
+public struct WidgetToggleRadioIntent: AppIntent {
+    public init() {}
+
+    public nonisolated static var title: LocalizedStringResource {
         "Toggle Lutheran Radio"
     }
-    nonisolated static var description: IntentDescription {
+    public nonisolated static var description: IntentDescription {
         IntentDescription("Play or pause Lutheran Radio.")
     }
-    
-    /**
-     * Executes play/pause toggle from Home Screen widget
-     * Provides immediate feedback to user through debug logging
-     */
-    func perform() async throws -> some IntentResult {
+
+    public func perform() async throws -> some IntentResult {
         #if DEBUG
         print("🔗 WidgetToggleRadioIntent.perform called")
         #endif
-        
-        let manager = SharedPlayerManager.shared
-        let state = manager.loadSharedState()  // already nonisolated → safe
-        let isCurrentlyPlaying = state.isPlaying
-        
-        if isCurrentlyPlaying {
-            await manager.stop()           // ← await, no closure
-        } else {
-            try await manager.play()       // ← try await, no closure
+
+        guard let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
+            return .result()
         }
-        
-        // NEW: Immediate refresh for user action
+
+        let manager = SharedPlayerManager.shared
+        let state = manager.loadSharedState()
+        let isCurrentlyPlaying = state.isPlaying
+
+        let action: String = isCurrentlyPlaying ? "pause" : "play"
+        let actionId = UUID().uuidString
+        let now = Date().timeIntervalSince1970
+
+        sharedDefaults.set(action, forKey: "pendingAction")
+        sharedDefaults.set(actionId, forKey: "pendingActionId")
+        sharedDefaults.set(now, forKey: "pendingActionTime")
+        // no language needed for toggle
+
+        // Post Darwin notification so main app reacts
+        CFNotificationCenterPostNotification(
+            CFNotificationCenterGetDarwinNotifyCenter(),
+            CFNotificationName("radio.lutheran.widget.action" as CFString),
+            nil, nil, true
+        )
+
+        // Immediate widget UI feedback
         let newState = WidgetState(
             isPlaying: !isCurrentlyPlaying,
             currentLanguage: state.currentLanguage,
             hasError: state.hasError
         )
         await WidgetRefreshManager.shared.refreshIfNeeded(for: newState, immediate: true)
-        
+
         #if DEBUG
-        print("🔗 WidgetToggleRadioIntent completed successfully")
+        print("🔗 WidgetToggleRadioIntent: posted \(action) action (ID: \(actionId))")
         #endif
-        
+
         return .result()
     }
 }
@@ -616,66 +628,83 @@ struct WidgetToggleRadioIntent: AppIntent {
  * - Automatic stream discovery
  * - Safe error handling for missing streams
  */
-struct SwitchStreamIntent: AppIntent {
-    nonisolated static var title: LocalizedStringResource {
-        "Switch Stream"
-    }
-    nonisolated static var description: IntentDescription {
-        IntentDescription("Switch to a different language stream.")
-    }
-    
-    /// Target language code for the switch
-    @Parameter(title: "Language Code")
-    var streamLanguageCode: String
-    
-    init() {}
-    
-    init(streamLanguageCode: String) {
+public struct SwitchStreamIntent: AppIntent {
+    public init() {}
+    public init(streamLanguageCode: String) {
         self.streamLanguageCode = streamLanguageCode
     }
 
-    func perform() async throws -> some IntentResult {
+    public nonisolated static var title: LocalizedStringResource {
+        "Switch Stream"
+    }
+    public nonisolated static var description: IntentDescription {
+        IntentDescription("Switch to a different language stream.")
+    }
+
+    @Parameter(title: "Language Code")
+    var streamLanguageCode: String
+
+    public func perform() async throws -> some IntentResult {
         #if DEBUG
         print("🔗 SwitchStreamIntent.perform called for language: \(streamLanguageCode)")
         #endif
-        
-        let manager = SharedPlayerManager.shared
-        
-        // Find target stream in available options
-        guard let targetStream = manager.availableStreams.first(where: { $0.languageCode == streamLanguageCode }) else {
-            #if DEBUG
-            print("🔗 SwitchStreamIntent: Language stream not found for \(streamLanguageCode)")
-            #endif
+
+        guard let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
             return .result()
         }
-        
-        // CRITICAL FIX: Execute the stream switch with proper language parameter
-        await manager.switchToStream(targetStream)
-        
+
+        let actionId = UUID().uuidString
+        let now = Date().timeIntervalSince1970
+
+        sharedDefaults.set("switch", forKey: "pendingAction")
+        sharedDefaults.set(actionId, forKey: "pendingActionId")
+        sharedDefaults.set(now, forKey: "pendingActionTime")
+        sharedDefaults.set(streamLanguageCode, forKey: "pendingLanguage")
+
+        // Post Darwin notification
+        CFNotificationCenterPostNotification(
+            CFNotificationCenterGetDarwinNotifyCenter(),
+            CFNotificationName("radio.lutheran.widget.action" as CFString),
+            nil, nil, true
+        )
+
+        // Immediate feedback
+        let manager = SharedPlayerManager.shared
+        let state = manager.loadSharedState()
+        let newState = WidgetState(
+            isPlaying: state.isPlaying,
+            currentLanguage: streamLanguageCode,
+            hasError: state.hasError
+        )
+        await WidgetRefreshManager.shared.refreshIfNeeded(for: newState, immediate: true)
+
         #if DEBUG
-        print("🔗 SwitchStreamIntent completed for \(targetStream.language)")
+        print("🔗 SwitchStreamIntent: posted switch to \(streamLanguageCode) (ID: \(actionId))")
         #endif
-        
+
         return .result()
     }
 }
 
 /**
- * WIDGET CONFIGURATION INTENT
- * ============================
- * Defines configuration options for the Lutheran Radio widget.
- * Currently serves as a placeholder for future configuration features.
- *
- * Future enhancements could include:
- * - Default language selection
- * - Auto-start preferences
- * - Display customization options
- */
-struct RadioWidgetConfiguration: WidgetConfigurationIntent {
-    nonisolated static var title: LocalizedStringResource {
+* WIDGET CONFIGURATION INTENT
+* ============================
+* Defines configuration options for the Lutheran Radio widget.
+* Currently serves as a placeholder for future configuration features.
+*
+* Future enhancements could include:
+* - Default language selection
+* - Auto-start preferences
+* - Display customization options
+*/
+public struct RadioWidgetConfiguration: WidgetConfigurationIntent {
+    public init() {}
+
+    public nonisolated static var title: LocalizedStringResource {
         "Widget Configuration"
     }
-    nonisolated static var description: IntentDescription {
+
+    public nonisolated static var description: IntentDescription {
         IntentDescription("Configuration for Lutheran Radio widget.")
     }
 }

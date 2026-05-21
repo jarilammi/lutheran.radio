@@ -268,6 +268,19 @@ actor SharedPlayerManager {
         #endif
     }
     
+    // MARK: - Widget-specific helpers
+
+    /// Clears the userPaused resurrection lock when a widget explicitly requests Play.
+    /// Called from handleWidgetPlayAction() so the widget can always start playback.
+    public func clearUserPausedLockIfNeeded() async {
+        if currentVisualState == .userPaused {
+            #if DEBUG
+            print("🔗 [Widget] Cleared userPaused lock for widget play action")
+            #endif
+            currentVisualState = .prePlay
+        }
+    }
+    
     /// Public async entry point for stopping playback
     public func stop() async {
         #if DEBUG
@@ -453,9 +466,13 @@ actor SharedPlayerManager {
         await saveCurrentState()
         
         if currentVisualState.mustSuppressResurrection {
+            #if DEBUG
             print("🔒 Resurrection suppressed — userPaused is sticky")
+            #endif
         } else if currentVisualState.shouldAutoPlayOrResume {
+            #if DEBUG
             print("▶️ Allowed to resume playback")
+            #endif
         }
     }
     
