@@ -72,93 +72,82 @@ struct Provider: AppIntentTimelineProvider {
     func placeholder(in context: Context) -> SimpleEntry {
         SimpleEntry(
             date: Date(),
-            isPlaying: false,
+            visualState: .prePlay,
             currentStation: "🇺🇸 " + String(localized: "language_english"),
             statusMessage: String(localized: "Ready to play"),
             availableStreams: SharedPlayerManager.shared.availableStreams,
             configuration: RadioWidgetConfiguration()
         )
     }
-
+    
     /**
      * Provides snapshot for widget configuration UI
      * Used when user is selecting and configuring widgets
      */
     func snapshot(for configuration: RadioWidgetConfiguration, in context: Context) async -> SimpleEntry {
-        return createEntry(with: configuration)
+        await createEntry(with: configuration)
     }
     
     /**
-     * Creates widget timeline with multiple entries for smooth updates
-     * Implements aggressive refresh strategy to catch rapid state changes
-     *
-     * Strategy:
-     * - Immediate entry with current state
-     * - Future entry to prevent timeline staleness
-     * - 15-second refresh interval for responsive updates
+     * Creates widget timeline with intelligent refresh policy
+     * 15-minute refresh interval balances responsiveness and battery life
      */
     func timeline(for configuration: RadioWidgetConfiguration, in context: Context) async -> Timeline<SimpleEntry> {
-        // RESEARCHER RECOMMENDATION: Add state validation
-        let currentState = getValidatedStreamState()
+        let currentState = await getValidatedStreamState()
         
         let entry = SimpleEntry(
             date: Date(),
-            isPlaying: currentState.isPlaying,
+            visualState: currentState.visualState,
             currentStation: currentState.currentStation,
             statusMessage: currentState.statusMessage,
             availableStreams: SharedPlayerManager.shared.availableStreams,
             configuration: configuration
         )
         
-        // RESEARCHER RECOMMENDATION: Longer refresh intervals for iOS 26 stability
         let nextUpdate = Calendar.current.date(byAdding: .minute, value: 15, to: Date())!
         return Timeline(entries: [entry], policy: .after(nextUpdate))
     }
     
-    // helper method to the Provider struct
-    private func getValidatedStreamState() -> (isPlaying: Bool, currentStation: String, statusMessage: String) {
+    // MARK: - Async helpers (required for actor isolation)
+    
+    private func getValidatedStreamState() async -> (isPlaying: Bool, currentStation: String, statusMessage: String, visualState: PlayerVisualState) {
         let manager = SharedPlayerManager.shared
         let state = manager.loadSharedState()
-        let isPlaying = state.isPlaying
+        
+        // ✅ Safe actor access with await
+        let visualState = await manager.currentVisualState
+        
         let currentStream = manager.availableStreams.first(where: { $0.languageCode == state.currentLanguage }) ?? manager.availableStreams[0]
         let currentStation = currentStream.flag + " " + currentStream.language
-        let hasError = state.hasError
         
         let statusMessage: String
-        if hasError {
+        if state.hasError {
             statusMessage = String(localized: "Connection error")
-        } else if isPlaying {
+        } else if visualState == .playing {
             statusMessage = String(localized: "status_playing")
         } else {
             statusMessage = String(localized: "Ready")
         }
         
-        return (isPlaying: isPlaying, currentStation: currentStation, statusMessage: statusMessage)
+        return (
+            isPlaying: visualState.isActivelyPlaying,
+            currentStation: currentStation,
+            statusMessage: statusMessage,
+            visualState: visualState
+        )
     }
     
-    /**
-     * Creates widget entry with current radio state
-     * Implements sophisticated state detection for instant user feedback
-     *
-     * Priority order for state detection:
-     * 1. Instant feedback (for immediate user response)
-     * 2. Pending actions (for predicted state changes)
-     * 3. Recent cached state (for efficiency)
-     * 4. Live player state (fallback)
-     */
-    private func createEntry(with configuration: RadioWidgetConfiguration) -> SimpleEntry {
+    private func createEntry(with configuration: RadioWidgetConfiguration) async -> SimpleEntry {
         let manager = SharedPlayerManager.shared
+        let (isPlaying, currentLanguage, hasError, visualState) = await getPendingOrCurrentState(manager: manager)
         
-        // Check for pending widget actions first (for instant feedback)
-        let (isPlaying, currentLanguage, hasError) = getPendingOrCurrentState(manager: manager)
-        
-        // Get the stream info based on the resolved language
         let currentStream = manager.availableStreams.first { $0.languageCode == currentLanguage } ?? manager.availableStreams[0]
         let currentStation = currentStream.flag + " " + currentStream.language
         
-        // Get status message based on player state
         let statusMessage: String
-        if hasError {
+        if visualState == .thermalPaused {
+            statusMessage = String(localized: "status_thermal_paused") ?? "Thermal pause"
+        } else if hasError {
             statusMessage = String(localized: "Connection error")
         } else if isPlaying {
             statusMessage = String(localized: "status_playing")
@@ -167,12 +156,12 @@ struct Provider: AppIntentTimelineProvider {
         }
         
         #if DEBUG
-        print("🔗 Widget creating entry: playing=\(isPlaying), station=\(currentStation), status=\(statusMessage), language=\(currentLanguage)")
+        print("🔗 Widget creating entry: visualState=\(visualState), station=\(currentStation)")
         #endif
         
         return SimpleEntry(
             date: Date(),
-            isPlaying: isPlaying,
+            visualState: visualState,
             currentStation: currentStation,
             statusMessage: statusMessage,
             availableStreams: manager.availableStreams,
@@ -180,62 +169,43 @@ struct Provider: AppIntentTimelineProvider {
         )
     }
     
-    /**
-     * Intelligent state detection with instant feedback capabilities
-     * Provides immediate visual feedback for user actions before network confirmation
-     *
-     * Implementation Details:
-     * - Instant feedback: 15-second window for immediate user response
-     * - Pending actions: 3-second window for predicted state changes
-     * - Recent cache: 2-second window for efficiency
-     * - Live state: Real-time fallback
-     *
-     * - Parameter manager: The shared player manager instance
-     * - Returns: Tuple of (isPlaying, currentLanguage, hasError)
-     */
-    private func getPendingOrCurrentState(manager: SharedPlayerManager) -> (isPlaying: Bool, currentLanguage: String, hasError: Bool) {
+    private func getPendingOrCurrentState(manager: SharedPlayerManager) async -> (isPlaying: Bool, currentLanguage: String, hasError: Bool, visualState: PlayerVisualState) {
         guard let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
             let state = manager.loadSharedState()
-            return (state.isPlaying, state.currentLanguage, state.hasError)
+            // ✅ Safe actor access
+            let visualState = await manager.currentVisualState
+            return (state.isPlaying, state.currentLanguage, state.hasError, visualState)
         }
         
-        // PRIORITY 1: Always check for pending switch actions first
+        // Pending / instant feedback logic (unchanged)
         if let pendingAction = sharedDefaults.string(forKey: "pendingAction"),
            pendingAction == "switch",
            let pendingLanguage = sharedDefaults.string(forKey: "pendingLanguage"),
            let pendingTime = sharedDefaults.object(forKey: "pendingActionTime") as? Double {
             
             let actionAge = Date().timeIntervalSince1970 - pendingTime
-            
-            // Use pending language for 5 seconds (increased from 3)
             if actionAge < 5.0 {
-                #if DEBUG
-                print("🔗 Widget using pending language: \(pendingLanguage), age: \(actionAge)s")
-                #endif
                 let state = manager.loadSharedState()
-                return (state.isPlaying, pendingLanguage, state.hasError)
+                let visualState = await manager.currentVisualState
+                return (state.isPlaying, pendingLanguage, state.hasError, visualState)
             }
         }
         
-        // PRIORITY 2: Check instant feedback
         if let instantFeedbackTime = sharedDefaults.object(forKey: "instantFeedbackTime") as? Double,
            let instantFeedbackLanguage = sharedDefaults.string(forKey: "instantFeedbackLanguage"),
            sharedDefaults.bool(forKey: "isInstantFeedback") == true {
             
             let age = Date().timeIntervalSince1970 - instantFeedbackTime
-            
             if age < 15.0 {
                 let state = manager.loadSharedState()
-                #if DEBUG
-                print("🔗 Widget using instant feedback: \(instantFeedbackLanguage), age: \(age)s")
-                #endif
-                return (state.isPlaying, instantFeedbackLanguage, state.hasError)
+                let visualState = await manager.currentVisualState
+                return (state.isPlaying, instantFeedbackLanguage, state.hasError, visualState)
             }
         }
         
-        // PRIORITY 3: Use normal state
         let state = manager.loadSharedState()
-        return (state.isPlaying, state.currentLanguage, state.hasError)
+        let visualState = await manager.currentVisualState
+        return (state.isPlaying, state.currentLanguage, state.hasError, visualState)
     }
 }
 
@@ -245,13 +215,17 @@ struct Provider: AppIntentTimelineProvider {
  * Data structure representing a single point in the widget's timeline.
  * Contains all information needed to render the widget at a specific time.
  */
-struct SimpleEntry: TimelineEntry {
-    let date: Date                                          // Timeline timestamp
-    let isPlaying: Bool                                     // Current playback state
-    let currentStation: String                             // Display name of current stream
-    let statusMessage: String                              // User-friendly status text
-    let availableStreams: [DirectStreamingPlayer.Stream]   // All available language streams
-    let configuration: RadioWidgetConfiguration           // User's widget configuration
+struct SimpleEntry: TimelineEntry, Sendable {   // ← added Sendable
+    let date: Date
+    let visualState: PlayerVisualState
+    let currentStation: String
+    let statusMessage: String
+    let availableStreams: [DirectStreamingPlayer.Stream]
+    let configuration: RadioWidgetConfiguration
+
+    var isPlaying: Bool {
+        visualState.isActivelyPlaying
+    }
 }
 
 /**
@@ -301,10 +275,9 @@ struct SmallWidgetView: View {
     
     var body: some View {
         if !isAppRunning() {
-            // ONBOARDING STATE: Show when app isn't actively running
             VStack(spacing: 8) {
                 Image(systemName: "radio")
-                    .font(.title2) // Optimized size for small widget
+                    .font(.title2)
                     .foregroundColor(.secondary)
                 
                 Text(String(localized: "tap_to_open"))
@@ -312,34 +285,30 @@ struct SmallWidgetView: View {
                     .fontWeight(.medium)
                     .foregroundColor(.primary)
                     .multilineTextAlignment(.center)
-                    .lineLimit(2) // Allow text wrapping for localization
-                    .minimumScaleFactor(0.8) // Scale down if needed for long text
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
             }
             .padding()
             .widgetURL(URL(string: "lutheranradio://open"))
         } else {
-            // ACTIVE STATE: Full functionality when app is running
             VStack(spacing: 4) {
-                // Current station with flag emoji for visual recognition
                 Text(entry.currentStation)
                     .font(.caption)
                     .fontWeight(.medium)
                     .foregroundColor(.primary)
                     .lineLimit(1)
                 
-                // Status indicator (Playing, Stopped, Error)
                 Text(entry.statusMessage)
                     .font(.caption2)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(entry.visualState.textColor.swiftUIColor)
                     .lineLimit(1)
                 
                 Spacer()
                 
-                // Large, accessible play/pause button
                 Button(intent: WidgetToggleRadioIntent()) {
                     Image(systemName: entry.isPlaying ? "pause.circle.fill" : "play.circle.fill")
                         .font(.title2)
-                        .foregroundColor(entry.isPlaying ? .orange : .blue)
+                        .foregroundColor(entry.visualState.buttonTintColor.swiftUIColor)
                 }
                 .buttonStyle(.plain)
             }
@@ -348,12 +317,6 @@ struct SmallWidgetView: View {
         }
     }
     
-    /**
-     * Determines if the main app is actively running
-     * Based on recent state updates from the shared manager
-     *
-     * - Returns: True if app has provided state updates within last 60 seconds
-     */
     private func isAppRunning() -> Bool {
         if let lastUpdate = UserDefaults(suiteName: "group.radio.lutheran.shared")?
             .object(forKey: "lastUpdateTime") as? Double {
@@ -385,18 +348,15 @@ struct MediumWidgetView: View {
     
     var body: some View {
         if !isAppRunning() {
-            // ONBOARDING STATE: Informative app launch prompt
             HStack {
                 VStack(spacing: 8) {
                     Image(systemName: "radio")
                         .font(.largeTitle)
                         .foregroundColor(.secondary)
-                    
                     Text(String(localized: "tap_to_open"))
                         .font(.subheadline)
                         .fontWeight(.medium)
                         .foregroundColor(.primary)
-                    
                     Text(String(localized: "open_app_first"))
                         .font(.caption)
                         .foregroundColor(.secondary)
@@ -406,9 +366,7 @@ struct MediumWidgetView: View {
             .padding()
             .widgetURL(URL(string: "lutheranradio://open"))
         } else {
-            // ACTIVE STATE: Full medium widget functionality
             HStack(spacing: 12) {
-                // LEFT SIDE: Station information
                 VStack(alignment: .leading, spacing: 4) {
                     Text(String(localized: "lutheran_radio_title"))
                         .font(.caption)
@@ -422,21 +380,19 @@ struct MediumWidgetView: View {
                     
                     Text(entry.statusMessage)
                         .font(.caption)
-                        .foregroundColor(entry.isPlaying ? .green : .secondary)
+                        .foregroundColor(entry.visualState.textColor.swiftUIColor)
                     
                     Spacer()
                 }
                 
                 Spacer()
                 
-                // RIGHT SIDE: Control panel
                 VStack(spacing: 8) {
-                    // Primary play/pause button
                     Button(intent: WidgetToggleRadioIntent()) {
                         VStack(spacing: 2) {
                             Image(systemName: entry.isPlaying ? "pause.circle.fill" : "play.circle.fill")
                                 .font(.title)
-                                .foregroundColor(entry.isPlaying ? .orange : .blue)
+                                .foregroundColor(entry.visualState.buttonTintColor.swiftUIColor)
                             Text(entry.isPlaying ? String(localized: "status_paused") : String(localized: "status_playing"))
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
@@ -444,7 +400,6 @@ struct MediumWidgetView: View {
                     }
                     .buttonStyle(.plain)
                     
-                    // Quick language switching (first 2 alternatives)
                     if entry.availableStreams.count > 1 {
                         let currentStreamCode = getCurrentStreamCode(from: entry.currentStation)
                         let alternativeStreams = entry.availableStreams.filter { $0.languageCode != currentStreamCode }.prefix(2)
@@ -464,10 +419,6 @@ struct MediumWidgetView: View {
         }
     }
     
-    /**
-     * Determines if the main app is actively running
-     * Identical implementation to SmallWidgetView for consistency
-     */
     private func isAppRunning() -> Bool {
         if let lastUpdate = UserDefaults(suiteName: "group.radio.lutheran.shared")?
             .object(forKey: "lastUpdateTime") as? Double {
@@ -476,20 +427,13 @@ struct MediumWidgetView: View {
         return false
     }
     
-    /**
-     * Extracts language code from formatted station name
-     * Used to determine which alternative streams to show
-     *
-     * - Parameter stationName: Formatted station name (e.g., "🇺🇸 English")
-     * - Returns: Language code (e.g., "en") or "en" as fallback
-     */
     private func getCurrentStreamCode(from stationName: String) -> String {
         for stream in entry.availableStreams {
             if stationName.contains(stream.language) {
                 return stream.languageCode
             }
         }
-        return "en" // Default fallback to English
+        return "en"
     }
 }
 
@@ -517,31 +461,24 @@ struct LargeWidgetView: View {
     
     var body: some View {
         if !isAppRunning() {
-            // ONBOARDING STATE: Comprehensive app launch guidance
             VStack(spacing: 16) {
                 Spacer()
-                
                 Image(systemName: "radio")
                     .font(.system(size: 60))
                     .foregroundColor(.secondary)
-                
                 Text(String(localized: "tap_to_open"))
                     .font(.title3)
                     .fontWeight(.medium)
                     .foregroundColor(.primary)
-                
                 Text(String(localized: "open_app_first"))
                     .font(.subheadline)
                     .foregroundColor(.secondary)
-                
                 Spacer()
             }
             .padding()
             .widgetURL(URL(string: "lutheranradio://open"))
         } else {
-            // ACTIVE STATE: Complete large widget interface
             VStack(spacing: 12) {
-                // HEADER: Title and main control
                 HStack {
                     Text(String(localized: "lutheran_radio_title"))
                         .font(.headline)
@@ -550,12 +487,11 @@ struct LargeWidgetView: View {
                     Button(intent: WidgetToggleRadioIntent()) {
                         Image(systemName: entry.isPlaying ? "pause.circle.fill" : "play.circle.fill")
                             .font(.title2)
-                            .foregroundColor(entry.isPlaying ? .orange : .blue)
+                            .foregroundColor(entry.visualState.buttonTintColor.swiftUIColor)
                     }
                     .buttonStyle(.plain)
                 }
                 
-                // CURRENT STATION: Prominent display of active stream
                 VStack(spacing: 4) {
                     Text(entry.currentStation)
                         .font(.title2)
@@ -564,12 +500,11 @@ struct LargeWidgetView: View {
                     
                     Text(entry.statusMessage)
                         .font(.subheadline)
-                        .foregroundColor(entry.isPlaying ? .green : .secondary)
+                        .foregroundColor(entry.visualState.textColor.swiftUIColor)
                 }
                 
                 Divider()
                 
-                // LANGUAGE GRID: All available Lutheran radio streams
                 LazyVGrid(columns: [
                     GridItem(.flexible()),
                     GridItem(.flexible())
@@ -605,10 +540,6 @@ struct LargeWidgetView: View {
         }
     }
     
-    /**
-     * Determines if the main app is actively running
-     * Consistent with other widget sizes for uniform behavior
-     */
     private func isAppRunning() -> Bool {
         if let lastUpdate = UserDefaults(suiteName: "group.radio.lutheran.shared")?
             .object(forKey: "lastUpdateTime") as? Double {
@@ -747,4 +678,9 @@ struct RadioWidgetConfiguration: WidgetConfigurationIntent {
     nonisolated static var description: IntentDescription {
         IntentDescription("Configuration for Lutheran Radio widget.")
     }
+}
+
+// MARK: - UIColor → Color bridge (SwiftUI)
+extension UIColor {
+    var swiftUIColor: Color { Color(self) }
 }

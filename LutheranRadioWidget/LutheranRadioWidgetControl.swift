@@ -51,19 +51,17 @@ struct LutheranRadioWidgetControl: ControlWidget {
                 action: ToggleRadioIntent()
             ) { isPlaying in
                 Label {
-                    // Status display showing playback state and current station
                     VStack(alignment: .leading, spacing: 1) {
-                        // Current status (Playing/Stopped) - localized for international users
-                        Text(isPlaying ? String(localized: "status_playing") : String(localized: "status_stopped"))
-                            .font(.caption2)
-                        // Current language stream with flag emoji for visual identification
+                        Text(value.visualState == .thermalPaused
+                             ? String(localized: "status_thermal_paused") ?? "Thermal pause"
+                             : (value.isPlaying ? String(localized: "status_playing") : String(localized: "status_stopped")))
+                        .font(.caption2)
                         Text(value.currentStation)
                             .font(.caption2)
                             .foregroundColor(.secondary)
                     }
                 } icon: {
-                    // Play/pause icon that updates based on current state
-                    Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                    Image(systemName: value.isPlaying ? "pause.fill" : "play.fill")
                 }
             }
         }
@@ -79,13 +77,18 @@ extension LutheranRadioWidgetControl {
      * Represents the current state of the radio player for display in the widget.
      * This data is refreshed automatically by iOS and reflects real-time player status.
      */
-    struct Value {
-        /// Whether audio is currently playing
-        var isPlaying: Bool
-        /// Display name of current stream (e.g., "🇺🇸 English", "🇩🇪 German")
-        var currentStation: String
-        /// Whether there's a connection or playback error
-        var hasError: Bool
+    struct Value: Sendable {                    // ← added Sendable for Swift 6
+        let visualState: PlayerVisualState      // ← NEW: SSOT
+        let currentStation: String
+        
+        // Backward-compatible properties
+        var isPlaying: Bool {
+            visualState.isActivelyPlaying
+        }
+        
+        var hasError: Bool {
+            visualState == .securityLocked
+        }
     }
 
     /**
@@ -101,10 +104,9 @@ extension LutheranRadioWidgetControl {
          * Used when user is configuring widgets or in Xcode previews
          */
         func previewValue(configuration: ControlConfigurationAppIntent) -> Value {
-            LutheranRadioWidgetControl.Value(
-                isPlaying: false,
-                currentStation: "🇺🇸 " + String(localized: "language_english"),
-                hasError: false
+            Value(
+                visualState: .prePlay,
+                currentStation: "🇺🇸 " + String(localized: "language_english")
             )
         }
 
@@ -119,18 +121,16 @@ extension LutheranRadioWidgetControl {
         func currentValue(configuration: ControlConfigurationAppIntent) async throws -> Value {
             let manager = SharedPlayerManager.shared
             let state = manager.loadSharedState()
-            let isPlaying = state.isPlaying
+            
+            // ✅ Safe actor access
+            let visualState = await manager.currentVisualState
+            
             let currentStream = manager.availableStreams.first(where: { $0.languageCode == state.currentLanguage }) ?? manager.availableStreams[0]
-            // Format station name with flag emoji and language name for easy recognition
             let currentStation = currentStream.flag + " " + currentStream.language
             
-            // Check for connection or streaming errors
-            let hasError = state.hasError
-            
-            return LutheranRadioWidgetControl.Value(
-                isPlaying: isPlaying,
-                currentStation: currentStation,
-                hasError: hasError
+            return Value(
+                visualState: visualState,
+                currentStation: currentStation
             )
         }
     }
