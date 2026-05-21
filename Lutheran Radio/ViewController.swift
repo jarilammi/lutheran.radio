@@ -1368,7 +1368,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     private static let placeholderArtwork: MPMediaItemArtwork? = {
         guard let image = UIImage(named: "radio-placeholder") else {
             // This will only print once at app launch if something is still wrong
+            #if DEBUG
             print("🔴 CRITICAL: Could not load radio-placeholder from Assets.xcassets")
+            #endif
             return nil
         }
         return MPMediaItemArtwork(boundsSize: image.size) { _ in image }
@@ -2580,13 +2582,17 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     // MARK: - UICollectionViewDelegateFlowLayout
     func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, sizeForItemAt indexPath: IndexPath) -> CGSize {
         let cellWidth: CGFloat = 50
+        #if DEBUG
         print("Cell size for item \(indexPath.item): width = \(cellWidth), height = 50")
+        #endif
         return CGSize(width: cellWidth, height: 50)
     }
     
     func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, minimumLineSpacingForSectionAt section: Int) -> CGFloat {
         let spacing = 10.0
+        #if DEBUG
         print("Minimum line spacing for section \(section): \(spacing)")
+        #endif
         return spacing
     }
     
@@ -2614,13 +2620,24 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     private func handleWidgetPlayAction() {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
+            
+            #if DEBUG
+            print("🔗 Widget Play action - forcing playback (bypassing userPaused lock)")
+            #endif
+            
             hasPermanentPlaybackError = false
+            isManualPause = false
             
-            // Direct playback without tuning sounds
-            startPlaybackDirect()
-            
-            // Immediately save state for widget feedback
-            saveStateForWidget()
+            Task { @MainActor in
+                // Force-clear the userPaused lock so play() can succeed
+                await SharedPlayerManager.shared.clearUserPausedLockIfNeeded()
+                
+                // Now start playback (no tuning sound)
+                self.startPlaybackDirect()
+                
+                // Immediate widget feedback
+                self.saveStateForWidget()
+            }
         }
     }
 
