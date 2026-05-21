@@ -661,21 +661,24 @@ struct SwitchStreamIntent: AppIntent {
 }
 
 /**
- * WIDGET CONFIGURATION INTENT
- * ============================
- * Defines configuration options for the Lutheran Radio widget.
- * Currently serves as a placeholder for future configuration features.
- *
- * Future enhancements could include:
- * - Default language selection
- * - Auto-start preferences
- * - Display customization options
- */
-struct RadioWidgetConfiguration: WidgetConfigurationIntent {
-    nonisolated static var title: LocalizedStringResource {
+* WIDGET CONFIGURATION INTENT
+* ============================
+* Defines configuration options for the Lutheran Radio widget.
+* Currently serves as a placeholder for future configuration features.
+*
+* Future enhancements could include:
+* - Default language selection
+* - Auto-start preferences
+* - Display customization options
+*/
+public struct RadioWidgetConfiguration: WidgetConfigurationIntent {
+    public init() {}
+
+    public nonisolated static var title: LocalizedStringResource {
         "Widget Configuration"
     }
-    nonisolated static var description: IntentDescription {
+
+    public nonisolated static var description: IntentDescription {
         IntentDescription("Configuration for Lutheran Radio widget.")
     }
 }
