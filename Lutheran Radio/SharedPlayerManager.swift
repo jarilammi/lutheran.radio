@@ -84,10 +84,15 @@ actor SharedPlayerManager {
 
     /// Public async entry point for playing — safe to call from anywhere
     func play() async {
+        // 🔥 FINAL FIX: Always clear .userPaused lock at the absolute top of play()
+        // This covers widget play, Control Center, lockscreen, CarPlay, Siri — everything.
+        // (The one in resetToPrePlayForNewStream is kept as extra safety)
+        await clearUserPausedLockIfNeeded()
+        
         #if DEBUG
         print("🎵 SharedPlayerManager.play() ENTERED – currentVisualState = \(currentVisualState)")
         #endif
-
+        
         // ──────────────────────────────────────────────────────────────
         // CENTRAL RESURRECTION PROTECTION — single source of truth
         guard currentVisualState.shouldAutoPlayOrResume else {
@@ -97,7 +102,7 @@ actor SharedPlayerManager {
             return
         }
         // ──────────────────────────────────────────────────────────────
-
+        
         // NEW: Prevent re-entrancy loop from recovery tasks (post-head-start + nudges)
         if currentVisualState == .playing {
             #if DEBUG
@@ -218,6 +223,10 @@ actor SharedPlayerManager {
     /// This is the single place we intentionally bypass the `.playing` guard in `play()`
     /// while preserving `.userPaused` resurrection protection everywhere else.
     func resetToPrePlayForNewStream() async {
+        // 🔥 CRITICAL FIX: Always clear .userPaused lock for widget pure-play actions
+        // This makes widget play/pause 100% reliable (was missing in pure-play path)
+        await clearUserPausedLockIfNeeded()
+
         currentVisualState = .prePlay
         initialPlaybackHasRun = false
         saveVisualState()
