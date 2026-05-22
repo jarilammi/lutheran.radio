@@ -910,31 +910,46 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         networkMonitor = pathMonitor
         networkMonitor?.pathUpdateHandler = { [weak self] status in
             guard let self else {
+                #if DEBUG
                 print("🧹 [Network] Skipped path update: self is nil")
+                #endif
                 return
             }
             
             let wasConnected = self.hasInternetConnection
             self.hasInternetConnection = status == .satisfied
             
+            #if DEBUG
             print("🌐 [Network] Status: \(self.hasInternetConnection ? "Connected" : "Disconnected")")
+            #endif
             
             if self.hasInternetConnection && !wasConnected {
                 // ── Reconnect case ──
+                #if DEBUG
                 print("🌐 [Network] Connection restored, previous server: \(self.currentSelectedServer.name)")
+                #endif
                 
                 // Clear server selection cache
                 self.lastServerSelectionTime = nil
                 self.serverFailureCount.removeAll()
+                
+                #if DEBUG
                 print("🌐 [Network] Cleared server selection cache + failure counts")
+                #endif
                 
                 // Reset transient security state + revalidate
                 Task {
                     await SecurityModelValidator.shared.resetTransientState()
+                    
+                    #if DEBUG
                     print("🔒 [Network] Invalidated security model validation cache (transient reset)")
+                    #endif
                     
                     let isValid = await SecurityModelValidator.shared.validateSecurityModel()
+                    
+                    #if DEBUG
                     print("🔒 [Network] Revalidation result on reconnect: \(isValid)")
+                    #endif
                     
                     if !isValid {
                         let isPermanent = await SecurityModelValidator.shared.isPermanentlyInvalid
@@ -972,7 +987,9 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                                     )
                                 }
                                 // Optionally log the error
+                                #if DEBUG
                                 print("Auto-replay failed: \(error)")
+                                #endif
                             }
                         }
                     }
@@ -980,13 +997,17 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 
                 // Select optimal server after reconnect
                 self.selectOptimalServer { server in
+                    #if DEBUG
                     print("🌐 [Network] New server selected: \(server.name)")
+                    #endif
                     // Any additional post-selection logic here if needed
                 }
             }
             else if !self.hasInternetConnection && wasConnected {
                 // ── Disconnect case ──
+                #if DEBUG
                 print("🌐 [Network] Connection lost")
+                #endif
                 
                 DispatchQueue.main.async {
                     self.safeOnStatusChange(
@@ -1247,7 +1268,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.playback,
                                     mode: .default,
-                                    options: [.allowAirPlay, .defaultToSpeaker])
+                                    options: [.allowAirPlay])
             
             try session.setActive(true)
             

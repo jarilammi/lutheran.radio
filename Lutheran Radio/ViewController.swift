@@ -2622,7 +2622,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             guard let self = self else { return }
             
             #if DEBUG
-            print("🔗 Widget Play action - forcing playback (bypassing userPaused lock)")
+            print("🔗 Widget Play action - forcing playback (main app style)")
             #endif
             
             hasPermanentPlaybackError = false
@@ -2632,8 +2632,21 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 // Force-clear the userPaused lock so play() can succeed
                 await SharedPlayerManager.shared.clearUserPausedLockIfNeeded()
                 
-                // Now start playback (no tuning sound)
-                self.startPlaybackDirect()
+                // === MAIN-APP STYLE PLAY (same path as cold launch / big Play button) ===
+                #if DEBUG
+                print("▶️ Widget Play button → calling SharedPlayerManager.play()")
+                #endif
+                
+                do {
+                    try await SharedPlayerManager.shared.play()
+                    #if DEBUG
+                    print("✅ Widget Play button: SharedPlayerManager.play() succeeded")
+                    #endif
+                } catch {
+                    #if DEBUG
+                    print("❌ Widget Play button play failed: \(error.localizedDescription)")
+                    #endif
+                }
                 
                 // Immediate widget feedback
                 self.saveStateForWidget()
@@ -2695,53 +2708,37 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 // 4. Switch in the shared actor
                 await SharedPlayerManager.shared.switchToStream(targetStream)
                 
+                // === CRITICAL FIX: Clear lock AFTER switchToStream (this is where .userAction stop happens) ===
+                await SharedPlayerManager.shared.clearUserPausedLockIfNeeded()
+                
+                #if DEBUG
+                print("🔗 [Widget Switch] Cleared userPaused lock → auto-play of new stream allowed")
+                #endif
+                
                 // 5. Update collection view
                 let indexPath = IndexPath(item: targetIndex, section: 0)
                 self.languageCollectionView.selectItem(at: indexPath, animated: true, scrollPosition: .centeredHorizontally)
                 self.updateSelectionIndicator(to: targetIndex)
                 
-                // 6. Ensure playback starts — but ONLY if visual state allows it
+                // 6. Main-app style play — exact same path the main Play button uses
                 try? await Task.sleep(for: .seconds(0.6))
                 
-                let visualState = await SharedPlayerManager.shared.currentVisualState
+                // Reset state so SharedPlayerManager.play() does NOT skip
+                self.hasPermanentPlaybackError = false
+                self.isManualPause = false
                 
-                guard visualState.shouldAutoPlayOrResume else {
-                    #if DEBUG
-                    print("🛡️ [Widget Switch] Blocked auto-play — currentVisualState is \(visualState)")
-                    #endif
-                    
-                    self.streamingPlayer.isSwitchingStream = false
-                    
-                    // ← SINGLE SOURCE OF TRUTH
-                    self.updateUI(for: visualState)
-                    
-                    self.saveStateForWidget()
-                    WidgetCenter.shared.reloadAllTimelines()
-                    await SharedPlayerManager.shared.clearPendingAction(actionId: actionId)
-                    return
-                }
+                #if DEBUG
+                print("▶️ [Widget Switch] Starting new stream using SharedPlayerManager.play() — main app path")
+                #endif
                 
-                // Only reach here if we are allowed to resume
-                let state = await SharedPlayerManager.shared.loadSharedState()   // ← added missing await
-                if !state.isPlaying {
+                do {
+                    try await SharedPlayerManager.shared.play()
                     #if DEBUG
-                    print("▶️ Attempting to start playback after switch (state: playing=\(state.isPlaying), lang=\(state.currentLanguage))")
+                    print("✅ Widget switch: SharedPlayerManager.play() succeeded")
                     #endif
-                    
-                    do {
-                        try await SharedPlayerManager.shared.play()
-                        
-                        #if DEBUG
-                        print("✅ SharedPlayerManager.play() succeeded")
-                        #endif
-                    } catch {
-                        #if DEBUG
-                        print("❌ SharedPlayerManager.play() failed: \(error.localizedDescription)")
-                        #endif
-                    }
-                } else {
+                } catch {
                     #if DEBUG
-                    print("ℹ️ Playback already active after switch")
+                    print("❌ Widget switch play failed: \(error.localizedDescription)")
                     #endif
                 }
                 
