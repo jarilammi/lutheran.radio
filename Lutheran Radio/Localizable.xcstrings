@@ -81,6 +81,12 @@
             "value" : "%1$@ %2$@"
           }
         },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@"
+          }
+        },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
@@ -197,6 +203,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "🇩🇪 Tysk"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "🇩🇪 Duits"
           }
         },
         "nn" : {
@@ -317,6 +329,12 @@
             "value" : "🇪🇪 Estisk"
           }
         },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "🇪🇪 Ests"
+          }
+        },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
@@ -433,6 +451,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "🇫🇮 Finsk"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "🇫🇮 Fins"
           }
         },
         "nn" : {
@@ -553,6 +577,12 @@
             "value" : "🇸🇪 Svensk"
           }
         },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "🇸🇪 Zweeds"
+          }
+        },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
@@ -669,6 +699,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "🇺🇸 Engelsk"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "🇺🇸 Engels"
           }
         },
         "nn" : {
@@ -789,6 +825,12 @@
             "value" : "Dobbelttrykk for å velge lydutgangsenhet"
           }
         },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dubbeltik om het audio-uitvoerapparaat te selecteren"
+          }
+        },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
@@ -905,6 +947,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Viser informasjon om gjeldende radioprogram"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toont informatie over het huidige radioprogramma"
           }
         },
         "nn" : {
@@ -1025,6 +1073,12 @@
             "value" : "Veksler mellom avspilling og pause av radiostrømmen"
           }
         },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Schakelt de afspeling van de radiostream in en uit"
+          }
+        },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1143,6 +1197,12 @@
             "value" : "Justerer avspillingsvolumet"
           }
         },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Past het afspeelvolume aan"
+          }
+        },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1256,6 +1316,12 @@
           }
         },
         "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AirPlay"
+          }
+        },
+        "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "AirPlay"
@@ -1380,6 +1446,12 @@
             "value" : "Pause"
           }
         },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pauzeren"
+          }
+        },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1496,6 +1568,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spill av"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afspelen"
           }
         },
         "nn" : {
@@ -1616,6 +1694,12 @@
             "value" : "Dobbelttrykk for å spille av eller pause radiostrømmen"
           }
         },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dubbeltik om de radiostream af te spelen of te pauzeren"
+          }
+        },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1732,6 +1816,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Volum"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volume"
           }
         },
         "nn" : {
@@ -1852,6 +1942,12 @@
             "value" : "%d prosent"
           }
         },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d procent"
+          }
+        },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1968,6 +2064,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mislyktes"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mislukt"
           }
         },
         "nn" : {
@@ -2088,6 +2190,12 @@
             "value" : "Fortsett"
           }
         },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Doorgaan"
+          }
+        },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2204,6 +2312,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Igjen"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opnieuw proberen"
           }
         },
         "nn" : {
@@ -2324,6 +2438,12 @@
             "value" : "Konfigurasjon for Lutheran Radio widget."
           }
         },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configuratie voor Lutheran Radio-widget."
+          }
+        },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2440,6 +2560,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Konfigurer Lutheran Radio kontrollwidget."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio-bedieningswidget configureren."
           }
         },
         "nn" : {
@@ -2560,6 +2686,12 @@
             "value" : "Konfigurer Lutheran Radio for ${preferredLanguage}"
           }
         },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio configureren voor ${preferredLanguage}"
+          }
+        },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2676,6 +2808,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tilkoblingsfeil"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verbindingsfout"
           }
         },
         "nn" : {
@@ -2796,6 +2934,12 @@
             "value" : "Kontrollkonfigurasjon"
           }
         },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bedieningsconfiguratie"
+          }
+        },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2914,6 +3058,12 @@
             "value" : "Kontroller Lutheran Radio avspilling og se gjeldende stasjon."
           }
         },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bedien Lutheran Radio-afspeling en bekijk het huidige station."
+          }
+        },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3030,6 +3180,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kontroller avspilling og bytt mellom språkstrømmer."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bedien de afspeling en schakel tussen taalstreams."
           }
         },
         "nn" : {
@@ -3151,6 +3307,12 @@
             "value" : "Reduser volumet"
           }
         },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volume verlagen"
+          }
+        },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3269,6 +3431,12 @@
             "value" : "Standard språkstrøm å bruke"
           }
         },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Standaardtaalstream om te gebruiken"
+          }
+        },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3385,6 +3553,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ikke vis igjen"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Niet meer tonen"
           }
         },
         "nn" : {
@@ -3506,6 +3680,12 @@
             "value" : "Øk volumet"
           }
         },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volume verhogen"
+          }
+        },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3622,6 +3802,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spiller"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wordt afgespeeld"
           }
         },
         "nn" : {
@@ -3742,6 +3928,12 @@
             "value" : "Språk"
           }
         },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taal"
+          }
+        },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3860,6 +4052,12 @@
             "value" : "Språkkode"
           }
         },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taalcode"
+          }
+        },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3976,6 +4174,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Språkstrøm å bytte til"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taalstream om naar over te schakelen"
           }
         },
         "nn" : {
@@ -4097,6 +4301,12 @@
             "value" : "Engelsk"
           }
         },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Engels"
+          }
+        },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4214,6 +4424,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Estisk"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ests"
           }
         },
         "nn" : {
@@ -4335,6 +4551,12 @@
             "value" : "Finsk"
           }
         },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fins"
+          }
+        },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4452,6 +4674,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tysk"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Duits"
           }
         },
         "nn" : {
@@ -4573,6 +4801,12 @@
             "value" : "Svensk"
           }
         },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zweeds"
+          }
+        },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4689,6 +4923,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "DIREKTE"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "LIVE"
           }
         },
         "nn" : {
@@ -4809,6 +5049,12 @@
             "value" : "Kun lokalt"
           }
         },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alleen lokaal"
+          }
+        },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4927,6 +5173,12 @@
             "value" : "Lutheran Radio direktesending"
           }
         },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio Livestream"
+          }
+        },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5041,6 +5293,12 @@
           }
         },
         "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio"
+          }
+        },
+        "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lutheran Radio"
@@ -5164,6 +5422,12 @@
             "value" : "Appen bruker mobildata, noe som kan medføre kostnader avhengig av dataplanen din."
           }
         },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "De app gebruikt mobiele data, wat kosten kan veroorzaken afhankelijk van je databundel."
+          }
+        },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5280,6 +5544,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mobildatabruk"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mobiel datagebruik"
           }
         },
         "nn" : {
@@ -5400,6 +5670,12 @@
             "value" : "Ingen sporinformasjon"
           }
         },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geen trackinformatie"
+          }
+        },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5516,6 +5792,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spiller nå"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nu aan het spelen"
           }
         },
         "nn" : {
@@ -5636,6 +5918,12 @@
             "value" : "Greit"
           }
         },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5752,6 +6040,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Åpne appen først"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open eerst de app"
           }
         },
         "nn" : {
@@ -5872,6 +6166,12 @@
             "value" : "Spill"
           }
         },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afspelen"
+          }
+        },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5988,6 +6288,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spill av eller sett på pause Lutheran Radio."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio afspelen of pauzeren."
           }
         },
         "nn" : {
@@ -6108,6 +6414,12 @@
             "value" : "Foretrukket språk"
           }
         },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Voorkeurstaal"
+          }
+        },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6224,6 +6536,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bytt raskt til en annen språkstrøm."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Snel overschakelen naar een andere taalstream."
           }
         },
         "nn" : {
@@ -6344,6 +6662,12 @@
             "value" : "Klar"
           }
         },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Klaar"
+          }
+        },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6460,6 +6784,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Klar til å spille"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Klaar om af te spelen"
           }
         },
         "nn" : {
@@ -6580,6 +6910,12 @@
             "value" : "Kan ikke starte avspilling på grunn av en feil i sikkerhetsvalideringen. Vennligst sjekk internettforbindelsen din og forsikre deg om at appen er oppdatert. Hvis problemet vedvarer, start appen på nytt og prøv igjen."
           }
         },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kan de afspeling niet starten vanwege een beveiligingsvalidatiefout. Controleer je internetverbinding en zorg dat de app up-to-date is. Als het probleem aanhoudt, herstart de app en probeer het opnieuw."
+          }
+        },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6696,6 +7032,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sikkerhetsvalidering mislyktes"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Beveiligingsvalidatie mislukt"
           }
         },
         "nn" : {
@@ -6816,6 +7158,12 @@
             "value" : "Streaming-serverne har fornyet sine SSL-sertifikater. Appen kjører i kompatibilitetsmodus. Vennligst oppdater til nyeste versjon når den er tilgjengelig for optimal sikkerhet."
           }
         },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "De streaming servers hebben hun SSL-certificaten vernieuwd. De app werkt in compatibiliteitsmodus. Werk bij naar de nieuwste versie wanneer beschikbaar voor optimale beveiliging."
+          }
+        },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6932,6 +7280,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sertifikat oppdatert"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Certificaat bijgewerkt"
           }
         },
         "nn" : {
@@ -7052,6 +7406,12 @@
             "value" : "Start eller stopp Lutheran Radio avspilling."
           }
         },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start of stop de Lutheran Radio-afspeling."
+          }
+        },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7168,6 +7528,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Start avspilling"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afspelen starten"
           }
         },
         "nn" : {
@@ -7288,6 +7654,12 @@
             "value" : "Start avspilling etter bytte"
           }
         },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Na wisselen afspelen starten"
+          }
+        },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7401,6 +7773,12 @@
           }
         },
         "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buffer"
+          }
+        },
+        "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Buffer"
@@ -7524,6 +7902,12 @@
             "value" : "Kobler"
           }
         },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verbinden"
+          }
+        },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7642,6 +8026,12 @@
             "value" : "Frakoblet"
           }
         },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offline"
+          }
+        },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7758,6 +8148,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pauset"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afspelen"
           }
         },
         "nn" : {
@@ -7880,6 +8276,12 @@
             "value" : "Pauset – Anrop aktivt"
           }
         },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gepauzeerd – Oproep actief"
+          }
+        },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7997,6 +8399,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Avspilling mislyktes: %@"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afspelen mislukt: %@"
           }
         },
         "nn" : {
@@ -8117,6 +8525,12 @@
             "value" : "Spiller"
           }
         },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afspelen"
+          }
+        },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8233,6 +8647,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sikkerhet"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Beveiliging"
           }
         },
         "nn" : {
@@ -8353,6 +8773,12 @@
             "value" : "SSL-sertifikat fornyet - oppdater app snart"
           }
         },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SSL-certificaat vernieuwd - update app binnenkort"
+          }
+        },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8469,6 +8895,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Stoppet"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gestopt"
           }
         },
         "nn" : {
@@ -8589,6 +9021,12 @@
             "value" : "Av"
           }
         },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uit"
+          }
+        },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8705,6 +9143,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Enhet varm"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apparaat oververhit"
           }
         },
         "nn" : {
@@ -8825,6 +9269,12 @@
             "value" : "Sendingen er midlertidig ikke tilgjengelig. Prøv igjen senere."
           }
         },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "De uitzending is tijdelijk niet beschikbaar. Probeer het later opnieuw."
+          }
+        },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
@@ -8941,6 +9391,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sending ikke tilgjengelig"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uitzending niet beschikbaar"
           }
         },
         "nn" : {
@@ -9061,6 +9517,12 @@
             "value" : "Bytt Lutheran Radio språk"
           }
         },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taal van Lutheran Radio wijzigen"
+          }
+        },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9177,6 +9639,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bytt strøm"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stream wisselen"
           }
         },
         "nn" : {
@@ -9297,6 +9765,12 @@
             "value" : "Bytt til ${language}"
           }
         },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Overschakelen naar ${language}"
+          }
+        },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9413,6 +9887,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bytt til ${language} og start avspilling"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Overschakelen naar ${language} en afspelen starten"
           }
         },
         "nn" : {
@@ -9533,6 +10013,12 @@
             "value" : "Bytt til en annen språkstrøm fra Live-aktivitet."
           }
         },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Overschakelen naar een andere taalstream vanuit Live Activiteit."
+          }
+        },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9649,6 +10135,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bytt til en annen språkstrøm."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Overschakelen naar een andere taalstream."
           }
         },
         "nn" : {
@@ -9771,6 +10263,12 @@
             "value" : "Byttet til %@"
           }
         },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Overgeschakeld naar %@"
+          }
+        },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9887,6 +10385,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Trykk for å åpne"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tik om te openen"
           }
         },
         "nn" : {
@@ -10007,6 +10511,12 @@
             "value" : "Veksle Lutheran Radio"
           }
         },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio omschakelen"
+          }
+        },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10125,6 +10635,12 @@
             "value" : "Veksle Lutheran Radio avspilling"
           }
         },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lutheran Radio-afspeling omschakelen"
+          }
+        },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10241,6 +10757,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Veksle mellom avspilling og pause fra Live-aktivitet."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afspelen/pauzeren omschakelen vanuit Live Activiteit."
           }
         },
         "nn" : {
@@ -10362,6 +10884,12 @@
             "value" : "Veksle avspilling"
           }
         },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afspelen omschakelen"
+          }
+        },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10480,6 +11008,12 @@
             "value" : "Volum satt til %d prosent"
           }
         },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volume ingesteld op %d procent"
+          }
+        },
         "nn" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10596,6 +11130,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Widget-konfigurasjon"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Widget-configuratie"
           }
         },
         "nn" : {
