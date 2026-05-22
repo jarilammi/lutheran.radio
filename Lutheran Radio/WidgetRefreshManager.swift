@@ -119,23 +119,45 @@ final class WidgetRefreshManager: @unchecked Sendable {
         return old.isPlaying != new.isPlaying ||
                old.currentLanguage != new.currentLanguage ||
                old.hasError != new.hasError ||
-               old.isTransitioning != new.isTransitioning
+               old.isTransitioning != new.isTransitioning ||
+               old.isThermalPaused != new.isThermalPaused
     }
 }
 
-// Simple state struct for change detection
+// Simple state struct for change detection - computed view on PlayerVisualState (SSOT)
 struct WidgetState {
     let isPlaying: Bool
     let currentLanguage: String
     let hasError: Bool
     let isTransitioning: Bool
+    let isThermalPaused: Bool      // Added after thermal protection refactor
     let timestamp: Date
-    
-    init(isPlaying: Bool, currentLanguage: String, hasError: Bool, isTransitioning: Bool = false) {
+   
+    // Legacy initializer (kept for any other call sites)
+    init(isPlaying: Bool,
+         currentLanguage: String,
+         hasError: Bool,
+         isTransitioning: Bool = false,
+         isThermalPaused: Bool = false) {
         self.isPlaying = isPlaying
         self.currentLanguage = currentLanguage
         self.hasError = hasError
         self.isTransitioning = isTransitioning
+        self.isThermalPaused = isThermalPaused
         self.timestamp = Date()
+    }
+    
+    /// Computed view initializer — this is the key part
+    /// WidgetState is now just a projection of PlayerVisualState + the few extra fields
+    init(from visualState: PlayerVisualState,
+         currentLanguage: String,
+         hasError: Bool,
+         isTransitioning: Bool) {
+        self.isPlaying       = visualState.isActivelyPlaying
+        self.currentLanguage = currentLanguage
+        self.hasError        = hasError
+        self.isTransitioning = isTransitioning
+        self.isThermalPaused = (visualState == .thermalPaused)
+        self.timestamp       = Date()
     }
 }
