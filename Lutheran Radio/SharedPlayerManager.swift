@@ -351,28 +351,6 @@ actor SharedPlayerManager {
         }
     }
     
-    /// Called only after the player confirmed successful start of playback
-    private func saveCurrentStateAfterSuccess() async {
-        guard !isRunningInWidget() else { return }
-        
-        let player = DirectStreamingPlayer.shared
-        let now = Date()
-        
-        let currentLanguageCode = sharedDefaults?.string(forKey: "currentLanguage") ?? "en"
-        let hasPermanentError = await player.isLastErrorPermanent()
-        
-        let currentState = (
-            isPlaying: true,                    // We KNOW it's playing now
-            currentLanguage: currentLanguageCode,
-            hasError: hasPermanentError
-        )
-        
-        performActualSave(currentState, at: now)
-        
-        // Optional: extra notification for widgets/Live Activities
-        notifyMainApp(action: "play")
-    }
-    
     // MARK: - Tuning Sound Handling
 
     /// Waits for the special tuning sound to finish before starting main radio playback.
@@ -604,15 +582,23 @@ extension SharedPlayerManager {
     func saveCurrentState() async {
         guard !isRunningInWidget() else { return }
         
-        let player = DirectStreamingPlayer.shared  // ← use the singleton directly
+        let player = DirectStreamingPlayer.shared
         
         let now = Date()
         
-        // Fetch current values from the real player (add these getters if missing!)
+        // Fetch current values from the real player
         let currentLanguageCode = sharedDefaults?.string(forKey: "currentLanguage") ?? "en"
-        let isPermanentError     = await player.isLastErrorPermanent()
-        let isPlaying            = player.actualPlaybackState     // assume this exists/returns Bool
-        let hasPermanentError    = player.hasPermanentError
+        let isPermanentError    = await player.isLastErrorPermanent()
+        let isPlaying           = player.actualPlaybackState
+        let hasPermanentError   = player.hasPermanentError
+        
+        // === NEW: WidgetState is now a computed view of PlayerVisualState (SSOT) ===
+        let widgetState = WidgetState(
+            from: currentVisualState,                  // ← SharedPlayerManager's SSOT
+            currentLanguage: currentLanguageCode,
+            hasError: hasPermanentError || isPermanentError,
+            isTransitioning: false
+        )
         
         let currentState = (
             isPlaying: isPlaying,
@@ -620,7 +606,7 @@ extension SharedPlayerManager {
             hasError: hasPermanentError || isPermanentError
         )
         
-        performActualSave(currentState, at: now)
+        performActualSave(currentState, widgetState: widgetState, at: now)
     }
     
     nonisolated func saveFireAndForget() {
@@ -629,7 +615,9 @@ extension SharedPlayerManager {
         }
     }
     
-    private func performActualSave(_ state: (isPlaying: Bool, currentLanguage: String, hasError: Bool), at time: Date) {
+    private func performActualSave(_ state: (isPlaying: Bool, currentLanguage: String, hasError: Bool),
+                                   widgetState: WidgetState,
+                                   at time: Date) {
         // Suppress rapid successive saves during language/stream switches
         if let lastUpdate = sharedDefaults?.double(forKey: "lastUpdateTime"),
            Date().timeIntervalSince1970 - lastUpdate < 5.0 {
@@ -649,17 +637,11 @@ extension SharedPlayerManager {
         sharedDefaults?.removeObject(forKey: "instantFeedbackTime")
         sharedDefaults?.removeObject(forKey: "instantFeedbackLanguage")
         
-        let newWidgetState = WidgetState(
-            isPlaying: state.isPlaying,
-            currentLanguage: state.currentLanguage,
-            hasError: state.hasError
-        )
-        
         let isUrgentUpdate = state.isPlaying || state.hasError
         
         // Always hop to MainActor for WidgetRefreshManager (required in Swift 6)
         Task { @MainActor in
-            WidgetRefreshManager.shared.refreshIfNeeded(for: newWidgetState, immediate: isUrgentUpdate)
+            WidgetRefreshManager.shared.refreshIfNeeded(for: widgetState, immediate: isUrgentUpdate)
         }
         
         #if DEBUG
@@ -731,5 +713,4 @@ extension SharedPlayerManager {
             #endif
         }
     }
-    
 }
