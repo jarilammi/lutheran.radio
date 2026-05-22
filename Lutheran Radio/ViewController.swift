@@ -2618,53 +2618,51 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
 
     /// Handle widget play action without tuning sounds
     private func handleWidgetPlayAction() {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
+        #if DEBUG
+        print("🔗 Widget Play action - forcing playback (main app style)")
+        #endif
+        
+        hasPermanentPlaybackError = false
+        isManualPause = false
+        
+        Task { @MainActor in
+            await SharedPlayerManager.shared.clearUserPausedLockIfNeeded()
+            
+            // 🔥 CRITICAL: Same reset that makes language switch work
+            await SharedPlayerManager.shared.resetToPrePlayForNewStream()
             
             #if DEBUG
-            print("🔗 Widget Play action - forcing playback (main app style)")
+            print("▶️ Widget Play button → calling SharedPlayerManager.play()")
             #endif
             
-            hasPermanentPlaybackError = false
-            isManualPause = false
-            
-            Task { @MainActor in
-                await SharedPlayerManager.shared.clearUserPausedLockIfNeeded()
-                
-                // 🔥 CRITICAL: Same reset that makes switch work (bypasses cold-launch guard)
-                // This is the exact same path the main Play button / togglePlayback uses
-                await SharedPlayerManager.shared.resetToPrePlayForNewStream()
-                
+            do {
+                try await SharedPlayerManager.shared.play()
                 #if DEBUG
-                print("▶️ Widget Play button → calling SharedPlayerManager.play()")
+                print("✅ Widget Play button: SharedPlayerManager.play() succeeded")
                 #endif
-                
-                do {
-                    try await SharedPlayerManager.shared.play()
-                    #if DEBUG
-                    print("✅ Widget Play button: SharedPlayerManager.play() succeeded")
-                    #endif
-                } catch {
-                    #if DEBUG
-                    print("❌ Widget Play button play failed: \(error.localizedDescription)")
-                    #endif
-                }
-                
-                // Immediate widget feedback
-                self.saveStateForWidget()
+            } catch {
+                #if DEBUG
+                print("❌ Widget Play button play failed: \(error.localizedDescription)")
+                #endif
             }
+            
+            // Force immediate widget refresh (bypasses saveStateForWidget throttling on cold launch)
+            await SharedPlayerManager.shared.saveCurrentState()
+            self.saveStateForWidget()
+            WidgetCenter.shared.reloadAllTimelines()
         }
     }
 
     /// Handle widget pause action
     private func handleWidgetPauseAction() {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            pausePlayback()
-            
-            // Immediately save state for widget feedback
-            saveStateForWidget()
+        pausePlayback()
+        
+        // Force immediate widget refresh (bypasses throttling)
+        Task {
+            await SharedPlayerManager.shared.saveCurrentState()
         }
+        saveStateForWidget()
+        WidgetCenter.shared.reloadAllTimelines()
     }
 
     /// Handles widget-initiated stream switching to a specific language without playing tuning sounds.
@@ -2787,6 +2785,10 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         )
         
         Task { @MainActor in
+            // 🔥 CRITICAL: same reset path now used by language switch + manual play + widget
+            // Must be awaited here (inside the @MainActor Task) to defeat the initialPlaybackHasRun guard on cold-launch widget play.
+            await SharedPlayerManager.shared.resetToPrePlayForNewStream()
+            
             let isValid = await SecurityModelValidator.shared.validateSecurityModel()
             
             if isValid {
@@ -2885,7 +2887,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         
         switch pendingAction {
         case "switch":
-            if let languageCode = pendingLanguage {  // Use the already retrieved value
+            if let languageCode = pendingLanguage {
                 #if DEBUG
                 print("🔗 Executing widget switch action to language: \(languageCode)")
                 #endif
@@ -2899,7 +2901,12 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             #if DEBUG
             print("🔗 Executing widget play action")
             #endif
-            handleWidgetPlayAction()
+            // 🔥 CRITICAL FIX: same reset path now used by language switch + manual play + widget
+            // This defeats the initialPlaybackHasRun guard on cold-launch Darwin notification.
+            Task { @MainActor in
+                await SharedPlayerManager.shared.resetToPrePlayForNewStream()
+                handleWidgetPlayAction()   // ← your existing handler (unchanged)
+            }
         case "pause":
             #if DEBUG
             print("🔗 Executing widget pause action")
