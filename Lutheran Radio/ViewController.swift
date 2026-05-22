@@ -2629,10 +2629,12 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             isManualPause = false
             
             Task { @MainActor in
-                // Force-clear the userPaused lock so play() can succeed
                 await SharedPlayerManager.shared.clearUserPausedLockIfNeeded()
                 
-                // === MAIN-APP STYLE PLAY (same path as cold launch / big Play button) ===
+                // 🔥 CRITICAL: Same reset that makes switch work (bypasses cold-launch guard)
+                // This is the exact same path the main Play button / togglePlayback uses
+                await SharedPlayerManager.shared.resetToPrePlayForNewStream()
+                
                 #if DEBUG
                 print("▶️ Widget Play button → calling SharedPlayerManager.play()")
                 #endif
@@ -2708,11 +2710,15 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 // 4. Switch in the shared actor
                 await SharedPlayerManager.shared.switchToStream(targetStream)
                 
-                // === CRITICAL FIX: Clear lock AFTER switchToStream (this is where .userAction stop happens) ===
+                // === CRITICAL: Clear lock + full reset for cold-launch play ===
                 await SharedPlayerManager.shared.clearUserPausedLockIfNeeded()
+                await SharedPlayerManager.shared.resetToPrePlayForNewStream()
+                
+                // 🔥 NEW: Update shared UserDefaults so widget actually shows the new language
+                self.updateUserDefaultsLanguage(languageCode)
                 
                 #if DEBUG
-                print("🔗 [Widget Switch] Cleared userPaused lock → auto-play of new stream allowed")
+                print("🔗 [Widget Switch] Cleared lock + resetToPrePlayForNewStream() + updated language to \(languageCode)")
                 #endif
                 
                 // 5. Update collection view
@@ -2720,10 +2726,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 self.languageCollectionView.selectItem(at: indexPath, animated: true, scrollPosition: .centeredHorizontally)
                 self.updateSelectionIndicator(to: targetIndex)
                 
-                // 6. Main-app style play — exact same path the main Play button uses
+                // 6. Main-app style play
                 try? await Task.sleep(for: .seconds(0.6))
                 
-                // Reset state so SharedPlayerManager.play() does NOT skip
                 self.hasPermanentPlaybackError = false
                 self.isManualPause = false
                 
@@ -2742,7 +2747,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                     #endif
                 }
                 
-                // 7. Widget refresh
+                // 7. Widget refresh (now with correct language)
                 self.saveStateForWidget()
                 WidgetCenter.shared.reloadAllTimelines()
                 
