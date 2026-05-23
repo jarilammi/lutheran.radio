@@ -2672,13 +2672,13 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             
             WidgetCenter.shared.reloadTimelines(ofKind: "LutheranRadioWidget")
             
+            saveStateForWidget()
+            WidgetCenter.shared.reloadAllTimelines()
+            
             #if DEBUG
-            print("🔗 Widget pause action completed → forced refresh to \(finalVisualState)")
+            print("🔗 Widget pause action completed → forced refresh to \(finalVisualState) [state saved]")
             #endif
         }
-        
-        saveStateForWidget()
-        WidgetCenter.shared.reloadAllTimelines()
     }
 
     /// Handles widget-initiated stream switching to a specific language without playing tuning sounds.
