@@ -580,61 +580,75 @@ struct LargeWidgetView: View {
 // MARK: - App Intents
 
 /**
- * WIDGET-SPECIFIC TOGGLE INTENT
- * ==============================
- * Handles play/pause functionality specifically from Home Screen widgets.
- * Now fully uses PlayerVisualState as the single source of truth.
+ * WIDGET TOGGLE INTENT (Home Screen)
+ * ==================================
+ * Now fully aligned with the PlayerVisualState → WidgetState SSOT refactor.
+ * Determines the correct action (play/pause) from the shared actor state,
+ * calls the proper manager method, and triggers immediate widget refresh.
  */
-public struct WidgetToggleRadioIntent: AppIntent {
-    public init() {}
-    
-    public nonisolated static var title: LocalizedStringResource {
+struct WidgetToggleRadioIntent: AppIntent {
+    nonisolated static var title: LocalizedStringResource {
         "Toggle Lutheran Radio"
     }
-    public nonisolated static var description: IntentDescription {
+    nonisolated static var description: IntentDescription {
         IntentDescription("Play or pause Lutheran Radio.")
     }
     
-    public func perform() async throws -> some IntentResult {
+    init() {}
+    
+    func perform() async throws -> some IntentResult {
         #if DEBUG
         print("🔗 WidgetToggleRadioIntent.perform called")
         #endif
         
-        guard let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
-            return .result()
+        // ✅ Reliable SSOT read for widget extension process
+        let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared")
+        let isCurrentlyPlaying = sharedDefaults?.bool(forKey: "playing") ?? false
+        let shouldPlay = !isCurrentlyPlaying
+        let action = shouldPlay ? "play" : "pause"
+        let targetVisualState: PlayerVisualState = shouldPlay ? .playing : .userPaused
+        
+        #if DEBUG
+        print("🔗 Widget wants to \(action) → target state: \(targetVisualState) (isCurrentlyPlaying from UserDefaults = \(isCurrentlyPlaying))")
+        #endif
+        
+        // === OPTIMISTIC UPDATE (critical for instant icon flip) ===
+        if let sharedDefaults = sharedDefaults {
+            sharedDefaults.set(shouldPlay, forKey: "playing")   // ← immediate visual SSOT
+            sharedDefaults.synchronize()                        // ← force cross-process visibility
+            
+            let actionId = UUID().uuidString
+            let now = Date().timeIntervalSince1970
+            
+            sharedDefaults.set(action, forKey: "pendingAction")
+            sharedDefaults.set(actionId, forKey: "pendingActionId")
+            sharedDefaults.set(now, forKey: "pendingActionTime")
+            
+            #if DEBUG
+            print("🔗 Widget set pendingAction = \(action) + playing = \(shouldPlay) (ID: \(actionId))")
+            #endif
         }
         
-        let manager = SharedPlayerManager.shared
-        let visualState = await manager.currentVisualState
-        let isCurrentlyPlaying = visualState.isActivelyPlaying
-        
-        let action: String = isCurrentlyPlaying ? "pause" : "play"
-        let actionId = UUID().uuidString
-        let now = Date().timeIntervalSince1970
-        
-        sharedDefaults.set(action, forKey: "pendingAction")
-        sharedDefaults.set(actionId, forKey: "pendingActionId")
-        sharedDefaults.set(now, forKey: "pendingActionTime")
-        // no language needed for toggle
-        
-        // Post Darwin notification so main app reacts
+        // Wake main app (does the real AVPlayer work + final state save)
         CFNotificationCenterPostNotification(
             CFNotificationCenterGetDarwinNotifyCenter(),
             CFNotificationName("radio.lutheran.widget.action" as CFString),
             nil, nil, true
         )
         
-        // Immediate widget UI feedback — now using modern PlayerVisualState API
-        let state = manager.loadSharedState()
+        // Immediate widget UI update
+        let state = SharedPlayerManager.shared.loadSharedState()
         await WidgetRefreshManager.shared.refreshIfNeeded(
-            visualState: isCurrentlyPlaying ? .userPaused : .playing,
+            visualState: targetVisualState,
             currentLanguage: state.currentLanguage,
             hasError: state.hasError,
             immediate: true
         )
         
+        WidgetCenter.shared.reloadTimelines(ofKind: "LutheranRadioWidget")
+        
         #if DEBUG
-        print("🔗 WidgetToggleRadioIntent: posted \(action) action (ID: \(actionId))")
+        print("🔗 WidgetToggleRadioIntent completed. Signaled \(action), refreshed widget to \(targetVisualState)")
         #endif
         
         return .result()
