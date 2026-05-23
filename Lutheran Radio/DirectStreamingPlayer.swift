@@ -21,7 +21,9 @@ typealias ResultCompletion<T> = @Sendable (Result<T, Error>) -> Void
 // MARK: - Delegate Protocol and Status Enum
 /// Protocol for delegate callbacks (e.g., UI updates from ViewController).
 protocol StreamingPlayerDelegate: AnyObject {
-    func onStatusChange(_ status: PlayerStatus, _ reason: String?)
+    /// status = semantic state (playing / paused / etc.)
+    /// reasonKey = the exact key from Localizable.xcstrings (e.g. "status_playing", "status_paused")
+    func onStatusChange(_ status: PlayerStatus, reasonKey: String?)
 }
 
 /// Player status enum for callbacks
@@ -227,7 +229,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     
     /// Track initialization and defer callbacks.
     private var isInitializing: Bool = true
-    private var pendingStatusChanges: [(isPlaying: Bool, status: String)] = []
+    private var pendingStatusChanges: [(isPlaying: Bool, reasonKey: String?)] = []
     
     /// Protects the playback startup path from aggressive `stop()` calls during async validation + server selection.
     /// Set to `true` at the beginning of `play()` and reset in `defer`.
@@ -669,24 +671,57 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     internal var currentMetadata: String?
     
     // MARK: - Safe callbacks to MainActor (Swift 6 fix)
-    func safeOnStatusChange(isPlaying: Bool, status: String) {
+    func safeOnStatusChange(isPlaying: Bool, reasonKey: String?) {
         DispatchQueue.main.async {  // Ensure main-thread safety for UI/delegate calls
             if self.isInitializing {
-                self.pendingStatusChanges.append((isPlaying, status))
+                self.pendingStatusChanges.append((isPlaying, reasonKey ?? ""))
             } else {
-                self.invokeStatusCallbacks(isPlaying: isPlaying, status: status)
+                self.invokeStatusCallbacks(isPlaying: isPlaying, reasonKey: reasonKey)
                 
-                // Fire-and-forget async save (does not block UI/delegate callbacks)
-                Task {
-                    await SharedPlayerManager.shared.saveCurrentState()
+                // 🔥 CLEAN + 100% LOCALIZATION-SAFE stable-state detection
+                // Uses exact keys from Localizable.xcstrings
+                let isStableState = isPlaying ||
+                reasonKey == "status_playing" ||
+                reasonKey == "status_paused" ||
+                reasonKey == "status_stopped" ||
+                reasonKey == "status_paused_call" ||
+                reasonKey == "status_thermal_paused" ||
+                reasonKey == "status_no_internet" ||
+                reasonKey == "status_security_failed" ||
+                reasonKey == "status_stream_unavailable" ||
+                reasonKey == "status_connecting" ||
+                reasonKey == "status_ssl_transition" ||
+                reasonKey == "status_buffering"
+                
+                if isStableState {
+                    #if DEBUG
+                    print("🔗 safeOnStatusChange: STABLE final state (isPlaying=\(isPlaying), key='\(reasonKey ?? "nil")') → forcing widget save")
+                    #endif
+                    
+                    Task {
+                        await SharedPlayerManager.shared.saveCurrentState()
+                    }
+                } else {
+                    #if DEBUG
+                    print("🔇 safeOnStatusChange: transient state (isPlaying=\(isPlaying), key='\(reasonKey ?? "nil")') → skipping widget save")
+                    #endif
                 }
             }
         }
     }
     
-    private func invokeStatusCallbacks(isPlaying: Bool, status: String) {
-        onStatusChange?(isPlaying, status)
-        delegate?.onStatusChange(isPlaying ? .playing : .stopped, status)  // Map to enum, pass status as reason
+    private func invokeStatusCallbacks(isPlaying: Bool, reasonKey: String?) {
+        // Compute localized string once for UI / logs / delegate (backward compatible)
+        let localizedStatus = reasonKey.map { NSLocalizedString($0, comment: "") } ?? ""
+        
+        onStatusChange?(isPlaying, localizedStatus)
+        
+        // Pass the raw key to the delegate (ViewController expects the key, not the translated text)
+        delegate?.onStatusChange(isPlaying ? .playing : .stopped, reasonKey: reasonKey)
+        
+        #if DEBUG
+        print("🔄 invokeStatusCallbacks → isPlaying=\(isPlaying), reasonKey='\(reasonKey ?? "nil")', localized='\(localizedStatus)'")
+        #endif
     }
     
     private func safeOnMetadataChange(metadata: String?) {
@@ -773,12 +808,11 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 #endif
                 
                 if isValid {
-                    self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_connecting"))
+                    self.safeOnStatusChange(isPlaying: false, reasonKey: "status_connecting")
                 } else {
                     let isPermanent = await SecurityModelValidator.shared.isPermanentlyInvalid
                     let statusKey = isPermanent ? "status_security_failed" : "status_no_internet"
-                    let localizedStatus = String(localized: String.LocalizationValue(statusKey))
-                    self.safeOnStatusChange(isPlaying: false, status: localizedStatus)
+                    self.safeOnStatusChange(isPlaying: false, reasonKey: statusKey)
                     
                     #if DEBUG
                     print("🔒 Validation failed — permanent? \(isPermanent)")
@@ -787,7 +821,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             }
         } else {
             // No internet at init → transient failure state
-            safeOnStatusChange(isPlaying: false, status: String(localized: "status_no_internet"))
+            safeOnStatusChange(isPlaying: false, reasonKey: "status_no_internet")
         }
         
         #if DEBUG
@@ -800,7 +834,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         
         DispatchQueue.main.async {  // Defer to after init returns
             for change in self.pendingStatusChanges {
-                self.invokeStatusCallbacks(isPlaying: change.isPlaying, status: change.status)
+                // Updated to pass reasonKey (see property change below)
+                self.invokeStatusCallbacks(isPlaying: change.isPlaying, reasonKey: change.reasonKey)
             }
             self.pendingStatusChanges = []
             
@@ -850,23 +885,21 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                         DispatchQueue.main.async {
                             self.safeOnStatusChange(
                                 isPlaying: false,
-                                status: String(localized: String.LocalizationValue(statusKey))
+                                reasonKey: statusKey          // ← fixed
                             )
                         }
                     } else if self.player?.rate ?? 0 == 0, !self.hasPermanentError {
                         // Auto-replay if previously playing / ready
-                    } else if self.player?.rate ?? 0 == 0, !self.hasPermanentError {
-                        // Auto-replay if previously playing / ready
                         
-                        Task { @MainActor in   // ← important: ensure we run on the right actor
+                        Task { @MainActor in
                             do {
-                                try await self.play()   // ← now async throws, no completion
+                                try await self.play()
                                 
                                 let playStatusKey = "status_playing"
-                                await MainActor.run {   // or just self.safeOnStatusChange since we're already @MainActor
+                                await MainActor.run {
                                     self.safeOnStatusChange(
                                         isPlaying: true,
-                                        status: String(localized: String.LocalizationValue(playStatusKey))
+                                        reasonKey: playStatusKey      // ← fixed
                                     )
                                 }
                             } catch {
@@ -874,10 +907,9 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                                 await MainActor.run {
                                     self.safeOnStatusChange(
                                         isPlaying: false,
-                                        status: String(localized: String.LocalizationValue(playStatusKey))
+                                        reasonKey: playStatusKey      // ← fixed
                                     )
                                 }
-                                // Optionally log the error
                                 print("Auto-replay failed: \(error)")
                             }
                         }
@@ -897,7 +929,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 DispatchQueue.main.async {
                     self.safeOnStatusChange(
                         isPlaying: false,
-                        status: String(localized: String.LocalizationValue("status_no_internet"))
+                        reasonKey: "status_no_internet"       // ← fixed
                     )
                 }
             }
@@ -959,23 +991,21 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                         DispatchQueue.main.async {
                             self.safeOnStatusChange(
                                 isPlaying: false,
-                                status: String(localized: String.LocalizationValue(statusKey))
+                                reasonKey: statusKey          // ← fixed
                             )
                         }
                     } else if self.player?.rate ?? 0 == 0, !self.hasPermanentError {
                         // Auto-replay if previously playing / ready
-                    } else if self.player?.rate ?? 0 == 0, !self.hasPermanentError {
-                        // Auto-replay if previously playing / ready
                         
-                        Task { @MainActor in   // ← important: ensure we run on the right actor
+                        Task { @MainActor in
                             do {
-                                try await self.play()   // ← now async throws, no completion
+                                try await self.play()
                                 
                                 let playStatusKey = "status_playing"
-                                await MainActor.run {   // or just self.safeOnStatusChange since we're already @MainActor
+                                await MainActor.run {
                                     self.safeOnStatusChange(
                                         isPlaying: true,
-                                        status: String(localized: String.LocalizationValue(playStatusKey))
+                                        reasonKey: playStatusKey      // ← fixed
                                     )
                                 }
                             } catch {
@@ -983,10 +1013,9 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                                 await MainActor.run {
                                     self.safeOnStatusChange(
                                         isPlaying: false,
-                                        status: String(localized: String.LocalizationValue(playStatusKey))
+                                        reasonKey: playStatusKey      // ← fixed
                                     )
                                 }
-                                // Optionally log the error
                                 #if DEBUG
                                 print("Auto-replay failed: \(error)")
                                 #endif
@@ -1012,7 +1041,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 DispatchQueue.main.async {
                     self.safeOnStatusChange(
                         isPlaying: false,
-                        status: String(localized: String.LocalizationValue("status_no_internet"))
+                        reasonKey: "status_no_internet"       // ← fixed
                     )
                 }
             }
@@ -1107,14 +1136,14 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 #endif
                 
                 if isValid {
-                    self.safeOnStatusChange(isPlaying: false, status: String(localized: String.LocalizationValue("status_connecting")))
+                    self.safeOnStatusChange(isPlaying: false, reasonKey: "status_connecting")
                 } else {
                     // Optional: show appropriate failure state
                     let isPermanent = await SecurityModelValidator.shared.isPermanentlyInvalid
                     let statusKey = isPermanent ? "status_security_failed" : "status_no_internet"
                     self.safeOnStatusChange(
                         isPlaying: false,
-                        status: String(localized: String.LocalizationValue(statusKey))
+                        reasonKey: statusKey
                     )
                 }
             }
@@ -1175,7 +1204,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 
                 await MainActor.run {
                     self.stop()
-                    self.safeOnStatusChange(isPlaying: false, status: String(localized: String.LocalizationValue("status_security_failed")))
+                    self.safeOnStatusChange(isPlaying: false, reasonKey: "status_security_failed")  // ← fixed
                 }
                 
                 #if DEBUG
@@ -1199,28 +1228,28 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             #if DEBUG
             print("🚫 [Play Guard] Blocked resurrection — currentVisualState is .userPaused")
             #endif
-            safeOnStatusChange(isPlaying: false, status: "UserPaused")
+            safeOnStatusChange(isPlaying: false, reasonKey: "status_paused")   // ← changed
             return false
         }
-
+        
         guard !isCurrentlyAttemptingPlayback else {
             #if DEBUG
             print("⚠️ [Playback Guard] Already attempting playback — ignoring duplicate call")
             #endif
             return false
         }
-
+        
         isCurrentlyAttemptingPlayback = true
         defer { isCurrentlyAttemptingPlayback = false }
-
-        safeOnStatusChange(isPlaying: true, status: String(localized: "status_connecting"))
+        
+        safeOnStatusChange(isPlaying: true, reasonKey: "status_connecting")   // ← changed
         SharedPlayerManager.shared.saveFireAndForget()
-
+        
         let isValid = await SecurityModelValidator.shared.isCurrentlyValid()
         guard isValid else {
             let isPermanent = await SecurityModelValidator.shared.isPermanentlyInvalid
             let statusKey = isPermanent ? "status_security_failed" : "status_no_internet"
-            safeOnStatusChange(isPlaying: false, status: String(localized: String.LocalizationValue(statusKey)))
+            safeOnStatusChange(isPlaying: false, reasonKey: statusKey)       // ← changed
             SharedPlayerManager.shared.saveFireAndForget()
             return false
         }
@@ -1247,22 +1276,22 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             #if DEBUG
             print("🚫 [Deep Play Guard] Blocked AVPlayer creation/resume — currentVisualState is .userPaused")
             #endif
-            safeOnStatusChange(isPlaying: false, status: "UserPaused")
+            safeOnStatusChange(isPlaying: false, reasonKey: "status_paused")  // ← fixed
             return
         }
-
+        
         let asset = AVURLAsset(url: url)
         asset.resourceLoader.setDelegate(self, queue: .main)
-
+        
         let playerItem = AVPlayerItem(asset: asset)
         self.playerItem = playerItem
-
+        
         if self.player == nil {
             self.player = AVPlayer(playerItem: playerItem)
         } else {
             self.player?.replaceCurrentItem(with: playerItem)
         }
-
+        
         // === CRITICAL: Activate the audio session before playback ===
         do {
             let session = AVAudioSession.sharedInstance()
@@ -1412,26 +1441,26 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                         #endif
                         return
                     }
-                    self.safeOnStatusChange(isPlaying: true, status: String(localized: "status_playing"))
+                    self.safeOnStatusChange(isPlaying: true, reasonKey: "status_playing")   // ← fixed
                     self.hasStartedPlaying = true
                     self.stopBufferingTimer()
-
+                    
                 case .paused:
                     if observedPlayer.rate == 0.0 {
-                        self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_stopped"))
+                        self.safeOnStatusChange(isPlaying: false, reasonKey: "status_stopped")   // ← fixed
                     }
-
+                    
                 case .waitingToPlayAtSpecifiedRate:
-                    self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_buffering"))
-
+                    self.safeOnStatusChange(isPlaying: false, reasonKey: "status_buffering")   // ← fixed
+                    
                 @unknown default:
                     break
                 }
-
+                
                 await SharedPlayerManager.shared.saveCurrentState()
             }
         }
-
+        
         // === item status observer (statusObserver) ===
         statusObserver = player?.currentItem?.observe(\.status, options: [.new]) { [weak self] item, _ in
             Task { @MainActor [weak self] in
@@ -1449,18 +1478,18 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                         #endif
                         return
                     }
-                    self.safeOnStatusChange(isPlaying: true, status: String(localized: "status_playing"))
+                    self.safeOnStatusChange(isPlaying: true, reasonKey: "status_playing")   // ← fixed
                     self.stopBufferingTimer()
-
+                    
                 case .failed:
-                    self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_stream_unavailable"))
+                    self.safeOnStatusChange(isPlaying: false, reasonKey: "status_stream_unavailable")   // ← fixed
                     if let error = item.error {
                         self.handlePlaybackError(error)
                     }
                 default:
                     break
                 }
-
+                
                 await SharedPlayerManager.shared.saveCurrentState()
             }
         }
@@ -1809,10 +1838,10 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             #if DEBUG
             print("⏰ Buffering timeout triggered")
             #endif
-            self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_stopped"))
+            self.safeOnStatusChange(isPlaying: false, reasonKey: "status_stopped")   // ← fixed
         }
     }
-
+    
     private func stopBufferingTimer() {
         bufferingTimer?.invalidate()
         bufferingTimer = nil
@@ -1887,7 +1916,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                         
                         self.player?.play()
                         self.player?.rate = 1.0
-                        self.safeOnStatusChange(isPlaying: true, status: String(localized: "status_playing"))
+                        self.safeOnStatusChange(isPlaying: true, reasonKey: "status_playing")   // ← fixed
                         self.stopBufferingTimer()
                         self.hasStartedPlaying = true
                         
@@ -1896,13 +1925,13 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                         let errorType = StreamErrorType.from(error: item.error)
                         self.hasPermanentError = errorType.isPermanent
                         
-                        // Permanent error path (transient retries will be added in a follow-up)
-                        self.safeOnStatusChange(isPlaying: false, status: errorType.statusString)
+                        // Permanent error path
+                        self.safeOnStatusChange(isPlaying: false, reasonKey: errorType.statusString)   // ← fixed
                         self.stop()
                         
                     case .unknown:
                         if self.hasStartedPlaying {
-                            self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_buffering"))
+                            self.safeOnStatusChange(isPlaying: false, reasonKey: "status_buffering")   // ← fixed
                         }
                     @unknown default:
                         break
@@ -1927,7 +1956,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                         }
                         return
                     }
-                    self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_buffering"))
+                    self.safeOnStatusChange(isPlaying: false, reasonKey: "status_buffering")   // ← fixed
                     self.startBufferingTimer()
                 }
             }
@@ -1938,7 +1967,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 DispatchQueue.main.async {
                     if newValue && item.status == .readyToPlay {
                         self.player?.play()
-                        self.safeOnStatusChange(isPlaying: true, status: String(localized: "status_playing"))
+                        self.safeOnStatusChange(isPlaying: true, reasonKey: "status_playing")   // ← fixed
                         self.stopBufferingTimer()
                     } else if !newValue && (self.player?.rate ?? 0) == 0 {
                         let stalledDelay: TimeInterval = self.isLowEfficiencyMode ? 20.0 : 10.0
@@ -1962,7 +1991,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 guard let self = self, let newValue = change.newValue, newValue else { return }
                 DispatchQueue.main.async {
                     self.player?.play()
-                    self.safeOnStatusChange(isPlaying: true, status: String(localized: "status_playing"))
+                    self.safeOnStatusChange(isPlaying: true, reasonKey: "status_playing")   // ← fixed
                     self.stopBufferingTimer()
                 }
             }
@@ -1978,7 +2007,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 self.timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] _ in
                     guard let self = self, self.delegate != nil else { return }
                     if (self.player?.rate ?? 0) > 0 {
-                        self.safeOnStatusChange(isPlaying: true, status: String(localized: "status_playing"))
+                        self.safeOnStatusChange(isPlaying: true, reasonKey: "status_playing")   // ← fixed
                     }
                 }
                 self.timeObserverPlayer = player
@@ -2212,7 +2241,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 if !effectiveSilent {
                     DispatchQueue.main.async {
                         MainActor.assumeIsolated {
-                            self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_stopped"))
+                            self.safeOnStatusChange(isPlaying: false, reasonKey: "status_stopped")  // ← fixed
                             completion?()
                         }
                     }
@@ -2227,7 +2256,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 return
             }
             
-            // Pause + cleanup (exactly your original code, unchanged)
+            // Pause + cleanup
             self.executeAudioOperation({
                 self.player?.pause()
                 self.player?.rate = 0.0
@@ -2257,7 +2286,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             if !effectiveSilent {
                 DispatchQueue.main.async {
                     MainActor.assumeIsolated {
-                        self.safeOnStatusChange(isPlaying: false, status: String(localized: "status_stopped"))
+                        self.safeOnStatusChange(isPlaying: false, reasonKey: "status_stopped")  // ← fixed
                         completion?()
                     }
                 }
@@ -2418,23 +2447,25 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 #if DEBUG
                 print("🔒 [Loading Error] SSL/Certificate error detected")
                 #endif
-                safeOnStatusChange(isPlaying: false, status: String(localized: "status_security_failed"))
+                safeOnStatusChange(isPlaying: false, reasonKey: "status_security_failed")   // ← fixed
+                
             case .cannotFindHost, .fileDoesNotExist, .badServerResponse:
                 #if DEBUG
                 print("🔒 [Loading Error] Permanent network/server error detected")
                 #endif
-                onStatusChange?(false, String(localized: "status_stream_unavailable"))
+                onStatusChange?(false, String(localized: "status_stream_unavailable"))   // closure stays as-is
+                
             default:
                 #if DEBUG
                 print("🔒 [Loading Error] Transient error detected")
                 #endif
-                safeOnStatusChange(isPlaying: false, status: String(localized: "status_buffering"))
+                safeOnStatusChange(isPlaying: false, reasonKey: "status_buffering")   // ← fixed
             }
         } else {
             #if DEBUG
             print("🔒 [Loading Error] Non-URLError detected")
             #endif
-            safeOnStatusChange(isPlaying: false, status: String(localized: "status_buffering"))
+            safeOnStatusChange(isPlaying: false, reasonKey: "status_buffering")   // ← fixed
         }
         
         stop()
@@ -2566,7 +2597,7 @@ extension DirectStreamingPlayer {
         let interruptionDelay: TimeInterval = isLowEfficiencyMode ? 1.0 : 0.5
         DispatchQueue.main.asyncAfter(deadline: .now() + interruptionDelay) { [weak self] in
             guard let self = self, self.delegate != nil else { return }
-            self.safeOnStatusChange(isPlaying: false, status: String(localized: "alert_retry"))
+            self.safeOnStatusChange(isPlaying: false, reasonKey: "alert_retry")   // ← fixed
         }
     }
     
@@ -2619,7 +2650,7 @@ extension DirectStreamingPlayer {
                     
                     if self.wasPlayingBeforeInterruption {
                         self.player?.pause()  // Graceful pause
-                        self.delegate?.onStatusChange(.paused, "Interruption")  // Notify UI
+                        self.delegate?.onStatusChange(.paused, reasonKey: "Interruption")  // ← fixed
                         
                         // Persist paused state for widget — non-blocking
                         Task {
@@ -2661,7 +2692,7 @@ extension DirectStreamingPlayer {
                             self.player?.play()
                             
                             if self.isPlaying {
-                                self.delegate?.onStatusChange(.playing, nil)
+                                self.delegate?.onStatusChange(.playing, reasonKey: nil)  // ← fixed
                             }
                             
                             await self.markAsPlaying()
@@ -2674,7 +2705,7 @@ extension DirectStreamingPlayer {
                             #if DEBUG
                             print("🚫 [AudioSession] Resurrection suppressed — user intent remains .userPaused")
                             #endif
-                            self.safeOnStatusChange(isPlaying: false, status: "UserPaused")
+                            self.safeOnStatusChange(isPlaying: false, reasonKey: "status_paused")
                         }
                     }
                     
@@ -2703,7 +2734,7 @@ extension DirectStreamingPlayer {
                 // If disconnected during play, pause and notify
                 if self.player?.rate ?? 0 > 0 {
                     self.player?.pause()
-                    self.delegate?.onStatusChange(.paused, "Route Change")
+                    self.delegate?.onStatusChange(.paused, reasonKey: "Route Change")  // ← fixed
                     
                     // Optional: persist paused state after route change
                     Task {

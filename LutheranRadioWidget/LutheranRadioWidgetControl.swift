@@ -63,7 +63,9 @@ struct LutheranRadioWidgetControl: ControlWidget {
                             .foregroundColor(.secondary)
                     }
                 } icon: {
-                    Image(systemName: value.visualState == .playing ? "pause.fill" : "play.fill")
+                    // FIXED: Use reliable isPlaying (which maps .userPaused → false)
+                    // This makes the miniature pause button finally appear correctly
+                    Image(systemName: isPlaying ? "pause.fill" : "play.fill")
                 }
             }
         }

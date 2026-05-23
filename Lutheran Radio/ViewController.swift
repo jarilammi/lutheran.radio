@@ -3330,34 +3330,34 @@ extension ViewController: StreamingPlayerDelegate {
     /// Handles status changes from DirectStreamingPlayer (e.g., playing, paused).
     /// - Parameters:
     ///   - status: The new player status (e.g., .playing, .paused).
-    ///   - reason: Optional reason for the change (e.g., "Interruption").
+    ///   - reasonKey: The localization key for the reason (e.g. "status_no_internet", "status_stream_unavailable").
     /// Called from background threads in DirectStreamingPlayer (@unchecked Sendable).
     /// Marked nonisolated + explicit MainActor hop to satisfy strict concurrency.
-    nonisolated func onStatusChange(_ status: PlayerStatus, _ reason: String?) {
+    nonisolated func onStatusChange(_ status: PlayerStatus, reasonKey: String?) {
         Task { @MainActor in
             // SINGLE SOURCE OF TRUTH — always pull latest locked state
             let visualState = await SharedPlayerManager.shared.currentVisualState
             
             #if DEBUG
-            print("🔥 StreamingPlayerDelegate.onStatusChange → \(status) (reason: \(reason ?? "nil")) → visualState \(visualState)")
+            print("🔥 StreamingPlayerDelegate.onStatusChange → \(status) (reasonKey: \(reasonKey ?? "nil")) → visualState \(visualState)")
             #endif
             
             // First apply the normal UI from PlayerVisualState (icon + basic label)
             self.updateUI(for: visualState)
             
             // These now run *after* updateUI so they can override the label color/alerts when needed
-            if let reason = reason {
-                if reason == String(localized: "status_ssl_transition") {
+            if let reasonKey = reasonKey {
+                if reasonKey == "status_ssl_transition" {
                     self.statusLabel.backgroundColor = .systemOrange
                     self.statusLabel.textColor = .white
                     self.showSSLTransitionAlert()
                     
-                } else if reason == String(localized: "status_no_internet") {
+                } else if reasonKey == "status_no_internet" {
                     self.statusLabel.backgroundColor = .systemGray
                     self.statusLabel.textColor = .white
                     self.updateUIForNoInternet()
                     
-                } else if reason == String(localized: "status_stream_unavailable") {
+                } else if reasonKey == "status_stream_unavailable" {
                     self.statusLabel.backgroundColor = .systemOrange
                     self.statusLabel.textColor = .white
                     if self.presentedViewController == nil {
@@ -3381,7 +3381,7 @@ extension ViewController: StreamingPlayerDelegate {
                 hasEverPlayed = true
                 
                 // Only haptic when user-initiated resume (not auto-resume after interruption)
-                if reason == nil {
+                if reasonKey == nil {
                     playHapticFeedback(style: .light)
                 }
             }
