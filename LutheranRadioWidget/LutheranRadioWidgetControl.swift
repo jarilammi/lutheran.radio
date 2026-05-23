@@ -47,21 +47,23 @@ struct LutheranRadioWidgetControl: ControlWidget {
             // Control toggle that shows current state and allows play/pause
             ControlWidgetToggle(
                 LocalizedStringKey("lutheran_radio_title"),
-                isOn: value.isPlaying,
+                isOn: value.isPlaying,                    // kept for ControlWidgetToggle API
                 action: ToggleRadioIntent()
             ) { isPlaying in
                 Label {
                     VStack(alignment: .leading, spacing: 1) {
                         Text(value.visualState == .thermalPaused
-                             ? String(localized: "status_thermal_paused") ?? "Thermal pause"
-                             : (value.isPlaying ? String(localized: "status_playing") : String(localized: "status_stopped")))
-                        .font(.caption2)
+                            ? String(localized: "status_thermal_paused") ?? "Thermal pause"
+                            : (value.visualState == .playing
+                                ? String(localized: "status_playing")
+                                : String(localized: "status_stopped")))
+                            .font(.caption2)
                         Text(value.currentStation)
                             .font(.caption2)
                             .foregroundColor(.secondary)
                     }
                 } icon: {
-                    Image(systemName: value.isPlaying ? "pause.fill" : "play.fill")
+                    Image(systemName: value.visualState == .playing ? "pause.fill" : "play.fill")
                 }
             }
         }
@@ -193,12 +195,7 @@ enum StreamLanguageOption: String, AppEnum {
  * PLAY/PAUSE TOGGLE INTENT
  * =========================
  * Handles play/pause functionality from the Control Widget.
- * This is the primary user interaction - starting and stopping religious audio content.
- *
- * SAFETY FEATURES:
- * - Connection-safe implementation prevents crashes if network unavailable
- * - Immediate widget refresh provides user feedback
- * - Graceful error handling for poor network conditions
+ * Now fully uses PlayerVisualState as the single source of truth (SSOT).
  */
 struct ToggleRadioIntent: SetValueIntent {
     nonisolated static var title: LocalizedStringResource {
@@ -213,41 +210,33 @@ struct ToggleRadioIntent: SetValueIntent {
 
     init() {}
 
-    /**
-     * Executes the play/pause action when user taps the Control Widget
-     *
-     * Flow:
-     * 1. Check current playback state
-     * 2. Toggle state (playing → stopped, stopped → playing)
-     * 3. Update widget display immediately
-     * 4. Provide debug feedback for development
-     */
     func perform() async throws -> some IntentResult {
         #if DEBUG
-        print("WidgetToggleRadioIntent.perform called")
+        print("🔗 ToggleRadioIntent.perform called")
         #endif
         
         let manager = SharedPlayerManager.shared
-        let state = manager.loadSharedState()  // assuming already nonisolated
-        let isCurrentlyPlaying = state.isPlaying
+        let visualState = await manager.currentVisualState          // ← SSOT
+        let isCurrentlyPlaying = visualState.isActivelyPlaying
         
-        // Toggle playback state – now await the async versions
+        // Toggle playback state
         if isCurrentlyPlaying {
-            await manager.stop()           // ← now async, no completion
+            await manager.stop()
         } else {
-            try await manager.play()       // ← now async throws, no completion
+            try await manager.play()
         }
         
-        // NEW: Use optimized refresh for immediate user feedback
-        let newState = WidgetState(
-            isPlaying: !isCurrentlyPlaying,
+        // Immediate widget UI feedback — now using modern PlayerVisualState API
+        let state = manager.loadSharedState()
+        await WidgetRefreshManager.shared.refreshIfNeeded(
+            visualState: isCurrentlyPlaying ? .userPaused : .playing,
             currentLanguage: state.currentLanguage,
-            hasError: state.hasError
+            hasError: state.hasError,
+            immediate: true
         )
-        await WidgetRefreshManager.shared.refreshIfNeeded(for: newState, immediate: true)
         
         #if DEBUG
-        print("WidgetToggleRadioIntent completed successfully")
+        print("🔗 ToggleRadioIntent completed successfully")
         #endif
         
         return .result()
