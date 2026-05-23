@@ -15,6 +15,7 @@ The app is fully localized in the following languages:
 - Danish (da)
 - German (de)
 - English (en)
+- Spanish (es)
 - Estonian (et)
 - Finnish (fi)
 - Tornedalen Finnish (fit)
