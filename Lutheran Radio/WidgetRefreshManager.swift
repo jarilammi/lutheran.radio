@@ -4,22 +4,14 @@
 //
 //  Created by Jari Lammi on 14.6.2025.
 //
-//  Prevents excessive widget refreshes through debouncing and change detection
+//  Prevents excessive widget refreshes through debouncing and change detection.
+//  Now fully aligned with PlayerVisualState as the Single Source of Truth (SSOT).
 
 import Foundation
 import WidgetKit
 
-/// - Article: Widget Refresh Optimization
-///
-/// `WidgetRefreshManager` prevents excessive WidgetKit reloads through debouncing, change detection, and adaptive intervals, integrated with `SharedPlayerManager.swift` for state updates.
-///
-/// Optimization Strategies:
-/// - **Throttling**: Delays non-urgent refreshes (e.g., 0.5-3s adaptive); always immediate for language changes or urgent states (playing/errors).
-/// - **Change Detection**: Compares `WidgetState` structs to skip redundant updates; checks active widgets before reloading.
-/// - **Integration**: Called from `SharedPlayerManager.swift`'s `saveCurrentState()`; uses `WidgetCenter` for timeline reloads.
-/// - **Privacy/Efficiency**: Reduces battery/network use; no data beyond anonymous state.
-///
-/// For widget data flow, see `loadSharedState()` in `SharedPlayerManager.swift`. iOS 26-focused for low-power scenarios.
+/// WidgetRefreshManager prevents excessive WidgetKit reloads through debouncing,
+/// change detection, and adaptive intervals. It is now 100% driven by PlayerVisualState.
 @MainActor
 final class WidgetRefreshManager: @unchecked Sendable {
     static let shared = WidgetRefreshManager()
@@ -33,7 +25,26 @@ final class WidgetRefreshManager: @unchecked Sendable {
     
     private init() {}
     
-    // Main refresh method with debouncing and change detection
+    // MARK: - Modern API (preferred — uses PlayerVisualState SSOT)
+    
+    /// Recommended call site: pass the real visual state directly.
+    func refreshIfNeeded(
+        visualState: PlayerVisualState,
+        currentLanguage: String,
+        hasError: Bool,
+        immediate: Bool = false
+    ) {
+        let newState = WidgetState(
+            from: visualState,
+            currentLanguage: currentLanguage,
+            hasError: hasError,
+            isTransitioning: false
+        )
+        refreshIfNeeded(for: newState, immediate: immediate)
+    }
+    
+    // MARK: - Legacy compatibility (still used by widget intents for now)
+    
     func refreshIfNeeded(for newState: WidgetState, immediate: Bool = false) {
         // ALWAYS refresh on language changes, regardless of throttling
         if let lastState = lastKnownState,
@@ -50,22 +61,18 @@ final class WidgetRefreshManager: @unchecked Sendable {
             if let lastRefresh = lastRefreshTime {
                 let timeSinceLastRefresh = now.timeIntervalSince(lastRefresh)
                 
-                // If refreshing frequently, increase the interval
                 if timeSinceLastRefresh < adaptiveInterval {
                     refreshCount += 1
-                    adaptiveInterval = min(adaptiveInterval * 1.5, 3.0) // Cap at 3 seconds
-                    
+                    adaptiveInterval = min(adaptiveInterval * 1.5, 3.0)
                     scheduleDelayedRefresh(for: newState, delay: adaptiveInterval)
                     return
                 } else if timeSinceLastRefresh > 5.0 {
-                    // Reset if we haven't refreshed in a while
                     refreshCount = 0
                     adaptiveInterval = 0.5
                 }
             }
         }
         
-        // Normal case → fire immediately on the main actor
         Task { @MainActor in
             await performRefresh(for: newState)
         }
@@ -77,17 +84,14 @@ final class WidgetRefreshManager: @unchecked Sendable {
         pendingRefresh = DispatchWorkItem { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
-                
                 await self.performRefresh(for: state)
-                
-                // Gradually decrease interval after successful refresh
                 self.adaptiveInterval = max(self.adaptiveInterval * 0.8, 0.5)
             }
         }
         
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: pendingRefresh!)
     }
-
+    
     private func performRefresh(for state: WidgetState) async {
         pendingRefresh?.cancel()
         lastRefreshTime = Date()
@@ -101,7 +105,7 @@ final class WidgetRefreshManager: @unchecked Sendable {
                 WidgetCenter.shared.reloadTimelines(ofKind: "radio.lutheran.LutheranRadio.LutheranRadioWidget")
                 
                 #if DEBUG
-                print("🔗 Widget refresh executed (widgets active: \(configs.count)) - playing: \(state.isPlaying), lang: \(state.currentLanguage)")
+                print("🔗 Widget refresh executed (widgets active: \(configs.count)) — visualState: \(state.isThermalPaused ? ".thermalPaused" : (state.isPlaying ? ".playing" : ".paused")), lang: \(state.currentLanguage)")
                 #endif
             } else {
                 #if DEBUG
@@ -114,45 +118,37 @@ final class WidgetRefreshManager: @unchecked Sendable {
             #endif
         }
     }
-    
-    private func stateChanged(from old: WidgetState, to new: WidgetState) -> Bool {
-        return old.isPlaying != new.isPlaying ||
-               old.currentLanguage != new.currentLanguage ||
-               old.hasError != new.hasError ||
-               old.isTransitioning != new.isTransitioning ||
-               old.isThermalPaused != new.isThermalPaused
-    }
 }
 
-// Simple state struct for change detection - computed view on PlayerVisualState (SSOT)
+// MARK: - WidgetState (lightweight projection of PlayerVisualState)
+
 struct WidgetState {
     let isPlaying: Bool
     let currentLanguage: String
     let hasError: Bool
     let isTransitioning: Bool
-    let isThermalPaused: Bool      // Added after thermal protection refactor
+    let isThermalPaused: Bool
     let timestamp: Date
-   
-    // Legacy initializer (kept for any other call sites)
+    
+    // Legacy initializer (kept temporarily for widget intents)
     init(isPlaying: Bool,
          currentLanguage: String,
          hasError: Bool,
          isTransitioning: Bool = false,
          isThermalPaused: Bool = false) {
-        self.isPlaying = isPlaying
+        self.isPlaying       = isPlaying
         self.currentLanguage = currentLanguage
-        self.hasError = hasError
+        self.hasError        = hasError
         self.isTransitioning = isTransitioning
         self.isThermalPaused = isThermalPaused
-        self.timestamp = Date()
+        self.timestamp       = Date()
     }
     
-    /// Computed view initializer — this is the key part
-    /// WidgetState is now just a projection of PlayerVisualState + the few extra fields
+    /// Modern initializer — this is now the intended path
     init(from visualState: PlayerVisualState,
          currentLanguage: String,
          hasError: Bool,
-         isTransitioning: Bool) {
+         isTransitioning: Bool = false) {
         self.isPlaying       = visualState.isActivelyPlaying
         self.currentLanguage = currentLanguage
         self.hasError        = hasError

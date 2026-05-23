@@ -2657,12 +2657,28 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     private func handleWidgetPauseAction() {
         pausePlayback()
         
-        // Force immediate widget refresh (bypasses throttling)
-        Task {
-            await SharedPlayerManager.shared.saveCurrentState()
+        // Force immediate widget refresh (bypasses throttling) — same as handleWidgetAction
+        Task { @MainActor in
+            let manager = SharedPlayerManager.shared
+            let finalVisualState = await manager.currentVisualState
+            let finalState = manager.loadSharedState()
+            
+            await WidgetRefreshManager.shared.refreshIfNeeded(
+                visualState: finalVisualState,
+                currentLanguage: finalState.currentLanguage,
+                hasError: finalState.hasError,
+                immediate: true
+            )
+            
+            WidgetCenter.shared.reloadTimelines(ofKind: "LutheranRadioWidget")
+            
+            saveStateForWidget()
+            WidgetCenter.shared.reloadAllTimelines()
+            
+            #if DEBUG
+            print("🔗 Widget pause action completed → forced refresh to \(finalVisualState) [state saved]")
+            #endif
         }
-        saveStateForWidget()
-        WidgetCenter.shared.reloadAllTimelines()
     }
 
     /// Handles widget-initiated stream switching to a specific language without playing tuning sounds.
@@ -3452,9 +3468,9 @@ extension ViewController: StreamingPlayerDelegate {
                         #endif
                         updatePlayPauseButton(isPlaying: false)
                         safeUpdateStatusLabel(text: String(localized: "status_paused"),
-                                             backgroundColor: .systemYellow,
-                                             textColor: .label,
-                                             isPermanentError: false)
+                                              backgroundColor: .systemYellow,
+                                              textColor: .label,
+                                              isPermanentError: false)
                     }
                     
                     // Feedback and save
@@ -3471,6 +3487,24 @@ extension ViewController: StreamingPlayerDelegate {
                 print("Unknown widget action: \(action)")
                 #endif
             }
+            
+            // === CRITICAL FIX: Force widget refresh after EVERY widget action ===
+            // This bypasses the "No meaningful state change" throttling and prevents icon revert
+            let finalVisualState = await manager.currentVisualState
+            let finalState = manager.loadSharedState()
+            
+            await WidgetRefreshManager.shared.refreshIfNeeded(
+                visualState: finalVisualState,
+                currentLanguage: finalState.currentLanguage,
+                hasError: finalState.hasError,
+                immediate: true
+            )
+            
+            WidgetCenter.shared.reloadTimelines(ofKind: "LutheranRadioWidget")
+            
+            #if DEBUG
+            print("🔗 Widget action '\(action)' completed → forced refresh to \(finalVisualState)")
+            #endif
             
             // Clear the pending action (actor-isolated)
             await SharedPlayerManager.shared.clearPendingAction(actionId: actionId)

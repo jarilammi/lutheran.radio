@@ -93,14 +93,30 @@ struct Provider: AppIntentTimelineProvider {
      * 15-minute refresh interval balances responsiveness and battery life
      */
     func timeline(for configuration: RadioWidgetConfiguration, in context: Context) async -> Timeline<SimpleEntry> {
-        let currentState = await getValidatedStreamState()
+        let (currentLanguage, hasError, visualState) = await getPendingOrCurrentState(manager: SharedPlayerManager.shared)
+        
+        let manager = SharedPlayerManager.shared
+        let currentStream = manager.availableStreams.first { $0.languageCode == currentLanguage } ?? manager.availableStreams[0]
+        let currentStation = currentStream.flag + " " + currentStream.language
+        
+        let statusMessage: String = {
+            if visualState == .thermalPaused {
+                return String(localized: "status_thermal_paused") ?? "Thermal pause"
+            } else if hasError {
+                return String(localized: "Connection error")
+            } else if visualState == .playing {
+                return String(localized: "status_playing")
+            } else {
+                return String(localized: "Ready")
+            }
+        }()
         
         let entry = SimpleEntry(
             date: Date(),
-            visualState: currentState.visualState,
-            currentStation: currentState.currentStation,
-            statusMessage: currentState.statusMessage,
-            availableStreams: SharedPlayerManager.shared.availableStreams,
+            visualState: visualState,
+            currentStation: currentStation,
+            statusMessage: statusMessage,
+            availableStreams: manager.availableStreams,
             configuration: configuration
         )
         
@@ -110,7 +126,7 @@ struct Provider: AppIntentTimelineProvider {
     
     // MARK: - Async helpers (required for actor isolation)
     
-    private func getValidatedStreamState() async -> (isPlaying: Bool, currentStation: String, statusMessage: String, visualState: PlayerVisualState) {
+    private func getValidatedStreamState() async -> (currentStation: String, statusMessage: String, visualState: PlayerVisualState) {
         let manager = SharedPlayerManager.shared
         let state = manager.loadSharedState()
         
@@ -120,40 +136,37 @@ struct Provider: AppIntentTimelineProvider {
         let currentStream = manager.availableStreams.first(where: { $0.languageCode == state.currentLanguage }) ?? manager.availableStreams[0]
         let currentStation = currentStream.flag + " " + currentStream.language
         
-        let statusMessage: String
-        if state.hasError {
-            statusMessage = String(localized: "Connection error")
-        } else if visualState == .playing {
-            statusMessage = String(localized: "status_playing")
-        } else {
-            statusMessage = String(localized: "Ready")
-        }
+        let statusMessage: String = {
+            if state.hasError {
+                return String(localized: "Connection error")
+            } else if visualState == .playing {
+                return String(localized: "status_playing")
+            } else {
+                return String(localized: "Ready")
+            }
+        }()
         
-        return (
-            isPlaying: visualState.isActivelyPlaying,
-            currentStation: currentStation,
-            statusMessage: statusMessage,
-            visualState: visualState
-        )
+        return (currentStation: currentStation, statusMessage: statusMessage, visualState: visualState)
     }
     
     private func createEntry(with configuration: RadioWidgetConfiguration) async -> SimpleEntry {
         let manager = SharedPlayerManager.shared
-        let (isPlaying, currentLanguage, hasError, visualState) = await getPendingOrCurrentState(manager: manager)
+        let (currentLanguage, hasError, visualState) = await getPendingOrCurrentState(manager: manager)
         
         let currentStream = manager.availableStreams.first { $0.languageCode == currentLanguage } ?? manager.availableStreams[0]
         let currentStation = currentStream.flag + " " + currentStream.language
         
-        let statusMessage: String
-        if visualState == .thermalPaused {
-            statusMessage = String(localized: "status_thermal_paused") ?? "Thermal pause"
-        } else if hasError {
-            statusMessage = String(localized: "Connection error")
-        } else if isPlaying {
-            statusMessage = String(localized: "status_playing")
-        } else {
-            statusMessage = String(localized: "Ready")
-        }
+        let statusMessage: String = {
+            if visualState == .thermalPaused {
+                return String(localized: "status_thermal_paused") ?? "Thermal pause"
+            } else if hasError {
+                return String(localized: "Connection error")
+            } else if visualState == .playing {
+                return String(localized: "status_playing")
+            } else {
+                return String(localized: "Ready")
+            }
+        }()
         
         #if DEBUG
         print("🔗 Widget creating entry: visualState=\(visualState), station=\(currentStation)")
@@ -169,28 +182,46 @@ struct Provider: AppIntentTimelineProvider {
         )
     }
     
-    private func getPendingOrCurrentState(manager: SharedPlayerManager) async -> (isPlaying: Bool, currentLanguage: String, hasError: Bool, visualState: PlayerVisualState) {
+    private func getPendingOrCurrentState(manager: SharedPlayerManager) async -> (currentLanguage: String, hasError: Bool, visualState: PlayerVisualState) {
         guard let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
             let state = manager.loadSharedState()
-            // ✅ Safe actor access
             let visualState = await manager.currentVisualState
-            return (state.isPlaying, state.currentLanguage, state.hasError, visualState)
+            return (state.currentLanguage, state.hasError, visualState)
         }
         
-        // Pending / instant feedback logic (unchanged)
+        // === CRITICAL: Handle pending play/pause actions for instant widget feedback ===
         if let pendingAction = sharedDefaults.string(forKey: "pendingAction"),
-           pendingAction == "switch",
-           let pendingLanguage = sharedDefaults.string(forKey: "pendingLanguage"),
            let pendingTime = sharedDefaults.object(forKey: "pendingActionTime") as? Double {
             
             let actionAge = Date().timeIntervalSince1970 - pendingTime
-            if actionAge < 5.0 {
+            if actionAge < 8.0 {   // enough time for widget → main-app roundtrip
                 let state = manager.loadSharedState()
                 let visualState = await manager.currentVisualState
-                return (state.isPlaying, pendingLanguage, state.hasError, visualState)
+                
+                let effectiveVisualState: PlayerVisualState = {
+                    switch pendingAction {
+                    case "play":  return .playing
+                    case "pause": return .userPaused   // or .paused depending on your enum
+                    case "switch":
+                        return visualState
+                    default:
+                        return visualState
+                    }
+                }()
+                
+                #if DEBUG
+                print("🔗 [WIDGET PROVIDER] pendingAction=\(pendingAction) → forcing visualState=\(effectiveVisualState)")
+                #endif
+                
+                let language = (pendingAction == "switch")
+                    ? (sharedDefaults.string(forKey: "pendingLanguage") ?? state.currentLanguage)
+                    : state.currentLanguage
+                
+                return (language, state.hasError, effectiveVisualState)
             }
         }
         
+        // instant feedback for language switch
         if let instantFeedbackTime = sharedDefaults.object(forKey: "instantFeedbackTime") as? Double,
            let instantFeedbackLanguage = sharedDefaults.string(forKey: "instantFeedbackLanguage"),
            sharedDefaults.bool(forKey: "isInstantFeedback") == true {
@@ -199,13 +230,14 @@ struct Provider: AppIntentTimelineProvider {
             if age < 15.0 {
                 let state = manager.loadSharedState()
                 let visualState = await manager.currentVisualState
-                return (state.isPlaying, instantFeedbackLanguage, state.hasError, visualState)
+                return (instantFeedbackLanguage, state.hasError, visualState)
             }
         }
         
+        // normal path
         let state = manager.loadSharedState()
         let visualState = await manager.currentVisualState
-        return (state.isPlaying, state.currentLanguage, state.hasError, visualState)
+        return (state.currentLanguage, state.hasError, visualState)
     }
 }
 
@@ -215,17 +247,13 @@ struct Provider: AppIntentTimelineProvider {
  * Data structure representing a single point in the widget's timeline.
  * Contains all information needed to render the widget at a specific time.
  */
-struct SimpleEntry: TimelineEntry, Sendable {   // ← added Sendable
+struct SimpleEntry: TimelineEntry, Sendable {
     let date: Date
     let visualState: PlayerVisualState
     let currentStation: String
     let statusMessage: String
     let availableStreams: [DirectStreamingPlayer.Stream]
     let configuration: RadioWidgetConfiguration
-
-    var isPlaying: Bool {
-        visualState.isActivelyPlaying
-    }
 }
 
 /**
@@ -306,7 +334,7 @@ struct SmallWidgetView: View {
                 Spacer()
                 
                 Button(intent: WidgetToggleRadioIntent()) {
-                    Image(systemName: entry.isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                    Image(systemName: entry.visualState.isActivelyPlaying ? "pause.circle.fill" : "play.circle.fill")
                         .font(.title2)
                         .foregroundColor(entry.visualState.buttonTintColor.swiftUIColor)
                 }
@@ -390,10 +418,10 @@ struct MediumWidgetView: View {
                 VStack(spacing: 8) {
                     Button(intent: WidgetToggleRadioIntent()) {
                         VStack(spacing: 2) {
-                            Image(systemName: entry.isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                            Image(systemName: entry.visualState.isActivelyPlaying ? "pause.circle.fill" : "play.circle.fill")
                                 .font(.title)
                                 .foregroundColor(entry.visualState.buttonTintColor.swiftUIColor)
-                            Text(entry.isPlaying ? String(localized: "status_paused") : String(localized: "status_playing"))
+                            Text(entry.visualState.isActivelyPlaying ? String(localized: "status_playing") : String(localized: "status_paused"))
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
                         }
@@ -485,7 +513,7 @@ struct LargeWidgetView: View {
                         .fontWeight(.bold)
                     Spacer()
                     Button(intent: WidgetToggleRadioIntent()) {
-                        Image(systemName: entry.isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                        Image(systemName: entry.visualState.isActivelyPlaying ? "pause.circle.fill" : "play.circle.fill")
                             .font(.title2)
                             .foregroundColor(entry.visualState.buttonTintColor.swiftUIColor)
                     }
@@ -552,67 +580,77 @@ struct LargeWidgetView: View {
 // MARK: - App Intents
 
 /**
- * WIDGET-SPECIFIC TOGGLE INTENT
- * ==============================
- * Handles play/pause functionality specifically from Home Screen widgets.
- * Identical to Control Widget toggle but optimized for Home Screen interaction.
- *
- * SAFETY FEATURES:
- * - Connection-safe implementation
- * - Graceful error handling
- * - Immediate user feedback
+ * WIDGET TOGGLE INTENT (Home Screen)
+ * ==================================
+ * Now fully aligned with the PlayerVisualState → WidgetState SSOT refactor.
+ * Determines the correct action (play/pause) from the shared actor state,
+ * calls the proper manager method, and triggers immediate widget refresh.
  */
-public struct WidgetToggleRadioIntent: AppIntent {
-    public init() {}
-
-    public nonisolated static var title: LocalizedStringResource {
+struct WidgetToggleRadioIntent: AppIntent {
+    nonisolated static var title: LocalizedStringResource {
         "Toggle Lutheran Radio"
     }
-    public nonisolated static var description: IntentDescription {
+    nonisolated static var description: IntentDescription {
         IntentDescription("Play or pause Lutheran Radio.")
     }
-
-    public func perform() async throws -> some IntentResult {
+    
+    init() {}
+    
+    func perform() async throws -> some IntentResult {
         #if DEBUG
         print("🔗 WidgetToggleRadioIntent.perform called")
         #endif
-
-        guard let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
-            return .result()
+        
+        // ✅ Reliable SSOT read for widget extension process
+        let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared")
+        let isCurrentlyPlaying = sharedDefaults?.bool(forKey: "playing") ?? false
+        let shouldPlay = !isCurrentlyPlaying
+        let action = shouldPlay ? "play" : "pause"
+        let targetVisualState: PlayerVisualState = shouldPlay ? .playing : .userPaused
+        
+        #if DEBUG
+        print("🔗 Widget wants to \(action) → target state: \(targetVisualState) (isCurrentlyPlaying from UserDefaults = \(isCurrentlyPlaying))")
+        #endif
+        
+        // === OPTIMISTIC UPDATE (critical for instant icon flip) ===
+        if let sharedDefaults = sharedDefaults {
+            sharedDefaults.set(shouldPlay, forKey: "playing")   // ← immediate visual SSOT
+            sharedDefaults.synchronize()                        // ← force cross-process visibility
+            
+            let actionId = UUID().uuidString
+            let now = Date().timeIntervalSince1970
+            
+            sharedDefaults.set(action, forKey: "pendingAction")
+            sharedDefaults.set(actionId, forKey: "pendingActionId")
+            sharedDefaults.set(now, forKey: "pendingActionTime")
+            
+            #if DEBUG
+            print("🔗 Widget set pendingAction = \(action) + playing = \(shouldPlay) (ID: \(actionId))")
+            #endif
         }
-
-        let manager = SharedPlayerManager.shared
-        let state = manager.loadSharedState()
-        let isCurrentlyPlaying = state.isPlaying
-
-        let action: String = isCurrentlyPlaying ? "pause" : "play"
-        let actionId = UUID().uuidString
-        let now = Date().timeIntervalSince1970
-
-        sharedDefaults.set(action, forKey: "pendingAction")
-        sharedDefaults.set(actionId, forKey: "pendingActionId")
-        sharedDefaults.set(now, forKey: "pendingActionTime")
-        // no language needed for toggle
-
-        // Post Darwin notification so main app reacts
+        
+        // Wake main app (does the real AVPlayer work + final state save)
         CFNotificationCenterPostNotification(
             CFNotificationCenterGetDarwinNotifyCenter(),
             CFNotificationName("radio.lutheran.widget.action" as CFString),
             nil, nil, true
         )
-
-        // Immediate widget UI feedback
-        let newState = WidgetState(
-            isPlaying: !isCurrentlyPlaying,
+        
+        // Immediate widget UI update
+        let state = SharedPlayerManager.shared.loadSharedState()
+        await WidgetRefreshManager.shared.refreshIfNeeded(
+            visualState: targetVisualState,
             currentLanguage: state.currentLanguage,
-            hasError: state.hasError
+            hasError: state.hasError,
+            immediate: true
         )
-        await WidgetRefreshManager.shared.refreshIfNeeded(for: newState, immediate: true)
-
+        
+        WidgetCenter.shared.reloadTimelines(ofKind: "LutheranRadioWidget")
+        
         #if DEBUG
-        print("🔗 WidgetToggleRadioIntent: posted \(action) action (ID: \(actionId))")
+        print("🔗 WidgetToggleRadioIntent completed. Signaled \(action), refreshed widget to \(targetVisualState)")
         #endif
-
+        
         return .result()
     }
 }
@@ -672,7 +710,7 @@ public struct SwitchStreamIntent: AppIntent {
         let manager = SharedPlayerManager.shared
         let state = manager.loadSharedState()
         let newState = WidgetState(
-            isPlaying: state.isPlaying,
+            isPlaying: state.isPlaying,   // stream switch does not change play state
             currentLanguage: streamLanguageCode,
             hasError: state.hasError
         )
