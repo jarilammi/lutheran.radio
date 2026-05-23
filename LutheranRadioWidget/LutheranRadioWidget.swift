@@ -93,14 +93,30 @@ struct Provider: AppIntentTimelineProvider {
      * 15-minute refresh interval balances responsiveness and battery life
      */
     func timeline(for configuration: RadioWidgetConfiguration, in context: Context) async -> Timeline<SimpleEntry> {
-        let currentState = await getValidatedStreamState()
+        let (currentLanguage, hasError, visualState) = await getPendingOrCurrentState(manager: SharedPlayerManager.shared)
+        
+        let manager = SharedPlayerManager.shared
+        let currentStream = manager.availableStreams.first { $0.languageCode == currentLanguage } ?? manager.availableStreams[0]
+        let currentStation = currentStream.flag + " " + currentStream.language
+        
+        let statusMessage: String = {
+            if visualState == .thermalPaused {
+                return String(localized: "status_thermal_paused") ?? "Thermal pause"
+            } else if hasError {
+                return String(localized: "Connection error")
+            } else if visualState == .playing {
+                return String(localized: "status_playing")
+            } else {
+                return String(localized: "Ready")
+            }
+        }()
         
         let entry = SimpleEntry(
             date: Date(),
-            visualState: currentState.visualState,
-            currentStation: currentState.currentStation,
-            statusMessage: currentState.statusMessage,
-            availableStreams: SharedPlayerManager.shared.availableStreams,
+            visualState: visualState,
+            currentStation: currentStation,
+            statusMessage: statusMessage,
+            availableStreams: manager.availableStreams,
             configuration: configuration
         )
         
@@ -318,7 +334,7 @@ struct SmallWidgetView: View {
                 Spacer()
                 
                 Button(intent: WidgetToggleRadioIntent()) {
-                    Image(systemName: entry.visualState == .playing ? "pause.circle.fill" : "play.circle.fill")
+                    Image(systemName: entry.visualState.isActivelyPlaying ? "pause.circle.fill" : "play.circle.fill")
                         .font(.title2)
                         .foregroundColor(entry.visualState.buttonTintColor.swiftUIColor)
                 }
@@ -402,10 +418,10 @@ struct MediumWidgetView: View {
                 VStack(spacing: 8) {
                     Button(intent: WidgetToggleRadioIntent()) {
                         VStack(spacing: 2) {
-                            Image(systemName: entry.visualState == .playing ? "pause.circle.fill" : "play.circle.fill")
+                            Image(systemName: entry.visualState.isActivelyPlaying ? "pause.circle.fill" : "play.circle.fill")
                                 .font(.title)
                                 .foregroundColor(entry.visualState.buttonTintColor.swiftUIColor)
-                            Text(entry.visualState == .playing ? String(localized: "status_paused") : String(localized: "status_playing"))
+                            Text(entry.visualState.isActivelyPlaying ? String(localized: "status_playing") : String(localized: "status_paused"))
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
                         }
@@ -497,7 +513,7 @@ struct LargeWidgetView: View {
                         .fontWeight(.bold)
                     Spacer()
                     Button(intent: WidgetToggleRadioIntent()) {
-                        Image(systemName: entry.visualState == .playing ? "pause.circle.fill" : "play.circle.fill")
+                        Image(systemName: entry.visualState.isActivelyPlaying ? "pause.circle.fill" : "play.circle.fill")
                             .font(.title2)
                             .foregroundColor(entry.visualState.buttonTintColor.swiftUIColor)
                     }

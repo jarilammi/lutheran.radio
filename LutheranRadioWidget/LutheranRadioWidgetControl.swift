@@ -192,10 +192,10 @@ enum StreamLanguageOption: String, AppEnum {
 }
 
 /**
- * PLAY/PAUSE TOGGLE INTENT
- * =========================
- * Handles play/pause functionality from the Control Widget.
- * Now fully uses PlayerVisualState as the single source of truth (SSOT).
+ * PLAY/PAUSE TOGGLE INTENT (SSOT-compliant after refactor)
+ * =========================================================
+ * Handles both play AND pause from widget / Control Center.
+ * This was the missing piece after PlayerVisualState → WidgetState refactor.
  */
 struct ToggleRadioIntent: SetValueIntent {
     nonisolated static var title: LocalizedStringResource {
@@ -206,34 +206,40 @@ struct ToggleRadioIntent: SetValueIntent {
     }
     
     @Parameter(title: "Is Playing")
-    var value: Bool
+    var value: Bool   // ← true = play, false = pause (this is what ControlWidgetToggle passes)
 
     init() {}
 
     func perform() async throws -> some IntentResult {
         #if DEBUG
-        print("🔗 ToggleRadioIntent.perform called")
+        print("🔗 ToggleRadioIntent.perform called with desired value: \(value)")
         #endif
         
         let manager = SharedPlayerManager.shared
-        let visualState = await manager.currentVisualState          // ← SSOT
-        let isCurrentlyPlaying = visualState.isActivelyPlaying
         
-        // Toggle playback state
-        if isCurrentlyPlaying {
-            await manager.stop()
-        } else {
+        if value {
+            // Play path (already worked)
+            print("🔗 Executing widget play action")
             try await manager.play()
+        } else {
+            // ← THIS WAS THE MISSING PIECE
+            print("🔗 Executing widget pause action")
+            await manager.stop()
         }
         
         // Immediate widget UI feedback — now using modern PlayerVisualState API
         let state = manager.loadSharedState()
+        let targetVisualState: PlayerVisualState = value ? .playing : .userPaused
+        
         await WidgetRefreshManager.shared.refreshIfNeeded(
-            visualState: isCurrentlyPlaying ? .userPaused : .playing,
+            visualState: targetVisualState,
             currentLanguage: state.currentLanguage,
             hasError: state.hasError,
             immediate: true
         )
+        
+        // Extra safety: force widget timeline refresh
+        WidgetCenter.shared.reloadTimelines(ofKind: "LutheranRadioWidget")
         
         #if DEBUG
         print("🔗 ToggleRadioIntent completed successfully")
