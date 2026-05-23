@@ -3452,9 +3452,9 @@ extension ViewController: StreamingPlayerDelegate {
                         #endif
                         updatePlayPauseButton(isPlaying: false)
                         safeUpdateStatusLabel(text: String(localized: "status_paused"),
-                                             backgroundColor: .systemYellow,
-                                             textColor: .label,
-                                             isPermanentError: false)
+                                              backgroundColor: .systemYellow,
+                                              textColor: .label,
+                                              isPermanentError: false)
                     }
                     
                     // Feedback and save
@@ -3471,6 +3471,24 @@ extension ViewController: StreamingPlayerDelegate {
                 print("Unknown widget action: \(action)")
                 #endif
             }
+            
+            // === CRITICAL FIX: Force widget refresh after EVERY widget action ===
+            // This bypasses the "No meaningful state change" throttling and prevents icon revert
+            let finalVisualState = await manager.currentVisualState
+            let finalState = manager.loadSharedState()
+            
+            await WidgetRefreshManager.shared.refreshIfNeeded(
+                visualState: finalVisualState,
+                currentLanguage: finalState.currentLanguage,
+                hasError: finalState.hasError,
+                immediate: true
+            )
+            
+            WidgetCenter.shared.reloadTimelines(ofKind: "LutheranRadioWidget")
+            
+            #if DEBUG
+            print("🔗 Widget action '\(action)' completed → forced refresh to \(finalVisualState)")
+            #endif
             
             // Clear the pending action (actor-isolated)
             await SharedPlayerManager.shared.clearPendingAction(actionId: actionId)
