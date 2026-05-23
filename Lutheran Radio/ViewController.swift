@@ -2657,10 +2657,26 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     private func handleWidgetPauseAction() {
         pausePlayback()
         
-        // Force immediate widget refresh (bypasses throttling)
-        Task {
-            await SharedPlayerManager.shared.saveCurrentState()
+        // Force immediate widget refresh (bypasses throttling) — same as handleWidgetAction
+        Task { @MainActor in
+            let manager = SharedPlayerManager.shared
+            let finalVisualState = await manager.currentVisualState
+            let finalState = manager.loadSharedState()
+            
+            await WidgetRefreshManager.shared.refreshIfNeeded(
+                visualState: finalVisualState,
+                currentLanguage: finalState.currentLanguage,
+                hasError: finalState.hasError,
+                immediate: true
+            )
+            
+            WidgetCenter.shared.reloadTimelines(ofKind: "LutheranRadioWidget")
+            
+            #if DEBUG
+            print("🔗 Widget pause action completed → forced refresh to \(finalVisualState)")
+            #endif
         }
+        
         saveStateForWidget()
         WidgetCenter.shared.reloadAllTimelines()
     }
