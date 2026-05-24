@@ -194,7 +194,7 @@ struct Provider: AppIntentTimelineProvider {
            let pendingTime = sharedDefaults.object(forKey: "pendingActionTime") as? Double {
             
             let actionAge = Date().timeIntervalSince1970 - pendingTime
-            if actionAge < 8.0 {   // enough time for widget → main-app roundtrip
+            if actionAge < 12.0 {   // enough time for widget → main-app roundtrip
                 let state = manager.loadSharedState()
                 let visualState = await manager.currentVisualState
                 
@@ -334,7 +334,7 @@ struct SmallWidgetView: View {
                 Spacer()
                 
                 Button(intent: WidgetToggleRadioIntent()) {
-                    Image(systemName: entry.visualState.isActivelyPlaying ? "pause.circle.fill" : "play.circle.fill")
+                    Image(systemName: "playpause.fill")
                         .font(.title2)
                         .foregroundColor(entry.visualState.buttonTintColor.swiftUIColor)
                 }
@@ -418,7 +418,7 @@ struct MediumWidgetView: View {
                 VStack(spacing: 8) {
                     Button(intent: WidgetToggleRadioIntent()) {
                         VStack(spacing: 2) {
-                            Image(systemName: entry.visualState.isActivelyPlaying ? "pause.circle.fill" : "play.circle.fill")
+                            Image(systemName: "playpause.fill")
                                 .font(.title)
                                 .foregroundColor(entry.visualState.buttonTintColor.swiftUIColor)
                             Text(entry.visualState.isActivelyPlaying ? String(localized: "status_playing") : String(localized: "status_paused"))
@@ -513,7 +513,7 @@ struct LargeWidgetView: View {
                         .fontWeight(.bold)
                     Spacer()
                     Button(intent: WidgetToggleRadioIntent()) {
-                        Image(systemName: entry.visualState.isActivelyPlaying ? "pause.circle.fill" : "play.circle.fill")
+                        Image(systemName: "playpause.fill")
                             .font(.title2)
                             .foregroundColor(entry.visualState.buttonTintColor.swiftUIColor)
                     }
@@ -614,8 +614,8 @@ struct WidgetToggleRadioIntent: AppIntent {
         
         // === OPTIMISTIC UPDATE (critical for instant icon flip) ===
         if let sharedDefaults = sharedDefaults {
-            sharedDefaults.set(shouldPlay, forKey: "playing")   // ← immediate visual SSOT
-            sharedDefaults.synchronize()                        // ← force cross-process visibility
+            sharedDefaults.set(shouldPlay, forKey: "playing")
+            sharedDefaults.synchronize()
             
             let actionId = UUID().uuidString
             let now = Date().timeIntervalSince1970
@@ -629,7 +629,7 @@ struct WidgetToggleRadioIntent: AppIntent {
             #endif
         }
         
-        // Wake main app (does the real AVPlayer work + final state save)
+        // Wake main app
         CFNotificationCenterPostNotification(
             CFNotificationCenterGetDarwinNotifyCenter(),
             CFNotificationName("radio.lutheran.widget.action" as CFString),

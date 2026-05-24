@@ -94,6 +94,10 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     private var pendingWidgetSwitchWorkItem: DispatchWorkItem?
     private var processedActionIds: Set<String> = []
     
+    // Widget play/pause action debouncing (prevents rapid taps from widget causing AVFoundation thrashing)
+    private var lastWidgetActionTime: Date = .distantPast
+    private let widgetActionDebounceInterval: TimeInterval = 0.65
+    
     private var lastCollectionViewSize: CGSize = .zero
     
     /// Flag indicating if the device is in Low Power Mode (iOS 26+).
@@ -2917,16 +2921,37 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             #if DEBUG
             print("🔗 Executing widget play action")
             #endif
+            
+            // === WIDGET PLAY/PAUSE DEBOUNCE GUARD ===
+            guard Date().timeIntervalSince(lastWidgetActionTime) > widgetActionDebounceInterval else {
+                #if DEBUG
+                print("🔇 Widget action debounced (too soon after previous tap)")
+                #endif
+                return
+            }
+            lastWidgetActionTime = Date()
+            // === END OF GUARD ===
+            
             // 🔥 CRITICAL FIX: same reset path now used by language switch + manual play + widget
-            // This defeats the initialPlaybackHasRun guard on cold-launch Darwin notification.
             Task { @MainActor in
                 await SharedPlayerManager.shared.resetToPrePlayForNewStream()
-                handleWidgetPlayAction()   // ← your existing handler (unchanged)
+                handleWidgetPlayAction()
             }
         case "pause":
             #if DEBUG
             print("🔗 Executing widget pause action")
             #endif
+            
+            // === WIDGET PLAY/PAUSE DEBOUNCE GUARD ===
+            guard Date().timeIntervalSince(lastWidgetActionTime) > widgetActionDebounceInterval else {
+                #if DEBUG
+                print("🔇 Widget action debounced (too soon after previous tap)")
+                #endif
+                return
+            }
+            lastWidgetActionTime = Date()
+            // === END OF GUARD ===
+            
             handleWidgetPauseAction()
         default:
             #if DEBUG
@@ -3315,7 +3340,8 @@ extension ViewController {
                 String(localized: "status_no_internet"),
                 String(localized: "status_stream_unavailable"),
                 String(localized: "status_security_failed"),
-                String(localized: "status_stopped")
+                String(localized: "status_stopped"),
+                String(localized: "status_ssl_transition")
             ]
             
             if importantStatuses.contains(text) {
