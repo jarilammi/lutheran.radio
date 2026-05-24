@@ -706,15 +706,19 @@ public struct SwitchStreamIntent: AppIntent {
             nil, nil, true
         )
 
-        // Immediate feedback
+        // Immediate feedback — modern SSOT path (no more legacy WidgetState init)
         let manager = SharedPlayerManager.shared
         let state = manager.loadSharedState()
-        let newState = WidgetState(
-            isPlaying: state.isPlaying,   // stream switch does not change play state
+
+        // Stream switch keeps the current play/pause state (only language changes)
+        let visualState: PlayerVisualState = state.isPlaying ? .playing : .userPaused
+
+        await WidgetRefreshManager.shared.refreshIfNeeded(
+            visualState: visualState,          // ← authoritative source
             currentLanguage: streamLanguageCode,
-            hasError: state.hasError
+            hasError: state.hasError,
+            immediate: true
         )
-        await WidgetRefreshManager.shared.refreshIfNeeded(for: newState, immediate: true)
 
         #if DEBUG
         print("🔗 SwitchStreamIntent: posted switch to \(streamLanguageCode) (ID: \(actionId))")

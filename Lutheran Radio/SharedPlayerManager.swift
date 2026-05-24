@@ -343,18 +343,24 @@ actor SharedPlayerManager {
         sharedDefaults?.set(sharedDefaults?.string(forKey: "currentLanguage") ?? "en",
                             forKey: "instantFeedbackLanguage")
         
+        // CRITICAL: Optimistic SSOT update (same pattern we already use in stop)
+        currentVisualState = .playing
+        saveVisualState()
+        
         scheduleWidgetAction(action: "play")
         notifyMainApp(action: "play")
         
-        // Small delay + optimistic widget refresh
+        // Small delay + optimistic widget refresh using the modern API
         Task {
             try? await Task.sleep(for: .seconds(0.5))
-            let optimisticState = WidgetState(
-                isPlaying: true,
-                currentLanguage: sharedDefaults?.string(forKey: "currentLanguage") ?? "en",
-                hasError: false
+            let language = sharedDefaults?.string(forKey: "currentLanguage") ?? "en"
+            
+            await WidgetRefreshManager.shared.refreshIfNeeded(
+                visualState: .playing,           // ← modern path
+                currentLanguage: language,
+                hasError: false,
+                immediate: true
             )
-            await WidgetRefreshManager.shared.refreshIfNeeded(for: optimisticState, immediate: true)
             
             await saveFireAndForget()
         }
@@ -476,22 +482,22 @@ actor SharedPlayerManager {
         
         // CRITICAL: Set the paused state synchronously for widget path
         currentVisualState = .userPaused
-        
-        // Persist the full visual state so widget / Live Activity read the correct paused intent
         saveVisualState()
         
         scheduleWidgetAction(action: "pause")
         notifyMainApp(action: "pause")
         
-        // Small delay + optimistic widget refresh using correct paused state
+        // Small delay + optimistic widget refresh using the modern API
         Task {
             try? await Task.sleep(for: .seconds(0.5))
-            let optimisticState = WidgetState(
-                isPlaying: false,                    // keep for backward compatibility for now
-                currentLanguage: sharedDefaults?.string(forKey: "currentLanguage") ?? "en",
-                hasError: false
+            let language = sharedDefaults?.string(forKey: "currentLanguage") ?? "en"
+            
+            await WidgetRefreshManager.shared.refreshIfNeeded(
+                visualState: currentVisualState,   // already .userPaused
+                currentLanguage: language,
+                hasError: false,
+                immediate: true
             )
-            await WidgetRefreshManager.shared.refreshIfNeeded(for: optimisticState, immediate: true)
         }
     }
     
@@ -650,7 +656,13 @@ extension SharedPlayerManager {
         
         // Always hop to MainActor for WidgetRefreshManager (required in Swift 6)
         Task { @MainActor in
-            WidgetRefreshManager.shared.refreshIfNeeded(for: widgetState, immediate: isUrgentUpdate)
+            // ✅ Modern SSOT path — no more legacy WidgetState overload
+            WidgetRefreshManager.shared.refreshIfNeeded(
+                visualState: widgetState.isPlaying ? .playing : .userPaused,
+                currentLanguage: state.currentLanguage,
+                hasError: state.hasError,
+                immediate: isUrgentUpdate
+            )
         }
         
         #if DEBUG
