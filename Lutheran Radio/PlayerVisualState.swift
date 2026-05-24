@@ -106,8 +106,18 @@ extension PlayerVisualState {
     static func from(
         status: PlayerStatus,
         isManualPause: Bool,
-        hasEverPlayed: Bool
+        hasEverPlayed: Bool,
+        currentVisualState: PlayerVisualState = .prePlay
     ) -> PlayerVisualState {
+        
+        // 🔥 CRITICAL: Once userPaused, stay there for any non-playing status
+        // This defeats the status-callback flip-back bug
+        if currentVisualState == .userPaused && status != .playing {
+            #if DEBUG
+            print("🔒 [PlayerVisualState] preserving sticky .userPaused for status=\(status)")
+            #endif
+            return .userPaused
+        }
         
         switch status {
         case .playing:
@@ -121,10 +131,8 @@ extension PlayerVisualState {
             return .securityLocked
             
         case .paused, .stopped:
-            // 🔥 CRITICAL CHANGE:
-            // Once user has ever interacted (paused or played), stay in userPaused.
-            // Only true initial state (never played) stays prePlay.
-            if isManualPause || hasEverPlayed {
+            // Once user has ever interacted (paused or played), stay in userPaused
+            if isManualPause || hasEverPlayed || currentVisualState == .userPaused {
                 return .userPaused
             }
             return .prePlay   // only for brand-new launch

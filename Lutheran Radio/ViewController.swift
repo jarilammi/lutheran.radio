@@ -2650,15 +2650,34 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 #endif
             }
             
-            // Force immediate widget refresh (bypasses saveStateForWidget throttling on cold launch)
-            await SharedPlayerManager.shared.saveCurrentState()
-            self.saveStateForWidget()
+            // === MODERNIZED: Use the same unified refresh path as pause/switch ===
+            // This replaces the old saveCurrentState() + saveStateForWidget() pattern
+            // while still bypassing throttling on cold launch (immediate: true)
+            let manager = SharedPlayerManager.shared
+            let finalVisualState = await manager.currentVisualState
+            let finalState = manager.loadSharedState()
+            
+            await WidgetRefreshManager.shared.refreshIfNeeded(
+                visualState: finalVisualState,
+                currentLanguage: finalState.currentLanguage,
+                hasError: finalState.hasError,
+                immediate: true
+            )
+            
+            saveStateForWidget()
             WidgetCenter.shared.reloadAllTimelines()
+            
+            #if DEBUG
+            print("🔗 Widget play action completed → forced refresh to \(finalVisualState)")
+            #endif
         }
     }
 
     /// Handle widget pause action
     private func handleWidgetPauseAction() {
+        // Mark this as a manual pause so the player doesn't auto-resume on certain paths
+        isManualPause = true
+        
         pausePlayback()
         
         // Force immediate widget refresh (bypasses throttling) — same as handleWidgetAction
@@ -2674,13 +2693,11 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 immediate: true
             )
             
-            WidgetCenter.shared.reloadTimelines(ofKind: "LutheranRadioWidget")
-            
             saveStateForWidget()
             WidgetCenter.shared.reloadAllTimelines()
             
             #if DEBUG
-            print("🔗 Widget pause action completed → forced refresh to \(finalVisualState) [state saved]")
+            print("🔗 Widget pause action completed → forced refresh to \(finalVisualState)")
             #endif
         }
     }
@@ -2765,9 +2782,25 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                     #endif
                 }
                 
-                // 7. Widget refresh (now with correct language)
-                self.saveStateForWidget()
+                // 7. Widget refresh (now with correct language + modern path)
+                //    Use the same unified refresh as play/pause for consistency
+                let manager = SharedPlayerManager.shared
+                let finalVisualState = await manager.currentVisualState
+                let finalState = manager.loadSharedState()
+                
+                await WidgetRefreshManager.shared.refreshIfNeeded(
+                    visualState: finalVisualState,
+                    currentLanguage: finalState.currentLanguage,
+                    hasError: finalState.hasError,
+                    immediate: true
+                )
+                
+                saveStateForWidget()
                 WidgetCenter.shared.reloadAllTimelines()
+                
+                #if DEBUG
+                print("🔗 Widget switch completed → forced refresh to \(finalVisualState) [language: \(finalState.currentLanguage)]")
+                #endif
                 
                 // 8. Clear pending action
                 await SharedPlayerManager.shared.clearPendingAction(actionId: actionId)
