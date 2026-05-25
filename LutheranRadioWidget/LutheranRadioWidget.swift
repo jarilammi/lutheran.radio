@@ -101,13 +101,13 @@ struct Provider: AppIntentTimelineProvider {
         
         let statusMessage: String = {
             if visualState == .thermalPaused {
-                return String(localized: "status_thermal_paused") ?? "Thermal pause"
+                return String(localized: "status_thermal_paused", defaultValue: "Thermal pause")
             } else if hasError {
-                return String(localized: "Connection error")
+                return String(localized: "Connection error", defaultValue: "Connection error")
             } else if visualState == .playing {
-                return String(localized: "status_playing")
+                return String(localized: "status_playing", defaultValue: "Playing")
             } else {
-                return String(localized: "Ready")
+                return String(localized: "Ready", defaultValue: "Ready")
             }
         }()
         
@@ -158,13 +158,13 @@ struct Provider: AppIntentTimelineProvider {
         
         let statusMessage: String = {
             if visualState == .thermalPaused {
-                return String(localized: "status_thermal_paused") ?? "Thermal pause"
+                return String(localized: "status_thermal_paused", defaultValue: "Thermal pause")
             } else if hasError {
-                return String(localized: "Connection error")
+                return String(localized: "Connection error", defaultValue: "Connection error")
             } else if visualState == .playing {
-                return String(localized: "status_playing")
+                return String(localized: "status_playing", defaultValue: "Playing")
             } else {
-                return String(localized: "Ready")
+                return String(localized: "Ready", defaultValue: "Ready")
             }
         }()
         

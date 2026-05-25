@@ -26,12 +26,12 @@ struct LiveActivityTogglePlaybackIntent: AppIntent {
         #endif
         
         let manager = SharedPlayerManager.shared
-        let visualState = await manager.currentVisualState   // ✅ Safe actor access
+        let visualState = await manager.currentVisualState   // ✅ Safe actor access (SSOT)
         
         if visualState.isActivelyPlaying {
             await manager.stop()
         } else {
-            try await manager.play()
+            await manager.play()   // ← Fixed: no more 'try'
         }
         
         #if DEBUG

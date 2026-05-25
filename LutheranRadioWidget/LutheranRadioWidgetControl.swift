@@ -47,24 +47,22 @@ struct LutheranRadioWidgetControl: ControlWidget {
             // Control toggle that shows current state and allows play/pause
             ControlWidgetToggle(
                 LocalizedStringKey("lutheran_radio_title"),
-                isOn: value.isPlaying,                    // kept for ControlWidgetToggle API
+                isOn: value.isPlaying,
                 action: ToggleRadioIntent()
             ) { isPlaying in
                 Label {
                     VStack(alignment: .leading, spacing: 1) {
                         Text(value.visualState == .thermalPaused
-                            ? String(localized: "status_thermal_paused") ?? "Thermal pause"
+                            ? String(localized: "status_thermal_paused", defaultValue: "Thermal pause")
                             : (value.visualState == .playing
-                                ? String(localized: "status_playing")
-                                : String(localized: "status_stopped")))
+                                ? String(localized: "status_playing", defaultValue: "Playing")
+                                : String(localized: "status_stopped", defaultValue: "Stopped")))
                             .font(.caption2)
                         Text(value.currentStation)
                             .font(.caption2)
                             .foregroundColor(.secondary)
                     }
                 } icon: {
-                    // FIXED: Use reliable isPlaying (which maps .userPaused → false)
-                    // This makes the miniature pause button finally appear correctly
                     Image(systemName: isPlaying ? "pause.fill" : "play.fill")
                 }
             }
@@ -222,7 +220,7 @@ struct ToggleRadioIntent: SetValueIntent {
         if value {
             // Play path (already worked)
             print("🔗 Executing widget play action")
-            try await manager.play()
+            await manager.play()
         } else {
             // ← THIS WAS THE MISSING PIECE
             print("🔗 Executing widget pause action")
