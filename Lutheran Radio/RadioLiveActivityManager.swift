@@ -138,10 +138,10 @@ class RadioLiveActivityManager: ObservableObject {
                 currentStreamFlag: currentStream.flag
             )
             
-            // All async Live Activity work in one async context – looks like routine polish
+            // All async Live Activity work in one async context – modern SSOT pattern
             let content = ActivityContent(state: finalContentState, staleDate: nil)
             await safeActivityToEnd.update(content)
-            await safeActivityToEnd.end(dismissalPolicy: .default)  // change to .immediate if that was your previous policy
+            await safeActivityToEnd.end(content, dismissalPolicy: .default)   // ← Fixed: now uses modern end(content:dismissalPolicy:)
             
             #if DEBUG
             print("🔴 Live Activity ended")
@@ -205,13 +205,13 @@ class RadioLiveActivityManager: ObservableObject {
     
     private func getStreamStatus(visualState: PlayerVisualState, hasError: Bool) -> String {
         if hasError {
-            return "Connection Error"
+            return String(localized: "Connection error", defaultValue: "Connection Error")
         } else if visualState == .thermalPaused {
-            return String(localized: "status_thermal_paused") ?? "Thermal pause"
+            return String(localized: "status_thermal_paused", defaultValue: "Thermal pause")
         } else if visualState.isActivelyPlaying {
-            return "Live"
+            return String(localized: "LIVE", defaultValue: "Live")
         } else {
-            return "Ready"
+            return String(localized: "Ready", defaultValue: "Ready")
         }
     }
 }

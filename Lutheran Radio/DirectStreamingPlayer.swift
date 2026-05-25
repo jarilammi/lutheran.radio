@@ -890,27 +890,19 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                         }
                     } else if self.player?.rate ?? 0 == 0, !self.hasPermanentError {
                         // Auto-replay if previously playing / ready
-                        
                         Task { @MainActor in
-                            do {
-                                try await self.play()
-                                
-                                let playStatusKey = "status_playing"
-                                await MainActor.run {
-                                    self.safeOnStatusChange(
-                                        isPlaying: true,
-                                        reasonKey: playStatusKey      // ← fixed
-                                    )
-                                }
-                            } catch {
-                                let playStatusKey = "status_stream_unavailable"
-                                await MainActor.run {
-                                    self.safeOnStatusChange(
-                                        isPlaying: false,
-                                        reasonKey: playStatusKey      // ← fixed
-                                    )
-                                }
-                                print("Auto-replay failed: \(error)")
+                            let success = await self.play()
+                            
+                            let playStatusKey = success ? "status_playing" : "status_stream_unavailable"
+                            self.safeOnStatusChange(
+                                isPlaying: success,
+                                reasonKey: playStatusKey
+                            )
+                            
+                            if !success {
+                                #if DEBUG
+                                print("Auto-replay failed or blocked by guard")
+                                #endif
                             }
                         }
                     }
@@ -991,35 +983,27 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                         DispatchQueue.main.async {
                             self.safeOnStatusChange(
                                 isPlaying: false,
-                                reasonKey: statusKey          // ← fixed
+                                reasonKey: statusKey
                             )
                         }
                     } else if self.player?.rate ?? 0 == 0, !self.hasPermanentError {
                         // Auto-replay if previously playing / ready
                         
                         Task { @MainActor in
-                            do {
-                                try await self.play()
-                                
-                                let playStatusKey = "status_playing"
-                                await MainActor.run {
-                                    self.safeOnStatusChange(
-                                        isPlaying: true,
-                                        reasonKey: playStatusKey      // ← fixed
-                                    )
-                                }
-                            } catch {
-                                let playStatusKey = "status_stream_unavailable"
-                                await MainActor.run {
-                                    self.safeOnStatusChange(
-                                        isPlaying: false,
-                                        reasonKey: playStatusKey      // ← fixed
-                                    )
-                                }
-                                #if DEBUG
-                                print("Auto-replay failed: \(error)")
-                                #endif
+                            let success = await self.play()
+                            
+                            let playStatusKey = success ? "status_playing" : "status_stream_unavailable"
+                            
+                            self.safeOnStatusChange(
+                                isPlaying: success,
+                                reasonKey: playStatusKey
+                            )
+                            
+                            #if DEBUG
+                            if !success {
+                                print("Auto-replay failed or was blocked by guard")
                             }
+                            #endif
                         }
                     }
                 }
@@ -1041,7 +1025,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 DispatchQueue.main.async {
                     self.safeOnStatusChange(
                         isPlaying: false,
-                        reasonKey: "status_no_internet"       // ← fixed
+                        reasonKey: "status_no_internet"
                     )
                 }
             }
@@ -1064,7 +1048,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             if thermalState == .serious || thermalState == .critical {
                 if self.isPlaying {
                     Task { @MainActor in
-                        await self.stop()
+                        self.stop()                                 // sync
                         await SharedPlayerManager.shared.setVisualState(.thermalPaused)
                     }
                 }
@@ -1074,17 +1058,14 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             // ── Device cooled down again ───────────────────────────────
             if thermalState == .nominal || thermalState == .fair {
                 Task { @MainActor in
-                    // Use the state machine instead of a manual flag
+                    // Must await actor-isolated property (Swift 6 rule)
                     if await SharedPlayerManager.shared.currentVisualState.shouldAutoResumeOnThermalRecovery {
                         // Set visual state *before* play() so UI turns green immediately
                         await SharedPlayerManager.shared.setVisualState(.playing)
                         
-                        do {
-                            try await self.play()
-                        } catch {
-                            #if DEBUG
-                            print("Thermal resume play failed: \(error)")
-                            #endif
+                        let success = await self.play()
+                        
+                        if !success {
                             await SharedPlayerManager.shared.setVisualState(.userPaused)
                         }
                     }
@@ -1314,7 +1295,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         self.player?.play()
 
         #if DEBUG
-        print("▶️ [MainActor] AVPlayer created + play() called for \(url.lastPathComponent ?? url.absoluteString)")
+        print("▶️ [MainActor] AVPlayer created + play() called for \(url.lastPathComponent)")
         #endif
 
         // Do NOT call notifyMainApp here — let SharedPlayerManager do it
@@ -1337,7 +1318,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         setupPlaybackObservers()
         
         #if DEBUG
-        print("🔄 [MainActor] Player item prepared (no auto-play) for \(url.lastPathComponent ?? url.absoluteString)")
+        print("🔄 [MainActor] Player item prepared (no auto-play) for \(url.lastPathComponent)")
         #endif
     }
 
@@ -1538,8 +1519,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// Updates the selected stream model and prepares the player.
     /// Does NOT start playback — call `play()` afterwards if needed.
     func setStream(to stream: Stream) async {
-        let previousLanguage = selectedStream.languageCode ?? "nil"
-        let newLanguage = stream.languageCode ?? "??"
+        let previousLanguage = selectedStream.languageCode
+        let newLanguage = stream.languageCode
 
         #if DEBUG
         print("ATOMIC STREAM SWITCH: \(previousLanguage) → \(newLanguage)")
