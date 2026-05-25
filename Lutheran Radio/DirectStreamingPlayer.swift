@@ -433,7 +433,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// - Note: Throttles calls; prefers servers with fewer failures; delays in low-power mode.
     /// - Example: `selectOptimalServer { server in print(server.name) }`
     /// - SeeAlso: `fetchServerIPsAndLatencies(completion:)`
-    func selectOptimalServer(completion: @escaping (Server) -> Void) {
+    func selectOptimalServer(completion: @escaping @Sendable (Server) -> Void) {
         // If we have a server that failed recently, try the other one first
         if let lastFailed = lastFailedServerName,
            let failureCount = serverFailureCount[lastFailed],
@@ -890,27 +890,19 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                         }
                     } else if self.player?.rate ?? 0 == 0, !self.hasPermanentError {
                         // Auto-replay if previously playing / ready
-                        
                         Task { @MainActor in
-                            do {
-                                try await self.play()
-                                
-                                let playStatusKey = "status_playing"
-                                await MainActor.run {
-                                    self.safeOnStatusChange(
-                                        isPlaying: true,
-                                        reasonKey: playStatusKey      // ← fixed
-                                    )
-                                }
-                            } catch {
-                                let playStatusKey = "status_stream_unavailable"
-                                await MainActor.run {
-                                    self.safeOnStatusChange(
-                                        isPlaying: false,
-                                        reasonKey: playStatusKey      // ← fixed
-                                    )
-                                }
-                                print("Auto-replay failed: \(error)")
+                            let success = await self.play()
+                            
+                            let playStatusKey = success ? "status_playing" : "status_stream_unavailable"
+                            self.safeOnStatusChange(
+                                isPlaying: success,
+                                reasonKey: playStatusKey
+                            )
+                            
+                            if !success {
+                                #if DEBUG
+                                print("Auto-replay failed or blocked by guard")
+                                #endif
                             }
                         }
                     }
@@ -991,35 +983,27 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                         DispatchQueue.main.async {
                             self.safeOnStatusChange(
                                 isPlaying: false,
-                                reasonKey: statusKey          // ← fixed
+                                reasonKey: statusKey
                             )
                         }
                     } else if self.player?.rate ?? 0 == 0, !self.hasPermanentError {
                         // Auto-replay if previously playing / ready
                         
                         Task { @MainActor in
-                            do {
-                                try await self.play()
-                                
-                                let playStatusKey = "status_playing"
-                                await MainActor.run {
-                                    self.safeOnStatusChange(
-                                        isPlaying: true,
-                                        reasonKey: playStatusKey      // ← fixed
-                                    )
-                                }
-                            } catch {
-                                let playStatusKey = "status_stream_unavailable"
-                                await MainActor.run {
-                                    self.safeOnStatusChange(
-                                        isPlaying: false,
-                                        reasonKey: playStatusKey      // ← fixed
-                                    )
-                                }
-                                #if DEBUG
-                                print("Auto-replay failed: \(error)")
-                                #endif
+                            let success = await self.play()
+                            
+                            let playStatusKey = success ? "status_playing" : "status_stream_unavailable"
+                            
+                            self.safeOnStatusChange(
+                                isPlaying: success,
+                                reasonKey: playStatusKey
+                            )
+                            
+                            #if DEBUG
+                            if !success {
+                                print("Auto-replay failed or was blocked by guard")
                             }
+                            #endif
                         }
                     }
                 }
@@ -1041,7 +1025,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 DispatchQueue.main.async {
                     self.safeOnStatusChange(
                         isPlaying: false,
-                        reasonKey: "status_no_internet"       // ← fixed
+                        reasonKey: "status_no_internet"
                     )
                 }
             }
@@ -1064,7 +1048,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             if thermalState == .serious || thermalState == .critical {
                 if self.isPlaying {
                     Task { @MainActor in
-                        await self.stop()
+                        self.stop()                                 // sync
                         await SharedPlayerManager.shared.setVisualState(.thermalPaused)
                     }
                 }
@@ -1074,17 +1058,14 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             // ── Device cooled down again ───────────────────────────────
             if thermalState == .nominal || thermalState == .fair {
                 Task { @MainActor in
-                    // Use the state machine instead of a manual flag
+                    // Must await actor-isolated property (Swift 6 rule)
                     if await SharedPlayerManager.shared.currentVisualState.shouldAutoResumeOnThermalRecovery {
                         // Set visual state *before* play() so UI turns green immediately
                         await SharedPlayerManager.shared.setVisualState(.playing)
                         
-                        do {
-                            try await self.play()
-                        } catch {
-                            #if DEBUG
-                            print("Thermal resume play failed: \(error)")
-                            #endif
+                        let success = await self.play()
+                        
+                        if !success {
                             await SharedPlayerManager.shared.setVisualState(.userPaused)
                         }
                     }
@@ -1314,7 +1295,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         self.player?.play()
 
         #if DEBUG
-        print("▶️ [MainActor] AVPlayer created + play() called for \(url.lastPathComponent ?? url.absoluteString)")
+        print("▶️ [MainActor] AVPlayer created + play() called for \(url.lastPathComponent)")
         #endif
 
         // Do NOT call notifyMainApp here — let SharedPlayerManager do it
@@ -1337,7 +1318,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         setupPlaybackObservers()
         
         #if DEBUG
-        print("🔄 [MainActor] Player item prepared (no auto-play) for \(url.lastPathComponent ?? url.absoluteString)")
+        print("🔄 [MainActor] Player item prepared (no auto-play) for \(url.lastPathComponent)")
         #endif
     }
 
@@ -1509,9 +1490,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     // MARK: - Stream Switching (the simpler fallback)
 
     func switchToStream(_ stream: Stream) async {
-        let wasPlaying = isPlaying
-        
-        await stop()
+        stop()
         resetTransientErrors()
         selectedStream = stream
         
@@ -1538,8 +1517,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// Updates the selected stream model and prepares the player.
     /// Does NOT start playback — call `play()` afterwards if needed.
     func setStream(to stream: Stream) async {
-        let previousLanguage = selectedStream.languageCode ?? "nil"
-        let newLanguage = stream.languageCode ?? "??"
+        let previousLanguage = selectedStream.languageCode
+        let newLanguage = stream.languageCode
 
         #if DEBUG
         print("ATOMIC STREAM SWITCH: \(previousLanguage) → \(newLanguage)")
@@ -1554,7 +1533,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             defer { isSwitchingStream = false }
 
             // Updated: use semantic reason instead of isSwitchingStream flag
-            await stop(reason: .streamSwitch, silent: true)
+            stop(reason: .streamSwitch, silent: true)   // ← removed `await`
         } else {
             #if DEBUG
             print("🔄 Same stream or initial playback (\(newLanguage)) – skipping stop()")
@@ -1770,41 +1749,6 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             strongPlayer.play()
             strongPlayer.rate = 1.0
             strongPlayer.playImmediately(atRate: 1.0)
-        }
-        
-        // Observe timeControlStatus
-        await MainActor.run {
-            guard let player = self.player else { return }
-            player.observe(\.timeControlStatus, options: [.new]) { observedPlayer, _ in
-                #if DEBUG
-                print("📊 [DirectStreamingPlayer] timeControlStatus → \(observedPlayer.timeControlStatus.rawValue) (rate: \(observedPlayer.rate))")
-                #endif
-            }
-        }
-        
-        // .readyToPlay observer
-        await MainActor.run {
-            guard let player = self.player, let item = player.currentItem else { return }
-            item.observe(\.status, options: [.new]) { [weak self] observedItem, _ in
-                if observedItem.status == .readyToPlay {
-                    Task { @MainActor in
-                        guard await SharedPlayerManager.shared.currentVisualState.shouldAutoPlayOrResume else {
-                            #if DEBUG
-                            print("🔒 [DirectStreamingPlayer] .readyToPlay observer: resurrection suppressed")
-                            #endif
-                            return
-                        }
-                        #if DEBUG
-                        print("🔄 [DirectStreamingPlayer] item.status → .readyToPlay → forcing play()")
-                        #endif
-                        self?.player?.play()
-                    }
-                } else if observedItem.status == .failed {
-                    #if DEBUG
-                    print("❌ [DirectStreamingPlayer] item.status → .failed: \(observedItem.error?.localizedDescription ?? "")")
-                    #endif
-                }
-            }
         }
         
         // Lightweight safety net for cold launch only
@@ -2069,35 +2013,35 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         print("🔄 Recreating player item due to decoder error")
         #endif
         
-        guard let urlAsset = playerItem?.asset as? AVURLAsset else {
-            #if DEBUG
-            print("❌ Cannot recreate: no valid URL asset")
-            #endif
-            return
-        }
-        
-        let currentURL = urlAsset.url
-        
-        // Clear observations
-        playerItemObservations.forEach { $0.invalidate() }
-        playerItemObservations.removeAll()
-        
-        // Create new asset and player item
-        let newAsset = AVURLAsset(url: currentURL)
-        let newItem = AVPlayerItem(asset: newAsset)
-        
-        // Replace the item
-        player?.replaceCurrentItem(with: newItem)
-        
-        // Update playerItem reference to the new item
-        playerItem = newItem
-        
-        // Re-add observers to the new item
-        addObservers()
-        
-        // ──────────────────────────────────────────────────────────────
-        // NEW: Respect PlayerVisualState before forcing playback
         Task { @MainActor in
+            guard let urlAsset = playerItem?.asset as? AVURLAsset else {
+                #if DEBUG
+                print("❌ Cannot recreate: no valid URL asset")
+                #endif
+                return
+            }
+            
+            let currentURL = urlAsset.url
+            
+            // Clear observations
+            playerItemObservations.forEach { $0.invalidate() }
+            playerItemObservations.removeAll()
+            
+            // Create new asset and player item
+            let newAsset = AVURLAsset(url: currentURL)
+            let newItem = AVPlayerItem(asset: newAsset)
+            
+            // Replace the item
+            player?.replaceCurrentItem(with: newItem)
+            
+            // Update playerItem reference to the new item
+            playerItem = newItem
+            
+            // Re-add observers to the new item
+            addObservers()
+            
+            // ──────────────────────────────────────────────────────────────
+            // NEW: Respect PlayerVisualState before forcing playback
             guard await SharedPlayerManager.shared.currentVisualState.shouldAutoPlayOrResume else {
                 #if DEBUG
                 print("🔒 [DirectStreamingPlayer] recreatePlayerItem: resurrection suppressed — userPaused / visualState lock active")
@@ -2111,8 +2055,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             #if DEBUG
             print("✅ Player item recreated and playback resumed")
             #endif
+            // ──────────────────────────────────────────────────────────────
         }
-        // ──────────────────────────────────────────────────────────────
     }
     
     private func removeObserversImplementation() {
@@ -2504,49 +2448,60 @@ extension DirectStreamingPlayer {
         let latency: TimeInterval
     }
     
-    func fetchServerIPsAndLatencies(completion: @escaping ([PingResult]) -> Void) {
-        let group = DispatchGroup()
-        var results: [PingResult] = []
-        let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = 2.0
-        let session = URLSession(configuration: config)
-        
-        networkQueue.async {
-            for server in Self.servers {
-                group.enter()
-                let startTime = Date()
-                #if DEBUG
-                print("📡 [Ping] Pinging \(server.name) at \(server.pingURL)")
-                #endif
-                
-                let task = session.dataTask(with: server.pingURL) { [weak self] data, response, error in
-                    guard self != nil else {
-                        group.leave()
-                        return
-                    }
-                    let latency = Date().timeIntervalSince(startTime)
-                    if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200, error == nil {
-                        results.append(PingResult(server: server, latency: latency))
-                        #if DEBUG
-                        print("📡 [Ping] Success for \(server.name), latency=\(latency)s")
-                        #endif
-                    } else {
-                        results.append(PingResult(server: server, latency: .infinity))
-                        #if DEBUG
-                        print("📡 [Ping] Failed for \(server.name): error=\(error?.localizedDescription ?? "None"), status=\((response as? HTTPURLResponse)?.statusCode ?? -1)")
-                        #endif
-                    }
-                    group.leave()
-                }
-                task.resume()
-            }
-        }
-        
-        group.notify(queue: .main) {
+    func fetchServerIPsAndLatencies(completion: @escaping @Sendable ([PingResult]) -> Void) {
+        Task { @MainActor in
+            let results = await self.fetchAllServerLatencies()
+            
             #if DEBUG
             print("📡 [Ping] All pings completed: \(results.map { "\($0.server.name): \($0.latency)s" })")
             #endif
             completion(results)
+        }
+    }
+    
+    private func fetchAllServerLatencies() async -> [PingResult] {
+        await withTaskGroup(of: PingResult.self) { group in
+            for server in Self.servers {
+                group.addTask {
+                    await self.ping(server: server)
+                }
+            }
+            
+            var results: [PingResult] = []
+            for await result in group {
+                results.append(result)
+            }
+            return results
+        }
+    }
+    
+    private func ping(server: Server) async -> PingResult {
+        let startTime = Date()
+        
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 2.0
+        let session = URLSession(configuration: config)
+        
+        do {
+            let (_, response) = try await session.data(from: server.pingURL)
+            let latency = Date().timeIntervalSince(startTime)
+            
+            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
+                #if DEBUG
+                print("📡 [Ping] Success for \(server.name), latency=\(latency)s")
+                #endif
+                return PingResult(server: server, latency: latency)
+            } else {
+                #if DEBUG
+                print("📡 [Ping] Failed for \(server.name): bad status")
+                #endif
+                return PingResult(server: server, latency: .infinity)
+            }
+        } catch {
+            #if DEBUG
+            print("📡 [Ping] Failed for \(server.name): \(error.localizedDescription)")
+            #endif
+            return PingResult(server: server, latency: .infinity)
         }
     }
 }

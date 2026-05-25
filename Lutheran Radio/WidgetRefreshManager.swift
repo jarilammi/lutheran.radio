@@ -6,6 +6,7 @@
 //
 //  Prevents excessive widget refreshes through debouncing and change detection.
 //  Now fully aligned with PlayerVisualState as the Single Source of Truth (SSOT).
+//
 
 import Foundation
 import WidgetKit
@@ -25,9 +26,10 @@ final class WidgetRefreshManager: @unchecked Sendable {
     
     private init() {}
     
-    // MARK: - Modern API (preferred — uses PlayerVisualState SSOT)
+    // MARK: - Modern API (only public entry point)
     
     /// Recommended call site: pass the real visual state directly.
+    /// All widget intents, SharedPlayerManager, and Live Activities now use this.
     func refreshIfNeeded(
         visualState: PlayerVisualState,
         currentLanguage: String,
@@ -40,12 +42,7 @@ final class WidgetRefreshManager: @unchecked Sendable {
             hasError: hasError,
             isTransitioning: false
         )
-        refreshIfNeeded(for: newState, immediate: immediate)
-    }
-    
-    // MARK: - Legacy compatibility (still used by widget intents for now)
-    
-    func refreshIfNeeded(for newState: WidgetState, immediate: Bool = false) {
+        
         // ALWAYS refresh on language changes, regardless of throttling
         if let lastState = lastKnownState,
            lastState.currentLanguage != newState.currentLanguage {
@@ -77,6 +74,8 @@ final class WidgetRefreshManager: @unchecked Sendable {
             await performRefresh(for: newState)
         }
     }
+    
+    // MARK: - Private helpers
     
     private func scheduleDelayedRefresh(for state: WidgetState, delay: TimeInterval) {
         pendingRefresh?.cancel()
@@ -130,21 +129,7 @@ struct WidgetState {
     let isThermalPaused: Bool
     let timestamp: Date
     
-    // Legacy initializer (kept temporarily for widget intents)
-    init(isPlaying: Bool,
-         currentLanguage: String,
-         hasError: Bool,
-         isTransitioning: Bool = false,
-         isThermalPaused: Bool = false) {
-        self.isPlaying       = isPlaying
-        self.currentLanguage = currentLanguage
-        self.hasError        = hasError
-        self.isTransitioning = isTransitioning
-        self.isThermalPaused = isThermalPaused
-        self.timestamp       = Date()
-    }
-    
-    /// Modern initializer — this is now the intended path
+    /// Modern initializer — this is the only path now
     init(from visualState: PlayerVisualState,
          currentLanguage: String,
          hasError: Bool,

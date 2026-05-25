@@ -86,7 +86,6 @@ actor SharedPlayerManager {
     func play() async {
         // 🔥 FINAL FIX: Always clear .userPaused lock at the absolute top of play()
         // This covers widget play, Control Center, lockscreen, CarPlay, Siri — everything.
-        // (The one in resetToPrePlayForNewStream is kept as extra safety)
         await clearUserPausedLockIfNeeded()
         
         #if DEBUG
@@ -94,23 +93,34 @@ actor SharedPlayerManager {
         #endif
         
         // ──────────────────────────────────────────────────────────────
-        // CENTRAL RESURRECTION PROTECTION — single source of truth
-        guard currentVisualState.shouldAutoPlayOrResume else {
-            #if DEBUG
-            print("🔒 [SharedPlayerManager] play() BLOCKED — currentVisualState = \(currentVisualState) (userPaused or error lock active)")
-            #endif
-            return
-        }
+        // NEW: Cold-launch grace period (uses your existing vars)
+        let isInColdLaunchWindow = !initialPlaybackHasRun ||
+            Date().timeIntervalSince(appLaunchTime) < initializationSettlingPeriod + 20.0
         // ──────────────────────────────────────────────────────────────
         
+        // CENTRAL RESURRECTION PROTECTION — but relaxed during cold launch
+        if !isInColdLaunchWindow {
+            guard currentVisualState.shouldAutoPlayOrResume else {
+                #if DEBUG
+                print("🔒 [SharedPlayerManager] play() BLOCKED — currentVisualState = \(currentVisualState) (userPaused or error lock active)")
+                #endif
+                return
+            }
+        } else {
+            #if DEBUG
+            print("🚀 Cold-launch window active – bypassing normal resurrection protection")
+            #endif
+        }
+        
         // NEW: Prevent re-entrancy loop from recovery tasks (post-head-start + nudges)
-        if currentVisualState == .playing {
+        // but allow re-entrancy during cold launch (the transient stopped → playing flips)
+        if currentVisualState == .playing && !isInColdLaunchWindow {
             #if DEBUG
             print("✅ SharedPlayerManager.play() — already .playing, skipping redundant call (recovery loop prevented)")
             #endif
             return
         }
-
+        
         // === ONE-SHOT GUARD FOR COLD LAUNCH INITIAL PLAYBACK ===
         if currentVisualState == .prePlay {
             if initialPlaybackHasRun {
@@ -125,7 +135,7 @@ actor SharedPlayerManager {
                 #endif
             }
         }
-
+        
         let isValid = await SecurityModelValidator.shared.validateSecurityModel()
         
         #if DEBUG
@@ -151,20 +161,20 @@ actor SharedPlayerManager {
             #endif
             return
         }
-
+        
         if isRunningInWidget() {
             handleWidgetPlay()
             return
         }
-
+        
         // Wait for tuning sound (critical!)
         await waitForTuningSoundIfActive()
-
+        
         let stream = DirectStreamingPlayer.shared.selectedStream
         #if DEBUG
         print("🎵 Setting stream to: \(stream)")
         #endif
-
+        
         await DirectStreamingPlayer.shared.setStreamAndPlay(to: stream)
         
         // No saveCurrentState() here — observer will handle it
@@ -246,14 +256,7 @@ actor SharedPlayerManager {
         #endif
         
         await setUserIntentToPlay()
-        
-        do {
-            try await play()
-        } catch {
-            #if DEBUG
-            print("❌ userRequestedPlay failed: \(error)")
-            #endif
-        }
+        await play()   // ← Fixed: no try/catch needed (play() is now non-throwing)
     }
     
     /// Explicitly records that the user performed a manual pause or stop.
@@ -343,20 +346,26 @@ actor SharedPlayerManager {
         sharedDefaults?.set(sharedDefaults?.string(forKey: "currentLanguage") ?? "en",
                             forKey: "instantFeedbackLanguage")
         
+        // CRITICAL: Optimistic SSOT update (same pattern we already use in stop)
+        currentVisualState = .playing
+        saveVisualState()
+        
         scheduleWidgetAction(action: "play")
         notifyMainApp(action: "play")
         
-        // Small delay + optimistic widget refresh
+        // Small delay + optimistic widget refresh using the modern API
         Task {
             try? await Task.sleep(for: .seconds(0.5))
-            let optimisticState = WidgetState(
-                isPlaying: true,
-                currentLanguage: sharedDefaults?.string(forKey: "currentLanguage") ?? "en",
-                hasError: false
-            )
-            await WidgetRefreshManager.shared.refreshIfNeeded(for: optimisticState, immediate: true)
+            let language = sharedDefaults?.string(forKey: "currentLanguage") ?? "en"
             
-            await saveFireAndForget()
+            await WidgetRefreshManager.shared.refreshIfNeeded(
+                visualState: .playing,           // ← modern path
+                currentLanguage: language,
+                hasError: false,
+                immediate: true
+            )
+            
+            saveFireAndForget()
         }
     }
     
@@ -476,22 +485,22 @@ actor SharedPlayerManager {
         
         // CRITICAL: Set the paused state synchronously for widget path
         currentVisualState = .userPaused
-        
-        // Persist the full visual state so widget / Live Activity read the correct paused intent
         saveVisualState()
         
         scheduleWidgetAction(action: "pause")
         notifyMainApp(action: "pause")
         
-        // Small delay + optimistic widget refresh using correct paused state
+        // Small delay + optimistic widget refresh using the modern API
         Task {
             try? await Task.sleep(for: .seconds(0.5))
-            let optimisticState = WidgetState(
-                isPlaying: false,                    // keep for backward compatibility for now
-                currentLanguage: sharedDefaults?.string(forKey: "currentLanguage") ?? "en",
-                hasError: false
+            let language = sharedDefaults?.string(forKey: "currentLanguage") ?? "en"
+            
+            await WidgetRefreshManager.shared.refreshIfNeeded(
+                visualState: currentVisualState,   // already .userPaused
+                currentLanguage: language,
+                hasError: false,
+                immediate: true
             )
-            await WidgetRefreshManager.shared.refreshIfNeeded(for: optimisticState, immediate: true)
         }
     }
     
@@ -650,7 +659,13 @@ extension SharedPlayerManager {
         
         // Always hop to MainActor for WidgetRefreshManager (required in Swift 6)
         Task { @MainActor in
-            WidgetRefreshManager.shared.refreshIfNeeded(for: widgetState, immediate: isUrgentUpdate)
+            // ✅ Modern SSOT path — no more legacy WidgetState overload
+            WidgetRefreshManager.shared.refreshIfNeeded(
+                visualState: widgetState.isPlaying ? .playing : .userPaused,
+                currentLanguage: state.currentLanguage,
+                hasError: state.hasError,
+                immediate: isUrgentUpdate
+            )
         }
         
         #if DEBUG

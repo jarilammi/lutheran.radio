@@ -2680,6 +2680,14 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         
         pausePlayback()
         
+        // ──────────────────────────────────────────────────────────────
+        // NEW: This is the missing piece after widget modernization
+        // Makes widget pause behave exactly like main-app pause
+        Task {
+            await SharedPlayerManager.shared.markAsUserPaused()
+        }
+        // ──────────────────────────────────────────────────────────────
+        
         // Force immediate widget refresh (bypasses throttling) — same as handleWidgetAction
         Task { @MainActor in
             let manager = SharedPlayerManager.shared
@@ -2697,7 +2705,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             WidgetCenter.shared.reloadAllTimelines()
             
             #if DEBUG
-            print("🔗 Widget pause action completed → forced refresh to \(finalVisualState)")
+            print("🔗 Widget pause action completed → forced refresh to \(finalVisualState) (userPaused locked)")
             #endif
         }
     }
