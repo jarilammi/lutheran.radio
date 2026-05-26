@@ -525,7 +525,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             self.updateBackground(for: DirectStreamingPlayer.availableStreams[initialIndex])
             
             // Tuning sound (now plays fully)
-            await self.playSpecialTuningSound()
+            self.playSpecialTuningSound()
             
             let visualState = await SharedPlayerManager.shared.currentVisualState
             #if DEBUG
@@ -870,7 +870,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             
             Task { @MainActor in   // ← Keeps UI work on main + gives us async context
                 // Reset transient failures (now async)
-                await self.streamingPlayer.resetTransientErrors()
+                self.streamingPlayer.resetTransientErrors()
                 
                 // Validate using the shared actor — automatic actor hop via await
                 let isValid = await SecurityModelValidator.shared.validateSecurityModel()
@@ -1125,7 +1125,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                     print("▶️ [Interruption Guard] Allowed resume after interruption")
                     #endif
                     
-                    await self.startPlayback()
+                    self.startPlayback()
                 }
             }
             
@@ -1213,7 +1213,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         
         Task { @MainActor in
             // 1. Reset transient failures
-            await self.streamingPlayer.resetTransientErrors()
+            self.streamingPlayer.resetTransientErrors()
             
             // 2. Re-validate using the shared actor
             let isValid = await SecurityModelValidator.shared.validateSecurityModel()
@@ -1310,7 +1310,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             Task { @MainActor in
                 let manager = SharedPlayerManager.shared
                 let currentVisualState = await manager.currentVisualState
-                let sharedState = await manager.loadSharedState()
+                let sharedState = manager.loadSharedState()
                 
                 if currentVisualState.isActivelyPlaying || sharedState.isPlaying {
                     await manager.stop()
@@ -1500,7 +1500,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                     let isValid = await SecurityModelValidator.shared.validateSecurityModel()
                     
                     if isValid {
-                        await self.streamingPlayer.resetTransientErrors()
+                        self.streamingPlayer.resetTransientErrors()
                         
                         let success = await self.streamingPlayer.play()
                         
@@ -2077,7 +2077,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             // More robust session setup (prevents conflicts with main AVPlayer)
             try audioSession.setCategory(.playback,
                                         mode: .default,
-                                        options: [.allowAirPlay, .allowBluetooth])
+                                        options: [.allowAirPlay, .allowBluetoothA2DP])
             try audioSession.setActive(true)
             
             #if DEBUG
@@ -2111,8 +2111,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             // CRITICAL: Tuning sound no longer controls playback or state.
             // All decisions go through SharedPlayerManager + PlayerVisualState in viewDidLoad.
             if didPlay {
-                // Keep strong reference during playback
-                let retainedPlayer = tuningPlayer
+                // Keep strong reference during playback via the ivar; no local needed.
                 
                 DispatchQueue.main.asyncAfter(deadline: .now() + (tuningPlayer?.duration ?? 2.0)) {
                     #if DEBUG
@@ -2190,8 +2189,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             // Optimistic UI update (still on MainActor)
             let manager = SharedPlayerManager.shared
             let state = manager.loadSharedState()
-            let currentStream = manager.availableStreams.first(where: { $0.languageCode == state.currentLanguage })
-                ?? manager.availableStreams[0]
             
             updatePlayPauseButton(isPlaying: true, animated: true)
             
@@ -2422,7 +2419,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         Task { @MainActor [weak self] in
             guard let self else { return }
             
-            await streamingPlayer.stop()
+            streamingPlayer.stop()
             
             // Convert completion handler to async/await properly
             await withCheckedContinuation { continuation in
@@ -2438,7 +2435,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                         hasPermanentPlaybackError = false
                         
                         if isPlaying || !isManualPause {
-                            await startPlayback()           // assuming this is async too
+                            startPlayback()           // assuming this is async too
                         }
                         
                         continuation.resume()
@@ -2697,16 +2694,10 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             print("▶️ Widget Play button → calling SharedPlayerManager.play()")
             #endif
             
-            do {
-                try await SharedPlayerManager.shared.play()
-                #if DEBUG
-                print("✅ Widget Play button: SharedPlayerManager.play() succeeded")
-                #endif
-            } catch {
-                #if DEBUG
-                print("❌ Widget Play button play failed: \(error.localizedDescription)")
-                #endif
-            }
+            await SharedPlayerManager.shared.play()
+            #if DEBUG
+            print("✅ Widget Play button: SharedPlayerManager.play() succeeded")
+            #endif
             
             // === MODERNIZED: Use the same unified refresh path as pause/switch ===
             // This replaces the old saveCurrentState() + saveStateForWidget() pattern
@@ -2715,7 +2706,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             let finalVisualState = await manager.currentVisualState
             let finalState = manager.loadSharedState()
             
-            await WidgetRefreshManager.shared.refreshIfNeeded(
+            WidgetRefreshManager.shared.refreshIfNeeded(
                 visualState: finalVisualState,
                 currentLanguage: finalState.currentLanguage,
                 hasError: finalState.hasError,
@@ -2752,7 +2743,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             let finalVisualState = await manager.currentVisualState
             let finalState = manager.loadSharedState()
             
-            await WidgetRefreshManager.shared.refreshIfNeeded(
+            WidgetRefreshManager.shared.refreshIfNeeded(
                 visualState: finalVisualState,
                 currentLanguage: finalState.currentLanguage,
                 hasError: finalState.hasError,
@@ -2789,7 +2780,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 self.streamingPlayer.isSwitchingStream = true
                 
                 // 1. Stop current playback cleanly
-                await self.streamingPlayer.stop(
+                self.streamingPlayer.stop(
                     reason: .streamSwitch,
                     silent: true
                 )
@@ -2837,16 +2828,10 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 print("▶️ [Widget Switch] Starting new stream using SharedPlayerManager.play() — main app path")
                 #endif
                 
-                do {
-                    try await SharedPlayerManager.shared.play()
-                    #if DEBUG
-                    print("✅ Widget switch: SharedPlayerManager.play() succeeded")
-                    #endif
-                } catch {
-                    #if DEBUG
-                    print("❌ Widget switch play failed: \(error.localizedDescription)")
-                    #endif
-                }
+                await SharedPlayerManager.shared.play()
+                #if DEBUG
+                print("✅ Widget switch: SharedPlayerManager.play() succeeded")
+                #endif
                 
                 // 7. Widget refresh (now with correct language + modern path)
                 //    Use the same unified refresh as play/pause for consistency
@@ -2854,7 +2839,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 let finalVisualState = await manager.currentVisualState
                 let finalState = manager.loadSharedState()
                 
-                await WidgetRefreshManager.shared.refreshIfNeeded(
+                WidgetRefreshManager.shared.refreshIfNeeded(
                     visualState: finalVisualState,
                     currentLanguage: finalState.currentLanguage,
                     hasError: finalState.hasError,
@@ -2911,12 +2896,12 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             let isValid = await SecurityModelValidator.shared.validateSecurityModel()
             
             if isValid {
-                await self.streamingPlayer.resetTransientErrors()
+                self.streamingPlayer.resetTransientErrors()
                 
                 // 🔥 FIXED: play() is now async throws - no more completion handler
-                do {
-                    try await self.streamingPlayer.play()
-                    
+                let success = await self.streamingPlayer.play()
+                
+                if success {
                     // Success path
                     self.isPlaying = true
                     self.updatePlayPauseButton(isPlaying: true)
@@ -2933,7 +2918,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                         self.saveStateForWidget()
                     }
                     
-                } catch {
+                } else {
                     // Failure path - use authoritative security state
                     let isPermanent = await SecurityModelValidator.shared.isPermanentlyInvalid
                     
@@ -3090,7 +3075,7 @@ extension ViewController {
     public func handlePlayAction() {
         Task { @MainActor in
             await DirectStreamingPlayer.shared.markAsPlaying()
-            await DirectStreamingPlayer.shared.play()
+            _ = await DirectStreamingPlayer.shared.play()
         }
     }
 
@@ -3098,7 +3083,7 @@ extension ViewController {
     public func handlePauseAction() {
         Task { @MainActor in
             await DirectStreamingPlayer.shared.markAsUserPaused()
-            await DirectStreamingPlayer.shared.stop()
+            DirectStreamingPlayer.shared.stop()
             updateUI(for: .userPaused)
         }
     }
@@ -3128,7 +3113,7 @@ extension ViewController {
             #endif
             
             // Updated: use semantic reason (no more isSwitchingStream flag)
-            await streamingPlayer.stop(
+            streamingPlayer.stop(
                 reason: .streamSwitch,      // ← NEW
                 silent: true                // ← kept exactly as before
             )
@@ -3165,7 +3150,7 @@ extension ViewController {
                 // Small delay to let AVPlayerItem settle
                 try? await Task.sleep(for: .seconds(0.5))
                 
-                await handlePlayAction()   // Uses new path with markAsPlaying()
+                handlePlayAction()   // Uses new path with markAsPlaying()
                 
             } else {
                 #if DEBUG
@@ -3190,10 +3175,10 @@ extension ViewController {
     /// (callable from SceneDelegate, remote commands, Control Center, etc.)
     public func handleTogglePlayback() {
         Task { @MainActor in
-            if await DirectStreamingPlayer.shared.isPlaying {
-                await handlePauseAction()
+            if DirectStreamingPlayer.shared.isPlaying {
+                handlePauseAction()
             } else {
-                await handlePlayAction()
+                handlePlayAction()
             }
         }
     }
@@ -3280,7 +3265,7 @@ extension ViewController {
             
             // Single source of truth
             let currentVisualState = await manager.currentVisualState
-            let sharedState = await manager.loadSharedState()
+            let sharedState = manager.loadSharedState()
             
             #if DEBUG
             print("🔥 togglePlayback() called → currentVisualState = \(currentVisualState), shared.isPlaying = \(sharedState.isPlaying)")
@@ -3321,20 +3306,12 @@ extension ViewController {
                 await manager.setUserIntentToPlay()
                 self.playHapticFeedback(style: .heavy)
                 
-                do {
-                    try await manager.play()
-                    let newState = await manager.currentVisualState
-                    self.updateUI(for: newState)
-                    #if DEBUG
-                    print("✅ Play complete → applied \(newState)")
-                    #endif
-                } catch {
-                    let errorState = await manager.currentVisualState
-                    self.updateUI(for: errorState)
-                    #if DEBUG
-                    print("❌ Play failed → applied \(errorState)")
-                    #endif
-                }
+                await manager.play()
+                let newState = await manager.currentVisualState
+                self.updateUI(for: newState)
+                #if DEBUG
+                print("✅ Play complete → applied \(newState)")
+                #endif
             }
         }
     }
@@ -3533,8 +3510,6 @@ extension ViewController: StreamingPlayerDelegate {
             // Safely read visual state (respects .userPaused)
             let visualState = await manager.currentVisualState
             let state = manager.loadSharedState()
-            let currentStream = manager.availableStreams.first(where: { $0.languageCode == state.currentLanguage })
-                ?? manager.availableStreams[0]
             
             switch action {
             case "play":
@@ -3545,7 +3520,7 @@ extension ViewController: StreamingPlayerDelegate {
                     #if DEBUG
                     print("▶️ Widget 'play' action → calling togglePlayback")
                     #endif
-                    await togglePlayback()
+                    togglePlayback()
                 } else {
                     #if DEBUG
                     print("🛡️ Widget 'play' blocked — currentVisualState is .userPaused")
@@ -3557,7 +3532,7 @@ extension ViewController: StreamingPlayerDelegate {
                     #if DEBUG
                     print("⏸️ Widget 'pause' action")
                     #endif
-                    await togglePlayback()
+                    togglePlayback()
                 }
                 
             case "switch":
@@ -3586,7 +3561,7 @@ extension ViewController: StreamingPlayerDelegate {
                         print("▶️ Widget switch → resuming playback (user intent)")
                         #endif
                         await manager.setUserIntentToPlay()
-                        try? await SharedPlayerManager.shared.play()
+                        await SharedPlayerManager.shared.play()
                     } else if !finalVisualState.shouldAutoPlayOrResume {
                         #if DEBUG
                         print("🛡️ Widget switch blocked resume — .userPaused")
@@ -3618,7 +3593,7 @@ extension ViewController: StreamingPlayerDelegate {
             let finalVisualState = await manager.currentVisualState
             let finalState = manager.loadSharedState()
             
-            await WidgetRefreshManager.shared.refreshIfNeeded(
+            WidgetRefreshManager.shared.refreshIfNeeded(
                 visualState: finalVisualState,
                 currentLanguage: finalState.currentLanguage,
                 hasError: finalState.hasError,

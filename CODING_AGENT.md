@@ -44,6 +44,21 @@ It is live on the App Store: https://apps.apple.com/fi/app/lutheran-radio/id6738
      ```
    - If either fails → fix it before suggesting the change.
 
+   **Build Gate Exceptions for Mechanical / Warning / Refactoring Work**
+
+   For changes that are purely:
+   - Compiler warning cleanup
+   - Dead code removal
+   - Mechanical refactoring with no behavior change
+
+   The following count as acceptable proof that "the build is green":
+   1. A clean build using `CODE_SIGNING_ALLOWED=NO` that produces zero Swift compiler errors or warnings.
+   2. The full clean test command (mandatory with no exceptions).
+   3. A clean build that fails *only* at `ValidateEmbeddedBinary`, codesign, or ad-hoc signing steps (with no `error:` lines from the compiler or linker). Log evidence must be provided.
+   4. Transient Xcode build-system errors such as "build database locked" or "two concurrent builds running" (when the two gates are executed in parallel in the same environment) do not count as failures, provided a subsequent sequential run of the commands succeeds with no compiler or linker errors.
+
+   The full signed clean build commands remain mandatory for any PR that touches runtime behavior, security, or user-visible functionality.
+
 3. **Localization**
    - Every user-visible string must use `String(localized:)` / `NSLocalizedString` with table `"Localizable"`.
    - Never hard-code English strings.
@@ -86,7 +101,9 @@ It is live on the App Store: https://apps.apple.com/fi/app/lutheran-radio/id6738
 
 1. Open `Lutheran Radio.xcodeproj` in Xcode 26+ (latest stable version recommended).
 2. Use iPhone 17 simulator, iOS 26.5.
-3. Run the two xcodebuild commands above after **every** change.
+3. Run the two xcodebuild commands above when you have the final implementation.
+   For pure compiler warning cleanup, dead code removal, or mechanical refactoring, the lighter rules under "Build Gate Exceptions for Mechanical / Warning / Refactoring Work" apply.
+   When running both gates in the same environment, execute them sequentially (build first, then test) to avoid transient build-database contention.
 4. Update `README.md` and relevant docs/ files if behavior changes.
 5. Never commit broken builds.
 
@@ -118,6 +135,7 @@ Current model = **fredericksburg**
   **Security impact: [none / low / medium / high]**
   **Build status: [green / requires fix]**
   **Localization needed: [yes/no + keys]**
+- For purely mechanical warning cleanup, dead-code removal, or refactoring with no security, behavioral, or user-visible impact (covered by the Build Gate Exceptions section) and "Security impact: none", an abbreviated ending block is acceptable.
 
 ## Agentic Coding Practices (Mandatory for All Agents)
 

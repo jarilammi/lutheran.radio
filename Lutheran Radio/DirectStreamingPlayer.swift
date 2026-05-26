@@ -8,7 +8,7 @@
 import Foundation
 import Security
 import CommonCrypto
-import AVFoundation
+@preconcurrency import AVFoundation
 import dnssd
 import Network
 import Core
@@ -1152,7 +1152,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         let session = AVAudioSession.sharedInstance()
         if session.category != .playback {
             do {
-                try audioSession.setCategory(.playback, mode: .default, options: [])
+                try audioSession.setCategory(.playback, mode: .default, options: [.allowAirPlay, .allowBluetoothA2DP])
                 try audioSession.setActive(true)
                 #if DEBUG
                 print("🔊 Audio session configured")
@@ -1278,7 +1278,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.playback,
                                     mode: .default,
-                                    options: [.allowAirPlay])
+                                    options: [.allowAirPlay, .allowBluetoothA2DP])
             
             try session.setActive(true)
             
@@ -1352,7 +1352,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
 
                     // 1. Audio Session (critical!)
                     do {
-                        try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
+                        try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.allowAirPlay, .allowBluetoothA2DP])
                         try AVAudioSession.sharedInstance().setActive(true)
                     } catch {
                         #if DEBUG
@@ -1605,7 +1605,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             
             do {
                 let session = AVAudioSession.sharedInstance()
-                try session.setCategory(.playback, mode: .default, options: [])
+                try session.setCategory(.playback, mode: .default, options: [.allowAirPlay, .allowBluetoothA2DP])
                 try session.setActive(true)
             } catch {
                 #if DEBUG
@@ -2528,13 +2528,12 @@ extension DirectStreamingPlayer: AVPlayerItemMetadataOutputPushDelegate {
         }
     }
 
-    /// Clean, Swift 6-compatible implementation for ICY/StreamTitle metadata extraction.
+    /// Modern iOS 16+ implementation for ICY/StreamTitle metadata extraction.
     ///
-    /// - Uses the long-stable `loadValuesAsynchronously(forKeys:completionHandler:)` API
-    ///   (no deprecation, no Sendable requirements on AVMetadataItem).
-    /// - Performs cheap synchronous filtering on identifier/key before any loading work.
-    /// - The framework-managed completion handler safely gives access to the loaded value.
-    /// - All UI / delegate side effects are dispatched back to the main queue.
+    /// Uses the non-deprecated `load(_:)` / `status(of:)` async properties on `AVMetadataItem`
+    /// (replaces the deprecated `loadValuesAsynchronously(forKeys:)` + `statusOfValue(forKey:)`).
+    /// Performs cheap synchronous filtering on identifier/key before any loading work.
+    /// All UI / delegate side effects are dispatched back to the main queue.
     private func processPotentialStreamTitle(_ item: AVMetadataItem) {
         // Capture Sendable filter criteria synchronously (cheap, no Sendable issues)
         let identifier = item.identifier?.rawValue
@@ -2546,26 +2545,24 @@ extension DirectStreamingPlayer: AVPlayerItemMetadataOutputPushDelegate {
 
         guard isStreamTitle else { return }
 
-        // Classic, battle-tested AVFoundation loading API — zero concurrency drama
-        // and no deprecation warnings even under strict Swift 6.
-        item.loadValuesAsynchronously(forKeys: ["stringValue"]) { [weak self] in
-            var error: NSError?
-            let status = item.statusOfValue(forKey: "stringValue", error: &error)
-            guard status == .loaded else { return }
+        // Modern async API (iOS 16+). The Task closure capture of non-Sendable AVMetadataItem
+        // is tolerated thanks to @preconcurrency import AVFoundation.
+        Task { [weak self] in
+            // load(_:) returns cached value immediately if already loaded; throws on failure.
+            if let title = try? await item.load(.stringValue) {
+                let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return }
 
-            guard let raw = item.value(forKey: "stringValue") as? String else { return }
-            let title = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !title.isEmpty else { return }
+                await MainActor.run { [weak self] in
+                    guard let self else { return }
 
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
+                    self.currentMetadata = trimmed
+                    self.safeOnMetadataChange(metadata: trimmed)
 
-                self.currentMetadata = title
-                self.safeOnMetadataChange(metadata: title)
-
-                #if DEBUG
-                print("📻 ✅ Using LIVE ICY metadata: \(title)")
-                #endif
+                    #if DEBUG
+                    print("📻 ✅ Using LIVE ICY metadata: \(trimmed)")
+                    #endif
+                }
             }
         }
     }
