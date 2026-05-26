@@ -58,7 +58,7 @@ class RadioLiveActivityManager: ObservableObject {
         
         let initialContentState = LutheranRadioLiveActivityAttributes.ContentState(
             visualState: visualState,
-            currentMetadata: getCurrentMetadata(),
+            currentMetadata: nil,
             streamStatus: getStreamStatus(visualState: visualState, hasError: state.hasError),
             lastUpdated: Date(),
             currentStreamLanguage: currentStream.languageCode,
@@ -99,7 +99,7 @@ class RadioLiveActivityManager: ObservableObject {
         
         let updatedContentState = LutheranRadioLiveActivityAttributes.ContentState(
             visualState: visualState,                                      // ← changed
-            currentMetadata: getCurrentMetadata(),
+            currentMetadata: nil,
             streamStatus: getStreamStatus(visualState: visualState, hasError: state.hasError),
             lastUpdated: Date(),
             currentStreamLanguage: currentStream.languageCode,
@@ -190,19 +190,6 @@ class RadioLiveActivityManager: ObservableObject {
         }
     }
     
-    private func getCurrentMetadata() -> String? {
-        // Get metadata from local player only - no external calls
-        if let metadata = getLocalMetadata(), !metadata.isEmpty {
-            return metadata
-        }
-        return nil
-    }
-    
-    private func getLocalMetadata() -> String? {
-        // Temporarily return nil until we add metadata support
-        return nil
-    }
-    
     private func getStreamStatus(visualState: PlayerVisualState, hasError: Bool) -> String {
         if hasError {
             return String(localized: "Connection error", defaultValue: "Connection Error")
@@ -213,42 +200,6 @@ class RadioLiveActivityManager: ObservableObject {
         } else {
             return String(localized: "Ready", defaultValue: "Ready")
         }
-    }
-}
-
-// MARK: - Enhanced Privacy Integration
-
-extension DirectStreamingPlayer {
-    func setupPrivacyFirstLiveActivity() {
-        // Store original callbacks
-        let originalOnStatusChange = onStatusChange
-        let originalOnMetadataChange = onMetadataChange
-        
-        // Enhanced status change with Live Activity updates
-        onStatusChange = { isPlaying, statusText in
-            // Call original callback first
-            originalOnStatusChange?(isPlaying, statusText)
-            
-            // Update Live Activity locally only
-            Task {
-                await RadioLiveActivityManager.shared.updateCurrentActivity()
-            }
-        }
-        
-        // Enhanced metadata change with Live Activity updates
-        onMetadataChange = { metadata in  // ← No [weak self] capture since we don't use self
-            // Call original callback
-            originalOnMetadataChange?(metadata)
-            
-            // Update Live Activity with new metadata locally
-            Task {
-                await RadioLiveActivityManager.shared.updateCurrentActivity()
-            }
-        }
-        
-        #if DEBUG
-        print("🔴 Privacy-first Live Activity integration setup complete")
-        #endif
     }
 }
 

@@ -105,7 +105,7 @@ extension LutheranRadioWidgetControl {
          * Provides sample data for widget preview in iOS Settings
          * Used when user is configuring widgets or in Xcode previews
          */
-        func previewValue(configuration: ControlConfigurationAppIntent) -> Value {
+        func previewValue(configuration: NoOpControlConfiguration) -> Value {
             Value(
                 visualState: .prePlay,
                 currentStation: "🇺🇸 " + String(localized: "language_english")
@@ -120,7 +120,7 @@ extension LutheranRadioWidgetControl {
          * - Returns: Current radio player state
          * - Throws: Errors if unable to communicate with radio player
          */
-        func currentValue(configuration: ControlConfigurationAppIntent) async throws -> Value {
+        func currentValue(configuration: NoOpControlConfiguration) async throws -> Value {
             let manager = SharedPlayerManager.shared
             let state = manager.loadSharedState()
             
@@ -139,55 +139,14 @@ extension LutheranRadioWidgetControl {
 }
 
 /**
- * WIDGET CONFIGURATION INTENT
+ * NO-OP CONTROL CONFIGURATION
  * ============================
- * Allows users to configure their preferred default language stream.
- * This configuration is stored locally and respects user privacy.
+ * Minimal type required to satisfy AppIntentControlValueProvider protocol
+ * after removal of dead parameterized configuration intent.
  */
-struct ControlConfigurationAppIntent: ControlConfigurationIntent {
+struct NoOpControlConfiguration: ControlConfigurationIntent {
     nonisolated static var title: LocalizedStringResource {
-        "Control Configuration"
-    }
-    nonisolated static var description: IntentDescription {
-        IntentDescription("Configure Lutheran Radio control widget.")
-    }
-    
-    /// User's preferred language stream for initial playback
-    @Parameter(title: "Preferred Language", description: "Default language stream to use")
-    var preferredLanguage: StreamLanguageOption?
-    
-    /// Summary text shown in iOS Settings when configuring the widget
-    static var parameterSummary: some ParameterSummary {
-        Summary("Configure Lutheran Radio for \(\.$preferredLanguage)")
-    }
-}
-
-/**
- * LANGUAGE STREAM OPTIONS
- * =======================
- * Defines available language streams for Lutheran radio content.
- * Each stream provides religious content in a specific language.
- */
-enum StreamLanguageOption: String, AppEnum {
-    case english = "en"      // English Lutheran content
-    case german = "de"       // German Lutheran content
-    case finnish = "fi"      // Finnish Lutheran content
-    case swedish = "sv"      // Swedish Lutheran content
-    case estonian = "et"     // Estonian Lutheran content
-    
-    nonisolated static var typeDisplayRepresentation: TypeDisplayRepresentation {
-        TypeDisplayRepresentation(name: "Language")
-    }
-    
-    /// User-friendly display names with flag emojis for easy recognition
-    nonisolated static var caseDisplayRepresentations: [StreamLanguageOption: DisplayRepresentation] {
-        [
-            .english: DisplayRepresentation(title: LocalizedStringResource("🇺🇸 English")),
-            .german: DisplayRepresentation(title: LocalizedStringResource("🇩🇪 German")),
-            .finnish: DisplayRepresentation(title: LocalizedStringResource("🇫🇮 Finnish")),
-            .swedish: DisplayRepresentation(title: LocalizedStringResource("🇸🇪 Swedish")),
-            .estonian: DisplayRepresentation(title: LocalizedStringResource("🇪🇪 Estonian"))
-        ]
+        "lutheran_radio_title"
     }
 }
 
@@ -243,83 +202,6 @@ struct ToggleRadioIntent: SetValueIntent {
         
         #if DEBUG
         print("🔗 ToggleRadioIntent completed successfully")
-        #endif
-        
-        return .result()
-    }
-}
-
-/**
- * QUICK STREAM SWITCHING INTENT
- * ==============================
- * Allows rapid switching between different language streams of Lutheran content.
- * Users can quickly change from English to German sermons, for example.
- *
- * FEATURES:
- * - Instant language switching without stopping playback
- * - Optional auto-play after switching
- * - Support for all available Lutheran radio languages
- */
-struct QuickSwitchStreamIntent: AppIntent {
-    nonisolated static var title: LocalizedStringResource {
-        "Switch Lutheran Radio Language"
-    }
-    nonisolated static var description: IntentDescription {
-        IntentDescription("Quickly switch to a different language stream.")
-    }
-    
-    /// Target language for switching
-    @Parameter(title: "Language", description: "Language stream to switch to")
-    var language: StreamLanguageOption
-    
-    /// Whether to automatically start playing after language switch
-    @Parameter(title: "Start Playing", description: "Start playing after switching", default: true)
-    var startPlaying: Bool
-    
-    /// Dynamic summary based on user's startPlaying preference
-    static var parameterSummary: some ParameterSummary {
-        When(\.$startPlaying, .equalTo, true) {
-            Summary("Switch to \(\.$language) and start playing")
-        } otherwise: {
-            Summary("Switch to \(\.$language)")
-        }
-    }
-
-    /**
-     * Executes language stream switching
-     *
-     * Process:
-     * 1. Find target language stream in available streams
-     * 2. Switch player to new stream
-     * 3. Optionally start playback
-     * 4. Refresh all widget types to show new state
-     *
-     * - Throws: Errors if target language stream is not available
-     */
-    func perform() async throws -> some IntentResult {
-        #if DEBUG
-        print("🔗 QuickSwitchStreamIntent.perform called for language: \(language.rawValue)")
-        #endif
-        
-        let manager = SharedPlayerManager.shared
-        
-        // Find the requested language stream
-        guard let targetStream = manager.availableStreams.first(where: { $0.languageCode == language.rawValue }) else {
-            #if DEBUG
-            print("🔗 QuickSwitchStreamIntent: Language stream not found")
-            #endif
-            return .result()
-        }
-        
-        // Switch to the new Lutheran content stream – now properly awaited
-        await manager.switchToStream(targetStream)
-        
-        // Update all widget displays immediately
-        WidgetCenter.shared.reloadTimelines(ofKind: "LutheranRadioWidget")
-        WidgetCenter.shared.reloadTimelines(ofKind: "radio.lutheran.LutheranRadio.LutheranRadioWidget")
-        
-        #if DEBUG
-        print("🔗 QuickSwitchStreamIntent completed for \(targetStream.language)")
         #endif
         
         return .result()
