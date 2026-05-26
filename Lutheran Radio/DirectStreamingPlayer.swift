@@ -511,26 +511,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         DispatchQueue.main.asyncAfter(deadline: .now() + selectionDelay, execute: workItem)
     }
     
-    public enum PlaybackState {
-        case unknown
-        case readyToPlay
-        case failed(Error?)
-    }
-    
     private var lastError: Error?
-        
-    public func getPlaybackState() -> PlaybackState {
-        switch player?.currentItem?.status {
-        case .unknown:
-            return .unknown
-        case .readyToPlay:
-            return .readyToPlay
-        case .failed:
-            return .failed(player?.currentItem?.error)
-        default:
-            return .unknown
-        }
-    }
     
     private var initialPlaybackRetryCount = 0
     private let maxInitialRetries = 2
@@ -641,15 +622,6 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         }
     }
     
-    #if DEBUG
-    private func logQueueHierarchy() {
-        print("🔧 [QoS] Audio Queue: .userInteractive")
-        print("🔧 [QoS] SSL Queue: .userInitiated")
-        print("🔧 [QoS] Network Queue: .utility")
-        print("🔧 [QoS] Playback Queue: .userInteractive (redirected to audio)")
-    }
-    #endif
-    
     var hasPermanentError: Bool = false
     private var rateObserver: NSKeyValueObservation?
     private var statusObserver: NSKeyValueObservation?
@@ -737,23 +709,6 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         self.delegate = delegate
     }
     
-    private func performConnectivityCheck(completion: @escaping BoolCompletion) {
-        let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = 3.0
-        let session = URLSession(configuration: config)
-        let url = URL(string: "https://www.apple.com/library/test/success.html")!
-        let task = session.dataTask(with: url) { data, response, error in
-            let isConnected = error == nil && (response as? HTTPURLResponse)?.statusCode == 200
-            #if DEBUG
-            print("🔒 [Connectivity Check] Result: \(isConnected ? "Connected" : "Disconnected"), error: \(error?.localizedDescription ?? "None")")
-            #endif
-            DispatchQueue.main.async {
-                completion(isConnected)
-            }
-        }
-        task.resume()
-    }
-    
     public func resetTransientErrors() {
         // Reset transient state in the shared validator
         // (Permanent failures stay permanent until app restart or model rotation)
@@ -823,10 +778,6 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             // No internet at init → transient failure state
             safeOnStatusChange(isPlaying: false, reasonKey: "status_no_internet")
         }
-        
-        #if DEBUG
-        logQueueHierarchy()
-        #endif
         
         setupThermalProtection()
         
