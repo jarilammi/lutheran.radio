@@ -2519,30 +2519,55 @@ extension DirectStreamingPlayer: AVPlayerItemMetadataOutputPushDelegate {
     func metadataOutput(_ output: AVPlayerItemMetadataOutput,
                         didOutputTimedMetadataGroups groups: [AVTimedMetadataGroup],
                         from track: AVPlayerItemTrack?) {
-        guard delegate != nil else { return }
-        
-        guard let item = groups.first?.items.first else { return }
-        
-        let value = item.stringValue ?? (item.value(forKeyPath: "stringValue") as? String)
-        guard let title = value?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !title.isEmpty else { return }
-        
-        // More robust ICY StreamTitle detection
-        let isStreamTitle = (item.identifier?.rawValue.localizedCaseInsensitiveContains("streamtitle") == true) ||
-        (item.identifier?.rawValue == "icy/StreamTitle") ||
-        (item.key as? String) == "StreamTitle"
-        
-        let streamTitle = isStreamTitle ? title : nil
-        
-        // Store metadata locally for Live Activities
-        self.currentMetadata = streamTitle
-        safeOnMetadataChange(metadata: streamTitle)
-        
-        #if DEBUG
-        if let streamTitle {
-            print("📻 ✅ Using LIVE ICY metadata: \(streamTitle)")
+        guard delegate != nil,
+              let group = groups.last else { return }
+
+        // A group can contain multiple metadata items; only StreamTitle candidates trigger async work.
+        for item in group.items {
+            processPotentialStreamTitle(item)
         }
-        #endif
+    }
+
+    /// Clean, Swift 6-compatible implementation for ICY/StreamTitle metadata extraction.
+    ///
+    /// - Uses the long-stable `loadValuesAsynchronously(forKeys:completionHandler:)` API
+    ///   (no deprecation, no Sendable requirements on AVMetadataItem).
+    /// - Performs cheap synchronous filtering on identifier/key before any loading work.
+    /// - The framework-managed completion handler safely gives access to the loaded value.
+    /// - All UI / delegate side effects are dispatched back to the main queue.
+    private func processPotentialStreamTitle(_ item: AVMetadataItem) {
+        // Capture Sendable filter criteria synchronously (cheap, no Sendable issues)
+        let identifier = item.identifier?.rawValue
+        let key = item.key as? String
+
+        let isStreamTitle = (identifier?.localizedCaseInsensitiveContains("streamtitle") == true) ||
+                            (identifier == "icy/StreamTitle") ||
+                            (key == "StreamTitle")
+
+        guard isStreamTitle else { return }
+
+        // Classic, battle-tested AVFoundation loading API — zero concurrency drama
+        // and no deprecation warnings even under strict Swift 6.
+        item.loadValuesAsynchronously(forKeys: ["stringValue"]) { [weak self] in
+            var error: NSError?
+            let status = item.statusOfValue(forKey: "stringValue", error: &error)
+            guard status == .loaded else { return }
+
+            guard let raw = item.value(forKey: "stringValue") as? String else { return }
+            let title = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !title.isEmpty else { return }
+
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+
+                self.currentMetadata = title
+                self.safeOnMetadataChange(metadata: title)
+
+                #if DEBUG
+                print("📻 ✅ Using LIVE ICY metadata: \(title)")
+                #endif
+            }
+        }
     }
 }
 
