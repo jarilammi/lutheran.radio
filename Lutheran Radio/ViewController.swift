@@ -139,12 +139,14 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         let layout = UICollectionViewFlowLayout()
         layout.scrollDirection = .horizontal
         layout.minimumLineSpacing = 0
+        layout.minimumInteritemSpacing = 10   // horizontal gap between flags (the value the centering math must match)
         let cv = UICollectionView(frame: .zero, collectionViewLayout: layout)
         cv.translatesAutoresizingMaskIntoConstraints = false
         cv.showsHorizontalScrollIndicator = false
         cv.backgroundColor = .systemBackground
         cv.isAccessibilityElement = false // Prevent the collection view itself from being focused; cells are accessible
         cv.accessibilityTraits = .none
+        cv.contentInsetAdjustmentBehavior = .never   // CRITICAL: sectionInset alone must control centering; default .automatic injects safe-area insets that break the math
         return cv
     }()
     
@@ -336,6 +338,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     }()
     
     private var speakerImageHeightConstraint: NSLayoutConstraint!
+    private var needleCenterXConstraint: NSLayoutConstraint!   // drives the tuning needle X position via Auto Layout so layout passes don't fight it
     
     // MARK: - Audio and Streaming
     // New streaming player
@@ -460,7 +463,11 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         let indexPath = IndexPath(item: initialIndex, section: 0)
         languageCollectionView.selectItem(at: indexPath, animated: false, scrollPosition: .centeredHorizontally)
         centerCollectionViewContent()
-        updateSelectionIndicator(to: initialIndex, isInitial: true)
+        // Do not force the needle on the very first viewDidLoad call with isInitial:true.
+        // The collection view has usually not performed its final layout pass yet (bounds may be
+        // stale, sectionInset not yet applied to cells). Let the width-change guard in
+        // viewDidLayoutSubviews (and later non-initial calls) do the first real positioning.
+        updateSelectionIndicator(to: initialIndex, isInitial: false)
         
         // Set initial volume slider position (UI only)
         if let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared") {
@@ -550,8 +557,12 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        if languageCollectionView.frame.size != lastCollectionViewSize {
-            updateSelectionIndicator(to: selectedStreamIndex, isInitial: true)
+        // Only react to *width* changes. Height-only shifts (e.g. long metadata pushing
+        // the contentStackView taller) must not retrigger needle positioning.
+        // Never pass isInitial:true from a layout callback — that path is only for true
+        // one-time setup in viewDidLoad.
+        if languageCollectionView.frame.width != lastCollectionViewSize.width {
+            updateSelectionIndicator(to: selectedStreamIndex, isInitial: false)
             lastCollectionViewSize = languageCollectionView.frame.size
         }
     }
@@ -619,13 +630,17 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         super.viewDidAppear(animated)
         
         // Layout / UI setup (keep your existing code)
+        // NOTE: Do NOT use isInitial:true here on cold launch — the collection view
+        // has often not performed its final layout pass with the real bounds + sectionInset yet.
+        // The width-change path in viewDidLayoutSubviews + the non-initial calls below are sufficient.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            self.updateSelectionIndicator(to: self.selectedStreamIndex, isInitial: true)
+            self.updateSelectionIndicator(to: self.selectedStreamIndex, isInitial: false)
         }
         
         if !didInitialLayout {
             didInitialLayout = true
-            selectionIndicator.center.x = view.bounds.width / 2
+            // Removed the direct assignment using view.bounds (wrong view, wrong time).
+            // Real positioning now comes from the layoutSubviews guard + the calls below.
             
             let currentLocale = Locale.current
             let languageCode = currentLocale.language.languageCode?.identifier
@@ -635,7 +650,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 guard let self = self else { return }
                 let indexPath = IndexPath(item: initialIndex, section: 0)
                 self.languageCollectionView.selectItem(at: indexPath, animated: false, scrollPosition: .centeredHorizontally)
-                self.updateSelectionIndicator(to: initialIndex, isInitial: true)
+                self.updateSelectionIndicator(to: initialIndex, isInitial: false)
             }
         }
         
@@ -947,9 +962,10 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             #endif
             return
         }
+        // Read the actual configured values so the centering math always matches what the layout will draw.
         let totalItems = DirectStreamingPlayer.availableStreams.count
-        let cellWidth: CGFloat = 50
-        let spacing: CGFloat = 10
+        let cellWidth = layout.itemSize.width
+        let spacing = layout.minimumInteritemSpacing
         let totalCellWidth = (cellWidth * CGFloat(totalItems)) + (spacing * CGFloat(totalItems - 1))
         let collectionViewWidth = languageCollectionView.bounds.width
         let inset = max((collectionViewWidth - totalCellWidth) / 2, 0)
@@ -959,6 +975,34 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         #if DEBUG
         print("📱 centerCollectionViewContent: totalCellWidth=\(totalCellWidth), collectionViewWidth=\(collectionViewWidth), inset=\(inset), bounds=\(languageCollectionView.bounds)")
         #endif
+    }
+
+    /// Pure mathematical derivation of the tuning needle (selectionIndicator) center X.
+    /// Mirrors the exact 50pt/10pt/inset formula from centerCollectionViewContent so we are
+    /// independent of UICollectionView layoutAttributes timing during cold-start metadata storms
+    /// and orientation changes.
+    private func centerXForIndex(_ index: Int) -> CGFloat {
+        let totalItems = DirectStreamingPlayer.availableStreams.count
+        guard languageCollectionView.bounds.width > 0, totalItems > 0 else {
+            return languageCollectionView.bounds.midX
+        }
+        guard let layout = languageCollectionView.collectionViewLayout as? UICollectionViewFlowLayout else {
+            return languageCollectionView.bounds.midX
+        }
+        let safeIndex = min(max(index, 0), totalItems - 1)
+        // Derive from the live layout configuration (set in one place + delegate) so the
+        // needle math always matches the actual cell positions the collection view will draw.
+        let cellWidth = layout.itemSize.width
+        let spacing = layout.minimumInteritemSpacing
+        let totalCellWidth = (cellWidth * CGFloat(totalItems)) + (spacing * CGFloat(totalItems - 1))
+        let collectionViewWidth = languageCollectionView.bounds.width
+        let inset = max((collectionViewWidth - totalCellWidth) / 2, 0)
+        let rawCenter = inset + (cellWidth / 2) + (CGFloat(safeIndex) * (cellWidth + spacing))
+        // Safe half-width even if the indicator frame hasn't been sized yet
+        let halfWidth = max(selectionIndicator.frame.width / 2, 2)
+        let minX = halfWidth
+        let maxX = collectionViewWidth - halfWidth
+        return max(minX, min(maxX, rawCenter))
     }
     
     // MARK: - Network and Interruption Handling
@@ -1953,7 +1997,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         
         view.addSubview(airplayButton)
         languageCollectionView.addSubview(selectionIndicator)
-        view.bringSubviewToFront(selectionIndicator)
+        languageCollectionView.bringSubviewToFront(selectionIndicator)   // correct parent; needle must sit above the flag cells
         
         NSLayoutConstraint.activate([
             titleLabel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 40),
@@ -1989,6 +2033,11 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         ])
         speakerImageHeightConstraint = speakerImageView.heightAnchor.constraint(equalToConstant: 50)
         speakerImageHeightConstraint.isActive = true
+
+        // Create the horizontal position constraint for the tuning needle once.
+        // We update its .constant in updateSelectionIndicator instead of mutating .center.x.
+        needleCenterXConstraint = selectionIndicator.centerXAnchor.constraint(equalTo: languageCollectionView.leadingAnchor, constant: 0)
+        needleCenterXConstraint.isActive = true
     }
     
     @objc private func handleMemoryWarning() {
@@ -2233,6 +2282,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         #endif
         
         isRotating = true  // Set flag
+        didPositionNeedle = false  // Force a fresh, stable positioning after rotation settles
         
         // Verify selectedStreamIndex against the player's current stream
         if let currentStreamIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.url == streamingPlayer.selectedStream.url }) {
@@ -2257,6 +2307,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             // Reload data after animation to ensure cells are up-to-date
             self.languageCollectionView.reloadData()
             self.languageCollectionView.layoutIfNeeded()
+            // Re-apply centering before the final positioning — the reload above can leave
+            // the collection view in a transient state.
+            self.centerCollectionViewContent()
             self.updateSelectionIndicator(to: self.selectedStreamIndex, isInitial: false)
             #if DEBUG
             print("📱 Rotation completed, selected index: \(self.selectedStreamIndex)")
@@ -2291,69 +2344,64 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             return
         }
         
-        // Ensure selectionIndicator is a subview of languageCollectionView
+        // Needle constraints are set once in setupUI(). Never re-parent or re-activate them here.
+        // Repeated addSubview + NSLayoutConstraint.activate creates duplicate/ambiguous constraints
+        // that fight the manual .center.x mutation and cause the needle to drift or snap.
         if selectionIndicator.superview != languageCollectionView {
-            #if DEBUG
-            print("📱 updateSelectionIndicator: Reparenting selectionIndicator")
-            #endif
             languageCollectionView.addSubview(selectionIndicator)
             selectionIndicator.translatesAutoresizingMaskIntoConstraints = false
-            NSLayoutConstraint.activate([
-                selectionIndicator.widthAnchor.constraint(equalToConstant: 4),
-                selectionIndicator.heightAnchor.constraint(equalTo: languageCollectionView.heightAnchor, multiplier: 0.8),
-                selectionIndicator.centerYAnchor.constraint(equalTo: languageCollectionView.centerYAnchor)
-            ])
+            // constraints intentionally NOT re-activated here
         }
+        
+        // CRITICAL for fault tolerance:
+        // Always re-apply the centering insets before we compute or trust anything.
+        // This guarantees the same math that positions the cells is active.
+        centerCollectionViewContent()
+        languageCollectionView.layoutIfNeeded()
         
         let indexPath = IndexPath(item: safeIndex, section: 0)
         
-        languageCollectionView.layoutIfNeeded() // Ensure latest layout
-        
+        // Prefer the *actual* cell center from the layout engine. This guarantees the needle
+        // sits on the real flag cell no matter what effective insets or timing the collection
+        // view is using. Fall back to the pure math only if attributes are not available yet.
+        let cellCenterX: CGFloat
         if let layoutAttributes = languageCollectionView.layoutAttributesForItem(at: indexPath) {
             let cellFrame = layoutAttributes.frame
-            var cellCenterX = cellFrame.midX
-            
-            // Clamp to view space to prevent offscreen
-            let halfWidth = selectionIndicator.frame.width / 2
-            let minX = halfWidth
-            let maxX = languageCollectionView.bounds.width - halfWidth
-            cellCenterX = max(minX, min(maxX, cellCenterX))
-            
+            cellCenterX = cellFrame.midX
             #if DEBUG
-            print("📱 updateSelectionIndicator: Moving to index=\(safeIndex), cellCenterX=\(cellCenterX), cellFrame=\(cellFrame), collectionViewBounds=\(languageCollectionView.bounds), isInitial=\(isInitial), caller=\(Thread.callStackSymbols[1])")
+            let derived = centerXForIndex(safeIndex)
+            print("📱 updateSelectionIndicator: Moving to index=\(safeIndex), using actual midX=\(cellCenterX) (derived was \(derived), delta=\(cellCenterX - derived)), cellFrame=\(cellFrame), bounds=\(languageCollectionView.bounds), isInitial=\(isInitial), caller=\(caller)")
             #endif
-            
-            // Skip animation if collection view isn't fully laid out
-            guard languageCollectionView.bounds.width > 0 else {
-                #if DEBUG
-                print("📱 updateSelectionIndicator: Skipping animation, collection view not laid out")
-                #endif
-                selectionIndicator.center.x = cellCenterX
-                return
-            }
-            
-            UIView.animate(withDuration: isInitial ? 0.0 : 0.3) {
-                self.selectionIndicator.center.x = cellCenterX
-                self.selectionIndicator.transform = isInitial ? .identity : CGAffineTransform(scaleX: 1.5, y: 1.0)
-            } completion: { _ in
-                if !isInitial {
-                    UIView.animate(withDuration: 0.1) {
-                        self.selectionIndicator.transform = .identity
-                    }
-                }
-                #if DEBUG
-                print("📱 updateSelectionIndicator: Animation completed, final center.x=\(self.selectionIndicator.center.x)")
-                #endif
-            }
         } else {
-            // Fallback: Center in collection view
-            let fallbackCenterX = languageCollectionView.bounds.midX
+            cellCenterX = centerXForIndex(safeIndex)
             #if DEBUG
-            print("📱 updateSelectionIndicator: No layout attributes for indexPath=\(indexPath), using fallback centerX=\(fallbackCenterX), bounds=\(languageCollectionView.bounds)")
+            print("📱 updateSelectionIndicator: No layout attributes for indexPath=\(indexPath) — falling back to derived centerX=\(cellCenterX)")
             #endif
-            UIView.animate(withDuration: isInitial ? 0.0 : 0.3) {
-                self.selectionIndicator.center.x = fallbackCenterX
+        }
+        
+        // Skip if the collection view has no width yet (still early in layout)
+        guard languageCollectionView.bounds.width > 0 else {
+            #if DEBUG
+            print("📱 updateSelectionIndicator: Skipping — collection view has zero width")
+            #endif
+            needleCenterXConstraint.constant = cellCenterX
+            return
+        }
+        
+        UIView.animate(withDuration: isInitial ? 0.0 : 0.3) {
+            self.needleCenterXConstraint.constant = cellCenterX
+            self.languageCollectionView.layoutIfNeeded()
+            self.selectionIndicator.transform = isInitial ? .identity : CGAffineTransform(scaleX: 1.5, y: 1.0)
+        } completion: { _ in
+            if !isInitial {
+                UIView.animate(withDuration: 0.1) {
+                    self.selectionIndicator.transform = .identity
+                }
             }
+            self.didPositionNeedle = true
+            #if DEBUG
+            print("📱 updateSelectionIndicator: Animation completed, final center.x=\(self.selectionIndicator.center.x) (didPositionNeedle=true)")
+            #endif
         }
     }
     // MARK: - UIPickerView DataSource
@@ -2596,6 +2644,16 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         let spacing = 10.0
         #if DEBUG
         print("Minimum line spacing for section \(section): \(spacing)")
+        #endif
+        return spacing
+    }
+
+    func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, minimumInteritemSpacingForSectionAt section: Int) -> CGFloat {
+        // Horizontal spacing between items in the horizontal flag row.
+        // Must match layout.minimumInteritemSpacing and the centering math.
+        let spacing: CGFloat = 10.0
+        #if DEBUG
+        print("Minimum inter-item spacing for section \(section): \(spacing)")
         #endif
         return spacing
     }
