@@ -98,17 +98,26 @@ actor SharedPlayerManager {
             Date().timeIntervalSince(appLaunchTime) < initializationSettlingPeriod + 20.0
         // ──────────────────────────────────────────────────────────────
         
-        // CENTRAL RESURRECTION PROTECTION — but relaxed during cold launch
+        // HARD RULE: Never bypass resurrection protection for explicit user pause,
+        // even inside the cold-launch window. User intent wins.
+        if currentVisualState == .userPaused {
+            #if DEBUG
+            print("🔒 [SharedPlayerManager] play() HARD-BLOCKED — explicit .userPaused (cold-launch bypass ignored)")
+            #endif
+            return
+        }
+        
+        // CENTRAL RESURRECTION PROTECTION — relaxed only for prePlay during true cold launch
         if !isInColdLaunchWindow {
             guard currentVisualState.shouldAutoPlayOrResume else {
                 #if DEBUG
-                print("🔒 [SharedPlayerManager] play() BLOCKED — currentVisualState = \(currentVisualState) (userPaused or error lock active)")
+                print("🔒 [SharedPlayerManager] play() BLOCKED — currentVisualState = \(currentVisualState)")
                 #endif
                 return
             }
         } else {
             #if DEBUG
-            print("🚀 Cold-launch window active – bypassing normal resurrection protection")
+            print("🚀 Cold-launch window active – bypassing normal resurrection protection (except .userPaused)")
             #endif
         }
         
