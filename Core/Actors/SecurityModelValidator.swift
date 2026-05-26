@@ -212,16 +212,18 @@ public actor SecurityModelValidator {
 
             context.serviceRef = serviceRef
 
-            // === Process results on a background queue (this was the missing piece) ===
+            // Let dnssd drive the socket and deliver results via our existing C callback.
+            // This is the Apple-recommended pattern (DNSServiceSetDispatchQueue);
+            // no manual polling, no capture of non-Sendable DNSServiceRef into @Sendable closures.
             let processingQueue = DispatchQueue(label: "radio.lutheran.dnssd", qos: .userInitiated)
-            processingQueue.async {
-                while !context.isDone {
-                    let processErr = DNSServiceProcessResult(serviceRef)
-                    if processErr != kDNSServiceErr_NoError {
-                        break
-                    }
-                    usleep(10_000) // 10 ms – acceptable for this short-lived query
-                }
+            let setQErr = DNSServiceSetDispatchQueue(serviceRef, processingQueue)
+            guard setQErr == kDNSServiceErr_NoError else {
+                watchdog.cancel()
+                DNSServiceRefDeallocate(serviceRef)
+                context.serviceRef = nil
+                Self.releaseContextPointer(contextPtr)
+                complete(.failure(NSError(domain: "dnssd", code: Int(setQErr), userInfo: nil)))
+                return
             }
         }
     }
