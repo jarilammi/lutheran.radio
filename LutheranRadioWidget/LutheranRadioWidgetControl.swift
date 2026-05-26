@@ -146,7 +146,7 @@ extension LutheranRadioWidgetControl {
  */
 struct NoOpControlConfiguration: ControlConfigurationIntent {
     nonisolated static var title: LocalizedStringResource {
-        "Lutheran Radio"
+        "lutheran_radio_title"
     }
 }
 
