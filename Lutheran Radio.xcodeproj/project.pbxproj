@@ -22,7 +22,7 @@
 		B785EBA22E673D2F0034C286 /* CoreHaptics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B785EBA12E673D2F0034C286 /* CoreHaptics.framework */; };
 		B7AFC6E22CCD7DD900BDDD83 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B7AFC6E12CCD7DD900BDDD83 /* AVFoundation.framework */; };
 		B7D26EFC2F6E6EFF003568F0 /* Core.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7D26EF72F6E6EFF003568F0 /* Core.swift */; };
-		B7D5BF9C2FBE1BF00006D803 /* LutheranRadioWidgetExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = B757A77C2DEF7B5C00FF90FC /* LutheranRadioWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		B7D5BF9C2FBE1BF00006D803 /* LutheranRadioWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = B757A77C2DEF7B5C00FF90FC /* LutheranRadioWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		B7E3FCED2F6FC2E0001A2BD9 /* Core.xctestplan in Resources */ = {isa = PBXBuildFile; fileRef = B7E3FCEC2F6FC2E0001A2BD9 /* Core.xctestplan */; };
 /* End PBXBuildFile section */
 
@@ -90,15 +90,15 @@
 			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		B7D5BF992FBE19C30006D803 /* Embed App Extensions */ = {
+		B7D5BF992FBE19C30006D803 /* Embed Foundation Extensions */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 12;
 			dstPath = "";
 			dstSubfolderSpec = 13;
 			files = (
-				B7D5BF9C2FBE1BF00006D803 /* LutheranRadioWidgetExtension.appex in Embed App Extensions */,
+				B7D5BF9C2FBE1BF00006D803 /* LutheranRadioWidgetExtension.appex in Embed Foundation Extensions */,
 			);
-			name = "Embed App Extensions";
+			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
@@ -419,7 +419,7 @@
 				B7AFC6A92CCD7D0A00BDDD83 /* Frameworks */,
 				B7AFC6AA2CCD7D0A00BDDD83 /* Resources */,
 				B77E54372F6E6A6700A055DA /* Embed Frameworks */,
-				B7D5BF992FBE19C30006D803 /* Embed App Extensions */,
+				B7D5BF992FBE19C30006D803 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
@@ -491,7 +491,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 2630;
-				LastUpgradeCheck = 2600;
+				LastUpgradeCheck = 2650;
 				TargetAttributes = {
 					B757A77B2DEF7B5C00FF90FC = {
 						CreatedOnToolsVersion = 16.4;
@@ -750,6 +750,7 @@
 				MARKETING_VERSION = 26.5.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "radio.lutheran.Lutheran-Radio.LutheranRadioWidget";
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SKIP_INSTALL = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 6.0;
@@ -761,6 +762,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUILD_LIBRARY_FOR_DISTRIBUTION = YES;
+				CODE_SIGN_IDENTITY = "";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DYLIB_COMPATIBILITY_VERSION = 1;
@@ -799,6 +801,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUILD_LIBRARY_FOR_DISTRIBUTION = YES;
+				CODE_SIGN_IDENTITY = "";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DYLIB_COMPATIBILITY_VERSION = 1;
@@ -934,6 +937,7 @@
 				MARKETING_VERSION = 26.5.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "radio.lutheran.Lutheran-Radio";
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OBJC_BRIDGING_HEADER = "LutheranRadio-Bridging-Header.h";
 				SWIFT_VERSION = 6.0;
