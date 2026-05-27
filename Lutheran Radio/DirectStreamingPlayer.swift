@@ -1706,6 +1706,20 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 guard let self, let strongPlayer = self.player else { return }
                 
                 // ──────────────────────────────────────────────────────────────
+                // Brave guard: widget/extension processes (and even main app after a rapid pause) may have a stale in-memory actor.
+                // Force a sync from the persisted JSON (or legacy bool) before trusting the guard.
+                await SharedPlayerManager.shared.syncVisualStateFromPersistence()
+                
+                // Additional hard barrier: if a widget pause happened very recently, block any recovery play
+                // even if the visual state load is one microsecond behind.
+                if let lastPause = UserDefaults(suiteName: "group.radio.lutheran.shared")?.double(forKey: "lastUserPauseTime"),
+                   Date().timeIntervalSince1970 - lastPause < 8.0 {
+                    #if DEBUG
+                    print("🔒 [DirectStreamingPlayer] nudge\(index + 1): blocked by recent lastUserPauseTime")
+                    #endif
+                    return
+                }
+                
                 guard await SharedPlayerManager.shared.currentVisualState.shouldAutoPlayOrResume else {
                     #if DEBUG
                     print("🔒 [DirectStreamingPlayer] nudge\(index + 1): resurrection suppressed — userPaused / visualState lock active")
@@ -1737,6 +1751,17 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             guard let self, let strongPlayer = self.player else { return }
             
             // ──────────────────────────────────────────────────────────────
+            // Brave guard: same sync as the nudges — the final cold-launch recovery timer can otherwise see a stale default.
+            await SharedPlayerManager.shared.syncVisualStateFromPersistence()
+            
+            if let lastPause = UserDefaults(suiteName: "group.radio.lutheran.shared")?.double(forKey: "lastUserPauseTime"),
+               Date().timeIntervalSince1970 - lastPause < 8.0 {
+                #if DEBUG
+                print("🔒 [DirectStreamingPlayer] final recovery: blocked by recent lastUserPauseTime")
+                #endif
+                return
+            }
+            
             guard await SharedPlayerManager.shared.currentVisualState.shouldAutoPlayOrResume else {
                 #if DEBUG
                 print("🔒 [DirectStreamingPlayer] final recovery: resurrection suppressed — userPaused / visualState lock active")
@@ -2069,6 +2094,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             
             // ──────────────────────────────────────────────────────────────
             // NEW: Respect PlayerVisualState before forcing playback
+            await SharedPlayerManager.shared.syncVisualStateFromPersistence()
             guard await SharedPlayerManager.shared.currentVisualState.shouldAutoPlayOrResume else {
                 #if DEBUG
                 print("🔒 [DirectStreamingPlayer] recreatePlayerItem: resurrection suppressed — userPaused / visualState lock active")

@@ -7,7 +7,6 @@
 
 import Foundation
 import AVFoundation
-import WidgetKit
 import Core
 
 /// - Article: Shared State Management for Widgets and Extensions
@@ -43,6 +42,96 @@ actor SharedPlayerManager {
     private let appLaunchTime = Date()
     private let initializationSettlingPeriod: TimeInterval = 5.0
     private var initialPlaybackHasRun = false
+    
+    /// Guards one-time loading of the persisted PlayerVisualState JSON (or legacy "playing" bool fallback).
+    /// Critical for widget/extension processes which start with a fresh actor instance (default .prePlay).
+    private var hasLoadedVisualStateFromPersistence = false
+    
+    /// Ensures the authoritative visual state is loaded from UserDefaults persistence.
+    /// Safe to call repeatedly; only does work the first time per process (or after explicit reset).
+    /// Widget providers and widget-side play/stop paths must call this (directly or via sync) before trusting currentVisualState.
+    private func ensureVisualStateLoaded() {
+        guard !hasLoadedVisualStateFromPersistence else { return }
+        
+        // Preferred: the full PlayerVisualState we persisted via saveVisualState()
+        let loaded = loadVisualState()
+        
+        // If we got something other than the default (i.e. JSON was present), trust it.
+        if loaded != .prePlay {
+            currentVisualState = loaded
+        } else {
+            // Fallback for older data: derive from the classic "playing" bool written by saveCurrentState()
+            // Treat anything that is not an explicit user pause as non-sticky here; the main app will correct on next real action.
+            let legacyIsPlaying = sharedDefaults?.bool(forKey: "playing") ?? false
+            currentVisualState = legacyIsPlaying ? .playing : .userPaused
+        }
+        
+        hasLoadedVisualStateFromPersistence = true
+        
+        #if DEBUG
+        if isRunningInWidget() {
+            print("🔗 [Widget] ensureVisualStateLoaded → currentVisualState = \(currentVisualState)")
+        }
+        #endif
+    }
+    
+    /// Public entry point for widget/extension providers to guarantee they read the real persisted state.
+    /// Call this once at the top of any Provider method before reading currentVisualState or loadSharedState for UI decisions.
+    public func syncVisualStateFromPersistence() async {
+        ensureVisualStateLoaded()
+    }
+    
+    /// Nonisolated convenience for widget/extension code paths that run outside actor isolation
+    /// (e.g. handleWidgetPlay / handleWidgetStop). Fires a quick hop to ensure the persisted state is loaded
+    /// before the method does its optimistic mutation. The pendingAction + instantFeedback paths already cover
+    /// immediate widget UI, so a tiny delay here is harmless.
+    nonisolated public func ensureVisualStateLoadedForWidget() {
+        Task { await Self.shared.ensureVisualStateLoaded() }
+    }
+    
+    /// Nonisolated helper that widget intents can call to persist a visual state directly to the JSON key.
+    /// This gives the next Provider run (even before the Darwin roundtrip completes) something authoritative to load.
+    ///
+    /// Also updates the in-memory currentVisualState in this process so that any Provider
+    /// running in the same widget extension process immediately sees the new value (the widget
+    /// process that just decided the optimistic state).
+    nonisolated public func forcePersistVisualState(_ state: PlayerVisualState) {
+        let encoder = JSONEncoder()
+        if let data = try? encoder.encode(state) {
+            sharedDefaults?.set(data, forKey: "playerVisualState")
+            sharedDefaults?.synchronize()
+        }
+        // Update in-memory so the widget process sees the fresh state on the next snapshot
+        // without waiting for a Darwin round-trip or a full re-load.
+        Task { await Self.shared._forceSetCurrentVisualState(state) }
+    }
+
+    private func _forceSetCurrentVisualState(_ state: PlayerVisualState) {
+        currentVisualState = state
+        hasLoadedVisualStateFromPersistence = true
+    }
+
+    /// Forces a fresh load of the persisted PlayerVisualState JSON from the App Group container.
+    /// Widget Providers (home screen + Control) should call this before reading currentVisualState
+    /// for UI decisions. It resets the one-shot guard so that updates written by forcePersistVisualState
+    /// (or by the main app via saveVisualState) are seen even in long-lived extension processes.
+    public func refreshVisualStateFromPersistence() async {
+        hasLoadedVisualStateFromPersistence = false
+        ensureVisualStateLoaded()
+    }
+
+    /// Decodes the "playerVisualState" JSON directly from the App Group UserDefaults.
+    /// This is the robust fallback for widget button visuals when no pendingAction is active.
+    /// It bypasses the actor's in-memory cache entirely, guaranteeing the widget sees the
+    /// exact value the intent just force-persisted (or the main app just saved).
+    nonisolated static func loadPersistedVisualStateDirect() -> PlayerVisualState {
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared"),
+              let data = defaults.data(forKey: "playerVisualState"),
+              let decoded = try? JSONDecoder().decode(PlayerVisualState.self, from: data) else {
+            return .prePlay
+        }
+        return decoded
+    }
     
     nonisolated func isRunningInWidget() -> Bool {
         // Example common implementations – use yours
@@ -84,6 +173,8 @@ actor SharedPlayerManager {
 
     /// Public async entry point for playing — safe to call from anywhere
     func play() async {
+        ensureVisualStateLoaded()
+        
         // 🔥 FINAL FIX: Always clear .userPaused lock at the absolute top of play()
         // This covers widget play, Control Center, lockscreen, CarPlay, Siri — everything.
         await clearUserPausedLockIfNeeded()
@@ -203,6 +294,8 @@ actor SharedPlayerManager {
     /// Safe resurrection entry point used by DirectStreamingPlayer recovery logic.
     /// Allows technical recovery (hiccups) even when visualState = .playing.
     func attemptResurrectionIfAllowed() async {
+        ensureVisualStateLoaded()
+        
         #if DEBUG
         print("🚀 SharedPlayerManager.attemptResurrectionIfAllowed() – currentVisualState = \(currentVisualState)")
         #endif
@@ -271,6 +364,8 @@ actor SharedPlayerManager {
     /// Explicitly records that the user performed a manual pause or stop.
     /// This locks .userPaused so resurrection paths are blocked.
     func markAsUserPaused() async {
+        ensureVisualStateLoaded()
+        
         #if DEBUG
         print("🔒 markAsUserPaused() called – forcing .userPaused to block resurrection")
         #endif
@@ -294,6 +389,7 @@ actor SharedPlayerManager {
     /// Clears the userPaused resurrection lock when a widget explicitly requests Play.
     /// Called from handleWidgetPlayAction() so the widget can always start playback.
     public func clearUserPausedLockIfNeeded() async {
+        ensureVisualStateLoaded()
         if currentVisualState == .userPaused {
             #if DEBUG
             print("🔗 [Widget] Cleared userPaused lock for widget play action")
@@ -304,6 +400,8 @@ actor SharedPlayerManager {
     
     /// Public async entry point for stopping playback
     public func stop() async {
+        ensureVisualStateLoaded()
+        
         #if DEBUG
         print("🚀 SharedPlayerManager.stop() ENTERED – currentVisualState = \(currentVisualState)")
         #endif
@@ -347,6 +445,8 @@ actor SharedPlayerManager {
     }
 
     private func handleWidgetPlay() {
+        ensureVisualStateLoadedForWidget()
+        
         // Instant visual feedback for widget
         let now = Date().timeIntervalSince1970
         sharedDefaults?.set(now, forKey: "lastUpdateTime")
@@ -402,6 +502,8 @@ actor SharedPlayerManager {
     /// Clears the .userPaused lock so resume is allowed.
     /// Resets the cold-launch guard ONLY for manual resumes.
     func setUserIntentToPlay() async {
+        ensureVisualStateLoaded()
+        
         #if DEBUG
         print("🎯 setUserIntentToPlay() called – clearing .userPaused lock")
         #endif
@@ -424,6 +526,7 @@ actor SharedPlayerManager {
     /// Sets the visual state to .userPaused and persists it.
     /// This is the canonical way to record user-initiated pause intent.
     func setUserPaused() async {
+        ensureVisualStateLoaded()
         currentVisualState = .userPaused
         saveVisualState()
         await saveCurrentState()
@@ -432,6 +535,7 @@ actor SharedPlayerManager {
     /// Sets the visual state to .playing and persists it.
     /// Call after successful playback start/resume.
     func setPlaying() async {
+        ensureVisualStateLoaded()
         currentVisualState = .playing
         saveVisualState()
         await saveCurrentState()
@@ -462,10 +566,13 @@ actor SharedPlayerManager {
     /// - Widget timeline reload
     /// - Any other system resume signal
     func restoreVisualStateRespectingUserIntent() async {
-        let loaded = loadVisualState()
+        ensureVisualStateLoaded()
         
-        // This is the key line that finally stops the bug
-        currentVisualState = PlayerVisualState.suppressResurrectionIfNeeded(currentState: loaded)
+        // If we already loaded something sticky from JSON, keep it; otherwise do the normal restore logic.
+        if !hasLoadedVisualStateFromPersistence {
+            let loaded = loadVisualState()
+            currentVisualState = PlayerVisualState.suppressResurrectionIfNeeded(currentState: loaded)
+        }
         
         saveVisualState()
         await saveCurrentState()
@@ -484,6 +591,8 @@ actor SharedPlayerManager {
     // MARK: - Private Helpers for stop()
 
     private func handleWidgetStop() {
+        ensureVisualStateLoadedForWidget()
+        
         // Instant visual feedback for widget using the new authoritative state
         let now = Date().timeIntervalSince1970
         sharedDefaults?.set(now, forKey: "lastUpdateTime")
@@ -538,8 +647,6 @@ actor SharedPlayerManager {
         scheduleWidgetAction(action: "switch", parameter: stream.languageCode)
         notifyMainApp(action: "switch", parameter: stream.languageCode)
         
-        WidgetCenter.shared.reloadAllTimelines()
-        
         #if DEBUG
         print("🔗 Widget stream switch scheduled: \(stream.languageCode)")
         #endif
@@ -591,13 +698,6 @@ actor SharedPlayerManager {
         
         #if DEBUG
         print("🔗 Posted Darwin notification for action: \(action)")
-        #endif
-    }
-    
-    private func reloadAllWidgets() {
-        // DEPRECATED: Use WidgetRefreshManager.shared.refreshIfNeeded() instead
-        #if DEBUG
-        print("🔗 DEPRECATED: Direct widget reload called - use WidgetRefreshManager instead")
         #endif
     }
 }

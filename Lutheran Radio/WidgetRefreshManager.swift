@@ -104,7 +104,9 @@ final class WidgetRefreshManager: @unchecked Sendable {
                 WidgetCenter.shared.reloadTimelines(ofKind: "radio.lutheran.LutheranRadio.LutheranRadioWidget")
                 
                 #if DEBUG
-                print("🔗 Widget refresh executed (widgets active: \(configs.count)) — visualState: \(state.isThermalPaused ? ".thermalPaused" : (state.isPlaying ? ".playing" : ".paused")), lang: \(state.currentLanguage)")
+                // Use real visual state for logging (no more fake ".paused" string)
+                let vs = state.isThermalPaused ? ".thermalPaused" : (state.isPlaying ? ".playing" : ".userPaused")
+                print("🔗 Widget refresh executed (widgets active: \(configs.count)) — visualState: \(vs), lang: \(state.currentLanguage)")
                 #endif
             } else {
                 #if DEBUG

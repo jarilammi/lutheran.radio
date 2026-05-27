@@ -17,7 +17,6 @@
 ///
 /// Privacy Focus: No user data collection; encrypted streams only (see `StreamingSessionDelegate.swift` for session management). For widget interactions, see `handleURLScheme` in `SceneDelegate.swift`.
 import UIKit
-import WidgetKit
 
 @main
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -47,12 +46,22 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     ///   - sceneSessions: The set of discarded scene sessions.
     func application(_ application: UIApplication, didDiscardSceneSessions sceneSessions: Set<UISceneSession>) {}
     
-    // NEW: Add foreground refresh
+    // Foreground refresh — use the centralized manager (respects debouncing + SSOT)
     func applicationWillEnterForeground(_ application: UIApplication) {
-        WidgetCenter.shared.reloadAllTimelines()
+        Task { @MainActor in
+            let manager = SharedPlayerManager.shared
+            let vs = await manager.currentVisualState
+            let st = manager.loadSharedState()
+            WidgetRefreshManager.shared.refreshIfNeeded(
+                visualState: vs,
+                currentLanguage: st.currentLanguage,
+                hasError: st.hasError,
+                immediate: true
+            )
+        }
         
         #if DEBUG
-        print("🔗 [AppDelegate] Force widget refresh on foreground")
+        print("🔗 [AppDelegate] Foreground widget refresh via WidgetRefreshManager")
         #endif
     }
 }

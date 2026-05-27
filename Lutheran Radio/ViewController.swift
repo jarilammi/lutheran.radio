@@ -35,7 +35,7 @@
 ///
 /// Accessibility: VoiceOver announcements for status/metadata; hyphenation for long text. For lifecycle events, see `SceneDelegate.swift` and `AppDelegate.swift`.
 import UIKit
-import AVFoundation
+@preconcurrency import AVFoundation
 import MediaPlayer
 import AVKit
 import Network
@@ -622,7 +622,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     private func setupWidgetActionPolling() {
         // Check for widget actions every 30 seconds as fallback
         Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
-            self?.checkForPendingWidgetActions()
+            Task { @MainActor [weak self] in
+                self?.checkForPendingWidgetActions()
+            }
         }
     }
     
@@ -757,24 +759,16 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     private func setupFastWidgetActionChecking() {
         // Check for widget actions every second for the first 5 seconds after app starts
-        // This ensures fast processing of widget actions when app becomes active
-        var checksRemaining = 5 // 5 checks × 1.0s = 5 seconds
-        
-        Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] timer in
-            guard let self = self else {
-                timer.invalidate()
-                return
-            }
-            
-            self.checkForPendingWidgetActions()
-            
-            checksRemaining -= 1
-            
-            if checksRemaining <= 0 {
-                timer.invalidate()
-                #if DEBUG
-                print("🔗 Fast widget action checking completed")
-                #endif
+        // This ensures fast processing of widget actions when app becomes active.
+        // Uses repeated asyncAfter (no Timer, no mutable counter, no Sendable data-race issues).
+        for i in 1...5 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(i)) { [weak self] in
+                self?.checkForPendingWidgetActions()
+                if i == 5 {
+                    #if DEBUG
+                    print("🔗 Fast widget action checking completed")
+                    #endif
+                }
             }
         }
     }
@@ -1165,13 +1159,15 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         connectivityCheckTimer?.invalidate()
         guard !isDeallocating else { return }
         connectivityCheckTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
-            guard let self = self else {
-                #if DEBUG
-                print("📱 connectivityCheckTimer: ViewController is nil, skipping callback")
-                #endif
-                return
+            Task { @MainActor [weak self] in
+                guard let self = self else {
+                    #if DEBUG
+                    print("📱 connectivityCheckTimer: ViewController is nil, skipping callback")
+                    #endif
+                    return
+                }
+                self.performActiveConnectivityCheck()
             }
-            self.performActiveConnectivityCheck()
         }
     }
     
@@ -1639,7 +1635,10 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     /// - Note: Sets manual pause flag and routes through SharedPlayerManager to ensure .userPaused state is set.
     private func pausePlayback() {
         #if DEBUG
-        print("📱 pausePlayback called (from lockscreen / remote command)")
+        // Called from lockscreen / Control Center / MPRemoteCommandCenter paths.
+        // Widget-initiated pauses now route directly through SharedPlayerManager.stop()
+        // (clean authoritative path that immediately locks .userPaused).
+        print("📱 pausePlayback called (lockscreen / remote command)")
         #endif
         
         Task { @MainActor in
@@ -1777,15 +1776,15 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         cacheQueue.async { [weak self] in
             guard let self = self else { return }
             
-            if let cachedImage = self.processedImageCache.object(forKey: cacheKey as NSString) {
-                DispatchQueue.main.async {
+            DispatchQueue.main.async {
+                if let cachedImage = self.processedImageCache.object(forKey: cacheKey as NSString) {
                     self.applyProcessedImage(cachedImage, for: stream)
+                    return
                 }
-                return
+                
+                // Process image on background queue (kick-off from main to satisfy isolation)
+                self.processImageAsync(imageName: imageName, cacheKey: cacheKey, stream: stream, isDarkMode: isDarkMode)
             }
-            
-            // Process image on background queue
-            self.processImageAsync(imageName: imageName, cacheKey: cacheKey, stream: stream, isDarkMode: isDarkMode)  // ✅ Pass the captured value
         }
     }
     
@@ -1817,7 +1816,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 print("Processing image for \(stream.languageCode), mode: \(isDarkMode ? "dark" : "light")")
                 #endif
                 
-                // Apply filters based on interface style
+                // Apply filters based on interface style.
+                // Methods are pure CPU transforms (no actor state) → nonisolated for Swift 6.
                 if isDarkMode {
                     processedImage = self.applyDarkModeFilters(to: processedImage)
                 } else {
@@ -1839,8 +1839,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 return result
             }
             
-            // Cache the result
-            self.cacheQueue.async {
+            // Cache the result on main (NSCache property access must be isolated).
+            DispatchQueue.main.async {
                 self.processedImageCache.setObject(finalImage, forKey: cacheKey as NSString)
             }
             
@@ -1851,7 +1851,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         }
     }
     
-    private func applyDarkModeFilters(to image: CIImage) -> CIImage {
+    nonisolated private func applyDarkModeFilters(to image: CIImage) -> CIImage {
         var processedImage = image
         
         // Invert colors
@@ -1893,7 +1893,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         return processedImage
     }
 
-    private func applyLightModeFilters(to image: CIImage) -> CIImage {
+    nonisolated private func applyLightModeFilters(to image: CIImage) -> CIImage {
         var processedImage = image
         
         // Color controls
@@ -2046,8 +2046,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         #endif
         
         // Clear image cache to free memory
-        cacheQueue.async {
-            self.processedImageCache.removeAllObjects()
+        DispatchQueue.main.async { [weak self] in
+            self?.processedImageCache.removeAllObjects()
             #if DEBUG
             print("🧹 Cleared processed image cache")
             #endif
@@ -2237,26 +2237,26 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     }
     
     private func stopTuningSound() {
-        audioQueue.async { [weak self] in
-            guard let self = self else {
-                #if DEBUG
-                print("🎵 stopTuningSound: ViewController is nil, skipping")
-                #endif
-                return
-            }
-            
-            // Stop the AVAudioPlayer
-            if self.tuningPlayer?.isPlaying == true {
-                self.tuningPlayer?.stop()
+        // Snapshot the MainActor-isolated property on the actor, BEFORE entering the Sendable closure.
+        // This is the required pattern for Swift 6 / approachable concurrency.
+        let player = self.tuningPlayer
+
+        audioQueue.async {
+            if player?.isPlaying == true {
+                player?.stop()
                 #if DEBUG
                 print("🎵 Tuning sound stopped via AVAudioPlayer")
                 #endif
             }
-            
-            self.isTuningSoundPlaying = false
-            #if DEBUG
-            print("🎵 isTuningSoundPlaying set to false")
-            #endif
+
+            // State mutation must hop to MainActor (safe, no Sendable violation).
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                self.isTuningSoundPlaying = false
+                #if DEBUG
+                print("🎵 isTuningSoundPlaying set to false (from stopTuningSound)")
+                #endif
+            }
         }
     }
     
@@ -2687,9 +2687,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         Task { @MainActor in
             await SharedPlayerManager.shared.clearUserPausedLockIfNeeded()
             
-            // 🔥 CRITICAL: Same reset that makes language switch work
-            await SharedPlayerManager.shared.resetToPrePlayForNewStream()
-            
             #if DEBUG
             print("▶️ Widget Play button → calling SharedPlayerManager.play()")
             #endif
@@ -2714,7 +2711,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             )
             
             saveStateForWidget()
-            WidgetCenter.shared.reloadAllTimelines()
             
             #if DEBUG
             print("🔗 Widget play action completed → forced refresh to \(finalVisualState)")
@@ -2727,15 +2723,43 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         // Mark this as a manual pause so the player doesn't auto-resume on certain paths
         isManualPause = true
         
-        pausePlayback()
-        
-        // ──────────────────────────────────────────────────────────────
-        // NEW: This is the missing piece after widget modernization
-        // Makes widget pause behave exactly like main-app pause
-        Task {
-            await SharedPlayerManager.shared.markAsUserPaused()
+        // Brave: write the authoritative state to UserDefaults *synchronously* on the main thread
+        // before any async work. This eliminates the race where a pending "play" or a fast
+        // widget-action checker could see the old "playing" bool after the pause intent.
+        if let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared") {
+            sharedDefaults.set(false, forKey: "playing")
+            
+            let encoder = JSONEncoder()
+            if let data = try? encoder.encode(PlayerVisualState.userPaused) {
+                sharedDefaults.set(data, forKey: "playerVisualState")
+            }
+            
+            // Nuke any stale "play" pending action that could race with this pause
+            if sharedDefaults.string(forKey: "pendingAction") == "play" {
+                sharedDefaults.removeObject(forKey: "pendingAction")
+                sharedDefaults.removeObject(forKey: "pendingActionId")
+                sharedDefaults.removeObject(forKey: "pendingActionTime")
+                sharedDefaults.removeObject(forKey: "pendingLanguage")
+            }
+            
+            // Record a hard barrier timestamp that all recovery/nudge paths can consult
+            sharedDefaults.set(Date().timeIntervalSince1970, forKey: "lastUserPauseTime")
+            sharedDefaults.synchronize()
         }
-        // ──────────────────────────────────────────────────────────────
+        
+        // Route through the clean authoritative stop path (SharedPlayerManager.stop).
+        // stop() immediately locks .userPaused on the actor at the very top, persists the JSON,
+        // notifies Darwin, and triggers proper widget refresh. This is the same clean path
+        // used for explicit user pauses (remote commands, etc.) and avoids the old
+        // pausePlayback() indirection for widget-initiated pauses.
+        Task { @MainActor in
+            await SharedPlayerManager.shared.stop()
+            self.isPlaying = false
+            let newState = await SharedPlayerManager.shared.currentVisualState
+            self.updateUI(for: newState)
+            self.updateNowPlayingInfo()
+            self.saveStateForWidget()
+        }
         
         // Force immediate widget refresh (bypasses throttling) — same as handleWidgetAction
         Task { @MainActor in
@@ -2751,7 +2775,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             )
             
             saveStateForWidget()
-            WidgetCenter.shared.reloadAllTimelines()
             
             #if DEBUG
             print("🔗 Widget pause action completed → forced refresh to \(finalVisualState) (userPaused locked)")
@@ -2847,7 +2870,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 )
                 
                 saveStateForWidget()
-                WidgetCenter.shared.reloadAllTimelines()
                 
                 #if DEBUG
                 print("🔗 Widget switch completed → forced refresh to \(finalVisualState) [language: \(finalState.currentLanguage)]")
@@ -3016,10 +3038,33 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             lastWidgetActionTime = Date()
             // === END OF GUARD ===
             
-            // 🔥 CRITICAL FIX: same reset path now used by language switch + manual play + widget
-            Task { @MainActor in
-                await SharedPlayerManager.shared.resetToPrePlayForNewStream()
-                handleWidgetPlayAction()
+            // Widget play: clear any user pause lock then play. Do NOT reset to prePlay here
+            // (resetToPrePlayForNewStream is only for language stream switches).
+            // Hoisted weak-self form (proven pattern elsewhere in this file) — avoids implicit self capture / compiler error.
+            // Route widget play through the documented user-requested entry point.
+            // userRequestedPlay() properly clears .userPaused, resets cold-launch guards,
+            // and calls play() — the correct lightweight path for external triggers
+            // (widgets, Control Center, lockscreen, CarPlay). Avoids the old heavy
+            // handleWidgetPlayAction + raw play() which pulled in tuning-sound waits
+            // and full stream re-setup even on simple resume.
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                hasPermanentPlaybackError = false
+                isManualPause = false
+                await SharedPlayerManager.shared.userRequestedPlay()
+
+                // Post-action refresh (same pattern previously inside handleWidgetPlayAction)
+                let manager = SharedPlayerManager.shared
+                let finalVisualState = await manager.currentVisualState
+                let finalState = manager.loadSharedState()
+
+                WidgetRefreshManager.shared.refreshIfNeeded(
+                    visualState: finalVisualState,
+                    currentLanguage: finalState.currentLanguage,
+                    hasError: finalState.hasError,
+                    immediate: true
+                )
+                saveStateForWidget()
             }
         case "pause":
             #if DEBUG
@@ -3036,7 +3081,21 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             lastWidgetActionTime = Date()
             // === END OF GUARD ===
             
-            handleWidgetPauseAction()
+            // Brave rapid-pause guard (must hop because checkForPendingWidgetActions is synchronous).
+            // If we are already .userPaused, ignore the tap to avoid queuing a second Darwin roundtrip
+            // that could race with recovery timers or a stale "play" pendingAction.
+            // Hoisted weak-self + guard form (await-safe, matches every other Task site in this file).
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let vs = await SharedPlayerManager.shared.currentVisualState
+                if vs == .userPaused {
+                    #if DEBUG
+                    print("🔇 Widget pause ignored — already .userPaused (prevents double-pause resurrection races)")
+                    #endif
+                    return
+                }
+                self.handleWidgetPauseAction()
+            }
         default:
             #if DEBUG
             print("🔗 Unknown pending action: \(pendingAction)")
@@ -3166,8 +3225,19 @@ extension ViewController {
             print("✅ handleSwitchToLanguage completed for \(languageCode)")
             #endif
             
+            // Use modern SSOT refresh path (replaces legacy direct WidgetCenter call)
+            let manager = SharedPlayerManager.shared
+            let finalVisualState = await manager.currentVisualState
+            let finalState = manager.loadSharedState()
+            
+            WidgetRefreshManager.shared.refreshIfNeeded(
+                visualState: finalVisualState,
+                currentLanguage: finalState.currentLanguage,
+                hasError: finalState.hasError,
+                immediate: true
+            )
+            
             saveStateForWidget()
-            WidgetCenter.shared.reloadAllTimelines()
         }
     }
 
@@ -3444,8 +3514,18 @@ extension ViewController: StreamingPlayerDelegate {
             print("🔥 StreamingPlayerDelegate.onStatusChange → \(status) (reasonKey: \(reasonKey ?? "nil")) → visualState \(visualState)")
             #endif
             
+            // Brave defensive rule: if the authoritative state is .userPaused, never let a transient
+            // "stopped", "connecting", or "buffering" callback flip the UI back to yellow/green.
+            // This was allowing the "stopped → visualState playing" flips visible in the logs during glitches.
+            let effectiveVisualState: PlayerVisualState = {
+                if visualState == .userPaused {
+                    return .userPaused
+                }
+                return visualState
+            }()
+            
             // First apply the normal UI from PlayerVisualState (icon + basic label)
-            self.updateUI(for: visualState)
+            self.updateUI(for: effectiveVisualState)
             
             // These now run *after* updateUI so they can override the label color/alerts when needed
             if let reasonKey = reasonKey {
@@ -3599,8 +3679,6 @@ extension ViewController: StreamingPlayerDelegate {
                 hasError: finalState.hasError,
                 immediate: true
             )
-            
-            WidgetCenter.shared.reloadTimelines(ofKind: "LutheranRadioWidget")
             
             #if DEBUG
             print("🔗 Widget action '\(action)' completed → forced refresh to \(finalVisualState)")

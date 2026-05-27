@@ -121,19 +121,87 @@ extension LutheranRadioWidgetControl {
          * - Throws: Errors if unable to communicate with radio player
          */
         func currentValue(configuration: NoOpControlConfiguration) async throws -> Value {
+            let (visualState, currentStation) = await effectiveVisualStateAndStation()
+            return Value(visualState: visualState, currentStation: currentStation)
+        }
+        
+        // MARK: - Best visual state (exact same pendingAction → instantFeedback → synced logic as home widget Provider)
+        
+        private func effectiveVisualStateAndStation() async -> (visualState: PlayerVisualState, currentStation: String) {
             let manager = SharedPlayerManager.shared
+            
+            // CRITICAL: Widget/Control Center extension runs in its own process.
+            // The actor's currentVisualState starts at .prePlay every time.
+            // We must load the persisted PlayerVisualState (or legacy fallback) before trusting it.
+            // Use the robust fresh-load path so we always see the latest value written by
+            // forcePersistVisualState (from this process) or the main app (via saveVisualState).
+            await manager.refreshVisualStateFromPersistence()
+            
+            guard let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
+                let state = manager.loadSharedState()
+                let vs = await manager.currentVisualState
+                let stream = manager.availableStreams.first(where: { $0.languageCode == state.currentLanguage }) ?? manager.availableStreams[0]
+                return (vs, stream.flag + " " + stream.language)
+            }
+            
+            // === CRITICAL: Handle pending play/pause actions for instant widget feedback ===
+            // (Identical 12-second window and mapping used by the home-screen widget Provider.)
+            if let pendingAction = sharedDefaults.string(forKey: "pendingAction"),
+               let pendingTime = sharedDefaults.object(forKey: "pendingActionTime") as? Double {
+                
+                let actionAge = Date().timeIntervalSince1970 - pendingTime
+                if actionAge < 12.0 {
+                    let state = manager.loadSharedState()
+                    let vs = await manager.currentVisualState
+                    
+                    let effective: PlayerVisualState = {
+                        switch pendingAction {
+                        case "play":  return .playing
+                        case "pause": return .userPaused
+                        case "switch": return vs
+                        default:      return vs
+                        }
+                    }()
+                    
+                    #if DEBUG
+                    print("🔗 [CONTROL PROVIDER] pendingAction=\(pendingAction) → forcing visualState=\(effective)")
+                    #endif
+                    
+                    let stream = manager.availableStreams.first(where: { $0.languageCode == state.currentLanguage }) ?? manager.availableStreams[0]
+                    let station = stream.flag + " " + stream.language
+                    return (effective, station)
+                }
+            }
+            
+            // instant feedback for language switch (visual from actor, station reflects the instant language)
+            if let instantFeedbackTime = sharedDefaults.object(forKey: "instantFeedbackTime") as? Double,
+               let instantFeedbackLanguage = sharedDefaults.string(forKey: "instantFeedbackLanguage"),
+               sharedDefaults.bool(forKey: "isInstantFeedback") == true {
+                
+                let age = Date().timeIntervalSince1970 - instantFeedbackTime
+                if age < 15.0 {
+                    _ = manager.loadSharedState()
+                    let vs = await manager.currentVisualState
+                    let lang = instantFeedbackLanguage
+                    let stream = manager.availableStreams.first(where: { $0.languageCode == lang }) ?? manager.availableStreams[0]
+                    let station = stream.flag + " " + stream.language
+                    return (vs, station)
+                }
+            }
+            
+            // Normal authoritative path.
+            // ROBUST HARDENING for the play/pause button visual (the ControlWidgetToggle isOn + icon):
+            // When no pendingAction is active, decode the "playerVisualState" JSON *directly*.
+            // This bypasses any reliance on the actor's in-memory currentVisualState (which may have
+            // been loaded before the intent's forcePersistVisualState write became visible).
+            // Combined with refreshVisualStateFromPersistence() above and the 12s pendingAction window,
+            // this guarantees the widget toggle shows the correct play/pause icon even on the very
+            // first interaction in a fresh widget process.
             let state = manager.loadSharedState()
-            
-            // ✅ Safe actor access
-            let visualState = await manager.currentVisualState
-            
-            let currentStream = manager.availableStreams.first(where: { $0.languageCode == state.currentLanguage }) ?? manager.availableStreams[0]
-            let currentStation = currentStream.flag + " " + currentStream.language
-            
-            return Value(
-                visualState: visualState,
-                currentStation: currentStation
-            )
+            let vs = SharedPlayerManager.loadPersistedVisualStateDirect()
+            let stream = manager.availableStreams.first(where: { $0.languageCode == state.currentLanguage }) ?? manager.availableStreams[0]
+            let station = stream.flag + " " + stream.language
+            return (vs, station)
         }
     }
 }
@@ -176,19 +244,40 @@ struct ToggleRadioIntent: SetValueIntent {
         
         let manager = SharedPlayerManager.shared
         
-        if value {
-            // Play path (already worked)
-            print("🔗 Executing widget play action")
-            await manager.play()
-        } else {
-            // ← THIS WAS THE MISSING PIECE
-            print("🔗 Executing widget pause action")
-            await manager.stop()
+        // Widget extension cannot own AVPlayer. We only signal intent via shared defaults + Darwin notification.
+        // The main app (receiving the Darwin notification via checkForPendingWidgetActions) is the sole executor
+        // of actual playback changes. This matches the design used by WidgetToggleRadioIntent (home widget).
+        // Direct play()/stop() calls here caused double-execution (widget optimistic path + main app heavy path),
+        // producing tuning-sound waits, full stream re-setup, intermediate playing=false saves, and state thrashing.
+        
+        // Brave: also force-persist the full visual state JSON from the widget process.
+        // This makes the next Control Widget timeline / currentValue read the correct icon immediately.
+        let targetVisualState: PlayerVisualState = value ? .playing : .userPaused
+        manager.forcePersistVisualState(targetVisualState)
+        
+        // Write the exact same pendingAction signals the home widget uses.
+        // The Control Provider's currentValue (above) now consults pendingAction + instantFeedback,
+        // so the very next toggle visual resolution (isOn / green-pause icon) flips instantly and correctly.
+        if let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared") {
+            let action = value ? "play" : "pause"
+            let actionId = UUID().uuidString
+            let now = Date().timeIntervalSince1970
+            sharedDefaults.set(action, forKey: "pendingAction")
+            sharedDefaults.set(actionId, forKey: "pendingActionId")
+            sharedDefaults.set(now, forKey: "pendingActionTime")
+            sharedDefaults.synchronize()
         }
+        
+        // Wake the main app so it executes the action (exactly like the home widget intent).
+        // Without this the Darwin round-trip never starts for pure Control Widget taps.
+        CFNotificationCenterPostNotification(
+            CFNotificationCenterGetDarwinNotifyCenter(),
+            CFNotificationName("radio.lutheran.widget.action" as CFString),
+            nil, nil, true
+        )
         
         // Immediate widget UI feedback — now using modern PlayerVisualState API
         let state = manager.loadSharedState()
-        let targetVisualState: PlayerVisualState = value ? .playing : .userPaused
         
         await WidgetRefreshManager.shared.refreshIfNeeded(
             visualState: targetVisualState,
@@ -197,11 +286,8 @@ struct ToggleRadioIntent: SetValueIntent {
             immediate: true
         )
         
-        // Extra safety: force widget timeline refresh
-        WidgetCenter.shared.reloadTimelines(ofKind: "LutheranRadioWidget")
-        
         #if DEBUG
-        print("🔗 ToggleRadioIntent completed successfully")
+        print("🔗 ToggleRadioIntent completed successfully (signaled \(value ? "play" : "pause") via pendingAction + Darwin)")
         #endif
         
         return .result()

@@ -128,9 +128,14 @@ struct Provider: AppIntentTimelineProvider {
     
     private func getValidatedStreamState() async -> (currentStation: String, statusMessage: String, visualState: PlayerVisualState) {
         let manager = SharedPlayerManager.shared
+        // CRITICAL: Widget process starts with a fresh actor (currentVisualState = .prePlay).
+        // Use the robust fresh-load path so we always see the latest persisted value
+        // written by forcePersistVisualState (from this process) or the main app.
+        await manager.refreshVisualStateFromPersistence()
+        
         let state = manager.loadSharedState()
         
-        // ✅ Safe actor access with await
+        // ✅ Safe actor access with await — now authoritative because we synced above
         let visualState = await manager.currentVisualState
         
         let currentStream = manager.availableStreams.first(where: { $0.languageCode == state.currentLanguage }) ?? manager.availableStreams[0]
@@ -151,6 +156,10 @@ struct Provider: AppIntentTimelineProvider {
     
     private func createEntry(with configuration: RadioWidgetConfiguration) async -> SimpleEntry {
         let manager = SharedPlayerManager.shared
+        // Use the robust fresh-load path so widget UI decisions always see the latest
+        // persisted visual state (forcePersist from intent or main app saves).
+        await manager.refreshVisualStateFromPersistence()
+        
         let (currentLanguage, hasError, visualState) = await getPendingOrCurrentState(manager: manager)
         
         let currentStream = manager.availableStreams.first { $0.languageCode == currentLanguage } ?? manager.availableStreams[0]
@@ -183,6 +192,11 @@ struct Provider: AppIntentTimelineProvider {
     }
     
     private func getPendingOrCurrentState(manager: SharedPlayerManager) async -> (currentLanguage: String, hasError: Bool, visualState: PlayerVisualState) {
+        // Use the robust fresh-load path so the widget always sees the latest persisted
+        // visual state (updated by forcePersistVisualState or main app) before deciding
+        // what to show for the play/pause button.
+        await manager.refreshVisualStateFromPersistence()
+        
         guard let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
             let state = manager.loadSharedState()
             let visualState = await manager.currentVisualState
@@ -235,8 +249,14 @@ struct Provider: AppIntentTimelineProvider {
         }
         
         // normal path
+        // ROBUST HARDENING for the play/pause button visual (the toggle button icon + label):
+        // When no pendingAction is active, decode the "playerVisualState" JSON *directly*.
+        // This eliminates dependence on the actor's in-memory currentVisualState (which may have been
+        // loaded before the intent's forcePersistVisualState write). Combined with the refresh call above
+        // and the short pendingAction window, this makes the first widget pause visually correct even
+        // in a fresh widget process.
         let state = manager.loadSharedState()
-        let visualState = await manager.currentVisualState
+        let visualState = SharedPlayerManager.loadPersistedVisualStateDirect()
         return (state.currentLanguage, state.hasError, visualState)
     }
 }
@@ -334,7 +354,7 @@ struct SmallWidgetView: View {
                 Spacer()
                 
                 Button(intent: WidgetToggleRadioIntent()) {
-                    Image(systemName: "playpause.fill")
+                    Image(systemName: entry.visualState.isActivelyPlaying ? "pause.fill" : "play.fill")
                         .font(.title2)
                         .foregroundColor(entry.visualState.buttonTintColor.swiftUIColor)
                 }
@@ -418,7 +438,7 @@ struct MediumWidgetView: View {
                 VStack(spacing: 8) {
                     Button(intent: WidgetToggleRadioIntent()) {
                         VStack(spacing: 2) {
-                            Image(systemName: "playpause.fill")
+                            Image(systemName: entry.visualState.isActivelyPlaying ? "pause.fill" : "play.fill")
                                 .font(.title)
                                 .foregroundColor(entry.visualState.buttonTintColor.swiftUIColor)
                             Text(entry.visualState.isActivelyPlaying ? String(localized: "status_playing") : String(localized: "status_paused"))
@@ -513,7 +533,7 @@ struct LargeWidgetView: View {
                         .fontWeight(.bold)
                     Spacer()
                     Button(intent: WidgetToggleRadioIntent()) {
-                        Image(systemName: "playpause.fill")
+                        Image(systemName: entry.visualState.isActivelyPlaying ? "pause.fill" : "play.fill")
                             .font(.title2)
                             .foregroundColor(entry.visualState.buttonTintColor.swiftUIColor)
                     }
@@ -615,6 +635,15 @@ struct WidgetToggleRadioIntent: AppIntent {
         // === OPTIMISTIC UPDATE (critical for instant icon flip) ===
         if let sharedDefaults = sharedDefaults {
             sharedDefaults.set(shouldPlay, forKey: "playing")
+            
+            // Brave: also write the full PlayerVisualState JSON so that any subsequent Provider run
+            // (even before the main app processes the Darwin notification) will see the correct sticky state.
+            let targetState: PlayerVisualState = shouldPlay ? .playing : .userPaused
+            let encoder = JSONEncoder()
+            if let data = try? encoder.encode(targetState) {
+                sharedDefaults.set(data, forKey: "playerVisualState")
+            }
+            
             sharedDefaults.synchronize()
             
             let actionId = UUID().uuidString
@@ -644,8 +673,6 @@ struct WidgetToggleRadioIntent: AppIntent {
             hasError: state.hasError,
             immediate: true
         )
-        
-        WidgetCenter.shared.reloadTimelines(ofKind: "LutheranRadioWidget")
         
         #if DEBUG
         print("🔗 WidgetToggleRadioIntent completed. Signaled \(action), refreshed widget to \(targetVisualState)")
