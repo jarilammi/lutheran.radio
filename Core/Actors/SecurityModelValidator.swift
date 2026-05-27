@@ -42,6 +42,18 @@ public actor SecurityModelValidator {
     /// Injectable for tests (time-dependent cache logic).
     internal var currentDate: @Sendable () -> Date = { Date() }
 
+    #if DEBUG
+    /// Test-only override for the TXT record fetch step (DNS-SD or fallback).
+    ///
+    /// When non-nil, `validateSecurityModel()` uses this closure instead of real
+    /// `queryTXTRecord(for:)`. This enables fully deterministic success / permanent-fail /
+    /// transient-fail testing without network or live DNS.
+    ///
+    /// Callers are responsible for also bypassing the 1-hour cache (see
+    /// `_test_setTXTFetcher` which does this automatically).
+    internal var _test_txtFetcher: (@Sendable (String) async throws -> Set<String>)?
+    #endif
+
     private init() {
         if let saved = UserDefaults.standard.object(forKey: userDefaultsKey) as? Date {
             lastValidationTime = saved
@@ -72,7 +84,17 @@ public actor SecurityModelValidator {
         // Try primary first, then backup on transient failure only
         for domain in config.securityModelDomains {
             do {
+                #if DEBUG
+                let validModels: Set<String>
+                if let fetcher = _test_txtFetcher {
+                    validModels = try await fetcher(domain)
+                } else {
+                    validModels = try await queryTXTRecord(for: domain)
+                }
+                #else
                 let validModels = try await queryTXTRecord(for: domain)
+                #endif
+
                 let isValid = validModels.contains(config.expectedSecurityModel.lowercased())
 
                 let now = currentDate()
@@ -275,7 +297,8 @@ public actor SecurityModelValidator {
             let strData = data.subdata(in: index..<index + length)
             if let str = String(data: strData, encoding: .utf8) {
                 let modelList = str.split(separator: ",")
-                    .map { String($0).trimmingCharacters(in: .whitespaces).lowercased() }
+                    .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+                    .filter { !$0.isEmpty }
                 models.formUnion(modelList)
             }
             index += length
@@ -287,6 +310,64 @@ public actor SecurityModelValidator {
 
         return models
     }
+
+    // MARK: - Test-only exposure (zero production impact)
+
+    #if DEBUG
+    /// Test-only entry point for the pure DNS TXT record parser.
+    ///
+    /// This is the **only** supported way to exercise `parseInlineTXTRecord` from tests.
+    /// The real parser remains private; this thin wrapper is compiled out of Release builds.
+    ///
+    /// - Parameter data: Raw wire-format DNS TXT rdata (length-prefixed strings).
+    /// - Returns: Set of lowercased, trimmed model names parsed from the record(s).
+    public static func _test_parseInlineTXTRecord(_ data: Data) -> Set<String> {
+        parseInlineTXTRecord(data)
+    }
+
+    /// Install a deterministic TXT fetcher for tests and force cache bypass.
+    ///
+    /// This is the recommended entry point from tests. It:
+    /// - Sets the internal fetcher (or clears it when `nil`)
+    /// - Clears the in-memory `lastValidationTime`
+    /// - Removes the UserDefaults persisted cache timestamp
+    /// - Resets the validation state to `.pending`
+    ///
+    /// Call with `nil` to restore real DNS behavior after a test.
+    public static func _test_setTXTFetcher(
+        _ fetcher: (@Sendable (String) async throws -> Set<String>)?,
+        clearCache: Bool = true
+    ) async {
+        await shared._installTestTXTFetcher(fetcher, clearCache: clearCache)
+    }
+
+    private func _installTestTXTFetcher(
+        _ fetcher: (@Sendable (String) async throws -> Set<String>)?,
+        clearCache: Bool
+    ) {
+        _test_txtFetcher = fetcher
+
+        if clearCache {
+            lastValidationTime = nil
+            UserDefaults.standard.removeObject(forKey: userDefaultsKey)
+            validationState = .pending
+        }
+    }
+
+    /// Test-only seam: override the time source used for the 1-hour success cache decision.
+    ///
+    /// Used by deterministic tests to force any previously-written success timestamp
+    /// (including ones written by the running app in the same process) to appear stale,
+    /// guaranteeing that the injected TXT fetcher is actually reached instead of the
+    /// cache guard short-circuiting to .success.
+    public static func _test_setCurrentDate(_ provider: @Sendable @escaping () -> Date) async {
+        await shared._installCurrentDateProvider(provider)
+    }
+
+    private func _installCurrentDateProvider(_ provider: @Sendable @escaping () -> Date) {
+        currentDate = provider
+    }
+    #endif
 
     /// Nonisolated static release helper (called only from the synchronous continuation body).
     /// Kept for clarity; balances manual memory management without ever crossing actor isolation.
