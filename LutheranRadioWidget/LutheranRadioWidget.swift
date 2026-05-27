@@ -623,13 +623,13 @@ struct WidgetToggleRadioIntent: AppIntent {
         
         // ✅ Reliable SSOT read for widget extension process
         let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared")
-        let isCurrentlyPlaying = sharedDefaults?.bool(forKey: "playing") ?? false
-        let shouldPlay = !isCurrentlyPlaying
+        let visualState = SharedPlayerManager.loadPersistedVisualStateDirect()
+        let shouldPlay = !visualState.isActivelyPlaying
         let action = shouldPlay ? "play" : "pause"
         let targetVisualState: PlayerVisualState = shouldPlay ? .playing : .userPaused
         
         #if DEBUG
-        print("🔗 Widget wants to \(action) → target state: \(targetVisualState) (isCurrentlyPlaying from UserDefaults = \(isCurrentlyPlaying))")
+        print("🔗 Widget wants to \(action) → target state: \(targetVisualState) (visualState.isActivelyPlaying = \(visualState.isActivelyPlaying))")
         #endif
         
         // === OPTIMISTIC UPDATE (critical for instant icon flip) ===

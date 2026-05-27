@@ -716,7 +716,13 @@ extension SharedPlayerManager {
         // Fetch current values from the real player
         let currentLanguageCode = sharedDefaults?.string(forKey: "currentLanguage") ?? "en"
         let isPermanentError    = await player.isLastErrorPermanent()
-        let isPlaying           = player.actualPlaybackState
+        // Source the legacy "playing" bool from the authoritative visual state (SSOT),
+        // not the racy snapshot in actualPlaybackState. The snapshot frequently returns
+        // false during normal playback (KVO timing, brief buffering, rate reads) causing
+        // the "playing" UserDefaults key (used by WidgetToggleRadioIntent decision logic
+        // and loadSharedState fallbacks) to be wrong. This was the "elsewhere" causing
+        // first-widget-interaction flakiness even after the pause throttle fix.
+        let isPlaying           = currentVisualState.isActivelyPlaying
         let hasPermanentError   = player.hasPermanentError
         
         // === NEW: WidgetState is now a computed view of PlayerVisualState (SSOT) ===
@@ -745,8 +751,13 @@ extension SharedPlayerManager {
     private func performActualSave(_ state: (isPlaying: Bool, currentLanguage: String, hasError: Bool),
                                    widgetState: WidgetState,
                                    at time: Date) {
-        // Suppress rapid successive saves during language/stream switches
-        if let lastUpdate = sharedDefaults?.double(forKey: "lastUpdateTime"),
+        // Suppress rapid successive saves during language/stream switches.
+        // CRITICAL FIX for first widget pause: explicit pauses (!isPlaying) must bypass
+        // the 5s throttle. During cold launch + stream setup the throttle is constantly
+        // active; the first widget pause save was dropped (second succeeded after window cleared).
+        // Pauses are now treated as urgent so .userPaused always reaches widgets/Live Activities.
+        if state.isPlaying,   // only throttle while actively playing / switching
+           let lastUpdate = sharedDefaults?.double(forKey: "lastUpdateTime"),
            Date().timeIntervalSince1970 - lastUpdate < 5.0 {
             #if DEBUG
             print("🔇 Skipping rapid state save (stream switch in progress)")
@@ -764,7 +775,7 @@ extension SharedPlayerManager {
         sharedDefaults?.removeObject(forKey: "instantFeedbackTime")
         sharedDefaults?.removeObject(forKey: "instantFeedbackLanguage")
         
-        let isUrgentUpdate = state.isPlaying || state.hasError
+        let isUrgentUpdate = !state.isPlaying || state.hasError
         
         // Always hop to MainActor for WidgetRefreshManager (required in Swift 6)
         Task { @MainActor in
