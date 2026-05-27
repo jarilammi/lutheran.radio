@@ -231,6 +231,15 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     private var isInitializing: Bool = true
     private var pendingStatusChanges: [(isPlaying: Bool, reasonKey: String?)] = []
     
+    /// Simple last-value dedup for status emissions.
+    /// Prevents identical consecutive (isPlaying, reasonKey) tuples from re-driving
+    /// the delegate + UI + widget pipeline on every KVO jitter or repeated callback.
+    private var lastEmittedStatus: (isPlaying: Bool, reasonKey: String?)?
+    
+    // Lightweight raw KVO dedup trackers (used inside the observer closures)
+    private var lastObservedTimeControl: AVPlayer.TimeControlStatus?
+    private var lastObservedItemStatus: AVPlayerItem.Status?
+    
     /// Protects the playback startup path from aggressive `stop()` calls during async validation + server selection.
     /// Set to `true` at the beginning of `play()` and reset in `defer`.
     private var isCurrentlyAttemptingPlayback = false
@@ -648,41 +657,62 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             if self.isInitializing {
                 self.pendingStatusChanges.append((isPlaying, reasonKey ?? ""))
             } else {
-                self.invokeStatusCallbacks(isPlaying: isPlaying, reasonKey: reasonKey)
+                // Central dedup lives in invokeStatusCallbacks; we use the return value
+                // here so the stable-state widget save path also respects duplicates.
+                let didEmit = self.invokeStatusCallbacks(isPlaying: isPlaying, reasonKey: reasonKey)
                 
                 // 🔥 CLEAN + 100% LOCALIZATION-SAFE stable-state detection
                 // Uses exact keys from Localizable.xcstrings
-                let isStableState = isPlaying ||
-                reasonKey == "status_playing" ||
-                reasonKey == "status_paused" ||
-                reasonKey == "status_stopped" ||
-                reasonKey == "status_paused_call" ||
-                reasonKey == "status_thermal_paused" ||
-                reasonKey == "status_no_internet" ||
-                reasonKey == "status_security_failed" ||
-                reasonKey == "status_stream_unavailable" ||
-                reasonKey == "status_connecting" ||
-                reasonKey == "status_ssl_transition" ||
-                reasonKey == "status_buffering"
-                
-                if isStableState {
-                    #if DEBUG
-                    print("🔗 safeOnStatusChange: STABLE final state (isPlaying=\(isPlaying), key='\(reasonKey ?? "nil")') → forcing widget save")
-                    #endif
+                // Only force a widget save on real emissions to avoid re-driving the
+                // widget pipeline with identical consecutive states.
+                if didEmit {
+                    let isStableState = isPlaying ||
+                    reasonKey == "status_playing" ||
+                    reasonKey == "status_paused" ||
+                    reasonKey == "status_stopped" ||
+                    reasonKey == "status_paused_call" ||
+                    reasonKey == "status_thermal_paused" ||
+                    reasonKey == "status_no_internet" ||
+                    reasonKey == "status_security_failed" ||
+                    reasonKey == "status_stream_unavailable" ||
+                    reasonKey == "status_connecting" ||
+                    reasonKey == "status_ssl_transition" ||
+                    reasonKey == "status_buffering"
                     
-                    Task {
-                        await SharedPlayerManager.shared.saveCurrentState()
+                    if isStableState {
+                        #if DEBUG
+                        print("🔗 safeOnStatusChange: STABLE final state (isPlaying=\(isPlaying), key='\(reasonKey ?? "nil")') → forcing widget save")
+                        #endif
+                        
+                        Task {
+                            await SharedPlayerManager.shared.saveCurrentState()
+                        }
+                    } else {
+                        #if DEBUG
+                        print("🔇 safeOnStatusChange: transient state (isPlaying=\(isPlaying), key='\(reasonKey ?? "nil")') → skipping widget save")
+                        #endif
                     }
-                } else {
-                    #if DEBUG
-                    print("🔇 safeOnStatusChange: transient state (isPlaying=\(isPlaying), key='\(reasonKey ?? "nil")') → skipping widget save")
-                    #endif
                 }
             }
         }
     }
     
-    private func invokeStatusCallbacks(isPlaying: Bool, reasonKey: String?) {
+    /// Returns true if the status was actually emitted (not a duplicate).
+    @discardableResult
+    private func invokeStatusCallbacks(isPlaying: Bool, reasonKey: String?) -> Bool {
+        // Simple last-value dedup: identical consecutive tuples are a no-op.
+        // This prevents KVO jitter and duplicate callback storms from re-driving
+        // the entire delegate → UI → widget pipeline.
+        let incoming = (isPlaying, reasonKey)
+        if lastEmittedStatus?.isPlaying == isPlaying && lastEmittedStatus?.reasonKey == reasonKey {
+            #if DEBUG
+            // Keep extremely quiet — only uncomment if actively debugging callback storms
+            // print("🔇 invokeStatusCallbacks: suppressed duplicate (\(isPlaying), \(reasonKey ?? "nil"))")
+            #endif
+            return false
+        }
+        lastEmittedStatus = incoming
+        
         // Compute localized string once for UI / logs / delegate (backward compatible)
         let localizedStatus = reasonKey.map { NSLocalizedString($0, comment: "") } ?? ""
         
@@ -694,6 +724,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         #if DEBUG
         print("🔄 invokeStatusCallbacks → isPlaying=\(isPlaying), reasonKey='\(reasonKey ?? "nil")', localized='\(localizedStatus)'")
         #endif
+        return true
     }
     
     private func safeOnMetadataChange(metadata: String?) {
@@ -718,6 +749,11 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         
         // Also clear any local permanent error flag if your UI/playback uses it
         hasPermanentError = false
+        
+        // Clear dedup state so post-reset status changes are not incorrectly suppressed.
+        lastEmittedStatus = nil
+        lastObservedTimeControl = nil
+        lastObservedItemStatus = nil
         
         #if DEBUG
         print("🔄 Requested reset of transient security validation state")
@@ -780,6 +816,11 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         }
         
         setupThermalProtection()
+        
+        // Clear dedup state so the first real post-init status always emits.
+        lastEmittedStatus = nil
+        lastObservedTimeControl = nil
+        lastObservedItemStatus = nil
         
         isInitializing = false
         
@@ -1351,6 +1392,11 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         rateObserver?.invalidate()
         statusObserver?.invalidate()
 
+        // Reset raw KVO trackers for the fresh observers (lastEmittedStatus is intentionally
+        // left alone here — stream switches and stop/play handle the higher-level reset).
+        lastObservedTimeControl = nil
+        lastObservedItemStatus = nil
+
         #if DEBUG
         print("🛠️ [DirectStreamingPlayer] setupPlaybackObservers() — setting up Swift-6-safe observers")
         #endif
@@ -1360,11 +1406,20 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             Task { @MainActor [weak self] in
                 guard let self else { return }
 
+                // Lightweight raw-value dedup in the KVO handler itself.
+                // Avoids even reaching safeOnStatusChange for identical consecutive observations.
+                let newTC = observedPlayer.timeControlStatus
+                if self.lastObservedTimeControl == newTC {
+                    // Still allow the unconditional save at the bottom (it is already heavily throttled downstream).
+                } else {
+                    self.lastObservedTimeControl = newTC
+                }
+
                 #if DEBUG
-                print("🔄 [KVO] timeControlStatus → \(observedPlayer.timeControlStatus.rawValue) | rate: \(observedPlayer.rate)")
+                print("🔄 [KVO] timeControlStatus → \(newTC.rawValue) | rate: \(observedPlayer.rate)")
                 #endif
 
-                switch observedPlayer.timeControlStatus {
+                switch newTC {
                 case .playing:
                     // CRITICAL: Respect resurrection protection after user pause
                     guard await SharedPlayerManager.shared.currentVisualState.shouldAutoPlayOrResume else {
@@ -1397,11 +1452,21 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         statusObserver = player?.currentItem?.observe(\.status, options: [.new]) { [weak self] item, _ in
             Task { @MainActor [weak self] in
                 guard let self else { return }
+
+                // Lightweight raw-value dedup in the KVO handler itself.
+                let newItemStatus = item.status
+                if self.lastObservedItemStatus == newItemStatus {
+                    // Raw status unchanged — the downstream tuple dedup in invokeStatusCallbacks
+                    // will still catch any derived (isPlaying, reasonKey) duplicates.
+                } else {
+                    self.lastObservedItemStatus = newItemStatus
+                }
+
                 #if DEBUG
-                print("🔊 [KVO] Item status → \(item.status.rawValue)")
+                print("🔊 [KVO] Item status → \(newItemStatus.rawValue)")
                 #endif
 
-                switch item.status {
+                switch newItemStatus {
                 case .readyToPlay:
                     // CRITICAL: Respect resurrection protection after user pause
                     guard await SharedPlayerManager.shared.currentVisualState.shouldAutoPlayOrResume else {
@@ -1491,6 +1556,11 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             #endif
         }
 
+        // Clear dedup state for the new stream context so the first status after the switch emits.
+        lastEmittedStatus = nil
+        lastObservedTimeControl = nil
+        lastObservedItemStatus = nil
+
         // Update model
         selectedStream = stream
 
@@ -1543,6 +1613,12 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             return
         }
         // ──────────────────────────────────────────────────────────────
+
+        // Fresh playback attempt — clear dedup state so the first status we emit
+        // (e.g. "status_connecting" or "status_playing") is never incorrectly suppressed.
+        lastEmittedStatus = nil
+        lastObservedTimeControl = nil
+        lastObservedItemStatus = nil
 
         await MainActor.run {
             ensurePlayerExists()
@@ -2179,6 +2255,12 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             self.playerItem = nil
             
             if !effectiveSilent {
+                // A real terminal stop is a context change — clear dedup so the
+                // "status_stopped" we are about to emit (and any subsequent play) is not suppressed.
+                lastEmittedStatus = nil
+                lastObservedTimeControl = nil
+                lastObservedItemStatus = nil
+                
                 DispatchQueue.main.async {
                     MainActor.assumeIsolated {
                         self.safeOnStatusChange(isPlaying: false, reasonKey: "status_stopped")  // ← fixed
@@ -2271,6 +2353,10 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         }
         self.timeObserver = nil
         self.timeObserverPlayer = nil
+        
+        // Clear raw KVO trackers when observers are torn down.
+        lastObservedTimeControl = nil
+        lastObservedItemStatus = nil
     }
     
     func clearCallbacks() {
