@@ -53,7 +53,8 @@ This ensures every single change respects the same non-negotiable security model
 
 ### Prerequisites
  - Xcode 26+ (Swift 6)
- - iOS 26.5 simulator
+ - Minimum deployment target: iOS 26.2 (required for EMTE + MIE hardened memory protections)
+ - Recommended local/CI test environment: iOS 26.5 simulator (iPhone 17) — used in the xcodebuild commands below
 
 To ensure a smooth development experience, follow these steps before contributing:
 
@@ -89,7 +90,7 @@ The app implements certificate pinning to prevent man-in-the-middle (MITM) attac
 
 1. **Domain:** ```lutheran.radio``` (including subdomains)
 2. **Pinned Value:** SHA-256 fingerprint of the server’s leaf certificate, hex-encoded (uppercase, colon-separated)
-3. **Location:** Embedded in ```Info.plist``` under ```NSAppTransportSecurity > NSPinnedDomains``` (primary) and ```CertificateValidator.swift``` (runtime validation)
+3. **Location:** Embedded in ```Info.plist``` under ```NSAppTransportSecurity > NSPinnedDomains``` (primary) and ```Core/Security/CertificateValidator.swift``` (runtime validation)
 4. **Current Fingerprint:** ```CC:F7:8E:09:EF:F3:3D:9A:5D:8B:B0:5C:74:28:0D:F6:BE:14:1C:C4:47:F9:69:C2:90:2C:43:97:66:8B:3D:CC```
 
 ### Dual Pinning Methods
@@ -105,7 +106,7 @@ For enhanced security, the app uses two complementary pinning approaches:
      - `XuAdGZ5Hy28pa2OHHMOry/fzpW8XyA5AV5bEDwSX2Ys=`
    - Verification: Use `openssl s_client -connect livestream.lutheran.radio:443 -servername livestream.lutheran.radio < /dev/null | openssl x509 -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | base64` and match against these values.
 
-2. **Full Certificate Fingerprint Pinning (via CertificateValidator.swift - Runtime Validation)**:
+2. **Full Certificate Fingerprint Pinning (via Core/Security/CertificateValidator.swift - Runtime Validation)**:
    - Pins the SHA-256 fingerprint of the full certificate's DER representation (hex, uppercase, colon-separated).
    - Performed at runtime for stricter validation, with caching (10 minutes) and transition support.
    - Complements SPKI by ensuring exact certificate matches, with fallback to ATS during the transition period.
@@ -123,7 +124,7 @@ To ensure uninterrupted service during SSL certificate renewals, the app include
 - **Transition Period:** One month before certificate expiry
 - **User Experience:** During the transition period, the app trusts ATS validation if the pinned fingerprint fails, allowing streaming to continue with a debug warning (visible in DEBUG builds)
 - **Security Protection:** Transition support is automatically enabled during the defined period, with strict enforcement of the pinned fingerprint outside this window
-- **Implementation:** Controlled via `CertificateValidator.swift` with predefined transition start and expiry dates
+- **Implementation:** Controlled via `Core/Security/CertificateValidator.swift` with predefined transition start and expiry dates
 
 This approach prevents service disruption during certificate updates while maintaining security through continued ATS enforcement and time-bounded operation.
 
@@ -256,6 +257,7 @@ This feature enhances availability while maintaining the app's privacy-first pri
 
 All security-critical constants (expected model name, certificate fingerprints, transition window dates) are now centralized in `Core/Configuration/SecurityConfiguration.swift`.
 The DNS TXT record validation logic has been extracted into a dedicated Swift actor `Core/Actors/SecurityModelValidator.swift`, which enforces strict actor isolation and provides the single entry point `validateSecurityModel()`.
+Runtime full-certificate (DER SHA-256) fingerprint validation with transition-window leniency lives in `Core/Security/CertificateValidator.swift`.
 
 This refactor:
 - Improves maintainability and testability
@@ -263,7 +265,14 @@ This refactor:
 - Keeps identical runtime behavior and security guarantees
 - Does **not** change the current model ("fredericksburg"), fingerprints, transition period, or any validation rules
 
-`DirectStreamingPlayer.swift` and `CertificateValidator.swift` now consume these shared components instead of duplicating logic.
+`DirectStreamingPlayer.swift` and `Core/Security/CertificateValidator.swift` now consume these shared components instead of duplicating logic.
+
+**Core module layout (three subdirectories only):**
+- `Core/Configuration/` — policy and constants (`SecurityConfiguration`)
+- `Core/Actors/` — DNS TXT validation actor (`SecurityModelValidator`)
+- `Core/Security/` — runtime certificate fingerprint validator (`CertificateValidator`)
+
+New security logic must be placed inside the appropriate `Core/` subdirectory. Duplication in the main app or widget is forbidden.
 
 ### Security Model TXT Record Usage
 

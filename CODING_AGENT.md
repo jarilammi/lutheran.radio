@@ -62,7 +62,7 @@ It is live on the App Store: https://apps.apple.com/fi/app/lutheran-radio/id6738
 3. **Localization**
    - Every user-visible string must use `String(localized:)` / `NSLocalizedString` with table `"Localizable"`.
    - Never hard-code English strings.
-   - All 18 languages must remain supported.
+   - All 21 languages must remain supported (see the language table in README.md for the authoritative list).
 
 4. **iOS 26+ Only**
    - Minimum deployment target is **iOS 26.2** (no exceptions).
@@ -77,11 +77,11 @@ It is live on the App Store: https://apps.apple.com/fi/app/lutheran-radio/id6738
 - **UI**: SwiftUI + WidgetKit (LutheranRadioWidget)
 - **Audio**: `DirectStreamingPlayer.swift` (custom secure HTTPS player)
 - **Security**:
-  * `CertificateValidator.swift` (runtime full-cert + SPKI fallback + transition window)
+  * `Core/Security/CertificateValidator.swift` (runtime full DER SHA-256 certificate fingerprint pinning + transition window leniency with time-skew protection; SPKI pinning is enforced exclusively by ATS in Info.plist)
   * ATS + NSPinnedDomains in Info.plist
   * DNS TXT security model validation (1-hour cache in UserDefaults)
   * MIE/EMTE: Enabled via hardened runtime entitlements (requires Xcode 26+ for build support)
-- Security logic is now isolated into the `Core/` module (`Core/Configuration/` and `Core/Actors/`) using Swift actors and strict concurrency for better isolation, testability, and maintainability. All security decisions flow through `SecurityConfiguration` and `SecurityModelValidator`.
+- Security logic is now isolated into the `Core/` framework module (`Core/Configuration/`, `Core/Actors/`, and `Core/Security/`) using Swift actors and strict concurrency for better isolation, testability, and maintainability. All security decisions flow through `SecurityConfiguration`, `SecurityModelValidator`, and `CertificateValidator`.
 - **Tests**: Unit + UI tests in dedicated targets
 - **Scripts**: Minimal Python (1%) — treat as build helpers only
 
@@ -90,12 +90,23 @@ It is live on the App Store: https://apps.apple.com/fi/app/lutheran-radio/id6738
 | File                                              | Responsibility                                                                 | Critical Notes                                                                 |
 |---------------------------------------------------|--------------------------------------------------------------------------------|--------------------------------------------------------------------------------|
 | `DirectStreamingPlayer.swift`                     | Main audio engine + consumes shared security validation                        | No longer contains `appSecurityModel` constant                                 |
-| `CertificateValidator.swift`                      | Full certificate pinning + transition logic (Jul 27 – Aug 26 2026)             | 10-minute cache; uses shared `SecurityConfiguration`                           |
+| `Core/Security/CertificateValidator.swift`        | Runtime full DER SHA-256 certificate fingerprint pinning + transition window leniency (Jul 27 – Aug 26 2026) with device/server time-skew protection | 10-minute cache; consumes `SecurityConfiguration`; SPKI is handled by ATS in Info.plist, not here |
 | `Core/Configuration/SecurityConfiguration.swift`  | Centralized security policy: expected model, fingerprints, transition dates    | Single source of truth for all pinned values and model name                    |
-| `Core/Actors/SecurityModelValidator.swift`        | Actor-isolated DNS TXT security model validation                               | New primary validator; uses `dns_sd.h` + 1-hour cache in UserDefaults          |
+| `Core/Actors/SecurityModelValidator.swift`        | Actor-isolated DNS TXT security model validation                               | Primary validator; uses `dns_sd.h` + 1-hour success cache in UserDefaults      |
+| `Core/Security/`                                  | Directory containing runtime certificate validator (part of Core framework)    | Treat as security-critical; compiled into main app + widget extension          |
 | `Info.plist`                                      | ATS pinning (SPKI + domain)                                                    | Never edit without updating `SecurityConfiguration` and validator              |
 | `LutheranRadioWidget/`                            | Home-screen widget                                                             | Must respect same security rules via shared `Core` module                      |
 | `docs/`                                           | All architecture & security decision records                                   | Read before any major change                                                   |
+
+### Core Framework Surface Area (Mandatory Knowledge)
+
+The `Core` framework is the **single source of truth** for all security decisions. Its public surface consists of exactly three subdirectories:
+
+- `Core/Configuration/` — `SecurityConfiguration.swift` (constants, policy, transition dates, fingerprints, expected model). Never duplicate these values elsewhere.
+- `Core/Actors/` — `SecurityModelValidator.swift` (the only place DNS TXT validation against `securitymodels.lutheran.radio` is allowed).
+- `Core/Security/` — `CertificateValidator.swift` (the only place runtime full-certificate DER fingerprint validation + transition leniency lives).
+
+**Rule**: Any new security logic, certificate handling, or validation must be added inside `Core/` under the appropriate subdirectory and exposed through the existing public types. Duplication in the main app, widget, or elsewhere is forbidden and will fail security review.
 
 ## Development Workflow (Always Follow)
 
@@ -147,6 +158,9 @@ Operate in full agentic mode at all times:
   * Fetch current DNS TXT record at `securitymodels.lutheran.radio`
   * Verify certificate fingerprints (use README openssl commands)
   * Cross-check Apple docs or Swift proposals when relevant
+- Before writing any code that touches security, certificate validation, streaming URLs, DNS validation, or the security model, run:
+  `find . -name "CertificateValidator.swift" -o -name "SecurityConfiguration.swift" -o -name "SecurityModelValidator.swift" | head -5`
+  and confirm you are reading from inside `Core/`. If the files are not under `Core/`, stop and ask before proceeding.
 - After every suggestion, include exact diff or full file, security impact, and build status.
 
 ## Common Pitfalls
