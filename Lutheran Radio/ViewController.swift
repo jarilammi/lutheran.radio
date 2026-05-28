@@ -2136,14 +2136,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         }
     }
     
-    // Legacy compatibility
-    func playTuningSound(completion: (() -> Void)? = nil) {
-        Task { @MainActor in
-            await playTuningSound()   // calls the new async version
-            completion?()
-        }
-    }
-    
     /// Modern async version - preferred in 2026 Swift code
     func playTuningSound() async {
         let now = Date()
@@ -2421,26 +2413,13 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             
             streamingPlayer.stop()
             
-            // Convert completion handler to async/await properly
-            await withCheckedContinuation { continuation in
-                playTuningSound { [weak self] in
-                    guard let self else {
-                        continuation.resume()
-                        return
-                    }
-                    
-                    // Now we can safely await inside this Task because we're still on @MainActor
-                    Task { @MainActor in
-                        await streamingPlayer.setStream(to: selectedStream)
-                        hasPermanentPlaybackError = false
-                        
-                        if isPlaying || !isManualPause {
-                            startPlayback()           // assuming this is async too
-                        }
-                        
-                        continuation.resume()
-                    }
-                }
+            await playTuningSound()
+            
+            await streamingPlayer.setStream(to: selectedStream)
+            hasPermanentPlaybackError = false
+            
+            if isPlaying || !isManualPause {
+                startPlayback()
             }
         }
     }
@@ -2577,54 +2556,42 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             }
             
             // 2. Play tuning sound + switch stream
-            await withCheckedContinuation { continuation in
-                self.playTuningSound { [weak self] in
-                    guard let self else {
-                        continuation.resume()
-                        return
-                    }
-                    
-                    Task { @MainActor in
-                        guard wasPlayingBeforeSwitch else {
-                            #if DEBUG
-                            print("🛡️ [completeStreamSwitch] Blocked play() after tuning sound")
-                            #endif
-                            await self.streamingPlayer.setStream(to: stream)
-                            self.updateSelectionIndicator(to: index)
-                            continuation.resume()
-                            return
-                        }
-                        
-                        #if DEBUG
-                        print("🔄 completeStreamSwitch → calling SharedPlayerManager.play() after tuning")
-                        #endif
-                        
-                        await self.streamingPlayer.setStream(to: stream)
-                        self.streamingPlayer.resetTransientErrors()
-                        self.updateUserDefaultsLanguage(stream.languageCode)
-                        self.hasPermanentPlaybackError = false
-                        
-                        // 🔥 CRITICAL FIX for stream switching after PlayerVisualState refactor
-                        // Reset visual state to .prePlay so SharedPlayerManager.play() executes
-                        // the full cold-launch path (bypasses the .playing skip guard).
-                        // Also gives immediate yellow "connecting" UI feedback during the atomic switch.
-                        await SharedPlayerManager.shared.resetToPrePlayForNewStream()
-                        self.updateUI(for: .prePlay)
-                        
-                        await SharedPlayerManager.shared.play()
-                        await Task.yield()
-                        
-                        self.updateSelectionIndicator(to: index)
-                        self.saveStateForWidget()
-                        
-                        #if DEBUG
-                        print("📱 completeStreamSwitch: Switched to stream \(stream.language), index=\(index)")
-                        #endif
-                        
-                        continuation.resume()
-                    }
-                }
+            await playTuningSound()
+            
+            guard wasPlayingBeforeSwitch else {
+                #if DEBUG
+                print("🛡️ [completeStreamSwitch] Blocked play() after tuning sound")
+                #endif
+                await streamingPlayer.setStream(to: stream)
+                updateSelectionIndicator(to: index)
+                return
             }
+            
+            #if DEBUG
+            print("🔄 completeStreamSwitch → calling SharedPlayerManager.play() after tuning")
+            #endif
+            
+            await streamingPlayer.setStream(to: stream)
+            streamingPlayer.resetTransientErrors()
+            updateUserDefaultsLanguage(stream.languageCode)
+            hasPermanentPlaybackError = false
+            
+            // 🔥 CRITICAL FIX for stream switching after PlayerVisualState refactor
+            // Reset visual state to .prePlay so SharedPlayerManager.play() executes
+            // the full cold-launch path (bypasses the .playing skip guard).
+            // Also gives immediate yellow "connecting" UI feedback during the atomic switch.
+            await SharedPlayerManager.shared.resetToPrePlayForNewStream()
+            updateUI(for: .prePlay)
+            
+            await SharedPlayerManager.shared.play()
+            await Task.yield()
+            
+            updateSelectionIndicator(to: index)
+            saveStateForWidget()
+            
+            #if DEBUG
+            print("📱 completeStreamSwitch: Switched to stream \(stream.language), index=\(index)")
+            #endif
         }
     }
     
@@ -3180,11 +3147,7 @@ extension ViewController {
             #if DEBUG
             print("🎵 Playing tuning sound")
             #endif
-            await withCheckedContinuation { continuation in
-                playTuningSound {
-                    continuation.resume()
-                }
-            }
+            await playTuningSound()
             
             streamingPlayer.resetTransientErrors()
             
