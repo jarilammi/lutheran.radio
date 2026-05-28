@@ -36,6 +36,80 @@ import Core
 ///
 /// See also: `DirectStreamingPlayer` (actual playback), `PlayerVisualState.swift` (the visual SSOT),
 /// `WidgetRefreshManager.swift`, and `RadioLiveActivityManager.swift`.
+///
+/// ## Formal Documentation: State Machine & App Group Persistence Model
+///
+/// The tables below are the authoritative reference for this component.
+/// They live in the source file so they are impossible to miss or drift from
+/// the implementation.
+///
+/// ### Resurrection Protection & State Transition Rules
+///
+/// **Sticky States (never auto-resume)**:
+/// - `.userPaused` — explicit user pause/stop. Set in `stop()`, `markAsUserPaused()`,
+///   `setUserPaused()`. Cleared only by `setUserIntentToPlay()` or widget play paths
+///   that call `clearUserPausedLockIfNeeded()`.
+/// - `.securityLocked` — permanent security failure (DNS TXT fail, 403, cert error).
+///   Set in `play()` guard and `setSecurityLocked()`. Persists until next explicit play
+///   that passes validation.
+///
+/// **Cold-Launch Grace Period** (defined in this actor):
+/// - `initializationSettlingPeriod = 5.0` seconds
+/// - Total window = 25 seconds (`< initializationSettlingPeriod + 20.0`)
+/// - `initialPlaybackHasRun` one-shot guard prevents duplicate first-play attempts.
+/// - The window only relaxes resurrection protection for `.prePlay`; `.userPaused` is
+///   *never* bypassed, even inside the window (hard rule at the top of `play()`).
+///
+/// **Key Transition Methods**:
+/// - `resetToPrePlayForNewStream()` — **only** place that intentionally sets `.prePlay`
+///   after first launch (language/stream switches). Also clears `initialPlaybackHasRun`.
+/// - `restoreVisualStateRespectingUserIntent()` — applies `suppressResurrectionIfNeeded()`.
+/// - `attemptResurrectionIfAllowed()` — recovery path used by DirectStreamingPlayer nudges;
+///   still respects `shouldAutoPlayOrResume`.
+///
+/// See `PlayerVisualState.swift` for `shouldAutoPlayOrResume`, `mustSuppressResurrection`,
+/// `suppressResurrectionIfNeeded(currentState:)`, and the `from(status:isManualPause:...)` mapper.
+///
+/// | From State      | Trigger / Event                                   | Guard / Condition                                              | To State        | Resurrection Behavior / Notes |
+/// |-----------------|---------------------------------------------------|-----------------------------------------------------------------|-----------------|-------------------------------|
+/// | .prePlay        | Cold launch first play                            | Security valid + inside 25s window (or first time)              | .playing        | Sets `initialPlaybackHasRun = true` |
+/// | .prePlay        | Explicit user play (button, widget, Siri, etc.)   | `userRequestedPlay()` → `setUserIntentToPlay()` first           | .playing        | Clears any prior .userPaused lock |
+/// | .playing        | User taps pause/stop (any surface)                | `stop()` or `markAsUserPaused()` at top of method               | .userPaused     | Immediate sticky lock + early `saveVisualState()` |
+/// | .playing        | User-initiated stream/language switch             | `resetToPrePlayForNewStream()` then `play()`                    | .prePlay → .playing | Special bypass of the ".playing guard" in play() |
+/// | .playing        | AV interruption, stall, or thermal event          | `attemptResurrectionIfAllowed()` or player recovery nudges      | .playing        | Only proceeds if `shouldAutoPlayOrResume` |
+/// | any             | Security validation failure (DNS/403/cert)        | Inside `play()` guard or StreamingSessionDelegate 403 handler   | .securityLocked | Permanent until explicit successful play |
+/// | .userPaused     | User explicitly taps play (any surface)           | `userRequestedPlay()` or widget play path                       | .prePlay        | Resets cold-launch one-shot guard for resume |
+/// | .thermalPaused  | Device cools sufficiently                         | DirectStreamingPlayer thermal recovery logic                    | .playing        | Only via `shouldAutoResumeOnThermalRecovery` |
+/// | any             | App foreground, interruption.ended(.shouldResume) | `restoreVisualStateRespectingUserIntent()`                      | (unchanged or forced .userPaused) | Applies `suppressResurrectionIfNeeded()` |
+///
+/// ### Persistence Keys & Ownership (App Group "group.radio.lutheran.shared")
+///
+/// This is the authoritative shared state model. All values are anonymous. No PII, no listening history.
+///
+/// | Key                     | Type                  | Primary Writers                                              | Primary Readers (widgets, recovery, UI)                              | Purpose & Semantics                                          | Lifetime / Notes |
+/// |-------------------------|-----------------------|--------------------------------------------------------------|----------------------------------------------------------------------|--------------------------------------------------------------|------------------|
+/// | playerVisualState       | Data (JSON)           | SharedPlayerManager (`saveVisualState`, all setters), widget timeline providers in some paths | `loadPersistedVisualStateDirect()`, `ensure...`, widgets, Live Activities, `restore...` | **Modern Single Source of Truth** for visual intent. Preferred over legacy bools. | Persisted across launches |
+/// | playing (legacy)        | Bool                  | Older paths + fallbacks in `performActualSave`               | `ensureVisualStateLoaded` fallback, some widget decision logic       | Legacy "is radio playing" signal                             | Being phased out; still read as fallback |
+/// | isPlaying               | Bool                  | `SharedPlayerManager.performActualSave`                      | `loadSharedState`, widget timeline providers                         | Snapshot derived from `currentVisualState.isActivelyPlaying` | Written on every authoritative save |
+/// | currentLanguage         | String (languageCode) | ViewController on switch, SharedPlayerManager save paths     | `loadSharedState`, widgets, Live Activities                          | Currently selected stream language                           | Updated on every stream change |
+/// | hasError                | Bool                  | SharedPlayerManager (sourced from player.hasPermanentError)  | `loadSharedState`, widgets                                           | Permanent error flag for UI chrome                           | Set on security or unrecoverable network failures |
+/// | lastUpdateTime          | Double (epoch)        | SharedPlayerManager (`performActualSave` + widget handlers)  | Throttling logic inside `performActualSave`, widget providers        | Timestamp of last authoritative state change                 | Used for 5s debounce + instant feedback expiry detection |
+/// | lastUserPauseTime       | Double (epoch)        | ViewController (explicit pause paths)                        | DirectStreamingPlayer recovery nudges (two locations)                | Hard 8-second barrier after any user pause                   | Prevents resurrection attempts immediately after pause |
+/// | isInstantFeedback       | Bool                  | Widget handlers (`handleWidgetPlay/Stop/Switch`)             | `loadSharedState` (checked first)                                    | Signals that a widget action just occurred (optimistic UI)   | Short-lived; cleared after 15s or next authoritative save |
+/// | instantFeedbackTime     | Double (epoch)        | Widget handlers                                              | `loadSharedState`                                                    | Timestamp for the instant feedback validity window           | 15-second validity window |
+/// | instantFeedbackLanguage | String                | Widget handlers                                              | `loadSharedState`                                                    | Language to show during the optimistic widget update         | Matches the language of the widget action |
+/// | pendingAction           | String ("play","pause","switch") | Widget intent handlers, Control Center, some ViewController paths | `getPendingAction()`, SceneDelegate, widget providers          | One-shot command from extension process to main app          | Cleared by `clearPendingAction(actionId:)` after processing |
+/// | pendingActionId         | String (UUID)         | Same writers as pendingAction                                | `getPendingAction()`, `clearPendingAction()`                         | Deduplication token to handle rapid repeated taps            | Prevents double-processing on race conditions |
+/// | pendingActionTime       | Double (epoch)        | Same writers as pendingAction                                | Widget providers (staleness checks)                                  | Freshness timestamp for pending actions                      | Used to ignore very old pending actions |
+/// | pendingLanguage         | String                | `scheduleWidgetAction` (only for "switch")                   | `getPendingAction()`, widget providers                               | Parameter for stream switch actions                          | Only meaningful when `pendingAction == "switch"` |
+///
+/// **Critical Invariants**:
+/// - The main app is always the source of truth. Widgets write optimistic visual state +
+///   `pendingAction`, then the main app performs real work and writes authoritative values.
+/// - `saveCurrentState()` is the primary persistence path driven by the real player.
+/// - Widget / extension code should prefer `loadPersistedVisualStateDirect()` or call
+///   `syncVisualStateFromPersistence()` / `refreshVisualStateFromPersistence()` before
+///   trusting in-memory `currentVisualState`.
 actor SharedPlayerManager {
     static let shared = SharedPlayerManager()
     

@@ -272,9 +272,15 @@ This refactor:
 - `Core/Actors/` — DNS TXT validation actor (`SecurityModelValidator`)
 - `Core/Security/` — runtime certificate fingerprint validator (`CertificateValidator`)
 
-The complete, authoritative list of security invariants is documented in the
-`Core` framework's DocC article: [Security Invariants](../Core/Core.docc/Articles/Security-Invariants.md)
-(or view it via Xcode's documentation browser for the `Core` target).
+The authoritative security invariants and architecture are documented in the
+`Core` framework's DocC catalog. The best reading experience is inside Xcode:
+
+- Open the **Developer Documentation** window and search for “Core”, or
+- Build documentation for the `Core` target (Product → Build Documentation).
+
+The source articles are also available on GitHub:
+- [Security Invariants](https://github.com/jarilammi/lutheran.radio/blob/HEAD/Core/Core.docc/Articles/Security-Invariants.md)
+- [Architecture](https://github.com/jarilammi/lutheran.radio/blob/HEAD/Core/Core.docc/Articles/Architecture.md).
 
 New security logic must be placed inside the appropriate `Core/` subdirectory. Duplication in the main app or widget is forbidden.
 
