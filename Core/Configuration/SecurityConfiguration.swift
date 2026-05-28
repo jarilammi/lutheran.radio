@@ -12,7 +12,13 @@ public struct SecurityConfiguration {
     // MARK: - Security Model (DNS TXT validated)
     
     /// The embedded security model this app build enforces.
-    /// Must match one of the comma-separated values in the TXT record.
+    ///
+    /// This value **must** appear in the comma-separated TXT record returned by the domains
+    /// listed in ``securityModelDomains`` (queried by ``SecurityModelValidator``).
+    ///
+    /// If validation fails permanently, streaming is disabled for the lifetime of the process.
+    ///
+    /// - SeeAlso: ``<doc:Security-Invariants>``, ``SecurityModelValidator/validateSecurityModel()``
     public let expectedSecurityModel: String = "fredericksburg"
     
     /// Primary domain queried for TXT record containing valid models (comma-separated).
@@ -42,8 +48,16 @@ public struct SecurityConfiguration {
     /// This is the primary runtime pin (beyond ATS SPKI).
     let pinnedLeafFingerprint: String = "CC:F7:8E:09:EF:F3:3D:9A:5D:8B:B0:5C:74:28:0D:F6:BE:14:1C:C4:47:F9:69:C2:90:2C:43:97:66:8B:3D:CC"
     
-    /// Optional: If you ever support multiple active certificates (e.g. during overlap),
-    /// expand to a Set<String>. For now kept as single value for simplicity.
+    /// The set of acceptable leaf certificate SHA-256 fingerprints (hex, colon-separated, uppercase).
+    ///
+    /// This is the runtime pinning source of truth used by ``CertificateValidator``.
+    /// It is currently a single value but is exposed as a `Set` to support future certificate
+    /// rotations with overlap periods.
+    ///
+    /// - Important: This value is authoritative. Never duplicate or override the fingerprint
+    ///   anywhere else in the codebase.
+    ///
+    /// - SeeAlso: ``<doc:Security-Invariants>``, ``CertificateValidator/validateServerTrust(_:)``
     public var pinnedFingerprints: Set<String> {
         [pinnedLeafFingerprint]
     }
@@ -77,7 +91,15 @@ public struct SecurityConfiguration {
         return Calendar.current.date(from: components) ?? Date.distantPast
     }()
     
-    /// Whether the current date is inside the transition grace period.
+    /// Whether the current device date falls inside the certificate transition grace period.
+    ///
+    /// During this window, ``CertificateValidator`` may (under strict additional conditions)
+    /// accept a certificate whose fingerprint does not match ``pinnedFingerprints``.
+    ///
+    /// The window is defined by ``transitionWindowStart`` and ``transitionWindowEnd``.
+    /// Time-skew protection (``maxAllowedTimeSkew``) can disable leniency even inside the window.
+    ///
+    /// - SeeAlso: ``<doc:Security-Invariants>``, ``CertificateValidator``
     public var isInTransitionWindow: Bool {
         let now = Date()
         return now >= transitionWindowStart && now <= transitionWindowEnd
@@ -93,6 +115,12 @@ public struct SecurityConfiguration {
     
     // MARK: - Convenience / Current Instance
     
-    /// Recommended usage: SecurityConfiguration.current (or inject via init)
+    /// The canonical, shared instance of the security policy.
+    ///
+    /// All production code should obtain configuration via `SecurityConfiguration.current`
+    /// rather than constructing new instances. This ensures a single source of truth
+    /// for every security constant and policy decision.
+    ///
+    /// - SeeAlso: ``<doc:Security-Invariants>``
     public static let current = SecurityConfiguration()
 }

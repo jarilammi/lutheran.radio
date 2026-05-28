@@ -9,40 +9,34 @@ import Foundation
 import CommonCrypto
 @preconcurrency import Security
 
-/// - Article: SSL Certificate Pinning and Validation
+/// Actor responsible for runtime full-certificate SHA-256 DER fingerprint pinning.
 ///
-/// `CertificateValidator` enforces runtime SSL security through full certificate fingerprint pinning (SHA-256), integrated with App Transport Security (ATS). It's used by `StreamingSessionDelegate.swift` for per-session challenges and `DirectStreamingPlayer.swift` for periodic HEAD checks.
+/// `CertificateValidator` provides an independent security layer on top of App Transport
+/// Security (ATS). It validates the exact leaf certificate presented by the server
+/// against the authoritative fingerprints stored in ``SecurityConfiguration``.
 ///
-/// Key Mechanics:
-/// - **Validation Process**: Checks system trust, then leaf certificate fingerprint against a pinned value; caches results for 10 minutes.
-/// - **Transition Period**: Allows leniency during certificate rotations (July 27 to August 26, 2026) with device/server time checks to detect manipulation.
-/// - **Integration**: Singleton accessed via `shared`; handles challenges in `URLSessionDelegate` conformance.
-/// - **Privacy/Security**: Prevents MITM attacks; no data logging beyond debug prints.
+/// ## Key Responsibilities
+/// - Performs system trust evaluation (includes ATS SPKI pinning and chain validation).
+/// - Verifies the leaf certificate's full DER SHA-256 fingerprint.
+/// - Implements a 10-minute validation cache.
+/// - Enforces the certificate transition window with device/server time-skew protection
+///   (see ``<doc:Security-Invariants>``).
 ///
-/// For streaming usage, see `validateServerCertificate` in `DirectStreamingPlayer.swift`. Testable via injectable `currentDate` for date-based logic.
-/// 
-/// Singleton class responsible for managing periodic SSL certificate validation with support for a transition period during certificate rotations.
+/// ## Concurrency
+/// The validator is an `actor`, making all state mutations (cache, leniency flag) isolated.
+/// The `URLSessionTaskDelegate` conformance uses the modern `async` challenge handler.
 ///
-/// This class performs runtime certificate pinning by validating the full SHA-256 fingerprint of the server's leaf certificate against a pinned value.
-/// It integrates with App Transport Security (ATS) for baseline trust evaluation and includes caching to optimize performance.
-/// During the defined transition period, fingerprint mismatches are allowed (falling back to ATS trust) to enable smooth certificate updates without disrupting service.
+/// ## Usage
+/// Access the shared instance via ``shared``. Call ``validateServerCertificate(for:)``
+/// for proactive HEAD-based checks (used by `DirectStreamingPlayer`) or rely on
+/// automatic challenge handling when the validator is installed as a `URLSession` delegate.
 ///
-/// Key Features:
-/// - Centralized validation logic used by both per-request (e.g., StreamingSessionDelegate) and periodic checks (e.g., DirectStreamingPlayer).
-/// - Caches validation results for 10 minutes to reduce overhead.
-/// - Logs warnings during transition for debugging (visible in DEBUG builds).
-/// - Enforces strict pinning outside the transition period.
-/// - **Non-blocking**: `validateServerCertificate(for:completion:)` is always
-///   asynchronous and **no longer blocks** `DirectStreamingPlayer.play()`.
-///   Playback starts optimistically; validation runs in the background and
-///   aborts playback only if it fails (2026 concurrency model).
-///
-/// Usage:
-/// - Access via `CertificateValidator.shared`.
-/// - Call `validateServerCertificate(for:completion:)` for initial/periodic HEAD-based validation.
-/// - Implements `URLSessionDelegate` for challenge-based validation during sessions.
+/// - SeeAlso: ``<doc:Architecture>``, ``<doc:Security-Invariants>``, ``SecurityConfiguration``
 public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
-    /// Shared singleton instance for global access.
+    /// The shared singleton instance.
+    ///
+    /// All production code must use this instance. The validator maintains internal
+    /// caches and transition state that would be lost with additional instances.
     public static let shared = CertificateValidator()
     
     internal var pinnedCertFingerprint: String {
@@ -78,8 +72,17 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
         super.init()
     }
     
-    /// Convenience initializer for **tests only**.
-    /// Allows injecting a mock `currentDate` to test transition window logic and time-skew detection.
+    /// Creates a validator for use in unit tests (DEBUG builds only).
+    ///
+    /// This initializer allows injection of a custom date provider so that transition
+    /// window and time-skew logic can be tested deterministically without waiting for
+    /// real-world clock changes.
+    ///
+    /// - Parameter currentDate: A closure that returns the "current" date for all
+    ///   time-based decisions inside the validator.
+    ///
+    /// - Important: This initializer is compiled out of Release builds and has no
+    ///   effect on production behavior.
     #if DEBUG
     public init(currentDate: @escaping @Sendable () -> Date = { Date() }) {
         self.currentDate = currentDate
@@ -101,21 +104,19 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
         return SecurityConfiguration.current.isInTransitionWindow
     }
     
-    /// Validates the server trust chain, respecting the transition period and caching results.
+    /// Validates a server trust object received during a URL authentication challenge.
     ///
-    /// Process:
-    /// 1. Checks cache: Returns cached result if valid and recent.
-    /// 2. Performs system trust evaluation via `SecTrustEvaluateWithError` (includes ATS pinning and chain validation).
-    /// 3. If system trust passes, validates the leaf certificate's full fingerprint.
-    /// 4. Applies transition logic:
-    ///    - After expiry: Strictly enforce fingerprint.
-    ///    - During transition: Warn on fingerprint failure but trust ATS (return true).
-    ///    - Before transition: Enforce fingerprint.
-    /// 5. Caches the final result and calls completion.
+    /// This is the primary entry point used by `URLSession` delegate challenge handlers.
+    /// It performs the full security evaluation (system trust + fingerprint pinning)
+    /// while respecting the current transition window and time-skew policy.
     ///
-    /// - Parameters:
-    ///   - serverTrust: The `SecTrust` object from the authentication challenge.
-    ///   - completion: Callback with the validation result (true if valid/trusted).
+    /// Results are cached for 10 minutes. The method is safe to call from any context;
+    /// all state access is actor-isolated.
+    ///
+    /// - Parameter serverTrust: The `SecTrust` from an `NSURLAuthenticationMethodServerTrust` challenge.
+    /// - Returns: `true` if the server should be trusted, `false` if the connection must be rejected.
+    ///
+    /// - SeeAlso: ``validateServerCertificate(for:)``, ``<doc:Security-Invariants>``
     public func validateServerTrust(_ serverTrust: SecTrust) async -> Bool {
         if let lastTime = lastValidationTime,
            Date().timeIntervalSince(lastTime) < validationInterval,
@@ -178,15 +179,19 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
         return isValid
     }
     
-    /// Performs certificate validation for a given URL via a HEAD request.
-    /// Now fully async/await (2026 pattern). Uses the async task delegate above.
+    /// Performs proactive certificate validation for a stream URL using a HEAD request.
     ///
-    /// This method creates an ephemeral URLSession to issue a HEAD request, triggering SSL validation.
-    /// It relies on the session delegate (`self`) to handle authentication challenges.
+    /// This method is used by `DirectStreamingPlayer` for initial validation before playback
+    /// and for periodic re-validation (approximately every 10 minutes).
     ///
-    /// - Parameters:
-    ///   - url: The stream URL to validate (must be HTTPS).
-    ///   - completion: Callback with the validation result (true if valid and no error).
+    /// It creates an ephemeral `URLSession` with this actor as the delegate, issues a
+    /// `HEAD` request, and returns the result of the subsequent challenge evaluation.
+    /// The call is fully asynchronous and non-blocking.
+    ///
+    /// - Parameter url: The HTTPS URL of the audio stream (must use HTTPS).
+    /// - Returns: `true` if the server certificate is acceptable under current policy.
+    ///
+    /// - SeeAlso: ``validateServerTrust(_:)``, ``<doc:Security-Invariants>``
     public func validateServerCertificate(for url: URL) async -> Bool {
         // Apple 2026 non-main delegate queue (utility QoS + serial for strict concurrency)
         // This is the exact pattern used in Music/Podcasts 2026 betas for async delegates.
@@ -254,15 +259,14 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
     
     // MARK: - Modern async delegate (WWDC 2025 / Swift 6 recommendation)
     
-    /// Handles server trust authentication challenges during URLSession tasks.
+    /// Handles server trust authentication challenges (modern async `URLSessionTaskDelegate`).
     ///
-    /// This delegate method is called when a server trust challenge occurs (e.g., during HEAD requests).
-    /// It defers to `validateServerTrust` for evaluation and either uses the credential or cancels the challenge.
+    /// This is the Swift 6+ async challenge handler. It is invoked automatically by
+    /// `URLSession` when a server trust challenge occurs. The implementation delegates
+    /// to ``validateServerTrust(_:)`` and either supplies credentials or cancels the challenge.
     ///
-    /// - Parameters:
-    ///   - session: The URLSession instance.
-    ///   - challenge: The authentication challenge.
-    ///   - completionHandler: Callback to disposition the challenge (use credential or cancel).
+    /// - Note: This method is `nonisolated` because it is part of the `URLSessionTaskDelegate`
+    ///   protocol contract, but it immediately hops to the actor via the `await` call.
     public nonisolated func urlSession(_ session: URLSession,
                                 task: URLSessionTask,
                                 didReceive challenge: URLAuthenticationChallenge) async -> (URLSession.AuthChallengeDisposition, URLCredential?) {

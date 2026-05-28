@@ -25,12 +25,27 @@ private final class QueryContext: @unchecked Sendable {
     }
 }
 
-/// Actor-isolated validator for the required security/protocol model (via DNS TXT record).
-/// Serves as the single, concurrency-safe source of truth for enforcing the app's
-/// current compatibility and security expectations.
-/// Implemented with Swift 6+ strict actor isolation and modern async/await patterns
-/// for robust thread safety and Sendable compliance.
+/// Actor-isolated validator for the required security model (via DNS TXT record).
+///
+/// `SecurityModelValidator` is the **single source of truth** for determining whether
+/// the current app build is permitted to stream content. It queries DNS TXT records
+/// on `securitymodels.lutheran.radio` (with backup domain) and requires that
+/// ``SecurityConfiguration/expectedSecurityModel`` appears in the response.
+///
+/// ## Behavior
+/// - Permanent failure (model not present) → streaming is permanently disabled.
+/// - Transient failure → safe retry is allowed; the 1-hour success cache is bypassed.
+/// - Success → result is cached for 1 hour in `UserDefaults`.
+///
+/// The actor uses strict Swift 6 isolation. All public API is `async` where mutation
+/// or cross-actor access is involved.
+///
+/// - SeeAlso: ``<doc:Security-Invariants>``, ``<doc:Architecture>``, ``SecurityConfiguration``
 public actor SecurityModelValidator {
+    /// The shared singleton validator.
+    ///
+    /// All production code must go through this instance. The validator owns
+    /// the in-memory and persisted cache state.
     public static let shared = SecurityModelValidator()
 
     private let config = SecurityConfiguration()
@@ -62,6 +77,21 @@ public actor SecurityModelValidator {
 
     // MARK: - Public API
 
+    /// Validates that the app's embedded security model is currently approved.
+    ///
+    /// This is the primary entry point. It:
+    /// 1. Returns `true` immediately if a successful validation result is still within
+    ///    the 1-hour cache window.
+    /// 2. Otherwise performs DNS TXT queries (primary domain first, then backup on
+    ///    transient errors only).
+    /// 3. Returns `true` only if the expected model appears in the TXT record.
+    ///
+    /// On permanent failure the validator transitions to `.failedPermanent` and
+    /// will continue returning `false` until the process exits.
+    ///
+    /// - Returns: `true` if the security model is approved and streaming may proceed.
+    ///
+    /// - SeeAlso: ``isCurrentlyValid()``, ``isPermanentlyInvalid``, ``<doc:Security-Invariants>``
     public func validateSecurityModel() async -> Bool {
         #if DEBUG
         print("🔒 SecurityModelValidator.validateSecurityModel() started")
@@ -140,34 +170,72 @@ public actor SecurityModelValidator {
         return false
     }
 
+    /// The current validation state, observed asynchronously.
+    ///
+    /// Useful for UI or diagnostics that need to react to changes without
+    /// triggering a fresh validation.
     public var currentState: ValidationState {
         get async { validationState }
     }
 
+    /// The possible states of a security model validation attempt.
     public enum ValidationState {
-        case pending, success, failedPermanent, failedTransient
+        /// No validation attempt has completed yet (initial state).
+        case pending
+
+        /// The embedded security model was found in the TXT record and the result
+        /// is still within the 1-hour success cache window.
+        case success
+
+        /// The embedded model was **not** present in the TXT record (authoritative failure).
+        ///
+        /// Streaming must remain disabled. Recovery requires a new app build.
+        case failedPermanent
+
+        /// All DNS queries failed with transient errors (network, timeout, etc.).
+        ///
+        /// The app may retry. A previous successful cache entry may still be used
+        /// until it expires.
+        case failedTransient
     }
     
-    /// Returns whether the current security model is considered valid right now.
-    /// Treats transient failures as "not valid for now" (safe default).
+    /// Convenience method that returns whether streaming is currently permitted.
+    ///
+    /// This is equivalent to calling ``validateSecurityModel()`` and is the
+    /// recommended API for call sites that only need a boolean answer.
+    ///
+    /// Transient failures are treated as "not valid for now" (safe default).
+    ///
+    /// - Returns: `true` only when the last (or freshly performed) validation succeeded.
     public func isCurrentlyValid() async -> Bool {
         await validateSecurityModel()
     }
     
+    /// Indicates whether the app has permanently failed security model validation.
+    ///
+    /// When `true`, the embedded model was not present in the DNS TXT record.
+    /// Streaming is disabled and will remain disabled until the user installs
+    /// an updated version of the app.
+    ///
+    /// This property does **not** trigger a new validation; it only reports
+    /// the current state.
     public var isPermanentlyInvalid: Bool {
         get async {
             validationState == .failedPermanent
-            // or: await currentState == .failedPermanent
         }
     }
     
     // MARK: - State Recovery
 
-    /// Clears transient validation failures and invalidates the cache,
-    /// allowing the next validation attempt to perform a fresh check.
+    /// Clears any transient validation failure state and invalidates the 1-hour success cache.
     ///
-    /// Permanent validation failures (e.g. model mismatch) are not affected
-    /// and require either a new app build or updated configuration to resolve.
+    /// After calling this method, the next call to ``validateSecurityModel()`` or
+    /// ``isCurrentlyValid()`` will perform a fresh DNS query (subject to normal
+    /// transient retry logic).
+    ///
+    /// Permanent failures (``ValidationState/failedPermanent``) are unaffected.
+    /// Use this method only to recover from transient network conditions during testing
+    /// or after the user has explicitly requested a retry.
     public func resetTransientState() {
         if validationState == .failedTransient {
             validationState = .pending
@@ -327,11 +395,11 @@ public actor SecurityModelValidator {
 
     /// Install a deterministic TXT fetcher for tests and force cache bypass.
     ///
-    /// This is the recommended entry point from tests. It:
-    /// - Sets the internal fetcher (or clears it when `nil`)
-    /// - Clears the in-memory `lastValidationTime`
-    /// - Removes the UserDefaults persisted cache timestamp
-    /// - Resets the validation state to `.pending`
+    /// This is the **recommended** entry point from tests. It:
+    /// - Installs (or clears) the override fetcher
+    /// - Clears the in-memory timestamp
+    /// - Removes the persisted `UserDefaults` cache
+    /// - Resets state to `.pending`
     ///
     /// Call with `nil` to restore real DNS behavior after a test.
     public static func _test_setTXTFetcher(
