@@ -44,42 +44,25 @@ import CoreHaptics
 import WidgetKit
 import Core
 
-// MARK: - Parallax Effect Extension
-/// Extends UIView with device motion-based parallax effects.
-extension UIView {
-    /// Adds horizontal and vertical tilt effects for a 3D-like appearance.
-    /// - Parameter intensity: Magnitude of the tilt (e.g., 10.0 for subtle effect).
-    /// - Note: Removes existing effects first to prevent conflicts.
-    func addParallaxEffect(intensity: CGFloat) {
-        // Remove any existing motion effects to avoid conflicts
-        motionEffects.forEach { removeMotionEffect($0) }
-        
-        // Horizontal tilt effect
-        let horizontalMotion = UIInterpolatingMotionEffect(
-            keyPath: "center.x",
-            type: .tiltAlongHorizontalAxis
-        )
-        horizontalMotion.minimumRelativeValue = -intensity
-        horizontalMotion.maximumRelativeValue = intensity
-        
-        // Vertical tilt effect
-        let verticalMotion = UIInterpolatingMotionEffect(
-            keyPath: "center.y",
-            type: .tiltAlongVerticalAxis
-        )
-        verticalMotion.minimumRelativeValue = -intensity
-        verticalMotion.maximumRelativeValue = intensity
-        
-        // Group the effects
-        let motionGroup = UIMotionEffectGroup()
-        motionGroup.motionEffects = [horizontalMotion, verticalMotion]
-        
-        // Apply to the view
-        addMotionEffect(motionGroup)
-    }
-}
-
 /// The main view controller for the Lutheran Radio app.
+///
+/// This class is responsible for:
+/// - Primary UI (title, language flag `UICollectionView`, playback controls, volume, metadata, AirPlay)
+/// - Audio streaming coordination via `DirectStreamingPlayer` (the single source of truth for the actual player)
+/// - Widget and Live Activity synchronization through `SharedPlayerManager` + `WidgetRefreshManager`
+/// - iOS 26+ energy-efficiency handling (Low Power Mode optimizations, parallax removal)
+/// - Haptic feedback, background image processing with caching, network monitoring, and interruption handling
+///
+/// All playback user intents (in-app buttons, remote commands, Control Center, widgets, URL schemes)
+/// are routed through `handleUserTogglePlayback()` (the internal Single Source of Truth) which then
+/// updates `PlayerVisualState` and calls `updateUI(for:)`.
+///
+/// See the detailed architecture article in the file header above for the complete interaction model,
+/// widget action debouncing strategy, and low-power mode behavior.
+///
+/// - Note: This is a large UIKit view controller (iOS 26.2+ only). Logical sections are grouped as:
+///   Initialization → Lifecycle Methods → Public Interface (SceneDelegate/widget entry points) →
+///   Protocol conformances → Private implementation grouped by concern.
 @MainActor
 class ViewController: UIViewController, UICollectionViewDelegate, UICollectionViewDataSource, UIScrollViewDelegate, AVAudioPlayerDelegate {
     // MARK: - Private Properties and Constants
@@ -104,19 +87,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     /// - Returns: `true` if low power mode is enabled, triggering UI/processing optimizations.
     private var isLowEfficiencyMode: Bool {
         ProcessInfo.processInfo.isLowPowerModeEnabled
-    }
-    
-    private func updateForEnergyEfficiency() {
-        if isLowEfficiencyMode {
-            // Reduce CPU/GPU usage: Remove parallax and lower image quality
-            backgroundImageView.motionEffects.forEach { backgroundImageView.removeMotionEffect($0) }
-            // Optionally, reduce alpha or hide non-essential UI elements if needed
-        } else {
-            // Re-enable parallax if it was set up
-            setupBackgroundParallax()
-        }
-        // Trigger background update with current stream to apply image processing changes
-        updateBackground(for: DirectStreamingPlayer.availableStreams[selectedStreamIndex])
     }
     
     // MARK: - UI Elements
@@ -345,19 +315,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     nonisolated private let streamingPlayer: DirectStreamingPlayer
     private let audioQueue = DispatchQueue(label: "radio.lutheran.audio", qos: .userInitiated)
 
-    // Add initializer for testing
-    init(streamingPlayer: DirectStreamingPlayer = DirectStreamingPlayer.shared) {
-        self.streamingPlayer = streamingPlayer
-        super.init(nibName: nil, bundle: nil)
-        self.streamingPlayer.setDelegate(self)
-    }
-
-    required init?(coder: NSCoder) {
-        self.streamingPlayer = DirectStreamingPlayer.shared
-        super.init(coder: coder)
-        self.streamingPlayer.setDelegate(self)
-    }
-    
     private let appLaunchTime = Date()
     private var hasEverPlayed = false
     private var isPlaying = false
@@ -393,6 +350,20 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     @objc var hasInternet: Bool {
         get { hasInternetConnection }
         set { hasInternetConnection = newValue } // Allow setting for test setup
+    }
+    
+    // MARK: - Initialization
+    // Add initializer for testing
+    init(streamingPlayer: DirectStreamingPlayer = DirectStreamingPlayer.shared) {
+        self.streamingPlayer = streamingPlayer
+        super.init(nibName: nil, bundle: nil)
+        self.streamingPlayer.setDelegate(self)
+    }
+
+    required init?(coder: NSCoder) {
+        self.streamingPlayer = DirectStreamingPlayer.shared
+        super.init(coder: coder)
+        self.streamingPlayer.setDelegate(self)
     }
     
     // MARK: - Lifecycle Methods
@@ -709,6 +680,13 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         }
     }
     
+    /// Persists the current playback / language state to the shared app group UserDefaults
+    /// so that the home-screen widget and Live Activities can reflect the correct visual state
+    /// without launching the app.
+    ///
+    /// - Important: This method is throttled (4 s during first 5 s after launch, 2 s thereafter)
+    ///   to avoid excessive `UserDefaults.synchronize()` calls and widget refresh spam.
+    /// - SeeAlso: `SharedPlayerManager.saveCurrentState()`, `WidgetRefreshManager.refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)`
     func saveStateForWidget() {
         let now = Date()
         let timeSinceAppLaunch = now.timeIntervalSince(appLaunchTime)
@@ -1339,7 +1317,18 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     // MARK: - User-Initiated Playback (single source of truth)
     // All in-app buttons, lockscreen, Control Center, handleTogglePlayback(), widgets, etc. now go through here.
-    // This guarantees perfect sync with PlayerVisualState after the recent refactor.
+    /// Internal Single Source of Truth for all playback user intents.
+    ///
+    /// Every play/pause action — whether it originates from the in-app button, remote commands,
+    /// Control Center, lock screen, widgets, or URL schemes — must ultimately go through this method
+    /// (via `togglePlayback()`, the public `handle*Action` methods, or `handleWidgetAction`).
+    ///
+    /// It reads the current `PlayerVisualState` from `SharedPlayerManager`, decides whether to call
+    /// `stop()` or `userRequestedPlay()`, then forces a full UI + now-playing + widget refresh.
+    ///
+    /// This is the only place that is allowed to mutate `isPlaying` in response to a user intent.
+    ///
+    /// - SeeAlso: `togglePlayback()`, `handlePlayAction()`, `handlePauseAction()`, `handleTogglePlayback()`, `updateUI(for:)`
     @MainActor
     private func handleUserTogglePlayback() async {
         let manager = SharedPlayerManager.shared
@@ -1704,6 +1693,10 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         
         // Accessibility
         statusLabel.accessibilityLabel = statusLabel.text
+        
+        // This is the single place that translates a `PlayerVisualState` into concrete UI.
+        // All call sites (SSOT, widget actions, network recovery, stream switches, etc.)
+        // must go through here so that the UI cannot drift from the authoritative state.
         
         #if DEBUG
         print("🔥 ViewController.updateUI → applied \(visualState) (bg=\(visualState.backgroundColor), tint=\(visualState.buttonTintColor))")
@@ -2252,62 +2245,23 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         }
     }
     
-    // MARK: - languageCollectionView
-    override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
-        super.viewWillTransition(to: size, with: coordinator)
-        
-        // Debounce rapid rotations
-        let now = Date()
-        if let lastTime = lastRotationTime, now.timeIntervalSince(lastTime) < rotationDebounceInterval {
-            #if DEBUG
-            print("📱 viewWillTransition: Debouncing rotation, time since last: \(now.timeIntervalSince(lastTime))s")
-            #endif
-            return
-        }
-        lastRotationTime = now
+    // MARK: - Lifecycle (deinit)
+    /// Cleans up resources, observers, and audio players to prevent leaks.
+    /// - Note: Sets `isDeallocating` to avoid operations during teardown.
+    deinit {
+        isDeallocating = true
         
         #if DEBUG
-        print("📱 viewWillTransition to size: \(size)")
+        print("🧹 ViewController deinit starting")
         #endif
         
-        isRotating = true  // Set flag
-        didPositionNeedle = false  // Force a fresh, stable positioning after rotation settles
+        // ONLY this is allowed in deinit (CF + Unmanaged is explicitly permitted)
+        let center = CFNotificationCenterGetDarwinNotifyCenter()
+        CFNotificationCenterRemoveEveryObserver(center, Unmanaged.passUnretained(self).toOpaque())
         
-        // Verify selectedStreamIndex against the player's current stream
-        if let currentStreamIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.url == streamingPlayer.selectedStream.url }) {
-            if currentStreamIndex != selectedStreamIndex {
-                #if DEBUG
-                print("📱 viewWillTransition: Correcting selectedStreamIndex from \(selectedStreamIndex) to \(currentStreamIndex)")
-                #endif
-                selectedStreamIndex = currentStreamIndex
-            }
-        }
-        
-        // Invalidate layout to prepare for new size
-        languageCollectionView.collectionViewLayout.invalidateLayout()
-        
-        // Update layout during animation
-        coordinator.animate(alongsideTransition: { [weak self] _ in
-            guard let self = self else { return }
-            self.centerCollectionViewContent()
-            self.updateSelectionIndicator(to: self.selectedStreamIndex, isInitial: false)
-        }, completion: { [weak self] _ in
-            guard let self = self else { return }
-            // Reload data after animation to ensure cells are up-to-date
-            self.languageCollectionView.reloadData()
-            self.languageCollectionView.layoutIfNeeded()
-            // Re-apply centering before the final positioning — the reload above can leave
-            // the collection view in a transient state.
-            self.centerCollectionViewContent()
-            self.updateSelectionIndicator(to: self.selectedStreamIndex, isInitial: false)
-            #if DEBUG
-            print("📱 Rotation completed, selected index: \(self.selectedStreamIndex)")
-            #endif
-            
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {  // Slight delay for stability
-                self.isRotating = false  // Clear flag post-animation
-            }
-        })
+        #if DEBUG
+        print("🧹 ViewController deinit completed")
+        #endif
     }
     
     // MARK: - Selection Indicator
@@ -2391,36 +2345,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             #if DEBUG
             print("📱 updateSelectionIndicator: Animation completed, final center.x=\(self.selectionIndicator.center.x) (didPositionNeedle=true)")
             #endif
-        }
-    }
-    // MARK: - UIPickerView DataSource
-    func numberOfComponents(in pickerView: UIPickerView) -> Int { 1 }
-    
-    func pickerView(_ pickerView: UIPickerView, numberOfRowsInComponent component: Int) -> Int {
-        DirectStreamingPlayer.availableStreams.count
-    }
-    
-    // MARK: - UIPickerView Delegate
-    func pickerView(_ pickerView: UIPickerView, titleForRow row: Int, forComponent component: Int) -> String? {
-        DirectStreamingPlayer.availableStreams[row].language
-    }
-    
-    func pickerView(_ pickerView: UIPickerView, didSelectRow row: Int, inComponent component: Int) {
-        let selectedStream = DirectStreamingPlayer.availableStreams[row]
-        
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            
-            streamingPlayer.stop()
-            
-            await playTuningSound()
-            
-            await streamingPlayer.setStream(to: selectedStream)
-            hasPermanentPlaybackError = false
-            
-            if isPlaying || !isManualPause {
-                startPlayback()
-            }
         }
     }
     
@@ -2620,24 +2544,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         print("Minimum inter-item spacing for section \(section): \(spacing)")
         #endif
         return spacing
-    }
-    
-    /// Cleans up resources, observers, and audio players to prevent leaks.
-    /// - Note: Sets `isDeallocating` to avoid operations during teardown.
-    deinit {
-        isDeallocating = true
-        
-        #if DEBUG
-        print("🧹 ViewController deinit starting")
-        #endif
-        
-        // ONLY this is allowed in deinit (CF + Unmanaged is explicitly permitted)
-        let center = CFNotificationCenterGetDarwinNotifyCenter()
-        CFNotificationCenterRemoveEveryObserver(center, Unmanaged.passUnretained(self).toOpaque())
-        
-        #if DEBUG
-        print("🧹 ViewController deinit completed")
-        #endif
     }
     
     // MARK: - Widget Action Handlers (No Tuning Sounds)
@@ -3257,6 +3163,19 @@ extension ViewController {
         }
     }
     
+    private func updateForEnergyEfficiency() {
+        if isLowEfficiencyMode {
+            // Reduce CPU/GPU usage: Remove parallax and lower image quality
+            backgroundImageView.motionEffects.forEach { backgroundImageView.removeMotionEffect($0) }
+            // Optionally, reduce alpha or hide non-essential UI elements if needed
+        } else {
+            // Re-enable parallax if it was set up
+            setupBackgroundParallax()
+        }
+        // Trigger background update with current stream to apply image processing changes
+        updateBackground(for: DirectStreamingPlayer.availableStreams[selectedStreamIndex])
+    }
+    
     @objc private func energyEfficiencyChanged() {
         updateForEnergyEfficiency()
     }
@@ -3277,6 +3196,13 @@ extension ViewController {
     }
     
     // MARK: - Toggle Playback
+    /// Primary @objc entry point for user-initiated play/pause (button tap + remote commands).
+    ///
+    /// Performs instant visual press feedback, rate-limits rapid taps, then delegates to
+    /// `handleUserTogglePlayback()` (the internal SSOT). This keeps all playback decisions
+    /// in one place while still giving immediate tactile response to the user.
+    ///
+    /// - SeeAlso: `handleUserTogglePlayback()`, `handleTogglePlayback()` (public wrapper for SceneDelegate)
     @objc private func togglePlayback() {
         // Instant visual press feedback
         UIView.animate(withDuration: 0.1, animations: {
@@ -3650,5 +3576,40 @@ extension ViewController: StreamingPlayerDelegate {
             // Clear the pending action (actor-isolated)
             await SharedPlayerManager.shared.clearPendingAction(actionId: actionId)
         }
+    }
+}
+
+// MARK: - Parallax Effect Extension
+/// Extends UIView with device motion-based parallax effects.
+extension UIView {
+    /// Adds horizontal and vertical tilt effects for a 3D-like appearance.
+    /// - Parameter intensity: Magnitude of the tilt (e.g., 10.0 for subtle effect).
+    /// - Note: Removes existing effects first to prevent conflicts.
+    func addParallaxEffect(intensity: CGFloat) {
+        // Remove any existing motion effects to avoid conflicts
+        motionEffects.forEach { removeMotionEffect($0) }
+        
+        // Horizontal tilt effect
+        let horizontalMotion = UIInterpolatingMotionEffect(
+            keyPath: "center.x",
+            type: .tiltAlongHorizontalAxis
+        )
+        horizontalMotion.minimumRelativeValue = -intensity
+        horizontalMotion.maximumRelativeValue = intensity
+        
+        // Vertical tilt effect
+        let verticalMotion = UIInterpolatingMotionEffect(
+            keyPath: "center.y",
+            type: .tiltAlongVerticalAxis
+        )
+        verticalMotion.minimumRelativeValue = -intensity
+        verticalMotion.maximumRelativeValue = intensity
+        
+        // Group the effects
+        let motionGroup = UIMotionEffectGroup()
+        motionGroup.motionEffects = [horizontalMotion, verticalMotion]
+        
+        // Apply to the view
+        addMotionEffect(motionGroup)
     }
 }
