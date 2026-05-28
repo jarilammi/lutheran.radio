@@ -199,7 +199,7 @@ final class NWPathMonitorAdapter: NetworkPathMonitoring, @unchecked Sendable {
     }
 }
 
-private let securityValidator = SecurityModelValidator.shared
+// (securityValidator global was dead code — all call sites use SecurityModelValidator.shared directly)
 
 /// Manages direct audio streaming, security validation, network monitoring, and privacy protections for the Lutheran Radio app.
 final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
@@ -216,13 +216,10 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// Injectable closure for the current date, used for testing time-dependent logic.
     internal var currentDate: @Sendable () -> Date = { Date() }
     
-    #if DEBUG
-    var networkMonitor: NetworkPathMonitoring?
-    var hasInternetConnection = true
-    #else
-    private var networkMonitor: NetworkPathMonitoring?
-    private var hasInternetConnection = true
-    #endif
+    // Single declaration (no DEBUG/release duplication) for the few members that historically
+    // needed relaxed visibility for test/diagnostic inspection. All other state is now declared once.
+    internal var networkMonitor: NetworkPathMonitoring?
+    internal var hasInternetConnection = true
     private var serverFailureCount: [String: Int] = [:]
     private var lastFailedServerName: String?
     private var currentSelectedServer: Server = servers[0]
@@ -256,7 +253,42 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     // Public accessors for ViewController
     var lastFailedServer: String? { return lastFailedServerName }
     var selectedServerInfo: Server { return currentSelectedServer }
+
+    // NOTE: Stream / Server / URL construction types have been hoisted to the
+    // "Nested Configuration Types" MARK section immediately after the injected
+    // dependencies (for locality and clean Xcode outline). The old block that
+    // lived here has been removed.
+
+    // MARK: - Injected Dependencies (construction roots)
+    private let audioSession: AVAudioSession
+    private let pathMonitor: NetworkPathMonitoring
     
+    // MARK: - Enhanced SSL Protection with Connection Tracking
+    /// Per-connection info for SSL handshake protection.
+    /// - Note: Migrated from `Timer` to `Task<Void, Never>` for Swift 6 Sendable compliance and better cancellation.
+    ///   Invariant: `task` fires once after delay, marks `isHandshakeComplete = true` unless cancelled.
+    private struct ConnectionInfo: Sendable {
+        let id: UUID
+        let startTime: Date
+        let task: Task<Void, Never>
+        var isHandshakeComplete: Bool = false
+    }
+    
+    // Dictionary to track multiple connections
+    private var activeConnections: [UUID: ConnectionInfo] = [:]
+    private let connectionQueue = DispatchQueue(label: "ssl.connections", qos: .userInitiated)
+
+    // MARK: - Nested Configuration Types
+    //
+    // Stream URL construction, language/region mapping, Stream model, Server definitions,
+    // and latency result type. All declared early (right after injected dependencies) for:
+    // • Maximum locality with the code that consumes them
+    // • Clean Xcode // MARK outline navigation
+    // • Single place for the documented URL pattern + security_model injection rules
+    //
+    // All production URLs are built with the current expectedSecurityModel from
+    // SecurityConfiguration (never hard-coded or duplicated elsewhere in this file).
+
     // MARK: - Stream URL Construction Rules
     //
     // All stream URLs follow this exact pattern:
@@ -392,44 +424,44 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                flag: "🇪🇪"),
     ]
     
-    private let audioSession: AVAudioSession
-    private let pathMonitor: NetworkPathMonitoring
-    
-    // MARK: - Enhanced SSL Protection with Connection Tracking
-    /// Per-connection info for SSL handshake protection.
-    /// - Note: Migrated from `Timer` to `Task<Void, Never>` for Swift 6 Sendable compliance and better cancellation.
-    ///   Invariant: `task` fires once after delay, marks `isHandshakeComplete = true` unless cancelled.
-    private struct ConnectionInfo: Sendable {
-        let id: UUID
-        let startTime: Date
-        let task: Task<Void, Never>
-        var isHandshakeComplete: Bool = false
+    /// A radio stream server endpoint (EU or US cluster).
+    struct Server {
+        let name: String
+        let pingURL: URL
+        let baseHostname: String
+        let subdomain: String
     }
     
-    // Dictionary to track multiple connections
-    private var activeConnections: [UUID: ConnectionInfo] = [:]
-    private let connectionQueue = DispatchQueue(label: "ssl.connections", qos: .userInitiated)
+    /// Static list of known streaming clusters.
+    /// The first entry is the default/fallback.
+    static let servers = [
+        Server(
+            name: "EU",
+            pingURL: URL(string: "https://european.lutheran.radio/ping")!,
+            baseHostname: "lutheran.radio",
+            subdomain: "eu"
+        ),
+        Server(
+            name: "US",
+            pingURL: URL(string: "https://livestream.lutheran.radio/ping")!,
+            baseHostname: "lutheran.radio",
+            subdomain: "us"
+        )
+    ]
     
-    #if DEBUG
-    var isTesting: Bool = false
-    #else
-    private var isTesting: Bool = false
-    #endif
+    /// Result of a latency ping against one server.
+    struct PingResult {
+        let server: Server
+        let latency: TimeInterval
+    }
+
+    // MARK: - Network & Server Selection
+    internal var isTesting: Bool = false
     
     private var lastServerSelectionTime: Date?
     private let serverSelectionCacheDuration: TimeInterval = 7200 // two hours
-    #if DEBUG
-    var serverSelectionWorkItem: DispatchWorkItem?
-    #else
-    private var serverSelectionWorkItem: DispatchWorkItem?
-    #endif
-    
-    // MARK: - Playback and Retry Management
-    #if DEBUG
-    var retryWorkItem: DispatchWorkItem?
-    #else
-    private var retryWorkItem: DispatchWorkItem?
-    #endif
+    internal var serverSelectionWorkItem: DispatchWorkItem?
+    internal var retryWorkItem: DispatchWorkItem?
     private var fallbackWorkItem: DispatchWorkItem?
     /// Work item for pending playback operations that can be cancelled
     private var pendingPlaybackWorkItem: DispatchWorkItem?
@@ -519,7 +551,71 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         let selectionDelay: TimeInterval = isLowEfficiencyMode ? 1.0 : 0.5
         DispatchQueue.main.asyncAfter(deadline: .now() + selectionDelay, execute: workItem)
     }
+
+    // MARK: - Latency Measurement
+    //
+    // Implementation co-located with selectOptimalServer (its only public caller)
+    // and the rest of the server-selection / failover logic. Types (Server, PingResult)
+    // live in the Nested Configuration Types section earlier in the class.
+
+    func fetchServerIPsAndLatencies(completion: @escaping @Sendable ([PingResult]) -> Void) {
+        Task { @MainActor in
+            let results = await self.fetchAllServerLatencies()
+            
+            #if DEBUG
+            print("📡 [Ping] All pings completed: \(results.map { "\($0.server.name): \($0.latency)s" })")
+            #endif
+            completion(results)
+        }
+    }
     
+    private func fetchAllServerLatencies() async -> [PingResult] {
+        await withTaskGroup(of: PingResult.self) { group in
+            for server in Self.servers {
+                group.addTask {
+                    await self.ping(server: server)
+                }
+            }
+            
+            var results: [PingResult] = []
+            for await result in group {
+                results.append(result)
+            }
+            return results
+        }
+    }
+    
+    private func ping(server: Server) async -> PingResult {
+        let startTime = Date()
+        
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 2.0
+        let session = URLSession(configuration: config)
+        
+        do {
+            let (_, response) = try await session.data(from: server.pingURL)
+            let latency = Date().timeIntervalSince(startTime)
+            
+            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
+                #if DEBUG
+                print("📡 [Ping] Success for \(server.name), latency=\(latency)s")
+                #endif
+                return PingResult(server: server, latency: latency)
+            } else {
+                #if DEBUG
+                print("📡 [Ping] Failed for \(server.name): bad status")
+                #endif
+                return PingResult(server: server, latency: .infinity)
+            }
+        } catch {
+            #if DEBUG
+            print("📡 [Ping] Failed for \(server.name): \(error.localizedDescription)")
+            #endif
+            return PingResult(server: server, latency: .infinity)
+        }
+    }
+
+    // MARK: - Error & Retry State (simple scalars)
     private var lastError: Error?
     
     private var initialPlaybackRetryCount = 0
@@ -529,6 +625,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         return (player?.rate ?? 0) > 0 && player?.currentItem?.status == .readyToPlay
     }
     
+    // Relaxed visibility in Debug builds only — for test / diagnostic inspection.
+    // (See the playerItem/metadataOutput block below for the complete list of intentional visibility differences.)
     #if DEBUG
     var selectedStream: Stream {
         didSet {
@@ -568,29 +666,27 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     }
     
     var player: AVPlayer?
+
+    // Concurrency queues — declared once to eliminate duplication risk between DEBUG and release builds.
+    // These three are always private; they are never exposed for testing or external use.
+    private let audioQueue = DispatchQueue(label: "radio.lutheran.audio", qos: .userInteractive)
+    private let sslValidationQueue = DispatchQueue(label: "radio.lutheran.ssl", qos: .userInitiated)
+    private let networkQueue = DispatchQueue(label: "radio.lutheran.network", qos: .utility)
+
+    // Retained only for the historical "compatibility" comment. All real audio/SSL work uses the queues above.
+    // Made private in all configurations (no external usage observed in the codebase).
+    private let playbackQueue = DispatchQueue(label: "radio.lutheran.playback", qos: .userInteractive)
+
+    // MARK: - Playback Engine (player, queues, observers, resource loaders)
     #if DEBUG
+    // Relaxed visibility in Debug builds only — for test / diagnostic inspection of the streaming engine.
+    // playerItem and metadataOutput (together with selectedStream above) are the only stored properties
+    // that intentionally differ in visibility between DEBUG and release.
     var playerItem: AVPlayerItem?
     var metadataOutput: AVPlayerItemMetadataOutput?
-    // Audio processing at highest priority
-    private let audioQueue = DispatchQueue(label: "radio.lutheran.audio", qos: .userInteractive)
-    // SSL operations at supporting priority
-    private let sslValidationQueue = DispatchQueue(label: "radio.lutheran.ssl", qos: .userInitiated)
-    //*********private let dnsQueue = DispatchQueue(label: "radio.lutheran.dns", qos: .userInitiated)
-    // Network operations at background priority
-    private let networkQueue = DispatchQueue(label: "radio.lutheran.network", qos: .utility)
-    // Keep playbackQueue for compatibility, but redirect to audioQueue
-    let playbackQueue = DispatchQueue(label: "radio.lutheran.playback", qos: .userInteractive)
     #else
     private var playerItem: AVPlayerItem?
     private var metadataOutput: AVPlayerItemMetadataOutput?
-    // Audio processing at highest priority
-    private let audioQueue = DispatchQueue(label: "radio.lutheran.audio", qos: .userInteractive)
-    // SSL operations at supporting priority
-    private let sslValidationQueue = DispatchQueue(label: "radio.lutheran.ssl", qos: .userInitiated)
-    // Network operations at background priority
-    private let networkQueue = DispatchQueue(label: "radio.lutheran.network", qos: .utility)
-    // Keep playbackQueue for compatibility, but redirect to audioQueue
-    private let playbackQueue = DispatchQueue(label: "radio.lutheran.playback", qos: .userInteractive)
     #endif
     
     // MARK: - Queue Priority Management
@@ -838,91 +934,11 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         }
     }
     
-    #if DEBUG
-    private func setupNetworkMonitoring() {
-        networkMonitor = pathMonitor
-        networkMonitor?.pathUpdateHandler = { [weak self] status in
-            guard let self else {
-                print("🧹 [Network] Skipped path update: self is nil")
-                return
-            }
-            
-            let wasConnected = self.hasInternetConnection
-            self.hasInternetConnection = status == .satisfied
-            
-            print("🌐 [Network] Status: \(self.hasInternetConnection ? "Connected" : "Disconnected")")
-            
-            if self.hasInternetConnection && !wasConnected {
-                // ── Reconnect case ──
-                print("🌐 [Network] Connection restored, previous server: \(self.currentSelectedServer.name)")
-                
-                // Clear server selection cache
-                self.lastServerSelectionTime = nil
-                self.serverFailureCount.removeAll()
-                print("🌐 [Network] Cleared server selection cache + failure counts")
-                
-                // Reset transient security state + revalidate
-                Task {
-                    await SecurityModelValidator.shared.resetTransientState()
-                    print("🔒 [Network] Invalidated security model validation cache (transient reset)")
-                    
-                    let isValid = await SecurityModelValidator.shared.validateSecurityModel()
-                    print("🔒 [Network] Revalidation result on reconnect: \(isValid)")
-                    
-                    if !isValid {
-                        let isPermanent = await SecurityModelValidator.shared.isPermanentlyInvalid
-                        
-                        let statusKey = isPermanent ? "status_security_failed" : "status_no_internet"
-                        
-                        DispatchQueue.main.async {
-                            self.safeOnStatusChange(
-                                isPlaying: false,
-                                reasonKey: statusKey          // ← fixed
-                            )
-                        }
-                    } else if self.player?.rate ?? 0 == 0, !self.hasPermanentError {
-                        // Auto-replay if previously playing / ready
-                        Task { @MainActor in
-                            let success = await self.play()
-                            
-                            let playStatusKey = success ? "status_playing" : "status_stream_unavailable"
-                            self.safeOnStatusChange(
-                                isPlaying: success,
-                                reasonKey: playStatusKey
-                            )
-                            
-                            if !success {
-                                #if DEBUG
-                                print("Auto-replay failed or blocked by guard")
-                                #endif
-                            }
-                        }
-                    }
-                }
-                
-                // Select optimal server after reconnect
-                self.selectOptimalServer { server in
-                    print("🌐 [Network] New server selected: \(server.name)")
-                    // Any additional post-selection logic here if needed
-                }
-            }
-            else if !self.hasInternetConnection && wasConnected {
-                // ── Disconnect case ──
-                print("🌐 [Network] Connection lost")
-                
-                DispatchQueue.main.async {
-                    self.safeOnStatusChange(
-                        isPlaying: false,
-                        reasonKey: "status_no_internet"       // ← fixed
-                    )
-                }
-            }
-        }
-        networkMonitor?.start(queue: networkQueue)
-    }
-    #else
-    // MARK: - Network and Monitoring
-    public func setupNetworkMonitoring() {
+    /// Sets up NWPathMonitor for network reachability changes.
+    /// Single implementation (no DEBUG/release duplication).
+    /// Uses `internal` visibility so `@testable` test targets can reach it when needed,
+    /// while keeping the production surface minimal. All `#if DEBUG` is confined to logging.
+    internal func setupNetworkMonitoring() {
         networkMonitor = pathMonitor
         networkMonitor?.pathUpdateHandler = { [weak self] status in
             guard let self else {
@@ -931,47 +947,43 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 #endif
                 return
             }
-            
+
             let wasConnected = self.hasInternetConnection
             self.hasInternetConnection = status == .satisfied
-            
+
             #if DEBUG
             print("🌐 [Network] Status: \(self.hasInternetConnection ? "Connected" : "Disconnected")")
             #endif
-            
+
             if self.hasInternetConnection && !wasConnected {
                 // ── Reconnect case ──
                 #if DEBUG
                 print("🌐 [Network] Connection restored, previous server: \(self.currentSelectedServer.name)")
-                #endif
-                
-                // Clear server selection cache
-                self.lastServerSelectionTime = nil
-                self.serverFailureCount.removeAll()
-                
-                #if DEBUG
                 print("🌐 [Network] Cleared server selection cache + failure counts")
                 #endif
-                
+
+                self.lastServerSelectionTime = nil
+                self.serverFailureCount.removeAll()
+
                 // Reset transient security state + revalidate
                 Task {
                     await SecurityModelValidator.shared.resetTransientState()
-                    
+
                     #if DEBUG
                     print("🔒 [Network] Invalidated security model validation cache (transient reset)")
                     #endif
-                    
+
                     let isValid = await SecurityModelValidator.shared.validateSecurityModel()
-                    
+
                     #if DEBUG
                     print("🔒 [Network] Revalidation result on reconnect: \(isValid)")
                     #endif
-                    
+
                     if !isValid {
                         let isPermanent = await SecurityModelValidator.shared.isPermanentlyInvalid
-                        
+
                         let statusKey = isPermanent ? "status_security_failed" : "status_no_internet"
-                        
+
                         DispatchQueue.main.async {
                             self.safeOnStatusChange(
                                 isPlaying: false,
@@ -980,17 +992,15 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                         }
                     } else if self.player?.rate ?? 0 == 0, !self.hasPermanentError {
                         // Auto-replay if previously playing / ready
-                        
                         Task { @MainActor in
                             let success = await self.play()
-                            
+
                             let playStatusKey = success ? "status_playing" : "status_stream_unavailable"
-                            
                             self.safeOnStatusChange(
                                 isPlaying: success,
                                 reasonKey: playStatusKey
                             )
-                            
+
                             #if DEBUG
                             if !success {
                                 print("Auto-replay failed or was blocked by guard")
@@ -999,7 +1009,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                         }
                     }
                 }
-                
+
                 // Select optimal server after reconnect
                 self.selectOptimalServer { server in
                     #if DEBUG
@@ -1013,7 +1023,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 #if DEBUG
                 print("🌐 [Network] Connection lost")
                 #endif
-                
+
                 DispatchQueue.main.async {
                     self.safeOnStatusChange(
                         isPlaying: false,
@@ -1024,7 +1034,6 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         }
         networkMonitor?.start(queue: networkQueue)
     }
-    #endif
     
     private func setupThermalProtection() {
         thermalObserver = NotificationCenter.default.addObserver(
@@ -2479,95 +2488,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     }
 }
 
-// MARK: - Server Configuration
-extension DirectStreamingPlayer {
-    struct Server {
-        let name: String
-        let pingURL: URL
-        let baseHostname: String
-        let subdomain: String
-    }
-    
-    static let servers = [
-        Server(
-            name: "EU",
-            pingURL: URL(string: "https://european.lutheran.radio/ping")!,
-            baseHostname: "lutheran.radio",
-            subdomain: "eu"
-        ),
-        Server(
-            name: "US",
-            pingURL: URL(string: "https://livestream.lutheran.radio/ping")!,
-            baseHostname: "lutheran.radio",
-            subdomain: "us"
-        )
-    ]
-}
-
-// MARK: - Latency Measurement
-extension DirectStreamingPlayer {
-    struct PingResult {
-        let server: Server
-        let latency: TimeInterval
-    }
-    
-    func fetchServerIPsAndLatencies(completion: @escaping @Sendable ([PingResult]) -> Void) {
-        Task { @MainActor in
-            let results = await self.fetchAllServerLatencies()
-            
-            #if DEBUG
-            print("📡 [Ping] All pings completed: \(results.map { "\($0.server.name): \($0.latency)s" })")
-            #endif
-            completion(results)
-        }
-    }
-    
-    private func fetchAllServerLatencies() async -> [PingResult] {
-        await withTaskGroup(of: PingResult.self) { group in
-            for server in Self.servers {
-                group.addTask {
-                    await self.ping(server: server)
-                }
-            }
-            
-            var results: [PingResult] = []
-            for await result in group {
-                results.append(result)
-            }
-            return results
-        }
-    }
-    
-    private func ping(server: Server) async -> PingResult {
-        let startTime = Date()
-        
-        let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = 2.0
-        let session = URLSession(configuration: config)
-        
-        do {
-            let (_, response) = try await session.data(from: server.pingURL)
-            let latency = Date().timeIntervalSince(startTime)
-            
-            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
-                #if DEBUG
-                print("📡 [Ping] Success for \(server.name), latency=\(latency)s")
-                #endif
-                return PingResult(server: server, latency: latency)
-            } else {
-                #if DEBUG
-                print("📡 [Ping] Failed for \(server.name): bad status")
-                #endif
-                return PingResult(server: server, latency: .infinity)
-            }
-        } catch {
-            #if DEBUG
-            print("📡 [Ping] Failed for \(server.name): \(error.localizedDescription)")
-            #endif
-            return PingResult(server: server, latency: .infinity)
-        }
-    }
-}
+// (No more top-level Latency Measurement extension — the methods now live
+// inside the class under a dedicated MARK, co-located with selectOptimalServer.)
 
 // Extension to get unique elements from a sequence
 extension Sequence where Element: Hashable {
