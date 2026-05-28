@@ -10,12 +10,52 @@ import WidgetKit
 import SwiftUI
 import AppIntents
 
+// MARK: - Live Activity Helpers (single source of truth for both Dynamic Island and Lock Screen views)
+
+/// Maps visual state to a status color used in the Live Activity UI.
+private func getStatusColor(_ state: LutheranRadioLiveActivityAttributes.ContentState) -> Color {
+    switch state.visualState {
+    case .thermalPaused: return .orange
+    case .securityLocked: return .red
+    case .playing:       return .green
+    default:             return .gray
+    }
+}
+
+/// Returns the localized display name for a language code.
+private func getLanguageName(_ code: String) -> String {
+    switch code {
+    case "en": return String(localized: "language_english")
+    case "de": return String(localized: "language_german")
+    case "fi": return String(localized: "language_finnish")
+    case "sv": return String(localized: "language_swedish")
+    case "et": return String(localized: "language_estonian")
+    default: return "Unknown"
+    }
+}
+
+/// Returns the flag emoji for a language code.
+private func getStreamFlag(_ code: String) -> String {
+    switch code {
+    case "en": return "🇺🇸"
+    case "de": return "🇩🇪"
+    case "fi": return "🇫🇮"
+    case "sv": return "🇸🇪"
+    case "et": return "🇪🇪"
+    default: return "🌍"
+    }
+}
+
+/// Returns up to 3 alternative language codes (excluding the current one).
+private func getAlternativeStreams(current: String) -> [String] {
+    let allStreams = ["en", "de", "fi", "sv", "et"]
+    return Array(allStreams.filter { $0 != current }.prefix(3))
+}
+
 // MARK: - Live Activity Intents (updated for SSOT + Swift 6)
 
 struct LiveActivityTogglePlaybackIntent: AppIntent {
-    nonisolated static var title: LocalizedStringResource {
-        "Toggle Lutheran Radio Playback"
-    }
+    nonisolated static var title: LocalizedStringResource { "Toggle Lutheran Radio Playback" }
     nonisolated static var description: IntentDescription {
         IntentDescription("Toggle play/pause from Live Activity.")
     }
@@ -43,9 +83,7 @@ struct LiveActivityTogglePlaybackIntent: AppIntent {
 }
 
 struct LiveActivitySwitchStreamIntent: AppIntent {
-    nonisolated static var title: LocalizedStringResource {
-        "Switch Stream"
-    }
+    nonisolated static var title: LocalizedStringResource { "Switch Stream" }
     nonisolated static var description: IntentDescription {
         IntentDescription("Switch to a different language stream from Live Activity.")
     }
@@ -81,19 +119,6 @@ struct LiveActivitySwitchStreamIntent: AppIntent {
         return .result()
     }
 }
-
-// MARK: - Live Activity Helpers (file-private)
-
-private func getStatusColor(_ state: LutheranRadioLiveActivityAttributes.ContentState) -> Color {
-    switch state.visualState {
-    case .thermalPaused: return .orange
-    case .securityLocked: return .red
-    case .playing:       return .green
-    default:             return .gray
-    }
-}
-
-// MARK: - Live Activity Widget
 
 struct LutheranRadioLiveActivityWidget: Widget {
     let kind: String = "LutheranRadioLiveActivity"
@@ -327,44 +352,6 @@ struct LutheranRadioLiveActivityWidget: Widget {
             }
         }
     }
-    
-    // MARK: - Helpers
-    
-    private func getLanguageName(_ code: String) -> String {
-        switch code {
-        case "en": return String(localized: "language_english")
-        case "de": return String(localized: "language_german")
-        case "fi": return String(localized: "language_finnish")
-        case "sv": return String(localized: "language_swedish")
-        case "et": return String(localized: "language_estonian")
-        default: return "Unknown"
-        }
-    }
-    
-    private func getStreamFlag(_ code: String) -> String {
-        switch code {
-        case "en": return "🇺🇸"
-        case "de": return "🇩🇪"
-        case "fi": return "🇫🇮"
-        case "sv": return "🇸🇪"
-        case "et": return "🇪🇪"
-        default: return "🌍"
-        }
-    }
-    
-    private func getAlternativeStreams(current: String) -> [String] {
-        let allStreams = ["en", "de", "fi", "sv", "et"]
-        return Array(allStreams.filter { $0 != current }.prefix(3))
-    }
-    
-    private func getStatusColor(_ state: LutheranRadioLiveActivityAttributes.ContentState) -> Color {
-        switch state.visualState {
-        case .thermalPaused: return .orange
-        case .securityLocked: return .red
-        case .playing:       return .green
-        default:             return .gray
-        }
-    }
 }
 
 // MARK: - Lock Screen View
@@ -399,7 +386,7 @@ struct LockScreenLiveActivityView: View {
             }
             
             HStack(spacing: 20) {
-                ForEach(getAlternativeStreams(current: context.state.currentStreamLanguage).prefix(3), id: \.self) { langCode in
+                ForEach(getAlternativeStreams(current: context.state.currentStreamLanguage), id: \.self) { langCode in
                     Button(intent: LiveActivitySwitchStreamIntent(languageCode: langCode)) {
                         VStack(spacing: 2) {
                             Text(getStreamFlag(langCode))
@@ -451,32 +438,5 @@ struct LockScreenLiveActivityView: View {
         .padding()
         .background(Color.black.opacity(0.8))
         .cornerRadius(12)
-    }
-    
-    private func getLanguageName(_ code: String) -> String {
-        switch code {
-        case "en": return String(localized: "language_english")
-        case "de": return String(localized: "language_german")
-        case "fi": return String(localized: "language_finnish")
-        case "sv": return String(localized: "language_swedish")
-        case "et": return String(localized: "language_estonian")
-        default: return "Unknown"
-        }
-    }
-    
-    private func getAlternativeStreams(current: String) -> [String] {
-        let allStreams = ["en", "de", "fi", "sv", "et"]
-        return allStreams.filter { $0 != current }
-    }
-    
-    private func getStreamFlag(_ code: String) -> String {
-        switch code {
-        case "en": return "🇺🇸"
-        case "de": return "🇩🇪"
-        case "fi": return "🇫🇮"
-        case "sv": return "🇸🇪"
-        case "et": return "🇪🇪"
-        default: return "🌍"
-        }
     }
 }
