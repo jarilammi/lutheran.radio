@@ -60,6 +60,10 @@ import Core
 /// - The window only relaxes resurrection protection for `.prePlay`; `.userPaused` is
 ///   *never* bypassed, even inside the window (hard rule at the top of `play()`).
 ///
+/// Phase 3 note: After intent unification, cold-launch special casing has been
+/// significantly reduced. The one-shot and window logic are now minimal and
+/// consistently subordinate to `currentPlaybackIntent`.
+///
 /// **Key Transition Methods**:
 /// - `resetToPrePlayForNewStream()` — **only** place that intentionally sets `.prePlay`
 ///   after first launch (language/stream switches). Also clears `initialPlaybackHasRun`.
@@ -69,6 +73,21 @@ import Core
 ///
 /// See `PlayerVisualState.swift` for `shouldAutoPlayOrResume`, `mustSuppressResurrection`,
 /// `suppressResurrectionIfNeeded(currentState:)`, and the `from(status:isManualPause:...)` mapper.
+///
+/// **Phase 3 note (Cold-Launch Nuance Cleanup)**: Cold-launch special casing in `play()`
+/// (one-shot + 25s window) has been further reduced and documented as minimal. The
+/// authoritative `currentPlaybackIntent` is now the dominant signal even in cold-launch paths.
+/// See Phase 3 chunks in the living plan for details.
+///
+/// **Chunk 2 complete (Playback Intent Unification)**: `currentPlaybackIntent` (owned exclusively
+/// by this actor via `updatePlaybackIntent(to:)`) is now the primary decision signal in the
+/// main resurrection paths:
+/// - `play()` (top HARD RULE, central non-cold protection, one-shot simplification)
+/// - `attemptResurrectionIfAllowed()`
+/// - `restoreVisualStateRespectingUserIntent()`
+/// The old overlapping visualState guards have been collapsed in the decision logic while
+/// preserving (and making explicit) sticky `.userPaused` / `.securityLocked` resurrection
+/// protection. Visual state remains the source of truth for UI/widget display.
 ///
 /// | From State      | Trigger / Event                                   | Guard / Condition                                              | To State        | Resurrection Behavior / Notes |
 /// |-----------------|---------------------------------------------------|-----------------------------------------------------------------|-----------------|-------------------------------|
@@ -98,6 +117,32 @@ import Core
 ///
 /// This is the authoritative shared state model. All values are anonymous. No PII, no listening history.
 ///
+/// ---
+/// **Phase 4 Completion Note (Playback Intent Unification — ViewController Cleanup)**:
+///
+/// After Phase 4 (under blanket approval):
+/// - `ViewController` no longer contains any independent playback retry state machine.
+/// - `attemptPlaybackWithRetry`, `startPlayback`, `startPlaybackDirect`, `lastPlaybackAttempt`,
+///   `minPlaybackInterval`, `pendingPlaybackWorkItem` (playback), `isManualPause`, and
+///   `hasPermanentPlaybackError` have all been removed from decision logic and (where possible) the file.
+/// - All user-facing and system entry points (in-app button, widget URL schemes, SceneDelegate
+///   `lutheranradio://` actions, remote commands, Control Center, interruption recovery, route changes,
+///   stream unavailable / security error retries) now flow exclusively through:
+///     - `handleUserTogglePlayback()` (the documented internal SSOT), or
+///     - Direct `SharedPlayerManager` intent methods (`userRequestedPlay()`, `play()`, `stop()`,
+///       `setUserIntentToPlay()`, `canProceedWithPlayback()`).
+/// - Resurrection protection and "does the user want audio playing?" decisions are 100% owned by
+///   this actor via the authoritative `currentPlaybackIntent` (written only through
+///   `updatePlaybackIntent(to:)` at the sticky transition points).
+/// - Permanent security lock alerts (`showSecurityModelAlert`) and stream unavailable error
+///   surfacing remain fully preserved and user-visible via the normal error paths.
+///
+/// ViewController is now a thin coordinator/observer. The "three try" symptom that originated
+/// from duplicated decision + retry logic in the main app layer has been eliminated at the source.
+///
+/// See `PLAYBACK_INTENT_UNIFICATION_PLAN.md` (Phase 4 records) for the full before/after audit
+/// and living execution log.
+///
 /// | Key                     | Type                  | Primary Writers                                              | Primary Readers (widgets, recovery, UI)                              | Purpose & Semantics                                          | Lifetime / Notes |
 /// |-------------------------|-----------------------|--------------------------------------------------------------|----------------------------------------------------------------------|--------------------------------------------------------------|------------------|
 /// | playerVisualState       | Data (JSON)           | (Legacy — no longer written)                                 | `loadPersistedVisualStateDirect()` (prefers snapshot; falls back for old installs) | Legacy visual state key. Readers prefer the combined snapshot. | Migration / compat only |
@@ -107,7 +152,7 @@ import Core
 /// | currentLanguage         | String (languageCode) | (Legacy — no longer written by current paths)                | Migration fallbacks only in `loadPersistedWidgetState` / `preferredWidgetLanguage` | Legacy separate language key. Snapshot + `preferredWidgetLanguage()` are the SSOT. | Migration / compat only |
 /// | hasError                | Bool                  | SharedPlayerManager (sourced from player.hasPermanentError)  | `loadSharedState`, widgets                                           | Permanent error flag for UI chrome                           | Set on security or unrecoverable network failures |
 /// | lastUpdateTime          | Double (epoch)        | `SharedPlayerManager.performActualSave` (on every save) + widget handlers | Widget providers (isAppRunning 60 s check), instant-feedback expiry | Timestamp of last authoritative state change                 | Useful for external freshness + isAppRunning |
-/// | lastUserPauseTime       | Double (epoch)        | ViewController (explicit pause paths)                        | DirectStreamingPlayer recovery nudges (two locations)                | Hard 8-second barrier after any user pause                   | Prevents resurrection attempts immediately after pause |
+/// | lastUserPauseTime       | Double (epoch)        | ViewController (explicit pause paths) + widget pause round-trips | Cross-process / extension readers (for compatibility); legacy barrier consumers | Hard 8-second barrier after any user pause (Phase 6 Chunk 3: recovery paths in DirectStreamingPlayer now use authoritative actor `wasRecentlyUserPaused()` instead of raw UD + defensive sync) | Prevents resurrection attempts immediately after pause |
 /// | isInstantFeedback       | Bool                  | Widget handlers (`handleWidgetPlay/Stop/Switch`)             | `loadSharedState` (checked first)                                    | Signals that a widget action just occurred (optimistic UI)   | Short-lived; cleared after 15s or next authoritative save |
 /// | instantFeedbackTime     | Double (epoch)        | Widget handlers                                              | `loadSharedState`                                                    | Timestamp for the instant feedback validity window           | 15-second validity window |
 /// | instantFeedbackLanguage | String                | Widget handlers                                              | `loadSharedState`                                                    | Language to show during the optimistic widget update         | Matches the language of the widget action |
@@ -131,6 +176,36 @@ actor SharedPlayerManager {
     private let initializationSettlingPeriod: TimeInterval = 5.0
     private var initialPlaybackHasRun = false
     
+    // MARK: - Chunk 3 (Phase 6): Authoritative recent-pause timestamp
+    //
+    // This is the first step toward eliminating the "Brave guard" defensive pattern.
+    //
+    // Problem being solved:
+    //   Recovery paths in DirectStreamingPlayer (nudges, final recovery timer, recreatePlayerItem)
+    //   were forced to do `syncVisualStateFromPersistence()` + raw UserDefaults read of
+    //   "lastUserPauseTime" because the actor's in-memory state could lag behind widget
+    //   optimistic writes and ViewController pause paths on cold launch / rapid resume.
+    //
+    // Solution direction (this micro-increment is pure scaffolding):
+    //   - Centralize the timestamp inside the actor (single source of truth for "when did
+    //     the user last explicitly pause?").
+    //   - Expose a clean `wasRecentlyUserPaused(within:)` query.
+    //   - All pause writers (inside this actor + ViewController) will update it.
+    //   - DirectStreamingPlayer recovery paths will later switch to the actor query instead
+    //     of raw UD + defensive sync on every nudge/timer.
+    //
+    // Current status (this edit): scaffolding only.
+    //   - The property exists and is updated at key pause points (subsequent micro-increments).
+    //   - No consumers yet. No behavior change. The raw "lastUserPauseTime" UD key continues
+    //     to be written for widget/extension readers that need it.
+    //   - `lastUserPauseTime` in UserDefaults remains the cross-process contract for non-actor
+    //     readers (widget providers, etc.). We are only giving the main-app recovery paths a
+    //     trustworthy in-actor view.
+    //
+    // Ownership: SharedPlayerManager is the only writer for the authoritative value used by
+    // recovery decisions. The UD key is kept for compatibility with extension processes.
+    private var lastUserPauseTimestamp: TimeInterval = 0
+    
     // MARK: - Visual State (Single Source of Truth)
     /// Single source of truth for playback intent (UI + widget + Live Activity)
     /// This prevents the "play on pause" resurrection bug when set synchronously to .userPaused
@@ -139,6 +214,111 @@ actor SharedPlayerManager {
     /// Guards one-time loading of the persisted PlayerVisualState JSON (or legacy "playing" bool fallback).
     /// Critical for widget/extension processes which start with a fresh actor instance (default .prePlay).
     private var hasLoadedVisualStateFromPersistence = false
+
+    // MARK: - Playback Intent (Micro-Patch 2 — Ownership Scaffolding)
+    //
+    // This is the **first** step toward making `PlaybackIntent` the authoritative
+    // answer to "Does the user currently want audio to be playing?".
+    //
+    // Current status (this patch): pure scaffolding.
+    // - The property exists and is updated at the key intent transition points.
+    // - It is NOT yet consulted by any guard, resurrection logic, or execution path.
+    // - `currentVisualState` remains the active driver (100% backward compatible).
+    // - No behavior change. No resurrection changes. No call-site changes.
+    //
+    // Future micro-patches (after explicit approval) will:
+    // - Make resurrection decisions consult playbackIntent + sticky flags.
+    // - Collapse the overlapping windows/one-shots.
+    // - Drive DirectStreamingPlayer from intent.
+    // - Remove attemptPlaybackWithRetry from ViewController.
+    //
+    // Ownership rule (permanent): SharedPlayerManager is the ONLY writer.
+    private var playbackIntent: PlaybackIntent = .shouldBePlaying
+
+    /// Read-only view of the current authoritative playback intent.
+    /// Consumers inside the actor (and trusted callers) should prefer this
+    /// over deriving intent from visual state.
+    /// This is the single source of truth for "does the user want audio playing right now?"
+    var currentPlaybackIntent: PlaybackIntent {
+        playbackIntent
+    }
+
+    // MARK: - Phase 2: Intent-Driven Playback Execution
+
+    /// Returns whether the player execution engine (DirectStreamingPlayer) should
+    /// be allowed to start, resume, or recover playback right now.
+    ///
+    /// This is the **preferred** intent-driven check for all playback command paths.
+    /// It is driven exclusively by `currentPlaybackIntent` (the single source of truth
+    /// updated only via `updatePlaybackIntent(to:)`).
+    ///
+    /// Phase 2 Chunk 1: First introduction of intent-driven guard for the execution engine.
+    /// Callers (DirectStreamingPlayer) should use this instead of deriving decisions
+    /// from `currentVisualState.shouldAutoPlayOrResume` where possible.
+    ///
+    /// Sticky rules are preserved exactly: `.userPaused` and `.securityLocked` are
+    /// permanent blockers until an explicit user play action clears them.
+    func canProceedWithPlayback() async -> Bool {
+        ensureVisualStateLoaded()
+        return currentPlaybackIntent != .userPaused && currentPlaybackIntent != .securityLocked
+    }
+
+    /// Chunk 3 (Phase 6): Authoritative query for the recent explicit user pause barrier.
+    ///
+    /// Recovery paths (DirectStreamingPlayer nudges, final recovery timer, recreatePlayerItem,
+    /// cold-launch safety net) should use this instead of reading "lastUserPauseTime" directly
+    /// from UserDefaults + doing defensive `syncVisualStateFromPersistence()` on every timer.
+    ///
+    /// This removes the root cause of the recurring "Brave guard" pattern.
+    ///
+    /// The 8-second window is preserved exactly (same constant and semantics as the prior
+    /// raw-UD logic in DirectStreamingPlayer). The value is maintained by the pause writers
+    /// inside this actor (subsequent micro-increments will wire all call sites).
+    ///
+    /// Cross-process readers (widget providers, extensions) continue to use the
+    /// "lastUserPauseTime" UserDefaults key — we do not change that contract.
+    func wasRecentlyUserPaused(within interval: TimeInterval = 8.0) async -> Bool {
+        // For true cold-launch or first recovery before any pause has been recorded,
+        // treat as "not recently paused".
+        guard lastUserPauseTimestamp > 0 else { return false }
+        return Date().timeIntervalSince1970 - lastUserPauseTimestamp < interval
+    }
+
+    /// Public helper for external callers (e.g. ViewController pause paths) to record
+    /// an explicit user pause timestamp into the authoritative actor state.
+    ///
+    /// This keeps the in-actor `lastUserPauseTimestamp` (used by recovery paths via
+    /// `wasRecentlyUserPaused()`) in sync when pauses are initiated from ViewController
+    /// surfaces that also need to write the raw UserDefaults key for extension readers.
+    ///
+    /// Chunk 3: Part of eliminating the need for defensive raw-UD + sync "Brave guards"
+    /// in DirectStreamingPlayer recovery logic.
+    nonisolated func recordUserPauseTimestamp() async {
+        await _recordUserPauseTimestampInternal()
+    }
+    
+    private func _recordUserPauseTimestampInternal() async {
+        lastUserPauseTimestamp = Date().timeIntervalSince1970
+    }
+
+    /// Single internal entry point for all playback intent transitions.
+    /// This is the **only** place that mutates `playbackIntent`.
+    ///
+    /// Call this (never assign `playbackIntent` directly) from every user-driven
+    /// play/pause/stop/lock path so that `currentPlaybackIntent` becomes the
+    /// authoritative answer to "does the user want audio playing right now?"
+    ///
+    /// Future increments inside Phase 1 will centralize sticky enforcement
+    /// (`.userPaused` and `.securityLocked` only cleared by explicit user play)
+    /// inside this method.
+    internal func updatePlaybackIntent(to intent: PlaybackIntent) {
+        if playbackIntent != intent {
+            #if DEBUG
+            print("🎯 [SharedPlayerManager] playbackIntent: \(playbackIntent) → \(intent)")
+            #endif
+            playbackIntent = intent
+        }
+    }
     
     // MARK: - Computed Properties (nonisolated safe access)
     
@@ -259,18 +439,24 @@ actor SharedPlayerManager {
         await clearUserPausedLockIfNeeded()
         
         #if DEBUG
-        print("🎵 SharedPlayerManager.play() ENTERED – currentVisualState = \(currentVisualState)")
+        print("🎵 SharedPlayerManager.play() ENTERED – currentPlaybackIntent = \(currentPlaybackIntent), currentVisualState = \(currentVisualState)")
         #endif
         
         // ──────────────────────────────────────────────────────────────
-        // NEW: Cold-launch grace period (uses your existing vars)
+        // Cold-launch grace period (Phase 3 final state)
+        // After intent unification (Phases 1-3), this 25s window + one-shot flag
+        // is the *only* remaining special-case resurrection relaxation.
+        // It is narrowly scoped to `.prePlay` first-play only and is always
+        // subordinate to explicit `.userPaused` / `.securityLocked` intent.
         let isInColdLaunchWindow = !initialPlaybackHasRun ||
             Date().timeIntervalSince(appLaunchTime) < initializationSettlingPeriod + 20.0
         // ──────────────────────────────────────────────────────────────
         
         // HARD RULE: Never bypass resurrection protection for explicit user pause,
         // even inside the cold-launch window. User intent wins.
-        if currentVisualState == .userPaused {
+        // Chunk 2 (sub-increment 2.3): Now driven by authoritative currentPlaybackIntent
+        // (wired in Chunk 1; visualState check collapsed here for consistency with central path).
+        if currentPlaybackIntent == .userPaused {
             #if DEBUG
             print("🔒 [SharedPlayerManager] play() HARD-BLOCKED — explicit .userPaused (cold-launch bypass ignored)")
             #endif
@@ -278,21 +464,25 @@ actor SharedPlayerManager {
         }
         
         // CENTRAL RESURRECTION PROTECTION — relaxed only for prePlay during true cold launch
+        // Chunk 2 (sub-increment 2.2): playbackIntent is now the primary/sole signal here.
+        // The parallel visualState guard has been removed as we collapse overlapping checks.
+        // Intent is authoritative (all transitions wired in Chunk 1).
         if !isInColdLaunchWindow {
-            guard currentVisualState.shouldAutoPlayOrResume else {
+            if currentPlaybackIntent == .userPaused || currentPlaybackIntent == .securityLocked {
                 #if DEBUG
-                print("🔒 [SharedPlayerManager] play() BLOCKED — currentVisualState = \(currentVisualState)")
+                print("🔒 [SharedPlayerManager] play() BLOCKED by playbackIntent = \(currentPlaybackIntent)")
                 #endif
                 return
             }
         } else {
             #if DEBUG
-            print("🚀 Cold-launch window active – bypassing normal resurrection protection (except .userPaused)")
+            print("🚀 Cold-launch window active – bypassing normal resurrection protection (except .userPaused) [Phase 3: minimal special case]")
             #endif
         }
         
-        // NEW: Prevent re-entrancy loop from recovery tasks (post-head-start + nudges)
-        // but allow re-entrancy during cold launch (the transient stopped → playing flips)
+        // Re-entrancy guard (Phase 3 Chunk 2): Detect actual AVPlayer state to break recovery loops.
+        // Intent is the primary signal; this visual check is deliberately narrow (only outside cold window)
+        // to protect against tight recovery-task loops when the player is already playing.
         if currentVisualState == .playing && !isInColdLaunchWindow {
             #if DEBUG
             print("✅ SharedPlayerManager.play() — already .playing, skipping redundant call (recovery loop prevented)")
@@ -300,15 +490,22 @@ actor SharedPlayerManager {
             return
         }
         
-        // === ONE-SHOT GUARD FOR COLD LAUNCH INITIAL PLAYBACK ===
+        // === ONE-SHOT GUARD FOR COLD LAUNCH INITIAL PLAYBACK (Phase 3 Chunk 1) ===
+        // Cold-launch special casing is now minimal. The authoritative `currentPlaybackIntent`
+        // is the primary signal; the one-shot flag only prevents duplicate first-play attempts
+        // when we do *not* have explicit user play intent.
         if currentVisualState == .prePlay {
-            if initialPlaybackHasRun {
+            if initialPlaybackHasRun && currentPlaybackIntent != .shouldBePlaying {
                 #if DEBUG
                 print("SharedPlayerManager.play() – skipping duplicate initial playback on cold launch")
                 #endif
                 return
             } else {
-                initialPlaybackHasRun = true
+                if currentPlaybackIntent == .shouldBePlaying {
+                    initialPlaybackHasRun = false
+                } else {
+                    initialPlaybackHasRun = true
+                }
                 #if DEBUG
                 print("SharedPlayerManager.play() – this is the first cold-launch play call, proceeding")
                 #endif
@@ -333,6 +530,10 @@ actor SharedPlayerManager {
             
             // Direct mutation inside the actor (this is allowed and correct)
             self.currentVisualState = .securityLocked
+            
+            // Chunk 1: Wire the authoritative intent writer (security lock is permanent until explicit play succeeds).
+            updatePlaybackIntent(to: .securityLocked)
+            
             await self.saveCurrentState()
             
             #if DEBUG
@@ -372,16 +573,24 @@ actor SharedPlayerManager {
     
     /// Safe resurrection entry point used by DirectStreamingPlayer recovery logic.
     /// Allows technical recovery (hiccups) even when visualState = .playing.
+    ///
+    /// Chunk 2 (first sub-increment): playbackIntent is now the *primary* (and sole)
+    /// decision signal for this path. The old visualState guard has been removed
+    /// as part of collapsing parallel checks — intent is authoritative because
+    /// all sticky transitions (Chunk 1) now flow through updatePlaybackIntent.
     func attemptResurrectionIfAllowed() async {
         ensureVisualStateLoaded()
         
         #if DEBUG
-        print("🚀 SharedPlayerManager.attemptResurrectionIfAllowed() – currentVisualState = \(currentVisualState)")
+        print("🚀 SharedPlayerManager.attemptResurrectionIfAllowed() – currentPlaybackIntent = \(currentPlaybackIntent), currentVisualState = \(currentVisualState)")
         #endif
 
-        guard currentVisualState.shouldAutoPlayOrResume else {
+        // PRIMARY GUARD: Driven by authoritative playbackIntent (Chunk 2).
+        // Blocks for explicit user pause or permanent security lock.
+        // This replaces the previous dual-guard pattern in this narrow recovery path.
+        if currentPlaybackIntent == .userPaused || currentPlaybackIntent == .securityLocked {
             #if DEBUG
-            print("🔒 [SharedPlayerManager] resurrection BLOCKED by visualState = \(currentVisualState)")
+            print("🔒 [SharedPlayerManager] resurrection BLOCKED by playbackIntent = \(currentPlaybackIntent)")
             #endif
             return
         }
@@ -427,6 +636,13 @@ actor SharedPlayerManager {
         // We are inside the actor, so mutation is allowed
         currentVisualState = .userPaused
         
+        // Chunk 1: Wire the authoritative intent writer.
+        updatePlaybackIntent(to: .userPaused)
+        
+        // Chunk 3 (3.2.2): Record authoritative pause timestamp for recovery paths.
+        // This lets wasRecentlyUserPaused() return correct answers without raw UD reads.
+        lastUserPauseTimestamp = Date().timeIntervalSince1970
+        
         // Persist the locked state
         await saveCurrentState()
         
@@ -450,6 +666,12 @@ actor SharedPlayerManager {
         // This closes the race window that causes resurrection after pause
         currentVisualState = .userPaused
         saveVisualState()   // persist early so widgets, Live Activity, and Darwin notifications see the new state
+
+        // Chunk 1: Wire the authoritative intent writer (single source for sticky pause).
+        updatePlaybackIntent(to: .userPaused)
+
+        // Chunk 3 (3.2.2): Record authoritative pause timestamp (used by recovery query).
+        lastUserPauseTimestamp = Date().timeIntervalSince1970
 
         #if DEBUG
         print("🛡️ userPaused locked immediately in stop() (resurrection protection active)")
@@ -498,9 +720,12 @@ actor SharedPlayerManager {
     /// a real language/stream switch behaves **exactly** like the initial
     /// cold-launch playback path.
     ///
-    /// Called **only** from `completeStreamSwitch` (and widget switch paths if needed later).
-    /// This is the single place we intentionally bypass the `.playing` guard in `play()`
-    /// while preserving `.userPaused` resurrection protection everywhere else.
+    /// Called **only** from `completeStreamSwitch`.
+    /// This is the single place we intentionally allow the cold-launch-like first-play
+    /// path after a switch while preserving `.userPaused` / `.securityLocked` protection.
+    ///
+    /// Phase 3 Chunk 3: Documentation modernized to reflect that cold-launch special
+    /// casing is now minimal and driven by the authoritative intent model.
     func resetToPrePlayForNewStream() async {
         // 🔥 CRITICAL FIX: Always clear .userPaused lock for widget pure-play actions
         // This makes widget play/pause 100% reliable (was missing in pure-play path)
@@ -512,7 +737,8 @@ actor SharedPlayerManager {
         await saveCurrentState()
 
         // NOTE: We no longer write persistedWidgetState snapshot here.
-        // resetToPrePlayForNewStream is a *visual/cold-guard* reset for stream switches.
+        // resetToPrePlayForNewStream is the intentional cold-launch-style reset for
+        // stream switches so the next play() call gets the correct first-play path.
         // Language changes are driven by callers via updateUserDefaultsLanguage() →
         // saveCombinedWidgetState(), which is the single place that authors the atomic
         // (visual + language) snapshot. This eliminates a source of potentially-stale
@@ -547,6 +773,9 @@ actor SharedPlayerManager {
             #endif
         }
         
+        // Chunk 1: Wire the authoritative intent writer.
+        updatePlaybackIntent(to: .shouldBePlaying)
+        
         saveVisualState()
         await saveCurrentState()
     }
@@ -556,6 +785,13 @@ actor SharedPlayerManager {
     func setUserPaused() async {
         ensureVisualStateLoaded()
         currentVisualState = .userPaused
+        
+        // Chunk 1: Wire the authoritative intent writer.
+        updatePlaybackIntent(to: .userPaused)
+        
+        // Chunk 3 (3.2.2): Record authoritative pause timestamp.
+        lastUserPauseTimestamp = Date().timeIntervalSince1970
+        
         saveVisualState()
         await saveCurrentState()
     }
@@ -565,6 +801,10 @@ actor SharedPlayerManager {
     func setPlaying() async {
         ensureVisualStateLoaded()
         currentVisualState = .playing
+        
+        // Chunk 1: Wire the authoritative intent writer.
+        updatePlaybackIntent(to: .shouldBePlaying)
+        
         saveVisualState()
         await saveCurrentState()
     }
@@ -575,8 +815,21 @@ actor SharedPlayerManager {
     /// - AVAudioSession interruption .shouldResume
     /// - Widget timeline reload
     /// - Any other system resume signal
+    ///
+    /// Phase 3 Chunk 5: Primary signal is now `currentPlaybackIntent`. The method is
+    /// intentionally simple because most resurrection complexity has been collapsed
+    /// into the intent model in earlier phases.
     func restoreVisualStateRespectingUserIntent() async {
         ensureVisualStateLoaded()
+        
+        // Chunk 2 (sub-increment 2.4) + Phase 3: playbackIntent is the primary signal.
+        // Visual-based suppression below is secondary (for loading persisted state only).
+        if currentPlaybackIntent == .userPaused || currentPlaybackIntent == .securityLocked {
+            #if DEBUG
+            print("🔒 [SharedPlayerManager] restoreVisualStateRespectingUserIntent BLOCKED by playbackIntent = \(currentPlaybackIntent)")
+            #endif
+            return
+        }
         
         // If we already loaded something sticky from JSON, keep it; otherwise do the normal restore logic.
         if !hasLoadedVisualStateFromPersistence {
@@ -604,6 +857,9 @@ actor SharedPlayerManager {
     /// Safe to call repeatedly; only does work the first time per process (or after explicit reset).
     /// Widget providers and widget-side play/stop paths must call this (directly or via sync)
     /// before trusting currentVisualState.
+    ///
+    /// Phase 3 Chunk 5: This method feeds the intent-driven paths. Any legacy fallback
+    /// is only for very old installs that never wrote a PersistedWidgetState snapshot.
     private func ensureVisualStateLoaded() {
         guard !hasLoadedVisualStateFromPersistence else { return }
         
@@ -640,6 +896,9 @@ actor SharedPlayerManager {
             print("🔗 [Widget] Cleared userPaused lock for widget play action")
             #endif
             currentVisualState = .prePlay
+            
+            // Chunk 1: Wire the authoritative intent writer (widget play clears the pause lock).
+            updatePlaybackIntent(to: .shouldBePlaying)
         }
     }
     
@@ -672,6 +931,10 @@ actor SharedPlayerManager {
         
         // CRITICAL: Optimistic SSOT update (same pattern we already use in stop)
         currentVisualState = .playing
+        
+        // Chunk 1: Wire the authoritative intent writer for the optimistic widget play path.
+        updatePlaybackIntent(to: .shouldBePlaying)
+        
         saveVisualState()
         
         scheduleWidgetAction(action: "play")
@@ -707,6 +970,13 @@ actor SharedPlayerManager {
         
         // CRITICAL: Set the paused state synchronously for widget path
         currentVisualState = .userPaused
+        
+        // Chunk 1: Wire the authoritative intent writer for the optimistic widget stop path.
+        updatePlaybackIntent(to: .userPaused)
+        
+        // Chunk 3 (3.2.2): Record authoritative pause timestamp for recovery paths.
+        lastUserPauseTimestamp = Date().timeIntervalSince1970
+        
         saveVisualState()
         
         scheduleWidgetAction(action: "pause")

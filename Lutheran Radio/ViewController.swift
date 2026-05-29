@@ -320,8 +320,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     private let appLaunchTime = Date()
     private var hasEverPlayed = false
     private var isPlaying = false
-    private var isManualPause = false
-    private var hasPermanentPlaybackError = false
+    // Phase 4 Chunk 4: Deleted isManualPause and hasPermanentPlaybackError.
+    // All decision logic, guards, and resurrection control now live exclusively in SharedPlayerManager.currentPlaybackIntent.
+    // The only remaining use of hasPermanentPlaybackError was in safeUpdateStatusLabel (removed in next step).
     private var networkMonitor: NWPathMonitor?
     private var networkMonitorHandler: (@Sendable (NWPath) -> Void)? // Store handler to clear it
     private var hasInternetConnection = true
@@ -336,9 +337,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     private var lastStreamSwitchTime: Date?
     private let streamSwitchDebounceInterval: TimeInterval = 1.0
     private var pendingStreamIndex: Int?
-    private var pendingPlaybackWorkItem: DispatchWorkItem?
-    private var lastPlaybackAttempt: Date?
-    private let minPlaybackInterval: TimeInterval = 1.0 // 1 second
+    // Phase 4 Chunk 4: Removed pendingPlaybackWorkItem, lastPlaybackAttempt, minPlaybackInterval.
+    // These belonged exclusively to the deleted attemptPlaybackWithRetry + startPlayback retry machine.
     private var isDeallocating = false // Flag to prevent operations during deallocation
     private var hasPlayedSpecialTuningSound = false // Flag to ensure special sound plays only once
     private var hasShownSecurityAlert = false // Flag to ensure security alert is shown only once
@@ -825,7 +825,10 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 let isValid = await SecurityModelValidator.shared.validateSecurityModel()
                 
                 if isValid {
-                    self.startPlayback()
+                    // Phase 4 Chunk 3 (micro-step): Security retry now routes through unified intent surface.
+                    // Validation already passed in this closure; userRequestedPlay() sets intent + drives play().
+                    // Legacy startPlayback() (with its duplicate security/debounce logic) no longer needed here.
+                    await SharedPlayerManager.shared.userRequestedPlay()
                 } else {
                     // Optional: distinguish failure type for better UX/logging
                     let isPermanent = await SecurityModelValidator.shared.isPermanentlyInvalid
@@ -858,8 +861,13 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         )
         
         alert.addAction(UIAlertAction(title: String(localized: "alert_continue"), style: .default, handler: { [weak self] _ in
-            // Continue with current connection during transition
-            self?.startPlayback()
+            // Phase 4 Chunk 3 (micro-step): SSL transition "Continue" now routes through unified intent.
+            // This is an explicit user recovery action during cert transition window.
+            // userRequestedPlay() sets authoritative intent + drives the (now-reliable) playback path.
+            guard let _ = self else { return }   // weak self retained for Task safety (no direct use after Chunk 4 cleanup)
+            Task { @MainActor in
+                await SharedPlayerManager.shared.userRequestedPlay()
+            }
         }))
         
         alert.addAction(UIAlertAction(title: String(localized: "ok"), style: .cancel, handler: nil))
@@ -987,7 +995,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 if isConnected != wasConnected {
                     #if DEBUG
                     print("📱 Network status changed: \(isConnected ? "Connected" : "Disconnected")")
-                    print("📱 isManualPause: \(self.isManualPause)")
                     #endif
                 }
                 if isConnected && !wasConnected {
@@ -1001,10 +1008,10 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                     print("📱 Network disconnected - stopping playback and tuning sound")
                     #endif
                     self.stopTuningSound()
-                    let wasPlayingBeforeDisconnect = self.isPlaying
                     self.stopPlayback()
                     self.updateUIForNoInternet()
-                    self.isManualPause = self.isManualPause && !wasPlayingBeforeDisconnect
+                    // Phase 4 Chunk 4: Removed stale isManualPause state preservation across disconnect.
+                    // Playback intent (userPaused / securityLocked) is now authoritative in SharedPlayerManager.
                 }
             }
         }
@@ -1074,7 +1081,10 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                     print("▶️ [Interruption Guard] Allowed resume after interruption")
                     #endif
                     
-                    self.startPlayback()
+                    // Phase 4 Chunk 3 (micro-step): Interruption .shouldResume path now uses unified intent-driven play().
+                    // The guard above already consults shouldAutoPlayOrResume (which delegates to currentPlaybackIntent
+                    // via canProceedWithPlayback post-Phase 2). startPlayback() + its retry machinery no longer needed.
+                    await SharedPlayerManager.shared.play()
                 }
             }
             
@@ -1102,7 +1112,12 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             if isPlaying { stopPlayback() }
         case .newDeviceAvailable:
             try? AVAudioSession.sharedInstance().setActive(true)
-            if !isManualPause { startPlayback() }
+            // Phase 4 Chunk 3 (micro-step): Route change .newDeviceAvailable resume now uses unified intent.
+            // Removed legacy isManualPause guard (intent-driven play() + canProceedWithPlayback is authoritative).
+            // play() will correctly block on .userPaused / .securityLocked and respect cold-launch rules.
+            Task { @MainActor in
+                await SharedPlayerManager.shared.play()
+            }
         case .categoryChange:
             try? AVAudioSession.sharedInstance().setActive(true)
         default:
@@ -1174,30 +1189,19 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 print("📱 Validation succeeded after reconnection - attempting playback")
                 #endif
                 
-                // Updated call – no longer takes a completion closure
-                let success = await self.streamingPlayer.play()
-                
-                if success {
-                    self.streamingPlayer.onStatusChange?(true, String(localized: "status_playing"))
-                } else {
-                    self.streamingPlayer.onStatusChange?(false, String(localized: "status_stream_unavailable"))
-                }
+                // Updated call – no longer takes a completion closure.
+                // Phase 6 Chunk 5 + follow-up: Playback success/failure now flows exclusively
+                // through the player's internal safeOnStatusChange → delegate path (no more
+                // legacy closure bypass here). The play() implementation always emits proper
+                // status_* reasonKeys.
+                _ = await self.streamingPlayer.play()
                 
             } else {
                 #if DEBUG
                 print("📱 Security model validation failed after reconnection")
                 #endif
                 
-                // Distinguish transient vs permanent using the new property
-                let isPermanent = await SecurityModelValidator.shared.isPermanentlyInvalid
-                
-                let statusKey: String.LocalizationValue = isPermanent
-                    ? "status_security_failed"
-                    : "status_no_internet"
-                
-                self.streamingPlayer.onStatusChange?(false, String(localized: statusKey))
-                
-                // Show alert only if not already presenting one
+                // Show alert only if not already presenting one (security error path unchanged)
                 if presentedViewController == nil {
                     let alert = UIAlertController(
                         title: String(localized: "security_model_error_title"),
@@ -1398,204 +1402,13 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     }
     
     // MARK: - Playback Control Methods
-    /// Starts audio playback with network checks and security validation.
-    /// - Note: Debounces rapid calls and handles retries on transient errors.
-    private func startPlayback() {
-        Task { @MainActor in
-            // 🔥 NEW: Special handling for permanent security lock
-            // This makes sure the alert appears even after SharedPlayerManager
-            // has already set .securityLocked
-            let currentState = await SharedPlayerManager.shared.currentVisualState
-            if currentState == .securityLocked {
-                #if DEBUG
-                print("🔒 startPlayback() detected existing .securityLocked — showing alert")
-                #endif
-                self.updateUI(for: .securityLocked)
-                self.showSecurityModelAlert()
-                return
-            }
-            
-        // === CRITICAL GUARD: Respect explicit user pause intent ===
-        // This prevents resurrection from tuning sound completion, language switches,
-        // and any other call site that routes through startPlayback()
-            guard await streamingPlayer.shouldAutoPlayOrResume else {
-                #if DEBUG
-                print("🚫 [StartPlayback Guard] Blocked resurrection — currentVisualState is .userPaused")
-                #endif
-                updateUI(for: .userPaused)
-                return
-            }
-
-            // Original logic continues only if we are allowed to play
-            if !hasInternetConnection {
-                updateUIForNoInternet()
-                stopTuningSound()
-                performActiveConnectivityCheck()
-                return
-            }
-            
-            let now = Date()
-            if let lastAttempt = lastPlaybackAttempt,
-               now.timeIntervalSince(lastAttempt) < 0.5,
-               let lastFailedServer = streamingPlayer.lastFailedServer,
-               lastFailedServer == streamingPlayer.selectedServerInfo.name {
-                #if DEBUG
-                print("📱 Debouncing failed server \(lastFailedServer), time since last: \(now.timeIntervalSince(lastAttempt))s")
-                #endif
-                return
-            }
-            lastPlaybackAttempt = now
-            
-            stopTuningSound()
-            
-            pendingPlaybackWorkItem?.cancel()
-            
-            let workItem = DispatchWorkItem { [weak self] in
-                guard let self else { return }
-                
-                isManualPause = false
-                statusLabel.text = String(localized: "status_connecting")
-                statusLabel.backgroundColor = .systemYellow
-                statusLabel.textColor = .black
-                
-                Task { @MainActor in
-                    let isValid = await SecurityModelValidator.shared.validateSecurityModel()
-                    
-                    if isValid {
-                        self.streamingPlayer.resetTransientErrors()
-                        
-                        let success = await self.streamingPlayer.play()
-                        
-                        if success {
-                            self.isPlaying = true
-                            self.updatePlayPauseButton(isPlaying: true)
-                            self.statusLabel.text = String(localized: "status_playing")
-                            self.statusLabel.backgroundColor = .systemGreen
-                        } else {
-                            let isPermanent = await SecurityModelValidator.shared.isPermanentlyInvalid
-                            
-                            if isPermanent {
-                                self.hasPermanentPlaybackError = true
-                                self.statusLabel.text = String(localized: "status_stream_unavailable")
-                                self.statusLabel.backgroundColor = .systemOrange
-                                self.statusLabel.textColor = .white
-                            } else {
-                                self.attemptPlaybackWithRetry(attempt: 1, maxAttempts: 3)
-                            }
-                        }
-                    } else {
-                        let isPermanent = await SecurityModelValidator.shared.isPermanentlyInvalid
-                        
-                        self.statusLabel.text = isPermanent
-                            ? String(localized: "status_security_failed")
-                            : String(localized: "status_no_internet")
-                        
-                        self.statusLabel.backgroundColor = isPermanent ? .systemRed : .systemGray
-                        self.statusLabel.textColor = .white
-                        
-                        self.hasPermanentPlaybackError = isPermanent
-                        
-                        if isPermanent {
-                            self.showSecurityModelAlert()
-                        }
-                    }
-                }
-            }
-            
-            pendingPlaybackWorkItem = workItem
-            DispatchQueue.main.async(execute: workItem)
-            
-            saveStateForWidget()
-        }
-    }
+    // Phase 4 Chunk 4: startPlayback() shim completely deleted (zero callers, all logic migrated to SharedPlayerManager intent surface).
+    // The former securityLocked special case inside it was belt-and-suspenders; permanent lock alerts continue to surface
+    // via SecurityModelValidator failure paths + explicit showSecurityModelAlert() calls in error handlers (preserved).
     
-    private func attemptPlaybackWithRetry(attempt: Int, maxAttempts: Int) {
-        guard hasInternetConnection && !isManualPause && !hasPermanentPlaybackError else {
-            #if DEBUG
-            print("📱 Aborting playback attempt \(attempt) - no internet, manually paused, or previous permanent error")
-            #endif
-            if hasPermanentPlaybackError {
-                streamingPlayer.onStatusChange?(false, String(localized: "status_stream_unavailable"))
-            }
-            return
-        }
-        
-        let now = Date()
-        if let lastAttempt = lastPlaybackAttempt,
-           now.timeIntervalSince(lastAttempt) < minPlaybackInterval {
-            
-            DispatchQueue.main.asyncAfter(deadline: .now() + minPlaybackInterval) { [weak self] in
-                guard let self else {
-                    #if DEBUG
-                    print("📱 attemptPlaybackWithRetry (asyncAfter): ViewController is nil, skipping callback")
-                    #endif
-                    return
-                }
-                self.attemptPlaybackWithRetry(attempt: attempt, maxAttempts: maxAttempts)
-            }
-            return
-        }
-        
-        lastPlaybackAttempt = now
-        
-        #if DEBUG
-        print("📱 Playback attempt \(attempt)/\(maxAttempts)")
-        #endif
-        
-        let delay = pow(2.0, Double(attempt - 1))
-        
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            guard let self else {
-                #if DEBUG
-                print("📱 attemptPlaybackWithRetry (asyncAfter): ViewController is nil, skipping callback")
-                #endif
-                return
-            }
-            
-            // UI / player setup on main thread
-            self.streamingPlayer.setVolume(self.volumeSlider.value)
-            
-            // FIXED: Use modern async/await version instead of trailing closure
-            Task { @MainActor in
-                let success = await self.streamingPlayer.play()
-                
-                if success {
-                    #if DEBUG
-                    print("📱 Playback succeeded on attempt \(attempt)")
-                    #endif
-                    // Success UI updates can be handled here if needed.
-                    // Usually already handled in startPlayback(), so optional.
-                    
-                } else {
-                    let isPermanent = await SecurityModelValidator.shared.isPermanentlyInvalid
-                    
-                    if isPermanent {
-                        #if DEBUG
-                        print("📱 Permanent security model failure detected - stopping retries")
-                        #endif
-                        self.hasPermanentPlaybackError = true
-                        self.streamingPlayer.onStatusChange?(false, String(localized: "status_stream_unavailable"))
-                        self.statusLabel.text = String(localized: "status_stream_unavailable")
-                        self.statusLabel.backgroundColor = .systemOrange
-                        self.statusLabel.textColor = .white
-                    } else if attempt < maxAttempts {
-                        #if DEBUG
-                        print("📱 Playback attempt \(attempt) failed, retrying...")
-                        #endif
-                        self.attemptPlaybackWithRetry(attempt: attempt + 1, maxAttempts: maxAttempts)
-                    } else {
-                        #if DEBUG
-                        print("📱 Max attempts (\(maxAttempts)) reached - giving up")
-                        #endif
-                        self.streamingPlayer.onStatusChange?(false, String(localized: "alert_connection_failed_title"))
-                        self.statusLabel.text = String(localized: "alert_connection_failed_title")
-                        self.statusLabel.backgroundColor = .systemRed
-                        self.statusLabel.textColor = .white
-                    }
-                }
-            }
-        }
-    }
+    // Phase 4 Chunk 4: attemptPlaybackWithRetry completely deleted.
+    // It was the core of the "three try" symptom (exponential backoff + own debounce + direct player calls).
+    // All call sites removed; permanent error surfacing now happens via onStatusChange + Shared intent paths.
     
     /// Pauses playback and updates UI/status.
     /// - Note: Sets manual pause flag and routes through SharedPlayerManager to ensure .userPaused state is set.
@@ -2442,7 +2255,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             // Now switching while paused correctly prepares the new language for the next manual play().
             await self.streamingPlayer.setStream(to: stream)
             self.streamingPlayer.resetTransientErrors()
-            self.hasPermanentPlaybackError = false
+            // Phase 4 Chunk 4: Removed hasPermanentPlaybackError = false (duplicative of intent model).
             
             #if DEBUG
             print("🔄 [completeStreamSwitch] Updated stream model to \(stream.languageCode) (works for both playing and userPaused)")
@@ -2476,6 +2289,11 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 )
             }
             
+            // Chunk 2: Explicitly reset the cold-launch attempt counters for the *new* stream.
+            // This prevents previous stream's ICY noise / safety net exhaustion from causing
+            // a false status_stream_unavailable red alert on a normal user language switch.
+            streamingPlayer.resetInitialPlaybackCountersForNewStream()
+            
             // 2. Play tuning sound + switch stream
             await playTuningSound()
             
@@ -2495,7 +2313,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             await streamingPlayer.setStream(to: stream)
             streamingPlayer.resetTransientErrors()
             updateUserDefaultsLanguage(stream.languageCode)
-            hasPermanentPlaybackError = false
+            // Phase 4 Chunk 4: Removed hasPermanentPlaybackError = false (duplicative).
             
             // 🔥 CRITICAL FIX for stream switching after PlayerVisualState refactor
             // Reset visual state to .prePlay so SharedPlayerManager.play() executes
@@ -2552,8 +2370,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         print("🔗 Widget Play action - forcing playback (main app style)")
         #endif
         
-        hasPermanentPlaybackError = false
-        isManualPause = false
+        // Phase 4 Chunk 4: Removed duplicate clears of hasPermanentPlaybackError / isManualPause.
+        // The modern path (clearUserPausedLockIfNeeded + play) drives authoritative intent.
         
         Task { @MainActor in
             await SharedPlayerManager.shared.clearUserPausedLockIfNeeded()
@@ -2578,8 +2396,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
 
     /// Handle widget pause action
     private func handleWidgetPauseAction() {
-        // Mark this as a manual pause so the player doesn't auto-resume on certain paths
-        isManualPause = true
+        // Phase 4 Chunk 4: Removed legacy isManualPause = true.
+        // Authoritative .userPaused is set inside SharedPlayerManager.stop() / markAsUserPaused() (already called by this path).
         
         // Write critical non-display state synchronously (pending nuke + lastUserPauseTime barrier).
         // The legacy "playing" bool and playerVisualState JSON writes have been removed here
@@ -2599,6 +2417,12 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             // Record a hard barrier timestamp that all recovery/nudge paths can consult
             sharedDefaults.set(Date().timeIntervalSince1970, forKey: "lastUserPauseTime")
             sharedDefaults.synchronize()
+            
+            // Chunk 3: Also update the authoritative in-actor timestamp so recovery paths
+            // using wasRecentlyUserPaused() see the pause without relying on raw UD + defensive sync.
+            Task {
+                await SharedPlayerManager.shared.recordUserPauseTimestamp()
+            }
         }
         
         // Route through the clean authoritative stop path (SharedPlayerManager.stop).
@@ -2684,8 +2508,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 // 6. Main-app style play
                 try? await Task.sleep(for: .seconds(0.6))
                 
-                self.hasPermanentPlaybackError = false
-                self.isManualPause = false
+                // Phase 4 Chunk 4: Removed duplicate clears before modern SharedPlayerManager.play() path.
                 
                 #if DEBUG
                 print("▶️ [Widget Switch] Starting new stream using SharedPlayerManager.play() — main app path")
@@ -2722,85 +2545,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     //
     // (Historical note: this helper predated the PersistedWidgetState SSOT work.)
 
-    /// Direct playback without tuning sounds (for widget actions, quick actions, etc.)
-    private func startPlaybackDirect() {
-        if !hasInternetConnection {
-            updateUIForNoInternet()
-            performActiveConnectivityCheck()
-            return
-        }
-        
-        isManualPause = false
-        
-        safeUpdateStatusLabel(
-            text: String(localized: "status_connecting"),
-            backgroundColor: .systemYellow,
-            textColor: .black,
-            isPermanentError: false
-        )
-        
-        Task { @MainActor in
-            // 🔥 CRITICAL: same reset path now used by language switch + manual play + widget
-            // Must be awaited here (inside the @MainActor Task) to defeat the initialPlaybackHasRun guard on cold-launch widget play.
-            await SharedPlayerManager.shared.resetToPrePlayForNewStream()
-            
-            let isValid = await SecurityModelValidator.shared.validateSecurityModel()
-            
-            if isValid {
-                self.streamingPlayer.resetTransientErrors()
-                
-                // 🔥 FIXED: play() is now async throws - no more completion handler
-                let success = await self.streamingPlayer.play()
-                
-                if success {
-                    // Success path
-                    self.isPlaying = true
-                    self.updatePlayPauseButton(isPlaying: true)
-                    
-                    self.safeUpdateStatusLabel(
-                        text: String(localized: "status_playing"),
-                        backgroundColor: .systemGreen,
-                        textColor: .black,
-                        isPermanentError: false
-                    )
-                    
-                    // Save state after successful playback
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                        self.saveStateForWidget()
-                    }
-                    
-                } else {
-                    // Failure path - use authoritative security state
-                    let isPermanent = await SecurityModelValidator.shared.isPermanentlyInvalid
-                    
-                    if isPermanent {
-                        self.safeUpdateStatusLabel(
-                            text: String(localized: "status_stream_unavailable"),
-                            backgroundColor: .systemOrange,
-                            textColor: .white,
-                            isPermanentError: true
-                        )
-                    } else {
-                        // Simple retry without complex logic
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                            self.startPlaybackDirect()
-                        }
-                    }
-                }
-            } else {
-                let isPermanent = await SecurityModelValidator.shared.isPermanentlyInvalid
-                
-                self.safeUpdateStatusLabel(
-                    text: isPermanent
-                        ? String(localized: "status_security_failed")
-                        : String(localized: "status_no_internet"),
-                    backgroundColor: isPermanent ? .systemRed : .systemGray,
-                    textColor: .white,
-                    isPermanentError: isPermanent
-                )
-            }
-        }
-    }
+    // Phase 4 Chunk 4: startPlaybackDirect() shim completely deleted (zero callers, all logic migrated).
     
     // MARK: - Widget and URL Scheme Handling
     /// Handles widget and URL scheme actions for playback control and stream switching.
@@ -2877,9 +2622,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             // handleWidgetPlayAction + raw play() which pulled in tuning-sound waits
             // and full stream re-setup even on simple resume.
             Task { @MainActor [weak self] in
-                guard let self else { return }
-                hasPermanentPlaybackError = false
-                isManualPause = false
+                guard let _ = self else { return }   // weak self retained for Task safety (no direct use after Chunk 4 cleanup)
+                // Phase 4 Chunk 4: Removed duplicate clears (intent path via userRequestedPlay is authoritative).
                 await SharedPlayerManager.shared.userRequestedPlay()
 
                 // Phase 10 prune: userRequestedPlay() (→ setUserIntentToPlay + play) already covers
@@ -2950,19 +2694,25 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
 extension ViewController {
 
     /// Public method to start playback (callable from SceneDelegate)
+    ///
+    /// Phase 4 Chunk 2: Routes through SharedPlayerManager intent (userRequestedPlay path)
+    /// instead of direct-to-DirectStreamingPlayer bypass. Consistent with SSOT.
     public func handlePlayAction() {
         Task { @MainActor in
-            await DirectStreamingPlayer.shared.markAsPlaying()
-            _ = await DirectStreamingPlayer.shared.play()
+            await SharedPlayerManager.shared.setUserIntentToPlay()
+            await SharedPlayerManager.shared.play()
         }
     }
 
     /// Public method to pause playback (callable from SceneDelegate)
+    ///
+    /// Phase 4 Chunk 2: Routes through SharedPlayerManager.stop() (the authoritative
+    /// path that immediately sets .userPaused + persists + refreshes widgets).
     public func handlePauseAction() {
         Task { @MainActor in
-            await DirectStreamingPlayer.shared.markAsUserPaused()
-            DirectStreamingPlayer.shared.stop()
-            updateUI(for: .userPaused)
+            await SharedPlayerManager.shared.stop()
+            let newState = await SharedPlayerManager.shared.currentVisualState
+            updateUI(for: newState)
         }
     }
 
@@ -3010,17 +2760,19 @@ extension ViewController {
             // Retired legacy direct-write helper; route through the modern path that also
             // writes the combined PersistedWidgetState snapshot.
             updateUserDefaultsLanguage(targetStream.languageCode)
-            hasPermanentPlaybackError = false
+            // Phase 4 Chunk 4: Removed hasPermanentPlaybackError = false (duplicative of intent + SecurityModelValidator).
             
             // UI update
             let indexPath = IndexPath(item: targetIndex, section: 0)
             languageCollectionView.selectItem(at: indexPath, animated: true, scrollPosition: .centeredHorizontally)
             updateSelectionIndicator(to: targetIndex)
             
-            // === CRITICAL: Robust playback start after switch ===
-            if !isManualPause {
+            // Phase 4 Chunk 4: Replaced legacy isManualPause decision guard with authoritative intent check.
+            // Language switch is a user action; we now ask the SSOT (currentPlaybackIntent via canProceedWithPlayback).
+            // This removes one of the last places the stale flag controlled playback flow.
+            if await SharedPlayerManager.shared.canProceedWithPlayback() {
                 #if DEBUG
-                print("▶️ Starting playback after switch")
+                print("▶️ Starting playback after switch (intent allows)")
                 #endif
                 
                 // Small delay to let AVPlayerItem settle
@@ -3030,7 +2782,7 @@ extension ViewController {
                 
             } else {
                 #if DEBUG
-                print("⏸️ Manual pause active — skipping auto-play after switch")
+                print("⏸️ Intent blocks playback after switch (userPaused or securityLocked)")
                 #endif
                 // Still update UI to paused state
                 updateUI(for: .userPaused)
@@ -3049,13 +2801,13 @@ extension ViewController {
 
     /// Public method to toggle play/pause state
     /// (callable from SceneDelegate, remote commands, Control Center, etc.)
+    ///
+    /// Phase 4 Chunk 2: Now delegates to the internal SSOT (`handleUserTogglePlayback`)
+    /// so that all toggle entry points (button, widget URL schemes, SceneDelegate, remote)
+    /// flow through the single authoritative intent decision path.
     public func handleTogglePlayback() {
         Task { @MainActor in
-            if DirectStreamingPlayer.shared.isPlaying {
-                handlePauseAction()
-            } else {
-                handlePlayAction()
-            }
+            await handleUserTogglePlayback()
         }
     }
 }
@@ -3157,58 +2909,13 @@ extension ViewController {
         }
         
         Task { @MainActor in
-            let manager = SharedPlayerManager.shared
-            
-            // Single source of truth
-            let currentVisualState = await manager.currentVisualState
-            let sharedState = manager.loadSharedState()
-            
-            #if DEBUG
-            print("🔥 togglePlayback() called → currentVisualState = \(currentVisualState), shared.isPlaying = \(sharedState.isPlaying)")
-            #endif
-            
-            // MINIMAL CHANGE: respect visualState first (fixes desync where visual = .userPaused but shared.isPlaying = true)
-            if currentVisualState.isActivelyPlaying {
-                // === PAUSE PATH ===
-                #if DEBUG
-                print("🔥 → PAUSE path")
-                #endif
-                
-                await manager.stop()   // ← this locks .userPaused
-                
-                // stabilizes the tuning indicator after AVPlayer teardown storm
-                self.updateSelectionIndicator(to: self.selectedStreamIndex,
-                                            isInitial: false,
-                                            caller: "post-pause-stabilize")
-                
-                self.playHapticFeedback(style: .medium)
-                
-                let newState = await manager.currentVisualState
-                self.updateUI(for: newState)
-                
-                #if DEBUG
-                print("✅ Pause complete → applied \(newState)")
-                #endif
-                
-            } else {
-                // === PLAY / RESUME PATH (this is where .userPaused now correctly lands) ===
-                #if DEBUG
-                print("🔥 → PLAY / RESUME path")
-                #endif
-                
-                // MINIMAL CHANGE: immediately mark as .prePlay so UI shows "Connecting..." instantly
-                self.updateUI(for: .prePlay)
-                
-                await manager.setUserIntentToPlay()
-                self.playHapticFeedback(style: .heavy)
-                
-                await manager.play()
-                let newState = await manager.currentVisualState
-                self.updateUI(for: newState)
-                #if DEBUG
-                print("✅ Play complete → applied \(newState)")
-                #endif
-            }
+            // Phase 4 Chunk 2 (first step toward true SSOT):
+            // The animation + rate-limit above remain here (good UX).
+            // All decision logic now delegates to the documented internal SSOT
+            // (`handleUserTogglePlayback`), which is the single place that calls
+            // SharedPlayerManager.userRequestedPlay() / stop() based on intent.
+            // This eliminates the previous duplicate visualState + play/pause branching.
+            await self.handleUserTogglePlayback()
         }
     }
     
@@ -3297,7 +3004,8 @@ extension ViewController {
             self.statusLabel.textColor = textColor
             self.statusLabel.accessibilityLabel = text   // always keep in sync
             
-            self.hasPermanentPlaybackError = isPermanentError
+            // Phase 4 Chunk 4: Removed assignment to deleted hasPermanentPlaybackError.
+            // Permanent error state is now driven by SecurityModelValidator.isPermanentlyInvalid + intent.
             
             if text != String(localized: "status_playing") {
                 self.saveStateForWidget()
@@ -3366,8 +3074,29 @@ extension ViewController: StreamingPlayerDelegate {
                     self.updateUIForNoInternet()
                     
                 } else if reasonKey == "status_stream_unavailable" {
-                    self.statusLabel.backgroundColor = .systemOrange
+                    // Phase 6 Chunk 5 + follow-up: Hard/permanent connection failures and other
+                    // stream unavailability cases use the red banner treatment and the
+                    // alert_connection_failed_title for the popup (restoring the pre-unification
+                    // severe failure presentation). The status label text itself remains the
+                    // proper status_stream_unavailable value.
+                    //
+                    // alert_connection_failed_title should be renamed to status_failed or similar
+                    //
+                    // FIX: Cold-launch safety net (and other early-failure paths) can emit this
+                    // while the optimistic .playing state from setPlaying() is still active.
+                    // Force-correct the SSOT here so updateUI + widget saves see the real terminal state.
+                    let vsForCheck = await SharedPlayerManager.shared.currentVisualState
+                    if vsForCheck.isActivelyPlaying || vsForCheck == .prePlay {
+                        await SharedPlayerManager.shared.setUserPaused()
+                    }
+                    let correctedVisualState = await SharedPlayerManager.shared.currentVisualState
+                    self.updateUI(for: correctedVisualState)
+                    
+                    self.statusLabel.text = String(localized: "status_stream_unavailable")
+                    self.statusLabel.backgroundColor = .systemRed
                     self.statusLabel.textColor = .white
+                    self.statusLabel.accessibilityLabel = self.statusLabel.text
+
                     if self.presentedViewController == nil {
                         let alert = UIAlertController(
                             title: String(localized: "stream_unavailable_title"),
@@ -3375,8 +3104,12 @@ extension ViewController: StreamingPlayerDelegate {
                             preferredStyle: .alert
                         )
                         alert.addAction(UIAlertAction(title: String(localized: "alert_retry"), style: .default) { _ in
-                            self.hasPermanentPlaybackError = false
-                            self.startPlayback()
+                            // Phase 4 Chunk 3 (micro-step): Route user-initiated stream retry through the unified
+                            // intent surface instead of the legacy startPlayback() retry machine.
+                            // userRequestedPlay() sets authoritative .shouldBePlaying intent + triggers play().
+                            Task { @MainActor in
+                                await SharedPlayerManager.shared.userRequestedPlay()
+                            }
                         })
                         alert.addAction(UIAlertAction(title: String(localized: "ok"), style: .cancel, handler: nil))
                         self.present(alert, animated: true)
@@ -3424,9 +3157,9 @@ extension ViewController: StreamingPlayerDelegate {
                     await manager.setUserIntentToPlay()
                     
                     #if DEBUG
-                    print("▶️ Widget 'play' action → calling togglePlayback")
+                    print("▶️ Widget 'play' action → calling handleUserTogglePlayback (SSOT)")
                     #endif
-                    togglePlayback()
+                    await handleUserTogglePlayback()
                 } else {
                     #if DEBUG
                     print("🛡️ Widget 'play' blocked — currentVisualState is .userPaused")
@@ -3436,9 +3169,9 @@ extension ViewController: StreamingPlayerDelegate {
             case "pause":
                 if state.isPlaying {
                     #if DEBUG
-                    print("⏸️ Widget 'pause' action")
+                    print("⏸️ Widget 'pause' action → calling handleUserTogglePlayback (SSOT)")
                     #endif
-                    togglePlayback()
+                    await handleUserTogglePlayback()
                 }
                 
             case "switch":

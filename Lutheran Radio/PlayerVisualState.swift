@@ -8,6 +8,61 @@
 import Foundation
 import UIKit
 
+// MARK: - Playback Intent (Phase 1 — Playback Intent Unification)
+//
+// Explicit, first-class representation of the user's current desired playback state.
+// This is the single source of truth that answers the question:
+//     "Does the user currently want audio to be playing?"
+//
+// Ownership: EXCLUSIVELY SharedPlayerManager (the actor is the only writer).
+// Consumers (DirectStreamingPlayer, ViewController, widget paths, remote commands,
+// interruption recovery, etc.) READ the intent via SharedPlayerManager but NEVER
+// make their own "should I play?" decisions.
+//
+// This type is the architectural successor to the scattered implicit intent that
+// previously lived across:
+//   - ViewController.attemptPlaybackWithRetry + lastPlaybackAttempt debouncing
+//   - DirectStreamingPlayer private startPlayback guards
+//   - Multiple overlapping resurrection windows in SharedPlayerManager
+//     (initialPlaybackHasRun, 25 s cold-launch window, lastUserPauseTime barrier)
+//   - PlayerVisualState.shouldAutoPlayOrResume / mustSuppressResurrection
+//
+// Design goals for this type (this micro-patch introduces the type only;
+// behavior changes come in subsequent approved micro-patches):
+//   - Clear, small, auditable state machine.
+//   - Distinguishes "user wants to play" from "UI is showing yellow/green".
+//   - Makes sticky .userPaused and .securityLocked first-class and impossible
+//     to bypass accidentally.
+//   - Enables the later collapse of special-case windows and the removal of
+//     attemptPlaybackWithRetry.
+//
+// This patch is purely additive. No existing code, no call sites, no persistence,
+// and no runtime behavior are changed. The type is not yet wired to anything.
+
+/// User's current desired playback state (the authoritative "intent" signal).
+///
+/// - shouldBePlaying: The user has expressed (or defaulted to) a desire for audio
+///                    to be playing. This is the normal "play" intent.
+/// - shouldBePaused:  The user has taken an action whose natural result is paused
+///                    state (e.g. stream switch while playing, or an explicit but
+///                    non-sticky pause in some flows). Not a resurrection blocker.
+/// - userPaused:      Explicit, sticky user-initiated pause or stop (button, remote,
+///                    Control Center, widget pause, lock screen, etc.). This is the
+///                    primary resurrection blocker. Once set, only an explicit user
+///                    play action may clear it.
+/// - securityLocked:  Permanent security failure (DNS TXT validation failure,
+///                    certificate pinning failure, 403 from streaming server, etc.).
+///                    This is a hard, permanent blocker until the next successful
+///                    explicit play that passes full security validation.
+enum PlaybackIntent: Codable, Equatable {
+    case shouldBePlaying
+    case shouldBePaused
+    case userPaused
+    case securityLocked
+}
+
+// MARK: - PlayerVisualState (existing visual + legacy intent surface)
+
 /// Single source of truth for playback UI **and** intent.
 ///
 /// - prePlay:        yellow, auto-plays on first launch only
