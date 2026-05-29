@@ -3019,6 +3019,7 @@ extension ViewController {
                 String(localized: "status_paused_call"),
                 String(localized: "status_no_internet"),
                 String(localized: "status_stream_unavailable"),
+                String(localized: "status_failed"),
                 String(localized: "status_security_failed"),
                 String(localized: "status_stopped"),
                 String(localized: "status_ssl_transition")
@@ -3073,14 +3074,10 @@ extension ViewController: StreamingPlayerDelegate {
                     self.statusLabel.textColor = .white
                     self.updateUIForNoInternet()
                     
-                } else if reasonKey == "status_stream_unavailable" {
-                    // Phase 6 Chunk 5 + follow-up: Hard/permanent connection failures and other
-                    // stream unavailability cases use the red banner treatment and the
-                    // alert_connection_failed_title for the popup (restoring the pre-unification
-                    // severe failure presentation). The status label text itself remains the
-                    // proper status_stream_unavailable value.
-                    //
-                    // alert_connection_failed_title should be renamed to status_failed or similar
+                } else if reasonKey == "status_stream_unavailable" || reasonKey == "status_failed" {
+                    // Hard/permanent connection failures (status_failed) and other stream
+                    // unavailability cases use the red banner treatment + popup.
+                    // The status label shows the appropriate status_* text.
                     //
                     // FIX: Cold-launch safety net (and other early-failure paths) can emit this
                     // while the optimistic .playing state from setPlaying() is still active.
@@ -3092,7 +3089,7 @@ extension ViewController: StreamingPlayerDelegate {
                     let correctedVisualState = await SharedPlayerManager.shared.currentVisualState
                     self.updateUI(for: correctedVisualState)
                     
-                    self.statusLabel.text = String(localized: "status_stream_unavailable")
+                    self.statusLabel.text = String(localized: String.LocalizationValue(reasonKey ?? "status_stream_unavailable"))
                     self.statusLabel.backgroundColor = .systemRed
                     self.statusLabel.textColor = .white
                     self.statusLabel.accessibilityLabel = self.statusLabel.text

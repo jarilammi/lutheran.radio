@@ -773,9 +773,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                     reasonKey == "status_stream_unavailable" ||
                     reasonKey == "status_connecting" ||
                     reasonKey == "status_ssl_transition" ||
-                    reasonKey == "status_buffering"
-                    // NOTE: alert_connection_failed_title is intentionally excluded.
-                    // It is a popup title signal, not a status_* value for the label or widget state.
+                    reasonKey == "status_buffering" ||
+                    reasonKey == "status_failed"
                     
                     if isStableState {
                         #if DEBUG
@@ -2473,10 +2472,9 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 #if DEBUG
                 print("🔒 [Loading Error] Permanent network/server error detected")
                 #endif
-                // Phase 6 Chunk 5 + follow-up: Always emit a proper status_* key.
-                // The distinct red banner + alert_connection_failed_title popup is handled
-                // in ViewController's status_stream_unavailable branch (see there for rationale).
-                safeOnStatusChange(isPlaying: false, reasonKey: "status_stream_unavailable")
+                // Permanent non-security failure → emit status_failed (now the canonical
+                // key for hard connection errors that trigger red banner + popup).
+                safeOnStatusChange(isPlaying: false, reasonKey: "status_failed")
                 
             default:
                 #if DEBUG
@@ -2941,7 +2939,7 @@ extension DirectStreamingPlayer {
             case .securityFailure:
                 return String(localized: "status_security_failed")
             case .permanentFailure:
-                return String(localized: "status_stream_unavailable")
+                return String(localized: "status_failed")
             case .transientFailure:
                 return String(localized: "status_buffering")
             case .unknown:
