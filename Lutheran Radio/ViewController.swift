@@ -72,7 +72,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         static let hasDismissedDataUsageNotification = "hasDismissedDataUsageNotification"
     }
     
-    private var lastWidgetUpdate: Date?
+    // All widget state save / refresh rate limiting lives in saveCurrentState +
+    // WidgetRefreshManager (the authoritative path). The earlier local throttling
+    // and many redundant call sites have been removed.
     private var lastWidgetSwitchTime: Date?
     private var pendingWidgetSwitchWorkItem: DispatchWorkItem?
     private var processedActionIds: Set<String> = []
@@ -685,56 +687,31 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     /// without launching the app.
     ///
     /// - Important: This method is throttled (4 s during first 5 s after launch, 2 s thereafter)
-    ///   to avoid excessive `UserDefaults.synchronize()` calls and widget refresh spam.
+    /// Thin delegate to the single authoritative persistence + refresh path.
+    ///
+    /// Post-Phase 9: the 2–4 s throttle + "meaningful change" check + lastWidgetUpdate
+    /// marker have been removed entirely. They were a historical VC-local rate limit
+    /// that could suppress `saveCurrentState()` (and therefore the unconditional
+    /// `PersistedWidgetState` snapshot write + `WidgetRefreshManager` trigger) from
+    /// numerous call sites. WidgetRefreshManager now owns all debouncing and the
+    /// lang-change immediate bypass; `saveCurrentState` (called from player actions
+    /// and here) is the only place that authors the SSOT snapshot.
+    ///
+    /// Phase 10: ~12 redundant call sites pruned (remote commands, handleUserTogglePlayback,
+    /// pause/stopPlayback wrappers, widget play/pause/switch handlers, completeStreamSwitch
+    /// post-play, handleSwitchToLanguage). These were immediately after stop()/play()/
+    /// userRequestedPlay() which already perform the authoritative saveCurrentState +
+    /// snapshot + refresh. Remaining sites are in callback/insurance/dispatch paths that
+    /// do not themselves mutate via the player methods. The snapshot + saveCurrentState
+    /// path is now even more dominant with less scaffolding.
+    ///
     /// - SeeAlso: `SharedPlayerManager.saveCurrentState()`, `WidgetRefreshManager.refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)`
     func saveStateForWidget() {
-        let now = Date()
-        let timeSinceAppLaunch = now.timeIntervalSince(appLaunchTime)
-        let isInInitializationPeriod = timeSinceAppLaunch < 5.0  // Match SharedPlayerManager
-        
-        // Enhanced throttling during initialization
-        let throttleInterval: TimeInterval = isInInitializationPeriod ? 4.0 : 2.0
-        
-        if let lastUpdate = lastWidgetUpdate,
-           now.timeIntervalSince(lastUpdate) < throttleInterval {
-            #if DEBUG
-            if isInInitializationPeriod {
-                print("🔗 ViewController: Throttling widget update during initialization")
-            }
-            #endif
-            return
-        }
-        
-        let stateBeforeSave = SharedPlayerManager.shared.loadSharedState()
-        
         Task {
             await SharedPlayerManager.shared.saveCurrentState()
-            
-            // Now load after the save has completed
-            let stateAfterSave = SharedPlayerManager.shared.loadSharedState()
-            
-            if stateBeforeSave.isPlaying != stateAfterSave.isPlaying ||
-               stateBeforeSave.currentLanguage != stateAfterSave.currentLanguage ||
-               stateBeforeSave.hasError != stateAfterSave.hasError {
-                
-                // Update timestamp on the main actor (since lastWidgetUpdate is likely UI-related)
-                await MainActor.run {
-                    self.lastWidgetUpdate = now
-                    
-                    #if DEBUG
-                    print("🔗 State saved for widgets (meaningful change detected)")
-                    #endif
-                }
-            } else {
-                #if DEBUG
-                await MainActor.run {
-                    print("🔗 No meaningful state change, skipping widget timestamp update")
-                }
-                #endif
-            }
         }
     }
-    
+
     private func setupFastWidgetActionChecking() {
         // Check for widget actions every second for the first 5 seconds after app starts
         // This ensures fast processing of widget actions when app becomes active.
@@ -1248,11 +1225,11 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             Task { @MainActor in
                 await SharedPlayerManager.shared.userRequestedPlay()
                 
-                // Refresh UI + Now Playing exactly like togglePlayback does
+                // Refresh UI + Now Playing exactly like togglePlayback does.
+                // userRequestedPlay() already performs the authoritative save + snapshot.
                 let newState = await SharedPlayerManager.shared.currentVisualState
                 self.updateUI(for: newState)
                 self.updateNowPlayingInfo()
-                self.saveStateForWidget()
             }
             return .success
         }
@@ -1269,7 +1246,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 let newState = await SharedPlayerManager.shared.currentVisualState
                 self.updateUI(for: newState)
                 self.updateNowPlayingInfo()
-                self.saveStateForWidget()
+                // stop() already performs the authoritative saveCurrentState + snapshot.
             }
             return .success
         }
@@ -1295,7 +1272,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 let newState = await manager.currentVisualState
                 self.updateUI(for: newState)
                 self.updateNowPlayingInfo()
-                self.saveStateForWidget()
+                // stop()/userRequestedPlay() already cover the authoritative save + snapshot.
             }
             return .success
         }
@@ -1309,7 +1286,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 let newState = await SharedPlayerManager.shared.currentVisualState
                 self.updateUI(for: newState)
                 self.updateNowPlayingInfo()
-                self.saveStateForWidget()
+                // stop() already performs the authoritative saveCurrentState + snapshot.
             }
             return .success
         }
@@ -1344,11 +1321,11 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             self.isPlaying = true
         }
         
-        // Refresh everything
+        // Refresh everything. Phase 10 prune: stop()/userRequestedPlay() already call
+        // saveCurrentState() (PersistedWidgetState snapshot + WidgetRefreshManager trigger).
         let newState = await manager.currentVisualState
         self.updateUI(for: newState)
         self.updateNowPlayingInfo()
-        self.saveStateForWidget()
     }
     
     private func updateNowPlayingInfo(title: String? = nil) {
@@ -1636,7 +1613,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             let newState = await SharedPlayerManager.shared.currentVisualState
             self.updateUI(for: newState)
             self.updateNowPlayingInfo()
-            self.saveStateForWidget()
+            // Phase 10 prune: stop() already covers authoritative snapshot + refresh.
         }
     }
     
@@ -1652,7 +1629,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             let newState = await SharedPlayerManager.shared.currentVisualState
             self.updateUI(for: newState)
             self.updateNowPlayingInfo()
-            self.saveStateForWidget()
+            // Phase 10 prune: stop() already covers authoritative snapshot + refresh.
         }
     }
     
@@ -2414,18 +2391,38 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     private func updateUserDefaultsLanguage(_ languageCode: String) {
         let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared")
-        sharedDefaults?.set(languageCode, forKey: "currentLanguage")
+
+        // The legacy separate "currentLanguage" key is no longer written directly.
+        // saveCombinedWidgetState writes the single authoritative PersistedWidgetState snapshot.
+        // We still bump lastUpdateTime for the widget "isAppRunning" check and freshness.
         sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "lastUpdateTime")
         sharedDefaults?.synchronize()
-        
+
+        // Architectural shift: Persist language together with current visual state
+        // so the widget's robust fallback (loadPersistedWidgetState) gets the correct
+        // language without extra forcing or freshness heuristics.
+        Task {
+            await SharedPlayerManager.shared.saveCombinedWidgetState(language: languageCode)
+        }
+
+        // The language setter is the single owner of prompt widget language propagation.
+        // Every call guarantees an immediate timeline reload carrying the new language.
+        WidgetRefreshManager.shared.refreshIfNeeded(
+            visualState: .prePlay,
+            currentLanguage: languageCode,
+            hasError: false,
+            immediate: true
+        )
+
         #if DEBUG
         print("🔗 MAIN APP: Updated UserDefaults language to: \(languageCode)")
         #endif
     }
     
     private func completeStreamSwitch(stream: DirectStreamingPlayer.Stream, index: Int) {
-        // Immediate non-async work
+        // Immediate non-async work. The language setter owns prompt widget refresh.
         updateUserDefaultsLanguage(stream.languageCode)
+        
         self.selectedStreamIndex = index
         saveStateForWidget()
         
@@ -2511,7 +2508,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             await Task.yield()
             
             updateSelectionIndicator(to: index)
-            saveStateForWidget()
+            // play() already performs the authoritative saveCurrentState + snapshot.
+            // Language propagation handled by updateUserDefaultsLanguage call above.
             
             #if DEBUG
             print("📱 completeStreamSwitch: Switched to stream \(stream.language), index=\(index)")
@@ -2569,24 +2567,11 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             print("✅ Widget Play button: SharedPlayerManager.play() succeeded")
             #endif
             
-            // === MODERNIZED: Use the same unified refresh path as pause/switch ===
-            // This replaces the old saveCurrentState() + saveStateForWidget() pattern
-            // while still bypassing throttling on cold launch (immediate: true)
-            let manager = SharedPlayerManager.shared
-            let finalVisualState = await manager.currentVisualState
-            let finalState = manager.loadSharedState()
-            
-            WidgetRefreshManager.shared.refreshIfNeeded(
-                visualState: finalVisualState,
-                currentLanguage: finalState.currentLanguage,
-                hasError: finalState.hasError,
-                immediate: true
-            )
-            
-            saveStateForWidget()
-            
+            // Phase 10 prune: play() already performs saveCurrentState (snapshot + WidgetRefreshManager).
+            // No extra poke required; providers saw optimistic state via intent's persistWidgetSnapshot
+            // (or forcePersist for play/pause) + early loadPersistedWidgetState return.
             #if DEBUG
-            print("🔗 Widget play action completed → forced refresh to \(finalVisualState)")
+            print("🔗 Widget play action completed")
             #endif
         }
     }
@@ -2596,17 +2581,13 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         // Mark this as a manual pause so the player doesn't auto-resume on certain paths
         isManualPause = true
         
-        // Brave: write the authoritative state to UserDefaults *synchronously* on the main thread
-        // before any async work. This eliminates the race where a pending "play" or a fast
-        // widget-action checker could see the old "playing" bool after the pause intent.
+        // Write critical non-display state synchronously (pending nuke + lastUserPauseTime barrier).
+        // The legacy "playing" bool and playerVisualState JSON writes have been removed here
+        // (Phase 8 cleanup): they are now true migration artifacts. Widget intents write the
+        // authoritative PersistedWidgetState snapshot via forcePersistVisualState before the
+        // Darwin round-trip; SharedPlayerManager.stop() writes isPlaying + snapshot via
+        // performActualSave on the authoritative path. Providers prefer the snapshot first.
         if let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared") {
-            sharedDefaults.set(false, forKey: "playing")
-            
-            let encoder = JSONEncoder()
-            if let data = try? encoder.encode(PlayerVisualState.userPaused) {
-                sharedDefaults.set(data, forKey: "playerVisualState")
-            }
-            
             // Nuke any stale "play" pending action that could race with this pause
             if sharedDefaults.string(forKey: "pendingAction") == "play" {
                 sharedDefaults.removeObject(forKey: "pendingAction")
@@ -2625,33 +2606,17 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         // notifies Darwin, and triggers proper widget refresh. This is the same clean path
         // used for explicit user pauses (remote commands, etc.) and avoids the old
         // pausePlayback() indirection for widget-initiated pauses.
+        // stop() performs authoritative saveCurrentState() (writes PersistedWidgetState snapshot
+        // + isPlaying + triggers WidgetRefreshManager with urgency for !playing). Widget providers
+        // see correct state via early snapshot return (written optimistically by the widget intent
+        // itself via forcePersistVisualState). Phase 10: the explicit saveStateForWidget after
+        // stop() in this path (and many others) was pruned as redundant.
         Task { @MainActor in
             await SharedPlayerManager.shared.stop()
             self.isPlaying = false
             let newState = await SharedPlayerManager.shared.currentVisualState
             self.updateUI(for: newState)
             self.updateNowPlayingInfo()
-            self.saveStateForWidget()
-        }
-        
-        // Force immediate widget refresh (bypasses throttling) — same as handleWidgetAction
-        Task { @MainActor in
-            let manager = SharedPlayerManager.shared
-            let finalVisualState = await manager.currentVisualState
-            let finalState = manager.loadSharedState()
-            
-            WidgetRefreshManager.shared.refreshIfNeeded(
-                visualState: finalVisualState,
-                currentLanguage: finalState.currentLanguage,
-                hasError: finalState.hasError,
-                immediate: true
-            )
-            
-            saveStateForWidget()
-            
-            #if DEBUG
-            print("🔗 Widget pause action completed → forced refresh to \(finalVisualState) (userPaused locked)")
-            #endif
         }
     }
 
@@ -2702,7 +2667,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 await SharedPlayerManager.shared.clearUserPausedLockIfNeeded()
                 await SharedPlayerManager.shared.resetToPrePlayForNewStream()
                 
-                // 🔥 NEW: Update shared UserDefaults so widget actually shows the new language
+                // 🔥 NEW: Update shared UserDefaults so widget actually shows the new language.
+                // Phase 10: language setter centralizes the immediate .prePlay refreshIfNeeded
+                // for prompt propagation; the prior explicit duplicate force is removed.
                 self.updateUserDefaultsLanguage(languageCode)
                 
                 #if DEBUG
@@ -2729,23 +2696,11 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 print("✅ Widget switch: SharedPlayerManager.play() succeeded")
                 #endif
                 
-                // 7. Widget refresh (now with correct language + modern path)
-                //    Use the same unified refresh as play/pause for consistency
-                let manager = SharedPlayerManager.shared
-                let finalVisualState = await manager.currentVisualState
-                let finalState = manager.loadSharedState()
-                
-                WidgetRefreshManager.shared.refreshIfNeeded(
-                    visualState: finalVisualState,
-                    currentLanguage: finalState.currentLanguage,
-                    hasError: finalState.hasError,
-                    immediate: true
-                )
-                
-                saveStateForWidget()
-                
+                // 7. Phase 10 prune: play() already did the authoritative saveCurrentState (snapshot
+                //    + WidgetRefreshManager). Language prompt owned by updateUserDefaultsLanguage.
+                //    No extra saveStateForWidget needed here.
                 #if DEBUG
-                print("🔗 Widget switch completed → forced refresh to \(finalVisualState) [language: \(finalState.currentLanguage)]")
+                print("🔗 Widget switch completed (authoritative save covered by play())")
                 #endif
                 
                 // 8. Clear pending action
@@ -2759,12 +2714,13 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         DispatchQueue.main.async(execute: workItem)
     }
     
-    private func updateUserDefaultsForStream(_ stream: DirectStreamingPlayer.Stream) {
-        let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared")
-        sharedDefaults?.set(stream.languageCode, forKey: "currentLanguage")
-        sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "lastUpdateTime")
-        sharedDefaults?.synchronize()
-    }
+    // REMOVED (architectural cleanup): updateUserDefaultsForStream
+    // It was the last direct writer of the legacy "currentLanguage" key outside the
+    // blessed paths (updateUserDefaultsLanguage + saveCombinedWidgetState).
+    // Its one call site was routed to the modern method above. The method is deleted
+    // to prevent future accidental direct writes.
+    //
+    // (Historical note: this helper predated the PersistedWidgetState SSOT work.)
 
     /// Direct playback without tuning sounds (for widget actions, quick actions, etc.)
     private func startPlaybackDirect() {
@@ -2926,18 +2882,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 isManualPause = false
                 await SharedPlayerManager.shared.userRequestedPlay()
 
-                // Post-action refresh (same pattern previously inside handleWidgetPlayAction)
-                let manager = SharedPlayerManager.shared
-                let finalVisualState = await manager.currentVisualState
-                let finalState = manager.loadSharedState()
-
-                WidgetRefreshManager.shared.refreshIfNeeded(
-                    visualState: finalVisualState,
-                    currentLanguage: finalState.currentLanguage,
-                    hasError: finalState.hasError,
-                    immediate: true
-                )
-                saveStateForWidget()
+                // Phase 10 prune: userRequestedPlay() (→ setUserIntentToPlay + play) already covers
+                // the authoritative saveCurrentState + PersistedWidgetState snapshot + refresh.
             }
         case "pause":
             #if DEBUG
@@ -3061,7 +3007,9 @@ extension ViewController {
             print("📡 Setting stream to: \(targetStream.language)")
             #endif
             await streamingPlayer.setStream(to: targetStream)
-            updateUserDefaultsForStream(targetStream)
+            // Retired legacy direct-write helper; route through the modern path that also
+            // writes the combined PersistedWidgetState snapshot.
+            updateUserDefaultsLanguage(targetStream.languageCode)
             hasPermanentPlaybackError = false
             
             // UI update
@@ -3094,19 +3042,8 @@ extension ViewController {
             print("✅ handleSwitchToLanguage completed for \(languageCode)")
             #endif
             
-            // Use modern SSOT refresh path (replaces legacy direct WidgetCenter call)
-            let manager = SharedPlayerManager.shared
-            let finalVisualState = await manager.currentVisualState
-            let finalState = manager.loadSharedState()
-            
-            WidgetRefreshManager.shared.refreshIfNeeded(
-                visualState: finalVisualState,
-                currentLanguage: finalState.currentLanguage,
-                hasError: finalState.hasError,
-                immediate: true
-            )
-            
-            saveStateForWidget()
+            // Phase 10 prune: handlePlayAction / player paths + saveCurrentState already handle
+            // the snapshot write + WidgetRefreshManager. (Language prompt via setter.)
         }
     }
 
@@ -3547,7 +3484,8 @@ extension ViewController: StreamingPlayerDelegate {
                     UIAccessibility.post(notification: .announcement,
                                         argument: String(localized: "switched_to_language \(targetStream.language)"))
                     
-                    // Save state for widget consistency
+                    // Save state for widget consistency (Phase 10: many peers pruned; this one
+                    // remains inside the lang-switch subcase of widget action dispatch).
                     saveStateForWidget()
                 }
                 
@@ -3557,20 +3495,15 @@ extension ViewController: StreamingPlayerDelegate {
                 #endif
             }
             
-            // === CRITICAL FIX: Force widget refresh after EVERY widget action ===
-            // This bypasses the "No meaningful state change" throttling and prevents icon revert
-            let finalVisualState = await manager.currentVisualState
-            let finalState = manager.loadSharedState()
-            
-            WidgetRefreshManager.shared.refreshIfNeeded(
-                visualState: finalVisualState,
-                currentLanguage: finalState.currentLanguage,
-                hasError: finalState.hasError,
-                immediate: true
-            )
+            // Post-action save: specific cases (play/pause/switch lang) were pruned in Phase 10
+            // because their player methods already cover saveCurrentState/snapshot/refresh.
+            // This tail poke remains for the general dispatch + any non-play paths (e.g. pure
+            // lang switch without play) to ensure the authoritative snapshot is written after
+            // Darwin processing. WidgetRefreshManager + snapshot SSOT handle the rest.
+            saveStateForWidget()
             
             #if DEBUG
-            print("🔗 Widget action '\(action)' completed → forced refresh to \(finalVisualState)")
+            print("🔗 Widget action '\(action)' completed → saveStateForWidget")
             #endif
             
             // Clear the pending action (actor-isolated)

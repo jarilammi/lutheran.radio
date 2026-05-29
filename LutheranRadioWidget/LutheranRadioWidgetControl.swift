@@ -162,68 +162,32 @@ extension LutheranRadioWidgetControl {
             return Value(visualState: visualState, currentStation: currentStation)
         }
 
-        // MARK: - State resolution (uses the same three-layer hardening as the Home Screen widget)
+        // MARK: - State resolution (snapshot is the sole SSOT)
 
         private func effectiveVisualStateAndStation() async -> (visualState: PlayerVisualState, currentStation: String) {
             let manager = SharedPlayerManager.shared
 
-            // Layer 1: Always refresh from persistence first (fresh actor).
+            // Always refresh from persistence first (fresh actor).
             await manager.refreshVisualStateFromPersistence()
             
-            guard let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
-                let state = manager.loadSharedState()
+            // App Group unavailable (extremely rare). Fall back to in-memory state + preferred language helper.
+            if UserDefaults(suiteName: "group.radio.lutheran.shared") == nil {
                 let vs = await manager.currentVisualState
-                let stream = manager.availableStreams.first(where: { $0.languageCode == state.currentLanguage }) ?? manager.availableStreams[0]
+                let lang = SharedPlayerManager.preferredWidgetLanguage()
+                let stream = manager.availableStreams.first(where: { $0.languageCode == lang }) ?? manager.availableStreams[0]
                 return (vs, stream.flag + " " + stream.language)
             }
+
+            // The unified snapshot is the single source of truth.
+            if let combined = SharedPlayerManager.loadPersistedWidgetState() {
+                let stream = manager.availableStreams.first(where: { $0.languageCode == combined.currentLanguage }) ?? manager.availableStreams[0]
+                return (combined.visualState, stream.flag + " " + stream.language)
+            }
             
-            // Layer 2: Short-lived pendingAction / instantFeedback (same pattern as Home Screen widget).
-            if let pendingAction = sharedDefaults.string(forKey: "pendingAction"),
-               let pendingTime = sharedDefaults.object(forKey: "pendingActionTime") as? Double {
-
-                let actionAge = Date().timeIntervalSince1970 - pendingTime
-                if actionAge < 12.0 {
-                    let state = manager.loadSharedState()
-                    let vs = await manager.currentVisualState
-
-                    let effective: PlayerVisualState = {
-                        switch pendingAction {
-                        case "play":  return .playing
-                        case "pause": return .userPaused
-                        case "switch": return vs
-                        default:      return vs
-                        }
-                    }()
-
-                    #if DEBUG
-                    print("🔗 [CONTROL PROVIDER] pendingAction=\(pendingAction) → forcing visualState=\(effective)")
-                    #endif
-
-                    let stream = manager.availableStreams.first(where: { $0.languageCode == state.currentLanguage }) ?? manager.availableStreams[0]
-                    let station = stream.flag + " " + stream.language
-                    return (effective, station)
-                }
-            }
-
-            if let instantFeedbackTime = sharedDefaults.object(forKey: "instantFeedbackTime") as? Double,
-               let instantFeedbackLanguage = sharedDefaults.string(forKey: "instantFeedbackLanguage"),
-               sharedDefaults.bool(forKey: "isInstantFeedback") == true {
-
-                let age = Date().timeIntervalSince1970 - instantFeedbackTime
-                if age < 15.0 {
-                    _ = manager.loadSharedState()
-                    let vs = await manager.currentVisualState
-                    let lang = instantFeedbackLanguage
-                    let stream = manager.availableStreams.first(where: { $0.languageCode == lang }) ?? manager.availableStreams[0]
-                    let station = stream.flag + " " + stream.language
-                    return (vs, station)
-                }
-            }
-
-            // Layer 3: Final fallback — direct JSON decode (bypasses actor memory).
-            let state = manager.loadSharedState()
-            let vs = SharedPlayerManager.loadPersistedVisualStateDirect()
-            let stream = manager.availableStreams.first(where: { $0.languageCode == state.currentLanguage }) ?? manager.availableStreams[0]
+            // Ultimate fallback (pre-Phase-6 install with no snapshot ever written).
+            let vs = await manager.currentVisualState
+            let lang = SharedPlayerManager.preferredWidgetLanguage()
+            let stream = manager.availableStreams.first(where: { $0.languageCode == lang }) ?? manager.availableStreams[0]
             let station = stream.flag + " " + stream.language
             return (vs, station)
         }

@@ -32,7 +32,7 @@ import Core
 /// Usage:
 /// - Main app / recovery logic: `await SharedPlayerManager.shared.play()`, `.stop()`, etc.
 /// - Widgets / Live Activities / intents: `SharedPlayerManager.shared.loadSharedState()`,
-///   `loadPersistedVisualStateDirect()`, `forcePersistVisualState(...)` (never instantiate a player).
+///   `loadPersistedVisualStateDirect()` (snapshot-first), `forcePersistVisualState(...)` (never instantiate a player).
 ///
 /// See also: `DirectStreamingPlayer` (actual playback), `PlayerVisualState.swift` (the visual SSOT),
 /// `WidgetRefreshManager.swift`, and `RadioLiveActivityManager.swift`.
@@ -84,16 +84,29 @@ import Core
 ///
 /// ### Persistence Keys & Ownership (App Group "group.radio.lutheran.shared")
 ///
+/// `persistedWidgetState` is the **single authoritative snapshot** for widget and Live Activity
+/// display. It carries both the visual state and the current language, and is written on every
+/// authoritative state change from the main app as well as optimistically from widget intents.
+///
+/// Widget providers and Live Activities are expected to consult `loadPersistedWidgetState()` first.
+/// This design allows the system to operate with minimal reliance on short-lived optimistic keys
+/// or freshness heuristics for normal operation.
+///
+/// Legacy separate keys (`playerVisualState` JSON and the standalone `currentLanguage` key) are
+/// no longer written by current code paths. They exist only for compatibility with very old
+/// installs that have never written a combined snapshot.
+///
 /// This is the authoritative shared state model. All values are anonymous. No PII, no listening history.
 ///
 /// | Key                     | Type                  | Primary Writers                                              | Primary Readers (widgets, recovery, UI)                              | Purpose & Semantics                                          | Lifetime / Notes |
 /// |-------------------------|-----------------------|--------------------------------------------------------------|----------------------------------------------------------------------|--------------------------------------------------------------|------------------|
-/// | playerVisualState       | Data (JSON)           | SharedPlayerManager (`saveVisualState`, all setters), widget timeline providers in some paths | `loadPersistedVisualStateDirect()`, `ensure...`, widgets, Live Activities, `restore...` | **Modern Single Source of Truth** for visual intent. Preferred over legacy bools. | Persisted across launches |
+/// | playerVisualState       | Data (JSON)           | (Legacy — no longer written)                                 | `loadPersistedVisualStateDirect()` (prefers snapshot; falls back for old installs) | Legacy visual state key. Readers prefer the combined snapshot. | Migration / compat only |
+/// | persistedWidgetState    | Data (JSON)           | `savePersistedWidgetState` (from performActualSave + saveCombined); also written optimistically by widget intents | `loadPersistedWidgetState()` (strongly preferred early return in providers) | **Single Source of Truth** for widget / Live Activity display (visualState + language) | Primary SSOT |
 /// | playing (legacy)        | Bool                  | Older paths + fallbacks in `performActualSave`               | `ensureVisualStateLoaded` fallback, some widget decision logic       | Legacy "is radio playing" signal                             | Being phased out; still read as fallback |
 /// | isPlaying               | Bool                  | `SharedPlayerManager.performActualSave`                      | `loadSharedState`, widget timeline providers                         | Snapshot derived from `currentVisualState.isActivelyPlaying` | Written on every authoritative save |
-/// | currentLanguage         | String (languageCode) | ViewController on switch, SharedPlayerManager save paths     | `loadSharedState`, widgets, Live Activities                          | Currently selected stream language                           | Updated on every stream change |
+/// | currentLanguage         | String (languageCode) | (Legacy — no longer written by current paths)                | Migration fallbacks only in `loadPersistedWidgetState` / `preferredWidgetLanguage` | Legacy separate language key. Snapshot + `preferredWidgetLanguage()` are the SSOT. | Migration / compat only |
 /// | hasError                | Bool                  | SharedPlayerManager (sourced from player.hasPermanentError)  | `loadSharedState`, widgets                                           | Permanent error flag for UI chrome                           | Set on security or unrecoverable network failures |
-/// | lastUpdateTime          | Double (epoch)        | SharedPlayerManager (`performActualSave` + widget handlers)  | Throttling logic inside `performActualSave`, widget providers        | Timestamp of last authoritative state change                 | Used for 5s debounce + instant feedback expiry detection |
+/// | lastUpdateTime          | Double (epoch)        | `SharedPlayerManager.performActualSave` (on every save) + widget handlers | Widget providers (isAppRunning 60 s check), instant-feedback expiry | Timestamp of last authoritative state change                 | Useful for external freshness + isAppRunning |
 /// | lastUserPauseTime       | Double (epoch)        | ViewController (explicit pause paths)                        | DirectStreamingPlayer recovery nudges (two locations)                | Hard 8-second barrier after any user pause                   | Prevents resurrection attempts immediately after pause |
 /// | isInstantFeedback       | Bool                  | Widget handlers (`handleWidgetPlay/Stop/Switch`)             | `loadSharedState` (checked first)                                    | Signals that a widget action just occurred (optimistic UI)   | Short-lived; cleared after 15s or next authoritative save |
 /// | instantFeedbackTime     | Double (epoch)        | Widget handlers                                              | `loadSharedState`                                                    | Timestamp for the instant feedback validity window           | 15-second validity window |
@@ -149,10 +162,17 @@ actor SharedPlayerManager {
     // Live Activities, and other non-actor contexts. They either perform no actor work
     // or hop internally via Task.
     
-    /// Decodes the "playerVisualState" JSON directly from the App Group UserDefaults.
-    /// This is the robust fallback for widget button visuals when no pendingAction is active.
-    /// It bypasses the actor's in-memory cache entirely.
+    /// Returns the authoritative visual state for widget/extension decision paths and fallbacks.
+    ///
+    /// Strongly prefers the combined `PersistedWidgetState` snapshot. Falls back to the
+    /// legacy "playerVisualState" JSON only for very old installs that have never written
+    /// a snapshot.
     nonisolated static func loadPersistedVisualStateDirect() -> PlayerVisualState {
+        // Preferred: the unified snapshot (written from both main app and widget intents)
+        if let combined = loadPersistedWidgetState() {
+            return combined.visualState
+        }
+        // Legacy migration fallback only
         guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared"),
               let data = defaults.data(forKey: "playerVisualState"),
               let decoded = try? JSONDecoder().decode(PlayerVisualState.self, from: data) else {
@@ -178,17 +198,18 @@ actor SharedPlayerManager {
         Task { await Self.shared.ensureVisualStateLoaded() }
     }
     
-    /// Nonisolated helper that widget intents can call to persist a visual state directly to the JSON key.
-    /// This gives the next Provider run (even before the Darwin roundtrip completes) something authoritative to load.
+    /// Nonisolated helper that widget intents can call to persist a visual state directly.
+    /// This gives the next Provider run (even before the Darwin roundtrip completes) something
+    /// authoritative to load.
     ///
-    /// Also updates the in-memory currentVisualState in this process so that any Provider
-    /// running in the same widget extension process immediately sees the new value.
+    /// Writes the combined `PersistedWidgetState` snapshot (visual + current preferred language).
+    /// This makes the snapshot the single source of truth for both authoritative saves from the
+    /// main app and optimistic updates from widget intents. Providers that check the snapshot
+    /// first see correct play/pause + language immediately.
+    ///
+    /// Also updates the in-memory currentVisualState in this process.
     nonisolated public func forcePersistVisualState(_ state: PlayerVisualState) {
-        let encoder = JSONEncoder()
-        if let data = try? encoder.encode(state) {
-            sharedDefaults?.set(data, forKey: "playerVisualState")
-            sharedDefaults?.synchronize()
-        }
+        Self.persistWidgetSnapshot(visualState: state, language: Self.preferredWidgetLanguage())
         // Update in-memory so the widget process sees the fresh state on the next snapshot
         // without waiting for a Darwin round-trip or a full re-load.
         Task { await Self.shared._forceSetCurrentVisualState(state) }
@@ -489,6 +510,16 @@ actor SharedPlayerManager {
         initialPlaybackHasRun = false
         saveVisualState()
         await saveCurrentState()
+
+        // NOTE: We no longer write persistedWidgetState snapshot here.
+        // resetToPrePlayForNewStream is a *visual/cold-guard* reset for stream switches.
+        // Language changes are driven by callers via updateUserDefaultsLanguage() →
+        // saveCombinedWidgetState(), which is the single place that authors the atomic
+        // (visual + language) snapshot. This eliminates a source of potentially-stale
+        // language in the snapshot (the old read of "currentLanguage" here could race
+        // with the update in some call orders, e.g. widget switch handler).
+        // performActualSave will still write the snapshot if it detects a language
+        // change via its internal check.
         
         #if DEBUG
         print("🔄 [SharedPlayerManager] resetToPrePlayForNewStream() — state reset to .prePlay for atomic stream switch")
@@ -636,8 +667,8 @@ actor SharedPlayerManager {
         sharedDefaults?.set(now, forKey: "lastUpdateTime")
         sharedDefaults?.set(true, forKey: "isInstantFeedback")
         sharedDefaults?.set(now, forKey: "instantFeedbackTime")
-        sharedDefaults?.set(sharedDefaults?.string(forKey: "currentLanguage") ?? "en",
-                            forKey: "instantFeedbackLanguage")
+        // Architectural shift: source from preferred (combined snapshot) even when writing legacy instant key
+        sharedDefaults?.set(Self.preferredWidgetLanguage(), forKey: "instantFeedbackLanguage")
         
         // CRITICAL: Optimistic SSOT update (same pattern we already use in stop)
         currentVisualState = .playing
@@ -649,7 +680,8 @@ actor SharedPlayerManager {
         // Small delay + optimistic widget refresh using the modern API
         Task {
             try? await Task.sleep(for: .seconds(0.5))
-            let language = sharedDefaults?.string(forKey: "currentLanguage") ?? "en"
+            // Architectural shift: Prefer combined snapshot for optimistic language (no direct old key)
+            let language = Self.preferredWidgetLanguage()
             
             await WidgetRefreshManager.shared.refreshIfNeeded(
                 visualState: .playing,           // ← modern path
@@ -670,8 +702,8 @@ actor SharedPlayerManager {
         sharedDefaults?.set(now, forKey: "lastUpdateTime")
         sharedDefaults?.set(true, forKey: "isInstantFeedback")
         sharedDefaults?.set(now, forKey: "instantFeedbackTime")
-        sharedDefaults?.set(sharedDefaults?.string(forKey: "currentLanguage") ?? "en",
-                            forKey: "instantFeedbackLanguage")
+        // Architectural shift: source from preferred (combined snapshot) even when writing legacy instant key
+        sharedDefaults?.set(Self.preferredWidgetLanguage(), forKey: "instantFeedbackLanguage")
         
         // CRITICAL: Set the paused state synchronously for widget path
         currentVisualState = .userPaused
@@ -683,7 +715,8 @@ actor SharedPlayerManager {
         // Small delay + optimistic widget refresh using the modern API
         Task {
             try? await Task.sleep(for: .seconds(0.5))
-            let language = sharedDefaults?.string(forKey: "currentLanguage") ?? "en"
+            // Architectural shift: Prefer combined snapshot for optimistic language (no direct old key)
+            let language = Self.preferredWidgetLanguage()
             
             await WidgetRefreshManager.shared.refreshIfNeeded(
                 visualState: currentVisualState,   // already .userPaused
@@ -702,6 +735,29 @@ actor SharedPlayerManager {
         sharedDefaults?.set(now, forKey: "instantFeedbackTime")
         sharedDefaults?.set(stream.languageCode, forKey: "instantFeedbackLanguage")
         sharedDefaults?.synchronize()
+
+        // Phase 11: Best-effort write of the combined snapshot from the widget side.
+        // Prefer the unified snapshot (or in-memory after any prior force in this process).
+        // The legacy "playerVisualState" read has been removed (writes retired).
+        // Main app will follow with authoritative saveCurrentState shortly.
+        let visualForSwitch: PlayerVisualState
+        if let combined = Self.loadPersistedWidgetState() {
+            visualForSwitch = combined.visualState
+        } else {
+            // Fresh widget extension process with no prior snapshot in this launch — safe default.
+            // The calling intent (SwitchStreamIntent) will have already persisted a snapshot
+            // with the correct visual derived from loadSharedState just before this path.
+            visualForSwitch = .prePlay
+        }
+        let snapshot = PersistedWidgetState(
+            visualState: visualForSwitch,
+            currentLanguage: stream.languageCode,
+            lastLanguageChangeTime: Date()
+        )
+        if let data = try? JSONEncoder().encode(snapshot) {
+            sharedDefaults?.set(data, forKey: "persistedWidgetState")
+            sharedDefaults?.synchronize()
+        }
         
         scheduleWidgetAction(action: "switch", parameter: stream.languageCode)
         notifyMainApp(action: "switch", parameter: stream.languageCode)
@@ -738,8 +794,9 @@ actor SharedPlayerManager {
             print("🔗 Set pendingLanguage: \(param)")
             #endif
         } else if action == "switch" {
-            // Fallback: use current stream language if no parameter provided
-            let currentLanguage = sharedDefaults.string(forKey: "currentLanguage") ?? "en"
+            // Fallback: use preferred (combined snapshot first) for pendingLanguage
+            // DEPRECATED direct key read — will be removed after migration complete.
+            let currentLanguage = Self.preferredWidgetLanguage()
             sharedDefaults.set(currentLanguage, forKey: "pendingLanguage")
             #if DEBUG
             print("🔗 Set fallback pendingLanguage: \(currentLanguage)")
@@ -799,19 +856,115 @@ actor SharedPlayerManager {
     // MARK: - PlayerVisualState Persistence & Restoration (Private)
 
     private func saveVisualState() {
-        let encoder = JSONEncoder()
-        if let data = try? encoder.encode(currentVisualState) {
-            sharedDefaults?.set(data, forKey: "playerVisualState")
-            sharedDefaults?.synchronize()   // Safe for widget/extension sync
-        }
+        // Intentionally a no-op for persistence.
+        // All visual + language state flows through the PersistedWidgetState snapshot
+        // written by performActualSave and the widget intent paths. The call sites
+        // remain for in-memory discipline and resurrection protection.
     }
 
     private func loadVisualState() -> PlayerVisualState {
+        // Prefer the combined snapshot for actor in-memory initialization
+        // (both main app and widget extension processes). Legacy key is migration-only.
+        if let combined = Self.loadPersistedWidgetState() {
+            return combined.visualState
+        }
         guard let data = sharedDefaults?.data(forKey: "playerVisualState"),
               let decoded = try? JSONDecoder().decode(PlayerVisualState.self, from: data) else {
             return .prePlay   // safe fallback for first launch
         }
         return decoded
+    }
+
+    // MARK: - Persisted Widget State (visual + language snapshot)
+
+    /// Combined snapshot that carries both visual intent and language.
+    /// This is the preferred path for cross-process widget and Live Activity correctness.
+    struct PersistedWidgetState: Codable {
+        let visualState: PlayerVisualState
+        let currentLanguage: String
+        let lastLanguageChangeTime: Date?
+    }
+
+    /// Saves the combined visual + language state as a single atomic blob.
+    /// This is the new preferred path for cross-process widget correctness.
+    private func savePersistedWidgetState(visualState: PlayerVisualState, language: String) {
+        let snapshot = PersistedWidgetState(
+            visualState: visualState,
+            currentLanguage: language,
+            lastLanguageChangeTime: Date()
+        )
+        let encoder = JSONEncoder()
+        if let data = try? encoder.encode(snapshot) {
+            sharedDefaults?.set(data, forKey: "persistedWidgetState")
+            sharedDefaults?.synchronize()
+        }
+    }
+
+    /// Loads the combined visual + language snapshot.
+    ///
+    /// Pre-unification installs without a snapshot receive nil and fall back to safe
+    /// defaults (.prePlay / "en") at call sites.
+    nonisolated static func loadPersistedWidgetState() -> (visualState: PlayerVisualState, currentLanguage: String)? {
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return nil }
+
+        // Preferred (and now only) path: the unified PersistedWidgetState snapshot.
+        // Written bidirectionally from performActualSave, saveCombined, forcePersist,
+        // and persistWidgetSnapshot. All widget providers and Live Activities should
+        // check this first.
+        if let data = defaults.data(forKey: "persistedWidgetState"),
+           let decoded = try? JSONDecoder().decode(PersistedWidgetState.self, from: data) {
+            return (decoded.visualState, decoded.currentLanguage)
+        }
+
+        // No migration fallback remains for the retired playerVisualState / currentLanguage keys.
+        // Old installs without a snapshot get the safe .prePlay / "en" defaults at usage sites.
+        return nil
+    }
+
+    /// Nonisolated static writer for the combined PersistedWidgetState snapshot.
+    /// Used by widget intents (optimistic path) and by forcePersistVisualState so that
+    /// providers see fresh visual + language immediately via their early snapshot check,
+    /// even before the main app processes the Darwin notification.
+    nonisolated static func persistWidgetSnapshot(visualState: PlayerVisualState, language: String) {
+        let snapshot = PersistedWidgetState(
+            visualState: visualState,
+            currentLanguage: language,
+            lastLanguageChangeTime: Date()
+        )
+        let encoder = JSONEncoder()
+        if let data = try? encoder.encode(snapshot) {
+            if let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") {
+                defaults.set(data, forKey: "persistedWidgetState")
+                defaults.synchronize()
+            }
+        }
+    }
+
+    /// Preferred source for widget language (and callers that need display language for
+    /// widgets and Live Activities). Strongly prefers the combined `PersistedWidgetState`
+    /// snapshot. Falls back to the legacy separate "currentLanguage" key only for migration
+    /// compatibility.
+    ///
+    /// Using this helper (instead of reading the raw key directly) routes language reads
+    /// through the snapshot and reduces the need for forcing or staleness heuristics.
+    nonisolated static func preferredWidgetLanguage() -> String {
+        if let combined = loadPersistedWidgetState() {
+            return combined.currentLanguage
+        }
+        // Ultimate fallback (migration only)
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return "en" }
+        return defaults.string(forKey: "currentLanguage") ?? "en"
+    }
+
+    /// Public entry point for language changes. Persists visual state + language together
+    /// in the combined snapshot so widgets receive correct language without extra forcing.
+    func saveCombinedWidgetState(language: String) {
+        savePersistedWidgetState(visualState: currentVisualState, language: language)
+
+        // 2026-05-29: Legacy separate "currentLanguage" key retired. lastUpdateTime
+        // is still bumped for the 60 s "isAppRunning" widget check and general freshness.
+        sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "lastUpdateTime")
+        sharedDefaults?.synchronize()
     }
 }
 
@@ -827,7 +980,10 @@ extension SharedPlayerManager {
         let now = Date()
         
         // Fetch current values from the real player
-        let currentLanguageCode = sharedDefaults?.string(forKey: "currentLanguage") ?? "en"
+        // NOTE (architectural shift): Language read now goes through preferredWidgetLanguage()
+        // which strongly prefers the combined PersistedWidgetState snapshot. The old direct
+        // key read is only in the ultimate fallback inside the helper (migration path).
+        let currentLanguageCode = Self.preferredWidgetLanguage()
         let isPermanentError    = await player.isLastErrorPermanent()
         // Source the legacy "playing" bool from the authoritative visual state (SSOT),
         // not the racy snapshot in actualPlaybackState. The snapshot frequently returns
@@ -864,22 +1020,24 @@ extension SharedPlayerManager {
     private func performActualSave(_ state: (isPlaying: Bool, currentLanguage: String, hasError: Bool),
                                    widgetState: WidgetState,
                                    at time: Date) {
-        // Suppress rapid successive saves during language/stream switches.
-        // CRITICAL FIX for first widget pause: explicit pauses (!isPlaying) must bypass
-        // the 5s throttle. During cold launch + stream setup the throttle is constantly
-        // active; the first widget pause save was dropped (second succeeded after window cleared).
-        // Pauses are now treated as urgent so .userPaused always reaches widgets/Live Activities.
-        if state.isPlaying,   // only throttle while actively playing / switching
-           let lastUpdate = sharedDefaults?.double(forKey: "lastUpdateTime"),
-           Date().timeIntervalSince1970 - lastUpdate < 5.0 {
-            #if DEBUG
-            print("🔇 Skipping rapid state save (stream switch in progress)")
-            #endif
-            return
-        }
-        
+        // The 5 s rapid-save throttle has been removed. The snapshot is written on every
+        // call. Providers trust the snapshot first. WidgetRefreshManager handles debouncing
+        // and language-change urgency. We retain isLanguageChange detection only for
+        // the urgent refresh flag.
+        let previousLanguage = Self.loadPersistedWidgetState()?.currentLanguage ?? ""
+        let isLanguageChange = !previousLanguage.isEmpty && previousLanguage != state.currentLanguage
+
+        // Always persist the authoritative (visualState + language) snapshot first.
+        // Widget providers take the early loadPersistedWidgetState() path for both
+        // authoritative and optimistic cases. WidgetRefreshManager handles debouncing
+        // and language-change urgency.
+        savePersistedWidgetState(visualState: currentVisualState, language: state.currentLanguage)
+
+        // Legacy keys are written only for migration surface. They are no longer
+        // rate-limited here; WidgetRefreshManager handles spam protection.
         sharedDefaults?.set(state.isPlaying, forKey: "isPlaying")
-        sharedDefaults?.set(state.currentLanguage, forKey: "currentLanguage")
+        // Legacy language key is no longer written. The snapshot is the primary
+        // persistence for widget providers and Live Activities.
         sharedDefaults?.set(state.hasError, forKey: "hasError")
         sharedDefaults?.set(time.timeIntervalSince1970, forKey: "lastUpdateTime")
         
@@ -888,7 +1046,7 @@ extension SharedPlayerManager {
         sharedDefaults?.removeObject(forKey: "instantFeedbackTime")
         sharedDefaults?.removeObject(forKey: "instantFeedbackLanguage")
         
-        let isUrgentUpdate = !state.isPlaying || state.hasError
+        let isUrgentUpdate = !state.isPlaying || state.hasError || isLanguageChange
         
         // Always hop to MainActor for WidgetRefreshManager (required in Swift 6)
         Task { @MainActor in
@@ -939,7 +1097,12 @@ extension SharedPlayerManager {
         
         // Normal state loading
         let isPlaying = sharedDefaults?.bool(forKey: "isPlaying") ?? false
-        let currentLanguage = sharedDefaults?.string(forKey: "currentLanguage") ?? "en"
+        // Language is returned via the preferred helper (combined snapshot first).
+        // This gives the large majority of call sites (Live Activities, many ViewController
+        // paths, etc.) the authoritative language with no further changes.
+        // The old direct key remains only as the ultimate migration fallback inside
+        // preferredWidgetLanguage().
+        let currentLanguage = Self.preferredWidgetLanguage()
         let hasError = sharedDefaults?.bool(forKey: "hasError") ?? false
         return (isPlaying, currentLanguage, hasError)
     }

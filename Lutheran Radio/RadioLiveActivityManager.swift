@@ -46,7 +46,10 @@ class RadioLiveActivityManager: ObservableObject {
         
         let manager = SharedPlayerManager.shared
         let state = manager.loadSharedState()
-        let currentStream = manager.availableStreams.first(where: { $0.languageCode == state.currentLanguage }) ?? manager.availableStreams[0]
+        // Use the preferred language helper (combined snapshot) for Live Activity stream selection.
+        // This matches the pattern used in the widget providers.
+        let language = SharedPlayerManager.preferredWidgetLanguage()
+        let currentStream = manager.availableStreams.first(where: { $0.languageCode == language }) ?? manager.availableStreams[0]
         
         let attributes = LutheranRadioLiveActivityAttributes(
             appName: "Lutheran Radio",
@@ -92,7 +95,8 @@ class RadioLiveActivityManager: ObservableObject {
         
         let manager = SharedPlayerManager.shared
         let state = manager.loadSharedState()
-        let currentStream = manager.availableStreams.first(where: { $0.languageCode == state.currentLanguage }) ?? manager.availableStreams[0]
+        let language = SharedPlayerManager.preferredWidgetLanguage()
+        let currentStream = manager.availableStreams.first(where: { $0.languageCode == language }) ?? manager.availableStreams[0]
         
         // NEW: Use visualState (SSOT) + await
         let visualState = await manager.currentVisualState
@@ -126,8 +130,8 @@ class RadioLiveActivityManager: ObservableObject {
         
         Task {
             let manager = SharedPlayerManager.shared
-            let state = manager.loadSharedState()
-            let currentStream = manager.availableStreams.first(where: { $0.languageCode == state.currentLanguage }) ?? manager.availableStreams[0]
+            let language = SharedPlayerManager.preferredWidgetLanguage()
+            let currentStream = manager.availableStreams.first(where: { $0.languageCode == language }) ?? manager.availableStreams[0]
             
             let finalContentState = LutheranRadioLiveActivityAttributes.ContentState(
                 visualState: .userPaused,                                  // ← changed (stopped = userPaused)
