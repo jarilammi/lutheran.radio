@@ -2050,9 +2050,25 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
 
                     if self.initialPlaybackRetryCount >= self.maxInitialRetries {
                         #if DEBUG
-                        print("📱 [Chunk1-Diag] Max attempts (\(self.maxInitialRetries)) reached - giving up → emitting status_stream_unavailable (this is the red-trigger path)")
+                        let tc = self.player?.timeControlStatus.rawValue ?? -1
+                        print("📱 [Chunk1-Diag] Max attempts (\(self.maxInitialRetries)) reached - giving up")
+                        print("📱 [Chunk3-Diag] Safety net terminal: hasPermanentError=\(self.hasPermanentError) | timeControlStatus=\(tc) | rate=\(self.player?.rate ?? -1) | currentItemStatus=\(self.currentItemStatus.rawValue)")
                         #endif
-                        self.safeOnStatusChange(isPlaying: false, reasonKey: "status_stream_unavailable")
+
+                        if self.hasPermanentError {
+                            // Real permanent failure (via handleLoadingError or item.failed permanent).
+                            // Emit the modern hard-failure key so red banner + popup use the
+                            // correct localized "Failed" / reason text (post-unification).
+                            self.safeOnStatusChange(isPlaying: false, reasonKey: "status_failed")
+                        } else {
+                            // Pure transient ICY/Fig/decoder noise on noisy streams (Viro etc.).
+                            // Give one final recreatePlayerItem() (unified resource-loader item)
+                            // and suppress the severe status entirely. No red UX for recoverable cases.
+                            #if DEBUG
+                            print("📱 [Chunk3-Diag] Transient give-up: performing FINAL recreatePlayerItem() then suppressing severe status. No red popup.")
+                            #endif
+                            self.recreatePlayerItem()
+                        }
                         return
                     }
 
