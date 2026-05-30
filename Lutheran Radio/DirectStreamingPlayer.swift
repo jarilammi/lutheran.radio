@@ -688,6 +688,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     private var playerItem: AVPlayerItem?
     private var metadataOutput: AVPlayerItemMetadataOutput?
     #endif
+    private var needsImmediateMetadataPush = false   // replaces time heuristic
     
     // MARK: - Queue Priority Management
     
@@ -1567,6 +1568,9 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             print("📻 [DirectStreamingPlayer] Attached AVPlayerItemMetadataOutput for ICY metadata")
             #endif
         }
+        
+        // NEW: Guarantee ICY delegate is attached even on item replacement paths (fixes pause→play resume metadata)
+        ensureICYAttached()
     }
 
     // MARK: - Stream Switching (the simpler fallback)
@@ -2137,6 +2141,9 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             #if DEBUG
             print("✅ Player item recreated and playback resumed")
             #endif
+            
+            // NEW (per minimal ICY resume fix): ensure delegate wired on the fresh item created by recreate
+            self.ensureICYAttached()
         }
     }
     
@@ -2575,7 +2582,6 @@ extension DirectStreamingPlayer: AVPlayerItemMetadataOutputPushDelegate {
         // Modern async API (iOS 16+). The Task closure capture of non-Sendable AVMetadataItem
         // is tolerated thanks to @preconcurrency import AVFoundation.
         Task { [weak self] in
-            // load(_:) returns cached value immediately if already loaded; throws on failure.
             if let title = try? await item.load(.stringValue) {
                 let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !trimmed.isEmpty else { return }
@@ -2584,14 +2590,43 @@ extension DirectStreamingPlayer: AVPlayerItemMetadataOutputPushDelegate {
                     guard let self else { return }
 
                     self.currentMetadata = trimmed
+                    
                     self.safeOnMetadataChange(metadata: trimmed)
-
-                    #if DEBUG
-                    print("📻 ✅ Using LIVE ICY metadata: \(trimmed)")
-                    #endif
+                    if self.needsImmediateMetadataPush {
+                        self.needsImmediateMetadataPush = false
+                        #if DEBUG
+                        print("📻 ✅ LIVE ICY [ensured after re-attach]: \(trimmed)")
+                        #endif
+                    } else {
+                        #if DEBUG
+                        print("📻 ✅ Using LIVE ICY metadata: \(trimmed)")
+                        #endif
+                    }
                 }
             }
         }
+    }
+
+    /// Guarantees metadata delegate is attached to every new AVPlayerItem (critical on same-stream resume).
+    /// Sets the explicit flag so the very next ICY StreamTitle triggers an immediate Now Playing / widget update.
+    @MainActor
+    private func ensureICYAttached() {
+        guard let item = player?.currentItem else { return }
+        
+        // Defensive clean + re-attach (idempotent)
+        if let old = metadataOutput {
+            item.remove(old)
+        }
+        
+        metadataOutput = AVPlayerItemMetadataOutput(identifiers: nil)
+        metadataOutput?.setDelegate(self, queue: .main)
+        item.add(metadataOutput!)
+        
+        needsImmediateMetadataPush = true
+        
+        #if DEBUG
+        print("🔗 ICY metadata output re-attached to fresh player item")
+        #endif
     }
 }
 
