@@ -497,6 +497,16 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             self.updateUserDefaultsLanguage(DirectStreamingPlayer.availableStreams[initialIndex].languageCode)
             self.updateBackground(for: DirectStreamingPlayer.availableStreams[initialIndex])
             
+            // Seeds the PersistedWidgetState snapshot (the SSOT read by saveCurrentState + preferredWidgetLanguage)
+            // with the correct initial languageCode *synchronously* before play() and its observer/KVO/save storm.
+            // This defeats the race where a prior session's "et" (or any stale language) gets re-written by
+            // the flood of early "State saved" calls. persistWidgetSnapshot is the existing nonisolated static
+            // intended for exactly these early/optimistic cross-process writes (also used by widget intents).
+            SharedPlayerManager.persistWidgetSnapshot(
+                visualState: .prePlay,
+                language: DirectStreamingPlayer.availableStreams[initialIndex].languageCode
+            )
+            
             // Tuning sound (now plays fully)
             self.playSpecialTuningSound()
             
@@ -3089,7 +3099,7 @@ extension ViewController: StreamingPlayerDelegate {
                     let correctedVisualState = await SharedPlayerManager.shared.currentVisualState
                     self.updateUI(for: correctedVisualState)
                     
-                    self.statusLabel.text = String(localized: String.LocalizationValue(reasonKey ?? "status_stream_unavailable"))
+                    self.statusLabel.text = String(localized: String.LocalizationValue(reasonKey))
                     self.statusLabel.backgroundColor = .systemRed
                     self.statusLabel.textColor = .white
                     self.statusLabel.accessibilityLabel = self.statusLabel.text
