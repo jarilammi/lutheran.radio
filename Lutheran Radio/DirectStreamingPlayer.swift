@@ -371,8 +371,9 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 URLQueryItem(name: "security_model", value: SecurityConfiguration.current.expectedSecurityModel)
             ]
             
-            // In production this can never fail, but to silence the compiler nicely:
-            return components.url ?? URL(string: "https://livestream.lutheran.radio")!
+            // This construction is guaranteed to succeed with valid inputs.
+            // We use a helper so we have a single place for all hardcoded URL fallbacks.
+            return components.url ?? makeURL("https://livestream.lutheran.radio")
         }
     }
     
@@ -434,20 +435,27 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     
     /// Static list of known streaming clusters.
     /// The first entry is the default/fallback.
-    static let servers = [
+    static let servers: [Server] = [
         Server(
             name: "EU",
-            pingURL: URL(string: "https://european.lutheran.radio/ping")!,
+            pingURL: makeURL("https://european.lutheran.radio/ping"),
             baseHostname: "lutheran.radio",
             subdomain: "eu"
         ),
         Server(
             name: "US",
-            pingURL: URL(string: "https://livestream.lutheran.radio/ping")!,
+            pingURL: makeURL("https://livestream.lutheran.radio/ping"),
             baseHostname: "lutheran.radio",
             subdomain: "us"
         )
     ]
+
+    internal static func makeURL(_ string: String) -> URL {
+        guard let url = URL(string: string) else {
+            fatalError("Invalid hardcoded URL: \(string)")
+        }
+        return url
+    }
     
     /// Result of a latency ping against one server.
     struct PingResult {
@@ -502,7 +510,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             }
         }
         
-        guard lastServerSelectionTime == nil || Date().timeIntervalSince(lastServerSelectionTime!) > 10.0 else {
+        if let last = lastServerSelectionTime,
+           Date().timeIntervalSince(last) <= 10.0 {
             #if DEBUG
             print("📡 selectOptimalServer: Throttling server selection, using cached server: \(currentSelectedServer.name)")
             #endif

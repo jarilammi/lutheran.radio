@@ -80,7 +80,7 @@ final class WidgetRefreshManager: @unchecked Sendable {
     private func scheduleDelayedRefresh(for state: WidgetState, delay: TimeInterval) {
         pendingRefresh?.cancel()
         
-        pendingRefresh = DispatchWorkItem { [weak self] in
+        let workItem = DispatchWorkItem { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
                 await self.performRefresh(for: state)
@@ -88,7 +88,8 @@ final class WidgetRefreshManager: @unchecked Sendable {
             }
         }
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: pendingRefresh!)
+        pendingRefresh = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
     }
     
     private func performRefresh(for state: WidgetState) async {

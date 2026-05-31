@@ -76,7 +76,12 @@ struct Provider: AppIntentTimelineProvider {
         let (currentLanguage, hasError, visualState) = await getPendingOrCurrentState(manager: SharedPlayerManager.shared)
         
         let manager = SharedPlayerManager.shared
-        let currentStream = manager.availableStreams.first { $0.languageCode == currentLanguage } ?? manager.availableStreams[0]
+        
+        // Safer stream selection
+        let currentStream = manager.availableStreams.first { $0.languageCode == currentLanguage }
+            ?? manager.availableStreams.first
+            ?? manager.availableStreams[0]          // final fallback (should never happen)
+        
         let currentStation = currentStream.flag + " " + currentStream.language
         
         let statusMessage: String = {
@@ -100,7 +105,10 @@ struct Provider: AppIntentTimelineProvider {
             configuration: configuration
         )
         
-        let nextUpdate = Calendar.current.date(byAdding: .minute, value: 15, to: Date())!
+        // Safe date calculation
+        let nextUpdate = Calendar.current.date(byAdding: .minute, value: 15, to: Date())
+            ?? Date().addingTimeInterval(15 * 60)
+        
         return Timeline(entries: [entry], policy: .after(nextUpdate))
     }
     

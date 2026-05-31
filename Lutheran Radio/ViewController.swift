@@ -309,8 +309,11 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         return imageView
     }()
     
-    private var speakerImageHeightConstraint: NSLayoutConstraint!
-    private var needleCenterXConstraint: NSLayoutConstraint!   // drives the tuning needle X position via Auto Layout so layout passes don't fight it
+    /// Height constraint for the speaker image (set in code).
+    private var speakerImageHeightConstraint: NSLayoutConstraint?
+
+    /// Drives the tuning needle X position via Auto Layout so layout passes don't fight it.
+    private var needleCenterXConstraint: NSLayoutConstraint?
     
     // MARK: - Audio and Streaming
     // New streaming player
@@ -789,7 +792,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                         UIView.transition(with: self.speakerImageView, duration: 0.3, options: .transitionCrossDissolve, animations: {
                             self.speakerImageView.image = speakerImage
                             self.speakerImageView.isHidden = false
-                            self.speakerImageHeightConstraint.constant = 100
+                            self.speakerImageHeightConstraint?.constant = 100
                             self.speakerImageView.accessibilityLabel = "Photo of \(speaker)"
                         }, completion: nil)
                         
@@ -798,7 +801,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                         UIView.transition(with: self.speakerImageView, duration: 0.3, options: .transitionCrossDissolve, animations: {
                             self.speakerImageView.image = placeholderImage
                             self.speakerImageView.isHidden = false
-                            self.speakerImageHeightConstraint.constant = 100
+                            self.speakerImageHeightConstraint?.constant = 100
                             self.speakerImageView.accessibilityLabel = "Lutheran Radio Logo"
                         }, completion: nil)
                     } else {
@@ -1153,12 +1156,21 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     private func performActiveConnectivityCheck() {
         guard !hasInternetConnection else { return }
-        if let lastAttempt = lastConnectionAttemptTime, Date().timeIntervalSince(lastAttempt) < 10.0 { return }
+        
+        if let lastAttempt = lastConnectionAttemptTime,
+           Date().timeIntervalSince(lastAttempt) < 10.0 {
+            return
+        }
+        
         lastConnectionAttemptTime = Date()
+        
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForResource = 5.0
         let session = URLSession(configuration: config)
-        let url = URL(string: "https://www.apple.com/library/test/success.html")!
+        
+        // Use our makeURL helper for consistency and safety
+        let url = DirectStreamingPlayer.makeURL("https://www.apple.com/library/test/success.html")
+        
         let task = session.dataTask(with: url) { [weak self] data, response, error in
             guard let self = self else {
                 #if DEBUG
@@ -1166,7 +1178,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 #endif
                 return
             }
+            
             let success = error == nil && (response as? HTTPURLResponse)?.statusCode == 200
+            
             DispatchQueue.main.async {
                 if success && !self.hasInternetConnection {
                     #if DEBUG
@@ -1825,12 +1839,12 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             airplayButton.heightAnchor.constraint(equalToConstant: 44)
         ])
         speakerImageHeightConstraint = speakerImageView.heightAnchor.constraint(equalToConstant: 50)
-        speakerImageHeightConstraint.isActive = true
+        speakerImageHeightConstraint?.isActive = true
 
         // Create the horizontal position constraint for the tuning needle once.
         // We update its .constant in updateSelectionIndicator instead of mutating .center.x.
         needleCenterXConstraint = selectionIndicator.centerXAnchor.constraint(equalTo: languageCollectionView.leadingAnchor, constant: 0)
-        needleCenterXConstraint.isActive = true
+        needleCenterXConstraint?.isActive = true
     }
     
     @objc private func handleMemoryWarning() {
@@ -2127,12 +2141,12 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             #if DEBUG
             print("📱 updateSelectionIndicator: Skipping — collection view has zero width")
             #endif
-            needleCenterXConstraint.constant = cellCenterX
+            needleCenterXConstraint?.constant = cellCenterX
             return
         }
         
         UIView.animate(withDuration: isInitial ? 0.0 : 0.3) {
-            self.needleCenterXConstraint.constant = cellCenterX
+            self.needleCenterXConstraint?.constant = cellCenterX
             self.languageCollectionView.layoutIfNeeded()
             self.selectionIndicator.transform = isInitial ? .identity : CGAffineTransform(scaleX: 1.5, y: 1.0)
         } completion: { _ in
@@ -2154,7 +2168,10 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     }
     
     func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
-        let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "LanguageCell", for: indexPath) as! LanguageCell
+        guard let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "LanguageCell", for: indexPath) as? LanguageCell else {
+            fatalError("Failed to dequeue LanguageCell — check cell registration and identifier")
+        }
+        
         let stream = DirectStreamingPlayer.availableStreams[indexPath.item]
         cell.configure(with: stream)
         return cell
