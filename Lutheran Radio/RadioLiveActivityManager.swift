@@ -196,7 +196,7 @@ class RadioLiveActivityManager: ObservableObject {
     
     private func getStreamStatus(visualState: PlayerVisualState, hasError: Bool) -> String {
         if hasError {
-            return String(localized: "Connection error", defaultValue: "Connection Error")
+            return String(localized: "Connection error", defaultValue: "Connection error")
         } else if visualState == .thermalPaused {
             return String(localized: "status_thermal_paused", defaultValue: "Thermal pause")
         } else if visualState.isActivelyPlaying {
