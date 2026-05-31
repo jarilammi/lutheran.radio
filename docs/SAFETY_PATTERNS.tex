@@ -1,0 +1,188 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+
+\usepackage[margin=2cm]{geometry}
+\usepackage{booktabs}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{titlesec}
+\usepackage{enumitem}
+
+\lstset{
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    frame=single,
+    backgroundcolor=\color{gray!10},
+    keywordstyle=\color{blue},
+    commentstyle=\color{gray},
+    stringstyle=\color{red!70!black},
+    showstringspaces=false
+}
+
+\titleformat{\section}{\large\bfseries\color{blue!70!black}}{}{0em}{}[\titlerule]
+\titleformat{\subsection}{\normalsize\bfseries}{}{0em}{}
+
+\title{\textbf{Swift Safety Patterns}\\[0.3em]
+\large Eliminate Force-Unwraps \& Force-Casts in Production Code}
+\author{Senior Engineering Review — May 2026}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+\noindent\textbf{Goal:} Remove all unsafe \texttt{!} (force-unwrap) and \texttt{as!} (force-cast) patterns.\\
+\textbf{Philosophy:} Prefer safety and clarity over brevity.
+\end{abstract}
+
+\section{1. Property Access on Optionals}
+
+\begin{tabular}{@{}p{5.5cm}p{5.5cm}l@{}}
+\toprule
+\textbf{Bad (Avoid)} & \textbf{Good (Preferred)} & \textbf{Notes} \\
+\midrule
+\texttt{foo!.bar = 42} & \texttt{foo?.bar = 42} & Default choice \\
+\texttt{constraint.constant = 100} & \texttt{constraint?.constant = 100} & Auto Layout constraints \\
+\texttt{pendingRefresh!.cancel()} & \texttt{pendingRefresh?.cancel()} & Optional work items \\
+\bottomrule
+\end{tabular}
+
+\section{2. Creating URLs from Strings}
+
+\textbf{Bad:}
+\begin{lstlisting}
+let url = URL(string: "https://example.com")!
+\end{lstlisting}
+
+\textbf{Good:}
+\begin{lstlisting}
+let url = makeURL("https://example.com")
+\end{lstlisting}
+
+\textbf{Recommended Helper:}
+\begin{lstlisting}[language=Swift]
+/// Creates a URL or crashes with a clear message during development.
+private static func makeURL(_ string: String) -> URL {
+    guard let url = URL(string: string) else {
+        fatalError("Invalid hardcoded URL: \(string)")
+    }
+    return url
+}
+\end{lstlisting}
+
+\section{3. Calendar \& Date Calculations}
+
+\textbf{Bad:}
+\begin{lstlisting}
+let nextDate = Calendar.current.date(byAdding: .minute, value: 15, to: Date())!
+\end{lstlisting}
+
+\textbf{Good:}
+\begin{lstlisting}
+let nextDate = Calendar.current.date(byAdding: .minute, value: 15, to: Date())
+    ?? Date().addingTimeInterval(15 * 60)
+\end{lstlisting}
+
+\section{4. Force Casts (\texttt{as!})}
+
+\textbf{Bad:}
+\begin{lstlisting}
+let cell = collectionView.dequeueReusableCell(...) as! LanguageCell
+\end{lstlisting}
+
+\textbf{Good:}
+\begin{lstlisting}
+guard let cell = collectionView.dequeueReusableCell(
+    withReuseIdentifier: "LanguageCell", 
+    for: indexPath
+) as? LanguageCell else {
+    fatalError("Failed to dequeue LanguageCell")
+}
+\end{lstlisting}
+
+\section{5. Implicitly Unwrapped Optionals (Declaration)}
+
+\textbf{Bad:}
+\begin{lstlisting}
+private var speakerImageHeightConstraint: NSLayoutConstraint!
+\end{lstlisting}
+
+\textbf{Good:}
+\begin{lstlisting}
+private var speakerImageHeightConstraint: NSLayoutConstraint?
+\end{lstlisting}
+
+\section{6. DispatchWorkItem \& Closures}
+
+\textbf{Bad:}
+\begin{lstlisting}
+DispatchQueue.main.asyncAfter(..., execute: pendingRefresh!)
+\end{lstlisting}
+
+\textbf{Good:}
+\begin{lstlisting}
+let workItem = DispatchWorkItem { ... }
+pendingRefresh = workItem
+DispatchQueue.main.asyncAfter(..., execute: workItem)
+\end{lstlisting}
+
+\section{7. Safe Array Access}
+
+\textbf{Bad:}
+\begin{lstlisting}
+let item = array[0]
+\end{lstlisting}
+
+\textbf{Good:}
+\begin{lstlisting}
+let item = array.first ?? array[0]   // final fallback only
+\end{lstlisting}
+
+\section{8. Timestamp / Throttle Checks}
+
+\textbf{Bad:}
+\begin{lstlisting}
+Date().timeIntervalSince(lastServerSelectionTime!)
+\end{lstlisting}
+
+\textbf{Good:}
+\begin{lstlisting}
+if let last = lastServerSelectionTime, 
+   Date().timeIntervalSince(last) > 10.0 {
+\end{lstlisting}
+
+\section{When \texttt{!} Is Still Acceptable}
+
+Use force-unwrap \textbf{only} in these cases:
+
+\begin{itemize}[leftmargin=*]
+    \item Immediately after a successful \texttt{guard let} or \texttt{if let}
+    \item In unit tests (where crashing on failure is often desired)
+    \item With a clear explanatory comment
+\end{itemize}
+
+\textbf{Example:}
+\begin{lstlisting}
+guard let constraint = speakerImageHeightConstraint else { return }
+constraint.constant = 100     // Safe here — no need for !
+\end{lstlisting}
+
+\section{Final Rule of Thumb}
+
+\begin{center}
+\fbox{\parbox{0.9\textwidth}{\centering
+\textbf{Default to \texttt{?}} (optional chaining)\\[0.5em]
+Only use \texttt{!} when you have \textbf{already proven} the value exists.
+}}
+\end{center}
+
+\vspace{1em}
+\hrule
+\vspace{0.5em}
+\footnotesize
+\textit{Maintained by Senior Engineering — Lutheran Radio Project, May 2026}
+
+\end{document}
