@@ -496,6 +496,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                     await SharedPlayerManager.shared.saveCurrentState()
                 }
                 
+                lastServerSelectionTime = Date()
                 completion(betterServer)
                 return
             }
@@ -527,6 +528,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                         await SharedPlayerManager.shared.saveCurrentState()
                     }
                     
+                    self.lastServerSelectionTime = Date()
+                    
                     #if DEBUG
                     print("📡 [Server Selection] Selected \(bestResult.server.name) with latency \(bestResult.latency)s")
                     #endif
@@ -537,6 +540,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                     Task {
                         await SharedPlayerManager.shared.saveCurrentState()
                     }
+                    
+                    self.lastServerSelectionTime = Date()
                     
                     #if DEBUG
                     print("📡 [Server Selection] No valid ping results, falling back to \(self.currentSelectedServer.name)")
@@ -550,6 +555,25 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         serverSelectionWorkItem = workItem
         let selectionDelay: TimeInterval = isLowEfficiencyMode ? 1.0 : 0.5
         DispatchQueue.main.asyncAfter(deadline: .now() + selectionDelay, execute: workItem)
+    }
+    
+    /// Ensures the optimal server — the one with the lowest measured latency — has been
+    /// confidently selected before any playback path constructs a `selectedStream.url`.
+    /// This makes server choice beautifully reliable across cold launches, stream switches,
+    /// and all other entry points.
+    ///
+    /// This is the canonical implementation of the cold-launch / first-URL failover fix.
+    /// It uses the same `withCheckedContinuation` + `selectOptimalServer` pattern so that
+    /// pings have completed and `currentSelectedServer` is updated before the caller
+    /// snapshots the URL for AVURLAsset / AVPlayerItem.
+    ///
+    /// Safe to call repeatedly: after the first selection, the 10 s throttle in
+    /// `selectOptimalServer` (now correctly maintained) makes subsequent calls return
+    /// instantly with the cached choice.
+    private func ensureOptimalServerSelected() async {
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            selectOptimalServer { _ in cont.resume() }
+        }
     }
 
     // MARK: - Latency Measurement
@@ -1267,6 +1291,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         print("✅ Security validation passed — creating player for \(selectedStream.languageCode)")
         #endif
         
+        await ensureOptimalServerSelected()
+        
         let streamURL = selectedStream.url
         await createAndStartPlayer(for: streamURL)
 
@@ -1576,6 +1602,9 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     // MARK: - Stream Switching (the simpler fallback)
 
     func switchToStream(_ stream: Stream) async {
+        // Ensure good server before any URL construction on this fallback path.
+        await ensureOptimalServerSelected()
+
         stop()
         resetInitialPlaybackCountersForNewStream()   // Chunk 2: give the new stream a fresh cold-launch attempt budget
         resetTransientErrors()
@@ -1626,6 +1655,9 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             print("🔄 Same stream or initial playback (\(newLanguage)) – skipping stop()")
             #endif
         }
+        
+        // Ensures the optimal server is selected before constructing any stream URL.
+        await ensureOptimalServerSelected()
 
         // Clear dedup state for the new stream context so the first status after the switch emits.
         lastEmittedStatus = nil
@@ -1688,6 +1720,9 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             return
         }
         // ──────────────────────────────────────────────────────────────
+
+        // Defense-in-depth: guarantee good server even on direct startPlayback paths.
+        await ensureOptimalServerSelected()
 
         // Fresh playback attempt — clear dedup state so the first status we emit
         // (e.g. "status_connecting" or "status_playing") is never incorrectly suppressed.
