@@ -1584,18 +1584,9 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             }
         }
         
-        // === METADATA OUTPUT FOR ICY STREAMTITLE ===
-        if let currentItem = player?.currentItem {
-            let metadataOutput = AVPlayerItemMetadataOutput(identifiers: nil)
-            metadataOutput.setDelegate(self, queue: DispatchQueue.main)
-            currentItem.add(metadataOutput)
-            
-            #if DEBUG
-            print("📻 [DirectStreamingPlayer] Attached AVPlayerItemMetadataOutput for ICY metadata")
-            #endif
-        }
-        
-        // NEW: Guarantee ICY delegate is attached even on item replacement paths (fixes pause→play resume metadata)
+        // Ensure ICY metadata delegate is wired on the fresh player item.
+        // This is the single canonical attachment point (tracked in `metadataOutput` for
+        // proper cleanup in stop paths and idempotent re-attach on item replacement).
         ensureICYAttached()
     }
 
@@ -2653,9 +2644,10 @@ extension DirectStreamingPlayer: AVPlayerItemMetadataOutputPushDelegate {
             item.remove(old)
         }
         
-        metadataOutput = AVPlayerItemMetadataOutput(identifiers: nil)
-        metadataOutput?.setDelegate(self, queue: .main)
-        item.add(metadataOutput!)
+        let newOutput = AVPlayerItemMetadataOutput(identifiers: nil)
+        newOutput.setDelegate(self, queue: .main)
+        item.add(newOutput)
+        metadataOutput = newOutput
         
         needsImmediateMetadataPush = true
         
