@@ -559,21 +559,51 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     
     /// Ensures the optimal server — the one with the lowest measured latency — has been
     /// confidently selected before any playback path constructs a `selectedStream.url`.
-    /// This makes server choice beautifully reliable across cold launches, stream switches,
-    /// and all other entry points.
     ///
-    /// This is the canonical implementation of the cold-launch / first-URL failover fix.
-    /// It uses the same `withCheckedContinuation` + `selectOptimalServer` pattern so that
-    /// pings have completed and `currentSelectedServer` is updated before the caller
-    /// snapshots the URL for AVURLAsset / AVPlayerItem.
+    /// Fast-path: if the 10 s throttle window is active we return immediately with zero
+    /// allocation and no suspension (fixes the "continuation always suspends" review item).
     ///
-    /// Safe to call repeatedly: after the first selection, the 10 s throttle in
-    /// `selectOptimalServer` (now correctly maintained) makes subsequent calls return
-    /// instantly with the cached choice.
+    /// This is the internal implementation detail behind `urlWithOptimalServer(for:)`.
     private func ensureOptimalServerSelected() async {
+        if let last = lastServerSelectionTime,
+           Date().timeIntervalSince(last) <= 10.0 {
+            #if DEBUG
+            print("📡 ensureOptimalServerSelected: throttled (≤10s), using cached \(currentSelectedServer.name)")
+            #endif
+            return
+        }
+
         await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
             selectOptimalServer { _ in cont.resume() }
         }
+    }
+
+    /// Returns a playback URL for `stream` whose host is guaranteed to be the current
+    /// optimal server (lowest latency, or the best non-failed server if one has recently failed).
+    ///
+    /// This is the **single source of truth** for all URL construction that feeds AVURLAsset
+    /// or AVPlayerItem on cold launch, stream switch, or direct start paths.
+    ///
+    /// Internally calls `ensureOptimalServerSelected()` (now cheap after first use) then
+    /// reads the computed `stream.url` (which consults `currentSelectedServer` at read time).
+    ///
+    /// Adding new playback entry points? Route their first `.url` access through this helper
+    /// and the original race becomes structurally impossible.
+    private func urlWithOptimalServer(for stream: Stream) async -> URL {
+        await ensureOptimalServerSelected()
+
+        #if DEBUG
+        // Catches regressions of the "forgot to update lastServerSelectionTime on a completion path"
+        // or any mutation that clears the stamp without going through selectOptimalServer.
+        if let t = lastServerSelectionTime {
+            let age = Date().timeIntervalSince(t)
+            assert(age < 60.0, "urlWithOptimalServer: ensure returned but selection stamp is \(age)s old")
+        } else {
+            assertionFailure("urlWithOptimalServer: ensure returned without a lastServerSelectionTime stamp")
+        }
+        #endif
+
+        return stream.url
     }
 
     // MARK: - Latency Measurement
@@ -1291,9 +1321,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         print("✅ Security validation passed — creating player for \(selectedStream.languageCode)")
         #endif
         
-        await ensureOptimalServerSelected()
-        
-        let streamURL = selectedStream.url
+        let streamURL = await urlWithOptimalServer(for: selectedStream)
         await createAndStartPlayer(for: streamURL)
 
         await SharedPlayerManager.shared.saveCurrentState()
@@ -1593,15 +1621,12 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     // MARK: - Stream Switching (the simpler fallback)
 
     func switchToStream(_ stream: Stream) async {
-        // Ensure good server before any URL construction on this fallback path.
-        await ensureOptimalServerSelected()
-
         stop()
         resetInitialPlaybackCountersForNewStream()   // Chunk 2: give the new stream a fresh cold-launch attempt budget
         resetTransientErrors()
         selectedStream = stream
         
-        let url = selectedStream.url
+        let url = await urlWithOptimalServer(for: selectedStream)
         await preparePlayerItem(for: url)
         
         // Force playback with explicit rate on main actor
@@ -1647,9 +1672,6 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             #endif
         }
         
-        // Ensures the optimal server is selected before constructing any stream URL.
-        await ensureOptimalServerSelected()
-
         // Clear dedup state for the new stream context so the first status after the switch emits.
         lastEmittedStatus = nil
         lastObservedTimeControl = nil
@@ -1658,9 +1680,13 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         // Update model
         selectedStream = stream
 
+        // Obtain URL under optimal-server guarantee, then hand the concrete URL value
+        // (baked with the correct host at construction time) to the MainActor work.
+        let url = await urlWithOptimalServer(for: stream)
+
         // Prepare the AVPlayerItem on MainActor
         await MainActor.run {
-            let newItem = AVPlayerItem(url: stream.url)
+            let newItem = AVPlayerItem(url: url)
             newItem.preferredForwardBufferDuration = 10.0
 
             self.player?.replaceCurrentItem(with: newItem)
@@ -1712,14 +1738,17 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         }
         // ──────────────────────────────────────────────────────────────
 
-        // Defense-in-depth: guarantee good server even on direct startPlayback paths.
-        await ensureOptimalServerSelected()
-
         // Fresh playback attempt — clear dedup state so the first status we emit
         // (e.g. "status_connecting" or "status_playing") is never incorrectly suppressed.
         lastEmittedStatus = nil
         lastObservedTimeControl = nil
         lastObservedItemStatus = nil
+
+        // Pre-compute the optimal URL (ensures server, bakes the host into the URL value).
+        // We do this here (outside MainActor.run) so the run closure stays synchronous,
+        // matching every other MainActor.run site in the file and avoiding overload resolution
+        // issues under the widget extension's compilation context.
+        let coldLaunchURL = await urlWithOptimalServer(for: selectedStream)
 
         await MainActor.run {
             ensurePlayerExists()
@@ -1755,7 +1784,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 print("🔧 [DirectStreamingPlayer] cold-launch: no currentItem after AVPlayer init → attaching fresh item")
                 #endif
                 
-                let url = selectedStream.url
+                let url = coldLaunchURL
                 // Chunk 2 (2.2): Use explicit AVURLAsset + resourceLoader delegate on the cold-launch fast path
                 // (matches the pattern in createAndStartPlayer and ensures the custom ICY StreamingSessionDelegate
                 // with Core certificate pinning is attached early and consistently).
