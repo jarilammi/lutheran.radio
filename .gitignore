@@ -89,3 +89,9 @@ DerivedData/     # More comprehensive than just xcuserdata
 
 # Generated tuning sound files
 Lutheran Radio/Tools/*.wav
+
+# LaTeX compilation files
+*.aux
+*.fdb_latexmk
+*.fls
+*.log
