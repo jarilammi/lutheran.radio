@@ -1345,8 +1345,15 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             self.isPlaying = false
         } else {
             // User explicitly wants to play → bypass resurrection protection
-            await manager.userRequestedPlay()
+            await manager.setUserIntentToPlay()
             self.isPlaying = true
+            
+            // OPTIMISTIC UI: show yellow "Connecting" immediately while the background
+            // work (tuning sound wait, validation, server selection, AVPlayer setup) runs.
+            // The final updateUI at the bottom will correct to the real terminal state.
+            self.updateUI(for: .prePlay)
+            
+            await manager.play()
         }
         
         // Refresh everything. Phase 10 prune: stop()/userRequestedPlay() already call
@@ -2192,6 +2199,21 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         print("📱 collectionView:didSelectItemAt called for index \(newIndex)")
         #endif
         
+        // OPTIMISTIC YELLOW BEFORE NEEDLE: When the user is currently playing (or will auto-resume),
+        // immediately tell the actor we are now in .prePlay for this new stream (this also resets
+        // the cold-launch budget for the target stream). This makes the actor SSOT yellow early,
+        // so all subsequent delegate callbacks during the teardown of the old stream and the
+        // tuning sound will see .prePlay and keep the yellow instead of flashing back to green.
+        // The needle animation then starts right after.
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let vs = await SharedPlayerManager.shared.currentVisualState
+            if vs.shouldAutoPlayOrResume {
+                await SharedPlayerManager.shared.resetToPrePlayForNewStream()
+                self.updateUI(for: .prePlay)
+            }
+        }
+        
         // INSTANT TUNING INDICATOR MOVEMENT — works whether playing or paused
         selectedStreamIndex = newIndex
         updateSelectionIndicator(to: newIndex, isInitial: false, caller: "didSelectItemAt")
@@ -2792,6 +2814,15 @@ extension ViewController {
             // UI update
             let indexPath = IndexPath(item: targetIndex, section: 0)
             languageCollectionView.selectItem(at: indexPath, animated: true, scrollPosition: .centeredHorizontally)
+            
+            // Optimistic yellow + actor reset for external language switch shortcut.
+            // We reset the actor to .prePlay here (same as the flag tap path) so that any
+            // transient callbacks during the switch see the correct SSOT and do not flash green.
+            if await SharedPlayerManager.shared.canProceedWithPlayback() {
+                await SharedPlayerManager.shared.resetToPrePlayForNewStream()
+                updateUI(for: .prePlay)
+            }
+            
             updateSelectionIndicator(to: targetIndex)
             
             // Phase 4 Chunk 4: Replaced legacy isManualPause decision guard with authoritative intent check.
@@ -3076,12 +3107,15 @@ extension ViewController: StreamingPlayerDelegate {
             print("🔥 StreamingPlayerDelegate.onStatusChange → \(status) (reasonKey: \(reasonKey ?? "nil")) → visualState \(visualState)")
             #endif
             
-            // Brave defensive rule: if the authoritative state is .userPaused, never let a transient
-            // "stopped", "connecting", or "buffering" callback flip the UI back to yellow/green.
-            // This was allowing the "stopped → visualState playing" flips visible in the logs during glitches.
+            // Brave defensive rule: if the authoritative state is .userPaused or .prePlay (during
+            // an in-progress flag-row stream change or optimistic start), never let a transient
+            // "stopped", "buffering", or early "playing" callback from the old item flip the UI
+            // back to green. This eliminates the extra yellow → green → yellow → green round-trip
+            // during flag taps. Real success paths will drive the actor to .playing and the final
+            // green will appear normally.
             let effectiveVisualState: PlayerVisualState = {
-                if visualState == .userPaused {
-                    return .userPaused
+                if visualState == .userPaused || visualState == .prePlay {
+                    return visualState
                 }
                 return visualState
             }()
