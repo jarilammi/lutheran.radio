@@ -70,6 +70,39 @@ It is live on the App Store: https://apps.apple.com/fi/app/lutheran-radio/id6738
    - Requires Xcode 26+ for proper MIE/EMTE support and Swift 6 mode.
    - Prefer modern APIs and leverage Memory Integrity Enforcement wherever possible.
 
+## Defensive Swift Practices (Directional Guidance)
+
+The following practices reduce the risk of runtime crashes, data races, and subtle bugs in a security-critical audio streaming app. These are **strong recommendations and long-term direction**, not build gates or rejection criteria.
+
+Agents are expected to follow them for all **new code** and when significantly refactoring existing code. Legacy code may be cleaned up opportunistically.
+
+### Force-Unwraps and Unsafe Patterns
+- Avoid `foo!` (force-unwrap) and `as!` (force-cast) in production code under `Lutheran Radio/`, `Core/`, and `LutheranRadioWidget/`.
+- The only standing exceptions are:
+  - Test files (`*Tests.swift`, `UITests/`)
+  - Cases with an explicit `// SAFETY: ...` justification comment explaining why the force is correct and why a safer alternative was not viable
+- See `docs/SAFETY_PATTERNS.tex` for concrete patterns and preferred alternatives. This document is the authoritative reference for safe Swift idioms in this codebase.
+
+### Concurrency and Actor Isolation
+- The project currently uses `SWIFT_APPROACHABLE_CONCURRENCY` to allow pragmatic incremental adoption of Swift 6 rules. New code should still be written with clean actor isolation and `Sendable` conformance in mind.
+- All mutable shared state should be protected by an `actor` or routed through the established single sources of truth (`PersistedWidgetState`, `SharedPlayerManager`, etc.).
+- Prefer `Task { @MainActor [weak self] in ... }` for UI work. Bare `Task {` without actor or sendable annotations should be rare and, when used, should be accompanied by a brief comment explaining why it is safe.
+
+### Single Source of Truth Principles
+The architecture has converged on a small number of authoritative paths. New code should use them:
+
+- Server selection → `urlWithOptimalServer(for:)` (DirectStreamingPlayer
+- Widget / Live Activity / optimistic playback state → `PersistedWidgetState` snapshot (via `loadPersistedWidgetState` / `savePersistedWidgetState`)
+- Playback intent decisions → `currentPlaybackIntent` / `PlaybackIntent` enum (SharedPlayerManager
+
+Bypassing these for new logic creates drift and is discouraged.
+
+### Error Handling
+- Prefer explicit modeling of permanent vs transient errors (see the existing `hasPermanentError` + `StreamErrorType` pattern) over boolean flags or implicit assumptions.
+- Typed throws and `Result` types are preferred on internal boundaries where they improve clarity.
+
+These guidelines exist because the cost of a force-unwrap or a data race in a backgrounded streaming app is unusually high. They are meant to steer agents toward safer defaults without creating impossible requirements for mechanical or incremental work.
+
 ## Tech Stack & Architecture
 
 - **Language**: Swift (99%)
