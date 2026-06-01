@@ -114,44 +114,13 @@ struct Provider: AppIntentTimelineProvider {
     
     // MARK: - Async helpers (required for actor isolation)
     
-    private func getValidatedStreamState() async -> (currentStation: String, statusMessage: String, visualState: PlayerVisualState) {
-        let manager = SharedPlayerManager.shared
-        // CRITICAL: Widget process starts with a fresh actor (currentVisualState = .prePlay).
-        // Use the robust fresh-load path so we always see the latest persisted value
-        // written by forcePersistVisualState (from this process) or the main app.
-        await manager.refreshVisualStateFromPersistence()
-        
-        let state = manager.loadSharedState()
-        
-        // ✅ Safe actor access with await — now authoritative because we synced above
-        let visualState = await manager.currentVisualState
-        
-        let currentStream = manager.availableStreams.first(where: { $0.languageCode == state.currentLanguage }) ?? manager.availableStreams[0]
-        let currentStation = currentStream.flag + " " + currentStream.language
-        
-        let statusMessage: String = {
-            if state.hasError {
-                return String(localized: "Connection error")
-            } else if visualState == .playing {
-                return String(localized: "status_playing")
-            } else {
-                return String(localized: "Ready")
-            }
-        }()
-        
-        return (currentStation: currentStation, statusMessage: statusMessage, visualState: visualState)
-    }
-    
     private func createEntry(with configuration: RadioWidgetConfiguration) async -> SimpleEntry {
         let manager = SharedPlayerManager.shared
-        // Layer 1: Always refresh from persistence first (see architectural note above).
-        await manager.refreshVisualStateFromPersistence()
-        
         let (currentLanguage, hasError, visualState) = await getPendingOrCurrentState(manager: manager)
-        
+
         let currentStream = manager.availableStreams.first { $0.languageCode == currentLanguage } ?? manager.availableStreams[0]
         let currentStation = currentStream.flag + " " + currentStream.language
-        
+
         let statusMessage: String = {
             if visualState == .thermalPaused {
                 return String(localized: "status_thermal_paused", defaultValue: "Thermal pause")
@@ -163,11 +132,11 @@ struct Provider: AppIntentTimelineProvider {
                 return String(localized: "Ready", defaultValue: "Ready")
             }
         }()
-        
+
         #if DEBUG
         print("🔗 Widget creating entry: visualState=\(visualState), station=\(currentStation)")
         #endif
-        
+
         return SimpleEntry(
             date: Date(),
             visualState: visualState,
@@ -182,25 +151,13 @@ struct Provider: AppIntentTimelineProvider {
         // Always refresh from persistence first (fresh actor starts at .prePlay).
         await manager.refreshVisualStateFromPersistence()
 
-        // App Group unavailable (extremely rare). Fall back to in-memory state + preferred language helper.
-        if UserDefaults(suiteName: "group.radio.lutheran.shared") == nil {
-            let state = manager.loadSharedState()
-            let visualState = await manager.currentVisualState
-            return (SharedPlayerManager.preferredWidgetLanguage(), state.hasError, visualState)
-        }
-
-        // The unified snapshot is the single source of truth for visualState + language.
-        // Providers load it early and trust it.
+        // Snapshot-first (modern path for all current installs). Single simple fallback for
+        // first-launch or installs that have never persisted a snapshot.
         if let combined = SharedPlayerManager.loadPersistedWidgetState() {
             return (combined.currentLanguage, false, combined.visualState)
         }
 
-        // Ultimate fallback (no snapshot yet — extremely rare: first launch of a very old
-        // pre-Phase-6 install that has never run the main app or any widget action).
-        // Use in-memory (after refresh above) + preferred helper (which itself falls back to "en").
-        let state = manager.loadSharedState()
-        let visualState = await manager.currentVisualState
-        return (SharedPlayerManager.preferredWidgetLanguage(), state.hasError, visualState)
+        return (SharedPlayerManager.preferredWidgetLanguage(), false, .prePlay)
     }
 }
 
@@ -486,8 +443,7 @@ struct WidgetToggleRadioIntent: AppIntent {
         let targetState: PlayerVisualState = shouldPlay ? .playing : .userPaused
         
         // Use the unified force path: writes the PersistedWidgetState snapshot (visual + lang)
-        // + updates in-memory currentVisualState in this process. (Phase 11: legacy JSON write retired;
-        // loadPersistedVisualStateDirect and all readers now prefer the snapshot.)
+        // + updates in-memory currentVisualState in this process.
         SharedPlayerManager.shared.forcePersistVisualState(targetState)
         
         if let sharedDefaults = sharedDefaults {
@@ -558,10 +514,6 @@ public struct SwitchStreamIntent: AppIntent {
         sharedDefaults.set(now, forKey: "pendingActionTime")
         sharedDefaults.set(streamLanguageCode, forKey: "pendingLanguage")
 
-        // PHASE 2 (from bugraport3.txt analysis): Give the provider the same
-        // high-quality 15s instantFeedback window that play/pause already use.
-        // This directly addresses the stale-language fallback window seen
-        // after pendingAction clears on every widget switch in the trace.
         sharedDefaults.set(true, forKey: "isInstantFeedback")
         sharedDefaults.set(now, forKey: "instantFeedbackTime")
         sharedDefaults.set(streamLanguageCode, forKey: "instantFeedbackLanguage")
@@ -573,19 +525,15 @@ public struct SwitchStreamIntent: AppIntent {
             nil, nil, true
         )
 
-        // Immediate feedback — modern SSOT path (no more legacy WidgetState init)
         let manager = SharedPlayerManager.shared
         let state = manager.loadSharedState()
 
         // Stream switch keeps the current play/pause state (only language changes)
         let visualState: PlayerVisualState = state.isPlaying ? .playing : .userPaused
 
-        // Architectural unification (real win, no hack): write the snapshot optimistically
-        // with the *new* language + preserved visual. Combined with the forcePersist change
-        // for play/pause, this means providers' early loadPersistedWidgetState() return now
+        // Architectural unification: write the snapshot optimistically with the *new* language
+        // + preserved visual. This means providers' early loadPersistedWidgetState() return
         // delivers correct optimistic state for *all* widget actions (play/pause/switch).
-        // The pending/instant visual override branches in getPendingOrCurrentState and
-        // effectiveVisualStateAndStation are now only hit on pre-snapshot migration installs.
         SharedPlayerManager.persistWidgetSnapshot(visualState: visualState, language: streamLanguageCode)
 
         await WidgetRefreshManager.shared.refreshIfNeeded(
