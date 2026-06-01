@@ -194,13 +194,4 @@ extension PlayerVisualState {
         }
     }
     
-    // NEW helper – call from DirectStreamingPlayer whenever a resurrection event occurs
-    /// Use this when AVAudioSession interruption ended with .shouldResume,
-    /// when app returns from background, or any other system resume signal.
-    static func suppressResurrectionIfNeeded(currentState: PlayerVisualState) -> PlayerVisualState {
-        if currentState.mustSuppressResurrection {
-            return .userPaused
-        }
-        return currentState
-    }
 }

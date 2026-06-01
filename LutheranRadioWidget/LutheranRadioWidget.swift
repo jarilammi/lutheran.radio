@@ -491,12 +491,6 @@ struct WidgetToggleRadioIntent: AppIntent {
         SharedPlayerManager.shared.forcePersistVisualState(targetState)
         
         if let sharedDefaults = sharedDefaults {
-            // 2026-05-30 (Phase 7): "playing" legacy bool demoted — no longer written from
-            // the hot optimistic path. Snapshot (via forcePersist) is the SSOT. We keep the
-            // key write commented for one more cycle in case any extremely old widget code
-            // still reads it directly (migration surface only).
-            // sharedDefaults.set(shouldPlay, forKey: "playing")
-            
             let actionId = UUID().uuidString
             let now = Date().timeIntervalSince1970
             
@@ -505,7 +499,7 @@ struct WidgetToggleRadioIntent: AppIntent {
             sharedDefaults.set(now, forKey: "pendingActionTime")
             
             #if DEBUG
-            print("🔗 Widget set pendingAction = \(action) (ID: \(actionId)) — legacy 'playing' bool retired")
+            print("🔗 Widget set pendingAction = \(action) (ID: \(actionId))")
             #endif
         }
         

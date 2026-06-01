@@ -67,12 +67,12 @@ import Core
 /// **Key Transition Methods**:
 /// - `resetToPrePlayForNewStream()` — **only** place that intentionally sets `.prePlay`
 ///   after first launch (language/stream switches). Also clears `initialPlaybackHasRun`.
-/// - `restoreVisualStateRespectingUserIntent()` — applies `suppressResurrectionIfNeeded()`.
+/// - `restoreVisualStateRespectingUserIntent()` — applies inline resurrection suppression (mustSuppressResurrection ? .userPaused : current).
 /// - `attemptResurrectionIfAllowed()` — recovery path used by DirectStreamingPlayer nudges;
 ///   still respects `shouldAutoPlayOrResume`.
 ///
 /// See `PlayerVisualState.swift` for `shouldAutoPlayOrResume`, `mustSuppressResurrection`,
-/// `suppressResurrectionIfNeeded(currentState:)`, and the `from(status:isManualPause:...)` mapper.
+/// and the `from(status:isManualPause:...)` mapper.
 ///
 /// **Phase 3 note (Cold-Launch Nuance Cleanup)**: Cold-launch special casing in `play()`
 /// (one-shot + 25s window) has been further reduced and documented as minimal. The
@@ -99,7 +99,7 @@ import Core
 /// | any             | Security validation failure (DNS/403/cert)        | Inside `play()` guard or StreamingSessionDelegate 403 handler   | .securityLocked | Permanent until explicit successful play |
 /// | .userPaused     | User explicitly taps play (any surface)           | `userRequestedPlay()` or widget play path                       | .prePlay        | Resets cold-launch one-shot guard for resume |
 /// | .thermalPaused  | Device cools sufficiently                         | DirectStreamingPlayer thermal recovery logic                    | .playing        | Only via `shouldAutoResumeOnThermalRecovery` |
-/// | any             | App foreground, interruption.ended(.shouldResume) | `restoreVisualStateRespectingUserIntent()`                      | (unchanged or forced .userPaused) | Applies `suppressResurrectionIfNeeded()` |
+/// | any             | App foreground, interruption.ended(.shouldResume) | `restoreVisualStateRespectingUserIntent()`                      | (unchanged or forced .userPaused) | Applies inline resurrection suppression (if mustSuppressResurrection → .userPaused) |
 ///
 /// ### Persistence Keys & Ownership (App Group "group.radio.lutheran.shared")
 ///
@@ -834,7 +834,11 @@ actor SharedPlayerManager {
         // If we already loaded something sticky from JSON, keep it; otherwise do the normal restore logic.
         if !hasLoadedVisualStateFromPersistence {
             let loaded = loadVisualState()
-            currentVisualState = PlayerVisualState.suppressResurrectionIfNeeded(currentState: loaded)
+            if loaded.mustSuppressResurrection {
+                currentVisualState = .userPaused
+            } else {
+                currentVisualState = loaded
+            }
         }
         
         saveVisualState()
