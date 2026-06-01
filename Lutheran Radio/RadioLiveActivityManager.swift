@@ -45,11 +45,6 @@ class RadioLiveActivityManager: ObservableObject {
         endActivity()
         
         let manager = SharedPlayerManager.shared
-        let state = manager.loadSharedState()
-        // Use the preferred language helper (combined snapshot) for Live Activity stream selection.
-        // This matches the pattern used in the widget providers.
-        let language = SharedPlayerManager.preferredWidgetLanguage()
-        let currentStream = manager.availableStreams.first(where: { $0.languageCode == language }) ?? manager.availableStreams[0]
         
         let attributes = LutheranRadioLiveActivityAttributes(
             appName: "Lutheran Radio",
@@ -60,12 +55,7 @@ class RadioLiveActivityManager: ObservableObject {
         let visualState = await manager.currentVisualState
         
         let initialContentState = LutheranRadioLiveActivityAttributes.ContentState(
-            visualState: visualState,
-            currentMetadata: nil,
-            streamStatus: getStreamStatus(visualState: visualState, hasError: state.hasError),
-            lastUpdated: Date(),
-            currentStreamLanguage: currentStream.languageCode,
-            currentStreamFlag: currentStream.flag
+            visualState: visualState
         )
         
         do {
@@ -94,20 +84,12 @@ class RadioLiveActivityManager: ObservableObject {
         guard let activity = currentActivity else { return }
         
         let manager = SharedPlayerManager.shared
-        let state = manager.loadSharedState()
-        let language = SharedPlayerManager.preferredWidgetLanguage()
-        let currentStream = manager.availableStreams.first(where: { $0.languageCode == language }) ?? manager.availableStreams[0]
         
         // NEW: Use visualState (SSOT) + await
         let visualState = await manager.currentVisualState
         
         let updatedContentState = LutheranRadioLiveActivityAttributes.ContentState(
-            visualState: visualState,                                      // ← changed
-            currentMetadata: nil,
-            streamStatus: getStreamStatus(visualState: visualState, hasError: state.hasError),
-            lastUpdated: Date(),
-            currentStreamLanguage: currentStream.languageCode,
-            currentStreamFlag: currentStream.flag
+            visualState: visualState
         )
         
         nonisolated(unsafe) let safeActivity = activity
@@ -129,17 +111,8 @@ class RadioLiveActivityManager: ObservableObject {
         nonisolated(unsafe) let safeActivityToEnd = activity
         
         Task {
-            let manager = SharedPlayerManager.shared
-            let language = SharedPlayerManager.preferredWidgetLanguage()
-            let currentStream = manager.availableStreams.first(where: { $0.languageCode == language }) ?? manager.availableStreams[0]
-            
             let finalContentState = LutheranRadioLiveActivityAttributes.ContentState(
-                visualState: .userPaused,                                  // ← changed (stopped = userPaused)
-                currentMetadata: nil,
-                streamStatus: "Stopped",
-                lastUpdated: Date(),
-                currentStreamLanguage: currentStream.languageCode,
-                currentStreamFlag: currentStream.flag
+                visualState: .userPaused
             )
             
             // All async Live Activity work in one async context – modern SSOT pattern
@@ -191,18 +164,6 @@ class RadioLiveActivityManager: ObservableObject {
             #if DEBUG
             print("🔴 Found existing Live Activity: \(activity.id)")
             #endif
-        }
-    }
-    
-    private func getStreamStatus(visualState: PlayerVisualState, hasError: Bool) -> String {
-        if hasError {
-            return String(localized: "Connection error", defaultValue: "Connection error")
-        } else if visualState == .thermalPaused {
-            return String(localized: "status_thermal_paused", defaultValue: "Thermal pause")
-        } else if visualState.isActivelyPlaying {
-            return String(localized: "LIVE", defaultValue: "Live")
-        } else {
-            return String(localized: "Ready", defaultValue: "Ready")
         }
     }
 }

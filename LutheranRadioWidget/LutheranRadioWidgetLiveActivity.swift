@@ -13,12 +13,27 @@ import AppIntents
 // MARK: - Live Activity Helpers (single source of truth for both Dynamic Island and Lock Screen views)
 
 /// Maps visual state to a status color used in the Live Activity UI.
-private func getStatusColor(_ state: LutheranRadioLiveActivityAttributes.ContentState) -> Color {
-    switch state.visualState {
+private func getStatusColor(_ visualState: PlayerVisualState) -> Color {
+    switch visualState {
     case .thermalPaused: return .orange
     case .securityLocked: return .red
     case .playing:       return .green
     default:             return .gray
+    }
+}
+
+/// Derives a localized status string for display in Live Activity (replaces legacy streamStatus).
+/// Reads hasError from shared app group for parity with widget providers.
+private func getCurrentStreamStatus(visualState: PlayerVisualState) -> String {
+    let hasError = UserDefaults(suiteName: "group.radio.lutheran.shared")?.bool(forKey: "hasError") ?? false
+    if hasError {
+        return String(localized: "Connection error", defaultValue: "Connection error")
+    } else if visualState == .thermalPaused {
+        return String(localized: "status_thermal_paused", defaultValue: "Thermal pause")
+    } else if visualState.isActivelyPlaying {
+        return String(localized: "LIVE", defaultValue: "Live")
+    } else {
+        return String(localized: "Ready", defaultValue: "Ready")
     }
 }
 
@@ -147,9 +162,9 @@ struct LutheranRadioLiveActivityWidget: Widget {
                                 .foregroundColor(.primary)
                             
                             HStack(spacing: 4) {
-                                Text(context.state.currentStreamFlag)
+                                Text(getStreamFlag(SharedPlayerManager.preferredWidgetLanguage()))
                                     .font(.caption2)
-                                Text(getLanguageName(context.state.currentStreamLanguage))
+                                Text(getLanguageName(SharedPlayerManager.preferredWidgetLanguage()))
                                     .font(.caption2)
                                     .fontWeight(.medium)
                                     .foregroundColor(.secondary)
@@ -192,7 +207,7 @@ struct LutheranRadioLiveActivityWidget: Widget {
                                     RoundedRectangle(cornerRadius: 1)
                                         .fill(Color.green)
                                         .frame(width: 2, height: CGFloat.random(in: 4...12))
-                                        .animation(.easeInOut(duration: Double.random(in: 0.3...0.7)).repeatForever(autoreverses: true), value: context.state.lastUpdated)
+                                        .animation(.easeInOut(duration: Double.random(in: 0.3...0.7)).repeatForever(autoreverses: true), value: context.state.visualState)
                                 }
                             }
                         }
@@ -201,38 +216,22 @@ struct LutheranRadioLiveActivityWidget: Widget {
                 
                 DynamicIslandExpandedRegion(.center) {
                     VStack(spacing: 6) {
-                        if let metadata = context.state.currentMetadata, !metadata.isEmpty {
-                            VStack(spacing: 2) {
-                                Text(LocalizedStringKey("Now Playing"))
-                                    .font(.system(size: 9, weight: .medium))
+                        VStack(spacing: 2) {
+                            Text(getCurrentStreamStatus(visualState: context.state.visualState))
+                                .font(.caption)
+                                .fontWeight(.medium)
+                                .foregroundColor(context.state.visualState.textColor.swiftUIColor)
+                            
+                            if context.state.visualState.isActivelyPlaying {
+                                Text(LocalizedStringKey("Lutheran Radio Live Stream"))
+                                    .font(.system(size: 10))
                                     .foregroundColor(.secondary)
-                                    .textCase(.uppercase)
-                                
-                                Text(metadata)
-                                    .font(.caption)
-                                    .fontWeight(.medium)
-                                    .multilineTextAlignment(.center)
-                                    .lineLimit(2)
-                                    .foregroundColor(.primary)
-                            }
-                        } else {
-                            VStack(spacing: 2) {
-                                Text(context.state.streamStatus)
-                                    .font(.caption)
-                                    .fontWeight(.medium)
-                                    .foregroundColor(context.state.visualState.textColor.swiftUIColor)
-                                
-                                if context.state.visualState.isActivelyPlaying {
-                                    Text(LocalizedStringKey("Lutheran Radio Live Stream"))
-                                        .font(.system(size: 10))
-                                        .foregroundColor(.secondary)
-                                }
                             }
                         }
                         
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 12) {
-                                ForEach(getAlternativeStreams(current: context.state.currentStreamLanguage), id: \.self) { langCode in
+                                ForEach(getAlternativeStreams(current: SharedPlayerManager.preferredWidgetLanguage()), id: \.self) { langCode in
                                     Button(intent: LiveActivitySwitchStreamIntent(languageCode: langCode)) {
                                         VStack(spacing: 2) {
                                             Text(getStreamFlag(langCode))
@@ -258,9 +257,9 @@ struct LutheranRadioLiveActivityWidget: Widget {
                     HStack {
                         HStack(spacing: 4) {
                             Circle()
-                                .fill(getStatusColor(context.state))
+                                .fill(getStatusColor(context.state.visualState))
                                 .frame(width: 6, height: 6)
-                            Text(context.state.streamStatus)
+                            Text(getCurrentStreamStatus(visualState: context.state.visualState))
                                 .font(.system(size: 10, weight: .medium))
                                 .foregroundColor(.secondary)
                         }
@@ -281,7 +280,7 @@ struct LutheranRadioLiveActivityWidget: Widget {
                                             .easeInOut(duration: Double.random(in: 0.3...0.8))
                                             .repeatForever(autoreverses: true)
                                             .delay(Double(index) * 0.1),
-                                            value: context.state.lastUpdated
+                                            value: context.state.visualState
                                         )
                                 }
                             }
@@ -315,7 +314,7 @@ struct LutheranRadioLiveActivityWidget: Widget {
                                 RoundedRectangle(cornerRadius: 0.5)
                                     .fill(Color.green)
                                     .frame(width: 1, height: CGFloat.random(in: 2...6))
-                                    .animation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true), value: context.state.lastUpdated)
+                                    .animation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true), value: context.state.visualState)
                             }
                         }
                     }
@@ -336,7 +335,7 @@ struct LutheranRadioLiveActivityWidget: Widget {
             } minimal: {
                 ZStack {
                     Circle()
-                        .fill(getStatusColor(context.state).opacity(0.3))
+                        .fill(getStatusColor(context.state.visualState).opacity(0.3))
                         .frame(width: 18, height: 18)
                     
                     if context.state.visualState.isActivelyPlaying {
@@ -360,6 +359,7 @@ struct LockScreenLiveActivityView: View {
     let context: ActivityViewContext<LutheranRadioLiveActivityAttributes>
     
     var body: some View {
+        let currentLanguage = SharedPlayerManager.preferredWidgetLanguage()
         VStack(spacing: 12) {
             HStack {
                 Image(systemName: "radio")
@@ -368,25 +368,17 @@ struct LockScreenLiveActivityView: View {
                     .font(.headline)
                     .fontWeight(.semibold)
                 Spacer()
-                Text("\(context.state.currentStreamFlag) \(getLanguageName(context.state.currentStreamLanguage))")
+                Text("\(getStreamFlag(currentLanguage)) \(getLanguageName(currentLanguage))")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
             }
             
-            if let metadata = context.state.currentMetadata, !metadata.isEmpty {
-                Text(metadata)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
-            } else {
-                Text(context.state.streamStatus)
-                    .font(.subheadline)
-                    .foregroundColor(context.state.visualState.textColor.swiftUIColor)
-            }
+            Text(getCurrentStreamStatus(visualState: context.state.visualState))
+                .font(.subheadline)
+                .foregroundColor(context.state.visualState.textColor.swiftUIColor)
             
             HStack(spacing: 20) {
-                ForEach(getAlternativeStreams(current: context.state.currentStreamLanguage), id: \.self) { langCode in
+                ForEach(getAlternativeStreams(current: currentLanguage), id: \.self) { langCode in
                     Button(intent: LiveActivitySwitchStreamIntent(languageCode: langCode)) {
                         VStack(spacing: 2) {
                             Text(getStreamFlag(langCode))
@@ -416,9 +408,9 @@ struct LockScreenLiveActivityView: View {
             
             HStack {
                 Circle()
-                    .fill(getStatusColor(context.state))
+                    .fill(getStatusColor(context.state.visualState))
                     .frame(width: 8, height: 8)
-                Text(context.state.streamStatus)
+                Text(getCurrentStreamStatus(visualState: context.state.visualState))
                     .font(.caption)
                     .foregroundColor(.secondary)
                 Spacer()
@@ -429,7 +421,7 @@ struct LockScreenLiveActivityView: View {
                                 .fill(Color.green)
                                 .frame(width: 2, height: 6)
                                 .opacity(Double.random(in: 0.3...1.0))
-                                .animation(.easeInOut(duration: 0.4).repeatForever(autoreverses: true), value: context.state.lastUpdated)
+                                .animation(.easeInOut(duration: 0.4).repeatForever(autoreverses: true), value: context.state.visualState)
                         }
                     }
                 }
