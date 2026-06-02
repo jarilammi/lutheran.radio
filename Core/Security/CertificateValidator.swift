@@ -128,7 +128,7 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
         }
         
         var error: CFError?
-        if !SecTrustEvaluateWithError(serverTrust, &error) {
+        if unsafe !SecTrustEvaluateWithError(serverTrust, &error) {
             #if DEBUG
             print("🔒 [CertificateValidator] System trust evaluation failed: \(error?.localizedDescription ?? "Unknown error")")
             #endif
@@ -328,10 +328,10 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
             return nil
         }
         var fingerprint = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
-        certData.withUnsafeBytes { dataBytes in
-            _ = CC_SHA256(dataBytes.baseAddress, CC_LONG(certData.count), &fingerprint)
+        unsafe certData.withUnsafeBytes { dataBytes in
+            _ = unsafe CC_SHA256(dataBytes.baseAddress, CC_LONG(certData.count), &fingerprint)
         }
         // Convert to hex, uppercase, colon-separated to match OpenSSL format
-        return fingerprint.map { String(format: "%02X", $0) }.joined(separator: ":")
+        return fingerprint.map { unsafe String(format: "%02X", $0) }.joined(separator: ":")
     }
 }

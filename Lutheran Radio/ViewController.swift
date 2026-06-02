@@ -450,7 +450,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             let savedVolume = sharedDefaults.float(forKey: "preferredVolume")
             let volumeToUse = savedVolume > 0 ? savedVolume : 0.5
             volumeSlider.value = volumeToUse
-            volumeSlider.accessibilityValue = String(format: String(localized: "accessibility_value_volume"), Int(volumeToUse * 100))
+            volumeSlider.accessibilityValue = unsafe String(format: String(localized: "accessibility_value_volume"), Int(volumeToUse * 100))
             sharedDefaults.set(volumeToUse, forKey: "preferredVolume")
             sharedDefaults.synchronize()
             #if DEBUG
@@ -582,12 +582,12 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         let center = CFNotificationCenterGetDarwinNotifyCenter()
         
         // Use a simpler approach without context pointer
-        CFNotificationCenterAddObserver(
+        unsafe CFNotificationCenterAddObserver(
             center,
             Unmanaged.passUnretained(self).toOpaque(),
             { (_, observer, _, _, _) in
-                guard let observer = observer else { return }
-                let vc = Unmanaged<ViewController>.fromOpaque(observer).takeUnretainedValue()
+                guard let observer = unsafe observer else { return }
+                let vc = unsafe Unmanaged<ViewController>.fromOpaque(observer).takeUnretainedValue()
                 DispatchQueue.main.async {
                     #if DEBUG
                     print("🔗 Received Darwin notification for widget action")
@@ -900,7 +900,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         volumeSlider.accessibilityHint = String(localized: "accessibility_hint_volume")
         volumeSlider.accessibilityLabel = String(localized: "accessibility_label_volume")  // e.g., "Volume"
         volumeSlider.accessibilityTraits = .adjustable  // Default, but explicit for clarity
-        volumeSlider.accessibilityValue = String(format: String(localized: "accessibility_value_volume"), Int(volumeSlider.value * 100))  // e.g., "50 percent"
+        volumeSlider.accessibilityValue = unsafe String(format: String(localized: "accessibility_value_volume"), Int(volumeSlider.value * 100))  // e.g., "50 percent"
         
         // Add AirPlay button tap feedback
         airplayButton.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(airplayTapped)))
@@ -1526,7 +1526,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     @objc private func volumeChanged(_ sender: UISlider) {
         streamingPlayer.setVolume(sender.value)
-        sender.accessibilityValue = String(format: String(localized: "accessibility_value_volume"), Int(sender.value * 100))  // e.g., "75 percent"
+        sender.accessibilityValue = unsafe String(format: String(localized: "accessibility_value_volume"), Int(sender.value * 100))  // e.g., "75 percent"
         let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared")
         sharedDefaults?.set(sender.value, forKey: "preferredVolume")
         sharedDefaults?.synchronize()
@@ -2078,7 +2078,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         
         // ONLY this is allowed in deinit (CF + Unmanaged is explicitly permitted)
         let center = CFNotificationCenterGetDarwinNotifyCenter()
-        CFNotificationCenterRemoveEveryObserver(center, Unmanaged.passUnretained(self).toOpaque())
+        unsafe CFNotificationCenterRemoveEveryObserver(center, Unmanaged.passUnretained(self).toOpaque())
         
         #if DEBUG
         print("🧹 ViewController deinit completed")
@@ -2881,7 +2881,7 @@ extension ViewController {
         
         // Announce status changes to VoiceOver only for play/pause states
         if text == String(localized: "status_playing") || text == String(localized: "status_paused") {
-            UIAccessibility.post(notification: .announcement, argument: text)
+            unsafe UIAccessibility.post(notification: .announcement, argument: text)
         }
     }
     
@@ -2906,7 +2906,7 @@ extension ViewController {
         
         // Announce metadata changes if significant
         if text != String(localized: "no_track_info") {
-            UIAccessibility.post(notification: .announcement, argument: text)
+            unsafe UIAccessibility.post(notification: .announcement, argument: text)
         }
     }
     
@@ -3042,14 +3042,14 @@ extension ViewController {
         let newValue = min(volumeSlider.value + 0.1, volumeSlider.maximumValue)
         volumeSlider.setValue(newValue, animated: true)
         volumeChanged(volumeSlider)
-        UIAccessibility.post(notification: .announcement, argument: String(format: NSLocalizedString("volume_set_to", comment: ""), Int(newValue * 100)))
+        unsafe UIAccessibility.post(notification: .announcement, argument: String(format: NSLocalizedString("volume_set_to", comment: ""), Int(newValue * 100)))
     }
     
     @objc private func decreaseVolume() {
         let newValue = max(volumeSlider.value - 0.1, volumeSlider.minimumValue)
         volumeSlider.setValue(newValue, animated: true)
         volumeChanged(volumeSlider)
-        UIAccessibility.post(notification: .announcement, argument: String(format: NSLocalizedString("volume_set_to", comment: ""), Int(newValue * 100)))
+        unsafe UIAccessibility.post(notification: .announcement, argument: String(format: NSLocalizedString("volume_set_to", comment: ""), Int(newValue * 100)))
     }
     
     private func safeUpdateStatusLabel(text: String, backgroundColor: UIColor, textColor: UIColor, isPermanentError: Bool) {
@@ -3084,7 +3084,7 @@ extension ViewController {
             ]
             
             if importantStatuses.contains(text) {
-                UIAccessibility.post(notification: .announcement, argument: text)
+                unsafe UIAccessibility.post(notification: .announcement, argument: text)
             }
         }
     }
@@ -3272,7 +3272,7 @@ extension ViewController: StreamingPlayerDelegate {
                     
                     // Feedback and save
                     playHapticFeedback(style: .medium)
-                    UIAccessibility.post(notification: .announcement,
+                    unsafe UIAccessibility.post(notification: .announcement,
                                         argument: String(localized: "switched_to_language \(targetStream.language)"))
                     
                     // Save state for widget consistency (Phase 10: many peers pruned; this one

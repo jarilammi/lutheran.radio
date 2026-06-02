@@ -93,7 +93,7 @@ class RadioLiveActivityManager: ObservableObject {
         )
         
         nonisolated(unsafe) let safeActivity = activity
-        await safeActivity.update(.init(state: updatedContentState, staleDate: nil))
+        unsafe await safeActivity.update(.init(state: updatedContentState, staleDate: nil))
         
         #if DEBUG
         print("🔴 Live Activity updated locally: visualState=\(visualState)")
@@ -117,8 +117,8 @@ class RadioLiveActivityManager: ObservableObject {
             
             // All async Live Activity work in one async context – modern SSOT pattern
             let content = ActivityContent(state: finalContentState, staleDate: nil)
-            await safeActivityToEnd.update(content)
-            await safeActivityToEnd.end(content, dismissalPolicy: .default)   // ← Fixed: now uses modern end(content:dismissalPolicy:)
+            unsafe await safeActivityToEnd.update(content)
+            unsafe await safeActivityToEnd.end(content, dismissalPolicy: .default)   // ← Fixed: now uses modern end(content:dismissalPolicy:)
             
             #if DEBUG
             print("🔴 Live Activity ended")
