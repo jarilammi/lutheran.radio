@@ -2901,11 +2901,18 @@ extension ViewController {
         let attributedText = NSAttributedString(string: text, attributes: attributes)
         metadataLabel.attributedText = attributedText
         
-        // Accessibility reads full text regardless of truncation
-        metadataLabel.accessibilityLabel = text
+        // Accessibility reads full text regardless of truncation.
+        // Visible text stays as track info only; prefix "Now Playing" for VoiceOver when streaming.
+        let noTrackInfo = String(localized: "no_track_info")
+        if text != noTrackInfo {
+            let nowPlaying = String(localized: "Now Playing")
+            metadataLabel.accessibilityLabel = "\(nowPlaying): \(text)"
+        } else {
+            metadataLabel.accessibilityLabel = text
+        }
         
         // Announce metadata changes if significant
-        if text != String(localized: "no_track_info") {
+        if text != noTrackInfo {
             unsafe UIAccessibility.post(notification: .announcement, argument: text)
         }
     }
