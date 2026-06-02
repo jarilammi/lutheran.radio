@@ -308,6 +308,7 @@ To avoid naming collisions, each security model name should be unique and not ma
 | `houston`           | March 3, 2026      | (ongoing)          | 26.3.0                 |
 | `starbase`          | May 18, 2026       | (ongoing)          | 26.5.0                 |
 | `fredericksburg`    | June 2, 2026       | (ongoing)          | 26.5.1                 |
+| `brenham`           | (pending)          | (pending)          | 26.6.0                 |
 
 **Notes:**
 - **Valid From:** The date when the security model was first published to the App Store.
