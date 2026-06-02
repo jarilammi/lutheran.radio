@@ -19,7 +19,7 @@ public struct SecurityConfiguration {
     /// If validation fails permanently, streaming is disabled for the lifetime of the process.
     ///
     /// - SeeAlso: ``<doc:Security-Invariants>``, ``SecurityModelValidator/validateSecurityModel()``
-    public let expectedSecurityModel: String = "fredericksburg"
+    public let expectedSecurityModel: String = "brenham"
     
     /// Primary domain queried for TXT record containing valid models (comma-separated).
     let primarySecurityModelDomain: String = "securitymodels.lutheran.radio"
