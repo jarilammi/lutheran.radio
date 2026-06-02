@@ -255,14 +255,14 @@ public actor SecurityModelValidator {
             }
 
             let context = QueryContext(completion: complete)
-            let contextPtr = Unmanaged.passRetained(context).toOpaque()
+            let contextPtr = unsafe Unmanaged.passRetained(context).toOpaque()
 
             // Correct watchdog using DispatchTime
             let watchdog = DispatchWorkItem { [weak context] in
                 guard let context, !context.isDone else { return }
-                if let ref = context.serviceRef {
-                    DNSServiceRefDeallocate(ref)
-                    context.serviceRef = nil
+                if let ref = unsafe context.serviceRef {
+                    unsafe DNSServiceRefDeallocate(ref)
+                    unsafe context.serviceRef = nil
                 }
                 context.completion(.failure(
                     NSError(domain: "dnssd", code: -999, userInfo: [NSLocalizedDescriptionKey: "DNS query timeout"])
@@ -276,13 +276,13 @@ public actor SecurityModelValidator {
 
             guard let domainCStr = domain.cString(using: .utf8) else {
                 watchdog.cancel()
-                Self.releaseContextPointer(contextPtr)
+                unsafe Self.releaseContextPointer(contextPtr)
                 complete(.failure(NSError(domain: "radio.lutheran", code: -998, userInfo: nil)))
                 return
             }
 
             var serviceRef: DNSServiceRef?
-            let err = DNSServiceQueryRecord(
+            let err = unsafe DNSServiceQueryRecord(
                 &serviceRef,
                 0,
                 0,
@@ -293,25 +293,25 @@ public actor SecurityModelValidator {
                 contextPtr
             )
 
-            guard err == kDNSServiceErr_NoError, let serviceRef = serviceRef else {
+            guard err == kDNSServiceErr_NoError, let serviceRef = unsafe serviceRef else {
                 watchdog.cancel()
-                Self.releaseContextPointer(contextPtr)
+                unsafe Self.releaseContextPointer(contextPtr)
                 complete(.failure(NSError(domain: "dnssd", code: Int(err), userInfo: nil)))
                 return
             }
 
-            context.serviceRef = serviceRef
+            unsafe context.serviceRef = unsafe serviceRef
 
             // Let dnssd drive the socket and deliver results via our existing C callback.
             // This is the Apple-recommended pattern (DNSServiceSetDispatchQueue);
             // no manual polling, no capture of non-Sendable DNSServiceRef into @Sendable closures.
             let processingQueue = DispatchQueue(label: "radio.lutheran.dnssd", qos: .userInitiated)
-            let setQErr = DNSServiceSetDispatchQueue(serviceRef, processingQueue)
+            let setQErr = unsafe DNSServiceSetDispatchQueue(serviceRef, processingQueue)
             guard setQErr == kDNSServiceErr_NoError else {
                 watchdog.cancel()
-                DNSServiceRefDeallocate(serviceRef)
-                context.serviceRef = nil
-                Self.releaseContextPointer(contextPtr)
+                unsafe DNSServiceRefDeallocate(serviceRef)
+                unsafe context.serviceRef = nil
+                unsafe Self.releaseContextPointer(contextPtr)
                 complete(.failure(NSError(domain: "dnssd", code: Int(setQErr), userInfo: nil)))
                 return
             }
@@ -322,26 +322,26 @@ public actor SecurityModelValidator {
     private static let dnsQueryCallback: DNSServiceQueryRecordReply = {
         sdRef, flags, interfaceIdx, errorCode, fullName, rrtype, rrclass, rdlen, rdata, ttl, ctx in
         
-        guard let ctx else { return }
+        guard let ctx = unsafe ctx else { return }
 
-        let queryCtx = Unmanaged<QueryContext>.fromOpaque(ctx).takeRetainedValue()
+        let queryCtx = unsafe Unmanaged<QueryContext>.fromOpaque(ctx).takeRetainedValue()
 
         defer {
             queryCtx.isDone = true
-            if let ref = queryCtx.serviceRef {
-                DNSServiceRefDeallocate(ref)
-                queryCtx.serviceRef = nil
+            if let ref = unsafe queryCtx.serviceRef {
+                unsafe DNSServiceRefDeallocate(ref)
+                unsafe queryCtx.serviceRef = nil
             }
         }
 
-        guard errorCode == kDNSServiceErr_NoError, let rdata else {
+        guard errorCode == kDNSServiceErr_NoError, let rdata = unsafe rdata else {
             queryCtx.completion(.failure(
                 NSError(domain: "dnssd", code: Int(errorCode), userInfo: nil)
             ))
             return
         }
 
-        let receivedData = Data(bytes: rdata, count: Int(rdlen))
+        let receivedData = unsafe Data(bytes: rdata, count: Int(rdlen))
         
         // Key change: SecurityModelValidator.parseInlineTXTRecord instead of Self.
         let models = SecurityModelValidator.parseInlineTXTRecord(receivedData)
@@ -440,6 +440,6 @@ public actor SecurityModelValidator {
     /// Nonisolated static release helper (called only from the synchronous continuation body).
     /// Kept for clarity; balances manual memory management without ever crossing actor isolation.
     private static func releaseContextPointer(_ ptr: UnsafeMutableRawPointer) {
-        Unmanaged<QueryContext>.fromOpaque(ptr).release()
+        unsafe Unmanaged<QueryContext>.fromOpaque(ptr).release()
     }
 }
