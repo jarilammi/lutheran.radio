@@ -307,7 +307,7 @@ To avoid naming collisions, each security model name should be unique and not ma
 | `birmingham`        | November 9, 2025   | April 18, 2026     | 26.0.2                 |
 | `houston`           | March 3, 2026      | (ongoing)          | 26.3.0                 |
 | `starbase`          | May 18, 2026       | (ongoing)          | 26.5.0                 |
-| `fredericksburg`    | (pending)          | (pending)          | 26.5.1                 |
+| `fredericksburg`    | June 2, 2026       | (ongoing)          | 26.5.1                 |
 
 **Notes:**
 - **Valid From:** The date when the security model was first published to the App Store.
