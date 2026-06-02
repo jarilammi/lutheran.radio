@@ -20,7 +20,7 @@ It is live on the App Store: https://apps.apple.com/fi/app/lutheran-radio/id6738
 ## Non-Negotiable Rules (Violating any = immediate rejection)
 
 1. **Security Model**
-   - Current `expectedSecurityModel = "fredericksburg"` (Core/Configuration/SecurityConfiguration.swift)
+   - Current `expectedSecurityModel = "brenham"` (Core/Configuration/SecurityConfiguration.swift)
    - Do not change, remove, or comment out DNS TXT validation against `securitymodels.lutheran.radio`
    - Never bypass full-certificate fingerprint pinning (`CC:F7:8E:09:EF:F3:3D:9A:5D:8B:B0:5C:74:28:0D:F6:BE:14:1C:C4:47:F9:69:C2:90:2C:43:97:66:8B:3D:CC`)
    - Never weaken SPKI pinning in Info.plist
@@ -84,9 +84,10 @@ Agents are expected to follow them for all **new code** and when significantly r
 - See `docs/SAFETY_PATTERNS.tex` for concrete patterns and preferred alternatives. This document is the authoritative reference for safe Swift idioms in this codebase.
 
 ### Concurrency and Actor Isolation
-- The project currently uses `SWIFT_APPROACHABLE_CONCURRENCY` to allow pragmatic incremental adoption of Swift 6 rules. New code should still be written with clean actor isolation and `Sendable` conformance in mind.
-- All mutable shared state should be protected by an `actor` or routed through the established single sources of truth (`PersistedWidgetState`, `SharedPlayerManager`, etc.).
-- Prefer `Task { @MainActor [weak self] in ... }` for UI work. Bare `Task {` without actor or sendable annotations should be rare and, when used, should be accompanied by a brief comment explaining why it is safe.
+- The project now uses strict Swift 6 concurrency checking (`SWIFT_STRICT_CONCURRENCY = complete` and `SWIFT_APPROACHABLE_CONCURRENCY = NO`).
+- New code must be written with clean actor isolation and `Sendable` conformance. All mutable shared state should be protected by an `actor` or routed through the established single sources of truth (`PersistedWidgetState`, `SharedPlayerManager`, etc.).
+- `unsafe` is used only where necessary for C interop or low-level APIs (e.g. `DNSService*`, `Unmanaged`). Prefer modern safe patterns wherever possible.
+- Prefer `Task { @MainActor [weak self] in ... }` for UI work. Bare `Task {` without actor or `Sendable` annotations should be rare and, when used, should be accompanied by a brief comment explaining why it is safe.
 
 ### Single Source of Truth Principles
 The architecture has converged on a small number of authoritative paths. New code should use them:
@@ -166,7 +167,7 @@ The `Core` framework is the **single source of truth** for all security decision
 
 The complete security model history is maintained in the Security Model History table in README.md, which serves as the source of truth. Refer to it for the full table of past and current models, including validity periods and app versions.
 
-Current model = **fredericksburg**
+Current model = **brenham**
 
 ## Response Style
 
