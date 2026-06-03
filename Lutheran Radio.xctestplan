@@ -31,6 +31,13 @@
         "identifier" : "B7AFC6CB2CCD7D0C00BDDD83",
         "name" : "Lutheran RadioUITests"
       }
+    },
+    {
+      "target" : {
+        "containerPath" : "container:Lutheran Radio.xcodeproj",
+        "identifier" : "B77E54262F6E6A6700A055DA",
+        "name" : "CoreTests"
+      }
     }
   ],
   "version" : 1

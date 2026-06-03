@@ -9,6 +9,9 @@ import Testing
 import Foundation
 @testable import Core
 
+/// Mirrors ``SecurityConfiguration/expectedSecurityModel`` for deterministic validator tests.
+private let testExpectedSecurityModel = SecurityConfiguration().expectedSecurityModel
+
 @Suite("SecurityModelValidator Tests", .serialized)
 struct SecurityModelValidatorTests {
     
@@ -132,7 +135,7 @@ struct SecurityModelValidatorTests {
         
         await SecurityModelValidator._test_setTXTFetcher { domain in
             if domain.contains("lutheran.radio") {
-                return ["fredericksburg", "other-model"]
+                return [testExpectedSecurityModel, "other-model"]
             }
             throw NSError(domain: "test.dns", code: -1, userInfo: [NSLocalizedDescriptionKey: "simulated primary failure"])
         }
@@ -153,7 +156,7 @@ struct SecurityModelValidatorTests {
                 throw NSError(domain: "test.dns", code: -1001, userInfo: nil)
             }
             if domain.contains("lutheranradio.sk") {
-                return ["fredericksburg"]
+                return [testExpectedSecurityModel]
             }
             throw NSError(domain: "test.dns", code: -1001, userInfo: nil)
         }
@@ -217,15 +220,17 @@ struct SecurityModelValidatorTests {
     func cacheHitSkipsFetcher() async {
         await resetForDeterministicTest()
         
-        final class Counter {
-            private(set) var value = 0
-            func increment() { value += 1 }
+        final class Counter: @unchecked Sendable {
+            private let lock = NSLock()
+            private var _value = 0
+            var value: Int { lock.withLock { _value } }
+            func increment() { lock.withLock { _value += 1 } }
         }
         let counter = Counter()
         
         await SecurityModelValidator._test_setTXTFetcher { _ in
             counter.increment()
-            return ["fredericksburg"]
+            return [testExpectedSecurityModel]
         }
         
         let first = await SecurityModelValidator.shared.validateSecurityModel()
@@ -271,7 +276,7 @@ struct SecurityModelValidatorTests {
         await SecurityModelValidator.shared.resetTransientState()
         
         await SecurityModelValidator._test_setTXTFetcher { _ in
-            return ["fredericksburg"]
+            return [testExpectedSecurityModel]
         }
         
         let second = await SecurityModelValidator.shared.validateSecurityModel()

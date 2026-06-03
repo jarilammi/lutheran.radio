@@ -179,7 +179,7 @@ public actor SecurityModelValidator {
     }
 
     /// The possible states of a security model validation attempt.
-    public enum ValidationState {
+    public enum ValidationState: Sendable {
         /// No validation attempt has completed yet (initial state).
         case pending
 
