@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		B7194FE72FD09507009C466D /* MediaPlayer.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B7194FE62FD09507009C466D /* MediaPlayer.framework */; };
 		B72CC03C2F7489390090CBC0 /* Core.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B77E541D2F6E6A6700A055DA /* Core.framework */; };
 		B757A77E2DEF7B5C00FF90FC /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B757A77D2DEF7B5C00FF90FC /* WidgetKit.framework */; };
 		B757A7802DEF7B5C00FF90FC /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B757A77F2DEF7B5C00FF90FC /* SwiftUI.framework */; };
@@ -104,6 +105,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		B7194FE62FD09507009C466D /* MediaPlayer.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MediaPlayer.framework; path = System/Library/Frameworks/MediaPlayer.framework; sourceTree = SDKROOT; };
 		B757A77C2DEF7B5C00FF90FC /* LutheranRadioWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LutheranRadioWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		B757A77D2DEF7B5C00FF90FC /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		B757A77F2DEF7B5C00FF90FC /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
@@ -233,6 +235,7 @@
 			files = (
 				B77E544A2F6E6BBC00A055DA /* Core.framework in Frameworks */,
 				B7AFC6E22CCD7DD900BDDD83 /* AVFoundation.framework in Frameworks */,
+				B7194FE72FD09507009C466D /* MediaPlayer.framework in Frameworks */,
 				B785EBA22E673D2F0034C286 /* CoreHaptics.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -322,6 +325,7 @@
 		B7AFC6E02CCD7DD900BDDD83 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				B7194FE62FD09507009C466D /* MediaPlayer.framework */,
 				B785EBA12E673D2F0034C286 /* CoreHaptics.framework */,
 				B7F7B4702DAA463E00194E5C /* libmdns.tbd */,
 				B7AFC6E12CCD7DD900BDDD83 /* AVFoundation.framework */,
@@ -907,6 +911,7 @@
 				MARKETING_VERSION = 26.6.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "radio.lutheran.Lutheran-Radio";
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) LUTHERAN_MAIN_APP";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OBJC_BRIDGING_HEADER = "LutheranRadio-Bridging-Header.h";
 				SWIFT_STRICT_MEMORY_SAFETY = MIGRATE;
@@ -943,6 +948,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "radio.lutheran.Lutheran-Radio";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = LUTHERAN_MAIN_APP;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OBJC_BRIDGING_HEADER = "LutheranRadio-Bridging-Header.h";
 				SWIFT_STRICT_MEMORY_SAFETY = MIGRATE;
