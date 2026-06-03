@@ -36,7 +36,6 @@
 /// Accessibility: VoiceOver announcements for status/metadata; hyphenation for long text. For lifecycle events, see `SceneDelegate.swift` and `AppDelegate.swift`.
 import UIKit
 @preconcurrency import AVFoundation
-import MediaPlayer
 import AVKit
 import Network
 import CoreImage
@@ -464,7 +463,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         
         setupControls()
         setupNetworkMonitoring()
-        setupBackgroundAudioControls()
         setupInterruptionHandling()
         setupRouteChangeHandling()
         setupStreamingCallbacks()
@@ -1239,87 +1237,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         }
     }
     
-    private func setupBackgroundAudioControls() {
-        let commandCenter = MPRemoteCommandCenter.shared()
-        [commandCenter.playCommand, commandCenter.pauseCommand, commandCenter.togglePlayPauseCommand, commandCenter.stopCommand].forEach { $0?.removeTarget(nil) }
-        
-        // Play from lockscreen / Control Center
-        commandCenter.playCommand.isEnabled = true
-        commandCenter.playCommand.addTarget { [weak self] _ -> MPRemoteCommandHandlerStatus in
-            guard let self else { return .commandFailed }
-            #if DEBUG
-            print("playCommand: lockscreen/Control Center Play tapped → userRequestedPlay")
-            #endif
-            Task { @MainActor in
-                await SharedPlayerManager.shared.userRequestedPlay()
-                
-                // Refresh UI + Now Playing exactly like togglePlayback does.
-                // userRequestedPlay() already performs the authoritative save + snapshot.
-                let newState = await SharedPlayerManager.shared.currentVisualState
-                self.updateUI(for: newState)
-                self.updateNowPlayingInfo()
-            }
-            return .success
-        }
-        
-        // Pause from lockscreen / Control Center
-        commandCenter.pauseCommand.isEnabled = true
-        commandCenter.pauseCommand.addTarget { [weak self] _ -> MPRemoteCommandHandlerStatus in
-            guard let self else { return .commandFailed }
-            #if DEBUG
-            print("pauseCommand: lockscreen/Control Center Pause tapped")
-            #endif
-            Task { @MainActor in
-                await SharedPlayerManager.shared.stop()
-                let newState = await SharedPlayerManager.shared.currentVisualState
-                self.updateUI(for: newState)
-                self.updateNowPlayingInfo()
-                // stop() already performs the authoritative saveCurrentState + snapshot.
-            }
-            return .success
-        }
-        
-        // Toggle (most common on Control Center, CarPlay, etc.)
-        commandCenter.togglePlayPauseCommand.isEnabled = true
-        commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ -> MPRemoteCommandHandlerStatus in
-            guard let self else { return .commandFailed }
-            #if DEBUG
-            print("togglePlayPauseCommand: received → using same logic as in-app toggle")
-            #endif
-            Task { @MainActor in
-                let manager = SharedPlayerManager.shared
-                let currentVisualState = await manager.currentVisualState
-                let sharedState = manager.loadSharedState()
-                
-                if currentVisualState.isActivelyPlaying || sharedState.isPlaying {
-                    await manager.stop()
-                } else {
-                    await manager.userRequestedPlay()
-                }
-                
-                let newState = await manager.currentVisualState
-                self.updateUI(for: newState)
-                self.updateNowPlayingInfo()
-                // stop()/userRequestedPlay() already cover the authoritative save + snapshot.
-            }
-            return .success
-        }
-        
-        // Stop (kept for completeness)
-        commandCenter.stopCommand.isEnabled = true
-        commandCenter.stopCommand.addTarget { [weak self] _ -> MPRemoteCommandHandlerStatus in
-            guard let self else { return .commandFailed }
-            Task { @MainActor in
-                await SharedPlayerManager.shared.stop()
-                let newState = await SharedPlayerManager.shared.currentVisualState
-                self.updateUI(for: newState)
-                self.updateNowPlayingInfo()
-                // stop() already performs the authoritative saveCurrentState + snapshot.
-            }
-            return .success
-        }
-    }
-    
     // MARK: - User-Initiated Playback (single source of truth)
     // All in-app buttons, lockscreen, Control Center, handleTogglePlayback(), widgets, etc. now go through here.
     /// Internal Single Source of Truth for all playback user intents.
@@ -1364,62 +1281,16 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     }
     
     private func updateNowPlayingInfo(title: String? = nil) {
-        #if DEBUG
-        print("🔄 updateNowPlayingInfo called with title: \(title ?? "nil") | thread: \(Thread.isMainThread ? "main" : "background")")
+        #if LUTHERAN_MAIN_APP
+        Task {
+            if let title {
+                await SharedPlayerManager.shared.didUpdateStreamMetadata(title)
+            } else {
+                await SharedPlayerManager.shared.updateNowPlayingInfo()
+            }
+        }
         #endif
-
-        // === LIVE ICY METADATA ALWAYS WINS ===
-        let liveMetadata = DirectStreamingPlayer.shared.currentMetadata
-        let finalTitle = liveMetadata ?? (title ?? "Lutheran Radio")
-
-        #if DEBUG
-        if let liveMetadata {
-            print("📻 ✅ Using LIVE ICY metadata: \(liveMetadata)")
-        }
-        print("🔄 updateNowPlayingInfo called with finalTitle: \(finalTitle) | thread: \(Thread.isMainThread ? "main" : "background")")
-        #endif
-
-        var info: [String: Any] = [
-            MPMediaItemPropertyTitle: finalTitle,
-            MPMediaItemPropertyArtist: "Lutheran Radio",
-            MPNowPlayingInfoPropertyIsLiveStream: true,
-            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
-            MPMediaItemPropertyMediaType: MPMediaType.anyAudio.rawValue
-        ]
-
-        // ✅ FIXED: Use asset catalog (thread-safe + supports light/dark variants)
-        if let artwork = Self.placeholderArtwork {
-            info[MPMediaItemPropertyArtwork] = artwork
-            #if DEBUG
-            print("✅ Speaker logo loaded successfully")
-            #endif
-        } else {
-            #if DEBUG
-            print("🔴 Failed to load placeholder image")
-            #endif
-        }
-
-        // Always update on main thread
-        DispatchQueue.main.async {
-            MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-            #if DEBUG
-            print("🔄 Updated nowPlayingInfo on main thread [final title: \(finalTitle)]")
-            #endif
-        }
     }
-
-    // MARK: - Static placeholder (one-time creation, huge performance win)
-
-    private static let placeholderArtwork: MPMediaItemArtwork? = {
-        guard let image = UIImage(named: "radio-placeholder") else {
-            // This will only print once at app launch if something is still wrong
-            #if DEBUG
-            print("🔴 CRITICAL: Could not load radio-placeholder from Assets.xcassets")
-            #endif
-            return nil
-        }
-        return MPMediaItemArtwork(boundsSize: image.size) { _ in image }
-    }()
     
     private func updateUIForNoInternet() {
         safeUpdateStatusLabel(

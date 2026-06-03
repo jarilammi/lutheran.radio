@@ -206,6 +206,11 @@ actor SharedPlayerManager {
     // recovery decisions. The UD key is kept for compatibility with extension processes.
     private var lastUserPauseTimestamp: TimeInterval = 0
     
+    // MARK: - Now Playing (Lock Screen & Control Center)
+    /// Latest ICY stream title for MPNowPlayingInfoCenter (main app only).
+    var nowPlayingStreamMetadata: String?
+    var remoteCommandsConfigured = false
+    
     // MARK: - Visual State (Single Source of Truth)
     /// Single source of truth for playback intent (UI + widget + Live Activity)
     /// This prevents the "play on pause" resurrection bug when set synchronously to .userPaused
@@ -433,9 +438,12 @@ actor SharedPlayerManager {
     /// Widget callers take the optimistic instant-feedback path.
     func play() async {
         ensureVisualStateLoaded()
+        #if LUTHERAN_MAIN_APP
+        await configureNowPlayingControlsIfNeeded()
+        #endif
         
         // 🔥 FINAL FIX: Always clear .userPaused lock at the absolute top of play()
-        // This covers widget play, Control Center, lockscreen, CarPlay, Siri — everything.
+        // This covers widget play, Control Center, lock screen, and Siri — everything.
         await clearUserPausedLockIfNeeded()
         
         #if DEBUG
@@ -620,6 +628,9 @@ actor SharedPlayerManager {
         print("SharedPlayerManager.userRequestedPlay() — setUserIntentToPlay + play() for explicit user intent")
         #endif
         
+        #if LUTHERAN_MAIN_APP
+        await configureNowPlayingControlsIfNeeded()
+        #endif
         await setUserIntentToPlay()
         await play()   // ← Fixed: no try/catch needed (play() is now non-throwing)
     }
@@ -645,6 +656,10 @@ actor SharedPlayerManager {
         
         // Persist the locked state
         await saveCurrentState()
+        
+        #if LUTHERAN_MAIN_APP
+        await updateNowPlayingInfo()
+        #endif
         
         #if DEBUG
         print("✅ Visual state locked to .userPaused")
@@ -690,6 +705,10 @@ actor SharedPlayerManager {
         await saveCurrentState()
         
         notifyMainApp(action: "pause")
+        
+        #if LUTHERAN_MAIN_APP
+        await updateNowPlayingInfo()
+        #endif
         
         #if DEBUG
         print("🛑 stop() completed – visualState locked to .userPaused")
@@ -794,6 +813,9 @@ actor SharedPlayerManager {
         
         saveVisualState()
         await saveCurrentState()
+        #if LUTHERAN_MAIN_APP
+        await updateNowPlayingInfo()
+        #endif
     }
     
     /// Sets the visual state to .playing and persists it.
@@ -807,6 +829,9 @@ actor SharedPlayerManager {
         
         saveVisualState()
         await saveCurrentState()
+        #if LUTHERAN_MAIN_APP
+        await updateNowPlayingInfo()
+        #endif
     }
     
     /// Safe restoration – ALWAYS respects .userPaused and blocks resurrection.

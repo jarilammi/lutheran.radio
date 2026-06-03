@@ -889,6 +889,11 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     }
     
     private func safeOnMetadataChange(metadata: String?) {
+        #if LUTHERAN_MAIN_APP
+        Task {
+            await SharedPlayerManager.shared.didUpdateStreamMetadata(metadata)
+        }
+        #endif
         Task { @MainActor [weak self] in
             self?.onMetadataChange?(metadata)
         }
