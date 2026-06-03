@@ -15,6 +15,8 @@ import dnssd
 /// - The callback executes on an arbitrary background thread managed by the dns_sd library.
 /// - Lifetime is strictly manual (Unmanaged.passRetained + takeRetainedValue) with a one-shot callback + watchdog flag.
 /// - No actor state or other types are involved; this is the standard, minimal pattern for Bonjour C callbacks in Swift 6.
+/// - Marked `@safe` because `DNSServiceRef` lifetime is confined to this type (retain/release, one-shot callback, watchdog).
+@safe
 private final class QueryContext: @unchecked Sendable {
     let completion: @Sendable (Result<Set<String>, Error>) -> Void
     var serviceRef: DNSServiceRef?

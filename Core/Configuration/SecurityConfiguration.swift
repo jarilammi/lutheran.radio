@@ -7,7 +7,7 @@
 
 import Foundation
 
-public struct SecurityConfiguration {
+public struct SecurityConfiguration: Sendable {
     
     // MARK: - Security Model (DNS TXT validated)
     
