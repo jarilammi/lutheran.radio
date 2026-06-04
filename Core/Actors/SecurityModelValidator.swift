@@ -344,9 +344,8 @@ public actor SecurityModelValidator {
         }
 
         let receivedData = unsafe Data(bytes: rdata, count: Int(rdlen))
-        
-        // Key change: SecurityModelValidator.parseInlineTXTRecord instead of Self.
-        let models = SecurityModelValidator.parseInlineTXTRecord(receivedData)
+        // Parse in a tight scope: `span` borrows `receivedData` and must not escape this callback.
+        let models = SecurityModelValidator.parseInlineTXTRecord(span: receivedData.span)
         
         queryCtx.completion(.success(models))
     }
@@ -355,23 +354,30 @@ public actor SecurityModelValidator {
     /// safely from the C callback (background thread, non-isolated context).
     /// No actor state access, no `self.`, no isolation violations.
     private static func parseInlineTXTRecord(_ data: Data) -> Set<String> {
+        parseInlineTXTRecord(span: data.span)
+    }
+
+    /// Length-prefixed DNS TXT rdata parser using `Span<UInt8>` views (no per-label `subdata`).
+    ///
+    /// `span` must not escape the caller's scope; the DNS-SD callback satisfies this by parsing
+    /// immediately after wrapping rdata in a local `Data`.
+    private static func parseInlineTXTRecord(span: Span<UInt8>) -> Set<String> {
         var models = Set<String>()
         var index = 0
-        while index < data.count {
-            let length = Int(data[index])
-            guard length > 0 && length <= 255 else { break }
+        while index < span.count {
+            let length = Int(span[index])
+            guard length > 0, length <= 255 else { break }
             index += 1
 
-            guard index + length <= data.count else { break }
+            let labelEnd = index + length
+            guard labelEnd <= span.count else { break }
 
-            let strData = data.subdata(in: index..<index + length)
-            if let str = String(data: strData, encoding: .utf8) {
-                let modelList = str.split(separator: ",")
-                    .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
-                    .filter { !$0.isEmpty }
-                models.formUnion(modelList)
+            let labelSpan = span.extracting(index..<labelEnd)
+            index = labelEnd
+
+            if let str = utf8String(from: labelSpan) {
+                models.formUnion(modelsFromTXTLabel(str))
             }
-            index += length
         }
 
         #if DEBUG
@@ -379,6 +385,24 @@ public actor SecurityModelValidator {
         #endif
 
         return models
+    }
+
+    /// Validates UTF-8 in-place over a borrowed label span, then materializes a `String`.
+    private static func utf8String(from labelSpan: Span<UInt8>) -> String? {
+        do {
+            let utf8 = try UTF8Span(validating: labelSpan)
+            return String(copying: utf8)
+        } catch {
+            return nil
+        }
+    }
+
+    private static func modelsFromTXTLabel(_ label: String) -> Set<String> {
+        Set(
+            label.split(separator: ",")
+                .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+                .filter { !$0.isEmpty }
+        )
     }
 
     // MARK: - Test-only exposure (zero production impact)
