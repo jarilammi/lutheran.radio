@@ -52,7 +52,7 @@ It is live on the App Store: https://apps.apple.com/fi/app/lutheran-radio/id6738
    - Mechanical refactoring with no behavior change
 
    The following count as acceptable proof that "the build is green":
-   1. A clean build using `CODE_SIGNING_ALLOWED=NO` that produces zero Swift compiler errors or warnings.
+   1. A clean build using `CODE_SIGNING_ALLOWED=NO` that produces zero Swift compiler errors or warnings (including strict memory-safety and `@preconcurrency` import warnings).
    2. The full clean test command (mandatory with no exceptions).
    3. A clean build that fails *only* at `ValidateEmbeddedBinary`, codesign, or ad-hoc signing steps (with no `error:` lines from the compiler or linker). Log evidence must be provided.
    4. Transient Xcode build-system errors such as "build database locked" or "two concurrent builds running" (when the two gates are executed in parallel in the same environment) do not count as failures, provided a subsequent sequential run of the commands succeeds with no compiler or linker errors.
@@ -64,10 +64,11 @@ It is live on the App Store: https://apps.apple.com/fi/app/lutheran-radio/id6738
    - Never hard-code English strings.
    - All 21 languages must remain supported (see the language table in README.md for the authoritative list).
 
-4. **iOS 26+ Only**
+4. **iOS 26+ and Swift Toolchain**
    - Minimum deployment target is **iOS 26.2** (no exceptions).
    - Required for full **EMTE + MIE** hardware-backed memory protections.
-   - Requires Xcode 26+ for proper MIE/EMTE support and Swift 6 mode.
+   - Requires Xcode 26+ (Swift 6.3 toolchain) for MIE/EMTE build support and Swift 6 language mode.
+   - **All targets** use `SWIFT_VERSION = 6`, `SWIFT_STRICT_CONCURRENCY = complete`, `SWIFT_APPROACHABLE_CONCURRENCY = NO`, and `SWIFT_STRICT_MEMORY_SAFETY = YES`. Do not weaken or remove these without owner approval and a documented security impact assessment.
    - Prefer modern APIs and leverage Memory Integrity Enforcement wherever possible.
 
 ## Defensive Swift Practices (Directional Guidance)
@@ -84,10 +85,17 @@ Agents are expected to follow them for all **new code** and when significantly r
 - See `docs/SAFETY_PATTERNS.tex` for concrete patterns and preferred alternatives. This document is the authoritative reference for safe Swift idioms in this codebase.
 
 ### Concurrency and Actor Isolation
-- The project now uses strict Swift 6 concurrency checking (`SWIFT_STRICT_CONCURRENCY = complete` and `SWIFT_APPROACHABLE_CONCURRENCY = NO`).
+- The project uses strict Swift 6 concurrency checking (`SWIFT_STRICT_CONCURRENCY = complete` and `SWIFT_APPROACHABLE_CONCURRENCY = NO`).
 - New code must be written with clean actor isolation and `Sendable` conformance. All mutable shared state should be protected by an `actor` or routed through the established single sources of truth (`PersistedWidgetState`, `SharedPlayerManager`, etc.).
-- `unsafe` is used only where necessary for C interop or low-level APIs (e.g. `DNSService*`, `Unmanaged`). Prefer modern safe patterns wherever possible.
+- `unsafe` (expression) is used only where necessary for C interop or low-level APIs (e.g. `DNSService*`, `Unmanaged`, `SecTrustEvaluateWithError`). Prefer modern safe patterns wherever possible.
+- Legacy Apple frameworks imported with `@preconcurrency` **must** use `@unsafe @preconcurrency import ModuleName` under `SWIFT_STRICT_MEMORY_SAFETY = YES`. Known sites: `@unsafe @preconcurrency import Security` (`Core/Security/CertificateValidator.swift`, `StreamingSessionDelegate.swift`), `@unsafe @preconcurrency import AVFoundation` (`DirectStreamingPlayer.swift`, `ViewController.swift`). Do not add bare `@preconcurrency import` — it will warn and should be fixed in the same PR.
 - Prefer `Task { @MainActor [weak self] in ... }` for UI work. Bare `Task {` without actor or `Sendable` annotations should be rare and, when used, should be accompanied by a brief comment explaining why it is safe.
+
+### Strict Memory Safety (SE-0458)
+- `SWIFT_STRICT_MEMORY_SAFETY = YES` is enabled on every target (app, widget, `Core`, tests). This is compile-time checking only; it does not replace MIE/EMTE or any runtime security invariant.
+- Treat new strict-memory-safety warnings as build failures unless the PR is explicitly scoped to warning cleanup (see Build Gate Exceptions).
+- `@unchecked Sendable` and `nonisolated(unsafe)` remain allowed when justified (see existing DNS callback context in `SecurityModelValidator` and streaming delegates); add or preserve a brief justification comment when introducing new uses.
+- Pair `unsafe { … }` blocks with a `// SAFETY: …` comment when the justification is not obvious from surrounding docs.
 
 ### Single Source of Truth Principles
 The architecture has converged on a small number of authoritative paths. New code should use them:
@@ -159,7 +167,8 @@ The `Core` framework is the **single source of truth** for all security decision
   * Security impact assessment (even if "none")
   * Updated xcodebuild status
   * Any new strings that need localization
-- Prefer small, focused PRs.
+- Prefer beautifully designed architecture, don't shy from making big changes if an improvement cannot be done without it and really requires it.
+- Clean up legacy variables, functions or otherwise unneccessarily duplicated code.
 - Use modern Swift patterns (actors, async/await, `#available`, strict concurrency).
 - Never use force-unwraps (`!`) on security or networking paths.
 
