@@ -8,7 +8,7 @@
 import Foundation
 import UIKit
 
-// MARK: - Playback Intent (Phase 1 — Playback Intent Unification)
+// MARK: - Playback Intent
 //
 // Explicit, first-class representation of the user's current desired playback state.
 // This is the single source of truth that answers the question:
@@ -19,25 +19,10 @@ import UIKit
 // interruption recovery, etc.) READ the intent via SharedPlayerManager but NEVER
 // make their own "should I play?" decisions.
 //
-// This type is the architectural successor to the scattered implicit intent that
-// previously lived across:
-//   - ViewController.attemptPlaybackWithRetry + lastPlaybackAttempt debouncing
-//   - DirectStreamingPlayer private startPlayback guards
-//   - Multiple overlapping resurrection windows in SharedPlayerManager
-//     (initialPlaybackHasRun, 25 s cold-launch window, lastUserPauseTime barrier)
-//   - PlayerVisualState.shouldAutoPlayOrResume / mustSuppressResurrection
+// Complements `PlayerVisualState` (what the UI shows) with explicit play/pause intent.
+// Sticky `.userPaused` and `.securityLocked` block resurrection until cleared by user play.
 //
-// Design goals for this type (this micro-patch introduces the type only;
-// behavior changes come in subsequent approved micro-patches):
-//   - Clear, small, auditable state machine.
-//   - Distinguishes "user wants to play" from "UI is showing yellow/green".
-//   - Makes sticky .userPaused and .securityLocked first-class and impossible
-//     to bypass accidentally.
-//   - Enables the later collapse of special-case windows and the removal of
-//     attemptPlaybackWithRetry.
 //
-// This patch is purely additive. No existing code, no call sites, no persistence,
-// and no runtime behavior are changed. The type is not yet wired to anything.
 
 /// User's current desired playback state (the authoritative "intent" signal).
 ///

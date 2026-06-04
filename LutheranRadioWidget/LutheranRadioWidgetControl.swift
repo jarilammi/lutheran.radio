@@ -19,7 +19,7 @@ extension AppIntentError {
         #endif
         return NSError(domain: "LutheranRadioWidget", code: 0, userInfo: [NSLocalizedDescriptionKey: message])
     }
-
+    
     static func general(_ message: String) -> Error {
         return NSError(domain: "LutheranRadioWidget", code: -1, userInfo: [NSLocalizedDescriptionKey: message])
     }
@@ -38,10 +38,10 @@ struct ToggleRadioIntent: SetValueIntent {
     }
     
     @Parameter(title: "Is Playing")
-    var value: Bool   // ← true = play, false = pause (this is what ControlWidgetToggle passes)
-
+    var value: Bool  // ← true = play, false = pause (this is what ControlWidgetToggle passes)
+    
     init() {}
-
+    
     func perform() async throws -> some IntentResult {
         #if DEBUG
         print("🔗 ToggleRadioIntent.perform called with desired value: \(value)")
@@ -101,7 +101,7 @@ struct ToggleRadioIntent: SetValueIntent {
 
 struct LutheranRadioWidgetControl: ControlWidget {
     static let kind: String = "radio.lutheran.LutheranRadio.LutheranRadioWidget"
-
+    
     var body: some ControlWidgetConfiguration {
         AppIntentControlConfiguration(
             kind: Self.kind,
@@ -116,11 +116,11 @@ struct LutheranRadioWidgetControl: ControlWidget {
                 Label {
                     VStack(alignment: .leading, spacing: 1) {
                         Text(value.visualState == .thermalPaused
-                            ? String(localized: "status_thermal_paused", defaultValue: "Thermal pause")
-                            : (value.visualState == .playing
+                             ? String(localized: "status_thermal_paused", defaultValue: "Thermal pause")
+                             : (value.visualState == .playing
                                 ? String(localized: "status_playing", defaultValue: "Playing")
                                 : String(localized: "status_stopped", defaultValue: "Stopped")))
-                            .font(.caption2)
+                        .font(.caption2)
                         Text(value.currentStation)
                             .font(.caption2)
                             .foregroundColor(.secondary)
@@ -139,16 +139,16 @@ extension LutheranRadioWidgetControl {
     struct Value: Sendable {
         let visualState: PlayerVisualState
         let currentStation: String
-
+        
         var isPlaying: Bool {
             visualState.isActivelyPlaying
         }
-
+        
         var hasError: Bool {
             visualState == .securityLocked
         }
     }
-
+    
     struct Provider: AppIntentControlValueProvider {
         func previewValue(configuration: NoOpControlConfiguration) -> Value {
             Value(
@@ -156,17 +156,17 @@ extension LutheranRadioWidgetControl {
                 currentStation: "🇺🇸 " + String(localized: "language_english")
             )
         }
-
+        
         func currentValue(configuration: NoOpControlConfiguration) async throws -> Value {
             let (visualState, currentStation) = await effectiveVisualStateAndStation()
             return Value(visualState: visualState, currentStation: currentStation)
         }
-
+        
         // MARK: - State resolution (snapshot is the sole SSOT)
-
+        
         private func effectiveVisualStateAndStation() async -> (visualState: PlayerVisualState, currentStation: String) {
             let manager = SharedPlayerManager.shared
-
+            
             // Always refresh from persistence first (fresh actor).
             await manager.refreshVisualStateFromPersistence()
             
@@ -177,14 +177,14 @@ extension LutheranRadioWidgetControl {
                 let stream = manager.availableStreams.first(where: { $0.languageCode == lang }) ?? manager.availableStreams[0]
                 return (vs, stream.flag + " " + stream.language)
             }
-
+            
             // The unified snapshot is the single source of truth.
             if let combined = SharedPlayerManager.loadPersistedWidgetState() {
                 let stream = manager.availableStreams.first(where: { $0.languageCode == combined.currentLanguage }) ?? manager.availableStreams[0]
                 return (combined.visualState, stream.flag + " " + stream.language)
             }
             
-            // Ultimate fallback (pre-Phase-6 install with no snapshot ever written).
+            // Ultimate fallback for installs that never wrote a combined snapshot.
             let vs = await manager.currentVisualState
             let lang = SharedPlayerManager.preferredWidgetLanguage()
             let stream = manager.availableStreams.first(where: { $0.languageCode == lang }) ?? manager.availableStreams[0]

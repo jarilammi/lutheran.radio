@@ -922,7 +922,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         lastObservedItemStatus = nil
         
         #if DEBUG
-        print("🔄 [Chunk1-Diag] Requested reset of transient security validation state (NOTE: initialPlaybackRetryCount and hasStartedPlaying are deliberately NOT reset here — use resetInitialPlaybackCountersForNewStream() for user stream switches; see Chunk 2)")
+        print("🔄 [Playback] Requested reset of transient security validation state (NOTE: initialPlaybackRetryCount and hasStartedPlaying are deliberately NOT reset here — use resetInitialPlaybackCountersForNewStream() for user stream switches)")
         #endif
     }
 
@@ -932,16 +932,13 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// transient ICY noise or safety-net exhaustion from the *previous* stream cannot
     /// trigger a false-positive status_stream_unavailable (red banner + popup).
     ///
-    /// This is the Chunk 2 scoping fix: the cold-launch recovery counters (early-drop recreate,
-    /// 5 s safety net) now only accumulate against true first-play after launch for any given
-    /// stream. Switches always get a fresh budget while preserving the exact same recovery
-    /// machinery and the hard red UX for genuine permanent failures.
+    /// Resets cold-launch recovery counters so each stream switch gets a fresh attempt budget.
     func resetInitialPlaybackCountersForNewStream() {
         initialPlaybackRetryCount = 0
         hasStartedPlaying = false   // defensive; the preceding stop() already does this for most paths
 
         #if DEBUG
-        print("🔄 [Chunk2-Diag] resetInitialPlaybackCountersForNewStream — fresh startup budget granted for user stream switch (retryCount reset to 0)")
+        print("🔄 [Playback] resetInitialPlaybackCountersForNewStream — fresh startup budget for stream switch (retryCount reset to 0)")
         #endif
     }
 
@@ -1293,7 +1290,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// - Throws: Only critical unrecoverable errors (rare).
     @MainActor
     func play() async -> Bool {
-        // === CRITICAL GUARD (Phase 2 Chunk 1): Driven by authoritative playback intent ===
+        // === CRITICAL GUARD : Driven by authoritative playback intent ===
         // This is the first execution-engine site wired to `currentPlaybackIntent` via
         // the new `canProceedWithPlayback()` helper. It replaces the prior ad-hoc visualState
         // derivation for this narrow top-level path.
@@ -1346,7 +1343,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
 
     @MainActor
     private func createAndStartPlayer(for url: URL) async {
-        // === DEEP CRITICAL GUARD (Phase 2 Chunk 2): Driven by authoritative playback intent ===
+        // === DEEP CRITICAL GUARD : Driven by authoritative playback intent ===
         // This catches all internal/resume paths that bypass the public play() method
         // (stream switches, tuning sound completion, audio session reactivation, etc.).
         // Now uses the intent helper (second execution-engine site wired to currentPlaybackIntent).
@@ -1527,7 +1524,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
 
                 switch newTC {
                 case .playing:
-                    // CRITICAL (Phase 2 Chunk 4): KVO resurrection protection now driven by
+                    // CRITICAL : KVO resurrection protection now driven by
                     // authoritative playback intent.
                     guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
                         #if DEBUG
@@ -1544,7 +1541,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                         self.safeOnStatusChange(isPlaying: false, reasonKey: "status_stopped")   // ← fixed
                     }
                     
-                    // Post-Phase 6 observer hardening (event-driven, no new timers):
+                    // observer hardening (event-driven, no new timers):
                     // React to early timeControlStatus drops on a fresh ICY item *before* any
                     // stable playing period has been achieved. This catches the exact transient
                     // ICY PUMP / FigStreamPlayer noise clusters (-12640, -12785, -12860, -12783,
@@ -1565,7 +1562,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                                 self.initialPlaybackRetryCount = 1
                             }
                             #if DEBUG
-                            print("🔄 [Chunk1-Diag] Early timeControl drop on fresh ICY item — proactive recreatePlayerItem | hasStartedPlaying=\(self.hasStartedPlaying) | retryCount now=\(self.initialPlaybackRetryCount) | rate=\(observedPlayer.rate)")
+                            print("🔄 [Playback] Early timeControl drop on fresh ICY item — proactive recreatePlayerItem | hasStartedPlaying=\(self.hasStartedPlaying) | retryCount now=\(self.initialPlaybackRetryCount) | rate=\(observedPlayer.rate)")
                             #endif
                             self.recreatePlayerItem()
                         }
@@ -1602,7 +1599,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
 
                 switch newItemStatus {
                 case .readyToPlay:
-                    // CRITICAL (Phase 2 Chunk 4): KVO resurrection protection now driven by
+                    // CRITICAL : KVO resurrection protection now driven by
                     // authoritative playback intent.
                     guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
                         #if DEBUG
@@ -1636,7 +1633,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
 
     func switchToStream(_ stream: Stream) async {
         stop()
-        resetInitialPlaybackCountersForNewStream()   // Chunk 2: give the new stream a fresh cold-launch attempt budget
+        resetInitialPlaybackCountersForNewStream()  // give the new stream a fresh cold-launch attempt budget
         resetTransientErrors()
         selectedStream = stream
         
@@ -1739,7 +1736,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// Private: Actually starts the player + handles session
     private func startPlayback() async {
         // ──────────────────────────────────────────────────────────────
-        // CRITICAL (Phase 2 Chunk 3): Top-level resurrection protection now driven by
+        // CRITICAL : Top-level resurrection protection now driven by
         // authoritative playback intent via canProceedWithPlayback().
         // (Previously visualState.shouldAutoPlayOrResume; now consistent with public play()
         // and deep createAndStartPlayer paths.)
@@ -1799,7 +1796,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 #endif
                 
                 let url = coldLaunchURL
-                // Chunk 2 (2.2): Use explicit AVURLAsset + resourceLoader delegate on the cold-launch fast path
+                // Use explicit AVURLAsset + resourceLoader delegate on the cold-launch fast path
                 // (matches the pattern in createAndStartPlayer and ensures the custom ICY StreamingSessionDelegate
                 // with Core certificate pinning is attached early and consistently).
                 let asset = AVURLAsset(url: url)
@@ -1809,10 +1806,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 player.replaceCurrentItem(with: newItem)
                 self.playerItem = newItem
                 self.setupPlaybackObservers()
-                // Chunk 2 (2.3): Activate richer playerItem observers (readyToPlay, bufferEmpty, likelyToKeepUp, bufferFull)
-                // now that playerItem is populated on this path. This was the missing piece identified in Chunk 1 diagnosis:
-                // the detailed "make it play when data arrives" logic was only active on recreate paths, not true cold launch.
-                // Primary path is now observably stronger; nudges should fire far less often.
+                // Activate richer playerItem observers (readyToPlay, bufferEmpty, likelyToKeepUp, bufferFull)
+                // Observers for readyToPlay, bufferEmpty, likelyToKeepUp, and bufferFull on cold launch.
                 self.addObservers()
                 
                 #if DEBUG
@@ -1836,7 +1831,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             guard let player = self.player else { return }
             
             // ──────────────────────────────────────────────────────────────
-            // Post-head-start guard (Phase 2 Chunk 5)
+            // Post-head-start guard
             // Now driven by authoritative playback intent.
             guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
                 #if DEBUG
@@ -1852,13 +1847,12 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             #endif
         }
         
-        // Phase 6 Chunk 4: Staggered nudges (1.8s/4.0s/7.0s) removed in 4.1.
         // Final 6.5 s recovery timer removed in 4.2 (it used legacy non-hardened item recreation).
         // Only the single lightweight safety net (below) remains as true last resort.
         // It will be further cleaned in 4.3 (removal of the two .prePlay decision points).
         
         // Lightweight safety net for cold launch only (single bounded last resort)
-        // Phase 6 Chunk 4.3: Scheduling is now unconditional (the net itself is internally
+        // Scheduling is now unconditional (the net itself is internally
         // bounded by retryCount + intent guards). The .prePlay heuristic has been removed.
         Task { @MainActor in
             #if DEBUG
@@ -1975,7 +1969,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                         let errorType = StreamErrorType.from(error: item.error)
                         self.hasPermanentError = errorType.isPermanent
                         
-                        // Post-Phase 6: Early item status .failed on fresh ICY item (common after
+                        // : Early item status .failed on fresh ICY item (common after
                         // paused/switch + first data pump noise) → canonical recreatePlayerItem
                         // for transient cases. Permanent/security paths still stop + surface error.
                         if !self.hasStartedPlaying && self.initialPlaybackRetryCount < self.maxInitialRetries
@@ -2100,7 +2094,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             
             Task { @MainActor in
                 // ──────────────────────────────────────────────────────────────
-                // Phase 2 Chunk 8 + Phase 6 Chunk 4.3: intent-driven cold-launch safety net.
+                // intent-driven cold-launch safety net.
                 // The .prePlay visual-state heuristic has been removed (last remaining
                 // currentVisualState decision point for control flow in DirectStreamingPlayer).
                 // Activation now relies solely on: intent check + actual playback facts.
@@ -2118,14 +2112,14 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 if !isActuallyPlaying {
                     self.initialPlaybackRetryCount += 1
                     #if DEBUG
-                    print("🔄 [Chunk1-Diag] Cold-launch safety net: no playback detected after 5s – retry \(self.initialPlaybackRetryCount)/\(self.maxInitialRetries) | hasStartedPlaying=\(self.hasStartedPlaying) | currentItemStatus=\(self.currentItemStatus.rawValue) | hasPlayerItem=\(self.playerItem != nil) | rate=\(self.player?.rate ?? -1)")
+                    print("🔄 [Playback] Cold-launch safety net: no playback detected after 5s – retry \(self.initialPlaybackRetryCount)/\(self.maxInitialRetries) | hasStartedPlaying=\(self.hasStartedPlaying) | currentItemStatus=\(self.currentItemStatus.rawValue) | hasPlayerItem=\(self.playerItem != nil) | rate=\(self.player?.rate ?? -1)")
                     #endif
 
                     if self.initialPlaybackRetryCount >= self.maxInitialRetries {
                         #if DEBUG
                         let tc = self.player?.timeControlStatus.rawValue ?? -1
-                        print("📱 [Chunk1-Diag] Max attempts (\(self.maxInitialRetries)) reached - giving up")
-                        print("📱 [Chunk3-Diag] Safety net terminal: hasPermanentError=\(self.hasPermanentError) | timeControlStatus=\(tc) | rate=\(self.player?.rate ?? -1) | currentItemStatus=\(self.currentItemStatus.rawValue)")
+                        print("📱 [Playback] Max attempts (\(self.maxInitialRetries)) reached - giving up")
+                        print("📱 [Playback] Safety net terminal: hasPermanentError=\(self.hasPermanentError) | timeControlStatus=\(tc) | rate=\(self.player?.rate ?? -1) | currentItemStatus=\(self.currentItemStatus.rawValue)")
                         #endif
 
                         if self.hasPermanentError {
@@ -2138,7 +2132,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                             // Give one final recreatePlayerItem() (unified resource-loader item)
                             // and suppress the severe status entirely. No red UX for recoverable cases.
                             #if DEBUG
-                            print("📱 [Chunk3-Diag] Transient give-up: performing FINAL recreatePlayerItem() then suppressing severe status. No red popup.")
+                            print("📱 [Playback] Transient give-up: performing FINAL recreatePlayerItem() then suppressing severe status. No red popup.")
                             #endif
                             self.recreatePlayerItem()
                         }
@@ -2170,7 +2164,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         Task { @MainActor in
             guard let urlAsset = playerItem?.asset as? AVURLAsset else {
                 #if DEBUG
-                print("❌ [Chunk1-Diag] Cannot recreate: no valid URL asset | hasStartedPlaying=\(self.hasStartedPlaying) | initialPlaybackRetryCount=\(self.initialPlaybackRetryCount) | playerItem=\(playerItem != nil) | this often happens during stream switch races")
+                print("❌ [Playback] Cannot recreate: no valid URL asset | hasStartedPlaying=\(self.hasStartedPlaying) | initialPlaybackRetryCount=\(self.initialPlaybackRetryCount) | playerItem=\(playerItem != nil) | this often happens during stream switch races")
                 #endif
                 return
             }
@@ -2194,7 +2188,6 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             // Re-add observers to the new item
             addObservers()
             
-            // Phase 2/Chunk 3: Intent-driven only. Removed the defensive syncVisualStateFromPersistence
             // (Brave guard) — the actor state is now kept trustworthy by the centralized pause timestamp
             // and intent wiring.
             guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
@@ -2574,7 +2567,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 #endif
                 safeOnStatusChange(isPlaying: false, reasonKey: "status_buffering")   // ← fixed
                 
-                // Post-Phase 6: Make recreatePlayerItem the canonical "reset this live ICY item
+                // : Make recreatePlayerItem the canonical "reset this live ICY item
                 // after startup noise" for transient cases in the early window (before stable play).
                 // This is the primary path from resource loader onError for ICY pump/Fig transients.
                 if !hasStartedPlaying && initialPlaybackRetryCount < maxInitialRetries {
@@ -2706,8 +2699,7 @@ extension DirectStreamingPlayer {
         let interruptionDelay: TimeInterval = isLowEfficiencyMode ? 1.0 : 0.5
         DispatchQueue.main.asyncAfter(deadline: .now() + interruptionDelay) { [weak self] in
             guard let self = self, self.delegate != nil else { return }
-            // Phase 6 follow-up: Always emit a proper status_* key (never button titles or
-            // popup titles as reasonKey values).
+            // Emit a proper status_* key (never button titles or popup titles as reasonKey).
             self.safeOnStatusChange(isPlaying: false, reasonKey: "status_paused")
         }
     }
@@ -2972,7 +2964,7 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
                     self.currentLoadingDelegate = nil
                 }
                 
-                // Post-Phase 6: For transient ICY startup noise on fresh items, go straight to
+                // : For transient ICY startup noise on fresh items, go straight to
                 // recreatePlayerItem (now the canonical reset tool) instead of the full
                 // handleLoadingError + stop path. handleLoadingError is still called for
                 // permanent cases and late transients.
@@ -3401,7 +3393,7 @@ extension DirectStreamingPlayer {
     /// Returns whether we are allowed to automatically start or resume playback
     /// according to the user's explicit intent stored in SharedPlayerManager.
     ///
-    /// Phase 2 Chunk 10: Now delegates to the authoritative playback intent helper
+    /// Now delegates to the authoritative playback intent helper
     /// instead of deriving from visualState. This makes Direct consistent with its
     /// internal guards.
     var shouldAutoPlayOrResume: Bool {
