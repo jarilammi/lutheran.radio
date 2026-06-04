@@ -43,23 +43,38 @@ public struct SecurityConfiguration: Sendable {
     
     // MARK: - Certificate Pinning (runtime full-chain validation)
     
-    /// SHA-256 fingerprint of the leaf certificate (hex, colon-separated).
-    /// Used in runtime validation (CertificateValidator / SecurityModelValidator).
-    /// This is the primary runtime pin (beyond ATS SPKI).
-    let pinnedLeafFingerprint: String = "CC:F7:8E:09:EF:F3:3D:9A:5D:8B:B0:5C:74:28:0D:F6:BE:14:1C:C4:47:F9:69:C2:90:2C:43:97:66:8B:3D:CC"
+    /// OpenSSL-style leaf fingerprint (README / operator tooling parity only).
+    private static let pinnedLeafFingerprintHex =
+        "CC:F7:8E:09:EF:F3:3D:9A:5D:8B:B0:5C:74:28:0D:F6:BE:14:1C:C4:47:F9:69:C2:90:2C:43:97:66:8B:3D:CC"
     
-    /// The set of acceptable leaf certificate SHA-256 fingerprints (hex, colon-separated, uppercase).
+    /// SHA-256 digest of the leaf certificate DER (authoritative runtime pin, beyond ATS SPKI).
     ///
-    /// This is the runtime pinning source of truth used by ``CertificateValidator``.
-    /// It is currently a single value but is exposed as a `Set` to support future certificate
-    /// rotations with overlap periods.
+    /// - Important: Never duplicate or override this value elsewhere in the codebase.
+    let pinnedLeafFingerprintDigest: CertificateFingerprint = {
+        // SAFETY: `pinnedLeafFingerprintHex` is a compile-time constant validated at first access.
+        guard let digest = CertificateFingerprint(colonHexUppercase: pinnedLeafFingerprintHex) else {
+            fatalError("Invalid pinnedLeafFingerprintHex in SecurityConfiguration")
+        }
+        return digest
+    }()
+    
+    /// Colon-hex view of ``pinnedLeafFingerprintDigest`` (documentation / external tooling).
+    public var pinnedLeafFingerprint: String {
+        pinnedLeafFingerprintDigest.colonHexUppercase
+    }
+    
+    /// Acceptable leaf certificate SHA-256 digests used by ``CertificateValidator``.
     ///
-    /// - Important: This value is authoritative. Never duplicate or override the fingerprint
-    ///   anywhere else in the codebase.
+    /// Exposed as a list to support future rotation overlap without `Set` hash short-circuits.
+    var pinnedFingerprintDigests: [CertificateFingerprint] {
+        [pinnedLeafFingerprintDigest]
+    }
+    
+    /// Colon-hex fingerprints (derived from ``pinnedFingerprintDigests``).
     ///
     /// - SeeAlso: ``<doc:Security-Invariants>``, ``CertificateValidator/validateServerTrust(_:)``
     public var pinnedFingerprints: Set<String> {
-        [pinnedLeafFingerprint]
+        Set(pinnedFingerprintDigests.map(\.colonHexUppercase))
     }
     
     

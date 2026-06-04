@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import CommonCrypto
 @unsafe @preconcurrency import Security
 
 /// Actor responsible for runtime full-certificate SHA-256 DER fingerprint pinning.
@@ -39,10 +38,9 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
     /// caches and transition state that would be lost with additional instances.
     public static let shared = CertificateValidator()
     
-    internal var pinnedCertFingerprint: String {
-        SecurityConfiguration().pinnedLeafFingerprint
+    internal var pinnedCertFingerprintDigest: CertificateFingerprint {
+        SecurityConfiguration.current.pinnedLeafFingerprintDigest
     }
-    
     /// Barrier flag to allow leniency during transition, mitigating date manipulation risks.
     /// Defaults to true (lenient, trusting ATS on mismatch); set to false if manipulation detected (e.g., via server time check).
     var allowTransitionLeniency: Bool = true
@@ -304,34 +302,36 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
         }
         
         let config = SecurityConfiguration.current
-        if let certFingerprint = computeCertificateFingerprint(for: leafCertificate) {
-            let isValid = config.pinnedFingerprints.contains(certFingerprint)
-            #if DEBUG
-            if !isValid {
-                print("🔒 [CertificateValidator] Fingerprint mismatch detected")
-            }
-            #endif
-            return isValid
+        guard let certDigest = computeCertificateFingerprintDigest(for: leafCertificate) else {
+            return false
         }
-        return false
+        let isValid = config.pinnedFingerprintDigests.contains { pin in
+            certDigest.constantTimeMatches(pin)
+        }
+        #if DEBUG
+        if !isValid {
+            print("🔒 [CertificateValidator] Fingerprint mismatch detected")
+        }
+        #endif
+        return isValid
     }
     
-    /// Computes the SHA-256 fingerprint of a certificate's DER representation.
+    /// Computes the SHA-256 digest of a certificate's DER representation.
     ///
     /// - Parameter certificate: The `SecCertificate` to fingerprint.
-    /// - Returns: The hex-formatted fingerprint (uppercase, colon-separated), or nil on failure.
-    internal func computeCertificateFingerprint(for certificate: SecCertificate) -> String? {
+    /// - Returns: Raw 32-byte digest, or nil on failure.
+    internal func computeCertificateFingerprintDigest(for certificate: SecCertificate) -> CertificateFingerprint? {
         guard let certData = SecCertificateCopyData(certificate) as Data? else {
             #if DEBUG
             print("🔒 [CertificateValidator] Failed to get certificate data")
             #endif
             return nil
         }
-        var fingerprint = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
-        unsafe certData.withUnsafeBytes { dataBytes in
-            _ = unsafe CC_SHA256(dataBytes.baseAddress, CC_LONG(certData.count), &fingerprint)
-        }
-        // Convert to hex, uppercase, colon-separated to match OpenSSL format
-        return fingerprint.map { unsafe String(format: "%02X", $0) }.joined(separator: ":")
+        return CertificateFingerprint.sha256DERDigest(of: certData)
+    }
+    
+    /// OpenSSL-style colon-hex fingerprint (tests and operator tooling only).
+    internal func computeCertificateFingerprint(for certificate: SecCertificate) -> String? {
+        computeCertificateFingerprintDigest(for: certificate)?.colonHexUppercase
     }
 }
