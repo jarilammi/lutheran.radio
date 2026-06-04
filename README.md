@@ -52,9 +52,25 @@ All AI coding agents (Claude, Grok, Cursor, Aider, Windsurf, etc.) **must** foll
 This ensures every single change respects the same non-negotiable security model, localization rules, and build gates.
 
 ### Prerequisites
- - Xcode 26+ (Swift 6)
+ - Xcode 26+ (Swift 6.3 toolchain; language mode `SWIFT_VERSION = 6`)
  - Minimum deployment target: iOS 26.2 (required for EMTE + MIE hardened memory protections)
  - Recommended local/CI test environment: iOS 26.5 simulator (iPhone 17) — used in the xcodebuild commands below
+
+### Swift Build Settings
+
+All targets (main app, widget extension, `Core` framework, and test bundles) use the same Swift hardening flags:
+
+| Setting | Value | Purpose |
+|---------|-------|---------|
+| `SWIFT_VERSION` | `6` | Swift 6 language mode |
+| `SWIFT_STRICT_CONCURRENCY` | `complete` | Full data-race checking |
+| `SWIFT_APPROACHABLE_CONCURRENCY` | `NO` | No relaxed concurrency downgrade |
+| `SWIFT_STRICT_MEMORY_SAFETY` | `YES` | SE-0458 strict memory-safety checking (compile-time) |
+| `SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY` | `YES` | Explicit import visibility |
+
+Legacy Apple framework imports that still rely on `@preconcurrency` must be written as `@unsafe @preconcurrency import …` (currently `Security` in `Core` and streaming code, `AVFoundation` in the main app). This documents an existing concurrency boundary; it does not weaken runtime security.
+
+Clean builds should produce **zero Swift compiler warnings**. If enabling a new checker surfaces warnings, fix or explicitly annotate them in the same PR — do not leave new warnings behind.
 
 To ensure a smooth development experience, follow these steps before contributing:
 
@@ -148,11 +164,15 @@ openssl s_client -connect livestream.lutheran.radio:443 -servername livestream.l
 
 Match the output against the ```SPKI-SHA256-BASE64``` value in ```Info.plist```. Update if necessary.
 
-## Memory Integrity Enforcement
+## Memory Safety (Compile-Time and Runtime)
 
-The app opts into iOS 26's Memory Integrity Enforcement (MIE) features, including the Enhanced Memory Tagging Extension (EMTE), to provide hardware-backed memory safety protections on compatible devices (e.g., iPhone 17 and later with A19 or newer chips). Full support for building and enabling these features requires Xcode 26+. This helps mitigate memory corruption exploits, use-after-free vulnerabilities, and other memory-related security issues by enforcing tagged memory allocations, bounds checking, and pointer authentication at runtime.
+Defense-in-depth uses **two complementary layers**:
 
-This feature enhances the app's defense-in-depth strategy, ensuring robust security for users on the latest iOS devices while maintaining backward compatibility.
+1. **Compile-time (Swift / Xcode)** — `SWIFT_STRICT_MEMORY_SAFETY = YES` on every target (SE-0458). The compiler flags unsafe memory operations, legacy `@preconcurrency` imports without `@unsafe`, and related patterns. Security-critical code in `Core/` uses explicit `unsafe { … }` only at C/Security framework boundaries (DNS-SD, `SecTrust`, hashing).
+
+2. **Runtime (iOS hardware)** — Memory Integrity Enforcement (MIE), including the Enhanced Memory Tagging Extension (EMTE), on compatible devices (e.g., iPhone 17 and later with A19 or newer chips). Requires Xcode 26+ and iOS 26.2+ deployment. This mitigates memory corruption, use-after-free, and similar issues via tagged allocations, bounds checking, and pointer authentication at runtime.
+
+These layers are independent: strict Swift checking hardens source before ship; MIE/EMTE hardens execution on supported hardware.
 
 The app enables additional MIE options for stricter memory protections:
 - `com.apple.security.hardened-process.checked-allocations.enable-pure-data = true`: Enforces pure data allocations to prevent executable code in data regions.
@@ -261,7 +281,7 @@ Runtime full-certificate (DER SHA-256) fingerprint validation with transition-wi
 
 This refactor:
 - Improves maintainability and testability
-- Enforces Swift 6 concurrency rules
+- Enforces Swift 6 strict concurrency and strict memory-safety build settings on all targets
 - Keeps identical runtime behavior and security guarantees
 - Does **not** change the current model ("brenham"), fingerprints, transition period, or any validation rules
 

@@ -7,7 +7,7 @@
 
 import Foundation
 import CommonCrypto
-@preconcurrency import Security
+@unsafe @preconcurrency import Security
 
 /// Actor responsible for runtime full-certificate SHA-256 DER fingerprint pinning.
 ///

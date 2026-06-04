@@ -35,7 +35,7 @@
 ///
 /// Accessibility: VoiceOver announcements for status/metadata; hyphenation for long text. For lifecycle events, see `SceneDelegate.swift` and `AppDelegate.swift`.
 import UIKit
-@preconcurrency import AVFoundation
+@unsafe @preconcurrency import AVFoundation
 import AVKit
 import Network
 import CoreImage

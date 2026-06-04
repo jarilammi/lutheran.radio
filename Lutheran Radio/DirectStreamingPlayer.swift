@@ -8,7 +8,7 @@
 import Foundation
 import Security
 import CommonCrypto
-@preconcurrency import AVFoundation
+@unsafe @preconcurrency import AVFoundation
 import dnssd
 import Network
 import Core
