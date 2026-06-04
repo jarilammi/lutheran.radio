@@ -24,9 +24,10 @@ This document defines the **non-negotiable security invariants** of the Lutheran
 ## Invariant 2: Certificate Pinning (Runtime Full-Chain)
 
 - Runtime certificate validation is performed exclusively by ``CertificateValidator``.
-- The validator performs **full-certificate SHA-256 DER fingerprint pinning** against the value in ``SecurityConfiguration/pinnedFingerprints``.
+- The validator performs **full-certificate SHA-256 DER digest pinning** against ``SecurityConfiguration/pinnedFingerprintDigests`` (``CertificateFingerprint`` values).
+- Comparison uses ``CertificateFingerprint/constantTimeMatches(_:)``; runtime code must not compare colon-hex strings.
 - App Transport Security (ATS) SPKI pinning in `Info.plist` provides the baseline. The runtime validator adds a second, independent layer.
-- The pinned fingerprint value in `SecurityConfiguration` is the source of truth; it must never be duplicated or overridden elsewhere.
+- ``SecurityConfiguration/pinnedLeafFingerprintDigest`` is the authoritative pin; ``pinnedLeafFingerprint`` and ``pinnedFingerprints`` are derived colon-hex views for operators and docs only. Never duplicate or override digest values elsewhere.
 
 ## Invariant 3: Transition Window & Time-Skew Protection
 
@@ -41,8 +42,10 @@ This document defines the **non-negotiable security invariants** of the Lutheran
 
 All of the following values exist **only** inside ``SecurityConfiguration`` and are never hard-coded elsewhere:
 
-- `expectedSecurityModel` ("fredericksburg")
-- `pinnedLeafFingerprint`
+- `expectedSecurityModel` ("brenham")
+- `pinnedLeafFingerprintDigest` (authoritative 32-byte pin; ``CertificateFingerprint``)
+- `pinnedFingerprintDigests` (acceptable digests for ``CertificateValidator``)
+- `pinnedLeafFingerprint` / `pinnedFingerprints` (derived colon-hex; operator and README parity only)
 - `transitionWindowStart` / `transitionWindowEnd`
 - `maxAllowedTimeSkew`
 - `modelCacheDuration`
@@ -60,14 +63,15 @@ These invariants are primarily enforced by:
 
 - ``SecurityConfiguration`` — constants and policy
 - ``SecurityModelValidator`` — DNS TXT actor
+- ``CertificateFingerprint`` — digest type, hashing, constant-time equality
 - ``CertificateValidator`` — runtime pinning actor
 
-Any proposed change that touches these three files, the DNS TXT record contents, the pinned fingerprint, or the transition dates requires explicit security review.
+Any proposed change that touches these files, the DNS TXT record contents, the pinned digest(s), or the transition dates requires explicit security review.
 
 ## References
 
 - ``<doc:Architecture>`` — How the three components interact
 - README.md — "Security Model Validation", "Certificate Pinning", and "Why DNS TXT Records?" sections
-- CODING_AGENT.md — Permanent rules for all contributors and AI agents
+- AGENTS.md / CODING_AGENT.md — Permanent rules for all contributors and AI agents
 
 > Warning: Violating any invariant above constitutes a security regression and will be rejected.

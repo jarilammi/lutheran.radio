@@ -105,9 +105,9 @@ After cleaning, retry the build and test steps above.
 The app implements certificate pinning to prevent man-in-the-middle (MITM) attacks. Key details:
 
 1. **Domain:** ```lutheran.radio``` (including subdomains)
-2. **Pinned Value:** SHA-256 fingerprint of the server’s leaf certificate, hex-encoded (uppercase, colon-separated)
-3. **Location:** Embedded in ```Info.plist``` under ```NSAppTransportSecurity > NSPinnedDomains``` (primary) and ```Core/Security/CertificateValidator.swift``` (runtime validation)
-4. **Current Fingerprint:** ```CC:F7:8E:09:EF:F3:3D:9A:5D:8B:B0:5C:74:28:0D:F6:BE:14:1C:C4:47:F9:69:C2:90:2C:43:97:66:8B:3D:CC```
+2. **Pinned Value (runtime):** SHA-256 digest of the leaf certificate DER (32 bytes), stored as ```CertificateFingerprint``` in ```Core/Configuration/SecurityConfiguration.swift``` as ```pinnedLeafFingerprintDigest```
+3. **Pinned Value (operator / docs):** OpenSSL-style colon-hex (uppercase), derived from the digest — ```CC:F7:8E:09:EF:F3:3D:9A:5D:8B:B0:5C:74:28:0D:F6:BE:14:1C:C4:47:F9:69:C2:90:2C:43:97:66:8B:3D:CC```
+4. **Location:** SPKI in ```Info.plist``` (```NSAppTransportSecurity > NSPinnedDomains```); runtime digest policy in ```SecurityConfiguration```; comparison in ```Core/Security/CertificateValidator.swift``` via ```Core/Security/CertificateFingerprint.swift```
 
 ### Dual Pinning Methods
 
@@ -122,10 +122,11 @@ For enhanced security, the app uses two complementary pinning approaches:
      - `XuAdGZ5Hy28pa2OHHMOry/fzpW8XyA5AV5bEDwSX2Ys=`
    - Verification: Use `openssl s_client -connect livestream.lutheran.radio:443 -servername livestream.lutheran.radio < /dev/null | openssl x509 -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | base64` and match against these values.
 
-2. **Full Certificate Fingerprint Pinning (via Core/Security/CertificateValidator.swift - Runtime Validation)**:
-   - Pins the SHA-256 fingerprint of the full certificate's DER representation (hex, uppercase, colon-separated).
-   - Performed at runtime for stricter validation, with caching (10 minutes) and transition support.
-   - Complements SPKI by ensuring exact certificate matches, with fallback to ATS during the transition period.
+2. **Full Certificate Fingerprint Pinning (via Core/Security/ - Runtime Validation)**:
+   - Authoritative pin: ```SecurityConfiguration.pinnedLeafFingerprintDigest``` (32-byte ```CertificateFingerprint```).
+   - ```CertificateValidator``` hashes the leaf DER with stack-local storage and compares digests using constant-time equality (no runtime hex string comparison).
+   - Colon-hex views (```pinnedLeafFingerprint```, ```pinnedFingerprints```) exist for README, tests, and ```openssl``` parity only.
+   - Performed at runtime with caching (10 minutes) and transition support; complements SPKI with exact DER matches, with ATS fallback during the transition period.
 
 This dual approach provides defense-in-depth: SPKI handles baseline TLS security and rotations, while full pinning adds runtime enforcement. During the transition period (July 27–August 26, 2026), runtime validation allows pinning mismatches to the known alternate key (trusting ATS/SPKI) to prevent disruptions from certificate updates.
 
@@ -168,7 +169,7 @@ Match the output against the ```SPKI-SHA256-BASE64``` value in ```Info.plist```.
 
 Defense-in-depth uses **two complementary layers**:
 
-1. **Compile-time (Swift / Xcode)** — `SWIFT_STRICT_MEMORY_SAFETY = YES` on every target (SE-0458). The compiler flags unsafe memory operations, legacy `@preconcurrency` imports without `@unsafe`, and related patterns. Security-critical code in `Core/` uses explicit `unsafe { … }` only at C/Security framework boundaries (DNS-SD, `SecTrust`, hashing).
+1. **Compile-time (Swift / Xcode)** — `SWIFT_STRICT_MEMORY_SAFETY = YES` on every target (SE-0458). The compiler flags unsafe memory operations, legacy `@preconcurrency` imports without `@unsafe`, and related patterns. Security-critical code in `Core/` uses explicit `unsafe { … }` only at C/Security framework boundaries (DNS-SD, `SecTrust`, hashing). Hot paths prefer `Span<UInt8>` / `UTF8Span` over `subdata` copies (DNS TXT rdata in `SecurityModelValidator`, DER hashing in `CertificateFingerprint`).
 
 2. **Runtime (iOS hardware)** — Memory Integrity Enforcement (MIE), including the Enhanced Memory Tagging Extension (EMTE), on compatible devices (e.g., iPhone 17 and later with A19 or newer chips). Requires Xcode 26+ and iOS 26.2+ deployment. This mitigates memory corruption, use-after-free, and similar issues via tagged allocations, bounds checking, and pointer authentication at runtime.
 
@@ -243,7 +244,7 @@ Example output:
 TXT 13 3 600 20260328052556 20260326032556 34505 lutheran.radio. CEZx+X3J947EaeiH/hevPZUJvaovpylfY9vLdMb75ohAW3MFuNg9RbnZ 5cjnVglSPo43UCk97UZwkQcREaNY0Q==
 ```
 
-Compare this output to the security model defined in the app (found in ```DirectStreamingPlayer.swift``` as ```appSecurityModel```). If the app’s model (e.g., "brenham") isn’t listed, it will fail validation. To update the list, modify the TXT record for ```securitymodels.lutheran.radio``` through the DNS management interface for the ```lutheran.radio``` domain.
+Compare this output to ```expectedSecurityModel``` in ```Core/Configuration/SecurityConfiguration.swift``` (currently ```brenham```). If the app’s model isn’t listed, validation fails permanently. To update the list, modify the TXT record for ```securitymodels.lutheran.radio``` through the DNS management interface for the ```lutheran.radio``` domain.
 
 ### Security Model Validation Cache
 
@@ -254,7 +255,7 @@ To improve resilience against transient DNS failures (e.g., network instability 
 - **Storage:** A non-sensitive timestamp (`Date`) is stored in `UserDefaults` under the key `"lastSecurityValidation"`. No actual security models or TXT records are cached.
 - **Behavior:**
   - On app launch or validation trigger: If a valid cache exists (timestamp within 1 hour), the app assumes success and proceeds with streaming.
-  - Cache is only updated on successful DNS fetches (i.e., when the embedded `appSecurityModel` matches the TXT record).
+  - Cache is only updated on successful DNS fetches (i.e., when `SecurityConfiguration.expectedSecurityModel` appears in the TXT record).
   - Failures are **not** cached—full validation (DNS query) is always performed on failure, with permanent disablement if the model is invalid.
   - Time handling uses an injectable `currentDate()` closure for testability and consistency.
 - **Security Considerations:**
@@ -275,9 +276,9 @@ This feature enhances availability while maintaining the app's privacy-first pri
 
 ### Security Isolation Architecture
 
-All security-critical constants (expected model name, certificate fingerprints, transition window dates) are now centralized in `Core/Configuration/SecurityConfiguration.swift`.
-The DNS TXT record validation logic has been extracted into a dedicated Swift actor `Core/Actors/SecurityModelValidator.swift`, which enforces strict actor isolation and provides the single entry point `validateSecurityModel()`.
-Runtime full-certificate (DER SHA-256) fingerprint validation with transition-window leniency lives in `Core/Security/CertificateValidator.swift`.
+All security-critical constants (expected model name, `pinnedLeafFingerprintDigest`, transition window dates) are centralized in `Core/Configuration/SecurityConfiguration.swift` (colon-hex fingerprint strings are derived views for operators and docs).
+The DNS TXT record validation logic lives in `Core/Actors/SecurityModelValidator.swift` (actor-isolated; `Span<UInt8>` TXT parser; entry point `validateSecurityModel()`).
+Runtime full-certificate (DER SHA-256) digest validation with transition-window leniency lives in `Core/Security/CertificateValidator.swift`, using `Core/Security/CertificateFingerprint.swift` for digest storage, hashing, and constant-time comparison.
 
 This refactor:
 - Improves maintainability and testability
@@ -290,7 +291,7 @@ This refactor:
 **Core module layout (three subdirectories only):**
 - `Core/Configuration/` — policy and constants (`SecurityConfiguration`)
 - `Core/Actors/` — DNS TXT validation actor (`SecurityModelValidator`)
-- `Core/Security/` — runtime certificate fingerprint validator (`CertificateValidator`)
+- `Core/Security/` — digest type and hashing (`CertificateFingerprint`) + runtime validator (`CertificateValidator`)
 
 The authoritative security invariants and architecture are documented in the
 `Core` framework's DocC catalog. The best reading experience is inside Xcode:

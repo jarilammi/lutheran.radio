@@ -31,7 +31,8 @@ This design makes security review, testing, and future rotation of certificates 
 A plain `struct` (value type) that exposes only the minimal public surface required by consumers:
 
 - `expectedSecurityModel`
-- `pinnedFingerprints`
+- `pinnedLeafFingerprintDigest` / `pinnedFingerprintDigests` (authoritative runtime pins)
+- `pinnedLeafFingerprint` / `pinnedFingerprints` (derived colon-hex)
 - `isInTransitionWindow`
 - `current` (the canonical instance)
 
@@ -42,18 +43,28 @@ All other properties are internal by design. The struct is deliberately not an a
 An `actor` that:
 
 - Performs DNS-SD TXT queries against the configured domains.
+- Parses length-prefixed TXT rdata with `Span<UInt8>` and `UTF8Span` in the DNS-SD callback (no per-label `subdata`); the span must not escape the callback scope.
 - Implements a one-hour success-only cache persisted in `UserDefaults`.
 - Distinguishes **permanent** failures (model not in TXT → streaming must stay disabled) from **transient** failures (network/DNS issues → safe to retry).
 - Exposes a tiny set of test seams under `#if DEBUG` that have zero production impact.
 
 The actor uses a carefully constructed non-isolated static C callback + `Unmanaged` context to satisfy Swift 6 strict concurrency while still using the classic `dnssd` API.
 
+### CertificateFingerprint
+
+A `Sendable` value type that:
+
+- Holds the raw 32-byte SHA-256 digest of a certificate DER encoding.
+- Computes digests via stack-local storage and `Data.span` (see `sha256DERDigest(of:)`).
+- Exposes constant-time equality for runtime pinning (`constantTimeMatches`).
+- Materializes OpenSSL-style colon-hex only for documentation and operator tooling.
+
 ### CertificateValidator
 
 An `actor` that:
 
 - Implements `URLSessionTaskDelegate` for modern async challenge handling.
-- Performs full SHA-256 DER leaf certificate fingerprint validation.
+- Performs full SHA-256 DER leaf certificate digest validation against ``SecurityConfiguration/pinnedFingerprintDigests``.
 - Maintains a 10-minute validation cache.
 - Implements the transition window + device/server time-skew protection logic.
 - Can be driven either via `validateServerTrust(_:)` (during live challenges) or `validateServerCertificate(for:)` (periodic HEAD checks).
@@ -86,4 +97,5 @@ Any new security mechanism (additional pinning layers, OCSP, certificate transpa
 - ``<doc:Security-Invariants>``
 - ``SecurityConfiguration``
 - ``SecurityModelValidator``
+- ``CertificateFingerprint``
 - ``CertificateValidator``

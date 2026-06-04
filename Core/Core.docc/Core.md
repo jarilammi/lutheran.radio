@@ -9,7 +9,7 @@ The `Core` framework is the **single source of truth** for all security policy, 
 The framework enforces three fundamental security mechanisms:
 
 - **Security model validation** via DNS TXT records (`securitymodels.lutheran.radio`)
-- **Runtime full-certificate SHA-256 fingerprint pinning** with transition support
+- **Runtime full-certificate SHA-256 digest pinning** (``CertificateFingerprint`` + constant-time comparison) with transition support
 - **Time-skew detection** to protect transition windows from clock manipulation
 
 All constants, policy, and validation logic live exclusively inside `Core/`. Duplication outside this framework is forbidden.
@@ -33,6 +33,10 @@ For a detailed explanation of the three-layer design (Configuration / Actors / S
 ### Configuration
 
 - ``SecurityConfiguration``
+
+### Security Types
+
+- ``CertificateFingerprint``
 
 ### Validation Actors
 
