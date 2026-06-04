@@ -11,6 +11,8 @@
 		B72CC03C2F7489390090CBC0 /* Core.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B77E541D2F6E6A6700A055DA /* Core.framework */; };
 		B757A77E2DEF7B5C00FF90FC /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B757A77D2DEF7B5C00FF90FC /* WidgetKit.framework */; };
 		B757A7802DEF7B5C00FF90FC /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B757A77F2DEF7B5C00FF90FC /* SwiftUI.framework */; };
+		B77B42112FD214FD00AB6019 /* CertificateFingerprint.swift in Sources */ = {isa = PBXBuildFile; fileRef = B77B42102FD214FD00AB6019 /* CertificateFingerprint.swift */; };
+		B77B42122FD214FD00AB6019 /* CertificateFingerprint.swift in Sources */ = {isa = PBXBuildFile; fileRef = B77B42102FD214FD00AB6019 /* CertificateFingerprint.swift */; };
 		B77E54282F6E6A6700A055DA /* Core.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B77E541D2F6E6A6700A055DA /* Core.framework */; };
 		B77E54332F6E6A6700A055DA /* Core.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = B77E541D2F6E6A6700A055DA /* Core.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		B77E54442F6E6A9000A055DA /* CertificateValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7759C352F6E62EA00829AC0 /* CertificateValidator.swift */; };
@@ -110,6 +112,7 @@
 		B757A77D2DEF7B5C00FF90FC /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		B757A77F2DEF7B5C00FF90FC /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		B7759C352F6E62EA00829AC0 /* CertificateValidator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CertificateValidator.swift; sourceTree = "<group>"; };
+		B77B42102FD214FD00AB6019 /* CertificateFingerprint.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CertificateFingerprint.swift; sourceTree = "<group>"; };
 		B77E541D2F6E6A6700A055DA /* Core.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Core.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		B77E54272F6E6A6700A055DA /* CoreTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CoreTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B785EBA12E673D2F0034C286 /* CoreHaptics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreHaptics.framework; path = System/Library/Frameworks/CoreHaptics.framework; sourceTree = SDKROOT; };
@@ -261,6 +264,7 @@
 			isa = PBXGroup;
 			children = (
 				B7759C352F6E62EA00829AC0 /* CertificateValidator.swift */,
+				B77B42102FD214FD00AB6019 /* CertificateFingerprint.swift */,
 			);
 			path = Security;
 			sourceTree = "<group>";
@@ -626,6 +630,7 @@
 				B7D26EFC2F6E6EFF003568F0 /* Core.swift in Sources */,
 				B77E54482F6E6AAD00A055DA /* SecurityConfiguration.swift in Sources */,
 				B77E54462F6E6A9E00A055DA /* SecurityModelValidator.swift in Sources */,
+				B77B42122FD214FD00AB6019 /* CertificateFingerprint.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -635,6 +640,7 @@
 			files = (
 				B77E54472F6E6A9E00A055DA /* SecurityModelValidator.swift in Sources */,
 				B77E54452F6E6A9000A055DA /* CertificateValidator.swift in Sources */,
+				B77B42112FD214FD00AB6019 /* CertificateFingerprint.swift in Sources */,
 				B77E54492F6E6AAD00A055DA /* SecurityConfiguration.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

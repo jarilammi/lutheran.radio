@@ -32,12 +32,15 @@ struct CertificateValidatorTests {
             return
         }
         
-        let expectedFingerprint = "CC:F7:8E:09:EF:F3:3D:9A:5D:8B:B0:5C:74:28:0D:F6:BE:14:1C:C4:47:F9:69:C2:90:2C:43:97:66:8B:3D:CC"  // Matches pinnedLeafFingerprint from SecurityConfiguration.swift
+        let expectedDigest = SecurityConfiguration.current.pinnedLeafFingerprintDigest
         
         let validator = CertificateValidator()
-        let computedFingerprint = await validator.computeCertificateFingerprint(for: certificate)
+        let computedDigest = await validator.computeCertificateFingerprintDigest(for: certificate)
         
-        #expect(computedFingerprint == expectedFingerprint)
+        #expect(computedDigest == expectedDigest)
+        
+        let computedHex = await validator.computeCertificateFingerprint(for: certificate)
+        #expect(computedHex == expectedDigest.colonHexUppercase)
     }
     
     // MARK: - Chain & Server Trust Validation
