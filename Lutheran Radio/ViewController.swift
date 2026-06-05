@@ -1380,7 +1380,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             return
         }
         
-        let cacheKey = "\(imageName)_\(traitCollection.userInterfaceStyle.rawValue)"
+        let maxPixelDimension = backgroundProcessingMaxPixelDimension()
+        let cacheKey = "\(imageName)_\(traitCollection.userInterfaceStyle.rawValue)_\(Int(maxPixelDimension))"
         let isDarkMode = traitCollection.userInterfaceStyle == .dark  // ✅ Capture on main thread
         
         if isLowEfficiencyMode {
@@ -1411,18 +1412,57 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 }
                 
                 // Process image on background queue (kick-off from main to satisfy isolation)
-                self.processImageAsync(imageName: imageName, cacheKey: cacheKey, stream: stream, isDarkMode: isDarkMode)
+                self.processImageAsync(
+                    imageName: imageName,
+                    cacheKey: cacheKey,
+                    stream: stream,
+                    isDarkMode: isDarkMode,
+                    maxPixelDimension: maxPixelDimension
+                )
             }
         }
     }
     
+    /// Display width (including background bleed) at 2× native scale — caps CIFilter work at display quality.
+    private func backgroundProcessingMaxPixelDimension() -> CGFloat {
+        let screenScale = view.window?.windowScene?.screen.scale ?? traitCollection.displayScale
+        let bounds = view.bounds
+        guard bounds.width > 1 else {
+            return ceil(393 * 2 * screenScale)
+        }
+        let displayWidth = bounds.width + 40
+        return ceil(displayWidth * 2 * screenScale)
+    }
+
+    /// Scales the image so its longest edge is at most `maxPixelDimension` before the filter chain.
+    /// - Returns: Downscaled image and scale factor applied (1.0 when no downscale was needed).
+    nonisolated private func downscaledForProcessing(_ image: CIImage, maxPixelDimension: CGFloat) -> (CIImage, CGFloat) {
+        let extent = image.extent
+        guard extent.width > 0, extent.height > 0, maxPixelDimension > 0 else {
+            return (image, 1)
+        }
+        let longestEdge = max(extent.width, extent.height)
+        guard longestEdge > maxPixelDimension else {
+            return (image, 1)
+        }
+        let scale = maxPixelDimension / longestEdge
+        return (image.transformed(by: CGAffineTransform(scaleX: scale, y: scale)), scale)
+    }
+
     /// Processes and applies background image filters asynchronously.
     /// - Parameter imageName: Name of the base image asset.
-    /// - Parameter cacheKey: Unique key for caching (includes interface style).
+    /// - Parameter cacheKey: Unique key for caching (includes interface style and processing size).
     /// - Parameter stream: Current stream for language-specific image.
     /// - Parameter isDarkMode: `true` if dark mode filters should be applied.
+    /// - Parameter maxPixelDimension: Upper bound on longest edge in pixels before filters run.
     /// - Note: Uses CIContext for efficiency; caches results to reduce CPU usage in low-power mode.
-    private func processImageAsync(imageName: String, cacheKey: String, stream: DirectStreamingPlayer.Stream, isDarkMode: Bool) {
+    private func processImageAsync(
+        imageName: String,
+        cacheKey: String,
+        stream: DirectStreamingPlayer.Stream,
+        isDarkMode: Bool,
+        maxPixelDimension: CGFloat
+    ) {
         guard let baseImage = UIImage(named: imageName) else {
             DispatchQueue.main.async {
                 self.backgroundImageView.image = nil
@@ -1438,18 +1478,23 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                     return baseImage
                 }
                 
-                var processedImage = ciImage
+                let (scaledImage, processingScale) = self.downscaledForProcessing(ciImage, maxPixelDimension: maxPixelDimension)
+                var processedImage = scaledImage
                 
                 #if DEBUG
-                print("Processing image for \(stream.languageCode), mode: \(isDarkMode ? "dark" : "light")")
+                print(
+                    "Processing image for \(stream.languageCode), mode: \(isDarkMode ? "dark" : "light"), "
+                        + "sourceExtent=\(ciImage.extent.integral), processingExtent=\(scaledImage.extent.integral), "
+                        + "maxPx=\(Int(maxPixelDimension)), scale=\(unsafe String(format: "%.3f", processingScale))"
+                )
                 #endif
                 
                 // Apply filters based on interface style.
                 // Methods are pure CPU transforms (no actor state) → nonisolated for Swift 6.
                 if isDarkMode {
-                    processedImage = self.applyDarkModeFilters(to: processedImage)
+                    processedImage = self.applyDarkModeFilters(to: processedImage, morphologyScale: processingScale)
                 } else {
-                    processedImage = self.applyLightModeFilters(to: processedImage)
+                    processedImage = self.applyLightModeFilters(to: processedImage, morphologyScale: processingScale)
                 }
                 
                 // Convert back to UIImage
@@ -1479,7 +1524,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         }
     }
     
-    nonisolated private func applyDarkModeFilters(to image: CIImage) -> CIImage {
+    nonisolated private func applyDarkModeFilters(to image: CIImage, morphologyScale: CGFloat = 1) -> CIImage {
         var processedImage = image
         
         // Invert colors
@@ -1506,10 +1551,10 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             }
         }
         
-        // Morphology
+        // Morphology (radius scaled to match visual effect after pre-filter downscale)
         if let dilateFilter = CIFilter(name: "CIMorphologyMaximum") {
             dilateFilter.setValue(processedImage, forKey: kCIInputImageKey)
-            dilateFilter.setValue(4.0, forKey: kCIInputRadiusKey)
+            dilateFilter.setValue(4.0 * morphologyScale, forKey: kCIInputRadiusKey)
             if let outputImage = dilateFilter.outputImage {
                 processedImage = outputImage
                 #if DEBUG
@@ -1521,7 +1566,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         return processedImage
     }
 
-    nonisolated private func applyLightModeFilters(to image: CIImage) -> CIImage {
+    nonisolated private func applyLightModeFilters(to image: CIImage, morphologyScale: CGFloat = 1) -> CIImage {
         var processedImage = image
         
         // Color controls
@@ -1537,10 +1582,10 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             }
         }
         
-        // Morphology operations
+        // Morphology operations (radius scaled to match visual effect after pre-filter downscale)
         if let dilateFilter = CIFilter(name: "CIMorphologyMaximum") {
             dilateFilter.setValue(processedImage, forKey: kCIInputImageKey)
-            dilateFilter.setValue(5.0, forKey: kCIInputRadiusKey)
+            dilateFilter.setValue(5.0 * morphologyScale, forKey: kCIInputRadiusKey)
             if let outputImage = dilateFilter.outputImage {
                 processedImage = outputImage
                 #if DEBUG
@@ -1551,7 +1596,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         
         if let erodeFilter = CIFilter(name: "CIMorphologyMinimum") {
             erodeFilter.setValue(processedImage, forKey: kCIInputImageKey)
-            erodeFilter.setValue(1.0, forKey: kCIInputRadiusKey)
+            erodeFilter.setValue(1.0 * morphologyScale, forKey: kCIInputRadiusKey)
             if let outputImage = erodeFilter.outputImage {
                 processedImage = outputImage
                 #if DEBUG
