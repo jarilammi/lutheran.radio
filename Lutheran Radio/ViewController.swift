@@ -386,7 +386,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     }
     
     // MARK: - Lifecycle Methods
-    /// Initializes the view hierarchy, audio session, and initial stream selection.
+    /// Initializes the view hierarchy and initial stream selection.
     /// - Note: Performs heavy setup; defers non-critical tasks with asyncAfter for better launch performance.
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -424,7 +424,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             )
         }
         
-        configureAudioSession()
+        // Playback audio session is configured in DirectStreamingPlayer.init (single owner).
         
         // Initialize haptic engine early if hardware supports haptics
         if CHHapticEngine.capabilitiesForHardware().supportsHaptics {
@@ -697,24 +697,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
 
             await self.refreshSleepTimerButtonAppearance()
             self.startSleepTimerDisplayUpdatesIfNeeded()
-        }
-    }
-    
-    /// Configures the audio session for background playback.
-    /// - Throws: AVAudioSession errors if category/activation fails.
-    /// - Note: Called in viewDidLoad; ensures ducking and mixing with other audio.
-    private func configureAudioSession() {
-        do {
-            let audioSession = AVAudioSession.sharedInstance()
-            try audioSession.setCategory(.playback, mode: .default, options: [])
-            try audioSession.setActive(true)
-            #if DEBUG
-            print("🔊 Audio session configured for playback")
-            #endif
-        } catch {
-            #if DEBUG
-            print("❌ Failed to configure audio session: \(error.localizedDescription)")
-            #endif
         }
     }
     
@@ -1750,16 +1732,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         }
         
         do {
-            let audioSession = AVAudioSession.sharedInstance()
-            // More robust session setup (prevents conflicts with main AVPlayer)
-            try audioSession.setCategory(.playback,
-                                        mode: .default,
-                                        options: [.allowAirPlay, .allowBluetoothA2DP])
-            try audioSession.setActive(true)
-            
-            #if DEBUG
-            print("🔊 Audio session activated for special tuning sound")
-            #endif
+            streamingPlayer.setupAudioSession()
             
             // Strong reference - critical to prevent sound cut-off
             tuningPlayer = try AVAudioPlayer(contentsOf: tuningURL)
@@ -1834,13 +1807,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         }
         
         do {
-            let audioSession = AVAudioSession.sharedInstance()
-            try audioSession.setCategory(.playback, mode: .default, options: [])
-            try audioSession.setActive(true)
-            
-            #if DEBUG
-            print("🔊 Audio session activated for tuning sound")
-            #endif
+            streamingPlayer.setupAudioSession()
             
             tuningPlayer = try AVAudioPlayer(contentsOf: tuningURL)
             tuningPlayer?.delegate = self

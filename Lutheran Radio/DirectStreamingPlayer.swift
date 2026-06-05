@@ -1282,6 +1282,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         #endif
     }
     
+    /// Single owner for playback `AVAudioSession` category and activation (cold launch, stream, tuning).
     func setupAudioSession() {
         guard !isTesting else {
             #if DEBUG
@@ -1290,19 +1291,19 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             return
         }
         
-        let session = AVAudioSession.sharedInstance()
-        if session.category != .playback {
-            do {
-                try audioSession.setCategory(.playback, mode: .default, options: [.allowAirPlay, .allowBluetoothA2DP])
-                try audioSession.setActive(true)
-                #if DEBUG
-                print("🔊 Audio session configured")
-                #endif
-            } catch {
-                #if DEBUG
-                print("🔊 Failed to configure audio session: \(error.localizedDescription)")
-                #endif
+        let wasAlreadyPlayback = audioSession.category == .playback
+        do {
+            try audioSession.setCategory(.playback, mode: .default, options: [.allowAirPlay, .allowBluetoothA2DP])
+            try audioSession.setActive(true)
+            #if DEBUG
+            if !wasAlreadyPlayback {
+                print("🔊 Audio session configured for playback")
             }
+            #endif
+        } catch {
+            #if DEBUG
+            print("🔊 Failed to configure audio session: \(error.localizedDescription)")
+            #endif
         }
     }
     
