@@ -521,8 +521,9 @@ actor SharedPlayerManager {
             return
         }
         
-        // Wait for tuning sound (critical!)
+        #if LUTHERAN_MAIN_APP
         await waitForTuningSoundIfActive()
+        #endif
         
         let stream = DirectStreamingPlayer.shared.selectedStream
         #if DEBUG
@@ -873,15 +874,16 @@ actor SharedPlayerManager {
     private func ensureVisualStateLoaded() {
         guard !hasLoadedVisualStateFromPersistence else { return }
         
-        // Preferred: the full PlayerVisualState we persisted via saveVisualState()
-        let loaded = loadVisualState()
-        
-        // If we got something other than the default (i.e. JSON was present), trust it.
-        if loaded != .prePlay {
-            currentVisualState = loaded
+        // Combined snapshot is authoritative — including `.prePlay` (cold launch / connecting).
+        // Do not treat `.prePlay` as “missing data”; the old `loaded != .prePlay` branch wrongly
+        // mapped snapshot prePlay + legacy playing=false to `.userPaused` (grey pause on launch).
+        if let combined = Self.loadPersistedWidgetState() {
+            currentVisualState = combined.visualState
+        } else if let data = sharedDefaults?.data(forKey: "playerVisualState"),
+                  let decoded = try? JSONDecoder().decode(PlayerVisualState.self, from: data) {
+            currentVisualState = decoded
         } else {
-            // Fallback for older data: derive from the classic "playing" bool written by saveCurrentState()
-            // Treat anything that is not an explicit user pause as non-sticky here; the main app will correct on next real action.
+            // Migration only: no snapshot and no legacy JSON.
             let legacyIsPlaying = sharedDefaults?.bool(forKey: "playing") ?? false
             currentVisualState = legacyIsPlaying ? .playing : .userPaused
         }
@@ -911,21 +913,13 @@ actor SharedPlayerManager {
         }
     }
     
-    /// Waits for the special tuning sound to finish before starting main radio playback.
-    /// This eliminates the session / timing conflict that was preventing the stream from starting.
+    #if LUTHERAN_MAIN_APP
+    /// Waits for an active tuning clip to finish (delegate-driven) before main stream attach.
+    /// No-op when ViewController already awaited the same clip (e.g. stream switch after `playTuningSound`).
     private func waitForTuningSoundIfActive() async {
-        // A proper notification/flag from the tuning-sound player would be cleaner than a fixed delay.
-        // The current 1200 ms value has proven reliable across devices on cold launch.
-        #if DEBUG
-        print("⏳ Waiting for tuning sound to finish before main playback...")
-        #endif
-        
-        try? await Task.sleep(for: .milliseconds(1200))
-        
-        #if DEBUG
-        print("✅ Tuning sound wait completed")
-        #endif
+        await TuningSoundCoordinator.shared.waitForActivePlaybackToFinishIfNeeded()
     }
+    #endif
     
     private func handleWidgetPlay() {
         ensureVisualStateLoadedForWidget()

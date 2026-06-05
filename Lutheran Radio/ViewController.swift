@@ -516,24 +516,22 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             guard let self else { return }
             
             let initialStream = DirectStreamingPlayer.availableStreams[initialIndex]
+            
+            // Seed snapshot before any path calls ensureVisualStateLoaded (player init, status_connecting).
+            SharedPlayerManager.persistWidgetSnapshot(
+                visualState: .prePlay,
+                language: initialStream.languageCode
+            )
+            await SharedPlayerManager.shared.refreshVisualStateFromPersistence()
+            self.updateUI(for: .prePlay)
+            
             // Stream model and UI only; secured AVPlayerItem is created once in setStreamAndPlay after tuning.
             await self.streamingPlayer.setSelectedStreamModelOnly(to: initialStream)
             
             self.updateUserDefaultsLanguage(initialStream.languageCode)
             self.updateBackground(for: initialStream)
             
-            // Seeds the PersistedWidgetState snapshot (the SSOT read by saveCurrentState + preferredWidgetLanguage)
-            // with the correct initial languageCode *synchronously* before play() and its observer/KVO/save storm.
-            // This defeats the race where a prior session's "et" (or any stale language) gets re-written by
-            // the flood of early "State saved" calls. persistWidgetSnapshot is the existing nonisolated static
-            // intended for exactly these early/optimistic cross-process writes (also used by widget intents).
-            SharedPlayerManager.persistWidgetSnapshot(
-                visualState: .prePlay,
-                language: initialStream.languageCode
-            )
-            
-            // Tuning sound (now plays fully)
-            self.playSpecialTuningSound()
+            await self.playSpecialTuningSound()
             
             let visualState = await SharedPlayerManager.shared.currentVisualState
             #if DEBUG
@@ -556,7 +554,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             self.streamingPlayer.cancelPendingSSLProtection()
             self.streamingPlayer.resetTransientErrors()
             
-            // ONE central call — tuning sound has already finished.
+            // ONE central call — play() waits on TuningSoundCoordinator until the special clip finishes.
             // viewDidAppear will NOT trigger another play() for .prePlay.
             await SharedPlayerManager.shared.play()
             self.restoreVolume()
@@ -1716,7 +1714,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     }
     
     // MARK: - Audio Setup
-    func playSpecialTuningSound(completion: (() -> Void)? = nil) {
+    func playSpecialTuningSound(completion: (() -> Void)? = nil) async {
         guard !hasPlayedSpecialTuningSound else {
             #if DEBUG
             print("🎵 Special tuning sound already played, skipping")
@@ -1729,6 +1727,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             #if DEBUG
             print("❌ Error: special_tuning_sound.wav not found in bundle")
             #endif
+            await TuningSoundCoordinator.shared.notifyNoActivePlayback()
             completion?()
             return
         }
@@ -1760,31 +1759,19 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             print(didPlay ? "🎵 Special tuning sound started playing" : "❌ Failed to start special tuning sound")
             #endif
             
-            // CRITICAL: Tuning sound no longer controls playback or state.
-            // All decisions go through SharedPlayerManager + PlayerVisualState in viewDidLoad.
-            if didPlay {
-                // Keep strong reference during playback via the ivar; no local needed.
-                
-                DispatchQueue.main.asyncAfter(deadline: .now() + (tuningPlayer?.duration ?? 2.0)) {
-                    #if DEBUG
-                    print("🎵 Special tuning sound should have finished")
-                    #endif
-                    
-                    // Just clean up — NO visualState checks, NO play() calls
-                    Task { @MainActor in
-                        self.tuningPlayer = nil
-                        self.isTuningSoundPlaying = false
-                    }
-                }
+            if didPlay, let duration = tuningPlayer?.duration {
+                await TuningSoundCoordinator.shared.notifyPlaybackStarted(estimatedDuration: duration)
             } else {
-                self.tuningPlayer = nil
+                await TuningSoundCoordinator.shared.notifyNoActivePlayback()
+                tuningPlayer = nil
             }
         } catch {
             #if DEBUG
             print("❌ Error loading special tuning sound: \(error.localizedDescription)")
             #endif
+            await TuningSoundCoordinator.shared.notifyNoActivePlayback()
             completion?()
-            self.tuningPlayer = nil
+            tuningPlayer = nil
         }
     }
     
@@ -1799,6 +1786,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             if let index {
                 updateSelectionIndicator(to: index, isInitial: false, caller: "playTuningSound-debounced", animationDuration: 0.3)
             }
+            try? await Task.sleep(for: .seconds(0.3))
             return
         }
         
@@ -1854,38 +1842,45 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 )
             }
             
-            // Wait for the sound to finish naturally (matches needle sweep duration when animating).
             if didPlay, let duration = tuningPlayer?.duration {
-                try? await Task.sleep(for: .seconds(duration))
+                await TuningSoundCoordinator.shared.notifyPlaybackStarted(estimatedDuration: duration)
+                await TuningSoundCoordinator.shared.waitForActivePlaybackToFinishIfNeeded()
             } else {
-                try? await Task.sleep(for: .seconds(index != nil ? 0.3 : 1.0))
+                await TuningSoundCoordinator.shared.notifyNoActivePlayback()
+                if index != nil {
+                    try? await Task.sleep(for: .seconds(0.3))
+                }
             }
             
         } catch {
             #if DEBUG
             print("❌ Error loading tuning sound \(soundIndex): \(error.localizedDescription)")
             #endif
+            await TuningSoundCoordinator.shared.notifyNoActivePlayback()
         }
     }
     
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
         Task { @MainActor in
+            guard player === tuningPlayer else { return }
             #if DEBUG
             print("🎵 Tuning sound finished playing, success: \(flag)")
             #endif
             isTuningSoundPlaying = false
-            // Do NOT set tuningPlayer = nil immediately
-            // tuningPlayer = nil
+            tuningPlayer = nil
+            await TuningSoundCoordinator.shared.notifyPlaybackFinished()
         }
     }
     
     nonisolated func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
         Task { @MainActor in
+            guard player === tuningPlayer else { return }
             #if DEBUG
             print("❌ Tuning sound decode error: \(error?.localizedDescription ?? "Unknown")")
             #endif
             isTuningSoundPlaying = false
             tuningPlayer = nil
+            await TuningSoundCoordinator.shared.notifyPlaybackFinished()
         }
     }
     
@@ -1906,6 +1901,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             Task { @MainActor [weak self] in
                 guard let self = self else { return }
                 self.isTuningSoundPlaying = false
+                self.tuningPlayer = nil
+                await TuningSoundCoordinator.shared.notifyPlaybackFinished(source: .cancelled)
                 #if DEBUG
                 print("🎵 isTuningSoundPlaying set to false (from stopTuningSound)")
                 #endif
@@ -3050,18 +3047,25 @@ extension ViewController: StreamingPlayerDelegate {
         Task { @MainActor in
             // SINGLE SOURCE OF TRUTH — always pull latest locked state
             let visualState = await SharedPlayerManager.shared.currentVisualState
+            let playbackIntent = await SharedPlayerManager.shared.currentPlaybackIntent
             
             #if DEBUG
             print("🔥 StreamingPlayerDelegate.onStatusChange → \(status) (reasonKey: \(reasonKey ?? "nil")) → visualState \(visualState)")
             #endif
             
-            // Brave defensive rule: if the authoritative state is .userPaused or .prePlay (during
-            // an in-progress flag-row stream change or optimistic start), never let a transient
-            // "stopped", "buffering", or early "playing" callback from the old item flip the UI
-            // back to green. This eliminates the extra yellow → green → yellow → green round-trip
-            // during flag taps. Real success paths will drive the actor to .playing and the final
-            // green will appear normally.
+            // Transient connect/buffer arrives as .stopped + status_connecting; never flash grey pause
+            // during cold launch or explicit play intent (yellow SSOT until setPlaying / attach).
             let effectiveVisualState: PlayerVisualState = {
+                if let reasonKey,
+                   (reasonKey == "status_connecting" || reasonKey == "status_buffering"),
+                   status != .playing {
+                    if visualState == .prePlay || visualState == .playing {
+                        return visualState
+                    }
+                    if playbackIntent == .shouldBePlaying {
+                        return .prePlay
+                    }
+                }
                 if visualState == .userPaused || visualState == .prePlay {
                     return visualState
                 }
