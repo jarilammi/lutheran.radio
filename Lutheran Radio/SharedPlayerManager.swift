@@ -178,8 +178,9 @@ actor SharedPlayerManager {
     /// This prevents the "play on pause" resurrection bug when set synchronously to .userPaused
     var currentVisualState: PlayerVisualState = .prePlay
     
-    /// When true, `play()` keeps `.prePlay` until `setPlaying()` at end of `startPlayback()`.
-    /// Set by `resetToPrePlayForNewStream()` so stale KVO from the prior item cannot flash green.
+    /// When true, `resetToPrePlayForNewStream()` has armed a stream switch: UI stays `.prePlay`
+    /// until `play()` runs. `play()` then calls `setPlaying()` when intent is `.shouldBePlaying`
+    /// (same as cold launch) so KVO does not leave yellow/prePlay after attach.
     private var holdPrePlayVisualUntilPlayback = false
     
     /// Guards one-time loading of the persisted PlayerVisualState JSON (or legacy "playing" bool fallback).
@@ -496,15 +497,22 @@ actor SharedPlayerManager {
             return
         }
         
-        // Cold launch and resume: set `.playing` before stream attach so KVO matches UI intent.
-        // Stream switches defer via `holdPrePlayVisualUntilPlayback` until `setPlaying()` in `startPlayback()`.
-        let deferOptimisticPlaying = holdPrePlayVisualUntilPlayback
-        if deferOptimisticPlaying {
+        // Set `.playing` before stream attach so KVO/status callbacks match UI intent.
+        // Stream switches arm `holdPrePlayVisualUntilPlayback` during tuning/teardown (yellow only
+        // until `play()`). Once `play()` runs with explicit `.shouldBePlaying`, apply the same
+        // optimistic `.playing` as cold launch — do not defer to late `startPlayback()` only.
+        let hadStreamSwitchHold = holdPrePlayVisualUntilPlayback
+        if hadStreamSwitchHold {
             holdPrePlayVisualUntilPlayback = false
-        } else {
+        }
+        if !hadStreamSwitchHold || currentPlaybackIntent == .shouldBePlaying {
             await setPlaying()
             #if DEBUG
-            print("✅ Visual state set to .playing before setStreamAndPlay")
+            if hadStreamSwitchHold {
+                print("✅ Visual state set to .playing before setStreamAndPlay (stream switch)")
+            } else {
+                print("✅ Visual state set to .playing before setStreamAndPlay")
+            }
             #endif
         }
         

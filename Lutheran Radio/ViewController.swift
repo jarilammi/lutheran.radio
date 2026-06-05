@@ -348,6 +348,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     private var tuningPlayer: AVAudioPlayer?
     private var lastTuningSoundTime: Date?
     private var streamSwitchWorkItem: DispatchWorkItem?
+    /// Cancels an in-flight `completeStreamSwitch` when the user selects another flag.
+    private var streamSwitchTask: Task<Void, Never>?
     private var lastStreamSwitchTime: Date?
     private let streamSwitchDebounceInterval: TimeInterval = 1.0
     private var pendingStreamIndex: Int?
@@ -1786,13 +1788,17 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         }
     }
     
-    /// Modern async version - preferred in 2026 Swift code
-    func playTuningSound() async {
+    /// Modern async version - preferred in 2026 Swift code.
+    /// When `animateNeedleTo` is set, the selection needle sweeps over the clip duration (or a short fallback if debounced).
+    func playTuningSound(animateNeedleTo index: Int? = nil) async {
         let now = Date()
         if let lastTime = lastTuningSoundTime, now.timeIntervalSince(lastTime) < 1.0 {
             #if DEBUG
             print("🎵 Skipping tuning sound: Debouncing, time since last: \(now.timeIntervalSince(lastTime))s")
             #endif
+            if let index {
+                updateSelectionIndicator(to: index, isInitial: false, caller: "playTuningSound-debounced", animationDuration: 0.3)
+            }
             return
         }
         
@@ -1822,6 +1828,17 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             print(didPlay ? "🎵 Tuning sound \(soundIndex) started playing" : "❌ Failed to start tuning sound \(soundIndex)")
             #endif
             
+            let clipDuration = tuningPlayer?.duration ?? 1.0
+            let needleAnimationDuration = min(max(clipDuration, 0.25), 2.5)
+            if let index {
+                updateSelectionIndicator(
+                    to: index,
+                    isInitial: false,
+                    caller: "playTuningSound",
+                    animationDuration: didPlay ? needleAnimationDuration : 0.3
+                )
+            }
+            
             // Optimistic UI update (still on MainActor)
             let manager = SharedPlayerManager.shared
             let state = manager.loadSharedState()
@@ -1837,11 +1854,11 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 )
             }
             
-            // Wait for the sound to finish naturally (this is the key improvement)
+            // Wait for the sound to finish naturally (matches needle sweep duration when animating).
             if didPlay, let duration = tuningPlayer?.duration {
                 try? await Task.sleep(for: .seconds(duration))
             } else {
-                try? await Task.sleep(for: .seconds(1.0)) // fallback
+                try? await Task.sleep(for: .seconds(index != nil ? 0.3 : 1.0))
             }
             
         } catch {
@@ -2035,7 +2052,12 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     }
     
     // MARK: - Selection Indicator
-    private func updateSelectionIndicator(to index: Int, isInitial: Bool = false, caller: String = #function) {
+    private func updateSelectionIndicator(
+        to index: Int,
+        isInitial: Bool = false,
+        caller: String = #function,
+        animationDuration: TimeInterval? = nil
+    ) {
         // SINGLE SOURCE OF TRUTH
         // • During normal operation (pause, play, network hiccups, etc.) → always use selectedStreamIndex
         // • Only on true initial load → accept the passed index
@@ -2101,12 +2123,14 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             return
         }
         
-        UIView.animate(withDuration: isInitial ? 0.0 : 0.3) {
+        let duration = animationDuration ?? (isInitial ? 0.0 : 0.3)
+        let usesNeedlePulse = !isInitial && duration > 0
+        UIView.animate(withDuration: duration) {
             self.needleCenterXConstraint?.constant = cellCenterX
             self.languageCollectionView.layoutIfNeeded()
-            self.selectionIndicator.transform = isInitial ? .identity : CGAffineTransform(scaleX: 1.5, y: 1.0)
+            self.selectionIndicator.transform = usesNeedlePulse ? CGAffineTransform(scaleX: 1.5, y: 1.0) : .identity
         } completion: { _ in
-            if !isInitial {
+            if usesNeedlePulse {
                 UIView.animate(withDuration: 0.1) {
                     self.selectionIndicator.transform = .identity
                 }
@@ -2153,19 +2177,19 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         // the cold-launch budget for the target stream). This makes the actor SSOT yellow early,
         // so all subsequent delegate callbacks during the teardown of the old stream and the
         // tuning sound will see .prePlay and keep the yellow instead of flashing back to green.
-        // The needle animation then starts right after.
+        // Playing path: needle sweeps during tuning sound in completeStreamSwitch.
+        // Paused path: move the needle immediately on tap.
+        selectedStreamIndex = newIndex
         Task { @MainActor [weak self] in
             guard let self else { return }
             let vs = await SharedPlayerManager.shared.currentVisualState
             if vs.shouldAutoPlayOrResume {
                 await SharedPlayerManager.shared.resetToPrePlayForNewStream()
                 self.updateUI(for: .prePlay)
+            } else {
+                self.updateSelectionIndicator(to: newIndex, isInitial: false, caller: "didSelectItemAt")
             }
         }
-        
-        // INSTANT TUNING INDICATOR MOVEMENT — works whether playing or paused
-        selectedStreamIndex = newIndex
-        updateSelectionIndicator(to: newIndex, isInitial: false, caller: "didSelectItemAt")
         
         // Debounce stream switch
         let now = Date()
@@ -2240,8 +2264,10 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         // Mark switch start immediately so state-saving can suppress spam
         self.lastStreamSwitchTime = Date()
         
-        Task { @MainActor [weak self] in
+        streamSwitchTask?.cancel()
+        streamSwitchTask = Task { @MainActor [weak self] in
             guard let self else { return }
+            guard !Task.isCancelled else { return }
             
             let visualState = await SharedPlayerManager.shared.currentVisualState
             
@@ -2249,9 +2275,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             print("🔄 completeStreamSwitch started – currentVisualState = \(visualState), stream = \(stream.languageCode)")
             #endif
             
-            // 🔥 CRITICAL: Always update the underlying stream model, even when .userPaused.
-            // Now switching while paused correctly prepares the new language for the next manual play().
-            await self.streamingPlayer.setStream(to: stream)
+            // Model-only first — defer ping/prepare until after tuning (playing) or manual play().
+            await self.streamingPlayer.setSelectedStreamModelOnly(to: stream)
             self.streamingPlayer.resetTransientErrors()
             
             #if DEBUG
@@ -2277,7 +2302,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             print("▶️ [completeStreamSwitch] Allowed resume during stream switch (was playing)")
             #endif
             
-            // 1. Clean stop current playback
+            // Stop before tuning; secured item is created once in SharedPlayerManager.play().
             await withCheckedContinuation { continuation in
                 streamingPlayer.stop(
                     reason: .streamSwitch,
@@ -2285,20 +2310,21 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                     silent: true
                 )
             }
+            guard !Task.isCancelled else { return }
             
             // Explicitly reset the cold-launch attempt counters for the *new* stream.
             // This prevents previous stream's ICY noise / safety net exhaustion from causing
             // a false status_stream_unavailable red alert on a normal user language switch.
             streamingPlayer.resetInitialPlaybackCountersForNewStream()
             
-            // 2. Play tuning sound + switch stream
-            await playTuningSound()
+            // Tuning before network ping / AVPlayerItem prepare (stream attach follows in play()).
+            await playTuningSound(animateNeedleTo: index)
+            guard !Task.isCancelled else { return }
             
             guard wasPlayingBeforeSwitch else {
                 #if DEBUG
                 print("🛡️ [completeStreamSwitch] Blocked play() after tuning sound")
                 #endif
-                await streamingPlayer.setStream(to: stream)
                 updateSelectionIndicator(to: index)
                 return
             }
@@ -2307,11 +2333,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             print("🔄 completeStreamSwitch → calling SharedPlayerManager.play() after tuning")
             #endif
             
-            await streamingPlayer.setStream(to: stream)
-            streamingPlayer.resetTransientErrors()
             updateUserDefaultsLanguage(stream.languageCode)
             
-            // 🔥 CRITICAL FIX for stream switching after PlayerVisualState refactor
             // Reset visual state to .prePlay so SharedPlayerManager.play() executes
             // the full cold-launch path (bypasses the .playing skip guard).
             // Also gives immediate yellow "connecting" UI feedback during the atomic switch.
@@ -2319,9 +2342,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             updateUI(for: .prePlay)
             
             await SharedPlayerManager.shared.play()
+            guard !Task.isCancelled else { return }
             await Task.yield()
             
-            updateSelectionIndicator(to: index)
             // play() already performs the authoritative saveCurrentState + snapshot.
             // Language propagation handled by updateUserDefaultsLanguage call above.
             
@@ -2728,7 +2751,7 @@ extension ViewController {
             #if DEBUG
             print("🎵 Playing tuning sound")
             #endif
-            await playTuningSound()
+            await playTuningSound(animateNeedleTo: targetIndex)
             
             streamingPlayer.resetTransientErrors()
             
@@ -2751,8 +2774,6 @@ extension ViewController {
                 await SharedPlayerManager.shared.resetToPrePlayForNewStream()
                 updateUI(for: .prePlay)
             }
-            
-            updateSelectionIndicator(to: targetIndex)
             
             // Language switch is a user action; we now ask the SSOT (currentPlaybackIntent via canProceedWithPlayback).
             // This removes one of the last places the stale flag controlled playback flow.
