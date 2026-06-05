@@ -80,18 +80,23 @@ public struct CertificateFingerprint: Sendable, Equatable {
     /// Constant-time equality for runtime pinning.
     public func constantTimeMatches(_ other: CertificateFingerprint) -> Bool {
         var diff: UInt8 = 0
-        unsafe Swift.withUnsafeBytes(of: storage) { lhs in
-            unsafe other.withDigestBytes { rhs in
+        withDigestSpan { lhs in
+            other.withDigestSpan { rhs in
                 for index in 0..<Self.byteCount {
-                    unsafe diff |= lhs[index] ^ rhs[index]
+                    unsafe diff |= lhs[unchecked: index] ^ rhs[unchecked: index]
                 }
             }
         }
         return diff == 0
     }
 
-    private func withDigestBytes<R>(_ body: (UnsafeRawBufferPointer) throws -> R) rethrows -> R {
-        try unsafe Swift.withUnsafeBytes(of: storage, body)
+    /// Borrows digest bytes for the duration of `body`. The span must not escape this closure.
+    private func withDigestSpan<R>(_ body: (Span<UInt8>) throws -> R) rethrows -> R {
+        try unsafe Swift.withUnsafeBytes(of: storage) { raw in
+            // SAFETY: `storage` is exactly `byteCount` bytes; `raw.count == byteCount`; span dies with closure.
+            let span = unsafe Span<UInt8>(_unsafeBytes: raw)
+            return try body(span)
+        }
     }
 }
 

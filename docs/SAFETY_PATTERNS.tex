@@ -26,7 +26,7 @@
 
 \title{\textbf{Swift Safety Patterns}\\[0.3em]
 \large Eliminate Force-Unwraps \& Force-Casts in Production Code}
-\author{Senior Engineering Review — May 2026}
+\author{Senior Engineering Review — June 2026}
 \date{}
 
 \begin{document}
@@ -154,6 +154,27 @@ if let last = lastServerSelectionTime,
    Date().timeIntervalSince(last) > 10.0 {
 \end{lstlisting}
 
+\section{Certificate digest constant-time compare}
+
+Runtime pinning compares 32-byte SHA-256 digests in \texttt{CertificateFingerprint/constantTimeMatches(\_:)}.
+
+\textbf{Pattern:}
+\begin{lstlisting}[language=Swift]
+private func withDigestSpan<R>(_ body: (Span<UInt8>) throws -> R) rethrows -> R {
+    try unsafe Swift.withUnsafeBytes(of: storage) { raw in
+        let span = Span<UInt8>(_unsafeBytes: raw)
+        return try body(span)
+    }
+}
+\end{lstlisting}
+
+\begin{itemize}[leftmargin=*]
+    \item Use \texttt{Span<UInt8>}, not \texttt{RawSpan}, for typed digest bytes.
+    \item Keep a fixed \texttt{0..<byteCount} loop; accumulate \texttt{diff |= lhs[i] \^{} rhs[i]}; branch once at the end.
+    \item When multiple pins are configured, iterate all pins without short-circuiting on the first match.
+    \item \texttt{CC\_SHA256} and other C APIs may still use \texttt{UnsafeRawBufferPointer} at the framework boundary.
+\end{itemize}
+
 \section{When \texttt{!} Is Still Acceptable}
 
 Use force-unwrap \textbf{only} in these cases:
@@ -183,6 +204,6 @@ Only use \texttt{!} when you have \textbf{already proven} the value exists.
 \hrule
 \vspace{0.5em}
 \footnotesize
-\textit{Maintained by Senior Engineering — Lutheran Radio Project, May 2026}
+\textit{Maintained by Senior Engineering — Lutheran Radio Project, June 2026}
 
 \end{document}

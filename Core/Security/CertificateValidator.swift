@@ -305,8 +305,10 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
         guard let certDigest = computeCertificateFingerprintDigest(for: leafCertificate) else {
             return false
         }
-        let isValid = config.pinnedFingerprintDigests.contains { pin in
-            certDigest.constantTimeMatches(pin)
+        // Compare every configured pin (no short-circuit on match) — see SecurityConfiguration pinning notes.
+        var isValid = false
+        for pin in config.pinnedFingerprintDigests {
+            isValid = isValid || certDigest.constantTimeMatches(pin)
         }
         #if DEBUG
         if !isValid {

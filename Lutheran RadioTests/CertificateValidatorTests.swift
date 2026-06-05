@@ -88,7 +88,7 @@ struct CertificateValidatorTests {
         
         let policy = SecPolicyCreateBasicX509()
         var trust: SecTrust?
-        let status = SecTrustCreateWithCertificates(cert, policy, &trust)
+        let status = unsafe SecTrustCreateWithCertificates(cert, policy, &trust)
         
         guard status == errSecSuccess, let mockTrust = trust else {
             fatalError("Failed to create mock SecTrust: \(status)")
@@ -110,7 +110,7 @@ extension Data {
             let j = hexString.index(i, offsetBy: 2)
             let bytes = hexString[i..<j]
             if var num = UInt8(bytes, radix: 16) {
-                data.append(&num, count: 1)
+                unsafe data.append(&num, count: 1)
             } else {
                 return nil
             }

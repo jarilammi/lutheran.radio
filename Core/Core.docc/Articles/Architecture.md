@@ -56,7 +56,7 @@ A `Sendable` value type that:
 
 - Holds the raw 32-byte SHA-256 digest of a certificate DER encoding.
 - Computes digests via stack-local storage and `Data.span` (see `sha256DERDigest(of:)`).
-- Exposes constant-time equality for runtime pinning (`constantTimeMatches`).
+- Exposes constant-time equality for runtime pinning (`constantTimeMatches`) via borrowed `Span<UInt8>` views (tuple → `withUnsafeBytes` boundary only).
 - Materializes OpenSSL-style colon-hex only for documentation and operator tooling.
 
 ### CertificateValidator
