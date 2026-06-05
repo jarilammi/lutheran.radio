@@ -43,7 +43,7 @@ All other properties are internal by design. The struct is deliberately not an a
 An `actor` that:
 
 - Performs DNS-SD TXT queries against the configured domains.
-- Parses length-prefixed TXT rdata with `Span<UInt8>` and `UTF8Span` in the DNS-SD callback (no per-label `subdata`); the span must not escape the callback scope.
+- Parses length-prefixed TXT rdata with `Span<UInt8>` and `UTF8Span` in the DNS-SD callback, borrowing dns_sd `rdata` in place (zero-copy; no `Data` copy, no per-label `subdata`); the span must not escape the callback scope.
 - Implements a one-hour success-only cache persisted in `UserDefaults`.
 - Distinguishes **permanent** failures (model not in TXT → streaming must stay disabled) from **transient** failures (network/DNS issues → safe to retry).
 - Exposes a tiny set of test seams under `#if DEBUG` that have zero production impact.

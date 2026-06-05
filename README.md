@@ -169,7 +169,7 @@ Match the output against the ```SPKI-SHA256-BASE64``` value in ```Info.plist```.
 
 Defense-in-depth uses **two complementary layers**:
 
-1. **Compile-time (Swift / Xcode)** — `SWIFT_STRICT_MEMORY_SAFETY = YES` on every target (SE-0458). The compiler flags unsafe memory operations, legacy `@preconcurrency` imports without `@unsafe`, and related patterns. Security-critical code in `Core/` uses explicit `unsafe { … }` only at C/Security framework boundaries (DNS-SD, `SecTrust`, hashing). Hot paths prefer `Span<UInt8>` / `UTF8Span` over `subdata` copies (DNS TXT rdata in `SecurityModelValidator`, DER hashing in `CertificateFingerprint`).
+1. **Compile-time (Swift / Xcode)** — `SWIFT_STRICT_MEMORY_SAFETY = YES` on every target (SE-0458). The compiler flags unsafe memory operations, legacy `@preconcurrency` imports without `@unsafe`, and related patterns. Security-critical code in `Core/` uses explicit `unsafe { … }` only at C/Security framework boundaries (DNS-SD, `SecTrust`, hashing). Hot paths prefer `Span<UInt8>` / `UTF8Span` over `subdata` copies (DNS TXT rdata in `SecurityModelValidator` zero-copy borrows dns_sd `rdata` in the DNS-SD callback; DER hashing in `CertificateFingerprint` uses `Data.span`).
 
 2. **Runtime (iOS hardware)** — Memory Integrity Enforcement (MIE), including the Enhanced Memory Tagging Extension (EMTE), on compatible devices (e.g., iPhone 17 and later with A19 or newer chips). Requires Xcode 26+ and iOS 26.2+ deployment. This mitigates memory corruption, use-after-free, and similar issues via tagged allocations, bounds checking, and pointer authentication at runtime.
 
@@ -277,7 +277,7 @@ This feature enhances availability while maintaining the app's privacy-first pri
 ### Security Isolation Architecture
 
 All security-critical constants (expected model name, `pinnedLeafFingerprintDigest`, transition window dates) are centralized in `Core/Configuration/SecurityConfiguration.swift` (colon-hex fingerprint strings are derived views for operators and docs).
-The DNS TXT record validation logic lives in `Core/Actors/SecurityModelValidator.swift` (actor-isolated; `Span<UInt8>` TXT parser; entry point `validateSecurityModel()`).
+The DNS TXT record validation logic lives in `Core/Actors/SecurityModelValidator.swift` (actor-isolated; `Span<UInt8>` TXT parser with zero-copy `rdata` borrow in the DNS-SD callback; entry point `validateSecurityModel()`).
 Runtime full-certificate (DER SHA-256) digest validation with transition-window leniency lives in `Core/Security/CertificateValidator.swift`, using `Core/Security/CertificateFingerprint.swift` for digest storage, hashing, and constant-time comparison.
 
 This refactor:

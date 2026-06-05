@@ -96,7 +96,7 @@ Agents are expected to follow them for all **new code** and when significantly r
 - Treat new strict-memory-safety warnings as build failures unless the PR is explicitly scoped to warning cleanup (see Build Gate Exceptions).
 - `@unchecked Sendable` and `nonisolated(unsafe)` remain allowed when justified (see existing DNS callback context in `SecurityModelValidator` and streaming delegates); add or preserve a brief justification comment when introducing new uses.
 - Pair `unsafe { … }` blocks with a `// SAFETY: …` comment when the justification is not obvious from surrounding docs.
-- Prefer `Span<UInt8>`, `UTF8Span`, and `Data.span` over per-slice `subdata` on hot paths (see DNS TXT parsing in `SecurityModelValidator` and digest hashing in `CertificateFingerprint`).
+- Prefer `Span<UInt8>`, `UTF8Span`, and `Data.span` over per-slice `subdata` and unnecessary `Data` copies on hot paths (DNS TXT: zero-copy `rdata` borrow in `SecurityModelValidator`; DER hashing in `CertificateFingerprint`).
 
 ### Single Source of Truth Principles
 The architecture has converged on a small number of authoritative paths. New code should use them:
@@ -137,7 +137,7 @@ These guidelines exist because the cost of a force-unwrap or a data race in a ba
 | `Core/Security/CertificateFingerprint.swift`      | Raw 32-byte SHA-256 DER digest + constant-time `constantTimeMatches`         | Hex (`colonHexUppercase`) is for README/openssl only; runtime never compares strings |
 | `Core/Security/CertificateValidator.swift`        | Runtime digest pinning + transition window leniency (Jul 27 – Aug 26 2026) with device/server time-skew protection | 10-minute cache; compares via `pinnedFingerprintDigests`; SPKI is ATS-only in Info.plist |
 | `Core/Configuration/SecurityConfiguration.swift`  | Centralized security policy: expected model, `pinnedLeafFingerprintDigest`, transition dates | Authoritative digests; colon-hex (`pinnedLeafFingerprint`, `pinnedFingerprints`) is derived |
-| `Core/Actors/SecurityModelValidator.swift`        | Actor-isolated DNS TXT security model validation                               | `Span<UInt8>` / `UTF8Span` TXT parser (no per-label `subdata`); `dns_sd.h` + 1-hour success cache |
+| `Core/Actors/SecurityModelValidator.swift`        | Actor-isolated DNS TXT security model validation                               | `Span<UInt8>` / `UTF8Span` TXT parser; zero-copy `rdata` borrow (no `Data` copy, no per-label `subdata`); `dns_sd.h` + 1-hour success cache |
 | `Core/Security/`                                  | `CertificateFingerprint` + `CertificateValidator` (Core framework)             | Treat as security-critical; compiled into main app + widget extension          |
 | `Info.plist`                                      | ATS pinning (SPKI + domain)                                                    | Never edit without updating `SecurityConfiguration` and validator              |
 | `LutheranRadioWidget/`                            | Home-screen widget                                                             | Must respect same security rules via shared `Core` module                      |

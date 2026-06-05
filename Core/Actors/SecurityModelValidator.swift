@@ -343,10 +343,19 @@ public actor SecurityModelValidator {
             return
         }
 
-        let receivedData = unsafe Data(bytes: rdata, count: Int(rdlen))
-        // Parse in a tight scope: `span` borrows `receivedData` and must not escape this callback.
-        let models = SecurityModelValidator.parseInlineTXTRecord(span: receivedData.span)
-        
+        let byteCount = Int(rdlen)
+        let models: Set<String>
+        if byteCount == 0 {
+            models = []
+        } else {
+            // SAFETY: `rdata` is valid for `byteCount` bytes only for this callback (dns_sd contract).
+            // `Span` borrows the pointer and must not escape; parsing completes before completion runs.
+            let rdataStart = unsafe rdata.assumingMemoryBound(to: UInt8.self)
+            models = SecurityModelValidator.parseInlineTXTRecord(
+                span: unsafe Span(_unsafeStart: rdataStart, count: byteCount)
+            )
+        }
+
         queryCtx.completion(.success(models))
     }
 
@@ -359,8 +368,8 @@ public actor SecurityModelValidator {
 
     /// Length-prefixed DNS TXT rdata parser using `Span<UInt8>` views (no per-label `subdata`).
     ///
-    /// `span` must not escape the caller's scope; the DNS-SD callback satisfies this by parsing
-    /// immediately after wrapping rdata in a local `Data`.
+    /// `span` must not escape the caller's scope. Production DNS-SD callbacks borrow `rdata`
+    /// in place (zero-copy); tests may borrow via `Data.span`.
     private static func parseInlineTXTRecord(span: Span<UInt8>) -> Set<String> {
         var models = Set<String>()
         var index = 0

@@ -2946,9 +2946,7 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
                                                delegate: streamingDelegate,
                                                delegateQueue: operationQueue)
         
-        // Apply Icecast/Liquidsoap headers exactly once (clean & future-proof)
-        let finalRequest = self.requestWithIcecastHeaders(from: modifiedRequest)
-        streamingDelegate.dataTask = streamingDelegate.session?.dataTask(with: finalRequest)
+        streamingDelegate.dataTask = streamingDelegate.session?.dataTask(with: modifiedRequest)
         
         streamingDelegate.onError = { [weak self, weak streamingDelegate] error in
             guard let self = self, let delegate = streamingDelegate else { return }
