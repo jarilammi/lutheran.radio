@@ -342,8 +342,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     private var hasInternetConnection = true
     private var connectivityCheckTimer: Timer?
     private var lastConnectionAttemptTime: Date?
-    private var didInitialLayout = false
     private var didPositionNeedle = false
+    /// Needle X is already correct within this many points — skip redundant layout/appear updates.
+    private let selectionIndicatorPositionEpsilon: CGFloat = 0.5
     private var isTuningSoundPlaying = false
     private var tuningPlayer: AVAudioPlayer?
     private var lastTuningSoundTime: Date?
@@ -455,11 +456,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         let indexPath = IndexPath(item: initialIndex, section: 0)
         languageCollectionView.selectItem(at: indexPath, animated: false, scrollPosition: .centeredHorizontally)
         centerCollectionViewContent()
-        // Do not force the needle on the very first viewDidLoad call with isInitial:true.
-        // The collection view has usually not performed its final layout pass yet (bounds may be
-        // stale, sectionInset not yet applied to cells). Let the width-change guard in
-        // viewDidLayoutSubviews (and later non-initial calls) do the first real positioning.
-        updateSelectionIndicator(to: initialIndex, isInitial: false)
+        // Needle positioning on cold launch: viewDidLayoutSubviews width-change guard only
+        // (collection bounds/sectionInset are not final here).
         
         // Set initial volume slider position (UI only)
         if let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared") {
@@ -637,30 +635,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         
-        // Layout / UI setup (keep your existing code)
-        // NOTE: Do NOT use isInitial:true here on cold launch — the collection view
-        // has often not performed its final layout pass with the real bounds + sectionInset yet.
-        // The width-change path in viewDidLayoutSubviews + the non-initial calls below are sufficient.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            self.updateSelectionIndicator(to: self.selectedStreamIndex, isInitial: false)
-        }
-        
-        if !didInitialLayout {
-            didInitialLayout = true
-            // Removed the direct assignment using view.bounds (wrong view, wrong time).
-            // Real positioning now comes from the layoutSubviews guard + the calls below.
-            
-            let currentLocale = Locale.current
-            let languageCode = currentLocale.language.languageCode?.identifier
-            let initialIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.languageCode == languageCode }) ?? 0
-            
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-                guard let self = self else { return }
-                let indexPath = IndexPath(item: initialIndex, section: 0)
-                self.languageCollectionView.selectItem(at: indexPath, animated: false, scrollPosition: .centeredHorizontally)
-                self.updateSelectionIndicator(to: initialIndex, isInitial: false)
-            }
-        }
+        // Cold-launch needle: viewDidLayoutSubviews width-change guard only (no delayed appear updates).
         
         // ───────────────────────────────────────────────────────────────────
         // SAFE playback trigger in viewDidAppear — ONLY for resurrection cases
@@ -684,15 +659,11 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 #if DEBUG
                 print("🔥 ViewController.viewDidAppear → already playing, no action needed")
                 #endif
-                self.updateSelectionIndicator(to: self.selectedStreamIndex, isInitial: false)
                 
             case .userPaused, .thermalPaused, .securityLocked:
                 #if DEBUG
                 print("🔥 ViewController.viewDidAppear → \(visualState) → SKIPPING auto-play (resurrection prevented)")
                 #endif
-                await MainActor.run {
-                    self.updateSelectionIndicator(to: self.selectedStreamIndex, isInitial: false)
-                }
             }
 
             await self.refreshSleepTimerButtonAppearance()
@@ -2117,6 +2088,14 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             print("📱 updateSelectionIndicator: Skipping — collection view has zero width")
             #endif
             needleCenterXConstraint?.constant = cellCenterX
+            return
+        }
+        
+        let currentNeedleX = needleCenterXConstraint?.constant ?? selectionIndicator.center.x
+        if abs(currentNeedleX - cellCenterX) <= selectionIndicatorPositionEpsilon {
+            #if DEBUG
+            print("📱 updateSelectionIndicator: Skipping — already at target X=\(cellCenterX) (caller=\(caller))")
+            #endif
             return
         }
         
