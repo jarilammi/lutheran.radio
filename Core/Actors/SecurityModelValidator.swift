@@ -53,6 +53,8 @@ public actor SecurityModelValidator {
     private let config = SecurityConfiguration()
     private var validationState: ValidationState = .pending
     private var lastValidationTime: Date?
+    /// Coalesces overlapping ``validateSecurityModel()`` calls (e.g. init Task + cold-launch ``play()``).
+    private var inFlightValidation: Task<Bool, Never>?
 
     private let userDefaultsKey = "lastSecurityValidation"
 
@@ -95,6 +97,51 @@ public actor SecurityModelValidator {
     ///
     /// - SeeAlso: ``isCurrentlyValid()``, ``isPermanentlyInvalid``, ``<doc:Security-Invariants>``
     public func validateSecurityModel() async -> Bool {
+        guard !Task.isCancelled else {
+            #if DEBUG
+            print("🔒 Task cancelled")
+            #endif
+            return false
+        }
+
+        if isSuccessCacheFresh() {
+            validationState = .success
+            return true
+        }
+
+        if validationState == .failedPermanent {
+            return false
+        }
+
+        if let inFlight = inFlightValidation {
+            return await inFlight.value
+        }
+
+        let task = Task { await self.performFreshValidation() }
+        inFlightValidation = task
+        let result = await task.value
+        inFlightValidation = nil
+        return result
+    }
+
+    /// Returns whether a successful validation is still within the 1-hour cache window.
+    private func isSuccessCacheFresh() -> Bool {
+        if validationState == .success,
+           let last = lastValidationTime,
+           currentDate().timeIntervalSince(last) < config.modelCacheDuration {
+            return true
+        }
+
+        if let last = lastValidationTime ?? UserDefaults.standard.object(forKey: userDefaultsKey) as? Date,
+           currentDate().timeIntervalSince(last) < config.modelCacheDuration {
+            return true
+        }
+
+        return false
+    }
+
+    /// Performs DNS TXT validation when cache is stale or absent. DEBUG "started" logs only here.
+    private func performFreshValidation() async -> Bool {
         #if DEBUG
         print("🔒 SecurityModelValidator.validateSecurityModel() started")
         #endif
@@ -104,13 +151,6 @@ public actor SecurityModelValidator {
             print("🔒 Task cancelled")
             #endif
             return false
-        }
-
-        // Cache check (one hour)
-        if let last = lastValidationTime ?? UserDefaults.standard.object(forKey: userDefaultsKey) as? Date,
-           currentDate().timeIntervalSince(last) < config.modelCacheDuration {
-            validationState = .success
-            return true
         }
 
         // Try primary first, then backup on transient failure only
@@ -451,6 +491,8 @@ public actor SecurityModelValidator {
         _test_txtFetcher = fetcher
 
         if clearCache {
+            inFlightValidation?.cancel()
+            inFlightValidation = nil
             lastValidationTime = nil
             UserDefaults.standard.removeObject(forKey: userDefaultsKey)
             validationState = .pending

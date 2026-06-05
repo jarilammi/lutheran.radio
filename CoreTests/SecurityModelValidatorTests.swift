@@ -216,6 +216,33 @@ struct SecurityModelValidatorTests {
     
     // MARK: - Cache Behavior (deterministic)
     
+    @Test("Concurrent validateSecurityModel coalesces to one fetcher invocation")
+    func concurrentValidationCoalesces() async {
+        await resetForDeterministicTest()
+
+        final class Counter: @unchecked Sendable {
+            private let lock = NSLock()
+            private var _value = 0
+            var value: Int { lock.withLock { _value } }
+            func increment() { lock.withLock { _value += 1 } }
+        }
+        let counter = Counter()
+
+        await SecurityModelValidator._test_setTXTFetcher { _ in
+            counter.increment()
+            try await Task.sleep(nanoseconds: 200_000_000)
+            return [testExpectedSecurityModel]
+        }
+
+        async let first = SecurityModelValidator.shared.validateSecurityModel()
+        async let second = SecurityModelValidator.shared.validateSecurityModel()
+        let results = await (first, second)
+
+        #expect(results.0 == true)
+        #expect(results.1 == true)
+        #expect(counter.value == 1, "Overlapping validations must share one DNS fetch")
+    }
+
     @Test("Cache hit returns success without calling fetcher again")
     func cacheHitSkipsFetcher() async {
         await resetForDeterministicTest()
