@@ -812,57 +812,74 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     internal var currentMetadata: String?
     
     // MARK: - Safe callbacks to MainActor (Swift 6 fix)
-    func safeOnStatusChange(isPlaying: Bool, reasonKey: String?) {
-        DispatchQueue.main.async {  // Ensure main-thread safety for UI/delegate calls
-            if self.isInitializing {
-                self.pendingStatusChanges.append((isPlaying, reasonKey ?? ""))
+
+    /// AVPlayer KVO (`timeControlStatus`, buffer empty, etc.) can emit `status_stopped` /
+    /// `status_buffering` for sub-second ICY/Fig glitches while `PlayerVisualState` is still `.playing`.
+    /// Suppresses the full delegate → UI → widget pipeline and re-asserts Now Playing playback rate
+    /// so Control Center / lock screen do not flash an extra pause.
+    @MainActor
+    private func shouldSuppressTransientKVOStatus(isPlaying: Bool, reasonKey: String?) async -> Bool {
+        guard !isPlaying, let reasonKey else { return false }
+        switch reasonKey {
+        case "status_stopped", "status_buffering":
+            break
+        default:
+            return false
+        }
+        return await SharedPlayerManager.shared.currentVisualState.isActivelyPlaying
+    }
+
+    @MainActor
+    private func deliverStatusChange(isPlaying: Bool, reasonKey: String?) {
+        let didEmit = invokeStatusCallbacks(isPlaying: isPlaying, reasonKey: reasonKey)
+
+        // Uses exact keys from Localizable.xcstrings. Only force a widget save on real emissions.
+        if didEmit {
+            let isStableState = isPlaying ||
+            reasonKey == "status_playing" ||
+            reasonKey == "status_paused" ||
+            reasonKey == "status_stopped" ||
+            reasonKey == "status_paused_call" ||
+            reasonKey == "status_thermal_paused" ||
+            reasonKey == "status_no_internet" ||
+            reasonKey == "status_security_failed" ||
+            reasonKey == "status_stream_unavailable" ||
+            reasonKey == "status_connecting" ||
+            reasonKey == "status_ssl_transition" ||
+            reasonKey == "status_buffering" ||
+            reasonKey == "status_failed"
+
+            if isStableState {
+                Task {
+                    #if DEBUG
+                    print("🔗 safeOnStatusChange: STABLE final state (isPlaying=\(isPlaying), key='\(reasonKey ?? "nil")') → forcing widget save")
+                    #endif
+                    await SharedPlayerManager.shared.saveCurrentState()
+                }
             } else {
-                // Central dedup lives in invokeStatusCallbacks; we use the return value
-                // here so the stable-state widget save path also respects duplicates.
-                let didEmit = self.invokeStatusCallbacks(isPlaying: isPlaying, reasonKey: reasonKey)
-                
-                // 🔥 CLEAN + 100% LOCALIZATION-SAFE stable-state detection
-                // Uses exact keys from Localizable.xcstrings
-                // Only force a widget save on real emissions to avoid re-driving the
-                // widget pipeline with identical consecutive states.
-                if didEmit {
-                    let isStableState = isPlaying ||
-                    reasonKey == "status_playing" ||
-                    reasonKey == "status_paused" ||
-                    reasonKey == "status_stopped" ||
-                    reasonKey == "status_paused_call" ||
-                    reasonKey == "status_thermal_paused" ||
-                    reasonKey == "status_no_internet" ||
-                    reasonKey == "status_security_failed" ||
-                    reasonKey == "status_stream_unavailable" ||
-                    reasonKey == "status_connecting" ||
-                    reasonKey == "status_ssl_transition" ||
-                    reasonKey == "status_buffering" ||
-                    reasonKey == "status_failed"
-                    
-                    if isStableState {
-                        Task {
-                            // Brief KVO stalls report status_stopped while SharedPlayerManager is still .playing.
-                            // Skipping the widget save avoids main-thread churn that can audibly glitch live streams.
-                            if reasonKey == "status_stopped" {
-                                let stillActivelyPlaying = await SharedPlayerManager.shared.currentVisualState.isActivelyPlaying
-                                if stillActivelyPlaying {
-                                    #if DEBUG
-                                    print("🔗 safeOnStatusChange: transient status_stopped while visualState .playing → skip widget save")
-                                    #endif
-                                    return
-                                }
-                            }
-                            #if DEBUG
-                            print("🔗 safeOnStatusChange: STABLE final state (isPlaying=\(isPlaying), key='\(reasonKey ?? "nil")') → forcing widget save")
-                            #endif
-                            await SharedPlayerManager.shared.saveCurrentState()
-                        }
-                    } else {
+                #if DEBUG
+                print("🔇 safeOnStatusChange: transient state (isPlaying=\(isPlaying), key='\(reasonKey ?? "nil")') → skipping widget save")
+                #endif
+            }
+        }
+    }
+
+    func safeOnStatusChange(isPlaying: Bool, reasonKey: String?) {
+        DispatchQueue.main.async {
+            if self.isInitializing {
+                self.pendingStatusChanges.append((isPlaying, reasonKey))
+            } else {
+                Task { @MainActor in
+                    if await self.shouldSuppressTransientKVOStatus(isPlaying: isPlaying, reasonKey: reasonKey) {
                         #if DEBUG
-                        print("🔇 safeOnStatusChange: transient state (isPlaying=\(isPlaying), key='\(reasonKey ?? "nil")') → skipping widget save")
+                        print("🔗 safeOnStatusChange: transient \(reasonKey ?? "nil") while visualState .playing → suppress pipeline")
                         #endif
+                        #if LUTHERAN_MAIN_APP
+                        await SharedPlayerManager.shared.updateNowPlayingInfo()
+                        #endif
+                        return
                     }
+                    self.deliverStatusChange(isPlaying: isPlaying, reasonKey: reasonKey)
                 }
             }
         }
