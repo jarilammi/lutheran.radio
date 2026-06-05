@@ -140,6 +140,19 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         button.accessibilityHint = String(localized: "accessibility_hint_play_pause")
         return button
     }()
+
+    let sleepTimerButton: UIButton = {
+        let button = UIButton(type: .system)
+        let config = UIImage.SymbolConfiguration(pointSize: 22, weight: .medium)
+        button.setImage(UIImage(systemName: "moon.zzz", withConfiguration: config), for: .normal)
+        button.tintColor = .secondaryLabel
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.isAccessibilityElement = true
+        button.accessibilityTraits = .button
+        button.accessibilityLabel = String(localized: "accessibility_label_sleep_timer")
+        button.accessibilityHint = String(localized: "accessibility_hint_sleep_timer")
+        return button
+    }()
     
     let statusLabel: UILabel = {
         let label = UILabel()
@@ -341,6 +354,11 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     private var isDeallocating = false // Flag to prevent operations during deallocation
     private var hasPlayedSpecialTuningSound = false // Flag to ensure special sound plays only once
     private var hasShownSecurityAlert = false // Flag to ensure security alert is shown only once
+
+    /// Polls `SharedPlayerManager.sleepTimerRemainingSeconds` for button/accessibility updates.
+    private var sleepTimerDisplayTask: Task<Void, Never>?
+    /// Avoids awaiting the actor before presenting the sleep-timer sheet (reduces main-thread work during playback).
+    private var cachedSleepTimerRemaining: Int?
     
     // Testable accessors
     @objc var isPlayingState: Bool {
@@ -475,6 +493,11 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         setupFastWidgetActionChecking()
         isInitialSetupComplete = true
         setupBackgroundParallax()
+
+        Task { @MainActor [weak self] in
+            await self?.refreshSleepTimerButtonAppearance()
+            self?.startSleepTimerDisplayUpdatesIfNeeded()
+        }
         
         // Energy Efficiency Optimizations (iOS 26)
         updateForEnergyEfficiency()
@@ -669,6 +692,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                     self.updateSelectionIndicator(to: self.selectedStreamIndex, isInitial: false)
                 }
             }
+
+            await self.refreshSleepTimerButtonAppearance()
+            self.startSleepTimerDisplayUpdatesIfNeeded()
         }
     }
     
@@ -863,6 +889,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     private func setupControls() {
         playPauseButton.addTarget(self, action: #selector(togglePlayback), for: .touchUpInside)
+        sleepTimerButton.addTarget(self, action: #selector(sleepTimerTapped), for: .touchUpInside)
+        sleepTimerButton.accessibilityIdentifier = "sleepTimerButton"
         playPauseButton.accessibilityIdentifier = "playPauseButton"
         playPauseButton.accessibilityHint = String(localized: "accessibility_hint_play_pause")
         playPauseButton.accessibilityLabel = String(localized: "accessibility_label_play")  // e.g., "Play" in Localizable.strings
@@ -1037,6 +1065,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         
         switch type {
         case .began:
+            #if DEBUG
+            print("📱 AVAudioSession interruption began (isPlaying=\(isPlaying))")
+            #endif
             if isPlaying {
                 stopPlayback()
             }
@@ -1621,7 +1652,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         
         view.addSubview(titleLabel)
         view.addSubview(languageCollectionView)
-        let controlsStackView = UIStackView(arrangedSubviews: [playPauseButton, statusLabel])
+        let controlsStackView = UIStackView(arrangedSubviews: [playPauseButton, sleepTimerButton, statusLabel])
         controlsStackView.axis = .horizontal
         controlsStackView.spacing = 20
         controlsStackView.alignment = .center
@@ -1652,6 +1683,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             statusLabel.heightAnchor.constraint(equalToConstant: 40),
             playPauseButton.widthAnchor.constraint(equalToConstant: 50),
             playPauseButton.heightAnchor.constraint(equalToConstant: 50),
+            sleepTimerButton.widthAnchor.constraint(equalToConstant: 44),
+            sleepTimerButton.heightAnchor.constraint(equalToConstant: 44),
             volumeSlider.topAnchor.constraint(equalTo: controlsStackView.bottomAnchor, constant: 20),
             volumeSlider.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 40),
             volumeSlider.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -40),
@@ -1894,11 +1927,130 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         }
     }
     
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        sleepTimerDisplayTask?.cancel()
+        sleepTimerDisplayTask = nil
+    }
+
+    // MARK: - Sleep Timer UI
+
+    @objc private func sleepTimerTapped() {
+        UIView.animate(withDuration: 0.1, animations: {
+            self.sleepTimerButton.transform = CGAffineTransform(scaleX: 0.92, y: 0.92)
+        }) { _ in
+            UIView.animate(withDuration: 0.1) {
+                self.sleepTimerButton.transform = .identity
+            }
+        }
+
+        presentSleepTimerActionSheet()
+    }
+
+    @MainActor
+    private func presentSleepTimerActionSheet() {
+        let sheet = UIAlertController(
+            title: String(localized: "sleep_timer_sheet_title"),
+            message: nil,
+            preferredStyle: .actionSheet
+        )
+
+        if cachedSleepTimerRemaining != nil {
+            sheet.addAction(UIAlertAction(
+                title: String(localized: "sleep_timer_cancel_timer"),
+                style: .destructive,
+                handler: { [weak self] _ in
+                    Task { @MainActor in
+                        await SharedPlayerManager.shared.cancelSleepTimer()
+                        self?.cachedSleepTimerRemaining = nil
+                        await self?.refreshSleepTimerButtonAppearance()
+                        self?.sleepTimerDisplayTask?.cancel()
+                        self?.sleepTimerDisplayTask = nil
+                    }
+                }
+            ))
+        }
+
+        let presets: [(minutes: Int, title: String)] = [
+            (15, String(localized: "sleep_timer_preset_15_min")),
+            (30, String(localized: "sleep_timer_preset_30_min")),
+            (45, String(localized: "sleep_timer_preset_45_min")),
+            (60, String(localized: "sleep_timer_preset_60_min"))
+        ]
+
+        for preset in presets {
+            sheet.addAction(UIAlertAction(title: preset.title, style: .default) { [weak self] _ in
+                Task { @MainActor in
+                    await SharedPlayerManager.shared.setSleepTimer(duration: TimeInterval(preset.minutes * 60))
+                    self?.cachedSleepTimerRemaining = await SharedPlayerManager.shared.sleepTimerRemainingSeconds
+                    await self?.refreshSleepTimerButtonAppearance()
+                    self?.startSleepTimerDisplayUpdatesIfNeeded()
+                }
+            })
+        }
+
+        sheet.addAction(UIAlertAction(
+            title: String(localized: "sleep_timer_sheet_dismiss"),
+            style: .cancel
+        ))
+
+        if let popover = sheet.popoverPresentationController {
+            popover.sourceView = sleepTimerButton
+            popover.sourceRect = sleepTimerButton.bounds
+        }
+
+        present(sheet, animated: true)
+    }
+
+    @MainActor
+    private func refreshSleepTimerButtonAppearance() async {
+        let config = UIImage.SymbolConfiguration(pointSize: 22, weight: .medium)
+        let remaining = await SharedPlayerManager.shared.sleepTimerRemainingSeconds
+        cachedSleepTimerRemaining = remaining
+
+        if let remaining, remaining > 0 {
+            let symbolName = "moon.zzz.fill"
+            sleepTimerButton.setImage(UIImage(systemName: symbolName, withConfiguration: config), for: .normal)
+            sleepTimerButton.tintColor = .systemIndigo
+            let minutes = max(1, (remaining + 59) / 60)
+            sleepTimerButton.accessibilityValue = unsafe String(
+                format: String(localized: "sleep_timer_accessibility_remaining"),
+                minutes
+            )
+        } else {
+            sleepTimerButton.setImage(UIImage(systemName: "moon.zzz", withConfiguration: config), for: .normal)
+            sleepTimerButton.tintColor = .secondaryLabel
+            sleepTimerButton.accessibilityValue = nil
+        }
+    }
+
+    @MainActor
+    private func startSleepTimerDisplayUpdatesIfNeeded() {
+        sleepTimerDisplayTask?.cancel()
+        sleepTimerDisplayTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                let remaining = await SharedPlayerManager.shared.sleepTimerRemainingSeconds
+                guard let remaining, remaining > 0 else {
+                    await self.refreshSleepTimerButtonAppearance()
+                    return
+                }
+                await self.refreshSleepTimerButtonAppearance()
+                do {
+                    try await Task.sleep(for: .seconds(1))
+                } catch {
+                    return
+                }
+            }
+        }
+    }
+
     // MARK: - Lifecycle (deinit)
     /// Cleans up resources, observers, and audio players to prevent leaks.
     /// - Note: Sets `isDeallocating` to avoid operations during teardown.
     deinit {
         isDeallocating = true
+        sleepTimerDisplayTask?.cancel()
         
         #if DEBUG
         print("🧹 ViewController deinit starting")

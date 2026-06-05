@@ -841,11 +841,21 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                     reasonKey == "status_failed"
                     
                     if isStableState {
-                        #if DEBUG
-                        print("🔗 safeOnStatusChange: STABLE final state (isPlaying=\(isPlaying), key='\(reasonKey ?? "nil")') → forcing widget save")
-                        #endif
-                        
                         Task {
+                            // Brief KVO stalls report status_stopped while SharedPlayerManager is still .playing.
+                            // Skipping the widget save avoids main-thread churn that can audibly glitch live streams.
+                            if reasonKey == "status_stopped" {
+                                let stillActivelyPlaying = await SharedPlayerManager.shared.currentVisualState.isActivelyPlaying
+                                if stillActivelyPlaying {
+                                    #if DEBUG
+                                    print("🔗 safeOnStatusChange: transient status_stopped while visualState .playing → skip widget save")
+                                    #endif
+                                    return
+                                }
+                            }
+                            #if DEBUG
+                            print("🔗 safeOnStatusChange: STABLE final state (isPlaying=\(isPlaying), key='\(reasonKey ?? "nil")') → forcing widget save")
+                            #endif
                             await SharedPlayerManager.shared.saveCurrentState()
                         }
                     } else {

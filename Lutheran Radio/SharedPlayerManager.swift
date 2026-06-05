@@ -159,6 +159,15 @@ actor SharedPlayerManager {
     //
     private var lastUserPauseTimestamp: TimeInterval = 0
     
+    #if LUTHERAN_MAIN_APP
+    // MARK: - Sleep Timer (main app only; implementation in SharedPlayerManager+SleepTimer.swift)
+    /// Active sleep timer task. Cancellable.
+    var sleepTimerTask: Task<Void, Never>?
+    /// Remaining seconds on the active sleep timer (for UI countdown). Nil when inactive.
+    /// Mutated only by sleep-timer logic in `SharedPlayerManager+SleepTimer.swift`.
+    var sleepTimerRemainingSeconds: Int?
+    #endif
+
     // MARK: - Now Playing (Lock Screen & Control Center)
     /// Latest ICY stream title for MPNowPlayingInfoCenter (main app only).
     var nowPlayingStreamMetadata: String?
@@ -358,6 +367,11 @@ actor SharedPlayerManager {
     /// Safe, single entry point to change the visual state from anywhere.
     /// (Notification handlers, MainActor, background tasks, etc.)
     func setVisualState(_ state: PlayerVisualState) async {
+        #if LUTHERAN_MAIN_APP
+        if state == .thermalPaused {
+            await cancelSleepTimer()
+        }
+        #endif
         self.currentVisualState = state
     }
     
@@ -370,6 +384,7 @@ actor SharedPlayerManager {
         ensureVisualStateLoaded()
         #if LUTHERAN_MAIN_APP
         await configureNowPlayingControlsIfNeeded()
+        await cancelSleepTimer()
         #endif
         
         // 🔥 FINAL FIX: Always clear .userPaused lock at the absolute top of play()
@@ -459,6 +474,10 @@ actor SharedPlayerManager {
             #if DEBUG
             print("🔒 Permanent security validation failure — locking UI to .securityLocked")
             #endif
+
+            #if LUTHERAN_MAIN_APP
+            await cancelSleepTimer()
+            #endif
             
             // Direct mutation inside the actor (this is allowed and correct)
             self.currentVisualState = .securityLocked
@@ -494,6 +513,9 @@ actor SharedPlayerManager {
     /// Forces the visual state to `.securityLocked` (permanent failure) and persists it.
     /// Called from server 403 responses or unrecoverable validation failures.
     func setSecurityLocked() async {
+        #if LUTHERAN_MAIN_APP
+        await cancelSleepTimer()
+        #endif
         self.currentVisualState = .securityLocked
         await self.saveCurrentState()
         
@@ -560,6 +582,10 @@ actor SharedPlayerManager {
     /// This locks .userPaused so resurrection paths are blocked.
     func markAsUserPaused() async {
         ensureVisualStateLoaded()
+
+        #if LUTHERAN_MAIN_APP
+        await cancelSleepTimer()
+        #endif
         
         #if DEBUG
         print("🔒 markAsUserPaused() called – forcing .userPaused to block resurrection")
@@ -592,6 +618,10 @@ actor SharedPlayerManager {
     /// then stops the real player (main app path) or schedules the widget stop action.
     public func stop() async {
         ensureVisualStateLoaded()
+
+        #if LUTHERAN_MAIN_APP
+        await cancelSleepTimer()
+        #endif
         
         #if DEBUG
         print("🚀 SharedPlayerManager.stop() ENTERED – currentVisualState = \(currentVisualState)")
@@ -665,6 +695,9 @@ actor SharedPlayerManager {
     /// Documentation modernized to reflect that cold-launch special
     /// casing is now minimal and driven by the authoritative intent model.
     func resetToPrePlayForNewStream() async {
+        #if LUTHERAN_MAIN_APP
+        await cancelSleepTimer()
+        #endif
         // 🔥 CRITICAL FIX: Always clear .userPaused lock for widget pure-play actions
         // This makes widget play/pause 100% reliable (was missing in pure-play path)
         await clearUserPausedLockIfNeeded()
@@ -695,6 +728,10 @@ actor SharedPlayerManager {
     /// Resets the cold-launch guard ONLY for manual resumes.
     func setUserIntentToPlay() async {
         ensureVisualStateLoaded()
+
+        #if LUTHERAN_MAIN_APP
+        await cancelSleepTimer()
+        #endif
         
         #if DEBUG
         print("🎯 setUserIntentToPlay() called – clearing .userPaused lock")
@@ -721,6 +758,10 @@ actor SharedPlayerManager {
     /// This is the canonical way to record user-initiated pause intent.
     func setUserPaused() async {
         ensureVisualStateLoaded()
+
+        #if LUTHERAN_MAIN_APP
+        await cancelSleepTimer()
+        #endif
         currentVisualState = .userPaused
         
         updatePlaybackIntent(to: .userPaused)
