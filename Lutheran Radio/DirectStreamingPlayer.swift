@@ -829,6 +829,24 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         return await SharedPlayerManager.shared.currentVisualState.isActivelyPlaying
     }
 
+    /// Returns true when a stable connect/buffer status should not trigger widget persistence:
+    /// `isPlaying` is false but `currentVisualState` is already `.prePlay` or `.playing`.
+    @MainActor
+    private func shouldSkipWidgetSaveForTransientConnectOrBuffer(
+        isPlaying: Bool,
+        reasonKey: String?
+    ) async -> Bool {
+        guard !isPlaying, let reasonKey else { return false }
+        switch reasonKey {
+        case "status_connecting", "status_buffering":
+            break
+        default:
+            return false
+        }
+        let visual = await SharedPlayerManager.shared.currentVisualState
+        return visual == .prePlay || visual == .playing
+    }
+
     @MainActor
     private func deliverStatusChange(isPlaying: Bool, reasonKey: String?) {
         let didEmit = invokeStatusCallbacks(isPlaying: isPlaying, reasonKey: reasonKey)
@@ -851,6 +869,15 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
 
             if isStableState {
                 Task {
+                    if await self.shouldSkipWidgetSaveForTransientConnectOrBuffer(
+                        isPlaying: isPlaying,
+                        reasonKey: reasonKey
+                    ) {
+                        #if DEBUG
+                        print("🔇 safeOnStatusChange: transient \(reasonKey ?? "nil") — skipping widget save (visual SSOT prePlay/playing)")
+                        #endif
+                        return
+                    }
                     #if DEBUG
                     print("🔗 safeOnStatusChange: STABLE final state (isPlaying=\(isPlaying), key='\(reasonKey ?? "nil")') → forcing widget save")
                     #endif
@@ -1429,6 +1456,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         asset.resourceLoader.setDelegate(self, queue: .main)
         
         let playerItem = AVPlayerItem(asset: asset)
+        playerItem.preferredForwardBufferDuration = 15.0
         
         if self.player == nil {
             self.player = AVPlayer(playerItem: playerItem)
@@ -1684,6 +1712,19 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     
     // MARK: - Stream Switching (Single Source of Truth)
 
+    /// Updates the selected stream model without creating or replacing an `AVPlayerItem`.
+    /// Used on cold launch before tuning so the secured item is created once in `setStreamAndPlay`.
+    func setSelectedStreamModelOnly(to stream: Stream) async {
+        lastEmittedStatus = nil
+        lastObservedTimeControl = nil
+        lastObservedItemStatus = nil
+        selectedStream = stream
+
+        #if DEBUG
+        print("✅ Stream model updated (no player item) for \(stream.language)")
+        #endif
+    }
+
     /// Updates the selected stream model and prepares the player.
     /// Does NOT start playback — call `play()` afterwards if needed.
     func setStream(to stream: Stream) async {
@@ -1718,22 +1759,12 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         // Update model
         selectedStream = stream
 
-        // Obtain URL under optimal-server guarantee, then hand the concrete URL value
-        // (baked with the correct host at construction time) to the MainActor work.
+        // Secured AVURLAsset + resourceLoader path (same as cold-launch startPlayback and createAndStartPlayer).
         let url = await urlWithOptimalServer(for: stream)
-
-        // Prepare the AVPlayerItem on MainActor
-        await MainActor.run {
-            let newItem = AVPlayerItem(url: url)
-            newItem.preferredForwardBufferDuration = 10.0
-
-            self.player?.replaceCurrentItem(with: newItem)
-            self.playerItem = newItem
-            self.setupPlaybackObservers()
-        }
+        await preparePlayerItem(for: url)
 
         #if DEBUG
-        print("✅ Stream model updated and AVPlayerItem replaced for \(stream.language)")
+        print("✅ Stream model updated and secured AVPlayerItem prepared for \(stream.language)")
         #endif
     }
 
@@ -1816,16 +1847,13 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             print("▶️ AVPlayer started via .play() + rate=1.0")
             #endif
             
-            // CRITICAL: Cold-launch race fix — guarantee an AVPlayerItem exists immediately after new AVPlayer()
+            // Item should already exist from setStream (secured preparePlayerItem). Attach only as fallback.
             if player.currentItem == nil {
                 #if DEBUG
                 print("🔧 [DirectStreamingPlayer] cold-launch: no currentItem after AVPlayer init → attaching fresh item")
                 #endif
                 
                 let url = coldLaunchURL
-                // Use explicit AVURLAsset + resourceLoader delegate on the cold-launch fast path
-                // (matches the pattern in createAndStartPlayer and ensures the custom ICY StreamingSessionDelegate
-                // with Core certificate pinning is attached early and consistently).
                 let asset = AVURLAsset(url: url)
                 asset.resourceLoader.setDelegate(self, queue: .main)
                 let newItem = AVPlayerItem(asset: asset)
@@ -1833,13 +1861,16 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 player.replaceCurrentItem(with: newItem)
                 self.playerItem = newItem
                 self.setupPlaybackObservers()
-                // Activate richer playerItem observers (readyToPlay, bufferEmpty, likelyToKeepUp, bufferFull)
-                // Observers for readyToPlay, bufferEmpty, likelyToKeepUp, and bufferFull on cold launch.
                 self.addObservers()
                 
                 #if DEBUG
                 print("🔧 [DirectStreamingPlayer] attached fresh AVPlayerItem for cold launch")
                 #endif
+            } else {
+                #if DEBUG
+                print("🔧 [DirectStreamingPlayer] cold-launch: reusing secured AVPlayerItem from setStream")
+                #endif
+                self.addObservers()
             }
             
             player.automaticallyWaitsToMinimizeStalling = false

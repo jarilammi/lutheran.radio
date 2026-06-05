@@ -513,10 +513,12 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         Task { @MainActor [weak self] in
             guard let self else { return }
             
-            await self.streamingPlayer.setStream(to: DirectStreamingPlayer.availableStreams[initialIndex])
+            let initialStream = DirectStreamingPlayer.availableStreams[initialIndex]
+            // Stream model and UI only; secured AVPlayerItem is created once in setStreamAndPlay after tuning.
+            await self.streamingPlayer.setSelectedStreamModelOnly(to: initialStream)
             
-            self.updateUserDefaultsLanguage(DirectStreamingPlayer.availableStreams[initialIndex].languageCode)
-            self.updateBackground(for: DirectStreamingPlayer.availableStreams[initialIndex])
+            self.updateUserDefaultsLanguage(initialStream.languageCode)
+            self.updateBackground(for: initialStream)
             
             // Seeds the PersistedWidgetState snapshot (the SSOT read by saveCurrentState + preferredWidgetLanguage)
             // with the correct initial languageCode *synchronously* before play() and its observer/KVO/save storm.
@@ -525,7 +527,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             // intended for exactly these early/optimistic cross-process writes (also used by widget intents).
             SharedPlayerManager.persistWidgetSnapshot(
                 visualState: .prePlay,
-                language: DirectStreamingPlayer.availableStreams[initialIndex].languageCode
+                language: initialStream.languageCode
             )
             
             // Tuning sound (now plays fully)

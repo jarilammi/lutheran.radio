@@ -178,6 +178,10 @@ actor SharedPlayerManager {
     /// This prevents the "play on pause" resurrection bug when set synchronously to .userPaused
     var currentVisualState: PlayerVisualState = .prePlay
     
+    /// When true, `play()` keeps `.prePlay` until `setPlaying()` at end of `startPlayback()`.
+    /// Set by `resetToPrePlayForNewStream()` so stale KVO from the prior item cannot flash green.
+    private var holdPrePlayVisualUntilPlayback = false
+    
     /// Guards one-time loading of the persisted PlayerVisualState JSON (or legacy "playing" bool fallback).
     /// Critical for widget/extension processes which start with a fresh actor instance (default .prePlay).
     private var hasLoadedVisualStateFromPersistence = false
@@ -492,6 +496,18 @@ actor SharedPlayerManager {
             return
         }
         
+        // Cold launch and resume: set `.playing` before stream attach so KVO matches UI intent.
+        // Stream switches defer via `holdPrePlayVisualUntilPlayback` until `setPlaying()` in `startPlayback()`.
+        let deferOptimisticPlaying = holdPrePlayVisualUntilPlayback
+        if deferOptimisticPlaying {
+            holdPrePlayVisualUntilPlayback = false
+        } else {
+            await setPlaying()
+            #if DEBUG
+            print("✅ Visual state set to .playing before setStreamAndPlay")
+            #endif
+        }
+        
         if isRunningInWidget() {
             handleWidgetPlay()
             return
@@ -703,6 +719,7 @@ actor SharedPlayerManager {
         await clearUserPausedLockIfNeeded()
 
         currentVisualState = .prePlay
+        holdPrePlayVisualUntilPlayback = true
         initialPlaybackHasRun = false
         saveVisualState()
         await saveCurrentState()
@@ -780,6 +797,7 @@ actor SharedPlayerManager {
     /// Call after successful playback start/resume.
     func setPlaying() async {
         ensureVisualStateLoaded()
+        holdPrePlayVisualUntilPlayback = false
         currentVisualState = .playing
         
         updatePlaybackIntent(to: .shouldBePlaying)
@@ -1275,8 +1293,14 @@ extension SharedPlayerManager {
         // call. Providers trust the snapshot first. WidgetRefreshManager handles debouncing
         // and language-change urgency. We retain isLanguageChange detection only for
         // the urgent refresh flag.
-        let previousLanguage = Self.loadPersistedWidgetState()?.currentLanguage ?? ""
+        let previousSnapshot = Self.loadPersistedWidgetState()
+        let previousLanguage = previousSnapshot?.currentLanguage ?? ""
         let isLanguageChange = !previousLanguage.isEmpty && previousLanguage != state.currentLanguage
+        let previousHasError = sharedDefaults?.bool(forKey: "hasError") ?? false
+        let snapshotUnchanged =
+            previousSnapshot?.visualState == currentVisualState &&
+            previousSnapshot?.currentLanguage == state.currentLanguage &&
+            previousHasError == state.hasError
 
         // Always persist the authoritative (visualState + language) snapshot first.
         // Widget providers take the early loadPersistedWidgetState() path for both
@@ -1297,17 +1321,30 @@ extension SharedPlayerManager {
         sharedDefaults?.removeObject(forKey: "instantFeedbackTime")
         sharedDefaults?.removeObject(forKey: "instantFeedbackLanguage")
         
-        let isUrgentUpdate = !state.isPlaying || state.hasError || isLanguageChange
+        // Urgent refresh only for errors, language changes, or sticky pause/security lock —
+        // not for transient `.prePlay` during cold launch.
+        let isUrgentUpdate = state.hasError || isLanguageChange || currentVisualState.mustSuppressResurrection
+        let shouldRefreshWidget = !snapshotUnchanged || isUrgentUpdate
+        let visualStateForRefresh = currentVisualState
+        let visualStateChanged = previousSnapshot?.visualState != currentVisualState
         
-        // Always hop to MainActor for WidgetRefreshManager (required in Swift 6)
-        Task { @MainActor in
-            // ✅ Modern SSOT path — no more legacy WidgetState overload
-            WidgetRefreshManager.shared.refreshIfNeeded(
-                visualState: widgetState.isPlaying ? .playing : .userPaused,
-                currentLanguage: state.currentLanguage,
-                hasError: state.hasError,
-                immediate: isUrgentUpdate
-            )
+        if shouldRefreshWidget {
+            // Always hop to MainActor for WidgetRefreshManager (required in Swift 6)
+            Task { @MainActor in
+                if visualStateChanged {
+                    WidgetRefreshManager.shared.cancelPendingRefresh()
+                }
+                WidgetRefreshManager.shared.refreshIfNeeded(
+                    visualState: visualStateForRefresh,
+                    currentLanguage: state.currentLanguage,
+                    hasError: state.hasError,
+                    immediate: isUrgentUpdate
+                )
+            }
+        } else {
+            #if DEBUG
+            print("🔇 performActualSave: snapshot unchanged — skipping widget timeline reload")
+            #endif
         }
         
         #if DEBUG
