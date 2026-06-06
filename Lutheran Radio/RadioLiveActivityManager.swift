@@ -53,9 +53,12 @@ class RadioLiveActivityManager: ObservableObject {
         
         // ✅ Safe actor access (now allowed because function is async)
         let visualState = await manager.currentVisualState
+        let streamMetadata = await manager.currentStreamMetadata
+            ?? SharedPlayerManager.loadPersistedStreamMetadata()
         
         let initialContentState = LutheranRadioLiveActivityAttributes.ContentState(
-            visualState: visualState
+            visualState: visualState,
+            streamMetadata: streamMetadata
         )
         
         do {
@@ -87,9 +90,12 @@ class RadioLiveActivityManager: ObservableObject {
         
         // NEW: Use visualState (SSOT) + await
         let visualState = await manager.currentVisualState
+        let streamMetadata = await manager.currentStreamMetadata
+            ?? SharedPlayerManager.loadPersistedStreamMetadata()
         
         let updatedContentState = LutheranRadioLiveActivityAttributes.ContentState(
-            visualState: visualState
+            visualState: visualState,
+            streamMetadata: streamMetadata
         )
         
         nonisolated(unsafe) let safeActivity = activity
@@ -112,7 +118,8 @@ class RadioLiveActivityManager: ObservableObject {
         
         Task {
             let finalContentState = LutheranRadioLiveActivityAttributes.ContentState(
-                visualState: .userPaused
+                visualState: .userPaused,
+                streamMetadata: nil
             )
             
             // All async Live Activity work in one async context – modern SSOT pattern
