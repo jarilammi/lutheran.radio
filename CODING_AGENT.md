@@ -10,14 +10,14 @@ This file is your permanent system prompt. Follow every rule without exception.
 **Lutheran Radio** is a security-first iOS streaming application that delivers Lutheran radio streams to users in **21 languages** (da, de, en, es, et, fi, fit, fo, gag, is, kl, lt, lv, nb, nl, nn, pl, ru, se, sk, sv).
 It is live on the App Store: https://apps.apple.com/fi/app/lutheran-radio/id6738301787
 
-**Core value**: Security is non-negotiable. Everything else is secondary.
+**Core value**: Security requirements take precedence over all other concerns.
 
 ## Document Maintenance
 
 - Updates to this file must be approved by the repository owner and documented in a PR with security review.
 - All changes must include a security impact assessment.
 
-## Non-Negotiable Rules (Violating any = immediate rejection)
+## Required Rules
 
 1. **Security Model**
    - Current `expectedSecurityModel = "brenham"` (Core/Configuration/SecurityConfiguration.swift)
@@ -131,14 +131,14 @@ These guidelines exist because the cost of a force-unwrap or a data race in a ba
 
 ### Key Files You Must Know Intimately
 
-| File                                              | Responsibility                                                                 | Critical Notes                                                                 |
+| File                                              | Responsibility                                                                 | Important notes                                                                |
 |---------------------------------------------------|--------------------------------------------------------------------------------|--------------------------------------------------------------------------------|
 | `DirectStreamingPlayer.swift`                     | Main audio engine + consumes shared security validation                        | No longer contains `appSecurityModel` constant                                 |
 | `Core/Security/CertificateFingerprint.swift`      | Raw 32-byte SHA-256 DER digest + constant-time `constantTimeMatches`         | Hex (`colonHexUppercase`) is for README/openssl only; runtime never compares strings |
 | `Core/Security/CertificateValidator.swift`        | Runtime digest pinning + transition window leniency (Jul 27 – Aug 26 2026) with device/server time-skew protection | 10-minute cache; compares via `pinnedFingerprintDigests`; SPKI is ATS-only in Info.plist |
 | `Core/Configuration/SecurityConfiguration.swift`  | Centralized security policy: expected model, `pinnedLeafFingerprintDigest`, transition dates | Authoritative digests; colon-hex (`pinnedLeafFingerprint`, `pinnedFingerprints`) is derived |
 | `Core/Actors/SecurityModelValidator.swift`        | Actor-isolated DNS TXT security model validation                               | `Span<UInt8>` / `UTF8Span` TXT parser; zero-copy `rdata` borrow (no `Data` copy, no per-label `subdata`); `dns_sd.h` + 1-hour success cache |
-| `Core/Security/`                                  | `CertificateFingerprint` + `CertificateValidator` (Core framework)             | Treat as security-critical; compiled into main app + widget extension          |
+| `Core/Security/`                                  | `CertificateFingerprint` + `CertificateValidator` (Core framework)             | Security-sensitive; compiled into main app + widget extension                  |
 | `Info.plist`                                      | ATS pinning (SPKI + domain)                                                    | Never edit without updating `SecurityConfiguration` and validator              |
 | `LutheranRadioWidget/`                            | Home-screen widget                                                             | Must respect same security rules via shared `Core` module                      |
 | `docs/`                                           | All architecture & security decision records                                   | Read before any major change                                                   |
@@ -151,7 +151,7 @@ The `Core` framework is the **single source of truth** for all security decision
 - `Core/Actors/` — `SecurityModelValidator.swift` (the only place DNS TXT validation against `securitymodels.lutheran.radio` is allowed).
 - `Core/Security/` — `CertificateFingerprint.swift` (digest type + hashing) and `CertificateValidator.swift` (runtime DER digest validation + transition leniency).
 
-**Rule**: Any new security logic, certificate handling, or validation must be added inside `Core/` under the appropriate subdirectory and exposed through the existing public types. Duplication in the main app, widget, or elsewhere is forbidden and will fail security review.
+**Rule**: Any new security logic, certificate handling, or validation must be added inside `Core/` under the appropriate subdirectory and exposed through the existing public types. Duplication in the main app, widget, or elsewhere is not permitted and will not pass security review.
 
 ## Development Workflow (Always Follow)
 
