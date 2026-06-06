@@ -87,6 +87,9 @@ DerivedData/     # More comprehensive than just xcuserdata
 *.swp            # Vim temporary files
 *~.nib           # Interface builder temporary files
 
+# Agent tooling alias - canonical source is CODING_AGENT.md
+/AGENTS.md
+
 # Generated tuning sound files
 Lutheran Radio/Tools/*.wav
 

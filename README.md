@@ -49,7 +49,7 @@ The app is fully localized in the following languages:
 
 All AI coding agents (Claude, Grok, Cursor, Aider, Windsurf, etc.) **must** follow [`CODING_AGENT.md`](CODING_AGENT.md) as their permanent system prompt / project instructions.
 
-This ensures every single change respects the same non-negotiable security model, localization rules, and build gates.
+This ensures every single change respects the same required security model, localization rules, and build gates.
 
 ### Prerequisites
  - Xcode 26+ (Swift 6.3 toolchain; language mode `SWIFT_VERSION = 6`)
@@ -303,7 +303,7 @@ The source articles are also available on GitHub:
 - [Security Invariants](https://github.com/jarilammi/lutheran.radio/blob/HEAD/Core/Core.docc/Articles/Security-Invariants.md)
 - [Architecture](https://github.com/jarilammi/lutheran.radio/blob/HEAD/Core/Core.docc/Articles/Architecture.md).
 
-New security logic must be placed inside the appropriate `Core/` subdirectory. Duplication in the main app or widget is forbidden.
+New security logic must be placed inside the appropriate `Core/` subdirectory. Duplication in the main app or widget is not permitted.
 
 ### Security Model TXT Record Usage
 
