@@ -60,7 +60,7 @@ import Core
 /// - `hasCompletedTrueColdLaunchPlay` records whether the app's first cold-launch play has run
 ///   (DEBUG classification only; does not drive resurrection guards).
 /// - The window only relaxes resurrection protection for `.prePlay`; `.userPaused` is
-///   *never* bypassed, even inside the window (hard rule at the top of `play()`).
+///   *never* bypassed, even inside the window (enforced at the top of `play()`).
 ///
 /// Cold-launch special casing is minimal; the one-shot and window logic are
 /// subordinate to `currentPlaybackIntent`.
@@ -78,7 +78,7 @@ import Core
 /// **Playback intent**: `currentPlaybackIntent` (owned exclusively by this actor via
 /// `updatePlaybackIntent(to:)`) is the primary decision signal in the main resurrection paths:
 ///
-/// - `play()` (top HARD RULE, central non-cold protection, one-shot simplification)
+/// - `play()` (top rule, central non-cold protection, one-shot simplification)
 /// - `attemptResurrectionIfAllowed()`
 /// - `restoreVisualStateRespectingUserIntent()`
 /// The old overlapping visualState guards have been collapsed in the decision logic while
@@ -127,7 +127,7 @@ import Core
 /// | currentLanguage         | String (languageCode) | (Legacy — no longer written by current paths)                | Migration fallbacks only in `loadPersistedWidgetState` / `preferredWidgetLanguage` | Legacy separate language key. Snapshot + `preferredWidgetLanguage()` are the SSOT. | Migration / compat only |
 /// | hasError                | Bool                  | SharedPlayerManager (sourced from player.hasPermanentError)  | `loadSharedState`, widgets                                           | Permanent error flag for UI chrome                           | Set on security or unrecoverable network failures |
 /// | lastUpdateTime          | Double (epoch)        | `SharedPlayerManager.performActualSave` (on every save) + widget handlers | Widget providers (isAppRunning 60 s check), instant-feedback expiry | Timestamp of last authoritative state change                 | Useful for external freshness + isAppRunning |
-/// | lastUserPauseTime | Double (epoch) | ViewController (explicit pause paths) + widget pause round-trips | Cross-process / extension readers (for compatibility); legacy barrier consumers | Hard 8-second barrier after any user pause (recovery paths in DirectStreamingPlayer now use authoritative actor `wasRecentlyUserPaused()` instead of raw UD + defensive sync) | Prevents resurrection attempts immediately after pause |
+/// | lastUserPauseTime | Double (epoch) | ViewController (explicit pause paths) + widget pause round-trips | Cross-process / extension readers (for compatibility); legacy barrier consumers | 8-second pause window after any user pause (recovery paths in DirectStreamingPlayer now use authoritative actor `wasRecentlyUserPaused()` instead of raw UD + defensive sync) | Prevents resurrection attempts immediately after pause |
 /// | isInstantFeedback       | Bool                  | Widget handlers (`handleWidgetPlay/Stop/Switch`)             | `loadSharedState` (checked first)                                    | Signals that a widget action just occurred (optimistic UI)   | Short-lived; cleared after 15s or next authoritative save |
 /// | instantFeedbackTime     | Double (epoch)        | Widget handlers                                              | `loadSharedState`                                                    | Timestamp for the instant feedback validity window           | 15-second validity window |
 /// | instantFeedbackLanguage | String                | Widget handlers                                              | `loadSharedState`                                                    | Language to show during the optimistic widget update         | Matches the language of the widget action |
@@ -136,7 +136,7 @@ import Core
 /// | pendingActionTime       | Double (epoch)        | Same writers as pendingAction                                | Widget providers (staleness checks)                                  | Freshness timestamp for pending actions                      | Used to ignore very old pending actions |
 /// | pendingLanguage         | String                | `scheduleWidgetAction` (only for "switch")                   | `getPendingAction()`, widget providers                               | Parameter for stream switch actions                          | Only meaningful when `pendingAction == "switch"` |
 ///
-/// **Critical Invariants**:
+/// **Key invariants**:
 /// - The main app is always the source of truth. Widgets write optimistic visual state +
 ///   `pendingAction`, then the main app performs real work and writes authoritative values.
 /// - `saveCurrentState()` is the primary persistence path driven by the real player.
@@ -175,6 +175,8 @@ actor SharedPlayerManager {
     // MARK: - Now Playing (Lock Screen & Control Center)
     /// Latest ICY stream title for MPNowPlayingInfoCenter (main app only).
     var nowPlayingStreamMetadata: String?
+    /// Parsed program metadata shared with widgets and Live Activities.
+    var currentStreamMetadata: StreamProgramMetadata?
     var remoteCommandsConfigured = false
     
     // MARK: - Visual State (Single Source of Truth)
@@ -194,7 +196,7 @@ actor SharedPlayerManager {
     }
     
     /// Guards one-time loading of the persisted PlayerVisualState JSON (or legacy "playing" bool fallback).
-    /// Critical for widget/extension processes which start with a fresh actor instance (default .prePlay).
+    /// Required for widget/extension processes which start with a fresh actor instance (default .prePlay).
     private var hasLoadedVisualStateFromPersistence = false
 
     // MARK: - Playback Intent
@@ -286,7 +288,7 @@ actor SharedPlayerManager {
         UserDefaults(suiteName: "group.radio.lutheran.shared")
     }
     
-    // Widget-safe methods that won't crash
+    // Widget-safe accessors for extension processes
     nonisolated var availableStreams: [DirectStreamingPlayer.Stream] {
         return DirectStreamingPlayer.availableStreams
     }
@@ -402,7 +404,7 @@ actor SharedPlayerManager {
         await cancelSleepTimer()
         #endif
         
-        // 🔥 FINAL FIX: Always clear .userPaused lock at the absolute top of play()
+        // Note: Always clear .userPaused lock at the absolute top of play()
         // This covers widget play, Control Center, lock screen, and Siri — everything.
         await clearUserPausedLockIfNeeded()
         
@@ -420,11 +422,11 @@ actor SharedPlayerManager {
             Date().timeIntervalSince(appLaunchTime) < initializationSettlingPeriod + 20.0
         // ──────────────────────────────────────────────────────────────
         
-        // HARD RULE: Never bypass resurrection protection for explicit user pause,
+        // Rule: Never bypass resurrection protection for explicit user pause,
         // even when resurrection protection is relaxed. User intent wins.
         if currentPlaybackIntent == .userPaused {
             #if DEBUG
-            print("🔒 [SharedPlayerManager] play() HARD-BLOCKED — explicit .userPaused (resurrection bypass ignored)")
+            print("🔒 [SharedPlayerManager] play() blocked — explicit .userPaused (resurrection bypass ignored)")
             #endif
             return
         }
@@ -679,7 +681,7 @@ actor SharedPlayerManager {
         print("🚀 SharedPlayerManager.stop() ENTERED – currentVisualState = \(currentVisualState)")
         #endif
 
-        // 🔥 CRITICAL FIX: Lock .userPaused IMMEDIATELY at the very top
+        // Note: Lock .userPaused IMMEDIATELY at the very top
         // This closes the race window that causes resurrection after pause
         currentVisualState = .userPaused
         saveVisualState()   // persist early so widgets, Live Activity, and Darwin notifications see the new state
@@ -701,6 +703,9 @@ actor SharedPlayerManager {
         // Main app path
         DirectStreamingPlayer.shared.stop()
         DirectStreamingPlayer.shared.player?.replaceCurrentItem(with: nil)
+
+        currentStreamMetadata = nil
+        nowPlayingStreamMetadata = nil
         
         // Always save after stop
         await saveCurrentState()
@@ -750,7 +755,7 @@ actor SharedPlayerManager {
         #if LUTHERAN_MAIN_APP
         await cancelSleepTimer()
         #endif
-        // 🔥 CRITICAL FIX: Always clear .userPaused lock for widget pure-play actions
+        // Note: Always clear .userPaused lock for widget pure-play actions
         // This makes widget play/pause 100% reliable (was missing in pure-play path)
         await clearUserPausedLockIfNeeded()
 
@@ -765,7 +770,7 @@ actor SharedPlayerManager {
         // stream switches so the next play() call gets the correct first-play path.
         // Language changes are driven by callers via updateUserDefaultsLanguage() →
         // saveCombinedWidgetState(), which is the single place that authors the atomic
-        // (visual + language) snapshot. This eliminates a source of potentially-stale
+        // (visual + language) snapshot. This reduces a source of potentially-stale
         // language in the snapshot (the old read of "currentLanguage" here could race
         // with the update in some call orders, e.g. widget switch handler).
         // performActualSave will still write the snapshot if it detects a language
@@ -956,7 +961,7 @@ actor SharedPlayerManager {
         // Architectural shift: source from preferred (combined snapshot) even when writing legacy instant key
         sharedDefaults?.set(Self.preferredWidgetLanguage(), forKey: "instantFeedbackLanguage")
         
-        // CRITICAL: Optimistic SSOT update (same pattern we already use in stop)
+        // Important: Optimistic SSOT update (same pattern we already use in stop)
         currentVisualState = .playing
         
         updatePlaybackIntent(to: .shouldBePlaying)
@@ -994,7 +999,7 @@ actor SharedPlayerManager {
         // Architectural shift: source from preferred (combined snapshot) even when writing legacy instant key
         sharedDefaults?.set(Self.preferredWidgetLanguage(), forKey: "instantFeedbackLanguage")
         
-        // CRITICAL: Set the paused state synchronously for widget path
+        // Important: Set the paused state synchronously for widget path
         currentVisualState = .userPaused
         
         updatePlaybackIntent(to: .userPaused)
@@ -1047,7 +1052,8 @@ actor SharedPlayerManager {
         let snapshot = PersistedWidgetState(
             visualState: visualForSwitch,
             currentLanguage: stream.languageCode,
-            lastLanguageChangeTime: Date()
+            lastLanguageChangeTime: Date(),
+            streamMetadata: nil
         )
         if let data = try? JSONEncoder().encode(snapshot) {
             sharedDefaults?.set(data, forKey: "persistedWidgetState")
@@ -1082,7 +1088,7 @@ actor SharedPlayerManager {
         sharedDefaults.set(actionId, forKey: "pendingActionId")
         sharedDefaults.set(Date().timeIntervalSince1970, forKey: "pendingActionTime")
         
-        // CRITICAL FIX: Always set the language parameter for switch actions
+        // Important FIX: Always set the language parameter for switch actions
         if let param = parameter {
             sharedDefaults.set(param, forKey: "pendingLanguage")
             #if DEBUG
@@ -1090,7 +1096,7 @@ actor SharedPlayerManager {
             #endif
         } else if action == "switch" {
             // Fallback: use preferred (combined snapshot first) for pendingLanguage
-            // DEPRECATED direct key read — will be removed after migration complete.
+            // Fallback via preferredWidgetLanguage() when no parameter is supplied.
             let currentLanguage = Self.preferredWidgetLanguage()
             sharedDefaults.set(currentLanguage, forKey: "pendingLanguage")
             #if DEBUG
@@ -1133,19 +1139,16 @@ actor SharedPlayerManager {
     
     /// Clears a pending widget action only if the provided `actionId` still matches the current one.
     /// Prevents race conditions when multiple rapid widget taps occur.
-    func clearPendingAction(actionId: String) {
-        // Only clear if the action ID matches to prevent race conditions
-        if let currentActionId = sharedDefaults?.string(forKey: "pendingActionId"),
-           currentActionId == actionId {
-            sharedDefaults?.removeObject(forKey: "pendingAction")
-            sharedDefaults?.removeObject(forKey: "pendingActionId")
-            sharedDefaults?.removeObject(forKey: "pendingActionTime")
-            sharedDefaults?.removeObject(forKey: "pendingLanguage")
-            
-            #if DEBUG
-            print("🔗 Cleared pending action with ID: \(actionId)")
-            #endif
-        }
+    nonisolated func clearPendingAction(actionId: String) {
+        guard let currentActionId = sharedDefaults?.string(forKey: "pendingActionId"),
+              currentActionId == actionId else { return }
+        sharedDefaults?.removeObject(forKey: "pendingAction")
+        sharedDefaults?.removeObject(forKey: "pendingActionId")
+        sharedDefaults?.removeObject(forKey: "pendingActionTime")
+        sharedDefaults?.removeObject(forKey: "pendingLanguage")
+        #if DEBUG
+        print("🔗 Cleared pending action with ID: \(actionId)")
+        #endif
     }
     
     // MARK: - PlayerVisualState Persistence & Restoration (Private)
@@ -1178,15 +1181,22 @@ actor SharedPlayerManager {
         let visualState: PlayerVisualState
         let currentLanguage: String
         let lastLanguageChangeTime: Date?
+        let streamMetadata: StreamProgramMetadata?
     }
 
-    /// Saves the combined visual + language state as a single atomic blob.
+    /// Saves the combined visual + language + metadata state as a single atomic blob.
     /// This is the new preferred path for cross-process widget correctness.
-    private func savePersistedWidgetState(visualState: PlayerVisualState, language: String) {
+    private func savePersistedWidgetState(
+        visualState: PlayerVisualState,
+        language: String,
+        streamMetadata: StreamProgramMetadata? = nil
+    ) {
+        let metadataToPersist = streamMetadata ?? currentStreamMetadata
         let snapshot = PersistedWidgetState(
             visualState: visualState,
             currentLanguage: language,
-            lastLanguageChangeTime: Date()
+            lastLanguageChangeTime: Date(),
+            streamMetadata: metadataToPersist
         )
         let encoder = JSONEncoder()
         if let data = try? encoder.encode(snapshot) {
@@ -1199,7 +1209,11 @@ actor SharedPlayerManager {
     ///
     /// Pre-unification installs without a snapshot receive nil and fall back to safe
     /// defaults (.prePlay / "en") at call sites.
-    nonisolated static func loadPersistedWidgetState() -> (visualState: PlayerVisualState, currentLanguage: String)? {
+    nonisolated static func loadPersistedWidgetState() -> (
+        visualState: PlayerVisualState,
+        currentLanguage: String,
+        streamMetadata: StreamProgramMetadata?
+    )? {
         guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return nil }
 
         // Preferred (and now only) path: the unified PersistedWidgetState snapshot.
@@ -1208,7 +1222,7 @@ actor SharedPlayerManager {
         // check this first.
         if let data = defaults.data(forKey: "persistedWidgetState"),
            let decoded = try? JSONDecoder().decode(PersistedWidgetState.self, from: data) {
-            return (decoded.visualState, decoded.currentLanguage)
+            return (decoded.visualState, decoded.currentLanguage, decoded.streamMetadata)
         }
 
         // No migration fallback remains for the retired playerVisualState / currentLanguage keys.
@@ -1216,15 +1230,25 @@ actor SharedPlayerManager {
         return nil
     }
 
+    /// Returns the latest persisted stream program metadata, if any.
+    nonisolated static func loadPersistedStreamMetadata() -> StreamProgramMetadata? {
+        loadPersistedWidgetState()?.streamMetadata
+    }
+
     /// Nonisolated static writer for the combined PersistedWidgetState snapshot.
     /// Used by widget intents (optimistic path) and by forcePersistVisualState so that
     /// providers see fresh visual + language immediately via their early snapshot check,
     /// even before the main app processes the Darwin notification.
-    nonisolated static func persistWidgetSnapshot(visualState: PlayerVisualState, language: String) {
+    nonisolated static func persistWidgetSnapshot(
+        visualState: PlayerVisualState,
+        language: String,
+        streamMetadata: StreamProgramMetadata? = nil
+    ) {
         let snapshot = PersistedWidgetState(
             visualState: visualState,
             currentLanguage: language,
-            lastLanguageChangeTime: Date()
+            lastLanguageChangeTime: Date(),
+            streamMetadata: streamMetadata
         )
         let encoder = JSONEncoder()
         if let data = try? encoder.encode(snapshot) {
@@ -1251,10 +1275,22 @@ actor SharedPlayerManager {
         return defaults.string(forKey: "currentLanguage") ?? "en"
     }
 
+    #if LUTHERAN_MAIN_APP
+    /// Persists the current stream metadata into the combined widget snapshot.
+    func persistStreamMetadataForWidgets() {
+        savePersistedWidgetState(
+            visualState: currentVisualState,
+            language: Self.preferredWidgetLanguage(),
+            streamMetadata: currentStreamMetadata
+        )
+    }
+    #endif
+
     /// Public entry point for language changes. Persists visual state + language together
     /// in the combined snapshot so widgets receive correct language without extra forcing.
     func saveCombinedWidgetState(language: String) {
-        savePersistedWidgetState(visualState: currentVisualState, language: language)
+        currentStreamMetadata = nil
+        savePersistedWidgetState(visualState: currentVisualState, language: language, streamMetadata: nil)
 
         // 2026-05-29: Legacy separate "currentLanguage" key retired. lastUpdateTime
         // is still bumped for the 60 s "isAppRunning" widget check and general freshness.
