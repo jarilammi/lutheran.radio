@@ -65,6 +65,20 @@ final class WidgetRefreshManager: @unchecked Sendable {
             return
         }
         
+        // Coalesce duplicate immediate sticky-pause refreshes (KVO bursts, widget + app paths).
+        if immediate,
+           !hasError,
+           newState.visualState.mustSuppressResurrection,
+           let lastState = lastKnownState,
+           lastState.visualState == newState.visualState,
+           lastState.currentLanguage == newState.currentLanguage,
+           lastState.hasError == newState.hasError {
+            #if DEBUG
+            print("🔇 Widget refresh coalesced: sticky \(newState.debugVisualStateLabel) unchanged")
+            #endif
+            return
+        }
+        
         // Adaptive debouncing - increase interval with frequency
         if !immediate {
             let now = Date()

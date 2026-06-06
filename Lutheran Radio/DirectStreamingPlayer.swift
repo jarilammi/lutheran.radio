@@ -684,6 +684,14 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     private var initialPlaybackRetryCount = 0
     private let maxInitialRetries = 2
     
+    /// At most one `recreatePlayerItem()` body may run at a time (MainActor only).
+    private var recreateInFlight = false
+    /// Coalesces rapid early `timeControlStatus` drops on a fresh ICY item into one recovery action.
+    private var earlyICYDropRecreateTask: Task<Void, Never>?
+    /// Set synchronously at intentional stop; cleared when a new secured `playerItem` is attached.
+    /// Prevents stale `timeControlStatus` KVO and debounced recreate tasks from running after teardown.
+    @MainActor private var isPlaybackTeardownActive = false
+    
     var isPlaying: Bool {
         return (player?.rate ?? 0) > 0 && player?.currentItem?.status == .readyToPlay
     }
@@ -990,6 +998,9 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     func resetInitialPlaybackCountersForNewStream() {
         initialPlaybackRetryCount = 0
         hasStartedPlaying = false   // defensive; the preceding stop() already does this for most paths
+        Task { @MainActor [weak self] in
+            self?.cancelEarlyICYDropRecreate()
+        }
 
         #if DEBUG
         print("🔄 [Playback] resetInitialPlaybackCountersForNewStream — fresh startup budget for stream switch (retryCount reset to 0)")
@@ -1416,6 +1427,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         
         let playerItem = AVPlayerItem(asset: asset)
         self.playerItem = playerItem
+        clearPlaybackTeardownGuard()
         
         if self.player == nil {
             self.player = AVPlayer(playerItem: playerItem)
@@ -1465,6 +1477,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             self.player?.replaceCurrentItem(with: playerItem)
         }
         self.playerItem = playerItem
+        clearPlaybackTeardownGuard()
         
         setupPlaybackObservers()
         
@@ -1525,6 +1538,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
 
                     self.player?.replaceCurrentItem(with: playerItem)
                     self.playerItem = playerItem
+                    self.clearPlaybackTeardownGuard()
 
                     // 3. Setup observers — BEFORE play()
                     self.setupPlaybackObservers()
@@ -1566,13 +1580,9 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 guard let self else { return }
 
                 // Lightweight raw-value dedup in the KVO handler itself.
-                // Avoids even reaching safeOnStatusChange for identical consecutive observations.
                 let newTC = observedPlayer.timeControlStatus
-                if self.lastObservedTimeControl == newTC {
-                    // Still allow the unconditional save at the bottom (it is already heavily throttled downstream).
-                } else {
-                    self.lastObservedTimeControl = newTC
-                }
+                guard self.lastObservedTimeControl != newTC else { return }
+                self.lastObservedTimeControl = newTC
 
                 #if DEBUG
                 print("🔄 [KVO] timeControlStatus → \(newTC.rawValue) | rate: \(observedPlayer.rate)")
@@ -1580,6 +1590,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
 
                 switch newTC {
                 case .playing:
+                    self.cancelEarlyICYDropRecreate()
                     // CRITICAL : KVO resurrection protection now driven by
                     // authoritative playback intent.
                     guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
@@ -1593,7 +1604,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                     self.stopBufferingTimer()
                     
                 case .paused:
-                    if observedPlayer.rate == 0.0 {
+                    if !self.isPlaybackTeardownActive && observedPlayer.rate == 0.0 {
                         self.safeOnStatusChange(isPlaying: false, reasonKey: "status_stopped")   // ← fixed
                     }
                     
@@ -1605,23 +1616,10 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                     // and therefore bypassed the existing bufferEmpty + stalled recreate paths.
                     // Reuses the same initialPlaybackRetryCount bound + canProceedWithPlayback()
                     // guard as the (now minimal) safety net. Purely reactive to the KVO symptom.
-                    if !self.hasStartedPlaying && self.initialPlaybackRetryCount < self.maxInitialRetries {
-                        Task { @MainActor [weak self] in
-                            guard let self else { return }
-                            guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
-                                #if DEBUG
-                                print("🔒 [KVO] early ICY drop: suppressed by playbackIntent")
-                                #endif
-                                return
-                            }
-                            if self.initialPlaybackRetryCount == 0 {
-                                self.initialPlaybackRetryCount = 1
-                            }
-                            #if DEBUG
-                            print("🔄 [Playback] Early timeControl drop on fresh ICY item — proactive recreatePlayerItem | hasStartedPlaying=\(self.hasStartedPlaying) | retryCount now=\(self.initialPlaybackRetryCount) | rate=\(observedPlayer.rate)")
-                            #endif
-                            self.recreatePlayerItem()
-                        }
+                    if !self.isPlaybackTeardownActive
+                        && !self.hasStartedPlaying
+                        && self.initialPlaybackRetryCount < self.maxInitialRetries {
+                        self.scheduleEarlyICYDropRecreate(rate: observedPlayer.rate)
                     }
                     
                 case .waitingToPlayAtSpecifiedRate:
@@ -1630,8 +1628,6 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 @unknown default:
                     break
                 }
-                
-                await SharedPlayerManager.shared.saveCurrentState()
             }
         }
         
@@ -1861,6 +1857,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 newItem.preferredForwardBufferDuration = 15.0
                 player.replaceCurrentItem(with: newItem)
                 self.playerItem = newItem
+                self.clearPlaybackTeardownGuard()
                 self.setupPlaybackObservers()
                 self.addObservers()
                 
@@ -2215,15 +2212,87 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         self.playerItemObservations.removeAll()
     }
     
-    private func recreatePlayerItem() {
-        #if DEBUG
-        print("🔄 Recreating player item due to decoder error")
-        #endif
-        
-        Task { @MainActor in
-            guard let urlAsset = playerItem?.asset as? AVURLAsset else {
+    @MainActor
+    private func activatePlaybackTeardownGuard() {
+        isPlaybackTeardownActive = true
+        cancelEarlyICYDropRecreate()
+    }
+
+    @MainActor
+    private func clearPlaybackTeardownGuard() {
+        isPlaybackTeardownActive = false
+    }
+
+    /// Activates the teardown guard on the main actor without requiring the caller to be MainActor-isolated.
+    private func activatePlaybackTeardownGuardFromStop() {
+        if Thread.isMainThread {
+            MainActor.assumeIsolated { activatePlaybackTeardownGuard() }
+        } else {
+            DispatchQueue.main.sync { MainActor.assumeIsolated { self.activatePlaybackTeardownGuard() } }
+        }
+    }
+
+    @MainActor
+    private func scheduleEarlyICYDropRecreate(rate: Float) {
+        guard !isPlaybackTeardownActive else { return }
+        earlyICYDropRecreateTask?.cancel()
+        earlyICYDropRecreateTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(for: .milliseconds(150))
+            } catch {
+                return
+            }
+            guard let self else { return }
+            guard !self.isPlaybackTeardownActive else { return }
+            guard !self.hasStartedPlaying else { return }
+            guard self.initialPlaybackRetryCount < self.maxInitialRetries else { return }
+            guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
                 #if DEBUG
-                print("❌ [Playback] Cannot recreate: no valid URL asset | hasStartedPlaying=\(self.hasStartedPlaying) | initialPlaybackRetryCount=\(self.initialPlaybackRetryCount) | playerItem=\(playerItem != nil) | this often happens during stream switch races")
+                print("🔒 [KVO] early ICY drop: suppressed by playbackIntent")
+                #endif
+                return
+            }
+            if self.initialPlaybackRetryCount == 0 {
+                self.initialPlaybackRetryCount = 1
+            }
+            #if DEBUG
+            print("🔄 [Playback] Early timeControl drop on fresh ICY item — proactive recreatePlayerItem | hasStartedPlaying=\(self.hasStartedPlaying) | retryCount now=\(self.initialPlaybackRetryCount) | rate=\(rate)")
+            #endif
+            self.recreatePlayerItem()
+        }
+    }
+    
+    @MainActor
+    private func cancelEarlyICYDropRecreate() {
+        earlyICYDropRecreateTask?.cancel()
+        earlyICYDropRecreateTask = nil
+    }
+    
+    private func recreatePlayerItem() {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            guard !self.isPlaybackTeardownActive else {
+                #if DEBUG
+                print("🔒 [Playback] recreatePlayerItem: suppressed — playback teardown active")
+                #endif
+                return
+            }
+            guard !self.recreateInFlight else {
+                #if DEBUG
+                print("🔒 [Playback] recreatePlayerItem: coalesced — already in flight")
+                #endif
+                return
+            }
+            self.recreateInFlight = true
+            defer { self.recreateInFlight = false }
+            
+            #if DEBUG
+            print("🔄 Recreating player item due to decoder error")
+            #endif
+            
+            guard let urlAsset = self.playerItem?.asset as? AVURLAsset else {
+                #if DEBUG
+                print("❌ [Playback] Cannot recreate: no valid URL asset | hasStartedPlaying=\(self.hasStartedPlaying) | initialPlaybackRetryCount=\(self.initialPlaybackRetryCount) | playerItem=\(self.playerItem != nil) | this often happens during stream switch races")
                 #endif
                 return
             }
@@ -2231,23 +2300,24 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             let currentURL = urlAsset.url
             
             // Clear observations
-            playerItemObservations.forEach { $0.invalidate() }
-            playerItemObservations.removeAll()
+            self.playerItemObservations.forEach { $0.invalidate() }
+            self.playerItemObservations.removeAll()
             
             // Create new asset and player item
             let newAsset = AVURLAsset(url: currentURL)
             let newItem = AVPlayerItem(asset: newAsset)
             
             // Replace the item
-            player?.replaceCurrentItem(with: newItem)
+            self.player?.replaceCurrentItem(with: newItem)
             
             // Update playerItem reference to the new item
-            playerItem = newItem
+            self.playerItem = newItem
+            self.clearPlaybackTeardownGuard()
             
             // Re-add observers to the new item
-            addObservers()
+            self.addObservers()
             
-            // (Brave guard) — the actor state is now kept trustworthy by the centralized pause timestamp
+            // Intent guard — actor state is kept trustworthy by the centralized pause timestamp
             // and intent wiring.
             guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
                 #if DEBUG
@@ -2257,7 +2327,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             }
             
             // Restart playback only if still allowed
-            player?.play()
+            self.player?.play()
             
             #if DEBUG
             print("✅ Player item recreated and playback resumed")
@@ -2299,7 +2369,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         #if DEBUG
         print("🛑 FORCE STOPPING ALL PLAYBACK - reason: \(reason), silent: \(silent), attemptingPlayback: \(isCurrentlyAttemptingPlayback)")
         #endif
-        
+
         // === EXISTING GUARDS - DO NOT REMOVE OR MERGE THESE ===
         if isCurrentlyAttemptingPlayback {
             #if DEBUG
@@ -2311,6 +2381,9 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             retryWorkItem?.cancel()
             return
         }
+
+        // Activate before any async work so stale KVO / debounced recreate cannot race teardown.
+        activatePlaybackTeardownGuardFromStop()
         
         loadingTimeoutWorkItem?.cancel()
         currentLoadingDelegate?.loadingRequest.finishLoading(with: URLError(.cancelled))
@@ -2360,6 +2433,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         completion: (@MainActor () -> Void)? = nil,
         silent: Bool = false
     ) {
+        activatePlaybackTeardownGuardFromStop()
         clearSSLProtectionTimer()
         isSSLHandshakeComplete = true
         hasStartedPlaying = false

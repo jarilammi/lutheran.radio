@@ -299,6 +299,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     /// Cache for processed background images to avoid redundant CIImage filtering.
     /// - Note: Limited to 5 items (one per language) to manage memory.
     private var processedImageCache = NSCache<NSString, UIImage>()
+    /// Coalesces overlapping background processing for the same cache key before NSCache is populated.
+    private var inFlightImageProcessing: [String: Task<UIImage?, Never>] = [:]
     private let cacheQueue = DispatchQueue(label: "radio.lutheran.imageCache", qos: .utility)
     
     private var selectedStreamIndex: Int = 0
@@ -1463,64 +1465,86 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         isDarkMode: Bool,
         maxPixelDimension: CGFloat
     ) {
-        guard let baseImage = UIImage(named: imageName) else {
-            DispatchQueue.main.async {
-                self.backgroundImageView.image = nil
+        if let inFlight = inFlightImageProcessing[cacheKey] {
+            Task { @MainActor [weak self] in
+                guard let self, let image = await inFlight.value else { return }
+                self.applyProcessedImage(image, for: stream)
             }
+            #if DEBUG
+            print("Background image processing coalesced for \(stream.languageCode), cacheKey=\(cacheKey)")
+            #endif
             return
         }
-        
-        imageProcessingQueue.async { [weak self] in
-            guard let self = self else { return }
-            
-            let finalImage = autoreleasepool { () -> UIImage in
-                guard let ciImage = CIImage(image: baseImage) else {
-                    return baseImage
+
+        guard let baseImage = UIImage(named: imageName) else {
+            backgroundImageView.image = nil
+            return
+        }
+
+        let task = Task<UIImage?, Never> { @MainActor [weak self] in
+            guard let self else { return nil }
+
+            let finalImage: UIImage? = await withCheckedContinuation { continuation in
+                self.imageProcessingQueue.async { [weak self] in
+                    guard let self else {
+                        continuation.resume(returning: nil)
+                        return
+                    }
+
+                    let result = autoreleasepool { () -> UIImage? in
+                        guard let ciImage = CIImage(image: baseImage) else {
+                            return baseImage
+                        }
+
+                        let (scaledImage, processingScale) = self.downscaledForProcessing(ciImage, maxPixelDimension: maxPixelDimension)
+                        var processedImage = scaledImage
+
+                        #if DEBUG
+                        print(
+                            "Processing image for \(stream.languageCode), mode: \(isDarkMode ? "dark" : "light"), "
+                                + "sourceExtent=\(ciImage.extent.integral), processingExtent=\(scaledImage.extent.integral), "
+                                + "maxPx=\(Int(maxPixelDimension)), scale=\(unsafe String(format: "%.3f", processingScale))"
+                        )
+                        #endif
+
+                        // Apply filters based on interface style.
+                        // Methods are pure CPU transforms (no actor state) → nonisolated for Swift 6.
+                        if isDarkMode {
+                            processedImage = self.applyDarkModeFilters(to: processedImage, morphologyScale: processingScale)
+                        } else {
+                            processedImage = self.applyLightModeFilters(to: processedImage, morphologyScale: processingScale)
+                        }
+
+                        guard let cgImage = self.imageProcessingContext.createCGImage(processedImage, from: processedImage.extent) else {
+                            #if DEBUG
+                            print("Failed to convert CIImage to CGImage - using base image as fallback")
+                            #endif
+                            return baseImage
+                        }
+
+                        let converted = UIImage(cgImage: cgImage)
+                        #if DEBUG
+                        print("Successfully converted processed image to UIImage - size: \(converted.size)")
+                        #endif
+                        return converted
+                    }
+                    continuation.resume(returning: result)
                 }
-                
-                let (scaledImage, processingScale) = self.downscaledForProcessing(ciImage, maxPixelDimension: maxPixelDimension)
-                var processedImage = scaledImage
-                
-                #if DEBUG
-                print(
-                    "Processing image for \(stream.languageCode), mode: \(isDarkMode ? "dark" : "light"), "
-                        + "sourceExtent=\(ciImage.extent.integral), processingExtent=\(scaledImage.extent.integral), "
-                        + "maxPx=\(Int(maxPixelDimension)), scale=\(unsafe String(format: "%.3f", processingScale))"
-                )
-                #endif
-                
-                // Apply filters based on interface style.
-                // Methods are pure CPU transforms (no actor state) → nonisolated for Swift 6.
-                if isDarkMode {
-                    processedImage = self.applyDarkModeFilters(to: processedImage, morphologyScale: processingScale)
-                } else {
-                    processedImage = self.applyLightModeFilters(to: processedImage, morphologyScale: processingScale)
-                }
-                
-                // Convert back to UIImage
-                guard let cgImage = self.imageProcessingContext.createCGImage(processedImage, from: processedImage.extent) else {
-                    #if DEBUG
-                    print("Failed to convert CIImage to CGImage - using base image as fallback")
-                    #endif
-                    return baseImage
-                }
-                
-                let result = UIImage(cgImage: cgImage)
-                #if DEBUG
-                print("Successfully converted processed image to UIImage - size: \(result.size)")
-                #endif
-                return result
             }
-            
-            // Cache the result on main (NSCache property access must be isolated).
-            DispatchQueue.main.async {
+
+            defer { self.inFlightImageProcessing.removeValue(forKey: cacheKey) }
+
+            if let finalImage {
                 self.processedImageCache.setObject(finalImage, forKey: cacheKey as NSString)
             }
-            
-            // Apply to UI on main thread
-            DispatchQueue.main.async {
-                self.applyProcessedImage(finalImage, for: stream)
-            }
+            return finalImage
+        }
+
+        inFlightImageProcessing[cacheKey] = task
+
+        Task { @MainActor [weak self] in
+            guard let self, let image = await task.value else { return }
+            self.applyProcessedImage(image, for: stream)
         }
     }
     
@@ -2356,10 +2380,15 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             
             updateUserDefaultsLanguage(stream.languageCode)
             
-            // Reset visual state to .prePlay so SharedPlayerManager.play() executes
-            // the full cold-launch path (bypasses the .playing skip guard).
-            // Also gives immediate yellow "connecting" UI feedback during the atomic switch.
-            await SharedPlayerManager.shared.resetToPrePlayForNewStream()
+            // Tap-time reset in didSelectItemAt already set .prePlay + hold for optimistic yellow.
+            // Skip redundant actor reset when the hold is already active.
+            if await SharedPlayerManager.shared.isStreamSwitchPrePlayHoldActive {
+                #if DEBUG
+                print("🔄 [completeStreamSwitch] Skipping redundant resetToPrePlayForNewStream — tap already set .prePlay hold")
+                #endif
+            } else {
+                await SharedPlayerManager.shared.resetToPrePlayForNewStream()
+            }
             updateUI(for: .prePlay)
             
             await SharedPlayerManager.shared.play()
@@ -2667,7 +2696,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             lastWidgetActionTime = Date()
             // === END OF GUARD ===
             
-            // Brave rapid-pause guard (must hop because checkForPendingWidgetActions is synchronous).
+            // Rapid-pause guard (must hop because checkForPendingWidgetActions is synchronous).
             // If we are already .userPaused, ignore the tap to avoid queuing a second Darwin roundtrip
             // that could race with recovery timers or a stale "play" pendingAction.
             // Hoisted weak-self + guard form (await-safe, matches every other Task site in this file).

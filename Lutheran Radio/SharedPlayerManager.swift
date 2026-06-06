@@ -56,7 +56,9 @@ import Core
 /// **Cold-Launch Grace Period** (defined in this actor):
 /// - `initializationSettlingPeriod = 5.0` seconds
 /// - Total window = 25 seconds (`< initializationSettlingPeriod + 20.0`)
-/// - `initialPlaybackHasRun` one-shot guard prevents duplicate first-play attempts.
+/// - `initialPlaybackHasRun` one-shot guard prevents duplicate automatic first-play attempts.
+/// - `hasCompletedTrueColdLaunchPlay` records whether the app's first cold-launch play has run
+///   (DEBUG classification only; does not drive resurrection guards).
 /// - The window only relaxes resurrection protection for `.prePlay`; `.userPaused` is
 ///   *never* bypassed, even inside the window (hard rule at the top of `play()`).
 ///
@@ -91,7 +93,7 @@ import Core
 /// | .playing        | User-initiated stream/language switch             | `resetToPrePlayForNewStream()` then `play()`                    | .prePlay → .playing | Special bypass of the ".playing guard" in play() |
 /// | .playing        | AV interruption, stall, or thermal event          | `attemptResurrectionIfAllowed()` or player recovery nudges      | .playing        | Only proceeds if `shouldAutoPlayOrResume` |
 /// | any             | Security validation failure (DNS/403/cert)        | Inside `play()` guard or StreamingSessionDelegate 403 handler   | .securityLocked | Permanent until explicit successful play |
-/// | .userPaused     | User explicitly taps play (any surface)           | `userRequestedPlay()` or widget play path                       | .prePlay        | Resets cold-launch one-shot guard for resume |
+/// | .userPaused     | User explicitly taps play (any surface)           | `userRequestedPlay()` or widget play path                       | .prePlay        | Resume via `.shouldBePlaying` in `play()` |
 /// | .thermalPaused  | Device cools sufficiently                         | DirectStreamingPlayer thermal recovery logic                    | .playing        | Only via `shouldAutoResumeOnThermalRecovery` |
 /// | any             | App foreground, interruption.ended(.shouldResume) | `restoreVisualStateRespectingUserIntent()`                      | (unchanged or forced .userPaused) | Applies inline resurrection suppression (if mustSuppressResurrection → .userPaused) |
 ///
@@ -148,6 +150,8 @@ actor SharedPlayerManager {
     private let appLaunchTime = Date()
     private let initializationSettlingPeriod: TimeInterval = 5.0
     private var initialPlaybackHasRun = false
+    /// True after the first true cold-launch `play()` proceeds (not stream-switch or resume).
+    private var hasCompletedTrueColdLaunchPlay = false
     
     // MARK: - Recent user pause (in-actor barrier for recovery paths)
     //
@@ -178,10 +182,16 @@ actor SharedPlayerManager {
     /// This prevents the "play on pause" resurrection bug when set synchronously to .userPaused
     var currentVisualState: PlayerVisualState = .prePlay
     
-    /// When true, `resetToPrePlayForNewStream()` has armed a stream switch: UI stays `.prePlay`
+    /// When true, `resetToPrePlayForNewStream()` has enabled a stream-switch hold: UI stays `.prePlay`
     /// until `play()` runs. `play()` then calls `setPlaying()` when intent is `.shouldBePlaying`
     /// (same as cold launch) so KVO does not leave yellow/prePlay after attach.
     private var holdPrePlayVisualUntilPlayback = false
+    
+    /// True when a stream-switch tap already reset to `.prePlay` and enabled the hold
+    /// (`didSelectItemAt` optimistic yellow). `completeStreamSwitch` skips a second reset.
+    var isStreamSwitchPrePlayHoldActive: Bool {
+        currentVisualState == .prePlay && holdPrePlayVisualUntilPlayback
+    }
     
     /// Guards one-time loading of the persisted PlayerVisualState JSON (or legacy "playing" bool fallback).
     /// Critical for widget/extension processes which start with a fresh actor instance (default .prePlay).
@@ -401,25 +411,26 @@ actor SharedPlayerManager {
         #endif
         
         // ──────────────────────────────────────────────────────────────
-        // Cold-launch grace period
-        // This 25s window + one-shot flag is the only special-case resurrection relaxation.
-        // It is narrowly scoped to `.prePlay` first-play only and is always
-        // subordinate to explicit `.userPaused` / `.securityLocked` intent.
-        let isInColdLaunchWindow = !initialPlaybackHasRun ||
+        // Play-context classification (DEBUG labels + one-shot guard semantics).
+        // `resurrectionProtectionRelaxed` preserves the prior cold-launch window behavior.
+        let isStreamSwitchPlay = holdPrePlayVisualUntilPlayback
+        let isTrueColdLaunchPlay = !hasCompletedTrueColdLaunchPlay && !isStreamSwitchPlay
+        let isResumePlay = hasCompletedTrueColdLaunchPlay && !isStreamSwitchPlay
+        let resurrectionProtectionRelaxed = !initialPlaybackHasRun ||
             Date().timeIntervalSince(appLaunchTime) < initializationSettlingPeriod + 20.0
         // ──────────────────────────────────────────────────────────────
         
         // HARD RULE: Never bypass resurrection protection for explicit user pause,
-        // even inside the cold-launch window. User intent wins.
+        // even when resurrection protection is relaxed. User intent wins.
         if currentPlaybackIntent == .userPaused {
             #if DEBUG
-            print("🔒 [SharedPlayerManager] play() HARD-BLOCKED — explicit .userPaused (cold-launch bypass ignored)")
+            print("🔒 [SharedPlayerManager] play() HARD-BLOCKED — explicit .userPaused (resurrection bypass ignored)")
             #endif
             return
         }
         
-        // Resurrection protection — relaxed only for prePlay during true cold launch.
-        if !isInColdLaunchWindow {
+        // Resurrection protection — relaxed during the settling window or explicit play paths.
+        if !resurrectionProtectionRelaxed {
             if currentPlaybackIntent == .userPaused || currentPlaybackIntent == .securityLocked {
                 #if DEBUG
                 print("🔒 [SharedPlayerManager] play() BLOCKED by playbackIntent = \(currentPlaybackIntent)")
@@ -428,28 +439,33 @@ actor SharedPlayerManager {
             }
         } else {
             #if DEBUG
-            print("🚀 Cold-launch window active – bypassing normal resurrection protection (except .userPaused)")
+            if isTrueColdLaunchPlay {
+                print("🚀 Cold-launch first play – resurrection protection relaxed")
+            } else if isStreamSwitchPlay {
+                print("🚀 Stream-switch play – resurrection protection relaxed")
+            } else if isResumePlay {
+                print("🚀 Resume play – resurrection protection relaxed")
+            }
             #endif
         }
         
         // Re-entrancy guard : Detect actual AVPlayer state to break recovery loops.
-        // Intent is the primary signal; this visual check is deliberately narrow (only outside cold window)
+        // Intent is the primary signal; this visual check is deliberately narrow (only outside relaxed window)
         // to protect against tight recovery-task loops when the player is already playing.
-        if currentVisualState == .playing && !isInColdLaunchWindow {
+        if currentVisualState == .playing && !resurrectionProtectionRelaxed {
             #if DEBUG
             print("✅ SharedPlayerManager.play() — already .playing, skipping redundant call (recovery loop prevented)")
             #endif
             return
         }
         
-        // === ONE-SHOT GUARD FOR COLD LAUNCH INITIAL PLAYBACK ===
-        // Cold-launch special casing is now minimal. The authoritative `currentPlaybackIntent`
-        // is the primary signal; the one-shot flag only prevents duplicate first-play attempts
-        // when we do *not* have explicit user play intent.
+        // === ONE-SHOT GUARD FOR AUTOMATIC PRE-PLAY INITIAL PLAYBACK ===
+        // The authoritative `currentPlaybackIntent` is the primary signal; the one-shot flag
+        // only prevents duplicate automatic first-play attempts without explicit `.shouldBePlaying`.
         if currentVisualState == .prePlay {
             if initialPlaybackHasRun && currentPlaybackIntent != .shouldBePlaying {
                 #if DEBUG
-                print("SharedPlayerManager.play() – skipping duplicate initial playback on cold launch")
+                print("SharedPlayerManager.play() – skipping duplicate automatic prePlay playback")
                 #endif
                 return
             } else {
@@ -459,8 +475,19 @@ actor SharedPlayerManager {
                     initialPlaybackHasRun = true
                 }
                 #if DEBUG
-                print("SharedPlayerManager.play() – this is the first cold-launch play call, proceeding")
+                if isStreamSwitchPlay {
+                    print("SharedPlayerManager.play() – stream-switch play, proceeding")
+                } else if isTrueColdLaunchPlay {
+                    print("SharedPlayerManager.play() – cold-launch first play, proceeding")
+                } else if isResumePlay {
+                    print("SharedPlayerManager.play() – resume play, proceeding")
+                } else {
+                    print("SharedPlayerManager.play() – prePlay play, proceeding")
+                }
                 #endif
+                if isTrueColdLaunchPlay {
+                    hasCompletedTrueColdLaunchPlay = true
+                }
             }
         }
         
@@ -498,7 +525,7 @@ actor SharedPlayerManager {
         }
         
         // Set `.playing` before stream attach so KVO/status callbacks match UI intent.
-        // Stream switches arm `holdPrePlayVisualUntilPlayback` during tuning/teardown (yellow only
+        // Stream switches enable `holdPrePlayVisualUntilPlayback` during tuning/teardown (yellow only
         // until `play()`). Once `play()` runs with explicit `.shouldBePlaying`, apply the same
         // optimistic `.playing` as cold launch — do not defer to late `startPlayback()` only.
         let hadStreamSwitchHold = holdPrePlayVisualUntilPlayback
@@ -713,9 +740,9 @@ actor SharedPlayerManager {
     /// a real language/stream switch behaves **exactly** like the initial
     /// cold-launch playback path.
     ///
-    /// Called **only** from `completeStreamSwitch`.
-    /// This is the single place we intentionally allow the cold-launch-like first-play
-    /// path after a switch while preserving `.userPaused` / `.securityLocked` protection.
+    /// Called from stream-switch paths (`didSelectItemAt`, `completeStreamSwitch`, widget/shortcut).
+    /// Enables the cold-launch-like first-play path after a switch while preserving
+    /// `.userPaused` / `.securityLocked` protection.
     ///
     /// Documentation modernized to reflect that cold-launch special
     /// casing is now minimal and driven by the authoritative intent model.
@@ -751,7 +778,7 @@ actor SharedPlayerManager {
     
     /// Called only when the user taps the play button (or widget play action).
     /// Clears the .userPaused lock so resume is allowed.
-    /// Resets the cold-launch guard ONLY for manual resumes.
+    /// Clears `.userPaused` so `play()` can proceed via explicit `.shouldBePlaying` intent.
     func setUserIntentToPlay() async {
         ensureVisualStateLoaded()
 
@@ -766,11 +793,8 @@ actor SharedPlayerManager {
         if currentVisualState == .userPaused {
             currentVisualState = .prePlay
             
-            // This is the critical line: allow resume without breaking cold-launch protection
-            initialPlaybackHasRun = false
-            
             #if DEBUG
-            print("🎯 setUserIntentToPlay() → reset initialPlaybackHasRun = false (resume now allowed)")
+            print("🎯 setUserIntentToPlay() → .prePlay with .shouldBePlaying (resume path)")
             #endif
         }
         
@@ -1323,12 +1347,13 @@ extension SharedPlayerManager {
         sharedDefaults?.removeObject(forKey: "instantFeedbackTime")
         sharedDefaults?.removeObject(forKey: "instantFeedbackLanguage")
         
-        // Urgent refresh only for errors, language changes, or sticky pause/security lock —
-        // not for transient `.prePlay` during cold launch.
-        let isUrgentUpdate = state.hasError || isLanguageChange || currentVisualState.mustSuppressResurrection
+        // Urgent refresh for errors, language changes, or the first transition into sticky
+        // pause/security lock — not on every KVO save while already `.userPaused`.
+        let visualStateChanged = previousSnapshot?.visualState != currentVisualState
+        let isTransitionToStickyPause = visualStateChanged && currentVisualState.mustSuppressResurrection
+        let isUrgentUpdate = state.hasError || isLanguageChange || isTransitionToStickyPause
         let shouldRefreshWidget = !snapshotUnchanged || isUrgentUpdate
         let visualStateForRefresh = currentVisualState
-        let visualStateChanged = previousSnapshot?.visualState != currentVisualState
         
         if shouldRefreshWidget {
             // Always hop to MainActor for WidgetRefreshManager (required in Swift 6)
