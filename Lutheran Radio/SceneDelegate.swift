@@ -118,7 +118,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             if action == "switch", let languageCode = parameter {
                 viewController.handleWidgetSwitchToLanguage(languageCode, actionId: actionId)
                 Task {
-                    await SharedPlayerManager.shared.clearPendingAction(actionId: actionId)
+                    SharedPlayerManager.shared.clearPendingAction(actionId: actionId)
                 }
             } else {
                 viewController.handleWidgetAction(action: action, parameter: parameter, actionId: actionId)
