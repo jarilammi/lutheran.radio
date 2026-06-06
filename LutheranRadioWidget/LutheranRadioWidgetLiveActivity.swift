@@ -67,6 +67,30 @@ private func getAlternativeStreams(current: String) -> [String] {
     return Array(allStreams.filter { $0 != current }.prefix(3))
 }
 
+/// Primary program title for Live Activity display, with localized fallback.
+private func programDisplayTitle(
+    metadata: StreamProgramMetadata?,
+    visualState: PlayerVisualState,
+    languageCode: String
+) -> String {
+    if let title = metadata?.programTitle, !title.isEmpty {
+        return title
+    }
+    if visualState.isActivelyPlaying {
+        return unsafe String(
+            format: String(localized: "live_activity_program_fallback", defaultValue: "%@ · Live Stream"),
+            getLanguageName(languageCode)
+        )
+    }
+    return String(localized: "no_track_info", defaultValue: "No track information")
+}
+
+/// Secondary speaker line when parsed from ICY metadata.
+private func programSpeakerLine(metadata: StreamProgramMetadata?) -> String? {
+    guard let speaker = metadata?.speaker, !speaker.isEmpty else { return nil }
+    return speaker
+}
+
 // MARK: - Live Activity Intents (updated for SSOT + Swift 6)
 
 struct LiveActivityTogglePlaybackIntent: AppIntent {
@@ -215,6 +239,7 @@ struct LutheranRadioLiveActivityWidget: Widget {
                 }
                 
                 DynamicIslandExpandedRegion(.center) {
+                    let currentLanguage = SharedPlayerManager.preferredWidgetLanguage()
                     VStack(spacing: 6) {
                         VStack(spacing: 2) {
                             Text(getCurrentStreamStatus(visualState: context.state.visualState))
@@ -223,9 +248,22 @@ struct LutheranRadioLiveActivityWidget: Widget {
                                 .foregroundColor(context.state.visualState.textColor.swiftUIColor)
                             
                             if context.state.visualState.isActivelyPlaying {
-                                Text(LocalizedStringKey("Lutheran Radio Live Stream"))
-                                    .font(.system(size: 10))
-                                    .foregroundColor(.secondary)
+                                Text(programDisplayTitle(
+                                    metadata: context.state.streamMetadata,
+                                    visualState: context.state.visualState,
+                                    languageCode: currentLanguage
+                                ))
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundColor(.primary)
+                                    .lineLimit(2)
+                                    .multilineTextAlignment(.center)
+                                
+                                if let speaker = programSpeakerLine(metadata: context.state.streamMetadata) {
+                                    Text(speaker)
+                                        .font(.system(size: 9))
+                                        .foregroundColor(.secondary)
+                                        .lineLimit(1)
+                                }
                             }
                         }
                         
@@ -297,6 +335,7 @@ struct LutheranRadioLiveActivityWidget: Widget {
                     }
                 }
             } compactLeading: {
+                let currentLanguage = SharedPlayerManager.preferredWidgetLanguage()
                 HStack(spacing: 2) {
                     ZStack {
                         Circle()
@@ -316,6 +355,22 @@ struct LutheranRadioLiveActivityWidget: Widget {
                                     .frame(width: 1, height: CGFloat.random(in: 2...6))
                                     .animation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true), value: context.state.visualState)
                             }
+                        }
+                        
+                        if let title = context.state.streamMetadata?.programTitle, !title.isEmpty {
+                            Text(title)
+                                .font(.system(size: 8, weight: .medium))
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                        } else {
+                            Text(programDisplayTitle(
+                                metadata: context.state.streamMetadata,
+                                visualState: context.state.visualState,
+                                languageCode: currentLanguage
+                            ))
+                                .font(.system(size: 8, weight: .medium))
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
                         }
                     }
                 }
@@ -376,6 +431,28 @@ struct LockScreenLiveActivityView: View {
             Text(getCurrentStreamStatus(visualState: context.state.visualState))
                 .font(.subheadline)
                 .foregroundColor(context.state.visualState.textColor.swiftUIColor)
+            
+            if context.state.visualState.isActivelyPlaying {
+                VStack(spacing: 4) {
+                    Text(programDisplayTitle(
+                        metadata: context.state.streamMetadata,
+                        visualState: context.state.visualState,
+                        languageCode: currentLanguage
+                    ))
+                        .font(.headline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(3)
+                    
+                    if let speaker = programSpeakerLine(metadata: context.state.streamMetadata) {
+                        Text(speaker)
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+            }
             
             HStack(spacing: 20) {
                 ForEach(getAlternativeStreams(current: currentLanguage), id: \.self) { langCode in

@@ -2584,7 +2584,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 #endif
                 
                 // 8. Clear pending action
-                await SharedPlayerManager.shared.clearPendingAction(actionId: actionId)
+                SharedPlayerManager.shared.clearPendingAction(actionId: actionId)
                 
                 self.streamingPlayer.isSwitchingStream = false
             }
@@ -3294,7 +3294,7 @@ extension ViewController: StreamingPlayerDelegate {
             #endif
             
             // Clear the pending action (actor-isolated)
-            await SharedPlayerManager.shared.clearPendingAction(actionId: actionId)
+            SharedPlayerManager.shared.clearPendingAction(actionId: actionId)
         }
     }
 }

@@ -84,7 +84,12 @@ extension SharedPlayerManager {
     func didUpdateStreamMetadata(_ metadata: String?) async {
         guard !isRunningInWidget() else { return }
         nowPlayingStreamMetadata = metadata
+        currentStreamMetadata = StreamProgramMetadata.from(rawICYMetadata: metadata)
+
+        persistStreamMetadataForWidgets()
+
         await updateNowPlayingInfo()
+        await RadioLiveActivityManager.shared.updateCurrentActivity()
     }
     
     /// Refreshes MPNowPlayingInfoCenter from current visual state and metadata.
