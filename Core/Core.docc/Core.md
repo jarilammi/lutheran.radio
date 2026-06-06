@@ -12,11 +12,11 @@ The framework enforces three fundamental security mechanisms:
 - **Runtime full-certificate SHA-256 digest pinning** (``CertificateFingerprint`` + constant-time comparison) with transition support
 - **Time-skew detection** to protect transition windows from clock manipulation
 
-All constants, policy, and validation logic live exclusively inside `Core/`. Duplication outside this framework is forbidden.
+All constants, policy, and validation logic live exclusively inside `Core/`. Duplication outside this framework is not permitted.
 
 ## Security Invariants
 
-The authoritative list of non-negotiable rules is maintained in:
+The authoritative list of required rules is maintained in:
 
 - ``<doc:Security-Invariants>``
 

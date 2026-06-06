@@ -19,7 +19,7 @@ The framework is deliberately split into three subdirectories, each with a singl
 ### Why This Split?
 
 - **Configuration** owns every magic number, date, fingerprint, and domain. No other file is allowed to contain these values.
-- **Actors** provide the strong isolation guarantees required for security state machines that must never race.
+- **Actors** provide the strong isolation guarantees required for security state machines that must not race.
 - **Security** owns the complex, stateful certificate validation logic (caching, time-skew detection, transition leniency) while remaining fully testable.
 
 This design makes security review, testing, and future rotation of certificates or models straightforward and localized.
@@ -90,7 +90,7 @@ High-level operational details (DNSSEC status, certificate rotation procedures, 
 
 ## Future Evolution
 
-Any new security mechanism (additional pinning layers, OCSP, certificate transparency, etc.) must be added inside the appropriate subdirectory of `Core/` and exposed through the existing public types. Duplication outside `Core` is forbidden.
+Any new security mechanism (additional pinning layers, OCSP, certificate transparency, etc.) must be added inside the appropriate subdirectory of `Core/` and exposed through the existing public types. Duplication outside `Core` is not permitted.
 
 ## See Also
 

@@ -4,11 +4,11 @@
     @TechnologyRoot
 }
 
-This document defines the **non-negotiable security invariants** of the Lutheran Radio application. These rules are enforced in code and must never be weakened, bypassed, or duplicated outside the `Core` framework.
+This document defines the **required security invariants** of the Lutheran Radio application. These rules are enforced in code and must not be weakened, bypassed, or duplicated outside the `Core` framework.
 
 ## Core Principles
 
-- **Security is non-negotiable.** All other concerns (performance, convenience, code size) are secondary.
+- **Security requirements take precedence.** All other concerns (performance, convenience, code size) are secondary.
 - The `Core` framework is the **single source of truth** for every security decision.
 - No security logic may be duplicated in the main app target, widget extension, or tests (except test seams explicitly marked `#if DEBUG`).
 
@@ -74,4 +74,4 @@ Any proposed change that touches these files, the DNS TXT record contents, the p
 - README.md — "Security Model Validation", "Certificate Pinning", and "Why DNS TXT Records?" sections
 - AGENTS.md / CODING_AGENT.md — Permanent rules for all contributors and AI agents
 
-> Warning: Violating any invariant above constitutes a security regression and will be rejected.
+> Note: Changes that weaken any invariant above are treated as a security regression and are not accepted.

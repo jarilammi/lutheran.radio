@@ -16,7 +16,7 @@ extension SharedPlayerManager {
     /// Schedules a sleep timer that automatically pauses playback after the given duration.
     ///
     /// Replaces any existing timer. `duration` is in seconds (e.g. `30 * 60` for 30 minutes).
-    /// Countdown updates in-memory only (`sleepTimerRemainingSeconds`); persistence runs on fire via `stop()`.
+    /// Countdown updates in-memory only (`sleepTimerRemainingSeconds`); persistence runs when the timer elapses via `stop()`.
     /// Best-effort while backgrounded (actor task may suspend with the app).
     func setSleepTimer(duration: TimeInterval) async {
         await cancelSleepTimer()
@@ -72,7 +72,7 @@ extension SharedPlayerManager {
         sleepTimerTask = nil
 
         #if DEBUG
-        print("⏱️ [SleepTimer] fired — stopping playback")
+        print("⏱️ [SleepTimer] elapsed — stopping playback")
         #endif
 
         await sleepTimerDidFire()

@@ -117,7 +117,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         cv.backgroundColor = .systemBackground
         cv.isAccessibilityElement = false // Prevent the collection view itself from being focused; cells are accessible
         cv.accessibilityTraits = .none
-        cv.contentInsetAdjustmentBehavior = .never   // CRITICAL: sectionInset alone must control centering; default .automatic injects safe-area insets that break the math
+        cv.contentInsetAdjustmentBehavior = .never   // Important: sectionInset alone must control centering; default .automatic injects safe-area insets that break the math
         return cv
     }()
     
@@ -326,7 +326,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     /// Height constraint for the speaker image (set in code).
     private var speakerImageHeightConstraint: NSLayoutConstraint?
 
-    /// Drives the tuning needle X position via Auto Layout so layout passes don't fight it.
+    /// Drives the tuning needle X position via Auto Layout so layout passes do not override it.
     private var needleCenterXConstraint: NSLayoutConstraint?
     
     // MARK: - Audio and Streaming
@@ -338,7 +338,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     private var hasEverPlayed = false
     private var isPlaying = false
     // All decision logic, guards, and resurrection control now live exclusively in SharedPlayerManager.currentPlaybackIntent.
-    // The only remaining use of hasPermanentPlaybackError was in safeUpdateStatusLabel (removed in next step).
     private var networkMonitor: NWPathMonitor?
     private var networkMonitorHandler: (@Sendable (NWPath) -> Void)? // Store handler to clear it
     private var hasInternetConnection = true
@@ -647,24 +646,24 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             let visualState = await SharedPlayerManager.shared.currentVisualState
             
             #if DEBUG
-            print("🔥 ViewController.viewDidAppear → currentVisualState = \(visualState)")
+            print("[ViewController] viewDidAppear → currentVisualState = \(visualState)")
             #endif
             
             switch visualState {
             case .prePlay:
                 #if DEBUG
-                print("🔥 ViewController.viewDidAppear → prePlay on cold launch → SKIPPING (handled in viewDidLoad after tuning)")
+                print("[ViewController] viewDidAppear → prePlay on cold launch → SKIPPING (handled in viewDidLoad after tuning)")
                 #endif
                 // Do nothing — playback already started from viewDidLoad Task
                 
             case .playing:
                 #if DEBUG
-                print("🔥 ViewController.viewDidAppear → already playing, no action needed")
+                print("[ViewController] viewDidAppear → already playing, no action needed")
                 #endif
                 
             case .userPaused, .thermalPaused, .securityLocked:
                 #if DEBUG
-                print("🔥 ViewController.viewDidAppear → \(visualState) → SKIPPING auto-play (resurrection prevented)")
+                print("[ViewController] viewDidAppear → \(visualState) → SKIPPING auto-play (resurrection prevented)")
                 #endif
             }
 
@@ -1037,7 +1036,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             // Always try to reactivate the session
             try? AVAudioSession.sharedInstance().setActive(true, options: .notifyOthersOnDeactivation)
             
-            // === CRITICAL GUARD: Respect PlayerVisualState user intent ===
+            // === Important guard: Respect PlayerVisualState user intent ===
             // This prevents the most common "play-on-pause resurrection" after phone calls, Siri, etc.
             if options.contains(.shouldResume) {
                 Task { @MainActor in
@@ -1309,7 +1308,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         case .securityLocked:
             statusLabel.text = String(localized: "status_security_failed")
             
-            // 🔥 Alert lives here — most convenient place
+            // Alert is presented here — most convenient place
             if !hasShownSecurityAlert {
                 hasShownSecurityAlert = true
                 showSecurityModelAlert()
@@ -1336,7 +1335,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         // must go through here so that the UI cannot drift from the authoritative state.
         
         #if DEBUG
-        print("🔥 ViewController.updateUI → applied \(visualState) (bg=\(visualState.backgroundColor), tint=\(visualState.buttonTintColor))")
+        print("[ViewController] updateUI → applied \(visualState) (bg=\(visualState.backgroundColor), tint=\(visualState.buttonTintColor))")
         #endif
     }
     
@@ -1787,7 +1786,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             tuningPlayer?.numberOfLoops = 0
             tuningPlayer?.prepareToPlay()
             
-            // CRITICAL: Never trigger playback after tuning sound.
+            // Important: Never trigger playback after tuning sound.
             // Initial playback is handled only via viewDidAppear + SharedPlayerManager.
             // Resurrection is fully blocked by PlayerVisualState.mustSuppressResurrection.
             
@@ -2118,14 +2117,14 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         
         // Needle constraints are set once in setupUI(). Never re-parent or re-activate them here.
         // Repeated addSubview + NSLayoutConstraint.activate creates duplicate/ambiguous constraints
-        // that fight the manual .center.x mutation and cause the needle to drift or snap.
+        // that conflict with the manual .center.x mutation and cause the needle to drift or snap.
         if selectionIndicator.superview != languageCollectionView {
             languageCollectionView.addSubview(selectionIndicator)
             selectionIndicator.translatesAutoresizingMaskIntoConstraints = false
             // constraints intentionally NOT re-activated here
         }
         
-        // CRITICAL for fault tolerance:
+        // Important for fault tolerance:
         // Always re-apply the centering insets before we compute or trust anything.
         // This guarantees the same math that positions the cells is active.
         centerCollectionViewContent()
@@ -2465,13 +2464,13 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     private func handleWidgetPauseAction() {
         // Authoritative .userPaused is set inside SharedPlayerManager.stop() / markAsUserPaused() (already called by this path).
         
-        // Write critical non-display state synchronously (pending nuke + lastUserPauseTime barrier).
+        // Write critical non-display state synchronously (pending action clear + lastUserPauseTime barrier).
         // The legacy "playing" bool and playerVisualState JSON writes have been removed here
         // authoritative PersistedWidgetState snapshot via forcePersistVisualState before the
         // Darwin round-trip; SharedPlayerManager.stop() writes isPlaying + snapshot via
         // performActualSave on the authoritative path. Providers prefer the snapshot first.
         if let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared") {
-            // Nuke any stale "play" pending action that could race with this pause
+            // Clear any stale "play" pending action that could race with this pause
             if sharedDefaults.string(forKey: "pendingAction") == "play" {
                 sharedDefaults.removeObject(forKey: "pendingAction")
                 sharedDefaults.removeObject(forKey: "pendingActionId")
@@ -2547,11 +2546,11 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 // 4. Switch in the shared actor
                 await SharedPlayerManager.shared.switchToStream(targetStream)
                 
-                // === CRITICAL: Clear lock + full reset for cold-launch play ===
+                // === Important: Clear lock + full reset for cold-launch play ===
                 await SharedPlayerManager.shared.clearUserPausedLockIfNeeded()
                 await SharedPlayerManager.shared.resetToPrePlayForNewStream()
                 
-                // 🔥 NEW: Update shared UserDefaults so widget actually shows the new language.
+                // Note: Update shared UserDefaults so widget actually shows the new language.
                 // for prompt propagation; the prior explicit duplicate force is removed.
                 self.updateUserDefaultsLanguage(languageCode)
                 
@@ -2634,12 +2633,12 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             #if DEBUG
             print("🔗 Action expired (age: \(actionAge)s), clearing")
             #endif
-            clearWidgetAction(actionId: actionId)
+            SharedPlayerManager.shared.clearPendingAction(actionId: actionId)
             return
         }
         
         // Clear action immediately to prevent re-processing
-        clearWidgetAction(actionId: actionId)
+        SharedPlayerManager.shared.clearPendingAction(actionId: actionId)
         
         switch pendingAction {
         case "switch":
@@ -2724,22 +2723,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         }
     }
     
-    private func clearWidgetAction(actionId: String) {
-        guard let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return }
-        
-        // Only clear if the action ID matches to prevent race conditions
-        if let currentActionId = sharedDefaults.string(forKey: "pendingActionId"),
-           currentActionId == actionId {
-            sharedDefaults.removeObject(forKey: "pendingAction")
-            sharedDefaults.removeObject(forKey: "pendingActionId")
-            sharedDefaults.removeObject(forKey: "pendingActionTime")
-            sharedDefaults.removeObject(forKey: "pendingLanguage")
-            
-            #if DEBUG
-            print("🔗 Cleared processed action: \(actionId)")
-            #endif
-        }
-    }
 }
 
 // MARK: - Public Methods for URL Scheme Handling
@@ -3103,7 +3086,7 @@ extension ViewController: StreamingPlayerDelegate {
             let playbackIntent = await SharedPlayerManager.shared.currentPlaybackIntent
             
             #if DEBUG
-            print("🔥 StreamingPlayerDelegate.onStatusChange → \(status) (reasonKey: \(reasonKey ?? "nil")) → visualState \(visualState)")
+            print("[StreamingPlayerDelegate] onStatusChange → \(status) (reasonKey: \(reasonKey ?? "nil")) → visualState \(visualState)")
             #endif
             
             // Transient connect/buffer arrives as .stopped + status_connecting; never flash grey pause
@@ -3147,7 +3130,7 @@ extension ViewController: StreamingPlayerDelegate {
                     //
                     // FIX: Cold-launch safety net (and other early-failure paths) can emit this
                     // while the optimistic .playing state from setPlaying() is still active.
-                    // Force-correct the SSOT here so updateUI + widget saves see the real terminal state.
+                    // Correct the SSOT here so updateUI + widget saves see the real terminal state.
                     let vsForCheck = await SharedPlayerManager.shared.currentVisualState
                     if vsForCheck.isActivelyPlaying || vsForCheck == .prePlay {
                         await SharedPlayerManager.shared.setUserPaused()
@@ -3239,7 +3222,7 @@ extension ViewController: StreamingPlayerDelegate {
                    let targetStream = DirectStreamingPlayer.availableStreams.first(where: { $0.languageCode == languageCode }),
                    let newIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.languageCode == languageCode }) {
                     
-                    // 🔥 FIXED: switchToStream is now async
+                    // Note: switchToStream is now async
                     await SharedPlayerManager.shared.switchToStream(targetStream)
                     
                     // Update UI (safe on @MainActor)

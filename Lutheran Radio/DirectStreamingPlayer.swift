@@ -39,7 +39,7 @@ enum PlayerStatus {
 ///
 /// `DirectStreamingPlayer` is the heart of audio streaming, using AVFoundation for direct HTTPS playback with runtime SSL validation. It integrates with `CertificateValidator.swift` for certificate pinning and supports a transition period for rotations (July-August 2026).
 ///
-/// **Single source of truth for state**: `DirectStreamingPlayer` now owns ALL mutations to `isPlaying`, `selectedStream`, `hasPermanentError`, `validationState`, etc. It calls `SharedPlayerManager.shared.saveCurrentState()` immediately after EVERY mutation (play, stop, setStream, status observers, server fallback, validation callbacks). This eliminates widget/Live Activity desync.
+/// **Single source of truth for state**: `DirectStreamingPlayer` now owns all mutations to `isPlaying`, `selectedStream`, `hasPermanentError`, `validationState`, etc. It calls `SharedPlayerManager.shared.saveCurrentState()` immediately after every mutation (play, stop, setStream, status observers, server fallback, validation callbacks). This keeps widget and Live Activity state aligned.
 ///
 /// Workflow:
 /// 1. **Initialization/Setup**: Queries DNS for access authorization; sets up AVPlayer with custom resource loading (`StreamingSessionDelegate.swift`).
@@ -65,7 +65,7 @@ enum PlayerStatus {
 /// - **Push Notifications**:
 ///   - No remote notifications sent to devices.
 ///   - Prevents tracking of user engagement patterns.
-///   - Eliminates visibility into listening habits.
+///   - Does not expose listening habits to a remote service.
 /// - **Location Services**:
 ///   - Never requests location permissions.
 ///   - Prevents tracking of listening locations.
@@ -199,7 +199,6 @@ final class NWPathMonitorAdapter: NetworkPathMonitoring, @unchecked Sendable {
     }
 }
 
-// (securityValidator global was dead code — all call sites use SecurityModelValidator.shared directly)
 
 /// Manages direct audio streaming, security validation, network monitoring, and privacy protections for the Lutheran Radio app.
 final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
@@ -738,7 +737,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     
     var player: AVPlayer?
 
-    // Concurrency queues — declared once to eliminate duplication risk between DEBUG and release builds.
+    // Concurrency queues — declared once to avoid duplicated queue declarations between DEBUG and release builds.
     // These three are always private; they are never exposed for testing or external use.
     private let audioQueue = DispatchQueue(label: "radio.lutheran.audio", qos: .userInteractive)
     private let sslValidationQueue = DispatchQueue(label: "radio.lutheran.ssl", qos: .userInitiated)
@@ -787,7 +786,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         }
     }
     
-    // CRITICAL: All AVPlayer operations must be on main thread
+    // Important: All AVPlayer operations must be on main thread
     private func executeAudioOperation<T>(
         _ operation: @escaping @Sendable () -> T,
         completion: @escaping @Sendable (T) -> Void
@@ -1356,7 +1355,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// - Throws: Only critical unrecoverable errors (rare).
     @MainActor
     func play() async -> Bool {
-        // === CRITICAL GUARD : Driven by authoritative playback intent ===
+        // === Important guard : Driven by authoritative playback intent ===
         // This is the first execution-engine site wired to `currentPlaybackIntent` via
         // the new `canProceedWithPlayback()` helper. It replaces the prior ad-hoc visualState
         // derivation for this narrow top-level path.
@@ -1409,7 +1408,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
 
     @MainActor
     private func createAndStartPlayer(for url: URL) async {
-        // === DEEP CRITICAL GUARD : Driven by authoritative playback intent ===
+        // === Playback intent guard : Driven by authoritative playback intent ===
         // This catches all internal/resume paths that bypass the public play() method
         // (stream switches, tuning sound completion, audio session reactivation, etc.).
         // Now uses the intent helper (second execution-engine site wired to currentPlaybackIntent).
@@ -1435,7 +1434,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             self.player?.replaceCurrentItem(with: playerItem)
         }
         
-        // === CRITICAL: Activate the audio session before playback ===
+        // === Important: Activate the audio session before playback ===
         do {
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.playback,
@@ -1591,7 +1590,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 switch newTC {
                 case .playing:
                     self.cancelEarlyICYDropRecreate()
-                    // CRITICAL : KVO resurrection protection now driven by
+                    // Important : KVO resurrection protection now driven by
                     // authoritative playback intent.
                     guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
                         #if DEBUG
@@ -1651,7 +1650,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
 
                 switch newItemStatus {
                 case .readyToPlay:
-                    // CRITICAL : KVO resurrection protection now driven by
+                    // Important : KVO resurrection protection now driven by
                     // authoritative playback intent.
                     guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
                         #if DEBUG
@@ -1791,7 +1790,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// Private: Actually starts the player + handles session
     private func startPlayback() async {
         // ──────────────────────────────────────────────────────────────
-        // CRITICAL : Top-level resurrection protection now driven by
+        // Important : Top-level resurrection protection now driven by
         // authoritative playback intent via canProceedWithPlayback().
         // (Previously visualState.shouldAutoPlayOrResume; now consistent with public play()
         // and deep createAndStartPlayer paths.)
@@ -2397,7 +2396,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         pendingPlaybackWorkItem?.cancel()
         pendingPlaybackWorkItem = nil
         
-        // === CRITICAL: Set visual state based on reason + silent (respects recent commit semantics) ===
+        // === Important: Set visual state based on reason + silent (respects recent commit semantics) ===
         Task {
             if reason == .userAction && !silent {
                 await self.markAsUserPaused()
@@ -2406,7 +2405,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 #endif
             }
             // .streamSwitch / .interruption / .error intentionally skip markAsUserPaused()
-            // → this is what eliminates the markAsPlaying() hack forever
+            // → this replaces the markAsPlaying() workaround
             
             // Perform the actual stop on the main actor
             await MainActor.run {
@@ -2910,7 +2909,7 @@ extension DirectStreamingPlayer {
                         return
                     }
                     
-                    // === CRITICAL: Respect the new PlayerVisualState resurrection suppression ===
+                    // === Important: Respect the new PlayerVisualState resurrection suppression ===
                     // This uses the helper from the most recent commit on the branch
                     Task { @MainActor [weak self] in
                         guard let self else { return }
@@ -3487,7 +3486,7 @@ extension DirectStreamingPlayer {
                   !delegate.loadingRequest.isFinished else { return }
             
             #if DEBUG
-            print("⏰ [Hard Timeout] Force-finishing hung loading request after 15s – this should never happen only on dead-silent servers")
+            print("⏰ [Hard Timeout] Completing hung loading request after 15s – this should never happen only on unresponsive servers")
             #endif
             
             delegate.loadingRequest.finishLoading(with: URLError(.timedOut))

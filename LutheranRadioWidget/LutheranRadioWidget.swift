@@ -439,7 +439,7 @@ struct WidgetToggleRadioIntent: AppIntent {
         print("🔗 Widget wants to \(action) → target state: \(targetVisualState) (visualState.isActivelyPlaying = \(visualState.isActivelyPlaying))")
         #endif
         
-        // === OPTIMISTIC UPDATE (critical for instant icon flip) ===
+        // === OPTIMISTIC UPDATE (needed for instant icon flip) ===
         let targetState: PlayerVisualState = shouldPlay ? .playing : .userPaused
         
         // Use the unified force path: writes the PersistedWidgetState snapshot (visual + lang)

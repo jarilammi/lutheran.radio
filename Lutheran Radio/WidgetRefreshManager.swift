@@ -19,7 +19,7 @@ final class WidgetRefreshManager: @unchecked Sendable {
     
     private var lastRefreshTime: Date?
     private var pendingRefresh: DispatchWorkItem?
-    /// Latest debounced target; read at fire time so superseded visuals never reload timelines.
+    /// Latest debounced target; read when the debounce timer runs so superseded visuals never reload timelines.
     private var pendingRefreshState: WidgetState?
     private var lastKnownState: WidgetState?
     

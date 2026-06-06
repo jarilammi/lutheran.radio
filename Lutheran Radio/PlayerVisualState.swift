@@ -150,7 +150,7 @@ extension PlayerVisualState {
         currentVisualState: PlayerVisualState = .prePlay
     ) -> PlayerVisualState {
         
-        // 🔥 CRITICAL: Once userPaused, stay there for any non-playing status
+        // Note: Once userPaused, stay there for any non-playing status
         // This defeats the status-callback flip-back bug
         if currentVisualState == .userPaused && status != .playing {
             #if DEBUG
