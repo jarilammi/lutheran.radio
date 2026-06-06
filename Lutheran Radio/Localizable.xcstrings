@@ -17,7 +17,7 @@
         },
         "en" : {
           "stringUnit" : {
-            "state" : "new",
+            "state" : "translated",
             "value" : "%1$@ %2$@"
           }
         },
@@ -154,7 +154,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "oca dos veces para seleccionar el dispositivo de salida de audio"
+            "value" : "Toca dos veces para seleccionar el dispositivo de salida de audio"
           }
         },
         "et" : {
@@ -196,7 +196,7 @@
         "kl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Peqatigiilluni qinnuteqarfik ilinniarneq"
+            "value" : "Peqatigiilluni uunga nassiussanik toqqaruk"
           }
         },
         "lt" : {
@@ -3779,136 +3779,6 @@
         }
       }
     },
-    "Lutheran Radio Live Stream" : {
-      "localizations" : {
-        "da" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lutheran Radio Livestream"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lutheran Radio Livestream"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lutheran Radio Live Stream"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lutheran Radio Livestream"
-          }
-        },
-        "et" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lutheran Radio otseülekanne"
-          }
-        },
-        "fi" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Livestriimi"
-          }
-        },
-        "fit" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Livestriimi"
-          }
-        },
-        "fo" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lutheran Radio beinleiðis"
-          }
-        },
-        "gag" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lutheran Radio canlı stream-i"
-          }
-        },
-        "is" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lutheran Radio bein útsending"
-          }
-        },
-        "kl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lutheran Radio suulluinermut"
-          }
-        },
-        "lt" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lutheran Radio tiesioginė transliacija"
-          }
-        },
-        "lv" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lutheran Radio tiešraide"
-          }
-        },
-        "nb" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lutheran Radio direktesending"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lutheran Radio Livestream"
-          }
-        },
-        "nn" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lutheran Radio direktesending"
-          }
-        },
-        "pl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lutheran Radio na żywo"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lutheran Radio прямой эфир"
-          }
-        },
-        "se" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lutheran Radio suorga sáddaneapmi"
-          }
-        },
-        "sk" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lutheran Radio – živý stream"
-          }
-        },
-        "sv" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Live Stream"
-          }
-        }
-      }
-    },
     "live_activity_program_fallback" : {
       "localizations" : {
         "da" : {
@@ -4831,7 +4701,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sleep-Timer"
+            "value" : "Schlaf-Timer"
           }
         },
         "en" : {
@@ -4873,7 +4743,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Uinudamataaier"
+            "value" : "Uyku zamanlayıcısı"
           }
         },
         "is" : {
@@ -5003,7 +4873,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Valitse, kuinka kauan ennen kuin toisto pysähtyy"
+            "value" : "Oynatmanın ne zaman duracağını seçin"
           }
         },
         "is" : {
@@ -5091,7 +4961,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sleep-Timer"
+            "value" : "Schlaf-Timer"
           }
         },
         "en" : {
@@ -5133,7 +5003,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Uinudamataaier"
+            "value" : "Uyku zamanlayıcısı"
           }
         },
         "is" : {
@@ -5263,7 +5133,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "15 minuuttia"
+            "value" : "15 dakika"
           }
         },
         "is" : {
@@ -5393,7 +5263,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "30 minuuttia"
+            "value" : "30 dakika"
           }
         },
         "is" : {
@@ -5523,7 +5393,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "45 minuuttia"
+            "value" : "45 dakika"
           }
         },
         "is" : {
@@ -5653,7 +5523,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "60 minuuttia"
+            "value" : "60 dakika"
           }
         },
         "is" : {
@@ -5783,7 +5653,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Peru ajastin"
+            "value" : "Zamanlayıcıyı iptal et"
           }
         },
         "is" : {
@@ -5913,7 +5783,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Peru"
+            "value" : "İptal"
           }
         },
         "is" : {
@@ -6043,7 +5913,7 @@
         "gag" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%d minuuttia jäljellä"
+            "value" : "%d dakika kaldı"
           }
         },
         "is" : {
@@ -6871,7 +6741,7 @@
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Nie można rozpocząć odtwarzania z powodu niepowodzenia weryfikacji bezpieczeństwa. Proszę sprawdzić połączenie internetowe i upewnić się, że aplikacja jest zaktualizowana. Jeśli problem persists, uruchom ponownie aplikację i spróbuj jeszcze raz."
+            "value" : "Nie można rozpocząć odtwarzania z powodu niepowodzenia weryfikacji bezpieczeństwa. Proszę sprawdzić połączenie internetowe i upewnić się, że aplikacja jest zaktualizowana. Jeśli problem nadal występuje, uruchom ponownie aplikację i spróbuj jeszcze raz."
           }
         },
         "ru" : {
