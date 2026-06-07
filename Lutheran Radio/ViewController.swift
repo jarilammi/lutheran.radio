@@ -2501,9 +2501,10 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             guard !Task.isCancelled else { return }
             
             let visualState = await SharedPlayerManager.shared.currentVisualState
+            let playbackIntent = await SharedPlayerManager.shared.currentPlaybackIntent
             
             #if DEBUG
-            print("[ViewController] completeStreamSwitch started – currentVisualState = \(visualState), stream = \(stream.languageCode)")
+            print("[ViewController] completeStreamSwitch started – currentVisualState = \(visualState), playbackIntent = \(playbackIntent), stream = \(stream.languageCode)")
             #endif
             
             // Model-only first — defer ping/prepare until after tuning (playing) or manual play().
@@ -2514,11 +2515,12 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             print("[ViewController] [completeStreamSwitch] Updated stream model to \(stream.languageCode) (works for both playing and userPaused)")
             #endif
             
-            // Capture the original intent BEFORE any stop() or state mutation
-            let wasPlayingBeforeSwitch = visualState.shouldAutoPlayOrResume
+            // Capture authoritative intent BEFORE any stop() or state mutation.
+            // Visual `.userPaused` after stream failure must not block switch resume.
+            let shouldResumeAfterSwitch = playbackIntent.isActivePlaybackIntent
             
             // === STRONG GUARD: Never auto-resume if user explicitly paused ===
-            guard wasPlayingBeforeSwitch else {
+            guard shouldResumeAfterSwitch else {
                 #if DEBUG
                 print("🚫 [completeStreamSwitch] Blocked — userPaused, no auto-resume")
                 #endif
@@ -2557,7 +2559,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             await playTuningSound(animateNeedleTo: index)
             guard !Task.isCancelled else { return }
             
-            guard wasPlayingBeforeSwitch else {
+            guard shouldResumeAfterSwitch else {
                 #if DEBUG
                 print("[ViewController] [completeStreamSwitch] Blocked play() after tuning sound")
                 #endif
@@ -2728,7 +2730,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 }
                 
                 let visualState = await SharedPlayerManager.shared.currentVisualState
-                let wasPlayingBeforeSwitch = visualState.shouldAutoPlayOrResume
+                let playbackIntent = await SharedPlayerManager.shared.currentPlaybackIntent
+                let shouldResumeAfterSwitch = playbackIntent.isActivePlaybackIntent
                 
                 // Model-only first — secured item is created once in SharedPlayerManager.play().
                 await self.streamingPlayer.setSelectedStreamModelOnly(to: targetStream)
@@ -2751,7 +2754,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 let indexPath = IndexPath(item: targetIndex, section: 0)
                 self.languageCollectionView.selectItem(at: indexPath, animated: true, scrollPosition: .centeredHorizontally)
                 
-                guard wasPlayingBeforeSwitch else {
+                guard shouldResumeAfterSwitch else {
                     #if DEBUG
                     print("[ViewController] [Widget Switch] Blocked — userPaused, no auto-resume")
                     #endif
@@ -3315,7 +3318,7 @@ extension ViewController: StreamingPlayerDelegate {
                     // Correct the SSOT here so updateUI + widget saves see the real terminal state.
                     let vsForCheck = await SharedPlayerManager.shared.currentVisualState
                     if vsForCheck.isActivelyPlaying || vsForCheck == .prePlay {
-                        await SharedPlayerManager.shared.setUserPaused()
+                        await SharedPlayerManager.shared.markPlaybackStoppedByStreamFailure()
                     }
                     let correctedVisualState = await SharedPlayerManager.shared.currentVisualState
                     self.updateUI(for: correctedVisualState)

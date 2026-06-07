@@ -843,6 +843,27 @@ actor SharedPlayerManager {
         await saveCurrentState()
     }
     
+    /// Records that playback stopped due to stream failure (decode/network), not explicit user pause.
+    ///
+    /// Grey `.userPaused` visual supports error UI; `playbackIntent` stays unchanged (typically
+    /// `.shouldBePlaying`) so language switches can auto-resume without an extra play tap.
+    /// Does not bump `lastUserPauseTimestamp` — stream failure is not a sticky user pause.
+    func markPlaybackStoppedByStreamFailure() async {
+        ensureVisualStateLoaded()
+
+        #if DEBUG
+        print("[SharedPlayerManager] markPlaybackStoppedByStreamFailure() — visual .userPaused, intent unchanged (\(playbackIntent))")
+        #endif
+
+        currentVisualState = .userPaused
+
+        saveVisualState()
+        await saveCurrentState()
+        #if LUTHERAN_MAIN_APP
+        await updateNowPlayingInfo()
+        #endif
+    }
+
     /// Sets the visual state to .userPaused and persists it.
     /// This is the canonical way to record user-initiated pause intent.
     func setUserPaused() async {
