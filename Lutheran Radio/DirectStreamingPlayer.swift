@@ -983,8 +983,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         #endif
     }
 
-    /// Called on every user-initiated language/stream switch (both the main flag-tap path via
-    /// completeStreamSwitch and the widget/Siri/shortcut paths via switchToStream).
+    /// Called on every user-initiated language/stream switch (flag-tap via completeStreamSwitch,
+    /// widget via handleWidgetSwitchToLanguage, Siri/shortcut via switchToStream model-only helper).
     /// Gives the *new* stream a clean startup attempt budget (retryCount = 0) so that
     /// transient ICY noise or safety-net exhaustion from the *previous* stream cannot
     /// trigger a false-positive status_stream_unavailable (red banner + popup).
@@ -1679,27 +1679,16 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     // MARK: - Stream Switching (the simpler fallback)
 
     func switchToStream(_ stream: Stream) async {
-        stop()
-        resetInitialPlaybackCountersForNewStream()  // give the new stream a fresh cold-launch attempt budget
-        resetTransientErrors()
-        selectedStream = stream
+        let previousLanguage = selectedStream.languageCode
+        let newLanguage = stream.languageCode
         
-        let url = await urlWithOptimalServer(for: selectedStream)
-        await preparePlayerItem(for: url)
-        
-        // Force playback with explicit rate on main actor
-        await MainActor.run {
-            let newItem = AVPlayerItem(url: url)
-            self.player?.replaceCurrentItem(with: newItem)
-            self.player?.rate = 1.0
-            self.setupPlaybackObservers()
-            
-            #if DEBUG
-            print("[DirectStreamingPlayer] ▶ AVPlayer rate set to 1.0 from switchToStream on main thread")
-            #endif
+        if previousLanguage != newLanguage {
+            stop(reason: .streamSwitch, silent: true)
         }
         
-        await SharedPlayerManager.shared.saveCurrentState()
+        resetInitialPlaybackCountersForNewStream()
+        resetTransientErrors()
+        await setSelectedStreamModelOnly(to: stream)
     }
     
     // MARK: - Stream Switching (Single Source of Truth)

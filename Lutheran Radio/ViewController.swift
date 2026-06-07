@@ -2511,70 +2511,66 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             
             Task { @MainActor in
                 self.streamingPlayer.isSwitchingStream = true
+                defer { self.streamingPlayer.isSwitchingStream = false }
                 
-                // 1. Stop current playback cleanly
-                self.streamingPlayer.stop(
-                    reason: .streamSwitch,
-                    silent: true
-                )
-                
-                // 2. Find target
                 guard let targetStream = DirectStreamingPlayer.availableStreams.first(where: { $0.languageCode == languageCode }),
                       let targetIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.languageCode == languageCode }) else {
-                    self.streamingPlayer.isSwitchingStream = false
                     #if DEBUG
                     print("[ViewController] Widget switch: target stream not found for \(languageCode)")
                     #endif
                     return
                 }
                 
-                // 3. Update local UI state immediately
+                let visualState = await SharedPlayerManager.shared.currentVisualState
+                let wasPlayingBeforeSwitch = visualState.shouldAutoPlayOrResume
+                
+                // Model-only first — secured item is created once in SharedPlayerManager.play().
+                await self.streamingPlayer.setSelectedStreamModelOnly(to: targetStream)
+                self.streamingPlayer.resetTransientErrors()
+                
+                await withCheckedContinuation { continuation in
+                    self.streamingPlayer.stop(
+                        reason: .streamSwitch,
+                        completion: { continuation.resume() },
+                        silent: true
+                    )
+                }
+                
+                self.streamingPlayer.resetInitialPlaybackCountersForNewStream()
+                
                 self.selectedStreamIndex = targetIndex
                 self.updateBackground(for: targetStream)
-                
-                // 4. Switch in the shared actor
-                await SharedPlayerManager.shared.switchToStream(targetStream)
-                
-                // === Important: Clear lock + full reset for cold-launch play ===
-                await SharedPlayerManager.shared.clearUserPausedLockIfNeeded()
-                await SharedPlayerManager.shared.resetToPrePlayForNewStream()
-                
-                // Note: Update shared UserDefaults so widget actually shows the new language.
-                // for prompt propagation; the prior explicit duplicate force is removed.
                 self.updateUserDefaultsLanguage(languageCode)
                 
-                #if DEBUG
-                print("[ViewController] [Widget Switch] Cleared lock + resetToPrePlayForNewStream() + updated language to \(languageCode)")
-                #endif
-                
-                // 5. Update collection view
                 let indexPath = IndexPath(item: targetIndex, section: 0)
                 self.languageCollectionView.selectItem(at: indexPath, animated: true, scrollPosition: .centeredHorizontally)
+                
+                guard wasPlayingBeforeSwitch else {
+                    #if DEBUG
+                    print("[ViewController] [Widget Switch] Blocked — userPaused, no auto-resume")
+                    #endif
+                    self.updateSelectionIndicator(to: targetIndex)
+                    self.updateUI(for: .userPaused)
+                    SharedPlayerManager.shared.clearPendingAction(actionId: actionId)
+                    return
+                }
+                
+                await SharedPlayerManager.shared.resetToPrePlayForNewStream()
                 self.updateSelectionIndicator(to: targetIndex)
-                
-                // 6. Main-app style play
-                try? await Task.sleep(for: .seconds(0.6))
-                
+                self.updateUI(for: .prePlay)
                 
                 #if DEBUG
                 print("[ViewController] ▶ [Widget Switch] Starting new stream using SharedPlayerManager.play() — main app path")
                 #endif
                 
                 await SharedPlayerManager.shared.play()
+                
                 #if DEBUG
                 print("[ViewController] Widget switch: SharedPlayerManager.play() succeeded")
-                #endif
-                
-                //    + WidgetRefreshManager). Language prompt owned by updateUserDefaultsLanguage.
-                //    No extra saveStateForWidget needed here.
-                #if DEBUG
                 print("[ViewController] Widget switch completed (authoritative save covered by play())")
                 #endif
                 
-                // 8. Clear pending action
                 SharedPlayerManager.shared.clearPendingAction(actionId: actionId)
-                
-                self.streamingPlayer.isSwitchingStream = false
             }
         }
         
