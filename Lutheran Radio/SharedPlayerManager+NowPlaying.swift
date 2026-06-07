@@ -80,6 +80,21 @@ extension SharedPlayerManager {
         }
     }
     
+    /// Restores parsed widget metadata from the raw ICY stash after soft-pause resume.
+    /// ICY servers typically do not resend StreamTitle when the same secured item resumes.
+    func rehydrateStreamMetadataFromStashIfNeeded() async {
+        guard currentStreamMetadata == nil,
+              let raw = nowPlayingStreamMetadata else { return }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        #if DEBUG
+        print("[SharedPlayerManager] Rehydrating stream metadata from soft-pause stash")
+        #endif
+
+        await didUpdateStreamMetadata(raw)
+    }
+
     /// Called when ICY metadata changes (DirectStreamingPlayer → SharedPlayerManager).
     func didUpdateStreamMetadata(_ metadata: String?) async {
         guard !isRunningInWidget() else { return }
@@ -90,6 +105,13 @@ extension SharedPlayerManager {
 
         await updateNowPlayingInfo()
         await RadioLiveActivityManager.shared.updateCurrentActivity()
+
+        let state = loadSharedState()
+        await WidgetRefreshManager.shared.refreshIfNeeded(
+            visualState: currentVisualState,
+            currentLanguage: Self.preferredWidgetLanguage(),
+            hasError: state.hasError
+        )
     }
     
     /// Refreshes MPNowPlayingInfoCenter from current visual state and metadata.

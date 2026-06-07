@@ -205,6 +205,10 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     private var isSSLHandshakeComplete = false
     private var certificateValidationTimer: Timer?
     private var hasStartedPlaying = false
+    /// True while cold launch / stream-switch attach waits for `.readyToPlay` before the first audible kick.
+    private var isDeferringFirstPlayKick = false
+    /// True after the first non-empty ICY StreamTitle on the current attach (cold launch / stream switch).
+    private(set) var hasReceivedLiveStreamMetadata = false
     
     // MARK: - Audio Session Properties
     private var interruptionObserver: NSObjectProtocol?
@@ -690,6 +694,10 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// Set synchronously at intentional stop; cleared when a new secured `playerItem` is attached.
     /// Prevents stale `timeControlStatus` KVO and debounced recreate tasks from running after teardown.
     @MainActor private var isPlaybackTeardownActive = false
+    /// User-initiated pause kept the secured `AVPlayerItem` alive for gapless same-stream resume.
+    @MainActor private var isSoftPaused = false
+    /// Cancellable startup safety-net work (cold launch / stream-switch first attach only).
+    private var startupSafetyNetWorkItem: DispatchWorkItem?
     
     var isPlaying: Bool {
         return (player?.rate ?? 0) > 0 && player?.currentItem?.status == .readyToPlay
@@ -993,6 +1001,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     func resetInitialPlaybackCountersForNewStream() {
         initialPlaybackRetryCount = 0
         hasStartedPlaying = false   // defensive; the preceding stop() already does this for most paths
+        isDeferringFirstPlayKick = false
+        hasReceivedLiveStreamMetadata = false
         Task { @MainActor [weak self] in
             self?.cancelEarlyICYDropRecreate()
         }
@@ -1594,6 +1604,12 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                         #endif
                         return
                     }
+                    guard observedPlayer.currentItem?.status == .readyToPlay else {
+                        #if DEBUG
+                        print("[DirectStreamingPlayer] [KVO] timeControlStatus.playing: ignoring until item ready (status=\(observedPlayer.currentItem?.status.rawValue ?? -1))")
+                        #endif
+                        return
+                    }
                     self.safeOnStatusChange(isPlaying: true, reasonKey: "status_playing")   // ← fixed
                     self.hasStartedPlaying = true
                     self.stopBufferingTimer()
@@ -1613,6 +1629,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                     // guard as the (now minimal) safety net. Purely reactive to the KVO symptom.
                     if !self.isPlaybackTeardownActive
                         && !self.hasStartedPlaying
+                        && !self.isDeferringFirstPlayKick
                         && self.initialPlaybackRetryCount < self.maxInitialRetries {
                         self.scheduleEarlyICYDropRecreate(rate: observedPlayer.rate)
                     }
@@ -1646,16 +1663,9 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
 
                 switch newItemStatus {
                 case .readyToPlay:
-                    // Important : KVO resurrection protection now driven by
-                    // authoritative playback intent.
-                    guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
-                        #if DEBUG
-                        print("[DirectStreamingPlayer] [KVO] .readyToPlay observer: resurrection suppressed by playbackIntent")
-                        #endif
-                        return
-                    }
-                    self.safeOnStatusChange(isPlaying: true, reasonKey: "status_playing")   // ← fixed
-                    self.stopBufferingTimer()
+                    // First-play kick and status_playing emission are handled by addObservers'
+                    // readyToPlay branch (single canonical path after startPlayback deferral).
+                    break
                     
                 case .failed:
                     self.safeOnStatusChange(isPlaying: false, reasonKey: "status_stream_unavailable")   // ← fixed
@@ -1724,6 +1734,10 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             isSwitchingStream = true
             defer { isSwitchingStream = false }
 
+            Task { @MainActor in
+                self.isSoftPaused = false
+            }
+
             // Updated: use semantic reason instead of isSwitchingStream flag
             stop(reason: .streamSwitch, silent: true)   // ← removed `await`
         } else {
@@ -1750,11 +1764,41 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     }
 
     /// Full atomic "switch stream + start playing" — this is what SharedPlayerManager should call
-    func setStreamAndPlay(to stream: Stream) async {
+    func setStreamAndPlay(to stream: Stream, context: PlaybackAttachContext = .coldLaunch) async {
         await setStream(to: stream)
 
         // Now safely start playback
-        await startPlayback()
+        await startPlayback(context: context)
+    }
+
+    /// Cancels any pending startup safety-net recreate (e.g. before sleep-timer scheduling).
+    func cancelPendingStartupRecovery() {
+        Task { @MainActor [weak self] in
+            self?.cancelStartupSafetyNet()
+        }
+    }
+
+    /// Resumes a same-stream pause without recreating the secured `AVPlayerItem`.
+    @MainActor
+    func resumeFromSoftPauseIfAvailable() async -> Bool {
+        guard isSoftPaused, playerItem != nil, player?.currentItem != nil else { return false }
+        guard await SharedPlayerManager.shared.canProceedWithPlayback() else { return false }
+
+        isSoftPaused = false
+        cancelStartupSafetyNet()
+
+        guard let player else { return false }
+        player.play()
+        player.rate = 1.0
+        player.playImmediately(atRate: 1.0)
+        safeOnStatusChange(isPlaying: true, reasonKey: "status_playing")
+        hasStartedPlaying = true
+        await SharedPlayerManager.shared.setPlaying()
+
+        #if DEBUG
+        print("[DirectStreamingPlayer] Resumed from soft pause — skipped item recreation")
+        #endif
+        return true
     }
     
     private func ensurePlayerExists() {
@@ -1773,7 +1817,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     }
 
     /// Private: Actually starts the player + handles session
-    private func startPlayback() async {
+    private func startPlayback(context: PlaybackAttachContext = .coldLaunch) async {
         // ──────────────────────────────────────────────────────────────
         // Important : Top-level resurrection protection now driven by
         // authoritative playback intent via canProceedWithPlayback().
@@ -1820,14 +1864,6 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 #endif
             }
             
-            // Force immediate playback attempt for live streams
-            player.play()
-            player.rate = 1.0
-            
-            #if DEBUG
-            print("[DirectStreamingPlayer] ▶ AVPlayer started via .play() + rate=1.0")
-            #endif
-            
             // Item should already exist from setStream (secured preparePlayerItem). Attach only as fallback.
             if player.currentItem == nil {
                 #if DEBUG
@@ -1850,55 +1886,76 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 #endif
             } else {
                 #if DEBUG
-                print("🔧 [DirectStreamingPlayer] cold-launch: reusing secured AVPlayerItem from setStream")
+                print("🔧 [DirectStreamingPlayer] reusing secured AVPlayerItem from setStream")
                 #endif
+                // preparePlayerItem already ran setupPlaybackObservers; only attach item-level observers.
                 self.addObservers()
             }
             
             player.automaticallyWaitsToMinimizeStalling = false
-            player.playImmediately(atRate: 1.0)
+            // Defer the first audible kick until AVPlayerItem.status == .readyToPlay.
+            // Do not call play() here — AVPlayer begins loading the attached item automatically;
+            // playImmediately in addObservers' readyToPlay handler is the single audible kick.
+            self.isDeferringFirstPlayKick = true
+            self.hasReceivedLiveStreamMetadata = false
+            self.cancelEarlyICYDropRecreate()
+            self.safeOnStatusChange(isPlaying: false, reasonKey: "status_connecting")
             
             #if DEBUG
-            print("🔊 [DirectStreamingPlayer] playImmediately called — timeControlStatus: \(player.timeControlStatus.rawValue), rate: \(player.rate), item.status: \(player.currentItem?.status.rawValue ?? -1)")
+            print("🔊 [DirectStreamingPlayer] startPlayback: awaiting readyToPlay before first play kick (item.status: \(player.currentItem?.status.rawValue ?? -1))")
             #endif
         }
         
-        // Small head-start for custom ICY resource loader on cold launch
-        try? await Task.sleep(for: .milliseconds(400))
-        
-        // FIXED: Use Task { @MainActor in } so the async guard is allowed
-        Task { @MainActor in
-            guard let player = self.player else { return }
+        // Optional ICY head-start retry — only when the first kick has not achieved playback.
+        if context != .resume {
+            try? await Task.sleep(for: .milliseconds(400))
             
-            // ──────────────────────────────────────────────────────────────
-            // Post-head-start guard
-            // Now driven by authoritative playback intent.
-            guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
+            Task { @MainActor in
+                guard let player = self.player else { return }
+                
+                guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
+                    #if DEBUG
+                    print("[DirectStreamingPlayer] post-head-start: resurrection suppressed by playbackIntent")
+                    #endif
+                    return
+                }
+
+                let itemReady = player.currentItem?.status == .readyToPlay
+                let alreadyPlaying = self.hasStartedPlaying || player.rate > 0.1
+                guard !alreadyPlaying else {
+                    #if DEBUG
+                    print("[DirectStreamingPlayer] post-head-start: skipped — playback already active (hasStartedPlaying=\(self.hasStartedPlaying), rate=\(player.rate))")
+                    #endif
+                    return
+                }
+                
+                guard itemReady else {
+                    #if DEBUG
+                    print("[DirectStreamingPlayer] post-head-start: skipped — item not ready yet, deferring to readyToPlay observer")
+                    #endif
+                    return
+                }
+                
+                player.playImmediately(atRate: 1.0)
                 #if DEBUG
-                print("[DirectStreamingPlayer] post-head-start: resurrection suppressed by playbackIntent")
+                print("🔊 [DirectStreamingPlayer] post-head-start playImmediately called (ready fallback, item.status: \(player.currentItem?.status.rawValue ?? -1))")
                 #endif
-                return
             }
-            // ──────────────────────────────────────────────────────────────
-            
-            player.playImmediately(atRate: 1.0)
-            #if DEBUG
-            print("🔊 [DirectStreamingPlayer] post-head-start playImmediately called")
-            #endif
         }
         
         // Final 6.5 s recovery timer removed in 4.2 (it used legacy non-hardened item recreation).
         // Only the single lightweight safety net (below) remains as true last resort.
         // It will be further cleaned in 4.3 (removal of the two .prePlay decision points).
         
-        // Lightweight safety net for cold launch only (single bounded last resort)
-        // Scheduling is now unconditional (the net itself is internally
-        // bounded by retryCount + intent guards). The .prePlay heuristic has been removed.
-        Task { @MainActor in
-            #if DEBUG
-            print("[DirectStreamingPlayer] scheduling cold-launch safety net (single last resort)")
-            #endif
-            self.scheduleColdLaunchSafetyNet()
+        // Startup safety net: first-play attach only (cold launch or stream switch).
+        // Same-stream resume uses soft pause and must not schedule a stale recreate.
+        if context == .coldLaunch || context == .streamSwitch {
+            Task { @MainActor in
+                #if DEBUG
+                print("[DirectStreamingPlayer] scheduling startup safety net (single last resort)")
+                #endif
+                self.scheduleStartupSafetyNet()
+            }
         }
         
         // Persist the playing state
@@ -1912,6 +1969,16 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     func isActuallyPlaying() -> Bool {
         guard let player = self.player else { return false }
         return player.timeControlStatus == .playing && player.rate > 0.0
+    }
+
+    /// True after the canonical readyToPlay play kick has started stable audible output.
+    @MainActor
+    func isPlaybackAttachStable() -> Bool {
+        guard let player, let item = player.currentItem else { return false }
+        return hasStartedPlaying
+            && !isDeferringFirstPlayKick
+            && item.status == .readyToPlay
+            && player.rate > 0.1
     }
     
     private func startBufferingTimer() {
@@ -1992,14 +2059,22 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                     
                     switch item.status {
                     case .readyToPlay:
+                        // Canonical first-play kick: cold launch and stream-switch attach defer
+                        // playImmediately from startPlayback until the secured item is ready.
                         #if DEBUG
                         print("[DirectStreamingPlayer] Item readyToPlay → starting playback")
                         #endif
                         
                         self.initialPlaybackRetryCount = 0
                         
-                        self.player?.play()
-                        self.player?.rate = 1.0
+                        self.isDeferringFirstPlayKick = false
+                        self.cancelEarlyICYDropRecreate()
+                        if (self.player?.rate ?? 0) < 0.1 {
+                            self.player?.playImmediately(atRate: 1.0)
+                            #if DEBUG
+                            print("🔊 [DirectStreamingPlayer] playImmediately called — timeControlStatus: \(self.player?.timeControlStatus.rawValue ?? -1), rate: \(self.player?.rate ?? -1), item.status: \(item.status.rawValue)")
+                            #endif
+                        }
                         self.safeOnStatusChange(isPlaying: true, reasonKey: "status_playing")   // ← fixed
                         self.stopBufferingTimer()
                         self.hasStartedPlaying = true
@@ -2072,9 +2147,14 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 guard let self = self, let newValue = change.newValue else { return }
                 DispatchQueue.main.async {
                     if newValue && item.status == .readyToPlay {
-                        self.player?.play()
-                        self.safeOnStatusChange(isPlaying: true, reasonKey: "status_playing")   // ← fixed
-                        self.stopBufferingTimer()
+                        guard !self.isDeferringFirstPlayKick else { return }
+                        if (self.player?.rate ?? 0) < 0.1 {
+                            self.player?.play()
+                        }
+                        if self.hasStartedPlaying {
+                            self.safeOnStatusChange(isPlaying: true, reasonKey: "status_playing")   // ← fixed
+                            self.stopBufferingTimer()
+                        }
                     } else if !newValue && (self.player?.rate ?? 0) == 0 {
                         let stalledDelay: TimeInterval = self.isLowEfficiencyMode ? 20.0 : 10.0
                         DispatchQueue.main.asyncAfter(deadline: .now() + stalledDelay) { [weak self] in
@@ -2124,23 +2204,30 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         }
     }
     
-    // MARK: - Cold Launch Safety Net
     @MainActor
-    private func scheduleColdLaunchSafetyNet() {
+    private func cancelStartupSafetyNet() {
+        startupSafetyNetWorkItem?.cancel()
+        startupSafetyNetWorkItem = nil
+    }
+
+    // MARK: - Startup Safety Net (cold launch / stream-switch first attach)
+    @MainActor
+    private func scheduleStartupSafetyNet() {
         guard initialPlaybackRetryCount < maxInitialRetries else { return }
-        
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { [weak self] in
+
+        cancelStartupSafetyNet()
+        let workItem = DispatchWorkItem { [weak self] in
             guard let self = self else { return }
-            
+
             Task { @MainActor in
                 // ──────────────────────────────────────────────────────────────
-                // intent-driven cold-launch safety net.
+                // intent-driven startup safety net.
                 // The .prePlay visual-state heuristic has been removed (last remaining
                 // currentVisualState decision point for control flow in DirectStreamingPlayer).
                 // Activation now relies solely on: intent check + actual playback facts.
                 guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
                     #if DEBUG
-                    print("[DirectStreamingPlayer] cold-launch safety net: resurrection suppressed by playbackIntent")
+                    print("[DirectStreamingPlayer] startup safety net: resurrection suppressed by playbackIntent")
                     #endif
                     return
                 }
@@ -2152,7 +2239,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 if !isActuallyPlaying {
                     self.initialPlaybackRetryCount += 1
                     #if DEBUG
-                    print("[DirectStreamingPlayer] [Playback] Cold-launch safety net: no playback detected after 5s – retry \(self.initialPlaybackRetryCount)/\(self.maxInitialRetries) | hasStartedPlaying=\(self.hasStartedPlaying) | currentItemStatus=\(self.currentItemStatus.rawValue) | hasPlayerItem=\(self.playerItem != nil) | rate=\(self.player?.rate ?? -1)")
+                    print("[DirectStreamingPlayer] [Playback] Startup safety net: no playback detected after 5s – retry \(self.initialPlaybackRetryCount)/\(self.maxInitialRetries) | hasStartedPlaying=\(self.hasStartedPlaying) | currentItemStatus=\(self.currentItemStatus.rawValue) | hasPlayerItem=\(self.playerItem != nil) | rate=\(self.player?.rate ?? -1)")
                     #endif
 
                     if self.initialPlaybackRetryCount >= self.maxInitialRetries {
@@ -2183,6 +2270,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 }
             }
         }
+        startupSafetyNetWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0, execute: workItem)
     }
     
     // Methods for observer removal
@@ -2229,6 +2318,12 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             guard let self else { return }
             guard !self.isPlaybackTeardownActive else { return }
             guard !self.hasStartedPlaying else { return }
+            guard !self.isDeferringFirstPlayKick else {
+                #if DEBUG
+                print("[DirectStreamingPlayer] [KVO] early ICY drop: skipped — awaiting readyToPlay first-play kick")
+                #endif
+                return
+            }
             guard self.initialPlaybackRetryCount < self.maxInitialRetries else { return }
             guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
                 #if DEBUG
@@ -2310,11 +2405,16 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 return
             }
             
-            // Restart playback only if still allowed
-            self.player?.play()
+            // Restart playback only if still allowed — defer audible kick when item not ready.
+            if newItem.status == .readyToPlay {
+                self.isDeferringFirstPlayKick = false
+                self.player?.playImmediately(atRate: 1.0)
+            } else {
+                self.isDeferringFirstPlayKick = true
+            }
             
             #if DEBUG
-            print("[DirectStreamingPlayer] Player item recreated and playback resumed")
+            print("[DirectStreamingPlayer] Player item recreated and playback resumed (item.status: \(newItem.status.rawValue))")
             #endif
             
             // NEW (per minimal ICY resume fix): ensure delegate wired on the fresh item created by recreate
@@ -2366,8 +2466,16 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             return
         }
 
-        // Activate before any async work so stale KVO / debounced recreate cannot race teardown.
-        activatePlaybackTeardownGuardFromStop()
+        let usesSoftPause = reason == .userAction && !silent
+        if usesSoftPause {
+            Task { @MainActor [weak self] in
+                self?.cancelStartupSafetyNet()
+                self?.cancelEarlyICYDropRecreate()
+            }
+        } else {
+            // Activate before any async work so stale KVO / debounced recreate cannot race teardown.
+            activatePlaybackTeardownGuardFromStop()
+        }
         
         loadingTimeoutWorkItem?.cancel()
         currentLoadingDelegate?.loadingRequest.finishLoading(with: URLError(.cancelled))
@@ -2421,6 +2529,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         clearSSLProtectionTimer()
         isSSLHandshakeComplete = true
         hasStartedPlaying = false
+        isDeferringFirstPlayKick = false
         
         // Derive effectiveSilent exactly as before, but now driven by reason
         // (preserves all recent-commit behaviour for silent + stream switches)
@@ -2447,6 +2556,31 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             #if DEBUG
             print("[DirectStreamingPlayer] Stopping playback (reason: \(reason), effectiveSilent: \(effectiveSilent))")
             #endif
+
+            if reason == .userAction && !effectiveSilent {
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated {
+                        self.player?.pause()
+                        self.player?.rate = 0.0
+                        self.isSoftPaused = true
+                        self.lastEmittedStatus = nil
+                        self.lastObservedTimeControl = nil
+                        self.lastObservedItemStatus = nil
+                        self.safeOnStatusChange(isPlaying: false, reasonKey: "status_stopped")
+                        completion?()
+                    }
+                }
+                #if DEBUG
+                print("[DirectStreamingPlayer] Soft pause — kept secured AVPlayerItem for same-stream resume")
+                #endif
+                return
+            }
+
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    self.isSoftPaused = false
+                }
+            }
             
             guard self.player != nil || self.playerItem != nil else {
                 if !effectiveSilent {
@@ -2769,6 +2903,7 @@ extension DirectStreamingPlayer: AVPlayerItemMetadataOutputPushDelegate {
                     guard let self else { return }
 
                     self.currentMetadata = trimmed
+                    self.hasReceivedLiveStreamMetadata = true
                     
                     self.safeOnMetadataChange(metadata: trimmed)
                     if self.needsImmediateMetadataPush {

@@ -50,6 +50,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     func applicationWillEnterForeground(_ application: UIApplication) {
         Task { @MainActor in
             let manager = SharedPlayerManager.shared
+            await manager.recordWidgetLiveness()
             let vs = await manager.currentVisualState
             let st = manager.loadSharedState()
             WidgetRefreshManager.shared.refreshIfNeeded(

@@ -302,6 +302,10 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     /// Coalesces overlapping background processing for the same cache key before NSCache is populated.
     private var inFlightImageProcessing: [String: Task<UIImage?, Never>] = [:]
     private let cacheQueue = DispatchQueue(label: "radio.lutheran.imageCache", qos: .utility)
+    /// Cold launch: defer CIFilter + main-thread apply until first stream attach is stable.
+    private var deferBackgroundImageUntilPlaybackStable = false
+    private var pendingBackgroundStream: DirectStreamingPlayer.Stream?
+    private var deferredBackgroundFlushTask: Task<Void, Never>?
     
     private var selectedStreamIndex: Int = 0
     private var isRotating = false
@@ -359,10 +363,22 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     private var hasPlayedSpecialTuningSound = false // Flag to ensure special sound plays only once
     private var hasShownSecurityAlert = false // Flag to ensure security alert is shown only once
 
-    /// Polls `SharedPlayerManager.sleepTimerRemainingSeconds` for button/accessibility updates.
+    /// MainActor-local countdown for sleep-timer button/accessibility (no per-second actor hops).
     private var sleepTimerDisplayTask: Task<Void, Never>?
-    /// Avoids awaiting the actor before presenting the sleep-timer sheet (reduces main-thread work during playback).
+    /// Local countdown cache; seeded optimistically on set, synced once on foreground.
     private var cachedSleepTimerRemaining: Int?
+    /// Suppresses speaker / Now Playing visual work during sleep-timer menu selection.
+    private var isSleepTimerInteractionActive = false
+    private var pendingMetadataVisualRefresh: String?
+    /// Lets UIMenu teardown finish before the sleep-timer actor hop.
+    private static let sleepTimerMenuSettleNs: UInt64 = 250_000_000
+    /// Tint-only feedback after intent is scheduled; image swap waits longer.
+    private static let sleepTimerPostScheduleUISettleNs: UInt64 = 300_000_000
+    /// Full SF Symbol + deferred ICY speaker flush after audio has settled.
+    private static let sleepTimerDeferredVisualSettleNs: UInt64 = 500_000_000
+    private lazy var sleepTimerSymbolConfig = UIImage.SymbolConfiguration(pointSize: 22, weight: .medium)
+    private lazy var sleepTimerInactiveImage = UIImage(systemName: "moon.zzz", withConfiguration: sleepTimerSymbolConfig)
+    private lazy var sleepTimerActiveImage = UIImage(systemName: "moon.zzz.fill", withConfiguration: sleepTimerSymbolConfig)
     
     // Testable accessors
     @objc var isPlayingState: Bool {
@@ -490,9 +506,15 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         isInitialSetupComplete = true
         setupBackgroundParallax()
 
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(sleepTimerStateDidChange(_:)),
+            name: SleepTimerNotification.stateDidChange,
+            object: nil
+        )
+
         Task { @MainActor [weak self] in
-            await self?.refreshSleepTimerButtonAppearance()
-            self?.startSleepTimerDisplayUpdatesIfNeeded()
+            await self?.syncSleepTimerDisplayFromActorIfNeeded()
         }
         
         // Energy Efficiency Optimizations (iOS 26)
@@ -523,7 +545,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             await self.streamingPlayer.setSelectedStreamModelOnly(to: initialStream)
             
             self.updateUserDefaultsLanguage(initialStream.languageCode)
-            self.updateBackground(for: initialStream)
+            self.deferBackgroundImageUntilPlaybackStable = true
+            self.pendingBackgroundStream = initialStream
             
             await self.playSpecialTuningSound()
             
@@ -656,8 +679,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 #endif
             }
 
-            await self.refreshSleepTimerButtonAppearance()
-            self.startSleepTimerDisplayUpdatesIfNeeded()
+            await self.syncSleepTimerDisplayFromActorIfNeeded()
         }
     }
     
@@ -730,40 +752,18 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             DispatchQueue.main.async {
                 if let metadata = metadata {
                     self.metadataLabel.text = metadata
-                    self.updateNowPlayingInfo(title: metadata)
-                    
-                    let specificSpeakers = Set(["Jari Lammi"])
-                    let matchedSpeaker = potentialNames.first(where: { specificSpeakers.contains($0) })
-                    
-                    if let speaker = matchedSpeaker,
-                       let speakerImage = UIImage(named: "\(speaker.lowercased().replacingOccurrences(of: " ", with: "_"))_photo") {
-                        
-                        // Photo of the speaker
-                        UIView.transition(with: self.speakerImageView, duration: 0.3, options: .transitionCrossDissolve, animations: {
-                            self.speakerImageView.image = speakerImage
-                            self.speakerImageView.isHidden = false
-                            self.speakerImageHeightConstraint?.constant = 100
-                            self.speakerImageView.accessibilityLabel = "Photo of \(speaker)"
-                        }, completion: nil)
-                        
-                    } else if let placeholderImage = UIImage(named: "radio-placeholder") {
-                        // DEFAULT: always show station logo for everything else
-                        UIView.transition(with: self.speakerImageView, duration: 0.3, options: .transitionCrossDissolve, animations: {
-                            self.speakerImageView.image = placeholderImage
-                            self.speakerImageView.isHidden = false
-                            self.speakerImageHeightConstraint?.constant = 100
-                            self.speakerImageView.accessibilityLabel = "Lutheran Radio Logo"
-                        }, completion: nil)
+                    if self.isSleepTimerInteractionActive {
+                        self.pendingMetadataVisualRefresh = metadata
                     } else {
-                        #if DEBUG
-                        print("🔴 Still failed to load radio-placeholder from Assets.xcassets")
-                        #endif
-                        self.speakerImageView.isHidden = true
+                        self.updateNowPlayingInfo(title: metadata)
+                        self.applySpeakerVisuals(for: metadata, potentialNames: potentialNames)
                     }
                 } else {
                     self.metadataLabel.text = String(localized: "no_track_info")
-                    self.updateNowPlayingInfo()
-                    self.speakerImageView.isHidden = true
+                    if !self.isSleepTimerInteractionActive {
+                        self.updateNowPlayingInfo()
+                        self.speakerImageView.isHidden = true
+                    }
                 }
                 self.saveStateForWidget()
             }
@@ -834,7 +834,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     private func setupControls() {
         playPauseButton.addTarget(self, action: #selector(togglePlayback), for: .touchUpInside)
-        sleepTimerButton.addTarget(self, action: #selector(sleepTimerTapped), for: .touchUpInside)
+        configureSleepTimerButtonMenu()
         sleepTimerButton.accessibilityIdentifier = "sleepTimerButton"
         playPauseButton.accessibilityIdentifier = "playPauseButton"
         playPauseButton.accessibilityHint = String(localized: "accessibility_hint_play_pause")
@@ -1362,7 +1362,69 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     /// - Parameter stream: The current stream providing language code.
     /// - Note: Caches processed images; applies filters async for performance.
     /// - SeeAlso: `processImageAsync(imageName:cacheKey:stream:isDarkMode:)` for filtering details.
-    private func updateBackground(for stream: DirectStreamingPlayer.Stream) {
+    /// After cold launch, run background CIFilter only once stream attach is stable so HAL
+    /// and main-thread UIImageView work do not contend with first-play audio or early gestures.
+    private func isDeferredBackgroundFlushReady() -> Bool {
+        DirectStreamingPlayer.shared.isPlaybackAttachStable()
+            && DirectStreamingPlayer.shared.hasReceivedLiveStreamMetadata
+    }
+
+    private func cancelDeferredBackgroundFlushForModalInteraction() {
+        deferredBackgroundFlushTask?.cancel()
+        deferredBackgroundFlushTask = nil
+    }
+
+    private func rescheduleDeferredBackgroundImageFlushAfterModalIfNeeded() {
+        guard deferBackgroundImageUntilPlaybackStable, pendingBackgroundStream != nil else { return }
+        scheduleDeferredBackgroundImageFlushIfNeeded()
+    }
+
+    /// Defers CIFilter + apply until the new stream attach is stable (stream switch while playing).
+    private func scheduleDeferredBackgroundImageForStreamSwitch(_ stream: DirectStreamingPlayer.Stream) {
+        deferredBackgroundFlushTask?.cancel()
+        deferredBackgroundFlushTask = nil
+        deferBackgroundImageUntilPlaybackStable = true
+        pendingBackgroundStream = stream
+    }
+
+    private func scheduleDeferredBackgroundImageFlushIfNeeded() {
+        guard deferBackgroundImageUntilPlaybackStable,
+              let stream = pendingBackgroundStream else { return }
+        guard deferredBackgroundFlushTask == nil else { return }
+
+        deferredBackgroundFlushTask = Task { @MainActor [weak self] in
+            defer { self?.deferredBackgroundFlushTask = nil }
+            guard let self else { return }
+
+            for _ in 0..<40 {
+                if Task.isCancelled { return }
+                if self.isDeferredBackgroundFlushReady() { break }
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+            guard self.isDeferredBackgroundFlushReady() else { return }
+
+            // Brief settle after LIVE ICY before heavy CIContext + IOSurface apply.
+            try? await Task.sleep(for: .milliseconds(800))
+            guard !Task.isCancelled else { return }
+
+            self.deferBackgroundImageUntilPlaybackStable = false
+            self.pendingBackgroundStream = nil
+            #if DEBUG
+            print("[ViewController] Flushing deferred background image for \(stream.languageCode)")
+            #endif
+            self.updateBackground(for: stream, skipCrossDissolve: true)
+        }
+    }
+
+    private func updateBackground(for stream: DirectStreamingPlayer.Stream, skipCrossDissolve: Bool = false) {
+        if deferBackgroundImageUntilPlaybackStable {
+            pendingBackgroundStream = stream
+            #if DEBUG
+            print("[ViewController] Background image deferred until playback attach is stable (\(stream.languageCode))")
+            #endif
+            return
+        }
+
         guard let imageName = backgroundImages[stream.languageCode] else {
             DispatchQueue.main.async {
                 self.backgroundImageView.image = nil
@@ -1397,7 +1459,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             
             DispatchQueue.main.async {
                 if let cachedImage = self.processedImageCache.object(forKey: cacheKey as NSString) {
-                    self.applyProcessedImage(cachedImage, for: stream)
+                    self.applyProcessedImage(cachedImage, for: stream, skipCrossDissolve: skipCrossDissolve)
                     return
                 }
                 
@@ -1620,14 +1682,17 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         return processedImage
     }
     
-    private func applyProcessedImage(_ image: UIImage, for stream: DirectStreamingPlayer.Stream) {
+    private func applyProcessedImage(
+        _ image: UIImage,
+        for stream: DirectStreamingPlayer.Stream,
+        skipCrossDissolve: Bool = false
+    ) {
         // This runs on main thread
         let screen = view.window?.windowScene?.screen
         let screenSize = screen?.bounds.size ?? CGSize(width: 375, height: 667) // Fallback to default iPhone size if nil
         let isSmallScreen = screenSize.height < 1600
-        
-        backgroundImageView.image = image
-        
+        let targetAlpha: CGFloat = traitCollection.userInterfaceStyle == .dark ? 0.3 : 0.15
+
         if isSmallScreen {
             let imageSize = image.size
             let screenAspect = screenSize.width / screenSize.height
@@ -1637,13 +1702,22 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         } else {
             backgroundImageView.transform = .identity
         }
-        
-        // Reapply parallax effect
+
+        if skipCrossDissolve {
+            backgroundImageView.image = image
+            backgroundImageView.alpha = targetAlpha
+            backgroundImageView.addParallaxEffect(intensity: 10.0)
+            #if DEBUG
+            print("Background update completed - alpha: \(backgroundImageView.alpha), image: \(backgroundImageView.image != nil ? "set" : "nil")")
+            #endif
+            return
+        }
+
+        backgroundImageView.image = image
         backgroundImageView.addParallaxEffect(intensity: 10.0)
-        
-        // Animate alpha change
+
         UIView.transition(with: backgroundImageView, duration: 0.5, options: .transitionCrossDissolve, animations: {
-            self.backgroundImageView.alpha = self.traitCollection.userInterfaceStyle == .dark ? 0.3 : 0.15
+            self.backgroundImageView.alpha = targetAlpha
         }, completion: { _ in
             #if DEBUG
             print("Background update completed - alpha: \(self.backgroundImageView.alpha), image: \(self.backgroundImageView.image != nil ? "set" : "nil")")
@@ -1946,40 +2020,17 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
 
     // MARK: - Sleep Timer UI
 
-    @objc private func sleepTimerTapped() {
-        UIView.animate(withDuration: 0.1, animations: {
-            self.sleepTimerButton.transform = CGAffineTransform(scaleX: 0.92, y: 0.92)
-        }) { _ in
-            UIView.animate(withDuration: 0.1) {
-                self.sleepTimerButton.transform = .identity
-            }
-        }
-
-        presentSleepTimerActionSheet()
-    }
-
     @MainActor
-    private func presentSleepTimerActionSheet() {
-        let sheet = UIAlertController(
-            title: String(localized: "sleep_timer_sheet_title"),
-            message: nil,
-            preferredStyle: .actionSheet
-        )
+    private func configureSleepTimerButtonMenu() {
+        var children: [UIMenuElement] = []
 
         if cachedSleepTimerRemaining != nil {
-            sheet.addAction(UIAlertAction(
+            children.append(UIAction(
                 title: String(localized: "sleep_timer_cancel_timer"),
-                style: .destructive,
-                handler: { [weak self] _ in
-                    Task { @MainActor in
-                        await SharedPlayerManager.shared.cancelSleepTimer()
-                        self?.cachedSleepTimerRemaining = nil
-                        await self?.refreshSleepTimerButtonAppearance()
-                        self?.sleepTimerDisplayTask?.cancel()
-                        self?.sleepTimerDisplayTask = nil
-                    }
-                }
-            ))
+                attributes: .destructive
+            ) { [weak self] _ in
+                self?.handleSleepTimerCancelSelected()
+            })
         }
 
         let presets: [(minutes: Int, title: String)] = [
@@ -1990,38 +2041,198 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         ]
 
         for preset in presets {
-            sheet.addAction(UIAlertAction(title: preset.title, style: .default) { [weak self] _ in
-                Task { @MainActor in
-                    await SharedPlayerManager.shared.setSleepTimer(duration: TimeInterval(preset.minutes * 60))
-                    self?.cachedSleepTimerRemaining = await SharedPlayerManager.shared.sleepTimerRemainingSeconds
-                    await self?.refreshSleepTimerButtonAppearance()
-                    self?.startSleepTimerDisplayUpdatesIfNeeded()
-                }
+            children.append(UIAction(title: preset.title) { [weak self] _ in
+                self?.handleSleepTimerPresetSelected(minutes: preset.minutes)
             })
         }
 
-        sheet.addAction(UIAlertAction(
-            title: String(localized: "sleep_timer_sheet_dismiss"),
-            style: .cancel
-        ))
-
-        if let popover = sheet.popoverPresentationController {
-            popover.sourceView = sleepTimerButton
-            popover.sourceRect = sleepTimerButton.bounds
-        }
-
-        present(sheet, animated: true)
+        sleepTimerButton.menu = UIMenu(
+            title: String(localized: "sleep_timer_sheet_title"),
+            options: .displayInline,
+            children: children
+        )
+        sleepTimerButton.showsMenuAsPrimaryAction = true
     }
 
     @MainActor
-    private func refreshSleepTimerButtonAppearance() async {
-        let config = UIImage.SymbolConfiguration(pointSize: 22, weight: .medium)
-        let remaining = await SharedPlayerManager.shared.sleepTimerRemainingSeconds
-        cachedSleepTimerRemaining = remaining
+    private func handleSleepTimerPresetSelected(minutes: Int) {
+        isSleepTimerInteractionActive = true
+        cancelDeferredBackgroundFlushForModalInteraction()
 
+        let totalSeconds = max(1, minutes * 60)
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            await Task.yield()
+            try? await Task.sleep(nanoseconds: Self.sleepTimerMenuSettleNs)
+            let confirmed = await SharedPlayerManager.shared.setSleepTimer(
+                duration: TimeInterval(totalSeconds)
+            )
+            guard let confirmed else {
+                self.finishSleepTimerInteraction(applyDeferredVisuals: false)
+                return
+            }
+            try? await Task.sleep(nanoseconds: Self.sleepTimerPostScheduleUISettleNs)
+            guard !Task.isCancelled else { return }
+            self.beginLocalSleepTimerDisplay(remaining: confirmed, deferImageSwap: true)
+            try? await Task.sleep(nanoseconds: Self.sleepTimerDeferredVisualSettleNs)
+            guard !Task.isCancelled else { return }
+            self.applySleepTimerButtonAppearance(remaining: confirmed, deferImageSwap: false)
+            self.finishSleepTimerInteraction(applyDeferredVisuals: true)
+            self.rescheduleDeferredBackgroundImageFlushAfterModalIfNeeded()
+        }
+    }
+
+    @MainActor
+    private func handleSleepTimerCancelSelected() {
+        isSleepTimerInteractionActive = true
+        cancelDeferredBackgroundFlushForModalInteraction()
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            await Task.yield()
+            self.stopLocalSleepTimerDisplay()
+            await SharedPlayerManager.shared.cancelSleepTimer()
+            self.configureSleepTimerButtonMenu()
+            self.finishSleepTimerInteraction(applyDeferredVisuals: true)
+            self.rescheduleDeferredBackgroundImageFlushAfterModalIfNeeded()
+        }
+    }
+
+    @MainActor
+    private func finishSleepTimerInteraction(applyDeferredVisuals: Bool) {
+        isSleepTimerInteractionActive = false
+        guard applyDeferredVisuals, let metadata = pendingMetadataVisualRefresh else { return }
+        pendingMetadataVisualRefresh = nil
+        updateNowPlayingInfo(title: metadata)
+        applySpeakerVisuals(
+            for: metadata,
+            potentialNames: potentialNames(from: metadata),
+            animated: false
+        )
+    }
+
+    private func potentialNames(from metadata: String) -> [String] {
+        do {
+            let regex = try NSRegularExpression(pattern: "\\b[A-Z][a-z]+(?:\\s[A-Z][a-z]+)*\\b")
+            let matches = regex.matches(in: metadata, range: NSRange(metadata.startIndex..., in: metadata))
+            return matches.compactMap { match in
+                Range(match.range, in: metadata).map { String(metadata[$0]) }
+            }
+        } catch {
+            return []
+        }
+    }
+
+    @MainActor
+    private func applySpeakerVisuals(for metadata: String, potentialNames: [String], animated: Bool = true) {
+        let specificSpeakers = Set(["Jari Lammi"])
+        let matchedSpeaker = potentialNames.first(where: { specificSpeakers.contains($0) })
+
+        if let speaker = matchedSpeaker,
+           let speakerImage = UIImage(named: "\(speaker.lowercased().replacingOccurrences(of: " ", with: "_"))_photo") {
+            if animated {
+                UIView.transition(with: speakerImageView, duration: 0.3, options: .transitionCrossDissolve, animations: {
+                    self.speakerImageView.image = speakerImage
+                    self.speakerImageView.isHidden = false
+                    self.speakerImageHeightConstraint?.constant = 100
+                    self.speakerImageView.accessibilityLabel = "Photo of \(speaker)"
+                }, completion: nil)
+            } else {
+                speakerImageView.image = speakerImage
+                speakerImageView.isHidden = false
+                speakerImageHeightConstraint?.constant = 100
+                speakerImageView.accessibilityLabel = "Photo of \(speaker)"
+            }
+        } else if let placeholderImage = UIImage(named: "radio-placeholder") {
+            if animated {
+                UIView.transition(with: speakerImageView, duration: 0.3, options: .transitionCrossDissolve, animations: {
+                    self.speakerImageView.image = placeholderImage
+                    self.speakerImageView.isHidden = false
+                    self.speakerImageHeightConstraint?.constant = 100
+                    self.speakerImageView.accessibilityLabel = "Lutheran Radio Logo"
+                }, completion: nil)
+            } else {
+                speakerImageView.image = placeholderImage
+                speakerImageView.isHidden = false
+                speakerImageHeightConstraint?.constant = 100
+                speakerImageView.accessibilityLabel = "Lutheran Radio Logo"
+            }
+        } else {
+            #if DEBUG
+            print("🔴 Still failed to load radio-placeholder from Assets.xcassets")
+            #endif
+            speakerImageView.isHidden = true
+        }
+    }
+
+    @objc private func sleepTimerStateDidChange(_ notification: Notification) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let isActive = notification.userInfo?[SleepTimerNotification.Key.isActive] as? Bool ?? false
+            if !isActive {
+                self.stopLocalSleepTimerDisplay()
+                return
+            }
+            if let remaining = notification.userInfo?[SleepTimerNotification.Key.remainingSeconds] as? Int,
+               remaining > 0,
+               self.cachedSleepTimerRemaining == nil {
+                self.beginLocalSleepTimerDisplay(remaining: remaining)
+            }
+        }
+    }
+
+    /// One-shot actor read on launch/foreground — not a polling loop.
+    @MainActor
+    private func syncSleepTimerDisplayFromActorIfNeeded() async {
+        let remaining = await SharedPlayerManager.shared.sleepTimerRemainingSeconds
         if let remaining, remaining > 0 {
-            let symbolName = "moon.zzz.fill"
-            sleepTimerButton.setImage(UIImage(systemName: symbolName, withConfiguration: config), for: .normal)
+            beginLocalSleepTimerDisplay(remaining: remaining)
+        } else if cachedSleepTimerRemaining != nil {
+            stopLocalSleepTimerDisplay()
+        }
+    }
+
+    @MainActor
+    private func beginLocalSleepTimerDisplay(remaining: Int, deferImageSwap: Bool = false) {
+        cachedSleepTimerRemaining = remaining
+        applySleepTimerButtonAppearance(remaining: remaining, deferImageSwap: deferImageSwap)
+        configureSleepTimerButtonMenu()
+
+        sleepTimerDisplayTask?.cancel()
+        sleepTimerDisplayTask = Task { @MainActor [weak self] in
+            guard let self, !Task.isCancelled else { return }
+            var remainingSeconds = self.cachedSleepTimerRemaining ?? 0
+
+            while remainingSeconds > 0, !Task.isCancelled {
+                do {
+                    try await Task.sleep(for: .seconds(1))
+                } catch {
+                    return
+                }
+                guard !Task.isCancelled else { return }
+
+                remainingSeconds -= 1
+                self.cachedSleepTimerRemaining = remainingSeconds > 0 ? remainingSeconds : nil
+                self.applySleepTimerButtonAppearance(remaining: self.cachedSleepTimerRemaining)
+            }
+        }
+    }
+
+    @MainActor
+    private func stopLocalSleepTimerDisplay() {
+        sleepTimerDisplayTask?.cancel()
+        sleepTimerDisplayTask = nil
+        cachedSleepTimerRemaining = nil
+        applySleepTimerButtonAppearance(remaining: nil)
+        configureSleepTimerButtonMenu()
+    }
+
+    @MainActor
+    private func applySleepTimerButtonAppearance(remaining: Int?, deferImageSwap: Bool = false) {
+        if let remaining, remaining > 0 {
+            if !deferImageSwap {
+                sleepTimerButton.setImage(sleepTimerActiveImage, for: .normal)
+            }
             sleepTimerButton.tintColor = .systemIndigo
             let minutes = max(1, (remaining + 59) / 60)
             sleepTimerButton.accessibilityValue = unsafe String(
@@ -2029,30 +2240,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 minutes
             )
         } else {
-            sleepTimerButton.setImage(UIImage(systemName: "moon.zzz", withConfiguration: config), for: .normal)
+            sleepTimerButton.setImage(sleepTimerInactiveImage, for: .normal)
             sleepTimerButton.tintColor = .secondaryLabel
             sleepTimerButton.accessibilityValue = nil
-        }
-    }
-
-    @MainActor
-    private func startSleepTimerDisplayUpdatesIfNeeded() {
-        sleepTimerDisplayTask?.cancel()
-        sleepTimerDisplayTask = Task { @MainActor [weak self] in
-            while !Task.isCancelled {
-                guard let self else { return }
-                let remaining = await SharedPlayerManager.shared.sleepTimerRemainingSeconds
-                guard let remaining, remaining > 0 else {
-                    await self.refreshSleepTimerButtonAppearance()
-                    return
-                }
-                await self.refreshSleepTimerButtonAppearance()
-                do {
-                    try await Task.sleep(for: .seconds(1))
-                } catch {
-                    return
-                }
-            }
         }
     }
 
@@ -2062,6 +2252,11 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     deinit {
         isDeallocating = true
         sleepTimerDisplayTask?.cancel()
+        NotificationCenter.default.removeObserver(
+            self,
+            name: SleepTimerNotification.stateDidChange,
+            object: nil
+        )
         
         #if DEBUG
         print("[ViewController] deinit starting")
@@ -2217,7 +2412,10 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             guard let self else { return }
             let vs = await SharedPlayerManager.shared.currentVisualState
             if vs.shouldAutoPlayOrResume {
-                await SharedPlayerManager.shared.resetToPrePlayForNewStream()
+                let intent = await SharedPlayerManager.shared.currentPlaybackIntent
+                await SharedPlayerManager.shared.resetToPrePlayForNewStream(
+                    preserveActiveSleepTimer: intent == .sleepTimer
+                )
                 self.updateUI(for: .prePlay)
             } else {
                 self.updateSelectionIndicator(to: newIndex, isInitial: false, caller: "didSelectItemAt")
@@ -2238,7 +2436,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         let workItem = DispatchWorkItem { [weak self] in
             guard let self = self else { return }
             let stream = DirectStreamingPlayer.availableStreams[newIndex]  // use newIndex instead of indexPath.item
-            updateBackground(for: stream)
+            self.scheduleDeferredBackgroundImageForStreamSwitch(stream)
             
             // Wait for tuning sound to complete if playing
             if self.isTuningSoundPlaying {
@@ -2326,6 +2524,11 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 #endif
                 
                 // ← SINGLE SOURCE OF TRUTH
+                self.deferBackgroundImageUntilPlaybackStable = false
+                self.pendingBackgroundStream = nil
+                self.deferredBackgroundFlushTask?.cancel()
+                self.deferredBackgroundFlushTask = nil
+                self.updateBackground(for: stream)
                 self.updateUI(for: .userPaused)
                 self.updateSelectionIndicator(to: index)
                 return
@@ -2375,7 +2578,10 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 print("[ViewController] [completeStreamSwitch] Skipping redundant resetToPrePlayForNewStream — tap already set .prePlay hold")
                 #endif
             } else {
-                await SharedPlayerManager.shared.resetToPrePlayForNewStream()
+                let intent = await SharedPlayerManager.shared.currentPlaybackIntent
+                await SharedPlayerManager.shared.resetToPrePlayForNewStream(
+                    preserveActiveSleepTimer: intent == .sleepTimer
+                )
             }
             updateUI(for: .prePlay)
             
@@ -3074,7 +3280,7 @@ extension ViewController: StreamingPlayerDelegate {
                     if visualState == .prePlay || visualState == .playing {
                         return visualState
                     }
-                    if playbackIntent == .shouldBePlaying {
+                    if playbackIntent.isActivePlaybackIntent {
                         return .prePlay
                     }
                 }
@@ -3143,6 +3349,10 @@ extension ViewController: StreamingPlayerDelegate {
                 // Only haptic when user-initiated resume (not auto-resume after interruption)
                 if reasonKey == nil {
                     playHapticFeedback(style: .light)
+                }
+
+                if reasonKey == "status_playing" {
+                    self.scheduleDeferredBackgroundImageFlushIfNeeded()
                 }
             }
             

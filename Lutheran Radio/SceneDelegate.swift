@@ -60,6 +60,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // Save current state when becoming active (in case widget needs fresh data)
         // → non-blocking / fire-and-forget
         Task {
+            await SharedPlayerManager.shared.recordWidgetLiveness()
             await SharedPlayerManager.shared.saveCurrentState()
         }
     }
@@ -90,6 +91,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         
         // Save current state for widget sharing — non-blocking / fire-and-forget
         Task {
+            await SharedPlayerManager.shared.recordWidgetLiveness()
             await SharedPlayerManager.shared.saveCurrentState()
         }
         

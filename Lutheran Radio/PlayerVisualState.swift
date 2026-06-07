@@ -35,6 +35,11 @@ import UIKit
 ///                    Control Center, widget pause, lock screen, etc.). This is the
 ///                    primary resurrection blocker. Once set, only an explicit user
 ///                    play action may clear it.
+/// - sleepTimer:      Sleep timer is active (countdown) or has just elapsed.
+///                    While audio is still playing, intent mirrors `.shouldBePlaying`
+///                    and visual state stays `.playing`. When the timer fires, visual
+///                    becomes `.userPaused` but intent remains `.sleepTimer` so logic
+///                    can distinguish timer-driven pause from sticky `.userPaused`.
 /// - securityLocked:  Permanent security failure (DNS TXT validation failure,
 ///                    certificate pinning failure, 403 from streaming server, etc.).
 ///                    This is a hard, permanent blocker until the next successful
@@ -43,7 +48,20 @@ enum PlaybackIntent: Codable, Equatable {
     case shouldBePlaying
     case shouldBePaused
     case userPaused
+    case sleepTimer
     case securityLocked
+}
+
+extension PlaybackIntent {
+    /// True when the user still wants audio playing (normal play or active sleep-timer countdown).
+    var isActivePlaybackIntent: Bool {
+        self == .shouldBePlaying || self == .sleepTimer
+    }
+
+    /// Sticky blockers that only an explicit user play may clear.
+    var isStickyPauseOrLock: Bool {
+        self == .userPaused || self == .securityLocked
+    }
 }
 
 // MARK: - PlayerVisualState (existing visual + legacy intent surface)
@@ -132,8 +150,15 @@ enum PlayerVisualState: Codable, Equatable {
 enum StopReason {
     case userAction          // explicit pause button → become sticky .userPaused
     case streamSwitch        // language change → keep playing intent
-    case interruption        // background / call / AirPlay / etc.
+    case interruption        // background / call / AirPlay / sleep timer / etc.
     case error               // security failure, network loss, etc.
+}
+
+/// How `DirectStreamingPlayer` should attach or resume the secured `AVPlayerItem`.
+enum PlaybackAttachContext: Sendable, Equatable {
+    case coldLaunch
+    case streamSwitch
+    case resume
 }
 
 // MARK: - State mapping

@@ -12,6 +12,30 @@ import Foundation
 
 // MARK: - Shared Helpers
 
+/// Primary program title for widget display, with localized fallback.
+private func widgetProgramDisplayTitle(
+    metadata: StreamProgramMetadata?,
+    visualState: PlayerVisualState,
+    languageName: String
+) -> String {
+    if let title = metadata?.programTitle, !title.isEmpty {
+        return title
+    }
+    if visualState.isActivelyPlaying {
+        return unsafe String(
+            format: String(localized: "live_activity_program_fallback", defaultValue: "%@ · Live Stream"),
+            languageName
+        )
+    }
+    return String(localized: "no_track_info", defaultValue: "No track information")
+}
+
+/// Secondary speaker line when parsed from ICY metadata.
+private func widgetProgramSpeakerLine(metadata: StreamProgramMetadata?) -> String? {
+    guard let speaker = metadata?.speaker, !speaker.isEmpty else { return nil }
+    return speaker
+}
+
 /// Returns whether the main app has recently updated shared state.
 /// Used by all three widget sizes to decide whether to show controls or the "tap to open" prompt.
 private func isAppRunning() -> Bool {
@@ -62,7 +86,9 @@ struct Provider: AppIntentTimelineProvider {
             date: Date(),
             visualState: .prePlay,
             currentStation: "🇺🇸 " + String(localized: "language_english"),
+            currentLanguageCode: "en",
             statusMessage: String(localized: "Ready to play"),
+            streamMetadata: nil,
             availableStreams: SharedPlayerManager.shared.availableStreams,
             configuration: RadioWidgetConfiguration()
         )
@@ -73,7 +99,7 @@ struct Provider: AppIntentTimelineProvider {
     }
     
     func timeline(for configuration: RadioWidgetConfiguration, in context: Context) async -> Timeline<SimpleEntry> {
-        let (currentLanguage, hasError, visualState) = await getPendingOrCurrentState(manager: SharedPlayerManager.shared)
+        let (currentLanguage, hasError, visualState, streamMetadata) = await getPendingOrCurrentState(manager: SharedPlayerManager.shared)
         
         let manager = SharedPlayerManager.shared
         
@@ -83,7 +109,7 @@ struct Provider: AppIntentTimelineProvider {
             ?? manager.availableStreams[0]          // final fallback (should never happen)
         
         let currentStation = currentStream.flag + " " + currentStream.language
-        
+
         let statusMessage: String = {
             if visualState == .thermalPaused {
                 return String(localized: "status_thermal_paused", defaultValue: "Thermal pause")
@@ -100,7 +126,9 @@ struct Provider: AppIntentTimelineProvider {
             date: Date(),
             visualState: visualState,
             currentStation: currentStation,
+            currentLanguageCode: currentLanguage,
             statusMessage: statusMessage,
+            streamMetadata: streamMetadata,
             availableStreams: manager.availableStreams,
             configuration: configuration
         )
@@ -116,7 +144,7 @@ struct Provider: AppIntentTimelineProvider {
     
     private func createEntry(with configuration: RadioWidgetConfiguration) async -> SimpleEntry {
         let manager = SharedPlayerManager.shared
-        let (currentLanguage, hasError, visualState) = await getPendingOrCurrentState(manager: manager)
+        let (currentLanguage, hasError, visualState, streamMetadata) = await getPendingOrCurrentState(manager: manager)
 
         let currentStream = manager.availableStreams.first { $0.languageCode == currentLanguage } ?? manager.availableStreams[0]
         let currentStation = currentStream.flag + " " + currentStream.language
@@ -141,23 +169,30 @@ struct Provider: AppIntentTimelineProvider {
             date: Date(),
             visualState: visualState,
             currentStation: currentStation,
+            currentLanguageCode: currentLanguage,
             statusMessage: statusMessage,
+            streamMetadata: streamMetadata,
             availableStreams: manager.availableStreams,
             configuration: configuration
         )
     }
     
-    private func getPendingOrCurrentState(manager: SharedPlayerManager) async -> (currentLanguage: String, hasError: Bool, visualState: PlayerVisualState) {
+    private func getPendingOrCurrentState(manager: SharedPlayerManager) async -> (
+        currentLanguage: String,
+        hasError: Bool,
+        visualState: PlayerVisualState,
+        streamMetadata: StreamProgramMetadata?
+    ) {
         // Always refresh from persistence first (fresh actor starts at .prePlay).
         await manager.refreshVisualStateFromPersistence()
 
         // Snapshot-first (modern path for all current installs). Single simple fallback for
         // first-launch or installs that have never persisted a snapshot.
         if let combined = SharedPlayerManager.loadPersistedWidgetState() {
-            return (combined.currentLanguage, false, combined.visualState)
+            return (combined.currentLanguage, false, combined.visualState, combined.streamMetadata)
         }
 
-        return (SharedPlayerManager.preferredWidgetLanguage(), false, .prePlay)
+        return (SharedPlayerManager.preferredWidgetLanguage(), false, .prePlay, nil)
     }
 }
 
@@ -165,7 +200,9 @@ struct SimpleEntry: TimelineEntry, Sendable {
     let date: Date
     let visualState: PlayerVisualState
     let currentStation: String
+    let currentLanguageCode: String
     let statusMessage: String
+    let streamMetadata: StreamProgramMetadata?
     let availableStreams: [DirectStreamingPlayer.Stream]
     let configuration: RadioWidgetConfiguration
 }
@@ -373,6 +410,32 @@ struct LargeWidgetView: View {
                     Text(entry.statusMessage)
                         .font(.subheadline)
                         .foregroundColor(entry.visualState.textColor.swiftUIColor)
+                    
+                    if entry.visualState.isActivelyPlaying {
+                        let languageName = entry.availableStreams
+                            .first { $0.languageCode == entry.currentLanguageCode }?
+                            .language ?? entry.currentStation
+                        
+                        Text(widgetProgramDisplayTitle(
+                            metadata: entry.streamMetadata,
+                            visualState: entry.visualState,
+                            languageName: languageName
+                        ))
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(3)
+                        .minimumScaleFactor(0.85)
+                        
+                        if let speaker = widgetProgramSpeakerLine(metadata: entry.streamMetadata) {
+                            Text(speaker)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .lineLimit(2)
+                                .multilineTextAlignment(.center)
+                        }
+                    }
                 }
                 
                 Divider()

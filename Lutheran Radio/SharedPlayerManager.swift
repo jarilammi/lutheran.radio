@@ -126,7 +126,7 @@ import Core
 /// | isPlaying               | Bool                  | `SharedPlayerManager.performActualSave`                      | `loadSharedState`, widget timeline providers                         | Snapshot derived from `currentVisualState.isActivelyPlaying` | Written on every authoritative save |
 /// | currentLanguage         | String (languageCode) | (Legacy — no longer written by current paths)                | Migration fallbacks only in `loadPersistedWidgetState` / `preferredWidgetLanguage` | Legacy separate language key. Snapshot + `preferredWidgetLanguage()` are the SSOT. | Migration / compat only |
 /// | hasError                | Bool                  | SharedPlayerManager (sourced from player.hasPermanentError)  | `loadSharedState`, widgets                                           | Permanent error flag for UI chrome                           | Set on security or unrecoverable network failures |
-/// | lastUpdateTime          | Double (epoch)        | `SharedPlayerManager.performActualSave` (on every save) + widget handlers | Widget providers (isAppRunning 60 s check), instant-feedback expiry | Timestamp of last authoritative state change                 | Useful for external freshness + isAppRunning |
+/// | lastUpdateTime          | Double (epoch)        | `performActualSave`, `bumpWidgetLivenessTimestamp`, widget handlers, lifecycle hooks | Widget providers (isAppRunning 60 s check), instant-feedback expiry | Liveness heartbeat — bumped on saves and throttled unchanged-snapshot skips | Keeps widget controls alive during background playback |
 /// | lastUserPauseTime | Double (epoch) | ViewController (explicit pause paths) + widget pause round-trips | Cross-process / extension readers (for compatibility); legacy barrier consumers | 8-second pause window after any user pause (recovery paths in DirectStreamingPlayer now use authoritative actor `wasRecentlyUserPaused()` instead of raw UD + defensive sync) | Prevents resurrection attempts immediately after pause |
 /// | isInstantFeedback       | Bool                  | Widget handlers (`handleWidgetPlay/Stop/Switch`)             | `loadSharedState` (checked first)                                    | Signals that a widget action just occurred (optimistic UI)   | Short-lived; cleared after 15s or next authoritative save |
 /// | instantFeedbackTime     | Double (epoch)        | Widget handlers                                              | `loadSharedState`                                                    | Timestamp for the instant feedback validity window           | 15-second validity window |
@@ -224,9 +224,15 @@ actor SharedPlayerManager {
     ///
     /// Sticky rules are preserved exactly: `.userPaused` and `.securityLocked` are
     /// permanent blockers until an explicit user play action clears them.
+    /// `.sleepTimer` permits execution only while visual state is still `.playing`
+    /// (active countdown); after the timer fires, explicit play is required.
     func canProceedWithPlayback() async -> Bool {
         ensureVisualStateLoaded()
-        return currentPlaybackIntent != .userPaused && currentPlaybackIntent != .securityLocked
+        if currentPlaybackIntent.isStickyPauseOrLock { return false }
+        if currentPlaybackIntent == .sleepTimer {
+            return currentVisualState == .playing || holdPrePlayVisualUntilPlayback
+        }
+        return currentPlaybackIntent == .shouldBePlaying
     }
 
     /// Returns whether the user paused within the given interval (default 8 s).
@@ -394,12 +400,20 @@ actor SharedPlayerManager {
     /// Widget callers take the optimistic instant-feedback path.
     func play() async {
         ensureVisualStateLoaded()
+        let preserveSleepTimerForStreamSwitch =
+            holdPrePlayVisualUntilPlayback && currentPlaybackIntent == .sleepTimer
         #if LUTHERAN_MAIN_APP
         await configureNowPlayingControlsIfNeeded()
-        await cancelSleepTimer()
+        if !preserveSleepTimerForStreamSwitch {
+            await cancelSleepTimer()
+        } else {
+            #if DEBUG
+            print("[SharedPlayerManager] play() — preserving active sleep timer during stream switch")
+            #endif
+        }
         #endif
         
-        // Note: Always clear .userPaused lock at the absolute top of play()
+        // Note: Always clear .userPaused / elapsed-sleep-timer locks at the absolute top of play()
         // This covers widget play, Control Center, lock screen, and Siri — everything.
         await clearUserPausedLockIfNeeded()
         
@@ -425,10 +439,10 @@ actor SharedPlayerManager {
             #endif
             return
         }
-        
+
         // Resurrection protection — relaxed during the settling window or explicit play paths.
         if !resurrectionProtectionRelaxed {
-            if currentPlaybackIntent == .userPaused || currentPlaybackIntent == .securityLocked {
+            if currentPlaybackIntent.isStickyPauseOrLock {
                 #if DEBUG
                 print("[SharedPlayerManager] play() BLOCKED by playbackIntent = \(currentPlaybackIntent)")
                 #endif
@@ -460,13 +474,13 @@ actor SharedPlayerManager {
         // The authoritative `currentPlaybackIntent` is the primary signal; the one-shot flag
         // only prevents duplicate automatic first-play attempts without explicit `.shouldBePlaying`.
         if currentVisualState == .prePlay {
-            if initialPlaybackHasRun && currentPlaybackIntent != .shouldBePlaying {
+            if initialPlaybackHasRun && !currentPlaybackIntent.isActivePlaybackIntent {
                 #if DEBUG
                 print("SharedPlayerManager.play() – skipping duplicate automatic prePlay playback")
                 #endif
                 return
             } else {
-                if currentPlaybackIntent == .shouldBePlaying {
+                if currentPlaybackIntent.isActivePlaybackIntent {
                     initialPlaybackHasRun = false
                 } else {
                     initialPlaybackHasRun = true
@@ -505,7 +519,7 @@ actor SharedPlayerManager {
             #endif
 
             #if LUTHERAN_MAIN_APP
-            await cancelSleepTimer()
+            await cancelSleepTimer(restorePlaybackIntent: false)
             #endif
             
             // Direct mutation inside the actor (this is allowed and correct)
@@ -529,7 +543,7 @@ actor SharedPlayerManager {
         if hadStreamSwitchHold {
             holdPrePlayVisualUntilPlayback = false
         }
-        if !hadStreamSwitchHold || currentPlaybackIntent == .shouldBePlaying {
+        if !hadStreamSwitchHold || currentPlaybackIntent.isActivePlaybackIntent {
             await setPlaying()
             #if DEBUG
             if hadStreamSwitchHold {
@@ -549,12 +563,34 @@ actor SharedPlayerManager {
         await waitForTuningSoundIfActive()
         #endif
         
+        #if LUTHERAN_MAIN_APP
+        if isResumePlay {
+            let resumed = await DirectStreamingPlayer.shared.resumeFromSoftPauseIfAvailable()
+            if resumed {
+                await rehydrateStreamMetadataFromStashIfNeeded()
+                #if DEBUG
+                print("[SharedPlayerManager] Resumed from soft pause — skipped setStreamAndPlay")
+                #endif
+                return
+            }
+        }
+        #endif
+
+        let attachContext: PlaybackAttachContext
+        if isStreamSwitchPlay {
+            attachContext = .streamSwitch
+        } else if isResumePlay {
+            attachContext = .resume
+        } else {
+            attachContext = .coldLaunch
+        }
+
         let stream = DirectStreamingPlayer.shared.selectedStream
         #if DEBUG
         print("[SharedPlayerManager] Setting stream to: \(stream)")
         #endif
         
-        await DirectStreamingPlayer.shared.setStreamAndPlay(to: stream)
+        await DirectStreamingPlayer.shared.setStreamAndPlay(to: stream, context: attachContext)
         
         // No saveCurrentState() here — observer will handle it
     }
@@ -563,7 +599,7 @@ actor SharedPlayerManager {
     /// Called from server 403 responses or unrecoverable validation failures.
     func setSecurityLocked() async {
         #if LUTHERAN_MAIN_APP
-        await cancelSleepTimer()
+        await cancelSleepTimer(restorePlaybackIntent: false)
         #endif
         self.currentVisualState = .securityLocked
         await self.saveCurrentState()
@@ -587,8 +623,9 @@ actor SharedPlayerManager {
         print("[SharedPlayerManager] SharedPlayerManager.attemptResurrectionIfAllowed() – currentPlaybackIntent = \(currentPlaybackIntent), currentVisualState = \(currentVisualState)")
         #endif
 
-        // Block explicit user pause or permanent security lock.
-        if currentPlaybackIntent == .userPaused || currentPlaybackIntent == .securityLocked {
+        // Block explicit user pause, elapsed sleep timer, or permanent security lock.
+        if currentPlaybackIntent.isStickyPauseOrLock
+            || (currentPlaybackIntent == .sleepTimer && currentVisualState != .playing) {
             #if DEBUG
             print("[SharedPlayerManager] resurrection BLOCKED by playbackIntent = \(currentPlaybackIntent)")
             #endif
@@ -633,7 +670,7 @@ actor SharedPlayerManager {
         ensureVisualStateLoaded()
 
         #if LUTHERAN_MAIN_APP
-        await cancelSleepTimer()
+        await cancelSleepTimer(restorePlaybackIntent: false)
         #endif
         
         #if DEBUG
@@ -669,7 +706,7 @@ actor SharedPlayerManager {
         ensureVisualStateLoaded()
 
         #if LUTHERAN_MAIN_APP
-        await cancelSleepTimer()
+        await cancelSleepTimer(restorePlaybackIntent: false)
         #endif
         
         #if DEBUG
@@ -695,13 +732,13 @@ actor SharedPlayerManager {
             return
         }
 
-        // Main app path
+        // Main app path — soft pause keeps the secured item for gapless same-stream resume.
         DirectStreamingPlayer.shared.stop()
-        DirectStreamingPlayer.shared.player?.replaceCurrentItem(with: nil)
 
+        // Clear parsed widget metadata so paused snapshots hide program lines (P5-11).
+        // Retain raw ICY in nowPlayingStreamMetadata for same-stream resume re-hydrate.
         currentStreamMetadata = nil
-        nowPlayingStreamMetadata = nil
-        
+
         // Always save after stop
         await saveCurrentState()
         
@@ -746,9 +783,11 @@ actor SharedPlayerManager {
     ///
     /// Documentation modernized to reflect that cold-launch special
     /// casing is now minimal and driven by the authoritative intent model.
-    func resetToPrePlayForNewStream() async {
+    func resetToPrePlayForNewStream(preserveActiveSleepTimer: Bool = false) async {
         #if LUTHERAN_MAIN_APP
-        await cancelSleepTimer()
+        if !preserveActiveSleepTimer {
+            await cancelSleepTimer(restorePlaybackIntent: false)
+        }
         #endif
         // Note: Always clear .userPaused lock for widget pure-play actions
         // This makes widget play/pause 100% reliable (was missing in pure-play path)
@@ -783,7 +822,7 @@ actor SharedPlayerManager {
         ensureVisualStateLoaded()
 
         #if LUTHERAN_MAIN_APP
-        await cancelSleepTimer()
+        await cancelSleepTimer(restorePlaybackIntent: false)
         #endif
         
         #if DEBUG
@@ -810,7 +849,7 @@ actor SharedPlayerManager {
         ensureVisualStateLoaded()
 
         #if LUTHERAN_MAIN_APP
-        await cancelSleepTimer()
+        await cancelSleepTimer(restorePlaybackIntent: false)
         #endif
         currentVisualState = .userPaused
         
@@ -833,7 +872,9 @@ actor SharedPlayerManager {
         holdPrePlayVisualUntilPlayback = false
         currentVisualState = .playing
         
-        updatePlaybackIntent(to: .shouldBePlaying)
+        if playbackIntent != .sleepTimer {
+            updatePlaybackIntent(to: .shouldBePlaying)
+        }
         
         saveVisualState()
         await saveCurrentState()
@@ -855,7 +896,8 @@ actor SharedPlayerManager {
     func restoreVisualStateRespectingUserIntent() async {
         ensureVisualStateLoaded()
         
-        if currentPlaybackIntent == .userPaused || currentPlaybackIntent == .securityLocked {
+        if currentPlaybackIntent.isStickyPauseOrLock
+            || (currentPlaybackIntent == .sleepTimer && currentVisualState != .playing) {
             #if DEBUG
             print("[SharedPlayerManager] restoreVisualStateRespectingUserIntent BLOCKED by playbackIntent = \(currentPlaybackIntent)")
             #endif
@@ -927,14 +969,25 @@ actor SharedPlayerManager {
     /// Called from handleWidgetPlayAction() so the widget can always start playback.
     public func clearUserPausedLockIfNeeded() async {
         ensureVisualStateLoaded()
-        if currentVisualState == .userPaused {
-            #if DEBUG
-            print("[SharedPlayerManager] [Widget] Cleared userPaused lock for widget play action")
-            #endif
-            currentVisualState = .prePlay
-            
-            updatePlaybackIntent(to: .shouldBePlaying)
+
+        // Keep .sleepTimer through stream-switch prePlay (yellow) and active playback.
+        if currentPlaybackIntent == .sleepTimer {
+            if currentVisualState == .playing || holdPrePlayVisualUntilPlayback {
+                return
+            }
         }
+
+        guard currentVisualState == .userPaused || currentPlaybackIntent == .sleepTimer else { return }
+
+        #if DEBUG
+        print("[SharedPlayerManager] Cleared pause lock for explicit play (visual=\(currentVisualState), intent=\(currentPlaybackIntent))")
+        #endif
+
+        if currentVisualState == .userPaused {
+            currentVisualState = .prePlay
+        }
+
+        updatePlaybackIntent(to: .shouldBePlaying)
     }
     
     #if LUTHERAN_MAIN_APP
@@ -1054,6 +1107,29 @@ actor SharedPlayerManager {
         defaults.set(now, forKey: "instantFeedbackTime")
         defaults.set(language, forKey: "instantFeedbackLanguage")
         defaults.synchronize()
+    }
+
+    /// Refreshes the App Group `lastUpdateTime` heartbeat used by widget `isAppRunning()` (60 s window).
+    /// Throttled by default so unchanged-snapshot save skips do not spam UserDefaults on every KVO tick.
+    nonisolated static func bumpWidgetLivenessTimestamp(
+        force: Bool = false,
+        minInterval: TimeInterval = 30
+    ) {
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return }
+        let now = Date().timeIntervalSince1970
+        if !force,
+           let last = defaults.object(forKey: "lastUpdateTime") as? Double,
+           now - last < minInterval {
+            return
+        }
+        defaults.set(now, forKey: "lastUpdateTime")
+        defaults.synchronize()
+    }
+
+    /// Unconditional liveness bump for lifecycle edges (background, foreground) where the widget
+    /// must not flip to the offline prompt while audio continues.
+    func recordWidgetLiveness() {
+        Self.bumpWidgetLivenessTimestamp(force: true)
     }
 
     /// Optimistic play/pause widget path: persist visual state, schedule pending action, notify main app.
@@ -1281,6 +1357,7 @@ actor SharedPlayerManager {
             language: Self.preferredWidgetLanguage(),
             streamMetadata: currentStreamMetadata
         )
+        Self.bumpWidgetLivenessTimestamp(force: true)
     }
     #endif
 
@@ -1288,6 +1365,7 @@ actor SharedPlayerManager {
     /// in the combined snapshot so widgets receive correct language without extra forcing.
     func saveCombinedWidgetState(language: String) {
         currentStreamMetadata = nil
+        nowPlayingStreamMetadata = nil
         savePersistedWidgetState(visualState: currentVisualState, language: language, streamMetadata: nil)
 
         // 2026-05-29: Legacy separate "currentLanguage" key retired. lastUpdateTime
@@ -1353,18 +1431,25 @@ extension SharedPlayerManager {
         let previousLanguage = previousSnapshot?.currentLanguage ?? ""
         let isLanguageChange = !previousLanguage.isEmpty && previousLanguage != state.currentLanguage
         let previousHasError = sharedDefaults?.bool(forKey: "hasError") ?? false
+        let previousIsPlaying = sharedDefaults?.bool(forKey: "isPlaying") ?? false
+        let metadataUnchanged = previousSnapshot?.streamMetadata == currentStreamMetadata
         let snapshotUnchanged =
             previousSnapshot?.visualState == currentVisualState &&
             previousSnapshot?.currentLanguage == state.currentLanguage &&
-            previousHasError == state.hasError
+            previousHasError == state.hasError &&
+            previousIsPlaying == state.isPlaying &&
+            metadataUnchanged
 
         // Urgent refresh for errors, language changes, or the first transition into sticky
         // pause/security lock — not on every KVO save while already `.userPaused`.
         let visualStateChanged = previousSnapshot?.visualState != currentVisualState
         let isTransitionToStickyPause = visualStateChanged && currentVisualState.mustSuppressResurrection
-        let isUrgentUpdate = state.hasError || isLanguageChange || isTransitionToStickyPause
+        // Widget optimistic pause may pre-write .userPaused; still urgent when isPlaying flips false.
+        let isPlayingStopped = previousIsPlaying && !state.isPlaying
+        let isUrgentUpdate = state.hasError || isLanguageChange || isTransitionToStickyPause || isPlayingStopped
 
         if snapshotUnchanged && !isUrgentUpdate {
+            Self.bumpWidgetLivenessTimestamp()
             #if DEBUG
             print("[SharedPlayerManager] performActualSave: snapshot unchanged — skipping persist")
             #endif
@@ -1374,7 +1459,11 @@ extension SharedPlayerManager {
         // Persist the authoritative (visualState + language) snapshot. Widget providers
         // take the early loadPersistedWidgetState() path; WidgetRefreshManager handles
         // debouncing and language-change urgency.
-        savePersistedWidgetState(visualState: currentVisualState, language: state.currentLanguage)
+        savePersistedWidgetState(
+            visualState: currentVisualState,
+            language: state.currentLanguage,
+            streamMetadata: currentStreamMetadata
+        )
 
         // Legacy keys are written only for migration surface.
         sharedDefaults?.set(state.isPlaying, forKey: "isPlaying")
@@ -1450,4 +1539,34 @@ extension SharedPlayerManager {
         let hasError = sharedDefaults?.bool(forKey: "hasError") ?? false
         return (isPlaying, currentLanguage, hasError)
     }
+
+    #if LUTHERAN_MAIN_APP
+    /// Pauses playback when the sleep timer elapses.
+    ///
+    /// Uses `.sleepTimer` intent (not sticky `.userPaused`) and does not record
+    /// `lastUserPauseTimestamp`, so timer-driven pause is distinguishable from an
+    /// explicit user stop.
+    func applySleepTimerElapsedPause() async {
+        ensureVisualStateLoaded()
+
+        currentVisualState = .userPaused
+        saveVisualState()
+        updatePlaybackIntent(to: .sleepTimer)
+
+        DirectStreamingPlayer.shared.stop(reason: .interruption)
+
+        currentStreamMetadata = nil
+        nowPlayingStreamMetadata = nil
+
+        await saveCurrentState()
+        notifyMainApp(action: "pause")
+        await updateNowPlayingInfo()
+
+        await SleepTimerNotification.postStateChange(isActive: false)
+
+        #if DEBUG
+        print("[SharedPlayerManager] SleepTimer elapsed — paused with .sleepTimer intent (not sticky .userPaused)")
+        #endif
+    }
+    #endif
 }

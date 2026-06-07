@@ -22,9 +22,13 @@ final class WidgetRefreshManager: @unchecked Sendable {
     /// Latest debounced target; read when the debounce timer runs so superseded visuals never reload timelines.
     private var pendingRefreshState: WidgetState?
     private var lastKnownState: WidgetState?
+    /// Deferred `.prePlay` refresh; superseded by `.playing` on the same language within the coalesce window.
+    private var coalescedPrePlayWorkItem: DispatchWorkItem?
+    private var coalescedPrePlayState: WidgetState?
     
     private var refreshCount = 0
     private var adaptiveInterval: TimeInterval = 0.5
+    private static let prePlayToPlayingCoalesceWindow: TimeInterval = 0.3
     
     private init() {}
     
@@ -35,6 +39,7 @@ final class WidgetRefreshManager: @unchecked Sendable {
         pendingRefresh?.cancel()
         pendingRefresh = nil
         pendingRefreshState = nil
+        cancelCoalescedPrePlayRefresh()
     }
     
     /// Recommended call site: pass the real visual state directly.
@@ -59,9 +64,49 @@ final class WidgetRefreshManager: @unchecked Sendable {
         // ALWAYS refresh on language changes, regardless of throttling
         if let lastState = lastKnownState,
            lastState.currentLanguage != newState.currentLanguage {
+            cancelCoalescedPrePlayRefresh()
             Task { @MainActor in
                 await performRefreshIfNotStale(for: newState)
             }
+            return
+        }
+        
+        // Errors and non-playing visual transitions supersede a deferred .prePlay refresh.
+        if hasError {
+            cancelCoalescedPrePlayRefresh()
+        } else if coalescedPrePlayState != nil,
+                  newState.visualState != .prePlay,
+                  newState.visualState != .playing {
+            cancelCoalescedPrePlayRefresh()
+        }
+        
+        // Coalesce back-to-back .prePlay → .playing refreshes on the same language.
+        if !hasError,
+           newState.visualState == .playing,
+           let prePlaySource = coalescedPrePlayState ?? lastKnownState,
+           prePlaySource.currentLanguage == newState.currentLanguage,
+           prePlaySource.visualState == .prePlay,
+           prePlaySource.hasError == newState.hasError {
+            let withinCoalesceWindow = coalescedPrePlayState != nil
+                || (lastRefreshTime.map { Date().timeIntervalSince($0) < Self.prePlayToPlayingCoalesceWindow } ?? false)
+            if withinCoalesceWindow {
+                cancelCoalescedPrePlayRefresh()
+                #if DEBUG
+                print("[WidgetRefreshManager] Widget refresh coalesced: .prePlay → .playing, lang: \(newState.currentLanguage)")
+                #endif
+                Task { @MainActor in
+                    await performRefreshIfNotStale(for: newState)
+                }
+                return
+            }
+        }
+        
+        // Defer lone .prePlay refreshes briefly so a fast .playing follow-up can supersede them.
+        if !hasError, newState.visualState == .prePlay {
+            #if DEBUG
+            print("[WidgetRefreshManager] Widget refresh deferred: awaiting possible .playing follow-up — lang: \(newState.currentLanguage)")
+            #endif
+            scheduleCoalescedPrePlayRefresh(for: newState)
             return
         }
         
@@ -147,6 +192,32 @@ final class WidgetRefreshManager: @unchecked Sendable {
         case .prePlay:
             return false
         }
+    }
+    
+    private func cancelCoalescedPrePlayRefresh() {
+        coalescedPrePlayWorkItem?.cancel()
+        coalescedPrePlayWorkItem = nil
+        coalescedPrePlayState = nil
+    }
+    
+    private func scheduleCoalescedPrePlayRefresh(for state: WidgetState) {
+        coalescedPrePlayState = state
+        coalescedPrePlayWorkItem?.cancel()
+        
+        let workItem = DispatchWorkItem { [weak self] in
+            Task { @MainActor in
+                guard let self, let pendingState = self.coalescedPrePlayState else { return }
+                self.coalescedPrePlayWorkItem = nil
+                self.coalescedPrePlayState = nil
+                await self.performRefreshIfNotStale(for: pendingState)
+            }
+        }
+        
+        coalescedPrePlayWorkItem = workItem
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + Self.prePlayToPlayingCoalesceWindow,
+            execute: workItem
+        )
     }
     
     private func scheduleDelayedRefresh(for state: WidgetState, delay: TimeInterval) {
