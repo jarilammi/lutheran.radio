@@ -61,7 +61,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         }
         
         #if DEBUG
-        print("🔗 [AppDelegate] Foreground widget refresh via WidgetRefreshManager")
+        print("[AppDelegate] Foreground widget refresh via WidgetRefreshManager")
         #endif
     }
 }

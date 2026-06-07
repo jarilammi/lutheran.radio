@@ -101,11 +101,11 @@ struct LiveActivityTogglePlaybackIntent: AppIntent {
     
     func perform() async throws -> some IntentResult {
         #if DEBUG
-        print("🔗 LiveActivityTogglePlaybackIntent.perform called")
+        print("[LutheranRadioWidgetLiveActivity] LiveActivityTogglePlaybackIntent.perform called")
         #endif
         
         let manager = SharedPlayerManager.shared
-        let visualState = await manager.currentVisualState   // ✅ Safe actor access (SSOT)
+        let visualState = await manager.currentVisualState   // Safe actor access (SSOT)
         
         if visualState.isActivelyPlaying {
             await manager.stop()
@@ -114,7 +114,7 @@ struct LiveActivityTogglePlaybackIntent: AppIntent {
         }
         
         #if DEBUG
-        print("🔗 LiveActivityTogglePlaybackIntent completed – visualState was \(visualState)")
+        print("[LutheranRadioWidgetLiveActivity] LiveActivityTogglePlaybackIntent completed – visualState was \(visualState)")
         #endif
         
         return .result()
@@ -137,14 +137,14 @@ struct LiveActivitySwitchStreamIntent: AppIntent {
 
     func perform() async throws -> some IntentResult {
         #if DEBUG
-        print("🔗 LiveActivitySwitchStreamIntent.perform called for language: \(languageCode)")
+        print("[LutheranRadioWidgetLiveActivity] LiveActivitySwitchStreamIntent.perform called for language: \(languageCode)")
         #endif
         
         let manager = SharedPlayerManager.shared
         
         guard let targetStream = manager.availableStreams.first(where: { $0.languageCode == languageCode }) else {
             #if DEBUG
-            print("🔗 LiveActivitySwitchStreamIntent: Language stream not found")
+            print("[LutheranRadioWidgetLiveActivity] LiveActivitySwitchStreamIntent: Language stream not found")
             #endif
             return .result()
         }
@@ -152,7 +152,7 @@ struct LiveActivitySwitchStreamIntent: AppIntent {
         await manager.switchToStream(targetStream)
         
         #if DEBUG
-        print("🔗 LiveActivitySwitchStreamIntent completed for \(targetStream.language)")
+        print("[LutheranRadioWidgetLiveActivity] LiveActivitySwitchStreamIntent completed for \(targetStream.language)")
         #endif
         
         return .result()

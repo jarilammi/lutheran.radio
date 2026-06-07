@@ -256,12 +256,12 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                     Task { @MainActor [weak self] in
                         guard let self else { return }
                         #if DEBUG
-                        print("✅ Haptic engine restarted after reset")
+                        print("[ViewController] Haptic engine restarted after reset")
                         #endif
                     }
                 } catch {
                     #if DEBUG
-                    print("❌ Failed to restart haptic engine after reset: \(error)")
+                    print("[ViewController] Failed to restart haptic engine after reset: \(error)")
                     #endif
                 }
             }
@@ -269,17 +269,17 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             // Stopped handler (unchanged – no self capture)
             engine.stoppedHandler = { reason in
                 #if DEBUG
-                print("⚠️ Haptic engine stopped: reason \(reason.rawValue)")
+                print("[ViewController] Haptic engine stopped: reason \(reason.rawValue)")
                 #endif
                 if reason != .systemError && reason != .engineDestroyed {
                     do {
                         try engine.start()
                         #if DEBUG
-                        print("✅ Haptic engine auto-restarted")
+                        print("[ViewController] Haptic engine auto-restarted")
                         #endif
                     } catch {
                         #if DEBUG
-                        print("❌ Failed to auto-restart haptic engine: \(error)")
+                        print("[ViewController] Failed to auto-restart haptic engine: \(error)")
                         #endif
                     }
                 }
@@ -287,7 +287,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             return engine
         } catch {
             #if DEBUG
-            print("❌ Haptics unavailable during creation: \(error)")
+            print("[ViewController] Haptics unavailable during creation: \(error)")
             #endif
             return nil
         }
@@ -461,17 +461,12 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         // (collection bounds/sectionInset are not final here).
         
         // Set initial volume slider position (UI only)
-        if let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared") {
-            let savedVolume = sharedDefaults.float(forKey: "preferredVolume")
-            let volumeToUse = savedVolume > 0 ? savedVolume : 0.5
-            volumeSlider.value = volumeToUse
-            volumeSlider.accessibilityValue = unsafe String(format: String(localized: "accessibility_value_volume"), Int(volumeToUse * 100))
-            sharedDefaults.set(volumeToUse, forKey: "preferredVolume")
-            sharedDefaults.synchronize()
-            #if DEBUG
-            print("📱 Set initial volumeSlider to \(volumeToUse)")
-            #endif
-        }
+        let volumeToUse = preferredVolume()
+        volumeSlider.value = volumeToUse
+        volumeSlider.accessibilityValue = unsafe String(format: String(localized: "accessibility_value_volume"), Int(volumeToUse * 100))
+        #if DEBUG
+        print("[ViewController] Set initial volumeSlider to \(volumeToUse)")
+        #endif
         
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
             self?.isInitialScrollLocked = false
@@ -534,12 +529,12 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             
             let visualState = await SharedPlayerManager.shared.currentVisualState
             #if DEBUG
-            print("🔄 After tuning — visualState = \(visualState)")
+            print("[ViewController] After tuning — visualState = \(visualState)")
             #endif
             
             guard visualState == .prePlay || visualState.shouldAutoPlayOrResume else {
                 #if DEBUG
-                print("🛡️ Blocked initial playback — state = \(visualState)")
+                print("[ViewController] Blocked initial playback — state = \(visualState)")
                 #endif
                 return
             }
@@ -547,7 +542,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             guard self.hasInternetConnection else { return }
             
             #if DEBUG
-            print("🚀 Starting initial stream playback after tuning (single source)")
+            print("[ViewController] Starting initial stream playback after tuning (single source)")
             #endif
             
             self.streamingPlayer.cancelPendingSSLProtection()
@@ -585,15 +580,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     }
     
     private func restoreVolume() {
-        // Restore volume after player initialization
-        if let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared") {
-            let savedVolume = sharedDefaults.float(forKey: "preferredVolume")
-            let volumeToUse = savedVolume > 0 ? savedVolume : 0.5 // Use saved volume or default to 0.5
-            volumeSlider.value = volumeToUse
-            streamingPlayer.setVolume(volumeToUse)
-            sharedDefaults.set(volumeToUse, forKey: "preferredVolume") // Persist the default if none exists
-            sharedDefaults.synchronize()
-        }
+        let volumeToUse = preferredVolume()
+        volumeSlider.value = volumeToUse
+        streamingPlayer.setVolume(volumeToUse)
     }
     
     func setupDarwinNotificationListener() {
@@ -609,7 +598,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 let vc = unsafe Unmanaged<ViewController>.fromOpaque(observer).takeUnretainedValue()
                 DispatchQueue.main.async {
                     #if DEBUG
-                    print("🔗 Received Darwin notification for widget action")
+                    print("[ViewController] Received Darwin notification for widget action")
                     #endif
                     vc.checkForPendingWidgetActions()
                 }
@@ -620,7 +609,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         )
         
         #if DEBUG
-        print("🔗 Darwin notification listener setup complete")
+        print("[ViewController] Darwin notification listener setup complete")
         #endif
     }
     
@@ -695,7 +684,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 self?.checkForPendingWidgetActions()
                 if i == 5 {
                     #if DEBUG
-                    print("🔗 Fast widget action checking completed")
+                    print("[ViewController] Fast widget action checking completed")
                     #endif
                 }
             }
@@ -716,7 +705,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         streamingPlayer.onMetadataChange = { [weak self] metadata in
             guard let self else {
                 #if DEBUG
-                print("📱 onMetadataChange: ViewController is nil, skipping callback")
+                print("[ViewController] onMetadataChange: ViewController is nil, skipping callback")
                 #endif
                 return
             }
@@ -878,14 +867,14 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     private func centerCollectionViewContent() {
         guard languageCollectionView.bounds.width > 0, DirectStreamingPlayer.availableStreams.count > 0 else {
             #if DEBUG
-            print("📱 centerCollectionViewContent: Invalid bounds or no streams, width=\(languageCollectionView.bounds.width)")
+            print("[ViewController] centerCollectionViewContent: Invalid bounds or no streams, width=\(languageCollectionView.bounds.width)")
             #endif
             return
         }
         languageCollectionView.layoutIfNeeded()
         guard let layout = languageCollectionView.collectionViewLayout as? UICollectionViewFlowLayout else {
             #if DEBUG
-            print("📱 centerCollectionViewContent: Invalid layout, aborting")
+            print("[ViewController] centerCollectionViewContent: Invalid layout, aborting")
             #endif
             return
         }
@@ -900,7 +889,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         layout.invalidateLayout()
         
         #if DEBUG
-        print("📱 centerCollectionViewContent: totalCellWidth=\(totalCellWidth), collectionViewWidth=\(collectionViewWidth), inset=\(inset), bounds=\(languageCollectionView.bounds)")
+        print("[ViewController] centerCollectionViewContent: totalCellWidth=\(totalCellWidth), collectionViewWidth=\(collectionViewWidth), inset=\(inset), bounds=\(languageCollectionView.bounds)")
         #endif
     }
 
@@ -938,12 +927,12 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         networkMonitor = nil
         networkMonitor = NWPathMonitor()
         #if DEBUG
-        print("📱 Setting up network monitoring")
+        print("[ViewController] Setting up network monitoring")
         #endif
         networkMonitorHandler = { [weak self] path in
             guard let self = self else {
                 #if DEBUG
-                print("📱 pathUpdateHandler: ViewController is nil, skipping callback")
+                print("[ViewController] pathUpdateHandler: ViewController is nil, skipping callback")
                 #endif
                 return
             }
@@ -960,22 +949,22 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 let wasConnected = self.hasInternetConnection
                 self.hasInternetConnection = isConnected
                 #if DEBUG
-                print("📱 Network path update: status=\(path.status), isExpensive=\(path.isExpensive), isConstrained=\(path.isConstrained)")
+                print("[ViewController] Network path update: status=\(path.status), isExpensive=\(path.isExpensive), isConstrained=\(path.isConstrained)")
                 #endif
                 if isConnected != wasConnected {
                     #if DEBUG
-                    print("📱 Network status changed: \(isConnected ? "Connected" : "Disconnected")")
+                    print("[ViewController] Network status changed: \(isConnected ? "Connected" : "Disconnected")")
                     #endif
                 }
                 if isConnected && !wasConnected {
                     #if DEBUG
-                    print("📱 Network monitor detected reconnection")
+                    print("[ViewController] Network monitor detected reconnection")
                     #endif
                     self.stopTuningSound()
                     self.handleNetworkReconnection()
                 } else if !isConnected && wasConnected {
                     #if DEBUG
-                    print("📱 Network disconnected - stopping playback and tuning sound")
+                    print("[ViewController] Network disconnected - stopping playback and tuning sound")
                     #endif
                     self.stopTuningSound()
                     self.stopPlayback()
@@ -1010,7 +999,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     @objc private func handleInterruption(_ notification: Notification) {
         guard !isDeallocating else {
             #if DEBUG
-            print("📱 handleInterruption: ViewController is deallocating, skipping")
+            print("[ViewController] handleInterruption: ViewController is deallocating, skipping")
             #endif
             return
         }
@@ -1022,7 +1011,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         switch type {
         case .began:
             #if DEBUG
-            print("📱 AVAudioSession interruption began (isPlaying=\(isPlaying))")
+            print("[ViewController] AVAudioSession interruption began (isPlaying=\(isPlaying))")
             #endif
             if isPlaying {
                 stopPlayback()
@@ -1050,7 +1039,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                     }
                     
                     #if DEBUG
-                    print("▶️ [Interruption Guard] Allowed resume after interruption")
+                    print("[ViewController] ▶ [Interruption Guard] Allowed resume after interruption")
                     #endif
                     
                     await SharedPlayerManager.shared.play()
@@ -1069,7 +1058,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     @objc private func handleRouteChange(_ notification: Notification) {
         guard !isDeallocating else {
             #if DEBUG
-            print("📱 handleRouteChange: ViewController is deallocating, skipping")
+            print("[ViewController] handleRouteChange: ViewController is deallocating, skipping")
             #endif
             return
         }
@@ -1098,7 +1087,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             Task { @MainActor [weak self] in
                 guard let self = self else {
                     #if DEBUG
-                    print("📱 connectivityCheckTimer: ViewController is nil, skipping callback")
+                    print("[ViewController] connectivityCheckTimer: ViewController is nil, skipping callback")
                     #endif
                     return
                 }
@@ -1127,7 +1116,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         let task = session.dataTask(with: url) { [weak self] data, response, error in
             guard let self = self else {
                 #if DEBUG
-                print("📱 performActiveConnectivityCheck: ViewController is nil, skipping callback")
+                print("[ViewController] performActiveConnectivityCheck: ViewController is nil, skipping callback")
                 #endif
                 return
             }
@@ -1137,7 +1126,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             DispatchQueue.main.async {
                 if success && !self.hasInternetConnection {
                     #if DEBUG
-                    print("📱 Active check detected internet connection")
+                    print("[ViewController] Active check detected internet connection")
                     #endif
                     self.hasInternetConnection = true
                     self.handleNetworkReconnection()
@@ -1151,7 +1140,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         hasInternetConnection = true
         
         #if DEBUG
-        print("📱 Network reconnected - checking validation state")
+        print("[ViewController] Network reconnected - checking validation state")
         #endif
         
         Task { @MainActor in
@@ -1163,14 +1152,14 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             
             if isValid {
                 #if DEBUG
-                print("📱 Validation succeeded after reconnection - attempting playback")
+                print("[ViewController] Validation succeeded after reconnection - attempting playback")
                 #endif
                 
                 _ = await self.streamingPlayer.play()
                 
             } else {
                 #if DEBUG
-                print("📱 Security model validation failed after reconnection")
+                print("[ViewController] Security model validation failed after reconnection")
                 #endif
                 
                 // Show alert only if not already presenting one (security error path unchanged)
@@ -1265,7 +1254,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         // Called from lockscreen / Control Center / MPRemoteCommandCenter paths.
         // Widget-initiated pauses now route directly through SharedPlayerManager.stop()
         // (clean authoritative path that immediately locks .userPaused).
-        print("📱 pausePlayback called (lockscreen / remote command)")
+        print("[ViewController] pausePlayback called (lockscreen / remote command)")
         #endif
         
         Task { @MainActor in
@@ -1280,7 +1269,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     // MARK: - Manual Pause (user tap)
     private func stopPlayback() {
         #if DEBUG
-        print("🛑 stopPlayback called")
+        print("[ViewController] stopPlayback called")
         #endif
         
         Task { @MainActor in
@@ -1383,7 +1372,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         
         let maxPixelDimension = backgroundProcessingMaxPixelDimension()
         let cacheKey = "\(imageName)_\(traitCollection.userInterfaceStyle.rawValue)_\(Int(maxPixelDimension))"
-        let isDarkMode = traitCollection.userInterfaceStyle == .dark  // ✅ Capture on main thread
+        let isDarkMode = traitCollection.userInterfaceStyle == .dark  // Capture on main thread
         
         if isLowEfficiencyMode {
             // Low efficiency: Skip heavy processing/caching to save battery/CPU
@@ -1664,7 +1653,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     private func setupUI() {
         view.addSubview(backgroundImageView)
-        // ✅ Modern + cleaner: activate directly, no unnecessary stored array
+        // Modern + cleaner: activate directly, no unnecessary stored array
         NSLayoutConstraint.activate([
             backgroundImageView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: -20),
             backgroundImageView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: 20),
@@ -1740,14 +1729,14 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     @objc private func handleMemoryWarning() {
         #if DEBUG
-        print("🧹 Received memory warning")
+        print("[ViewController] Received memory warning")
         #endif
         
         // Clear image cache to free memory
         DispatchQueue.main.async { [weak self] in
             self?.processedImageCache.removeAllObjects()
             #if DEBUG
-            print("🧹 Cleared processed image cache")
+            print("[ViewController] Cleared processed image cache")
             #endif
         }
     }
@@ -1756,7 +1745,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     func playSpecialTuningSound(completion: (() -> Void)? = nil) async {
         guard !hasPlayedSpecialTuningSound else {
             #if DEBUG
-            print("🎵 Special tuning sound already played, skipping")
+            print("[ViewController] Special tuning sound already played, skipping")
             #endif
             completion?()
             return
@@ -1764,7 +1753,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         
         guard let tuningURL = Bundle.main.url(forResource: "special_tuning_sound", withExtension: "wav") else {
             #if DEBUG
-            print("❌ Error: special_tuning_sound.wav not found in bundle")
+            print("[ViewController] Error: special_tuning_sound.wav not found in bundle")
             #endif
             await TuningSoundCoordinator.shared.notifyNoActivePlayback()
             completion?()
@@ -1780,7 +1769,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             tuningPlayer?.volume = preferredVolume()
             
             #if DEBUG
-            print("🎵 Set special tuning sound volume to \(tuningPlayer?.volume ?? -1.0)")
+            print("[ViewController] Set special tuning sound volume to \(tuningPlayer?.volume ?? -1.0)")
             #endif
             
             tuningPlayer?.numberOfLoops = 0
@@ -1795,7 +1784,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             hasPlayedSpecialTuningSound = true
             
             #if DEBUG
-            print(didPlay ? "🎵 Special tuning sound started playing" : "❌ Failed to start special tuning sound")
+            print(didPlay ? "[ViewController] Special tuning sound started playing" : "[ViewController] Failed to start special tuning sound")
             #endif
             
             if didPlay, let duration = tuningPlayer?.duration {
@@ -1806,7 +1795,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             }
         } catch {
             #if DEBUG
-            print("❌ Error loading special tuning sound: \(error.localizedDescription)")
+            print("[ViewController] Error loading special tuning sound: \(error.localizedDescription)")
             #endif
             await TuningSoundCoordinator.shared.notifyNoActivePlayback()
             completion?()
@@ -1820,7 +1809,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         let now = Date()
         if let lastTime = lastTuningSoundTime, now.timeIntervalSince(lastTime) < 1.0 {
             #if DEBUG
-            print("🎵 Skipping tuning sound: Debouncing, time since last: \(now.timeIntervalSince(lastTime))s")
+            print("[ViewController] Skipping tuning sound: Debouncing, time since last: \(now.timeIntervalSince(lastTime))s")
             #endif
             if let index {
                 updateSelectionIndicator(to: index, isInitial: false, caller: "playTuningSound-debounced", animationDuration: 0.3)
@@ -1834,7 +1823,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         let soundIndex = Int.random(in: 1...3)
         guard let tuningURL = Bundle.main.url(forResource: "tuning_sound_\(soundIndex)", withExtension: "wav") else {
             #if DEBUG
-            print("❌ Error: tuning_sound_\(soundIndex).wav not found in bundle")
+            print("[ViewController] Error: tuning_sound_\(soundIndex).wav not found in bundle")
             #endif
             return
         }
@@ -1852,7 +1841,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             isTuningSoundPlaying = didPlay
             
             #if DEBUG
-            print(didPlay ? "🎵 Tuning sound \(soundIndex) started playing" : "❌ Failed to start tuning sound \(soundIndex)")
+            print(didPlay ? "[ViewController] Tuning sound \(soundIndex) started playing" : "[ViewController] Failed to start tuning sound \(soundIndex)")
             #endif
             
             let clipDuration = tuningPlayer?.duration ?? 1.0
@@ -1893,7 +1882,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             
         } catch {
             #if DEBUG
-            print("❌ Error loading tuning sound \(soundIndex): \(error.localizedDescription)")
+            print("[ViewController] Error loading tuning sound \(soundIndex): \(error.localizedDescription)")
             #endif
             await TuningSoundCoordinator.shared.notifyNoActivePlayback()
         }
@@ -1903,7 +1892,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         Task { @MainActor in
             guard player === tuningPlayer else { return }
             #if DEBUG
-            print("🎵 Tuning sound finished playing, success: \(flag)")
+            print("[ViewController] Tuning sound finished playing, success: \(flag)")
             #endif
             isTuningSoundPlaying = false
             tuningPlayer = nil
@@ -1915,7 +1904,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         Task { @MainActor in
             guard player === tuningPlayer else { return }
             #if DEBUG
-            print("❌ Tuning sound decode error: \(error?.localizedDescription ?? "Unknown")")
+            print("[ViewController] Tuning sound decode error: \(error?.localizedDescription ?? "Unknown")")
             #endif
             isTuningSoundPlaying = false
             tuningPlayer = nil
@@ -1932,7 +1921,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             if player?.isPlaying == true {
                 player?.stop()
                 #if DEBUG
-                print("🎵 Tuning sound stopped via AVAudioPlayer")
+                print("[ViewController] Tuning sound stopped via AVAudioPlayer")
                 #endif
             }
 
@@ -1943,7 +1932,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 self.tuningPlayer = nil
                 await TuningSoundCoordinator.shared.notifyPlaybackFinished(source: .cancelled)
                 #if DEBUG
-                print("🎵 isTuningSoundPlaying set to false (from stopTuningSound)")
+                print("[ViewController] isTuningSoundPlaying set to false (from stopTuningSound)")
                 #endif
             }
         }
@@ -2075,7 +2064,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         sleepTimerDisplayTask?.cancel()
         
         #if DEBUG
-        print("🧹 ViewController deinit starting")
+        print("[ViewController] deinit starting")
         #endif
         
         // ONLY this is allowed in deinit (CF + Unmanaged is explicitly permitted)
@@ -2083,7 +2072,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         unsafe CFNotificationCenterRemoveEveryObserver(center, Unmanaged.passUnretained(self).toOpaque())
         
         #if DEBUG
-        print("🧹 ViewController deinit completed")
+        print("[ViewController] deinit completed")
         #endif
     }
     
@@ -2103,14 +2092,14 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         let safeIndex = min(max(targetIndex, 0), DirectStreamingPlayer.availableStreams.count - 1)
         
         #if DEBUG
-        print("📱 updateSelectionIndicator: Moving to index=\(safeIndex) (selectedStreamIndex=\(selectedStreamIndex), isInitial=\(isInitial), caller=\(caller))")
+        print("[ViewController] updateSelectionIndicator: Moving to index=\(safeIndex) (selectedStreamIndex=\(selectedStreamIndex), isInitial=\(isInitial), caller=\(caller))")
         #endif
         
         guard !isDeallocating else { return }
         
         guard safeIndex >= 0 && safeIndex < DirectStreamingPlayer.availableStreams.count else {
             #if DEBUG
-            print("📱 updateSelectionIndicator: Invalid index \(safeIndex), streams count=\(DirectStreamingPlayer.availableStreams.count)")
+            print("[ViewController] updateSelectionIndicator: Invalid index \(safeIndex), streams count=\(DirectStreamingPlayer.availableStreams.count)")
             #endif
             return
         }
@@ -2141,19 +2130,19 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             cellCenterX = cellFrame.midX
             #if DEBUG
             let derived = centerXForIndex(safeIndex)
-            print("📱 updateSelectionIndicator: Moving to index=\(safeIndex), using actual midX=\(cellCenterX) (derived was \(derived), delta=\(cellCenterX - derived)), cellFrame=\(cellFrame), bounds=\(languageCollectionView.bounds), isInitial=\(isInitial), caller=\(caller)")
+            print("[ViewController] updateSelectionIndicator: Moving to index=\(safeIndex), using actual midX=\(cellCenterX) (derived was \(derived), delta=\(cellCenterX - derived)), cellFrame=\(cellFrame), bounds=\(languageCollectionView.bounds), isInitial=\(isInitial), caller=\(caller)")
             #endif
         } else {
             cellCenterX = centerXForIndex(safeIndex)
             #if DEBUG
-            print("📱 updateSelectionIndicator: No layout attributes for indexPath=\(indexPath) — falling back to derived centerX=\(cellCenterX)")
+            print("[ViewController] updateSelectionIndicator: No layout attributes for indexPath=\(indexPath) — falling back to derived centerX=\(cellCenterX)")
             #endif
         }
         
         // Skip if the collection view has no width yet (still early in layout)
         guard languageCollectionView.bounds.width > 0 else {
             #if DEBUG
-            print("📱 updateSelectionIndicator: Skipping — collection view has zero width")
+            print("[ViewController] updateSelectionIndicator: Skipping — collection view has zero width")
             #endif
             needleCenterXConstraint?.constant = cellCenterX
             return
@@ -2162,7 +2151,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         let currentNeedleX = needleCenterXConstraint?.constant ?? selectionIndicator.center.x
         if abs(currentNeedleX - cellCenterX) <= selectionIndicatorPositionEpsilon {
             #if DEBUG
-            print("📱 updateSelectionIndicator: Skipping — already at target X=\(cellCenterX) (caller=\(caller))")
+            print("[ViewController] updateSelectionIndicator: Skipping — already at target X=\(cellCenterX) (caller=\(caller))")
             #endif
             return
         }
@@ -2181,7 +2170,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             }
             self.didPositionNeedle = true
             #if DEBUG
-            print("📱 updateSelectionIndicator: Animation completed, final center.x=\(self.selectionIndicator.center.x) (didPositionNeedle=true)")
+            print("[ViewController] updateSelectionIndicator: Animation completed, final center.x=\(self.selectionIndicator.center.x) (didPositionNeedle=true)")
             #endif
         }
     }
@@ -2205,7 +2194,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         guard !isRotating else {  // Suppress during rotation
             #if DEBUG
-            print("📱 Suppressed didSelect during rotation")
+            print("[ViewController] Suppressed didSelect during rotation")
             #endif
             return
         }
@@ -2213,7 +2202,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         let newIndex = indexPath.item
         
         #if DEBUG
-        print("📱 collectionView:didSelectItemAt called for index \(newIndex)")
+        print("[ViewController] collectionView:didSelectItemAt called for index \(newIndex)")
         #endif
         
         // OPTIMISTIC YELLOW BEFORE NEEDLE: When the user is currently playing (or will auto-resume),
@@ -2239,7 +2228,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         let now = Date()
         if let lastTime = lastStreamSwitchTime, now.timeIntervalSince(lastTime) < streamSwitchDebounceInterval {
             #if DEBUG
-            print("📱 collectionView:didSelectItemAt: Debouncing stream switch, time since last: \(now.timeIntervalSince(lastTime))s")
+            print("[ViewController] collectionView:didSelectItemAt: Debouncing stream switch, time since last: \(now.timeIntervalSince(lastTime))s")
             #endif
             return
         }
@@ -2254,7 +2243,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             // Wait for tuning sound to complete if playing
             if self.isTuningSoundPlaying {
                 #if DEBUG
-                print("📱 collectionView:didSelectItemAt: Waiting for tuning sound to complete")
+                print("[ViewController] collectionView:didSelectItemAt: Waiting for tuning sound to complete")
                 #endif
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
                     guard let self = self else { return }
@@ -2294,7 +2283,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         )
 
         #if DEBUG
-        print("🔗 MAIN APP: Updated UserDefaults language to: \(languageCode)")
+        print("[ViewController] MAIN APP: Updated UserDefaults language to: \(languageCode)")
         #endif
     }
     
@@ -2316,7 +2305,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             let visualState = await SharedPlayerManager.shared.currentVisualState
             
             #if DEBUG
-            print("🔄 completeStreamSwitch started – currentVisualState = \(visualState), stream = \(stream.languageCode)")
+            print("[ViewController] completeStreamSwitch started – currentVisualState = \(visualState), stream = \(stream.languageCode)")
             #endif
             
             // Model-only first — defer ping/prepare until after tuning (playing) or manual play().
@@ -2324,7 +2313,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             self.streamingPlayer.resetTransientErrors()
             
             #if DEBUG
-            print("🔄 [completeStreamSwitch] Updated stream model to \(stream.languageCode) (works for both playing and userPaused)")
+            print("[ViewController] [completeStreamSwitch] Updated stream model to \(stream.languageCode) (works for both playing and userPaused)")
             #endif
             
             // Capture the original intent BEFORE any stop() or state mutation
@@ -2343,7 +2332,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             }
             
             #if DEBUG
-            print("▶️ [completeStreamSwitch] Allowed resume during stream switch (was playing)")
+            print("[ViewController] ▶ [completeStreamSwitch] Allowed resume during stream switch (was playing)")
             #endif
             
             // Stop before tuning; secured item is created once in SharedPlayerManager.play().
@@ -2367,14 +2356,14 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             
             guard wasPlayingBeforeSwitch else {
                 #if DEBUG
-                print("🛡️ [completeStreamSwitch] Blocked play() after tuning sound")
+                print("[ViewController] [completeStreamSwitch] Blocked play() after tuning sound")
                 #endif
                 updateSelectionIndicator(to: index)
                 return
             }
             
             #if DEBUG
-            print("🔄 completeStreamSwitch → calling SharedPlayerManager.play() after tuning")
+            print("[ViewController] completeStreamSwitch → calling SharedPlayerManager.play() after tuning")
             #endif
             
             updateUserDefaultsLanguage(stream.languageCode)
@@ -2383,7 +2372,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             // Skip redundant actor reset when the hold is already active.
             if await SharedPlayerManager.shared.isStreamSwitchPrePlayHoldActive {
                 #if DEBUG
-                print("🔄 [completeStreamSwitch] Skipping redundant resetToPrePlayForNewStream — tap already set .prePlay hold")
+                print("[ViewController] [completeStreamSwitch] Skipping redundant resetToPrePlayForNewStream — tap already set .prePlay hold")
                 #endif
             } else {
                 await SharedPlayerManager.shared.resetToPrePlayForNewStream()
@@ -2398,7 +2387,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             // Language propagation handled by updateUserDefaultsLanguage call above.
             
             #if DEBUG
-            print("📱 completeStreamSwitch: Switched to stream \(stream.language), index=\(index)")
+            print("[ViewController] completeStreamSwitch: Switched to stream \(stream.language), index=\(index)")
             #endif
         }
     }
@@ -2435,7 +2424,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     /// Handle widget play action without tuning sounds
     private func handleWidgetPlayAction() {
         #if DEBUG
-        print("🔗 Widget Play action - forcing playback (main app style)")
+        print("[ViewController] Widget Play action - forcing playback (main app style)")
         #endif
         
         // The modern path (clearUserPausedLockIfNeeded + play) drives authoritative intent.
@@ -2444,18 +2433,18 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             await SharedPlayerManager.shared.clearUserPausedLockIfNeeded()
             
             #if DEBUG
-            print("▶️ Widget Play button → calling SharedPlayerManager.play()")
+            print("[ViewController] ▶ Widget Play button → calling SharedPlayerManager.play()")
             #endif
             
             await SharedPlayerManager.shared.play()
             #if DEBUG
-            print("✅ Widget Play button: SharedPlayerManager.play() succeeded")
+            print("[ViewController] Widget Play button: SharedPlayerManager.play() succeeded")
             #endif
             
             // No extra poke required; providers saw optimistic state via intent's persistWidgetSnapshot
             // (or forcePersist for play/pause) + early loadPersistedWidgetState return.
             #if DEBUG
-            print("🔗 Widget play action completed")
+            print("[ViewController] Widget play action completed")
             #endif
         }
     }
@@ -2534,7 +2523,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                       let targetIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.languageCode == languageCode }) else {
                     self.streamingPlayer.isSwitchingStream = false
                     #if DEBUG
-                    print("❌ Widget switch: target stream not found for \(languageCode)")
+                    print("[ViewController] Widget switch: target stream not found for \(languageCode)")
                     #endif
                     return
                 }
@@ -2555,7 +2544,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 self.updateUserDefaultsLanguage(languageCode)
                 
                 #if DEBUG
-                print("🔗 [Widget Switch] Cleared lock + resetToPrePlayForNewStream() + updated language to \(languageCode)")
+                print("[ViewController] [Widget Switch] Cleared lock + resetToPrePlayForNewStream() + updated language to \(languageCode)")
                 #endif
                 
                 // 5. Update collection view
@@ -2568,18 +2557,18 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 
                 
                 #if DEBUG
-                print("▶️ [Widget Switch] Starting new stream using SharedPlayerManager.play() — main app path")
+                print("[ViewController] ▶ [Widget Switch] Starting new stream using SharedPlayerManager.play() — main app path")
                 #endif
                 
                 await SharedPlayerManager.shared.play()
                 #if DEBUG
-                print("✅ Widget switch: SharedPlayerManager.play() succeeded")
+                print("[ViewController] Widget switch: SharedPlayerManager.play() succeeded")
                 #endif
                 
                 //    + WidgetRefreshManager). Language prompt owned by updateUserDefaultsLanguage.
                 //    No extra saveStateForWidget needed here.
                 #if DEBUG
-                print("🔗 Widget switch completed (authoritative save covered by play())")
+                print("[ViewController] Widget switch completed (authoritative save covered by play())")
                 #endif
                 
                 // 8. Clear pending action
@@ -2593,22 +2582,13 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         DispatchQueue.main.async(execute: workItem)
     }
     
-    // REMOVED (architectural cleanup): updateUserDefaultsForStream
-    // It was the last direct writer of the legacy "currentLanguage" key outside the
-    // blessed paths (updateUserDefaultsLanguage + saveCombinedWidgetState).
-    // Its one call site was routed to the modern method above. The method is deleted
-    // to prevent future accidental direct writes.
-    //
-    // (Historical note: this helper predated the PersistedWidgetState SSOT work.)
-
-    
     // MARK: - Widget and URL Scheme Handling
     /// Handles widget and URL scheme actions for playback control and stream switching.
     /// - Note: Relies on `DirectStreamingPlayer.isSwitchingStream` (set to `internal`) to coordinate stream switches and suppress unnecessary "stopped" status updates during transitions. Ensures smooth UI updates for widget and URL scheme interactions.
     public func checkForPendingWidgetActions() {
         guard let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
             #if DEBUG
-            print("🔗 ERROR: Failed to access shared UserDefaults")
+            print("[ViewController] ERROR: Failed to access shared UserDefaults")
             #endif
             return
         }
@@ -2624,14 +2604,14 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         let actionAge = now - pendingTime
         
         #if DEBUG
-        print("🔗 Found pending action: \(pendingAction), age: \(actionAge)s, ID: \(actionId)")
-        print("🔗 Pending language: \(pendingLanguage ?? "nil")")
+        print("[ViewController] Found pending action: \(pendingAction), age: \(actionAge)s, ID: \(actionId)")
+        print("[ViewController] Pending language: \(pendingLanguage ?? "nil")")
         #endif
         
         // Expire actions after 30 seconds
         guard actionAge < 30.0 else {
             #if DEBUG
-            print("🔗 Action expired (age: \(actionAge)s), clearing")
+            print("[ViewController] Action expired (age: \(actionAge)s), clearing")
             #endif
             SharedPlayerManager.shared.clearPendingAction(actionId: actionId)
             return
@@ -2644,23 +2624,23 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         case "switch":
             if let languageCode = pendingLanguage {
                 #if DEBUG
-                print("🔗 Executing widget switch action to language: \(languageCode)")
+                print("[ViewController] Executing widget switch action to language: \(languageCode)")
                 #endif
                 handleWidgetSwitchToLanguage(languageCode, actionId: actionId)
             } else {
                 #if DEBUG
-                print("🔗 Switch action missing language code - pendingLanguage was nil")
+                print("[ViewController] Switch action missing language code - pendingLanguage was nil")
                 #endif
             }
         case "play":
             #if DEBUG
-            print("🔗 Executing widget play action")
+            print("[ViewController] Executing widget play action")
             #endif
             
             // === WIDGET PLAY/PAUSE DEBOUNCE GUARD ===
             guard Date().timeIntervalSince(lastWidgetActionTime) > widgetActionDebounceInterval else {
                 #if DEBUG
-                print("🔇 Widget action debounced (too soon after previous tap)")
+                print("[ViewController] Widget action debounced (too soon after previous tap)")
                 #endif
                 return
             }
@@ -2682,13 +2662,13 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             }
         case "pause":
             #if DEBUG
-            print("🔗 Executing widget pause action")
+            print("[ViewController] Executing widget pause action")
             #endif
             
             // === WIDGET PLAY/PAUSE DEBOUNCE GUARD ===
             guard Date().timeIntervalSince(lastWidgetActionTime) > widgetActionDebounceInterval else {
                 #if DEBUG
-                print("🔇 Widget action debounced (too soon after previous tap)")
+                print("[ViewController] Widget action debounced (too soon after previous tap)")
                 #endif
                 return
             }
@@ -2704,7 +2684,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 let vs = await SharedPlayerManager.shared.currentVisualState
                 if vs == .userPaused {
                     #if DEBUG
-                    print("🔇 Widget pause ignored — already .userPaused (prevents double-pause resurrection races)")
+                    print("[ViewController] Widget pause ignored — already .userPaused (prevents double-pause resurrection races)")
                     #endif
                     return
                 }
@@ -2712,7 +2692,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             }
         default:
             #if DEBUG
-            print("🔗 Unknown pending action: \(pendingAction)")
+            print("[ViewController] Unknown pending action: \(pendingAction)")
             #endif
         }
         
@@ -2756,13 +2736,13 @@ extension ViewController {
     public func handleSwitchToLanguage(_ languageCode: String) {
         Task { @MainActor in
             #if DEBUG
-            print("🔄 handleSwitchToLanguage started for: \(languageCode)")
+            print("[ViewController] handleSwitchToLanguage started for: \(languageCode)")
             #endif
             
             guard let targetStream = DirectStreamingPlayer.availableStreams.first(where: { $0.languageCode == languageCode }),
                   let targetIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.languageCode == languageCode }) else {
                 #if DEBUG
-                print("❌ handleSwitchToLanguage: target stream not found for \(languageCode)")
+                print("[ViewController] handleSwitchToLanguage: target stream not found for \(languageCode)")
                 #endif
                 return
             }
@@ -2772,7 +2752,7 @@ extension ViewController {
             streamingPlayer.isSwitchingStream = true
             
             #if DEBUG
-            print("🛑 Starting silent stop for switch to \(languageCode)")
+            print("[ViewController] Starting silent stop for switch to \(languageCode)")
             #endif
             
             // Updated: use semantic reason (no more isSwitchingStream flag)
@@ -2782,14 +2762,14 @@ extension ViewController {
             )
             
             #if DEBUG
-            print("🎵 Playing tuning sound")
+            print("[ViewController] Playing tuning sound")
             #endif
             await playTuningSound(animateNeedleTo: targetIndex)
             
             streamingPlayer.resetTransientErrors()
             
             #if DEBUG
-            print("📡 Setting stream to: \(targetStream.language)")
+            print("[ViewController] Setting stream to: \(targetStream.language)")
             #endif
             await streamingPlayer.setStream(to: targetStream)
             // Retired legacy direct-write helper; route through the modern path that also
@@ -2812,7 +2792,7 @@ extension ViewController {
             // This removes one of the last places the stale flag controlled playback flow.
             if await SharedPlayerManager.shared.canProceedWithPlayback() {
                 #if DEBUG
-                print("▶️ Starting playback after switch (intent allows)")
+                print("[ViewController] ▶ Starting playback after switch (intent allows)")
                 #endif
                 
                 // Small delay to let AVPlayerItem settle
@@ -2822,7 +2802,7 @@ extension ViewController {
                 
             } else {
                 #if DEBUG
-                print("⏸️ Intent blocks playback after switch (userPaused or securityLocked)")
+                print("[ViewController] ⏸ Intent blocks playback after switch (userPaused or securityLocked)")
                 #endif
                 // Still update UI to paused state
                 updateUI(for: .userPaused)
@@ -2831,7 +2811,7 @@ extension ViewController {
             streamingPlayer.isSwitchingStream = false
             
             #if DEBUG
-            print("✅ handleSwitchToLanguage completed for \(languageCode)")
+            print("[ViewController] handleSwitchToLanguage completed for \(languageCode)")
             #endif
             
             // the snapshot write + WidgetRefreshManager. (Language prompt via setter.)
@@ -2921,11 +2901,11 @@ extension ViewController {
         do {
             try engine.start()
             #if DEBUG
-            print("✅ Haptic engine started successfully")
+            print("[ViewController] Haptic engine started successfully")
             #endif
         } catch {
             #if DEBUG
-            print("❌ Failed to start haptic engine: \(error)")
+            print("[ViewController] Failed to start haptic engine: \(error)")
             #endif
         }
     }
@@ -2973,7 +2953,7 @@ extension ViewController {
         // Early exit in Low Power Mode to conserve battery
         guard !ProcessInfo.processInfo.isLowPowerModeEnabled else {
             #if DEBUG
-            print("❌ Haptics skipped in Low Power Mode")
+            print("[ViewController] Haptics skipped in Low Power Mode")
             #endif
             return
         }
@@ -2982,7 +2962,7 @@ extension ViewController {
         guard CHHapticEngine.capabilitiesForHardware().supportsHaptics,
               let engine = hapticEngine else {
             #if DEBUG
-            print("❌ Haptics not supported or engine unavailable")
+            print("[ViewController] Haptics not supported or engine unavailable")
             #endif
             return
         }
@@ -3008,11 +2988,11 @@ extension ViewController {
             try player.start(atTime: CHHapticTimeImmediate)
             
             #if DEBUG
-            print("✅ Haptic played: style=\(style), intensity=\(intensityValue), sharpness=\(sharpnessValue)")
+            print("[ViewController] Haptic played: style=\(style), intensity=\(intensityValue), sharpness=\(sharpnessValue)")
             #endif
         } catch {
             #if DEBUG
-            print("❌ Failed to play haptic: \(error.localizedDescription)")
+            print("[ViewController] Failed to play haptic: \(error.localizedDescription)")
             #endif
             // Fallback to UIImpactFeedbackGenerator if custom fails (but still respect LPM via the early guard)
             let fallback = UIImpactFeedbackGenerator(style: style)
@@ -3200,19 +3180,19 @@ extension ViewController: StreamingPlayerDelegate {
                     await manager.setUserIntentToPlay()
                     
                     #if DEBUG
-                    print("▶️ Widget 'play' action → calling handleUserTogglePlayback (SSOT)")
+                    print("[ViewController] ▶ Widget 'play' action → calling handleUserTogglePlayback (SSOT)")
                     #endif
                     await handleUserTogglePlayback()
                 } else {
                     #if DEBUG
-                    print("🛡️ Widget 'play' blocked — currentVisualState is .userPaused")
+                    print("[ViewController] Widget 'play' blocked — currentVisualState is .userPaused")
                     #endif
                 }
                 
             case "pause":
                 if state.isPlaying {
                     #if DEBUG
-                    print("⏸️ Widget 'pause' action → calling handleUserTogglePlayback (SSOT)")
+                    print("[ViewController] ⏸ Widget 'pause' action → calling handleUserTogglePlayback (SSOT)")
                     #endif
                     await handleUserTogglePlayback()
                 }
@@ -3240,13 +3220,13 @@ extension ViewController: StreamingPlayerDelegate {
                     let finalVisualState = await manager.currentVisualState
                     if finalVisualState.shouldAutoPlayOrResume && !state.isPlaying {
                         #if DEBUG
-                        print("▶️ Widget switch → resuming playback (user intent)")
+                        print("[ViewController] ▶ Widget switch → resuming playback (user intent)")
                         #endif
                         await manager.setUserIntentToPlay()
                         await SharedPlayerManager.shared.play()
                     } else if !finalVisualState.shouldAutoPlayOrResume {
                         #if DEBUG
-                        print("🛡️ Widget switch blocked resume — .userPaused")
+                        print("[ViewController] Widget switch blocked resume — .userPaused")
                         #endif
                         updatePlayPauseButton(isPlaying: false)
                         safeUpdateStatusLabel(text: String(localized: "status_paused"),
@@ -3273,7 +3253,7 @@ extension ViewController: StreamingPlayerDelegate {
             saveStateForWidget()
             
             #if DEBUG
-            print("🔗 Widget action '\(action)' completed → saveStateForWidget")
+            print("[ViewController] Widget action '\(action)' completed → saveStateForWidget")
             #endif
             
             // Clear the pending action (actor-isolated)

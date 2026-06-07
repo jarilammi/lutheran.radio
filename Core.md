@@ -12,7 +12,7 @@ The `Core` module is the central, isolated foundation of **lutheran.radio**. It 
 
 ### SecurityConfiguration
 - Centralized constants and rules (expected security model, pinned certificate fingerprints, cache durations, time skew tolerance, etc.).
-- Non-negotiable security parameters — any deviation from these values is treated as a hard failure.
+- Required security parameters — any deviation from these values is treated as a validation failure.
 
 ### SecurityModelValidator
 - `@MainActor`-isolated actor responsible for DNS TXT record validation against the ordered list of security model domains (`securitymodels.lutheran.radio` primary + `securitymodels.lutheranradio.sk` backup) with smart fallback on transient errors.

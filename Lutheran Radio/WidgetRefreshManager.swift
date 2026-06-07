@@ -74,7 +74,7 @@ final class WidgetRefreshManager: @unchecked Sendable {
            lastState.currentLanguage == newState.currentLanguage,
            lastState.hasError == newState.hasError {
             #if DEBUG
-            print("🔇 Widget refresh coalesced: sticky \(newState.debugVisualStateLabel) unchanged")
+            print("[WidgetRefreshManager] Widget refresh coalesced: sticky \(newState.debugVisualStateLabel) unchanged")
             #endif
             return
         }
@@ -171,7 +171,7 @@ final class WidgetRefreshManager: @unchecked Sendable {
         if let combined = SharedPlayerManager.loadPersistedWidgetState(),
            refreshWouldRegress(executing: state.visualState, persisted: combined.visualState) {
             #if DEBUG
-            print("🔇 Widget refresh discarded: stale debounced \(state.debugVisualStateLabel) vs persisted \(debugLabel(for: combined.visualState))")
+            print("[WidgetRefreshManager] Widget refresh discarded: stale debounced \(state.debugVisualStateLabel) vs persisted \(debugLabel(for: combined.visualState))")
             #endif
             return
         }
@@ -201,16 +201,16 @@ final class WidgetRefreshManager: @unchecked Sendable {
                 WidgetCenter.shared.reloadTimelines(ofKind: "radio.lutheran.LutheranRadio.LutheranRadioWidget")
                 
                 #if DEBUG
-                print("🔗 Widget refresh executed (widgets active: \(configs.count)) — visualState: \(state.debugVisualStateLabel), lang: \(state.currentLanguage)")
+                print("[WidgetRefreshManager] Widget refresh executed (widgets active: \(configs.count)) — visualState: \(state.debugVisualStateLabel), lang: \(state.currentLanguage)")
                 #endif
             } else {
                 #if DEBUG
-                print("🔗 Skipped widget refresh: No active widgets configured")
+                print("[WidgetRefreshManager] Skipped widget refresh: No active widgets configured")
                 #endif
             }
         } catch {
             #if DEBUG
-            print("🔗 Widget refresh failed: \(error.localizedDescription)")
+            print("[WidgetRefreshManager] Widget refresh failed: \(error.localizedDescription)")
             #endif
         }
     }

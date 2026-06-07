@@ -154,13 +154,8 @@ actor SharedPlayerManager {
     private var hasCompletedTrueColdLaunchPlay = false
     
     // MARK: - Recent user pause (in-actor barrier for recovery paths)
-    //
-    /// Authoritative timestamp for `wasRecentlyUserPaused(within:)`. The UserDefaults
-    //
-    /// `lastUserPauseTime` key remains the cross-process contract for extensions.
-    //
-    //
-    //
+    /// Authoritative timestamp for `wasRecentlyUserPaused(within:)`.
+    /// The UserDefaults `lastUserPauseTime` key remains the cross-process contract for extensions.
     private var lastUserPauseTimestamp: TimeInterval = 0
     
     #if LUTHERAN_MAIN_APP
@@ -275,7 +270,7 @@ actor SharedPlayerManager {
     internal func updatePlaybackIntent(to intent: PlaybackIntent) {
         if playbackIntent != intent {
             #if DEBUG
-            print("🎯 [SharedPlayerManager] playbackIntent: \(playbackIntent) → \(intent)")
+            print("[SharedPlayerManager] playbackIntent: \(playbackIntent) → \(intent)")
             #endif
             playbackIntent = intent
         }
@@ -409,7 +404,7 @@ actor SharedPlayerManager {
         await clearUserPausedLockIfNeeded()
         
         #if DEBUG
-        print("🎵 SharedPlayerManager.play() ENTERED – currentPlaybackIntent = \(currentPlaybackIntent), currentVisualState = \(currentVisualState)")
+        print("[SharedPlayerManager] SharedPlayerManager.play() ENTERED – currentPlaybackIntent = \(currentPlaybackIntent), currentVisualState = \(currentVisualState)")
         #endif
         
         // ──────────────────────────────────────────────────────────────
@@ -426,7 +421,7 @@ actor SharedPlayerManager {
         // even when resurrection protection is relaxed. User intent wins.
         if currentPlaybackIntent == .userPaused {
             #if DEBUG
-            print("🔒 [SharedPlayerManager] play() blocked — explicit .userPaused (resurrection bypass ignored)")
+            print("[SharedPlayerManager] play() blocked — explicit .userPaused (resurrection bypass ignored)")
             #endif
             return
         }
@@ -435,18 +430,18 @@ actor SharedPlayerManager {
         if !resurrectionProtectionRelaxed {
             if currentPlaybackIntent == .userPaused || currentPlaybackIntent == .securityLocked {
                 #if DEBUG
-                print("🔒 [SharedPlayerManager] play() BLOCKED by playbackIntent = \(currentPlaybackIntent)")
+                print("[SharedPlayerManager] play() BLOCKED by playbackIntent = \(currentPlaybackIntent)")
                 #endif
                 return
             }
         } else {
             #if DEBUG
             if isTrueColdLaunchPlay {
-                print("🚀 Cold-launch first play – resurrection protection relaxed")
+                print("[SharedPlayerManager] Cold-launch first play – resurrection protection relaxed")
             } else if isStreamSwitchPlay {
-                print("🚀 Stream-switch play – resurrection protection relaxed")
+                print("[SharedPlayerManager] Stream-switch play – resurrection protection relaxed")
             } else if isResumePlay {
-                print("🚀 Resume play – resurrection protection relaxed")
+                print("[SharedPlayerManager] Resume play – resurrection protection relaxed")
             }
             #endif
         }
@@ -456,7 +451,7 @@ actor SharedPlayerManager {
         // to protect against tight recovery-task loops when the player is already playing.
         if currentVisualState == .playing && !resurrectionProtectionRelaxed {
             #if DEBUG
-            print("✅ SharedPlayerManager.play() — already .playing, skipping redundant call (recovery loop prevented)")
+            print("[SharedPlayerManager] SharedPlayerManager.play() — already .playing, skipping redundant call (recovery loop prevented)")
             #endif
             return
         }
@@ -498,15 +493,15 @@ actor SharedPlayerManager {
         #if DEBUG
         print("🔐 SecurityModelValidator returned: \(isValid)")
         if !isValid {
-            print("❌ Validation failed → bailing out of playback")
+            print("[SharedPlayerManager] Validation failed → bailing out of playback")
         } else {
-            print("✅ Validation passed → proceeding with playback")
+            print("[SharedPlayerManager] Validation passed → proceeding with playback")
         }
         #endif
         
         guard isValid else {
             #if DEBUG
-            print("🔒 Permanent security validation failure — locking UI to .securityLocked")
+            print("[SharedPlayerManager] Permanent security validation failure — locking UI to .securityLocked")
             #endif
 
             #if LUTHERAN_MAIN_APP
@@ -521,7 +516,7 @@ actor SharedPlayerManager {
             await self.saveCurrentState()
             
             #if DEBUG
-            print("✅ Security lock applied – currentVisualState is now .securityLocked")
+            print("[SharedPlayerManager] Security lock applied – currentVisualState is now .securityLocked")
             #endif
             return
         }
@@ -538,9 +533,9 @@ actor SharedPlayerManager {
             await setPlaying()
             #if DEBUG
             if hadStreamSwitchHold {
-                print("✅ Visual state set to .playing before setStreamAndPlay (stream switch)")
+                print("[SharedPlayerManager] Visual state set to .playing before setStreamAndPlay (stream switch)")
             } else {
-                print("✅ Visual state set to .playing before setStreamAndPlay")
+                print("[SharedPlayerManager] Visual state set to .playing before setStreamAndPlay")
             }
             #endif
         }
@@ -556,7 +551,7 @@ actor SharedPlayerManager {
         
         let stream = DirectStreamingPlayer.shared.selectedStream
         #if DEBUG
-        print("🎵 Setting stream to: \(stream)")
+        print("[SharedPlayerManager] Setting stream to: \(stream)")
         #endif
         
         await DirectStreamingPlayer.shared.setStreamAndPlay(to: stream)
@@ -574,7 +569,7 @@ actor SharedPlayerManager {
         await self.saveCurrentState()
         
         #if DEBUG
-        print("✅ Security lock applied from server 403 response")
+        print("[SharedPlayerManager] Security lock applied from server 403 response")
         #endif
     }
     
@@ -589,13 +584,13 @@ actor SharedPlayerManager {
         ensureVisualStateLoaded()
         
         #if DEBUG
-        print("🚀 SharedPlayerManager.attemptResurrectionIfAllowed() – currentPlaybackIntent = \(currentPlaybackIntent), currentVisualState = \(currentVisualState)")
+        print("[SharedPlayerManager] SharedPlayerManager.attemptResurrectionIfAllowed() – currentPlaybackIntent = \(currentPlaybackIntent), currentVisualState = \(currentVisualState)")
         #endif
 
         // Block explicit user pause or permanent security lock.
         if currentPlaybackIntent == .userPaused || currentPlaybackIntent == .securityLocked {
             #if DEBUG
-            print("🔒 [SharedPlayerManager] resurrection BLOCKED by playbackIntent = \(currentPlaybackIntent)")
+            print("[SharedPlayerManager] resurrection BLOCKED by playbackIntent = \(currentPlaybackIntent)")
             #endif
             return
         }
@@ -603,13 +598,13 @@ actor SharedPlayerManager {
         // Light check — if the player is already playing, do nothing
         if DirectStreamingPlayer.shared.isActuallyPlaying() {
             #if DEBUG
-            print("✅ SharedPlayerManager: already actually playing — skipping redundant recovery")
+            print("[SharedPlayerManager] SharedPlayerManager: already actually playing — skipping redundant recovery")
             #endif
             return
         }
 
         #if DEBUG
-        print("🔄 Resurrection proceeding — player is stalled, forcing light recovery")
+        print("[SharedPlayerManager] Resurrection proceeding — player is stalled, forcing light recovery")
         #endif
 
         // Light recovery: just force the existing player back to life (no full validation/tuning/stream switch)
@@ -642,7 +637,7 @@ actor SharedPlayerManager {
         #endif
         
         #if DEBUG
-        print("🔒 markAsUserPaused() called – forcing .userPaused to block resurrection")
+        print("[SharedPlayerManager] markAsUserPaused() called – forcing .userPaused to block resurrection")
         #endif
         
         // We are inside the actor, so mutation is allowed
@@ -662,7 +657,7 @@ actor SharedPlayerManager {
         #endif
         
         #if DEBUG
-        print("✅ Visual state locked to .userPaused")
+        print("[SharedPlayerManager] Visual state locked to .userPaused")
         #endif
     }
     
@@ -678,7 +673,7 @@ actor SharedPlayerManager {
         #endif
         
         #if DEBUG
-        print("🚀 SharedPlayerManager.stop() ENTERED – currentVisualState = \(currentVisualState)")
+        print("[SharedPlayerManager] SharedPlayerManager.stop() ENTERED – currentVisualState = \(currentVisualState)")
         #endif
 
         // Note: Lock .userPaused IMMEDIATELY at the very top
@@ -692,7 +687,7 @@ actor SharedPlayerManager {
         lastUserPauseTimestamp = Date().timeIntervalSince1970
 
         #if DEBUG
-        print("🛡️ userPaused locked immediately in stop() (resurrection protection active)")
+        print("[SharedPlayerManager] userPaused locked immediately in stop() (resurrection protection active)")
         #endif
 
         if isRunningInWidget() {
@@ -717,7 +712,7 @@ actor SharedPlayerManager {
         #endif
         
         #if DEBUG
-        print("🛑 stop() completed – visualState locked to .userPaused")
+        print("[SharedPlayerManager] stop() completed – visualState locked to .userPaused")
         #endif
     }
     
@@ -777,7 +772,7 @@ actor SharedPlayerManager {
         // change via its internal check.
         
         #if DEBUG
-        print("🔄 [SharedPlayerManager] resetToPrePlayForNewStream() — state reset to .prePlay for atomic stream switch")
+        print("[SharedPlayerManager] resetToPrePlayForNewStream() — state reset to .prePlay for atomic stream switch")
         #endif
     }
     
@@ -792,14 +787,14 @@ actor SharedPlayerManager {
         #endif
         
         #if DEBUG
-        print("🎯 setUserIntentToPlay() called – clearing .userPaused lock")
+        print("[SharedPlayerManager] setUserIntentToPlay() called – clearing .userPaused lock")
         #endif
         
         if currentVisualState == .userPaused {
             currentVisualState = .prePlay
             
             #if DEBUG
-            print("🎯 setUserIntentToPlay() → .prePlay with .shouldBePlaying (resume path)")
+            print("[SharedPlayerManager] setUserIntentToPlay() → .prePlay with .shouldBePlaying (resume path)")
             #endif
         }
         
@@ -862,7 +857,7 @@ actor SharedPlayerManager {
         
         if currentPlaybackIntent == .userPaused || currentPlaybackIntent == .securityLocked {
             #if DEBUG
-            print("🔒 [SharedPlayerManager] restoreVisualStateRespectingUserIntent BLOCKED by playbackIntent = \(currentPlaybackIntent)")
+            print("[SharedPlayerManager] restoreVisualStateRespectingUserIntent BLOCKED by playbackIntent = \(currentPlaybackIntent)")
             #endif
             return
         }
@@ -882,11 +877,11 @@ actor SharedPlayerManager {
         
         if currentVisualState.mustSuppressResurrection {
             #if DEBUG
-            print("🔒 Resurrection suppressed — userPaused is sticky")
+            print("[SharedPlayerManager] Resurrection suppressed — userPaused is sticky")
             #endif
         } else if currentVisualState.shouldAutoPlayOrResume {
             #if DEBUG
-            print("▶️ Allowed to resume playback")
+            print("[SharedPlayerManager] ▶ Allowed to resume playback")
             #endif
         }
     }
@@ -921,7 +916,7 @@ actor SharedPlayerManager {
         
         #if DEBUG
         if isRunningInWidget() {
-            print("🔗 [Widget] ensureVisualStateLoaded → currentVisualState = \(currentVisualState)")
+            print("[SharedPlayerManager] [Widget] ensureVisualStateLoaded → currentVisualState = \(currentVisualState)")
         }
         #endif
     }
@@ -934,7 +929,7 @@ actor SharedPlayerManager {
         ensureVisualStateLoaded()
         if currentVisualState == .userPaused {
             #if DEBUG
-            print("🔗 [Widget] Cleared userPaused lock for widget play action")
+            print("[SharedPlayerManager] [Widget] Cleared userPaused lock for widget play action")
             #endif
             currentVisualState = .prePlay
             
@@ -954,12 +949,7 @@ actor SharedPlayerManager {
         ensureVisualStateLoadedForWidget()
         
         // Instant visual feedback for widget
-        let now = Date().timeIntervalSince1970
-        sharedDefaults?.set(now, forKey: "lastUpdateTime")
-        sharedDefaults?.set(true, forKey: "isInstantFeedback")
-        sharedDefaults?.set(now, forKey: "instantFeedbackTime")
-        // Architectural shift: source from preferred (combined snapshot) even when writing legacy instant key
-        sharedDefaults?.set(Self.preferredWidgetLanguage(), forKey: "instantFeedbackLanguage")
+        Self.writeInstantFeedback(language: Self.preferredWidgetLanguage())
         
         // Important: Optimistic SSOT update (same pattern we already use in stop)
         currentVisualState = .playing
@@ -992,12 +982,7 @@ actor SharedPlayerManager {
         ensureVisualStateLoadedForWidget()
         
         // Instant visual feedback for widget using the new authoritative state
-        let now = Date().timeIntervalSince1970
-        sharedDefaults?.set(now, forKey: "lastUpdateTime")
-        sharedDefaults?.set(true, forKey: "isInstantFeedback")
-        sharedDefaults?.set(now, forKey: "instantFeedbackTime")
-        // Architectural shift: source from preferred (combined snapshot) even when writing legacy instant key
-        sharedDefaults?.set(Self.preferredWidgetLanguage(), forKey: "instantFeedbackLanguage")
+        Self.writeInstantFeedback(language: Self.preferredWidgetLanguage())
         
         // Important: Set the paused state synchronously for widget path
         currentVisualState = .userPaused
@@ -1029,12 +1014,7 @@ actor SharedPlayerManager {
     
     // This helper must be nonisolated because it's called from the nonisolated switchToStream
     nonisolated private func handleWidgetSwitch(to stream: DirectStreamingPlayer.Stream) {
-        let now = Date().timeIntervalSince1970
-        sharedDefaults?.set(now, forKey: "lastUpdateTime")
-        sharedDefaults?.set(true, forKey: "isInstantFeedback")
-        sharedDefaults?.set(now, forKey: "instantFeedbackTime")
-        sharedDefaults?.set(stream.languageCode, forKey: "instantFeedbackLanguage")
-        sharedDefaults?.synchronize()
+        Self.writeInstantFeedback(language: stream.languageCode)
 
         // Best-effort write of the combined snapshot from the widget side.
         // Prefer the unified snapshot (or in-memory after any prior force in this process).
@@ -1049,22 +1029,13 @@ actor SharedPlayerManager {
             // with the correct visual derived from loadSharedState just before this path.
             visualForSwitch = .prePlay
         }
-        let snapshot = PersistedWidgetState(
-            visualState: visualForSwitch,
-            currentLanguage: stream.languageCode,
-            lastLanguageChangeTime: Date(),
-            streamMetadata: nil
-        )
-        if let data = try? JSONEncoder().encode(snapshot) {
-            sharedDefaults?.set(data, forKey: "persistedWidgetState")
-            sharedDefaults?.synchronize()
-        }
+        Self.persistWidgetSnapshot(visualState: visualForSwitch, language: stream.languageCode)
         
         scheduleWidgetAction(action: "switch", parameter: stream.languageCode)
         notifyMainApp(action: "switch", parameter: stream.languageCode)
         
         #if DEBUG
-        print("🔗 Widget stream switch scheduled: \(stream.languageCode)")
+        print("[SharedPlayerManager] Widget stream switch scheduled: \(stream.languageCode)")
         #endif
     }
     
@@ -1074,13 +1045,38 @@ actor SharedPlayerManager {
     // They are deliberately nonisolated so widget intent handlers can call them without
     // crossing the actor boundary on the hot path.
 
-    // Schedule widget action for main app to handle
-    nonisolated private func scheduleWidgetAction(action: String, parameter: String? = nil) {
+    /// Writes the short-lived instant-feedback keys used by widget providers for optimistic UI.
+    nonisolated static func writeInstantFeedback(language: String) {
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return }
+        let now = Date().timeIntervalSince1970
+        defaults.set(now, forKey: "lastUpdateTime")
+        defaults.set(true, forKey: "isInstantFeedback")
+        defaults.set(now, forKey: "instantFeedbackTime")
+        defaults.set(language, forKey: "instantFeedbackLanguage")
+        defaults.synchronize()
+    }
+
+    /// Optimistic play/pause widget path: persist visual state, schedule pending action, notify main app.
+    @discardableResult
+    nonisolated func signalWidgetPendingAction(
+        visualState: PlayerVisualState,
+        action: String
+    ) -> String? {
+        forcePersistVisualState(visualState)
+        let actionId = scheduleWidgetAction(action: action)
+        notifyMainApp(action: action)
+        return actionId
+    }
+
+    /// Schedules a one-shot widget action for the main app via App Group UserDefaults.
+    /// Returns the generated action ID, or `nil` if the App Group is unavailable.
+    @discardableResult
+    nonisolated func scheduleWidgetAction(action: String, parameter: String? = nil) -> String? {
         guard let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
             #if DEBUG
-            print("🔗 ERROR: Failed to access shared UserDefaults in scheduleWidgetAction")
+            print("[SharedPlayerManager] ERROR: Failed to access shared UserDefaults in scheduleWidgetAction")
             #endif
-            return
+            return nil
         }
         
         let actionId = UUID().uuidString
@@ -1088,11 +1084,11 @@ actor SharedPlayerManager {
         sharedDefaults.set(actionId, forKey: "pendingActionId")
         sharedDefaults.set(Date().timeIntervalSince1970, forKey: "pendingActionTime")
         
-        // Important FIX: Always set the language parameter for switch actions
+        // Note: Always set the language parameter for switch actions.
         if let param = parameter {
             sharedDefaults.set(param, forKey: "pendingLanguage")
             #if DEBUG
-            print("🔗 Set pendingLanguage: \(param)")
+            print("[SharedPlayerManager] Set pendingLanguage: \(param)")
             #endif
         } else if action == "switch" {
             // Fallback: use preferred (combined snapshot first) for pendingLanguage
@@ -1100,7 +1096,7 @@ actor SharedPlayerManager {
             let currentLanguage = Self.preferredWidgetLanguage()
             sharedDefaults.set(currentLanguage, forKey: "pendingLanguage")
             #if DEBUG
-            print("🔗 Set fallback pendingLanguage: \(currentLanguage)")
+            print("[SharedPlayerManager] Set fallback pendingLanguage: \(currentLanguage)")
             #endif
         }
         
@@ -1108,19 +1104,21 @@ actor SharedPlayerManager {
         sharedDefaults.synchronize()
         
         #if DEBUG
-        print("🔗 Scheduled widget action: \(action) \(parameter ?? "") [ID: \(actionId)]")
-        print("🔗 UserDefaults synchronized for App Group")
+        print("[SharedPlayerManager] Scheduled widget action: \(action) \(parameter ?? "") [ID: \(actionId)]")
+        print("[SharedPlayerManager] UserDefaults synchronized for App Group")
         #endif
+        
+        return actionId
     }
     
-    // Notify main app using Darwin notifications
-    nonisolated private func notifyMainApp(action: String, parameter: String? = nil) {
+    /// Posts a Darwin notification so the main app processes a pending widget action.
+    nonisolated func notifyMainApp(action: String, parameter: String? = nil) {
         let notificationName = "radio.lutheran.widget.action"
         let center = CFNotificationCenterGetDarwinNotifyCenter()
         CFNotificationCenterPostNotification(center, CFNotificationName(notificationName as CFString), nil, nil, true)
         
         #if DEBUG
-        print("🔗 Posted Darwin notification for action: \(action)")
+        print("[SharedPlayerManager] Posted Darwin notification for action: \(action)")
         #endif
     }
     
@@ -1147,7 +1145,7 @@ actor SharedPlayerManager {
         sharedDefaults?.removeObject(forKey: "pendingActionTime")
         sharedDefaults?.removeObject(forKey: "pendingLanguage")
         #if DEBUG
-        print("🔗 Cleared pending action with ID: \(actionId)")
+        print("[SharedPlayerManager] Cleared pending action with ID: \(actionId)")
         #endif
     }
     
@@ -1406,12 +1404,12 @@ extension SharedPlayerManager {
             }
         } else {
             #if DEBUG
-            print("🔇 performActualSave: snapshot unchanged — skipping widget timeline reload")
+            print("[SharedPlayerManager] performActualSave: snapshot unchanged — skipping widget timeline reload")
             #endif
         }
         
         #if DEBUG
-        print("🔗 State saved: playing=\(state.isPlaying), language=\(state.currentLanguage)")
+        print("[SharedPlayerManager] State saved: playing=\(state.isPlaying), language=\(state.currentLanguage)")
         #endif
     }
     
@@ -1430,7 +1428,7 @@ extension SharedPlayerManager {
                 let hasError = sharedDefaults?.bool(forKey: "hasError") ?? false
                 
                 #if DEBUG
-                print("🔗 Using instant feedback state: \(instantFeedbackLanguage), age: \(age)s")
+                print("[SharedPlayerManager] Using instant feedback state: \(instantFeedbackLanguage), age: \(age)s")
                 #endif
                 
                 return (isPlaying, instantFeedbackLanguage, hasError)
@@ -1441,7 +1439,7 @@ extension SharedPlayerManager {
                 sharedDefaults?.removeObject(forKey: "instantFeedbackLanguage")
                 
                 #if DEBUG
-                print("🔗 Cleared expired instant feedback (age: \(age)s)")
+                print("[SharedPlayerManager] Cleared expired instant feedback (age: \(age)s)")
                 #endif
             }
         }

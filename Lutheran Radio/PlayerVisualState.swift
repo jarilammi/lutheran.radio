@@ -154,7 +154,7 @@ extension PlayerVisualState {
         // This defeats the status-callback flip-back bug
         if currentVisualState == .userPaused && status != .playing {
             #if DEBUG
-            print("🔒 [PlayerVisualState] preserving sticky .userPaused for status=\(status)")
+            print("[PlayerVisualState] preserving sticky .userPaused for status=\(status)")
             #endif
             return .userPaused
         }

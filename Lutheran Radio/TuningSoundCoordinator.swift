@@ -61,9 +61,9 @@ actor TuningSoundCoordinator {
         case .delegate:
             break
         case .safetyTimeout:
-            print("⚠️ Tuning wait safety timeout — resuming main playback")
+            print("[TuningSoundCoordinator] Tuning wait safety timeout — resuming main playback")
         case .cancelled:
-            print("🎵 Tuning playback cancelled — resuming waiters")
+            print("[TuningSoundCoordinator] Tuning playback cancelled — resuming waiters")
         }
         #endif
 
@@ -74,7 +74,7 @@ actor TuningSoundCoordinator {
     func waitForActivePlaybackToFinishIfNeeded() async {
         guard isPlaybackActive else {
             #if DEBUG
-            print("🔇 Tuning wait skipped — no active tuning clip")
+            print("[TuningSoundCoordinator] Tuning wait skipped — no active tuning clip")
             #endif
             return
         }
@@ -92,7 +92,7 @@ actor TuningSoundCoordinator {
         }
 
         #if DEBUG
-        print("✅ Tuning sound wait completed")
+        print("[TuningSoundCoordinator] Tuning sound wait completed")
         #endif
     }
 

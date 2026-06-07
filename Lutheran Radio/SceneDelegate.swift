@@ -94,7 +94,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
         
         #if DEBUG
-        print("🔗 Saved state for widget on background")
+        print("[SceneDelegate] Saved state for widget on background")
         #endif
     }
 
@@ -130,19 +130,19 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     private func handleURLScheme(_ url: URL) {
         guard url.scheme == "lutheranradio" else {
             #if DEBUG
-            print("🔗 Invalid URL scheme: \(url.scheme ?? "nil"), expected 'lutheranradio'")
+            print("[SceneDelegate] Invalid URL scheme: \(url.scheme ?? "nil"), expected 'lutheranradio'")
             #endif
             return
         }
         
         #if DEBUG
-        print("🔗 Handling URL scheme: \(url.absoluteString)")
+        print("[SceneDelegate] Handling URL scheme: \(url.absoluteString)")
         #endif
         
         // Ensure we have access to the view controller
         guard let viewController = window?.rootViewController as? ViewController else {
             #if DEBUG
-            print("🔗 Unable to get ViewController from window")
+            print("[SceneDelegate] Unable to get ViewController from window")
             #endif
             return
         }
@@ -150,21 +150,21 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         switch url.host {
         case "play":
             #if DEBUG
-            print("🔗 Handling play action from widget")
+            print("[SceneDelegate] Handling play action from widget")
             #endif
-            viewController.handlePlayAction() // ✅ Use public method
+            viewController.handlePlayAction() // Use public method
             
         case "pause":
             #if DEBUG
-            print("🔗 Handling pause action from widget")
+            print("[SceneDelegate] Handling pause action from widget")
             #endif
-            viewController.handlePauseAction() // ✅ Use public method
+            viewController.handlePauseAction() // Use public method
             
         case "toggle":
             #if DEBUG
-            print("🔗 Handling toggle action from widget")
+            print("[SceneDelegate] Handling toggle action from widget")
             #endif
-            viewController.handleTogglePlayback() // ✅ Use public method
+            viewController.handleTogglePlayback() // Use public method
             
         case "switch":
             // Handle stream switch from widget
@@ -174,18 +174,18 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                let languageItem = queryItems.first(where: { $0.name == "language" || $0.name == "param" }),
                let languageCode = languageItem.value {
                 #if DEBUG
-                print("🔗 Handling switch to language: \(languageCode)")
+                print("[SceneDelegate] Handling switch to language: \(languageCode)")
                 #endif
-                viewController.handleSwitchToLanguage(languageCode) // ✅ Use public method
+                viewController.handleSwitchToLanguage(languageCode) // Use public method
             } else {
                 #if DEBUG
-                print("🔗 Invalid switch URL format: \(url.absoluteString)")
+                print("[SceneDelegate] Invalid switch URL format: \(url.absoluteString)")
                 #endif
             }
             
         default:
             #if DEBUG
-            print("🔗 Unknown URL host: \(url.host ?? "nil")")
+            print("[SceneDelegate] Unknown URL host: \(url.host ?? "nil")")
             #endif
             break
         }

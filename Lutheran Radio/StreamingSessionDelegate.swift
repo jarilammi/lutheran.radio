@@ -60,7 +60,7 @@ final class StreamingSessionDelegate: NSObject, URLSessionDataDelegate, URLSessi
         self.loadingRequest = loadingRequest
         super.init()
         #if DEBUG
-        print("🔒 [SSL Debug] StreamingSessionDelegate initialized")
+        print("[StreamingSessionDelegate] [SSL Debug] StreamingSessionDelegate initialized")
         #endif
     }
     
@@ -91,7 +91,7 @@ final class StreamingSessionDelegate: NSObject, URLSessionDataDelegate, URLSessi
             return (.useCredential, URLCredential(trust: serverTrust))
         } else {
             #if DEBUG
-            print("🔒 [StreamingSessionDelegate] Certificate validation failed – cancelling stream")
+            print("[StreamingSessionDelegate] Certificate validation failed – cancelling stream")
             #endif
             self.onError?(URLError(.serverCertificateUntrusted))
             self.loadingRequest.finishLoading(with: URLError(.serverCertificateUntrusted))
@@ -112,7 +112,7 @@ final class StreamingSessionDelegate: NSObject, URLSessionDataDelegate, URLSessi
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse, completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
         #if DEBUG
         if let httpResponse = response as? HTTPURLResponse {
-            print("📡 [StreamingDelegate] Received response: \(httpResponse.statusCode) – Content-Type: \(httpResponse.allHeaderFields["Content-Type"] ?? "nil")")
+            print("[StreamingSessionDelegate] [StreamingDelegate] Received response: \(httpResponse.statusCode) – Content-Type: \(httpResponse.allHeaderFields["Content-Type"] ?? "nil")")
         }
         #endif
         guard let httpResponse = response as? HTTPURLResponse else {
@@ -127,7 +127,7 @@ final class StreamingSessionDelegate: NSObject, URLSessionDataDelegate, URLSessi
            requestURL.query?.contains("security_model=") == true {
 
             #if DEBUG
-            print("🔒 Server returned 403 on security_model= URL → PERMANENT security failure")
+            print("[StreamingSessionDelegate] Server returned 403 on security_model= URL → PERMANENT security failure")
             #endif
 
             Task { @MainActor in
@@ -182,18 +182,18 @@ final class StreamingSessionDelegate: NSObject, URLSessionDataDelegate, URLSessi
         if let urlError = error as? URLError, urlError.code == .cancelled {
             // Cancelled → treat as clean EOF (common practice for live streams)
             #if DEBUG
-            print("📡 [StreamingDelegate] Task cancelled → finishLoading() (clean EOF)")
+            print("[StreamingSessionDelegate] [StreamingDelegate] Task cancelled → finishLoading() (clean EOF)")
             #endif
             loadingRequest.finishLoading()
         } else if let error = error {
             #if DEBUG
-            print("❌ [StreamingDelegate] Task completed with error: \(error.localizedDescription)")
+            print("[StreamingSessionDelegate] [StreamingDelegate] Task completed with error: \(error.localizedDescription)")
             #endif
             onError?(error)
             loadingRequest.finishLoading(with: error)
         } else {
             #if DEBUG
-            print("✅ [StreamingDelegate] Task completed successfully – finishLoading()")
+            print("[StreamingSessionDelegate] [StreamingDelegate] Task completed successfully – finishLoading()")
             #endif
             loadingRequest.finishLoading()
         }

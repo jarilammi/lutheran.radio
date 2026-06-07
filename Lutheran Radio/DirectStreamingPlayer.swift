@@ -313,7 +313,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     // 2. Simple automatic failover (if one cluster is down, the other is used next launch)
     // 3. Future-proof version gating via DNS TXT record
     //
-    // ⚠️  WHEN RELEASING A NEW SECURITY MODEL (certificate rotation, etc.):
+    // WHEN RELEASING A NEW SECURITY MODEL (certificate rotation, etc.):
     // 1. Change the constant below to the new codename (e.g. "brenham")
     // 2. Add the new codename to securitymodels.lutheran.radio TXT record
     // 3. Update README.md Security Model History table
@@ -512,7 +512,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         if let last = lastServerSelectionTime,
            Date().timeIntervalSince(last) <= 10.0 {
             #if DEBUG
-            print("📡 selectOptimalServer: Throttling server selection, using cached server: \(currentSelectedServer.name)")
+            print("[DirectStreamingPlayer] selectOptimalServer: Throttling server selection, using cached server: \(currentSelectedServer.name)")
             #endif
             completion(currentSelectedServer)
             return
@@ -539,7 +539,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                     self.lastServerSelectionTime = Date()
                     
                     #if DEBUG
-                    print("📡 [Server Selection] Selected \(bestResult.server.name) with latency \(bestResult.latency)s")
+                    print("[DirectStreamingPlayer] [Server Selection] Selected \(bestResult.server.name) with latency \(bestResult.latency)s")
                     #endif
                 } else {
                     self.currentSelectedServer = Self.servers[0]
@@ -552,7 +552,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                     self.lastServerSelectionTime = Date()
                     
                     #if DEBUG
-                    print("📡 [Server Selection] No valid ping results, falling back to \(self.currentSelectedServer.name)")
+                    print("[DirectStreamingPlayer] [Server Selection] No valid ping results, falling back to \(self.currentSelectedServer.name)")
                     #endif
                 }
                 
@@ -576,7 +576,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         if let last = lastServerSelectionTime,
            Date().timeIntervalSince(last) <= 10.0 {
             #if DEBUG
-            print("📡 ensureOptimalServerSelected: throttled (≤10s), using cached \(currentSelectedServer.name)")
+            print("[DirectStreamingPlayer] ensureOptimalServerSelected: throttled (≤10s), using cached \(currentSelectedServer.name)")
             #endif
             return
         }
@@ -625,7 +625,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             let results = await self.fetchAllServerLatencies()
             
             #if DEBUG
-            print("📡 [Ping] All pings completed: \(results.map { "\($0.server.name): \($0.latency)s" })")
+            print("[DirectStreamingPlayer] [Ping] All pings completed: \(results.map { "\($0.server.name): \($0.latency)s" })")
             #endif
             completion(results)
         }
@@ -660,18 +660,18 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             
             if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
                 #if DEBUG
-                print("📡 [Ping] Success for \(server.name), latency=\(latency)s")
+                print("[DirectStreamingPlayer] [Ping] Success for \(server.name), latency=\(latency)s")
                 #endif
                 return PingResult(server: server, latency: latency)
             } else {
                 #if DEBUG
-                print("📡 [Ping] Failed for \(server.name): bad status")
+                print("[DirectStreamingPlayer] [Ping] Failed for \(server.name): bad status")
                 #endif
                 return PingResult(server: server, latency: .infinity)
             }
         } catch {
             #if DEBUG
-            print("📡 [Ping] Failed for \(server.name): \(error.localizedDescription)")
+            print("[DirectStreamingPlayer] [Ping] Failed for \(server.name): \(error.localizedDescription)")
             #endif
             return PingResult(server: server, latency: .infinity)
         }
@@ -881,18 +881,18 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                         reasonKey: reasonKey
                     ) {
                         #if DEBUG
-                        print("🔇 safeOnStatusChange: transient \(reasonKey ?? "nil") — skipping widget save (visual SSOT prePlay/playing)")
+                        print("[DirectStreamingPlayer] safeOnStatusChange: transient \(reasonKey ?? "nil") — skipping widget save (visual SSOT prePlay/playing)")
                         #endif
                         return
                     }
                     #if DEBUG
-                    print("🔗 safeOnStatusChange: STABLE final state (isPlaying=\(isPlaying), key='\(reasonKey ?? "nil")') → forcing widget save")
+                    print("[DirectStreamingPlayer] safeOnStatusChange: STABLE final state (isPlaying=\(isPlaying), key='\(reasonKey ?? "nil")') → forcing widget save")
                     #endif
                     await SharedPlayerManager.shared.saveCurrentState()
                 }
             } else {
                 #if DEBUG
-                print("🔇 safeOnStatusChange: transient state (isPlaying=\(isPlaying), key='\(reasonKey ?? "nil")') → skipping widget save")
+                print("[DirectStreamingPlayer] safeOnStatusChange: transient state (isPlaying=\(isPlaying), key='\(reasonKey ?? "nil")') → skipping widget save")
                 #endif
             }
         }
@@ -906,7 +906,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 Task { @MainActor in
                     if await self.shouldSuppressTransientKVOStatus(isPlaying: isPlaying, reasonKey: reasonKey) {
                         #if DEBUG
-                        print("🔗 safeOnStatusChange: transient \(reasonKey ?? "nil") while visualState .playing → suppress pipeline")
+                        print("[DirectStreamingPlayer] safeOnStatusChange: transient \(reasonKey ?? "nil") while visualState .playing → suppress pipeline")
                         #endif
                         #if LUTHERAN_MAIN_APP
                         await SharedPlayerManager.shared.updateNowPlayingInfo()
@@ -927,10 +927,6 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         // the entire delegate → UI → widget pipeline.
         let incoming = (isPlaying, reasonKey)
         if lastEmittedStatus?.isPlaying == isPlaying && lastEmittedStatus?.reasonKey == reasonKey {
-            #if DEBUG
-            // Keep extremely quiet — only uncomment if actively debugging callback storms
-            // print("🔇 invokeStatusCallbacks: suppressed duplicate (\(isPlaying), \(reasonKey ?? "nil"))")
-            #endif
             return false
         }
         lastEmittedStatus = incoming
@@ -944,7 +940,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         delegate?.onStatusChange(isPlaying ? .playing : .stopped, reasonKey: reasonKey)
         
         #if DEBUG
-        print("🔄 invokeStatusCallbacks → isPlaying=\(isPlaying), reasonKey='\(reasonKey ?? "nil")', localized='\(localizedStatus)'")
+        print("[DirectStreamingPlayer] invokeStatusCallbacks → isPlaying=\(isPlaying), reasonKey='\(reasonKey ?? "nil")', localized='\(localizedStatus)'")
         #endif
         return true
     }
@@ -983,7 +979,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         lastObservedItemStatus = nil
         
         #if DEBUG
-        print("🔄 [Playback] Requested reset of transient security validation state (NOTE: initialPlaybackRetryCount and hasStartedPlaying are deliberately NOT reset here — use resetInitialPlaybackCountersForNewStream() for user stream switches)")
+        print("[DirectStreamingPlayer] [Playback] Requested reset of transient security validation state (NOTE: initialPlaybackRetryCount and hasStartedPlaying are deliberately NOT reset here — use resetInitialPlaybackCountersForNewStream() for user stream switches)")
         #endif
     }
 
@@ -1002,7 +998,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         }
 
         #if DEBUG
-        print("🔄 [Playback] resetInitialPlaybackCountersForNewStream — fresh startup budget for stream switch (retryCount reset to 0)")
+        print("[DirectStreamingPlayer] [Playback] resetInitialPlaybackCountersForNewStream — fresh startup budget for stream switch (retryCount reset to 0)")
         #endif
     }
 
@@ -1033,7 +1029,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         setupNetworkMonitoring()
         
         #if DEBUG
-        print("🎵 Player initialized, starting validation")
+        print("[DirectStreamingPlayer] Player initialized, starting validation")
         #endif
         
         if hasInternetConnection {
@@ -1041,7 +1037,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 let isValid = await SecurityModelValidator.shared.validateSecurityModel()
                 
                 #if DEBUG
-                print("🔒 Initial validation completed: \(isValid)")
+                print("[DirectStreamingPlayer] Initial validation completed: \(isValid)")
                 #endif
                 
                 if isValid {
@@ -1052,7 +1048,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                     self.safeOnStatusChange(isPlaying: false, reasonKey: statusKey)
                     
                     #if DEBUG
-                    print("🔒 Validation failed — permanent? \(isPermanent)")
+                    print("[DirectStreamingPlayer] Validation failed — permanent? \(isPermanent)")
                     #endif
                 }
             }
@@ -1093,7 +1089,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         networkMonitor?.pathUpdateHandler = { [weak self] status in
             guard let self else {
                 #if DEBUG
-                print("🧹 [Network] Skipped path update: self is nil")
+                print("[DirectStreamingPlayer] [Network] Skipped path update: self is nil")
                 #endif
                 return
             }
@@ -1102,14 +1098,14 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             self.hasInternetConnection = status == .satisfied
 
             #if DEBUG
-            print("🌐 [Network] Status: \(self.hasInternetConnection ? "Connected" : "Disconnected")")
+            print("[DirectStreamingPlayer] [Network] Status: \(self.hasInternetConnection ? "Connected" : "Disconnected")")
             #endif
 
             if self.hasInternetConnection && !wasConnected {
                 // ── Reconnect case ──
                 #if DEBUG
-                print("🌐 [Network] Connection restored, previous server: \(self.currentSelectedServer.name)")
-                print("🌐 [Network] Cleared server selection cache + failure counts")
+                print("[DirectStreamingPlayer] [Network] Connection restored, previous server: \(self.currentSelectedServer.name)")
+                print("[DirectStreamingPlayer] [Network] Cleared server selection cache + failure counts")
                 #endif
 
                 self.lastServerSelectionTime = nil
@@ -1120,13 +1116,13 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                     await SecurityModelValidator.shared.resetTransientState()
 
                     #if DEBUG
-                    print("🔒 [Network] Invalidated security model validation cache (transient reset)")
+                    print("[DirectStreamingPlayer] [Network] Invalidated security model validation cache (transient reset)")
                     #endif
 
                     let isValid = await SecurityModelValidator.shared.validateSecurityModel()
 
                     #if DEBUG
-                    print("🔒 [Network] Revalidation result on reconnect: \(isValid)")
+                    print("[DirectStreamingPlayer] [Network] Revalidation result on reconnect: \(isValid)")
                     #endif
 
                     if !isValid {
@@ -1163,7 +1159,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 // Select optimal server after reconnect
                 self.selectOptimalServer { server in
                     #if DEBUG
-                    print("🌐 [Network] New server selected: \(server.name)")
+                    print("[DirectStreamingPlayer] [Network] New server selected: \(server.name)")
                     #endif
                     // Any additional post-selection logic here if needed
                 }
@@ -1171,7 +1167,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             else if !self.hasInternetConnection && wasConnected {
                 // ── Disconnect case ──
                 #if DEBUG
-                print("🌐 [Network] Connection lost")
+                print("[DirectStreamingPlayer] [Network] Connection lost")
                 #endif
 
                 DispatchQueue.main.async {
@@ -1256,7 +1252,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         )
         
         #if DEBUG
-        print("🎵 Player initialized, starting validation")
+        print("[DirectStreamingPlayer] Player initialized, starting validation")
         #endif
         
         if hasInternetConnection {
@@ -1264,7 +1260,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 let isValid = await SecurityModelValidator.shared.validateSecurityModel()
                 
                 #if DEBUG
-                print("🔒 Initial validation completed: \(isValid)")
+                print("[DirectStreamingPlayer] Initial validation completed: \(isValid)")
                 #endif
                 
                 if isValid {
@@ -1341,7 +1337,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 }
                 
                 #if DEBUG
-                print("🔒 [Periodic Validation] Certificate validation failed → stopping stream for URL: \(urlToValidate)")
+                print("[DirectStreamingPlayer] [Periodic Validation] Certificate validation failed → stopping stream for URL: \(urlToValidate)")
                 #endif
             }
         }
@@ -1373,7 +1369,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         
         guard !isCurrentlyAttemptingPlayback else {
             #if DEBUG
-            print("⚠️ [Playback Guard] Already attempting playback — ignoring duplicate call")
+            print("[DirectStreamingPlayer] [Playback Guard] Already attempting playback — ignoring duplicate call")
             #endif
             return false
         }
@@ -1394,7 +1390,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         }
         
         #if DEBUG
-        print("✅ Security validation passed — creating player for \(selectedStream.languageCode)")
+        print("[DirectStreamingPlayer] Security validation passed — creating player for \(selectedStream.languageCode)")
         #endif
         
         let streamURL = await urlWithOptimalServer(for: selectedStream)
@@ -1448,7 +1444,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             #endif
         } catch {
             #if DEBUG
-            print("❌ [MainActor] Failed to activate AVAudioSession: \(error.localizedDescription)")
+            print("[DirectStreamingPlayer] [MainActor] Failed to activate AVAudioSession: \(error.localizedDescription)")
             #endif
         }
         // ========================================================
@@ -1456,7 +1452,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         self.player?.play()
 
         #if DEBUG
-        print("▶️ [MainActor] AVPlayer created + play() called for \(url.lastPathComponent)")
+        print("[DirectStreamingPlayer] ▶ [MainActor] AVPlayer created + play() called for \(url.lastPathComponent)")
         #endif
 
         // Do NOT call notifyMainApp here — let SharedPlayerManager do it
@@ -1481,7 +1477,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         setupPlaybackObservers()
         
         #if DEBUG
-        print("🔄 [MainActor] Player item prepared (no auto-play) for \(url.lastPathComponent)")
+        print("[DirectStreamingPlayer] [MainActor] Player item prepared (no auto-play) for \(url.lastPathComponent)")
         #endif
     }
 
@@ -1519,7 +1515,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                         try AVAudioSession.sharedInstance().setActive(true)
                     } catch {
                         #if DEBUG
-                        print("❌ AudioSession failed: \(error)")
+                        print("[DirectStreamingPlayer] AudioSession failed: \(error)")
                         #endif
                         continuation.resume(returning: false)
                         return
@@ -1546,7 +1542,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                     self.player?.play()
 
                     #if DEBUG
-                    print("▶️ [Playback Setup] replaceCurrentItem + play() called on main actor")
+                    print("[DirectStreamingPlayer] ▶ [Playback Setup] replaceCurrentItem + play() called on main actor")
                     #endif
 
                     // We consider initiation successful here.
@@ -1570,7 +1566,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         lastObservedItemStatus = nil
 
         #if DEBUG
-        print("🛠️ [DirectStreamingPlayer] setupPlaybackObservers() — setting up Swift-6-safe observers")
+        print("[DirectStreamingPlayer] 🛠 [DirectStreamingPlayer] setupPlaybackObservers() — setting up Swift-6-safe observers")
         #endif
 
         // === timeControlStatus observer (rateObserver) ===
@@ -1584,7 +1580,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 self.lastObservedTimeControl = newTC
 
                 #if DEBUG
-                print("🔄 [KVO] timeControlStatus → \(newTC.rawValue) | rate: \(observedPlayer.rate)")
+                print("[DirectStreamingPlayer] [KVO] timeControlStatus → \(newTC.rawValue) | rate: \(observedPlayer.rate)")
                 #endif
 
                 switch newTC {
@@ -1594,7 +1590,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                     // authoritative playback intent.
                     guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
                         #if DEBUG
-                        print("🔒 [KVO] timeControlStatus.playing: resurrection suppressed by playbackIntent")
+                        print("[DirectStreamingPlayer] [KVO] timeControlStatus.playing: resurrection suppressed by playbackIntent")
                         #endif
                         return
                     }
@@ -1654,7 +1650,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                     // authoritative playback intent.
                     guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
                         #if DEBUG
-                        print("🔒 [KVO] .readyToPlay observer: resurrection suppressed by playbackIntent")
+                        print("[DirectStreamingPlayer] [KVO] .readyToPlay observer: resurrection suppressed by playbackIntent")
                         #endif
                         return
                     }
@@ -1699,7 +1695,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             self.setupPlaybackObservers()
             
             #if DEBUG
-            print("▶️ AVPlayer rate set to 1.0 from switchToStream on main thread")
+            print("[DirectStreamingPlayer] ▶ AVPlayer rate set to 1.0 from switchToStream on main thread")
             #endif
         }
         
@@ -1717,7 +1713,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         selectedStream = stream
 
         #if DEBUG
-        print("✅ Stream model updated (no player item) for \(stream.language)")
+        print("[DirectStreamingPlayer] Stream model updated (no player item) for \(stream.language)")
         #endif
     }
 
@@ -1733,7 +1729,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
 
         if previousLanguage != newLanguage {
             #if DEBUG
-            print("🔄 Real stream switch detected – performing clean stop")
+            print("[DirectStreamingPlayer] Real stream switch detected – performing clean stop")
             #endif
 
             isSwitchingStream = true
@@ -1743,7 +1739,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             stop(reason: .streamSwitch, silent: true)   // ← removed `await`
         } else {
             #if DEBUG
-            print("🔄 Same stream or initial playback (\(newLanguage)) – skipping stop()")
+            print("[DirectStreamingPlayer] Same stream or initial playback (\(newLanguage)) – skipping stop()")
             #endif
         }
         
@@ -1760,7 +1756,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         await preparePlayerItem(for: url)
 
         #if DEBUG
-        print("✅ Stream model updated and secured AVPlayerItem prepared for \(stream.language)")
+        print("[DirectStreamingPlayer] Stream model updated and secured AVPlayerItem prepared for \(stream.language)")
         #endif
     }
 
@@ -1775,7 +1771,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     private func ensurePlayerExists() {
         if self.player == nil {
             #if DEBUG
-            print("🎵 Creating new AVPlayer instance")
+            print("[DirectStreamingPlayer] Creating new AVPlayer instance")
             #endif
             
             let newPlayer = AVPlayer()
@@ -1797,7 +1793,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         // Sticky .userPaused / .securityLocked behavior preserved exactly.
         guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
             #if DEBUG
-            print("🔒 [DirectStreamingPlayer] startPlayback: resurrection suppressed by playbackIntent = \(await SharedPlayerManager.shared.currentPlaybackIntent)")
+            print("[DirectStreamingPlayer] startPlayback: resurrection suppressed by playbackIntent = \(await SharedPlayerManager.shared.currentPlaybackIntent)")
             #endif
             return
         }
@@ -1820,7 +1816,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             
             guard let player = self.player else {
                 #if DEBUG
-                print("❌ No AVPlayer instance available")
+                print("[DirectStreamingPlayer] No AVPlayer instance available")
                 #endif
                 return
             }
@@ -1831,7 +1827,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 try session.setActive(true)
             } catch {
                 #if DEBUG
-                print("⚠️ Audio session activation failed: \(error)")
+                print("[DirectStreamingPlayer] Audio session activation failed: \(error)")
                 #endif
             }
             
@@ -1840,7 +1836,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             player.rate = 1.0
             
             #if DEBUG
-            print("▶️ AVPlayer started via .play() + rate=1.0")
+            print("[DirectStreamingPlayer] ▶ AVPlayer started via .play() + rate=1.0")
             #endif
             
             // Item should already exist from setStream (secured preparePlayerItem). Attach only as fallback.
@@ -1890,7 +1886,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             // Now driven by authoritative playback intent.
             guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
                 #if DEBUG
-                print("🔒 [DirectStreamingPlayer] post-head-start: resurrection suppressed by playbackIntent")
+                print("[DirectStreamingPlayer] post-head-start: resurrection suppressed by playbackIntent")
                 #endif
                 return
             }
@@ -1911,7 +1907,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         // bounded by retryCount + intent guards). The .prePlay heuristic has been removed.
         Task { @MainActor in
             #if DEBUG
-            print("🛡️ [DirectStreamingPlayer] scheduling cold-launch safety net (single last resort)")
+            print("[DirectStreamingPlayer] scheduling cold-launch safety net (single last resort)")
             #endif
             self.scheduleColdLaunchSafetyNet()
         }
@@ -1920,7 +1916,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         await SharedPlayerManager.shared.setPlaying()
         
         #if DEBUG
-        print("✅ Requested playing state update via SharedPlayerManager (initial auto-play)")
+        print("[DirectStreamingPlayer] Requested playing state update via SharedPlayerManager (initial auto-play)")
         #endif
     }
     
@@ -1950,7 +1946,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     func cancelPendingSSLProtection() {
         clearSSLProtectionTimer()
         #if DEBUG
-        print("🔒 [Manual Cancel] Cancelled pending SSL protection")
+        print("[DirectStreamingPlayer] [Manual Cancel] Cancelled pending SSL protection")
         #endif
     }
     
@@ -1960,7 +1956,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         isSSLHandshakeComplete = true
         
         #if DEBUG
-        print("🔒 [SSL Protection] Legacy timer cleared")
+        print("[DirectStreamingPlayer] [SSL Protection] Legacy timer cleared")
         #endif
     }
     
@@ -1981,7 +1977,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             guard let self = self else { return }
             
             #if DEBUG
-            print("🧹 addObservers() called — clearing old ones")
+            print("[DirectStreamingPlayer] addObservers() called — clearing old ones")
             #endif
             
             // Clear existing first (safe even if called multiple times)
@@ -1990,7 +1986,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             
             guard let playerItem = self.playerItem else {
                 #if DEBUG
-                print("⚠️ addObservers: No playerItem yet")
+                print("[DirectStreamingPlayer] addObservers: No playerItem yet")
                 #endif
                 return
             }
@@ -2000,7 +1996,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 guard let self = self else { return }
                 DispatchQueue.main.async {
                     #if DEBUG
-                    print("🎵 Player item status changed: \(item.status.rawValue) (readyToPlay=1, failed=2)")
+                    print("[DirectStreamingPlayer] Player item status changed: \(item.status.rawValue) (readyToPlay=1, failed=2)")
                     #endif
                     
                     guard self.delegate != nil else { return }
@@ -2008,7 +2004,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                     switch item.status {
                     case .readyToPlay:
                         #if DEBUG
-                        print("✅ Item readyToPlay → starting playback")
+                        print("[DirectStreamingPlayer] Item readyToPlay → starting playback")
                         #endif
                         
                         self.initialPlaybackRetryCount = 0
@@ -2033,13 +2029,13 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                                 guard let self else { return }
                                 guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
                                     #if DEBUG
-                                    print("🔒 [Item status .failed] early transient: suppressed by intent")
+                                    print("[DirectStreamingPlayer] [Item status .failed] early transient: suppressed by intent")
                                     #endif
                                     return
                                 }
                                 if self.initialPlaybackRetryCount == 0 { self.initialPlaybackRetryCount = 1 }
                                 #if DEBUG
-                                print("🔄 Item status .failed on fresh ICY item (post-pause/switch) — canonical recreatePlayerItem")
+                                print("[DirectStreamingPlayer] Item status .failed on fresh ICY item (post-pause/switch) — canonical recreatePlayerItem")
                                 #endif
                                 self.recreatePlayerItem()
                             }
@@ -2061,7 +2057,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             }
             self.playerItemObservations.append(statusObs)
             #if DEBUG
-            print("🧹 Added robust status observer")
+            print("[DirectStreamingPlayer] Added robust status observer")
             #endif
             
             // Keep the existing buffer observers (they are still useful)
@@ -2070,7 +2066,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 DispatchQueue.main.async {
                     if let error = item.error as NSError?, error.domain == "AVFoundationErrorDomain" {
                         #if DEBUG
-                        print("🎵 Buffer empty with error — attempting recovery")
+                        print("[DirectStreamingPlayer] Buffer empty with error — attempting recovery")
                         #endif
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                             self.recreatePlayerItem()
@@ -2099,7 +2095,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                                   !currentItem.isPlaybackLikelyToKeepUp,
                                   (self.player?.rate ?? 0) == 0 else { return }
                             #if DEBUG
-                            print("🔄 Stalled — attempting recovery")
+                            print("[DirectStreamingPlayer] Stalled — attempting recovery")
                             #endif
                             self.recreatePlayerItem()
                         }
@@ -2119,7 +2115,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             self.playerItemObservations.append(bufferFullObs)
             
             #if DEBUG
-            print("🧹 Added buffer observers")
+            print("[DirectStreamingPlayer] Added buffer observers")
             #endif
             
             // Time observer (kept as-is)
@@ -2133,7 +2129,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 }
                 self.timeObserverPlayer = player
                 #if DEBUG
-                print("🧹 Added time observer")
+                print("[DirectStreamingPlayer] Added time observer")
                 #endif
             }
         }
@@ -2155,7 +2151,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 // Activation now relies solely on: intent check + actual playback facts.
                 guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
                     #if DEBUG
-                    print("🔒 [DirectStreamingPlayer] cold-launch safety net: resurrection suppressed by playbackIntent")
+                    print("[DirectStreamingPlayer] cold-launch safety net: resurrection suppressed by playbackIntent")
                     #endif
                     return
                 }
@@ -2167,14 +2163,14 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 if !isActuallyPlaying {
                     self.initialPlaybackRetryCount += 1
                     #if DEBUG
-                    print("🔄 [Playback] Cold-launch safety net: no playback detected after 5s – retry \(self.initialPlaybackRetryCount)/\(self.maxInitialRetries) | hasStartedPlaying=\(self.hasStartedPlaying) | currentItemStatus=\(self.currentItemStatus.rawValue) | hasPlayerItem=\(self.playerItem != nil) | rate=\(self.player?.rate ?? -1)")
+                    print("[DirectStreamingPlayer] [Playback] Cold-launch safety net: no playback detected after 5s – retry \(self.initialPlaybackRetryCount)/\(self.maxInitialRetries) | hasStartedPlaying=\(self.hasStartedPlaying) | currentItemStatus=\(self.currentItemStatus.rawValue) | hasPlayerItem=\(self.playerItem != nil) | rate=\(self.player?.rate ?? -1)")
                     #endif
 
                     if self.initialPlaybackRetryCount >= self.maxInitialRetries {
                         #if DEBUG
                         let tc = self.player?.timeControlStatus.rawValue ?? -1
-                        print("📱 [Playback] Max attempts (\(self.maxInitialRetries)) reached - giving up")
-                        print("📱 [Playback] Safety net terminal: hasPermanentError=\(self.hasPermanentError) | timeControlStatus=\(tc) | rate=\(self.player?.rate ?? -1) | currentItemStatus=\(self.currentItemStatus.rawValue)")
+                        print("[DirectStreamingPlayer] [Playback] Max attempts (\(self.maxInitialRetries)) reached - giving up")
+                        print("[DirectStreamingPlayer] [Playback] Safety net terminal: hasPermanentError=\(self.hasPermanentError) | timeControlStatus=\(tc) | rate=\(self.player?.rate ?? -1) | currentItemStatus=\(self.currentItemStatus.rawValue)")
                         #endif
 
                         if self.hasPermanentError {
@@ -2187,7 +2183,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                             // Give one final recreatePlayerItem() (unified resource-loader item)
                             // and suppress the severe status entirely. No red UX for recoverable cases.
                             #if DEBUG
-                            print("📱 [Playback] Transient give-up: performing FINAL recreatePlayerItem() then suppressing severe status. No red popup.")
+                            print("[DirectStreamingPlayer] [Playback] Transient give-up: performing FINAL recreatePlayerItem() then suppressing severe status. No red popup.")
                             #endif
                             self.recreatePlayerItem()
                         }
@@ -2247,7 +2243,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             guard self.initialPlaybackRetryCount < self.maxInitialRetries else { return }
             guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
                 #if DEBUG
-                print("🔒 [KVO] early ICY drop: suppressed by playbackIntent")
+                print("[DirectStreamingPlayer] [KVO] early ICY drop: suppressed by playbackIntent")
                 #endif
                 return
             }
@@ -2255,7 +2251,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 self.initialPlaybackRetryCount = 1
             }
             #if DEBUG
-            print("🔄 [Playback] Early timeControl drop on fresh ICY item — proactive recreatePlayerItem | hasStartedPlaying=\(self.hasStartedPlaying) | retryCount now=\(self.initialPlaybackRetryCount) | rate=\(rate)")
+            print("[DirectStreamingPlayer] [Playback] Early timeControl drop on fresh ICY item — proactive recreatePlayerItem | hasStartedPlaying=\(self.hasStartedPlaying) | retryCount now=\(self.initialPlaybackRetryCount) | rate=\(rate)")
             #endif
             self.recreatePlayerItem()
         }
@@ -2272,13 +2268,13 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             guard let self else { return }
             guard !self.isPlaybackTeardownActive else {
                 #if DEBUG
-                print("🔒 [Playback] recreatePlayerItem: suppressed — playback teardown active")
+                print("[DirectStreamingPlayer] [Playback] recreatePlayerItem: suppressed — playback teardown active")
                 #endif
                 return
             }
             guard !self.recreateInFlight else {
                 #if DEBUG
-                print("🔒 [Playback] recreatePlayerItem: coalesced — already in flight")
+                print("[DirectStreamingPlayer] [Playback] recreatePlayerItem: coalesced — already in flight")
                 #endif
                 return
             }
@@ -2286,12 +2282,12 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             defer { self.recreateInFlight = false }
             
             #if DEBUG
-            print("🔄 Recreating player item due to decoder error")
+            print("[DirectStreamingPlayer] Recreating player item due to decoder error")
             #endif
             
             guard let urlAsset = self.playerItem?.asset as? AVURLAsset else {
                 #if DEBUG
-                print("❌ [Playback] Cannot recreate: no valid URL asset | hasStartedPlaying=\(self.hasStartedPlaying) | initialPlaybackRetryCount=\(self.initialPlaybackRetryCount) | playerItem=\(self.playerItem != nil) | this often happens during stream switch races")
+                print("[DirectStreamingPlayer] [Playback] Cannot recreate: no valid URL asset | hasStartedPlaying=\(self.hasStartedPlaying) | initialPlaybackRetryCount=\(self.initialPlaybackRetryCount) | playerItem=\(self.playerItem != nil) | this often happens during stream switch races")
                 #endif
                 return
             }
@@ -2320,7 +2316,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             // and intent wiring.
             guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
                 #if DEBUG
-                print("🔒 [DirectStreamingPlayer] recreatePlayerItem: resurrection suppressed by playbackIntent")
+                print("[DirectStreamingPlayer] recreatePlayerItem: resurrection suppressed by playbackIntent")
                 #endif
                 return
             }
@@ -2329,7 +2325,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             self.player?.play()
             
             #if DEBUG
-            print("✅ Player item recreated and playback resumed")
+            print("[DirectStreamingPlayer] Player item recreated and playback resumed")
             #endif
             
             // NEW (per minimal ICY resume fix): ensure delegate wired on the fresh item created by recreate
@@ -2366,13 +2362,13 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     ) {
         
         #if DEBUG
-        print("🛑 FORCE STOPPING ALL PLAYBACK - reason: \(reason), silent: \(silent), attemptingPlayback: \(isCurrentlyAttemptingPlayback)")
+        print("[DirectStreamingPlayer] FORCE STOPPING ALL PLAYBACK - reason: \(reason), silent: \(silent), attemptingPlayback: \(isCurrentlyAttemptingPlayback)")
         #endif
 
         // === EXISTING GUARDS - DO NOT REMOVE OR MERGE THESE ===
         if isCurrentlyAttemptingPlayback {
             #if DEBUG
-            print("⚠️ [Stop Guard] Skipping aggressive stop during playback startup attempt")
+            print("[DirectStreamingPlayer] [Stop Guard] Skipping aggressive stop during playback startup attempt")
             #endif
             loadingTimeoutWorkItem?.cancel()
             fallbackWorkItem?.cancel()
@@ -2401,7 +2397,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             if reason == .userAction && !silent {
                 await self.markAsUserPaused()
                 #if DEBUG
-                print("🎯 markAsUserPaused() called – visualState set to .userPaused")
+                print("[DirectStreamingPlayer] markAsUserPaused() called – visualState set to .userPaused")
                 #endif
             }
             // .streamSwitch / .interruption / .error intentionally skip markAsUserPaused()
@@ -2460,7 +2456,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             }
             
             #if DEBUG
-            print("🛑 Stopping playback (reason: \(reason), effectiveSilent: \(effectiveSilent))")
+            print("[DirectStreamingPlayer] Stopping playback (reason: \(reason), effectiveSilent: \(effectiveSilent))")
             #endif
             
             guard self.player != nil || self.playerItem != nil else {
@@ -2477,7 +2473,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                     }
                 }
                 #if DEBUG
-                print("🛑 Playback already stopped, skipping cleanup (reason: \(reason))")
+                print("[DirectStreamingPlayer] Playback already stopped, skipping cleanup (reason: \(reason))")
                 #endif
                 return
             }
@@ -2498,7 +2494,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 if playerItem.outputs.contains(metadataOutput) {
                     playerItem.remove(metadataOutput)
                     #if DEBUG
-                    print("🧹 Removed metadata output from playerItem in stop")
+                    print("[DirectStreamingPlayer] Removed metadata output from playerItem in stop")
                     #endif
                 }
             }
@@ -2531,7 +2527,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             self.stopBufferingTimer()
             
             #if DEBUG
-            print("🛑 Playback stopped, playerItem and resource loaders cleared (reason: \(reason))")
+            print("[DirectStreamingPlayer] Playback stopped, playerItem and resource loaders cleared (reason: \(reason))")
             #endif
         }
     }
@@ -2628,7 +2624,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         retryWorkItem?.cancel()
         
         #if DEBUG
-        print("🧹 [Deinit] Cancelled pending work items")
+        print("[DirectStreamingPlayer] [Deinit] Cancelled pending work items")
         #endif
         
         // Stop synchronously to avoid async cleanup during deallocation
@@ -2664,7 +2660,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         clearAllSSLProtectionTimers()  // Ensure existing SSL cleanup runs
         
         #if DEBUG
-        print("🧹 DirectStreamingPlayer deinit completed")
+        print("[DirectStreamingPlayer] deinit completed")
         #endif
     }
     
@@ -2673,21 +2669,21 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         hasPermanentError = errorType.isPermanent
         
         #if DEBUG
-        print("🔒 [Loading Error] Type: \(errorType), isPermanent: \(errorType.isPermanent)")
-        print("🔒 [Loading Error] Error: \(error.localizedDescription)")
+        print("[DirectStreamingPlayer] [Loading Error] Type: \(errorType), isPermanent: \(errorType.isPermanent)")
+        print("[DirectStreamingPlayer] [Loading Error] Error: \(error.localizedDescription)")
         #endif
         
         if let urlError = error as? URLError {
             switch urlError.code {
             case .serverCertificateUntrusted, .secureConnectionFailed:
                 #if DEBUG
-                print("🔒 [Loading Error] SSL/Certificate error detected")
+                print("[DirectStreamingPlayer] [Loading Error] SSL/Certificate error detected")
                 #endif
                 safeOnStatusChange(isPlaying: false, reasonKey: "status_security_failed")   // ← fixed
                 
             case .cannotFindHost, .fileDoesNotExist, .badServerResponse:
                 #if DEBUG
-                print("🔒 [Loading Error] Permanent network/server error detected")
+                print("[DirectStreamingPlayer] [Loading Error] Permanent network/server error detected")
                 #endif
                 // Permanent non-security failure → emit status_failed (now the canonical
                 // key for hard connection errors that trigger red banner + popup).
@@ -2695,7 +2691,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 
             default:
                 #if DEBUG
-                print("🔒 [Loading Error] Transient error detected")
+                print("[DirectStreamingPlayer] [Loading Error] Transient error detected")
                 #endif
                 safeOnStatusChange(isPlaying: false, reasonKey: "status_buffering")   // ← fixed
                 
@@ -2707,13 +2703,13 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                         guard let self else { return }
                         guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
                             #if DEBUG
-                            print("🔒 [Loading Error] transient early: suppressed by playbackIntent")
+                            print("[DirectStreamingPlayer] [Loading Error] transient early: suppressed by playbackIntent")
                             #endif
                             return
                         }
                         if initialPlaybackRetryCount == 0 { initialPlaybackRetryCount = 1 }
                         #if DEBUG
-                        print("🔄 Transient loading error on fresh ICY item — canonical recreatePlayerItem")
+                        print("[DirectStreamingPlayer] Transient loading error on fresh ICY item — canonical recreatePlayerItem")
                         #endif
                         recreatePlayerItem()
                     }
@@ -2722,7 +2718,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             }
         } else {
             #if DEBUG
-            print("🔒 [Loading Error] Non-URLError detected")
+            print("[DirectStreamingPlayer] [Loading Error] Non-URLError detected")
             #endif
             safeOnStatusChange(isPlaying: false, reasonKey: "status_buffering")   // ← fixed
         }
@@ -2789,11 +2785,11 @@ extension DirectStreamingPlayer: AVPlayerItemMetadataOutputPushDelegate {
                     if self.needsImmediateMetadataPush {
                         self.needsImmediateMetadataPush = false
                         #if DEBUG
-                        print("📻 ✅ LIVE ICY [ensured after re-attach]: \(trimmed)")
+                        print("[DirectStreamingPlayer] LIVE ICY [ensured after re-attach]: \(trimmed)")
                         #endif
                     } else {
                         #if DEBUG
-                        print("📻 ✅ Using LIVE ICY metadata: \(trimmed)")
+                        print("[DirectStreamingPlayer] Using LIVE ICY metadata: \(trimmed)")
                         #endif
                     }
                 }
@@ -2820,7 +2816,7 @@ extension DirectStreamingPlayer: AVPlayerItemMetadataOutputPushDelegate {
         needsImmediateMetadataPush = true
         
         #if DEBUG
-        print("🔗 ICY metadata output re-attached to fresh player item")
+        print("[DirectStreamingPlayer] ICY metadata output re-attached to fresh player item")
         #endif
     }
 }
@@ -2839,13 +2835,13 @@ extension DirectStreamingPlayer {
     private func handlePlaybackError(_ error: Error?) {
         guard let avError = error as? AVError else { return }
         #if DEBUG
-        print("❌ Playback error: code=\(avError.code.rawValue), desc=\(avError.localizedDescription)")
+        print("[DirectStreamingPlayer] Playback error: code=\(avError.code.rawValue), desc=\(avError.localizedDescription)")
         #endif
         self.hasPermanentError = true  // Flag for reset in stop
         self.stop(completion: nil, silent: true)  // Silent stop to reset
         if avError.localizedDescription.contains("unmatched audio object type") || avError.localizedDescription.contains("SBR decoder") {
             #if DEBUG
-            print("⚠️ HE-AAC/SBR format issue detected—recommend server-side LC-AAC fallback")
+            print("[DirectStreamingPlayer] HE-AAC/SBR format issue detected—recommend server-side LC-AAC fallback")
             #endif
             // Optional: Trigger fallback stream if available (e.g., switchToStream(fallbackStream))
         }
@@ -2878,7 +2874,7 @@ extension DirectStreamingPlayer {
                 switch type {
                 case .began:
                     #if DEBUG
-                    print("🔇 [AudioSession] Interruption began")
+                    print("[DirectStreamingPlayer] [AudioSession] Interruption began")
                     #endif
                     self.isHandlingInterruption = true
                     self.wasPlayingBeforeInterruption = self.isPlaying  // Use refined check
@@ -2918,7 +2914,7 @@ extension DirectStreamingPlayer {
                         
                         if case .playing = await SharedPlayerManager.shared.currentVisualState {
                             #if DEBUG
-                            print("▶️ [AudioSession] Resurrection allowed — resuming playback")
+                            print("[DirectStreamingPlayer] ▶ [AudioSession] Resurrection allowed — resuming playback")
                             #endif
                             
                             // Small delay helps AVPlayer settle after interruption
@@ -2947,7 +2943,7 @@ extension DirectStreamingPlayer {
                 default:
                     // Fallback for unknown cases (exhaustive without @unknown)
                     #if DEBUG
-                    print("⚠️ [AudioSession] Unknown interruption type: \(String(describing: type))")
+                    print("[DirectStreamingPlayer] [AudioSession] Unknown interruption type: \(String(describing: type))")
                     #endif
                     break
                 }
@@ -2964,7 +2960,7 @@ extension DirectStreamingPlayer {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 #if DEBUG
-                print("🔄 [AudioSession] Route changed")
+                print("[DirectStreamingPlayer] [AudioSession] Route changed")
                 #endif
                 // If disconnected during play, pause and notify
                 if self.player?.rate ?? 0 > 0 {
@@ -3005,17 +3001,17 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
     func resourceLoader(_ resourceLoader: AVAssetResourceLoader, shouldWaitForLoadingOfRequestedResource loadingRequest: AVAssetResourceLoadingRequest) -> Bool {
         guard let url = loadingRequest.request.url else {
             #if DEBUG
-            print("❌ [Resource Loader] No URL in loading request")
+            print("[DirectStreamingPlayer] [Resource Loader] No URL in loading request")
             #endif
             loadingRequest.finishLoading(with: NSError(domain: "radio.lutheran", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid URL"]))
             return false
         }
         
         #if DEBUG
-        print("📡 [Resource Loader] ===== NEW REQUEST =====")
-        print("📡 [Resource Loader] Received URL: \(url)")
-        print("📡 [Resource Loader] URL scheme: \(url.scheme ?? "nil")")
-        print("📡 [Resource Loader] URL host: \(url.host ?? "nil")")
+        print("[DirectStreamingPlayer] [Resource Loader] ===== NEW REQUEST =====")
+        print("[DirectStreamingPlayer] [Resource Loader] Received URL: \(url)")
+        print("[DirectStreamingPlayer] [Resource Loader] URL scheme: \(url.scheme ?? "nil")")
+        print("[DirectStreamingPlayer] [Resource Loader] URL host: \(url.host ?? "nil")")
         #endif
         
         // FIXED: Only handle HTTPS URLs for lutheran.radio domains
@@ -3023,7 +3019,7 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
               let host = url.host,
               host.hasSuffix("lutheran.radio") else {
             #if DEBUG
-            print("📡 [Resource Loader] ❌ Not a lutheran.radio HTTPS URL, letting system handle it")
+            print("[DirectStreamingPlayer] [Resource Loader] Not a lutheran.radio HTTPS URL, letting system handle it")
             #endif
             return false  // Let the system handle non-lutheran.radio URLs
         }
@@ -3031,8 +3027,8 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
         // Store the original hostname for SSL validation
         let originalHostname = host
         #if DEBUG
-        print("📡 [Resource Loader] ✅ Handling lutheran.radio HTTPS URL: \(url)")
-        print("📡 [Resource Loader] Original hostname for SSL: \(originalHostname)")
+        print("[DirectStreamingPlayer] [Resource Loader] Handling lutheran.radio HTTPS URL: \(url)")
+        print("[DirectStreamingPlayer] [Resource Loader] Original hostname for SSL: \(originalHostname)")
         #endif
         
         // Create clean request with the HTTPS URL (no conversion needed)
@@ -3043,7 +3039,7 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
         modifiedRequest = self.requestWithIcecastHeaders(from: modifiedRequest)
         
         #if DEBUG
-        print("📡 [Resource Loader] Final request headers: \(modifiedRequest.allHTTPHeaderFields ?? [:])")
+        print("[DirectStreamingPlayer] [Resource Loader] Final request headers: \(modifiedRequest.allHTTPHeaderFields ?? [:])")
         #endif
         
         // Create streaming delegate
@@ -3051,7 +3047,7 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
         streamingDelegate.originalHostname = originalHostname
         
         #if DEBUG
-        print("🔒 [Resource Loader] StreamingSessionDelegate created for hostname: \(originalHostname)")
+        print("[DirectStreamingPlayer] [Resource Loader] StreamingSessionDelegate created for hostname: \(originalHostname)")
         #endif
         
         // Enhanced configuration for SSL pinning
@@ -3071,7 +3067,7 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
         operationQueue.maxConcurrentOperationCount = 1
         
         #if DEBUG
-        print("🔒 [Resource Loader] Creating URLSession with SSL-forcing config")
+        print("[DirectStreamingPlayer] [Resource Loader] Creating URLSession with SSL-forcing config")
         #endif
         
         streamingDelegate.session = URLSession(configuration: config,
@@ -3084,7 +3080,7 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
             guard let self = self, let delegate = streamingDelegate else { return }
             
             #if DEBUG
-            print("❌ [Resource Loader] Streaming error occurred: \(error.localizedDescription)")
+            print("[DirectStreamingPlayer] [Resource Loader] Streaming error occurred: \(error.localizedDescription)")
             #endif
             
             DispatchQueue.main.async {
@@ -3106,7 +3102,7 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
                         guard await SharedPlayerManager.shared.canProceedWithPlayback() else { return }
                         if self.initialPlaybackRetryCount == 0 { self.initialPlaybackRetryCount = 1 }
                         #if DEBUG
-                        print("🔄 Resource loader transient error on fresh ICY item — canonical recreatePlayerItem")
+                        print("[DirectStreamingPlayer] Resource loader transient error on fresh ICY item — canonical recreatePlayerItem")
                         #endif
                         self.recreatePlayerItem()
                     }
@@ -3120,15 +3116,15 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
         activeResourceLoaders[loadingRequest] = streamingDelegate
         
         #if DEBUG
-        print("🔒 [Resource Loader] Starting data task with Icecast-compatible headers…")
+        print("[DirectStreamingPlayer] [Resource Loader] Starting data task with Icecast-compatible headers…")
         #endif
         streamingDelegate.dataTask?.resume()
         self.currentLoadingDelegate = streamingDelegate
         self.startLoadingRequestTimeout(for: streamingDelegate)
         
         #if DEBUG
-        print("📡 [Resource Loader] ✅ Resource loader setup complete")
-        print("📡 [Resource Loader] ===== END REQUEST SETUP =====")
+        print("[DirectStreamingPlayer] [Resource Loader] Resource loader setup complete")
+        print("[DirectStreamingPlayer] [Resource Loader] ===== END REQUEST SETUP =====")
         #endif
         
         return true
@@ -3136,7 +3132,7 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
     
     func resourceLoader(_ resourceLoader: AVAssetResourceLoader, didCancel loadingRequest: AVAssetResourceLoadingRequest) {
         #if DEBUG
-        print("📡 [SSL Debug] Resource loading cancelled for request")
+        print("[DirectStreamingPlayer] [SSL Debug] Resource loading cancelled for request")
         #endif
         
         if let delegate = activeResourceLoaders.removeValue(forKey: loadingRequest) {
@@ -3219,7 +3215,7 @@ extension DirectStreamingPlayer {
         if isCellular {
             timeout += 4.0
             #if DEBUG
-            print("🔒 [SSL Timeout] Added 4s for cellular connection")
+            print("[DirectStreamingPlayer] [SSL Timeout] Added 4s for cellular connection")
             #endif
         }
         
@@ -3228,7 +3224,7 @@ extension DirectStreamingPlayer {
         if let path = networkMonitor?.currentPath, path.isExpensive {
             timeout += 2.0
             #if DEBUG
-            print("🔒 [SSL Timeout] Added 2s for expensive/metered network")
+            print("[DirectStreamingPlayer] [SSL Timeout] Added 2s for expensive/metered network")
             #endif
         }
         
@@ -3236,12 +3232,12 @@ extension DirectStreamingPlayer {
         if currentSelectedServer.name == "EU" && !isInEurope() {
             timeout += 1.5
             #if DEBUG
-            print("🔒 [SSL Timeout] Added 1.5s for EU server from non-Europe location")
+            print("[DirectStreamingPlayer] [SSL Timeout] Added 1.5s for EU server from non-Europe location")
             #endif
         } else if currentSelectedServer.name == "US" && !isInNorthAmerica() {
             timeout += 1.5
             #if DEBUG
-            print("🔒 [SSL Timeout] Added 1.5s for US server from non-North America location")
+            print("[DirectStreamingPlayer] [SSL Timeout] Added 1.5s for US server from non-North America location")
             #endif
         }
         
@@ -3249,7 +3245,7 @@ extension DirectStreamingPlayer {
         if hasRecentServerFailures() {
             timeout += 1.0
             #if DEBUG
-            print("🔒 [SSL Timeout] Added 1s for recent server failures")
+            print("[DirectStreamingPlayer] [SSL Timeout] Added 1s for recent server failures")
             #endif
         }
         
@@ -3257,7 +3253,7 @@ extension DirectStreamingPlayer {
         let finalTimeout = min(timeout, 20.0)
         
         #if DEBUG
-        print("🔒 [SSL Timeout] Calculated timeout: \(finalTimeout)s (base: 8.0s)")
+        print("[DirectStreamingPlayer] [SSL Timeout] Calculated timeout: \(finalTimeout)s (base: 8.0s)")
         #endif
         
         return finalTimeout
@@ -3371,7 +3367,7 @@ extension DirectStreamingPlayer {
         let adaptiveTimeout = await getSSLTimeout()
         
         #if DEBUG
-        print("🔒 [SSL Protection] Starting \(adaptiveTimeout)s adaptive protection task for connection \(id)")
+        print("[DirectStreamingPlayer] [SSL Protection] Starting \(adaptiveTimeout)s adaptive protection task for connection \(id)")
         #endif
         
         // Replace Timer with detached Task (Sendable, cancellable)
@@ -3384,7 +3380,7 @@ extension DirectStreamingPlayer {
             let connectionAge = Date().timeIntervalSince(connectionStartTime)
             
             #if DEBUG
-            print("🔒 [SSL Protection] Adaptive task completed after \(connectionAge)s for connection \(id)")
+            print("[DirectStreamingPlayer] [SSL Protection] Adaptive task completed after \(connectionAge)s for connection \(id)")
             #endif
             
             // Mark SSL handshake as complete after timeout for this specific connection
@@ -3398,7 +3394,7 @@ extension DirectStreamingPlayer {
             // If still not ready after adaptive timeout, allow normal error handling
             if self.playerItem?.status == .unknown {
                 #if DEBUG
-                print("🔒 [SSL Protection] Still connecting after \(connectionAge)s - allowing normal error handling")
+                print("[DirectStreamingPlayer] [SSL Protection] Still connecting after \(connectionAge)s - allowing normal error handling")
                 #endif
             }
         }
@@ -3423,7 +3419,7 @@ extension DirectStreamingPlayer {
                 self.activeConnections[connectionId] = connectionInfo
                 
                 #if DEBUG
-                print("🔒 [SSL Protection] Marked handshake complete for connection \(connectionId)")
+                print("[DirectStreamingPlayer] [SSL Protection] Marked handshake complete for connection \(connectionId)")
                 #endif
             }
         }
@@ -3447,7 +3443,7 @@ extension DirectStreamingPlayer {
                 connectionInfo.task.cancel()
                 
                 #if DEBUG
-                print("🔒 [SSL Protection] Cleared timer for connection \(connectionId)")
+                print("[DirectStreamingPlayer] [SSL Protection] Cleared timer for connection \(connectionId)")
                 #endif
             }
         }
@@ -3464,13 +3460,13 @@ extension DirectStreamingPlayer {
                 connectionInfo.task.cancel()
                 
                 #if DEBUG
-                print("🔒 [SSL Protection] Cleared timer for connection \(connectionId)")
+                print("[DirectStreamingPlayer] [SSL Protection] Cleared timer for connection \(connectionId)")
                 #endif
             }
             self.activeConnections.removeAll()
             
             #if DEBUG
-            print("🔒 [SSL Protection] Cleared all SSL protection timers")
+            print("[DirectStreamingPlayer] [SSL Protection] Cleared all SSL protection timers")
             #endif
         }
     }
@@ -3538,7 +3534,7 @@ extension DirectStreamingPlayer {
         await SharedPlayerManager.shared.setUserPaused()
         
         #if DEBUG
-        print("🎯 markAsUserPaused() called – currentVisualState = .userPaused")
+        print("[DirectStreamingPlayer] markAsUserPaused() called – currentVisualState = .userPaused")
         #endif
     }
 
@@ -3548,7 +3544,7 @@ extension DirectStreamingPlayer {
         await SharedPlayerManager.shared.setPlaying()
         
         #if DEBUG
-        print("▶️ markAsPlaying() called – currentVisualState = .playing")
+        print("[DirectStreamingPlayer] ▶ markAsPlaying() called – currentVisualState = .playing")
         #endif
     }
 }

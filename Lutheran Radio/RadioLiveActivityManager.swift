@@ -51,7 +51,7 @@ class RadioLiveActivityManager: ObservableObject {
             startTime: Date()
         )
         
-        // ✅ Safe actor access (now allowed because function is async)
+        // Safe actor access (now allowed because function is async)
         let visualState = await manager.currentVisualState
         let streamMetadata = await manager.currentStreamMetadata
             ?? SharedPlayerManager.loadPersistedStreamMetadata()

@@ -134,7 +134,7 @@ struct Provider: AppIntentTimelineProvider {
         }()
 
         #if DEBUG
-        print("🔗 Widget creating entry: visualState=\(visualState), station=\(currentStation)")
+        print("[LutheranRadioWidget] Widget creating entry: visualState=\(visualState), station=\(currentStation)")
         #endif
 
         return SimpleEntry(
@@ -425,46 +425,28 @@ struct WidgetToggleRadioIntent: AppIntent {
     
     func perform() async throws -> some IntentResult {
         #if DEBUG
-        print("🔗 WidgetToggleRadioIntent.perform called")
+        print("[LutheranRadioWidget] WidgetToggleRadioIntent.perform called")
         #endif
         
-        // ✅ Reliable SSOT read for widget extension process
-        let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared")
+        // Reliable SSOT read for widget extension process
         let visualState = SharedPlayerManager.loadPersistedVisualStateDirect()
         let shouldPlay = !visualState.isActivelyPlaying
         let action = shouldPlay ? "play" : "pause"
         let targetVisualState: PlayerVisualState = shouldPlay ? .playing : .userPaused
         
         #if DEBUG
-        print("🔗 Widget wants to \(action) → target state: \(targetVisualState) (visualState.isActivelyPlaying = \(visualState.isActivelyPlaying))")
+        print("[LutheranRadioWidget] Widget wants to \(action) → target state: \(targetVisualState) (visualState.isActivelyPlaying = \(visualState.isActivelyPlaying))")
         #endif
         
         // === OPTIMISTIC UPDATE (needed for instant icon flip) ===
-        let targetState: PlayerVisualState = shouldPlay ? .playing : .userPaused
-        
-        // Use the unified force path: writes the PersistedWidgetState snapshot (visual + lang)
-        // + updates in-memory currentVisualState in this process.
-        SharedPlayerManager.shared.forcePersistVisualState(targetState)
-        
-        if let sharedDefaults = sharedDefaults {
-            let actionId = UUID().uuidString
-            let now = Date().timeIntervalSince1970
-            
-            sharedDefaults.set(action, forKey: "pendingAction")
-            sharedDefaults.set(actionId, forKey: "pendingActionId")
-            sharedDefaults.set(now, forKey: "pendingActionTime")
-            
+        if let actionId = SharedPlayerManager.shared.signalWidgetPendingAction(
+            visualState: targetVisualState,
+            action: action
+        ) {
             #if DEBUG
-            print("🔗 Widget set pendingAction = \(action) (ID: \(actionId))")
+            print("[LutheranRadioWidget] Widget set pendingAction = \(action) (ID: \(actionId))")
             #endif
         }
-        
-        // Wake main app
-        CFNotificationCenterPostNotification(
-            CFNotificationCenterGetDarwinNotifyCenter(),
-            CFNotificationName("radio.lutheran.widget.action" as CFString),
-            nil, nil, true
-        )
         
         // Immediate widget UI update
         let state = SharedPlayerManager.shared.loadSharedState()
@@ -476,7 +458,7 @@ struct WidgetToggleRadioIntent: AppIntent {
         )
         
         #if DEBUG
-        print("🔗 WidgetToggleRadioIntent completed. Signaled \(action), refreshed widget to \(targetVisualState)")
+        print("[LutheranRadioWidget] WidgetToggleRadioIntent completed. Signaled \(action), refreshed widget to \(targetVisualState)")
         #endif
         
         return .result()
@@ -499,31 +481,12 @@ public struct SwitchStreamIntent: AppIntent {
 
     public func perform() async throws -> some IntentResult {
         #if DEBUG
-        print("🔗 SwitchStreamIntent.perform called for language: \(streamLanguageCode)")
+        print("[LutheranRadioWidget] SwitchStreamIntent.perform called for language: \(streamLanguageCode)")
         #endif
 
-        guard let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
-            return .result()
-        }
-
-        let actionId = UUID().uuidString
-        let now = Date().timeIntervalSince1970
-
-        sharedDefaults.set("switch", forKey: "pendingAction")
-        sharedDefaults.set(actionId, forKey: "pendingActionId")
-        sharedDefaults.set(now, forKey: "pendingActionTime")
-        sharedDefaults.set(streamLanguageCode, forKey: "pendingLanguage")
-
-        sharedDefaults.set(true, forKey: "isInstantFeedback")
-        sharedDefaults.set(now, forKey: "instantFeedbackTime")
-        sharedDefaults.set(streamLanguageCode, forKey: "instantFeedbackLanguage")
-
-        // Post Darwin notification
-        CFNotificationCenterPostNotification(
-            CFNotificationCenterGetDarwinNotifyCenter(),
-            CFNotificationName("radio.lutheran.widget.action" as CFString),
-            nil, nil, true
-        )
+        let actionId = SharedPlayerManager.shared.scheduleWidgetAction(action: "switch", parameter: streamLanguageCode)
+        SharedPlayerManager.writeInstantFeedback(language: streamLanguageCode)
+        SharedPlayerManager.shared.notifyMainApp(action: "switch", parameter: streamLanguageCode)
 
         let manager = SharedPlayerManager.shared
         let state = manager.loadSharedState()
@@ -544,7 +507,7 @@ public struct SwitchStreamIntent: AppIntent {
         )
 
         #if DEBUG
-        print("🔗 SwitchStreamIntent: posted switch to \(streamLanguageCode) (ID: \(actionId))")
+        print("[LutheranRadioWidget] SwitchStreamIntent: posted switch to \(streamLanguageCode) (ID: \(actionId ?? "nil"))")
         #endif
 
         return .result()

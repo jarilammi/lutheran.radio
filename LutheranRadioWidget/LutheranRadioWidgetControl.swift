@@ -15,7 +15,7 @@ import Foundation
 extension AppIntentError {
     static func widgetSafe(_ message: String) -> Error {
         #if DEBUG
-        print("🔗 Widget-safe error: \(message)")
+        print("[LutheranRadioWidgetControl] Widget-safe error: \(message)")
         #endif
         return NSError(domain: "LutheranRadioWidget", code: 0, userInfo: [NSLocalizedDescriptionKey: message])
     }
@@ -44,7 +44,7 @@ struct ToggleRadioIntent: SetValueIntent {
     
     func perform() async throws -> some IntentResult {
         #if DEBUG
-        print("🔗 ToggleRadioIntent.perform called with desired value: \(value)")
+        print("[LutheranRadioWidgetControl] ToggleRadioIntent.perform called with desired value: \(value)")
         #endif
         
         let manager = SharedPlayerManager.shared
@@ -58,28 +58,9 @@ struct ToggleRadioIntent: SetValueIntent {
         // Brave: also force-persist the full visual state JSON from the widget process.
         // This makes the next Control Widget timeline / currentValue read the correct icon immediately.
         let targetVisualState: PlayerVisualState = value ? .playing : .userPaused
-        manager.forcePersistVisualState(targetVisualState)
-        
-        // Write the exact same pendingAction signals the home widget uses.
-        // The Control Provider's currentValue (above) now consults pendingAction + instantFeedback,
-        // so the very next toggle visual resolution (isOn / green-pause icon) flips instantly and correctly.
-        if let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared") {
-            let action = value ? "play" : "pause"
-            let actionId = UUID().uuidString
-            let now = Date().timeIntervalSince1970
-            sharedDefaults.set(action, forKey: "pendingAction")
-            sharedDefaults.set(actionId, forKey: "pendingActionId")
-            sharedDefaults.set(now, forKey: "pendingActionTime")
-            sharedDefaults.synchronize()
-        }
-        
-        // Wake the main app so it executes the action (exactly like the home widget intent).
-        // Without this the Darwin round-trip never starts for pure Control Widget taps.
-        CFNotificationCenterPostNotification(
-            CFNotificationCenterGetDarwinNotifyCenter(),
-            CFNotificationName("radio.lutheran.widget.action" as CFString),
-            nil, nil, true
-        )
+        let action = value ? "play" : "pause"
+        // Same optimistic path as WidgetToggleRadioIntent: snapshot + pendingAction + Darwin notify.
+        manager.signalWidgetPendingAction(visualState: targetVisualState, action: action)
         
         // Immediate widget UI feedback — now using modern PlayerVisualState API
         let state = manager.loadSharedState()
@@ -92,7 +73,7 @@ struct ToggleRadioIntent: SetValueIntent {
         )
         
         #if DEBUG
-        print("🔗 ToggleRadioIntent completed successfully (signaled \(value ? "play" : "pause") via pendingAction + Darwin)")
+        print("[LutheranRadioWidgetControl] ToggleRadioIntent completed successfully (signaled \(value ? "play" : "pause") via pendingAction + Darwin)")
         #endif
         
         return .result()
