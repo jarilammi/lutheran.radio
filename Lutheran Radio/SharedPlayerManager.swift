@@ -1349,10 +1349,6 @@ extension SharedPlayerManager {
     private func performActualSave(_ state: (isPlaying: Bool, currentLanguage: String, hasError: Bool),
                                    widgetState: WidgetState,
                                    at time: Date) {
-        // The 5 s rapid-save throttle has been removed. The snapshot is written on every
-        // call. Providers trust the snapshot first. WidgetRefreshManager handles debouncing
-        // and language-change urgency. We retain isLanguageChange detection only for
-        // the urgent refresh flag.
         let previousSnapshot = Self.loadPersistedWidgetState()
         let previousLanguage = previousSnapshot?.currentLanguage ?? ""
         let isLanguageChange = !previousLanguage.isEmpty && previousLanguage != state.currentLanguage
@@ -1362,52 +1358,51 @@ extension SharedPlayerManager {
             previousSnapshot?.currentLanguage == state.currentLanguage &&
             previousHasError == state.hasError
 
-        // Always persist the authoritative (visualState + language) snapshot first.
-        // Widget providers take the early loadPersistedWidgetState() path for both
-        // authoritative and optimistic cases. WidgetRefreshManager handles debouncing
-        // and language-change urgency.
-        savePersistedWidgetState(visualState: currentVisualState, language: state.currentLanguage)
-
-        // Legacy keys are written only for migration surface. They are no longer
-        // rate-limited here; WidgetRefreshManager handles spam protection.
-        sharedDefaults?.set(state.isPlaying, forKey: "isPlaying")
-        // Legacy language key is no longer written. The snapshot is the primary
-        // persistence for widget providers and Live Activities.
-        sharedDefaults?.set(state.hasError, forKey: "hasError")
-        sharedDefaults?.set(time.timeIntervalSince1970, forKey: "lastUpdateTime")
-        
-        // Clear instant feedback flags (still required for widget responsiveness)
-        sharedDefaults?.removeObject(forKey: "isInstantFeedback")
-        sharedDefaults?.removeObject(forKey: "instantFeedbackTime")
-        sharedDefaults?.removeObject(forKey: "instantFeedbackLanguage")
-        
         // Urgent refresh for errors, language changes, or the first transition into sticky
         // pause/security lock — not on every KVO save while already `.userPaused`.
         let visualStateChanged = previousSnapshot?.visualState != currentVisualState
         let isTransitionToStickyPause = visualStateChanged && currentVisualState.mustSuppressResurrection
         let isUrgentUpdate = state.hasError || isLanguageChange || isTransitionToStickyPause
-        let shouldRefreshWidget = !snapshotUnchanged || isUrgentUpdate
-        let visualStateForRefresh = currentVisualState
-        
-        if shouldRefreshWidget {
-            // Always hop to MainActor for WidgetRefreshManager (required in Swift 6)
-            Task { @MainActor in
-                if visualStateChanged {
-                    WidgetRefreshManager.shared.cancelPendingRefresh()
-                }
-                WidgetRefreshManager.shared.refreshIfNeeded(
-                    visualState: visualStateForRefresh,
-                    currentLanguage: state.currentLanguage,
-                    hasError: state.hasError,
-                    immediate: isUrgentUpdate
-                )
-            }
-        } else {
+
+        if snapshotUnchanged && !isUrgentUpdate {
             #if DEBUG
-            print("[SharedPlayerManager] performActualSave: snapshot unchanged — skipping widget timeline reload")
+            print("[SharedPlayerManager] performActualSave: snapshot unchanged — skipping persist")
             #endif
+            return
         }
-        
+
+        // Persist the authoritative (visualState + language) snapshot. Widget providers
+        // take the early loadPersistedWidgetState() path; WidgetRefreshManager handles
+        // debouncing and language-change urgency.
+        savePersistedWidgetState(visualState: currentVisualState, language: state.currentLanguage)
+
+        // Legacy keys are written only for migration surface.
+        sharedDefaults?.set(state.isPlaying, forKey: "isPlaying")
+        // Legacy language key is no longer written. The snapshot is the primary
+        // persistence for widget providers and Live Activities.
+        sharedDefaults?.set(state.hasError, forKey: "hasError")
+        sharedDefaults?.set(time.timeIntervalSince1970, forKey: "lastUpdateTime")
+
+        // Clear instant feedback flags (still required for widget responsiveness)
+        sharedDefaults?.removeObject(forKey: "isInstantFeedback")
+        sharedDefaults?.removeObject(forKey: "instantFeedbackTime")
+        sharedDefaults?.removeObject(forKey: "instantFeedbackLanguage")
+
+        let visualStateForRefresh = currentVisualState
+
+        // Always hop to MainActor for WidgetRefreshManager (required in Swift 6)
+        Task { @MainActor in
+            if visualStateChanged {
+                WidgetRefreshManager.shared.cancelPendingRefresh()
+            }
+            WidgetRefreshManager.shared.refreshIfNeeded(
+                visualState: visualStateForRefresh,
+                currentLanguage: state.currentLanguage,
+                hasError: state.hasError,
+                immediate: isUrgentUpdate
+            )
+        }
+
         #if DEBUG
         print("[SharedPlayerManager] State saved: playing=\(state.isPlaying), language=\(state.currentLanguage)")
         #endif
