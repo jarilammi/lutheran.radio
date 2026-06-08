@@ -1600,8 +1600,12 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                     // authoritative playback intent.
                     guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
                         #if DEBUG
-                        print("[DirectStreamingPlayer] [KVO] timeControlStatus.playing: resurrection suppressed by playbackIntent")
+                        print("[DirectStreamingPlayer] [KVO] timeControlStatus.playing: resurrection suppressed by playbackIntent — enforcing pause")
                         #endif
+                        if observedPlayer.rate > 0 {
+                            observedPlayer.pause()
+                            observedPlayer.rate = 0.0
+                        }
                         return
                     }
                     guard observedPlayer.currentItem?.status == .readyToPlay else {
@@ -1801,6 +1805,16 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         return true
     }
     
+    #if DEBUG
+    private func debugAttachContextLabel(_ context: PlaybackAttachContext) -> String {
+        switch context {
+        case .coldLaunch: return "cold launch"
+        case .streamSwitch: return "stream switch"
+        case .resume: return "resume"
+        }
+    }
+    #endif
+
     private func ensurePlayerExists() {
         if self.player == nil {
             #if DEBUG
@@ -1867,7 +1881,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             // Item should already exist from setStream (secured preparePlayerItem). Attach only as fallback.
             if player.currentItem == nil {
                 #if DEBUG
-                print("🔧 [DirectStreamingPlayer] cold-launch: no currentItem after AVPlayer init → attaching fresh item")
+                print("🔧 [DirectStreamingPlayer] \(debugAttachContextLabel(context)): no currentItem after AVPlayer init → attaching fresh item")
                 #endif
                 
                 let url = coldLaunchURL
@@ -1882,7 +1896,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 self.addObservers()
                 
                 #if DEBUG
-                print("🔧 [DirectStreamingPlayer] attached fresh AVPlayerItem for cold launch")
+                print("🔧 [DirectStreamingPlayer] attached fresh AVPlayerItem (\(debugAttachContextLabel(context)))")
                 #endif
             } else {
                 #if DEBUG
@@ -2012,7 +2026,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         isSSLHandshakeComplete = true
         
         #if DEBUG
-        print("[DirectStreamingPlayer] [SSL Protection] Legacy timer cleared")
+        print("[DirectStreamingPlayer] SSL protection timer cleared")
         #endif
     }
     
@@ -2148,12 +2162,16 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 DispatchQueue.main.async {
                     if newValue && item.status == .readyToPlay {
                         guard !self.isDeferringFirstPlayKick else { return }
-                        if (self.player?.rate ?? 0) < 0.1 {
-                            self.player?.play()
-                        }
-                        if self.hasStartedPlaying {
-                            self.safeOnStatusChange(isPlaying: true, reasonKey: "status_playing")   // ← fixed
-                            self.stopBufferingTimer()
+                        Task { @MainActor [weak self] in
+                            guard let self else { return }
+                            guard await SharedPlayerManager.shared.canProceedWithPlayback() else { return }
+                            if (self.player?.rate ?? 0) < 0.1 {
+                                self.player?.play()
+                            }
+                            if self.hasStartedPlaying {
+                                self.safeOnStatusChange(isPlaying: true, reasonKey: "status_playing")   // ← fixed
+                                self.stopBufferingTimer()
+                            }
                         }
                     } else if !newValue && (self.player?.rate ?? 0) == 0 {
                         let stalledDelay: TimeInterval = self.isLowEfficiencyMode ? 20.0 : 10.0
@@ -2176,9 +2194,13 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             let bufferFullObs = playerItem.observe(\.isPlaybackBufferFull, options: [.new]) { [weak self] item, change in
                 guard let self = self, let newValue = change.newValue, newValue else { return }
                 DispatchQueue.main.async {
-                    self.player?.play()
-                    self.safeOnStatusChange(isPlaying: true, reasonKey: "status_playing")   // ← fixed
-                    self.stopBufferingTimer()
+                    Task { @MainActor [weak self] in
+                        guard let self else { return }
+                        guard await SharedPlayerManager.shared.canProceedWithPlayback() else { return }
+                        self.player?.play()
+                        self.safeOnStatusChange(isPlaying: true, reasonKey: "status_playing")   // ← fixed
+                        self.stopBufferingTimer()
+                    }
                 }
             }
             self.playerItemObservations.append(bufferFullObs)
@@ -2526,15 +2548,18 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         completion: (@MainActor () -> Void)? = nil,
         silent: Bool = false
     ) {
-        activatePlaybackTeardownGuardFromStop()
+        // Derive effectiveSilent exactly as before, but now driven by reason
+        // (preserves all recent-commit behaviour for silent + stream switches)
+        let effectiveSilent = silent || (reason != .userAction)
+        let usesSoftPause = reason == .userAction && !effectiveSilent
+
+        if !usesSoftPause {
+            activatePlaybackTeardownGuardFromStop()
+        }
         clearSSLProtectionTimer()
         isSSLHandshakeComplete = true
         hasStartedPlaying = false
         isDeferringFirstPlayKick = false
-        
-        // Derive effectiveSilent exactly as before, but now driven by reason
-        // (preserves all recent-commit behaviour for silent + stream switches)
-        let effectiveSilent = silent || (reason != .userAction)
         
         if isDeallocating {
             stopSynchronously()
@@ -2558,7 +2583,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             print("[DirectStreamingPlayer] Stopping playback (reason: \(reason), effectiveSilent: \(effectiveSilent))")
             #endif
 
-            if reason == .userAction && !effectiveSilent {
+            if usesSoftPause {
                 DispatchQueue.main.async {
                     MainActor.assumeIsolated {
                         self.player?.pause()

@@ -84,6 +84,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     private var lastCollectionViewSize: CGSize = .zero
     
+    /// Last visual state applied by `updateUI(for:)`; used to skip redundant UI work during stop cascades.
+    private var lastAppliedVisualState: PlayerVisualState?
+    
     /// Flag indicating if the device is in Low Power Mode (iOS 26+).
     /// - Returns: `true` if low power mode is enabled, triggering UI/processing optimizations.
     private var isLowEfficiencyMode: Bool {
@@ -620,6 +623,17 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 guard let observer = unsafe observer else { return }
                 let vc = unsafe Unmanaged<ViewController>.fromOpaque(observer).takeUnretainedValue()
                 DispatchQueue.main.async {
+                    #if LUTHERAN_MAIN_APP
+                    let hasPendingAction = UserDefaults(suiteName: "group.radio.lutheran.shared")?
+                        .string(forKey: "pendingAction") != nil
+                    if DarwinSelfEchoGuard.shouldSuppressPauseEcho(hasPendingAction: hasPendingAction) {
+                        #if DEBUG
+                        print("[ViewController] Ignoring self-posted Darwin pause notification echo")
+                        #endif
+                        return
+                    }
+                    #endif
+
                     #if DEBUG
                     print("[ViewController] Received Darwin notification for widget action")
                     #endif
@@ -1283,6 +1297,13 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     @MainActor
     private func updateUI(for visualState: PlayerVisualState) {
+        if lastAppliedVisualState == visualState {
+            #if DEBUG
+            print("[ViewController] updateUI → skipped (already applied \(visualState))")
+            #endif
+            return
+        }
+        lastAppliedVisualState = visualState
         
         // Text
         switch visualState {
@@ -2729,7 +2750,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                     return
                 }
                 
-                let visualState = await SharedPlayerManager.shared.currentVisualState
                 let playbackIntent = await SharedPlayerManager.shared.currentPlaybackIntent
                 let shouldResumeAfterSwitch = playbackIntent.isActivePlaybackIntent
                 

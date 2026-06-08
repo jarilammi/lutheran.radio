@@ -8,6 +8,9 @@
 import Foundation
 import AVFoundation
 import Core
+#if LUTHERAN_MAIN_APP
+import os
+#endif
 
 /// - Article: Shared State Management for Widgets and Extensions
 ///
@@ -143,6 +146,34 @@ import Core
 /// - Widget / extension code should prefer `loadPersistedVisualStateDirect()` or call
 ///   `syncVisualStateFromPersistence()` / `refreshVisualStateFromPersistence()` before
 ///   trusting in-memory `currentVisualState`.
+
+#if LUTHERAN_MAIN_APP
+/// Suppresses Darwin notify echoes when the main app posts a pause notification to itself
+/// after already executing `stop()`. Genuine widget-originated pauses carry `pendingAction`
+/// in the App Group and are never suppressed.
+enum DarwinSelfEchoGuard {
+    private static let lock = OSAllocatedUnfairLock(initialState: false)
+
+    nonisolated static func markExpectingSelfPostedPauseEcho() {
+        lock.withLock { $0 = true }
+    }
+
+    /// Returns true when the notification is a main-app self-echo with no widget pending action.
+    nonisolated static func shouldSuppressPauseEcho(hasPendingAction: Bool) -> Bool {
+        lock.withLock { expectingEcho in
+            guard expectingEcho, !hasPendingAction else {
+                if hasPendingAction {
+                    expectingEcho = false
+                }
+                return false
+            }
+            expectingEcho = false
+            return true
+        }
+    }
+}
+#endif
+
 actor SharedPlayerManager {
     static let shared = SharedPlayerManager()
     
@@ -1210,6 +1241,12 @@ actor SharedPlayerManager {
     
     /// Posts a Darwin notification so the main app processes a pending widget action.
     nonisolated func notifyMainApp(action: String, parameter: String? = nil) {
+        #if LUTHERAN_MAIN_APP
+        if !isRunningInWidget(), action == "pause" {
+            DarwinSelfEchoGuard.markExpectingSelfPostedPauseEcho()
+        }
+        #endif
+
         let notificationName = "radio.lutheran.widget.action"
         let center = CFNotificationCenterGetDarwinNotifyCenter()
         CFNotificationCenterPostNotification(center, CFNotificationName(notificationName as CFString), nil, nil, true)
