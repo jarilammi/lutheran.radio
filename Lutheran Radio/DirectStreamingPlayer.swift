@@ -1949,7 +1949,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         
         // Startup safety net: first-play attach only (cold launch or stream switch).
         // Same-stream resume uses soft pause and must not schedule a stale recreate.
-        if context == .coldLaunch || context == .streamSwitch {
+        if (context == .coldLaunch || context == .streamSwitch) && initialPlaybackRetryCount == 0 {
             Task { @MainActor in
                 #if DEBUG
                 print("[DirectStreamingPlayer] scheduling startup safety net (single last resort)")
@@ -2289,6 +2289,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     private func activatePlaybackTeardownGuard() {
         isPlaybackTeardownActive = true
         cancelEarlyICYDropRecreate()
+        cancelStartupSafetyNet()
     }
 
     @MainActor
