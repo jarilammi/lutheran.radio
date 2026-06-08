@@ -696,6 +696,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     @MainActor private var isPlaybackTeardownActive = false
     /// User-initiated pause kept the secured `AVPlayerItem` alive for gapless same-stream resume.
     @MainActor private var isSoftPaused = false
+    /// Language of the secured `AVPlayerItem` currently attached (`nil` after hard teardown).
+    @MainActor private var attachedItemLanguageCode: String?
     /// Cancellable startup safety-net work (cold launch / stream-switch first attach only).
     private var startupSafetyNetWorkItem: DispatchWorkItem?
     
@@ -1432,6 +1434,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         
         let playerItem = AVPlayerItem(asset: asset)
         self.playerItem = playerItem
+        bindAttachedItemToSelectedStream()
         clearPlaybackTeardownGuard()
         
         if self.player == nil {
@@ -1439,7 +1442,6 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         } else {
             self.player?.replaceCurrentItem(with: playerItem)
         }
-        
         // === Important: Activate the audio session before playback ===
         do {
             let session = AVAudioSession.sharedInstance()
@@ -1482,6 +1484,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             self.player?.replaceCurrentItem(with: playerItem)
         }
         self.playerItem = playerItem
+        bindAttachedItemToSelectedStream()
         clearPlaybackTeardownGuard()
         
         setupPlaybackObservers()
@@ -1543,6 +1546,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
 
                     self.player?.replaceCurrentItem(with: playerItem)
                     self.playerItem = playerItem
+                    self.bindAttachedItemToSelectedStream()
                     self.clearPlaybackTeardownGuard()
 
                     // 3. Setup observers — BEFORE play()
@@ -1722,28 +1726,37 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
 
     /// Updates the selected stream model and prepares the player.
     /// Does NOT start playback — call `play()` afterwards if needed.
+    @MainActor
     func setStream(to stream: Stream) async {
-        let previousLanguage = selectedStream.languageCode
+        let modelLanguage = selectedStream.languageCode
+        let attachedLanguage = attachedItemLanguageCode
         let newLanguage = stream.languageCode
+        let attachedMismatch = attachedLanguage.map { $0 != newLanguage } ?? false
+        let modelChanged = modelLanguage != newLanguage
+        let needsCleanStop = attachedMismatch || modelChanged
 
         #if DEBUG
-        print("ATOMIC STREAM SWITCH: \(previousLanguage) → \(newLanguage)")
+        let fromLanguage = attachedLanguage ?? modelLanguage
+        print("ATOMIC STREAM SWITCH: \(fromLanguage) → \(newLanguage)")
         #endif
 
-        if previousLanguage != newLanguage {
+        if needsCleanStop {
             #if DEBUG
-            print("[DirectStreamingPlayer] Real stream switch detected – performing clean stop")
+            if attachedMismatch {
+                print("[DirectStreamingPlayer] Attached item language mismatch — performing clean stop")
+            } else {
+                print("[DirectStreamingPlayer] Real stream switch detected – performing clean stop")
+            }
             #endif
 
             isSwitchingStream = true
             defer { isSwitchingStream = false }
 
-            Task { @MainActor in
-                self.isSoftPaused = false
-            }
+            isSoftPaused = false
 
-            // Updated: use semantic reason instead of isSwitchingStream flag
-            stop(reason: .streamSwitch, silent: true)   // ← removed `await`
+            if playerItem != nil || attachedLanguage != nil {
+                stop(reason: .streamSwitch, silent: true)   // ← removed `await`
+            }
         } else {
             #if DEBUG
             print("[DirectStreamingPlayer] Same stream or initial playback (\(newLanguage)) – skipping stop()")
@@ -1768,6 +1781,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     }
 
     /// Full atomic "switch stream + start playing" — this is what SharedPlayerManager should call
+    @MainActor
     func setStreamAndPlay(to stream: Stream, context: PlaybackAttachContext = .coldLaunch) async {
         await setStream(to: stream)
 
@@ -1782,10 +1796,34 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         }
     }
 
+    /// True when a soft-paused or attached item targets a different language than `selectedStream`.
+    @MainActor
+    func softPauseResumeRequiresStreamReattach() -> Bool {
+        guard let attached = attachedItemLanguageCode else { return false }
+        return attached != selectedStream.languageCode
+    }
+
+    @MainActor
+    private func bindAttachedItemToSelectedStream() {
+        attachedItemLanguageCode = selectedStream.languageCode
+    }
+
+    @MainActor
+    private func clearAttachedItemBinding() {
+        attachedItemLanguageCode = nil
+    }
+
     /// Resumes a same-stream pause without recreating the secured `AVPlayerItem`.
     @MainActor
     func resumeFromSoftPauseIfAvailable() async -> Bool {
         guard isSoftPaused, playerItem != nil, player?.currentItem != nil else { return false }
+        guard !softPauseResumeRequiresStreamReattach() else {
+            isSoftPaused = false
+            #if DEBUG
+            print("[DirectStreamingPlayer] Soft-pause resume declined — attached item language (\(attachedItemLanguageCode ?? "nil")) != selected stream (\(selectedStream.languageCode))")
+            #endif
+            return false
+        }
         guard await SharedPlayerManager.shared.canProceedWithPlayback() else { return false }
 
         isSoftPaused = false
@@ -1891,6 +1929,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 newItem.preferredForwardBufferDuration = 15.0
                 player.replaceCurrentItem(with: newItem)
                 self.playerItem = newItem
+                self.bindAttachedItemToSelectedStream()
                 self.clearPlaybackTeardownGuard()
                 self.setupPlaybackObservers()
                 self.addObservers()
@@ -2414,6 +2453,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             
             // Update playerItem reference to the new item
             self.playerItem = newItem
+            self.bindAttachedItemToSelectedStream()
             self.clearPlaybackTeardownGuard()
             
             // Re-add observers to the new item
@@ -2653,6 +2693,11 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             self.playerItemObservations.removeAll()
             self.removeObserversImplementation()
             self.playerItem = nil
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    self.clearAttachedItemBinding()
+                }
+            }
             
             if !effectiveSilent {
                 // A real terminal stop is a context change — clear dedup so the
@@ -2712,6 +2757,9 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         
         // Clear playerItem
         playerItem = nil
+        if Thread.isMainThread {
+            MainActor.assumeIsolated { clearAttachedItemBinding() }
+        }
         
         // Stop buffering timer
         bufferingTimer?.invalidate()
@@ -2741,6 +2789,9 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         
         removeObserversImplementation()
         playerItem = nil
+        if Thread.isMainThread {
+            MainActor.assumeIsolated { clearAttachedItemBinding() }
+        }
         stopBufferingTimer()
     }
     

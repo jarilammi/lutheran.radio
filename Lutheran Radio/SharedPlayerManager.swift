@@ -204,6 +204,12 @@ actor SharedPlayerManager {
     /// Parsed program metadata shared with widgets and Live Activities.
     var currentStreamMetadata: StreamProgramMetadata?
     var remoteCommandsConfigured = false
+
+    /// Clears soft-pause ICY stash when the user changes language without resuming first.
+    func clearSoftPauseMetadataStashForLanguageChange() {
+        currentStreamMetadata = nil
+        nowPlayingStreamMetadata = nil
+    }
     
     // MARK: - Visual State (Single Source of Truth)
     /// Single source of truth for playback intent (UI + widget + Live Activity)
@@ -595,6 +601,7 @@ actor SharedPlayerManager {
         #endif
         
         #if LUTHERAN_MAIN_APP
+        var declinedSoftPauseForLanguageChange = false
         if isResumePlay {
             let resumed = await DirectStreamingPlayer.shared.resumeFromSoftPauseIfAvailable()
             if resumed {
@@ -604,10 +611,23 @@ actor SharedPlayerManager {
                 #endif
                 return
             }
+            declinedSoftPauseForLanguageChange = await DirectStreamingPlayer.shared.softPauseResumeRequiresStreamReattach()
+            if declinedSoftPauseForLanguageChange {
+                DirectStreamingPlayer.shared.resetInitialPlaybackCountersForNewStream()
+            }
         }
         #endif
 
         let attachContext: PlaybackAttachContext
+        #if LUTHERAN_MAIN_APP
+        if isStreamSwitchPlay || declinedSoftPauseForLanguageChange {
+            attachContext = .streamSwitch
+        } else if isResumePlay {
+            attachContext = .resume
+        } else {
+            attachContext = .coldLaunch
+        }
+        #else
         if isStreamSwitchPlay {
             attachContext = .streamSwitch
         } else if isResumePlay {
@@ -615,6 +635,7 @@ actor SharedPlayerManager {
         } else {
             attachContext = .coldLaunch
         }
+        #endif
 
         let stream = DirectStreamingPlayer.shared.selectedStream
         #if DEBUG

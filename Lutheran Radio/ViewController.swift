@@ -2545,6 +2545,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 #if DEBUG
                 print("🚫 [completeStreamSwitch] Blocked — userPaused, no auto-resume")
                 #endif
+
+                await SharedPlayerManager.shared.clearSoftPauseMetadataStashForLanguageChange()
                 
                 // ← SINGLE SOURCE OF TRUTH
                 self.deferBackgroundImageUntilPlaybackStable = false
@@ -2778,6 +2780,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                     #if DEBUG
                     print("[ViewController] [Widget Switch] Blocked — userPaused, no auto-resume")
                     #endif
+                    await SharedPlayerManager.shared.clearSoftPauseMetadataStashForLanguageChange()
                     self.updateSelectionIndicator(to: targetIndex)
                     self.updateUI(for: .userPaused)
                     SharedPlayerManager.shared.clearPendingAction(actionId: actionId)
