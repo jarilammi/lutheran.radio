@@ -1277,6 +1277,11 @@ actor SharedPlayerManager {
         #endif
     }
     
+    /// Returns whether any widget action is queued in the App Group (staleness not checked).
+    nonisolated func hasPendingWidgetAction() -> Bool {
+        getPendingAction() != nil
+    }
+
     /// Returns the currently pending widget action (if any), along with its parameter and unique ID.
     /// Used by the main app (typically in SceneDelegate or a notification handler) to process
     /// play/stop/switch requests originating from widgets or Control Center.

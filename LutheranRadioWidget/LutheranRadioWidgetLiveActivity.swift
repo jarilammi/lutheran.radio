@@ -23,9 +23,9 @@ private func getStatusColor(_ visualState: PlayerVisualState) -> Color {
 }
 
 /// Derives a localized status string for display in Live Activity (replaces legacy streamStatus).
-/// Reads hasError from shared app group for parity with widget providers.
+/// Reads hasError via `loadSharedState()` for parity with widget providers.
 private func getCurrentStreamStatus(visualState: PlayerVisualState) -> String {
-    let hasError = UserDefaults(suiteName: "group.radio.lutheran.shared")?.bool(forKey: "hasError") ?? false
+    let hasError = SharedPlayerManager.shared.loadSharedState().hasError
     if hasError {
         return String(localized: "Connection error", defaultValue: "Connection error")
     } else if visualState == .thermalPaused {

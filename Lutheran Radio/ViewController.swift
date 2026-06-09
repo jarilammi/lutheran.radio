@@ -597,9 +597,14 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         let savedVolume = sharedDefaults.float(forKey: "preferredVolume")
         let volumeToUse = savedVolume > 0 ? savedVolume : 0.5
         // Persist default if none exists (for consistency with restoreVolume)
-        sharedDefaults.set(volumeToUse, forKey: "preferredVolume")
-        sharedDefaults.synchronize()
+        persistPreferredVolume(volumeToUse)
         return volumeToUse
+    }
+
+    private func persistPreferredVolume(_ volume: Float) {
+        guard let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return }
+        sharedDefaults.set(volume, forKey: "preferredVolume")
+        sharedDefaults.synchronize()
     }
     
     private func restoreVolume() {
@@ -621,8 +626,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 let vc = unsafe Unmanaged<ViewController>.fromOpaque(observer).takeUnretainedValue()
                 DispatchQueue.main.async {
                     #if LUTHERAN_MAIN_APP
-                    let hasPendingAction = UserDefaults(suiteName: "group.radio.lutheran.shared")?
-                        .string(forKey: "pendingAction") != nil
+                    let hasPendingAction = SharedPlayerManager.shared.hasPendingWidgetAction()
                     if DarwinSelfEchoGuard.shouldSuppressPauseEcho(hasPendingAction: hasPendingAction) {
                         #if DEBUG
                         print("[ViewController] Ignoring self-posted Darwin pause notification echo")
@@ -1339,9 +1343,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     @objc private func volumeChanged(_ sender: UISlider) {
         streamingPlayer.setVolume(sender.value)
         sender.accessibilityValue = unsafe String(format: String(localized: "accessibility_value_volume"), Int(sender.value * 100))  // e.g., "75 percent"
-        let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared")
-        sharedDefaults?.set(sender.value, forKey: "preferredVolume")
-        sharedDefaults?.synchronize()
+        persistPreferredVolume(sender.value)
     }
     
     private func updatePlayPauseButton(isPlaying: Bool, animated: Bool = false) {
