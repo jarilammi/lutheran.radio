@@ -71,9 +71,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         static let hasDismissedDataUsageNotification = "hasDismissedDataUsageNotification"
     }
     
-    // All widget state save / refresh rate limiting lives in saveCurrentState +
-    // WidgetRefreshManager (the authoritative path). The earlier local throttling
-    // and many redundant call sites have been removed.
     private var lastWidgetSwitchTime: Date?
     private var pendingWidgetSwitchWorkItem: DispatchWorkItem?
     private var processedActionIds: Set<String> = []
@@ -728,14 +725,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     }
     
     // MARK: - Streaming Callbacks (metadata only)
-    //
-    // IMPORTANT: The old onStatusChange closure has been completely removed.
-    // It was the last piece overriding updateUI(for:) with .systemYellow after pause.
-    // Status changes are now handled exclusively by StreamingPlayerDelegate.onStatusChange(_:reason:)
-    // which calls updateUI(for:) — making PlayerVisualState the single source of truth.
-    //
-    // We only keep onMetadataChange because it still does useful non-conflicting work
-    // (speaker photo + metadata label + Now Playing info).
+    // Status changes: StreamingPlayerDelegate.onStatusChange → updateUI(for:).
+    // onMetadataChange only (speaker photo, metadata label, Now Playing).
     
     private func setupStreamingCallbacks() {
         streamingPlayer.onMetadataChange = { [weak self] metadata in
@@ -1256,10 +1247,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     }
     
     // MARK: - Playback Control Methods
-    // The former securityLocked special case inside it was belt-and-suspenders; permanent lock alerts continue to surface
-    // via SecurityModelValidator failure paths + explicit showSecurityModelAlert() calls in error handlers (preserved).
-    
-    // All call sites removed; permanent error surfacing now happens via onStatusChange + Shared intent paths.
     
     /// Pauses playback and updates UI/status.
     /// - Note: Sets manual pause flag and routes through SharedPlayerManager to ensure .userPaused state is set.
@@ -2685,10 +2672,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         // Authoritative .userPaused is set inside SharedPlayerManager.stop() / markAsUserPaused() (already called by this path).
         
         // Write critical non-display state synchronously (pending action clear + lastUserPauseTime barrier).
-        // The legacy "playing" bool and playerVisualState JSON writes have been removed here
-        // authoritative PersistedWidgetState snapshot via forcePersistVisualState before the
-        // Darwin round-trip; SharedPlayerManager.stop() writes isPlaying + snapshot via
-        // performActualSave on the authoritative path. Providers prefer the snapshot first.
+        // Display state is persisted via SharedPlayerManager.stop() → performActualSave; providers prefer the snapshot.
         if let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared") {
             // Clear any stale "play" pending action that could race with this pause
             if sharedDefaults.string(forKey: "pendingAction") == "play" {

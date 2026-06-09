@@ -257,11 +257,6 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     var lastFailedServer: String? { return lastFailedServerName }
     var selectedServerInfo: Server { return currentSelectedServer }
 
-    // NOTE: Stream / Server / URL construction types have been hoisted to the
-    // "Nested Configuration Types" MARK section immediately after the injected
-    // dependencies (for locality and clean Xcode outline). The old block that
-    // lived here has been removed.
-
     // MARK: - Injected Dependencies (construction roots)
     private let audioSession: AVAudioSession
     private let pathMonitor: NetworkPathMonitoring
@@ -1296,7 +1291,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     @objc private func energyEfficiencyChanged() {
         // No immediate action needed; the isLowEfficiencyMode property will be queried dynamically in retry/fallback spots
         #if DEBUG
-        print("🔋 Low Power Mode changed to: \(isLowEfficiencyMode ? "Enabled" : "Disabled")")
+        print("[DirectStreamingPlayer] Low Power Mode changed to: \(isLowEfficiencyMode ? "Enabled" : "Disabled")")
         #endif
     }
     
@@ -1304,7 +1299,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     func setupAudioSession() {
         guard !isTesting else {
             #if DEBUG
-            print("🔊 Skipped audio session setup for tests")
+            print("[DirectStreamingPlayer] Skipped audio session setup for tests")
             #endif
             return
         }
@@ -1315,12 +1310,12 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             try audioSession.setActive(true)
             #if DEBUG
             if !wasAlreadyPlayback {
-                print("🔊 Audio session configured for playback")
+                print("[DirectStreamingPlayer] Audio session configured for playback")
             }
             #endif
         } catch {
             #if DEBUG
-            print("🔊 Failed to configure audio session: \(error.localizedDescription)")
+            print("[DirectStreamingPlayer] Failed to configure audio session: \(error.localizedDescription)")
             #endif
         }
     }
@@ -1452,7 +1447,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             try session.setActive(true)
             
             #if DEBUG
-            print("🔊 [MainActor] AVAudioSession activated successfully (.playback)")
+            print("[DirectStreamingPlayer] [MainActor] AVAudioSession activated successfully (.playback)")
             #endif
         } catch {
             #if DEBUG
@@ -1499,7 +1494,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     @MainActor
     private func performOptimalServerSelectionAndFullPlaybackSetup() async -> Bool {
         #if DEBUG
-        print("🔊 [Playback Setup] Starting server selection + asset creation")
+        print("[DirectStreamingPlayer] [Playback Setup] Starting server selection + asset creation")
         #endif
 
         return await withCheckedContinuation { continuation in
@@ -1512,7 +1507,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 let streamURL = self.selectedStream.url
 
                 #if DEBUG
-                print("🔊 [Playback Setup] Selected URL: \(streamURL)")
+                print("[DirectStreamingPlayer] [Playback Setup] Selected URL: \(streamURL)")
                 #endif
 
                 // Everything that touches AVPlayer must run on MainActor
@@ -1666,7 +1661,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 }
 
                 #if DEBUG
-                print("🔊 [KVO] Item status → \(newItemStatus.rawValue)")
+                print("[DirectStreamingPlayer] [KVO] Item status → \(newItemStatus.rawValue)")
                 #endif
 
                 switch newItemStatus {
@@ -1919,7 +1914,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             // Item should already exist from setStream (secured preparePlayerItem). Attach only as fallback.
             if player.currentItem == nil {
                 #if DEBUG
-                print("🔧 [DirectStreamingPlayer] \(debugAttachContextLabel(context)): no currentItem after AVPlayer init → attaching fresh item")
+                print("[DirectStreamingPlayer] \(debugAttachContextLabel(context)): no currentItem after AVPlayer init → attaching fresh item")
                 #endif
                 
                 let url = coldLaunchURL
@@ -1935,11 +1930,11 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 self.addObservers()
                 
                 #if DEBUG
-                print("🔧 [DirectStreamingPlayer] attached fresh AVPlayerItem (\(debugAttachContextLabel(context)))")
+                print("[DirectStreamingPlayer] attached fresh AVPlayerItem (\(debugAttachContextLabel(context)))")
                 #endif
             } else {
                 #if DEBUG
-                print("🔧 [DirectStreamingPlayer] reusing secured AVPlayerItem from setStream")
+                print("[DirectStreamingPlayer] reusing secured AVPlayerItem from setStream")
                 #endif
                 // preparePlayerItem already ran setupPlaybackObservers; only attach item-level observers.
                 self.addObservers()
@@ -1955,7 +1950,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             self.safeOnStatusChange(isPlaying: false, reasonKey: "status_connecting")
             
             #if DEBUG
-            print("🔊 [DirectStreamingPlayer] startPlayback: awaiting readyToPlay before first play kick (item.status: \(player.currentItem?.status.rawValue ?? -1))")
+            print("[DirectStreamingPlayer] startPlayback: awaiting readyToPlay before first play kick (item.status: \(player.currentItem?.status.rawValue ?? -1))")
             #endif
         }
         
@@ -1991,14 +1986,12 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 
                 player.playImmediately(atRate: 1.0)
                 #if DEBUG
-                print("🔊 [DirectStreamingPlayer] post-head-start playImmediately called (ready fallback, item.status: \(player.currentItem?.status.rawValue ?? -1))")
+                print("[DirectStreamingPlayer] post-head-start playImmediately called (ready fallback, item.status: \(player.currentItem?.status.rawValue ?? -1))")
                 #endif
             }
         }
         
-        // Final 6.5 s recovery timer removed in 4.2 (it used legacy non-hardened item recreation).
         // Only the single lightweight safety net (below) remains as true last resort.
-        // It will be further cleaned in 4.3 (removal of the two .prePlay decision points).
         
         // Startup safety net: first-play attach only (cold launch or stream switch).
         // Same-stream resume uses soft pause and must not schedule a stale recreate.
@@ -2125,7 +2118,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                         if (self.player?.rate ?? 0) < 0.1 {
                             self.player?.playImmediately(atRate: 1.0)
                             #if DEBUG
-                            print("🔊 [DirectStreamingPlayer] playImmediately called — timeControlStatus: \(self.player?.timeControlStatus.rawValue ?? -1), rate: \(self.player?.rate ?? -1), item.status: \(item.status.rawValue)")
+                            print("[DirectStreamingPlayer] playImmediately called — timeControlStatus: \(self.player?.timeControlStatus.rawValue ?? -1), rate: \(self.player?.rate ?? -1), item.status: \(item.status.rawValue)")
                             #endif
                         }
                         self.safeOnStatusChange(isPlaying: true, reasonKey: "status_playing")   // ← fixed
@@ -3092,7 +3085,7 @@ extension DirectStreamingPlayer {
                     
                 case .ended:
                     #if DEBUG
-                    print("🔊 [AudioSession] Interruption ended — options.contains(.shouldResume): \(options.contains(.shouldResume))")
+                    print("[DirectStreamingPlayer] [AudioSession] Interruption ended — options.contains(.shouldResume): \(options.contains(.shouldResume))")
                     #endif
                     
                     // Reset flags immediately
@@ -3101,13 +3094,12 @@ extension DirectStreamingPlayer {
                     
                     guard options.contains(.shouldResume) else {
                         #if DEBUG
-                        print("🔊 [AudioSession] No .shouldResume — doing nothing")
+                        print("[DirectStreamingPlayer] [AudioSession] No .shouldResume — doing nothing")
                         #endif
                         return
                     }
                     
-                    // === Important: Respect the new PlayerVisualState resurrection suppression ===
-                    // This uses the helper from the most recent commit on the branch
+                    // Respect PlayerVisualState resurrection suppression before resuming.
                     Task { @MainActor [weak self] in
                         guard let self else { return }
                         
