@@ -50,7 +50,7 @@ public actor SecurityModelValidator {
     /// the in-memory and persisted cache state.
     public static let shared = SecurityModelValidator()
 
-    private let config = SecurityConfiguration()
+    private var config: SecurityConfiguration { SecurityConfiguration.current }
     private var validationState: ValidationState = .pending
     private var lastValidationTime: Date?
     /// Coalesces overlapping ``validateSecurityModel()`` calls (e.g. init Task + cold-launch ``play()``).
@@ -99,7 +99,7 @@ public actor SecurityModelValidator {
     public func validateSecurityModel() async -> Bool {
         guard !Task.isCancelled else {
             #if DEBUG
-            print("🔒 Task cancelled")
+            print("[SecurityModelValidator] Task cancelled")
             #endif
             return false
         }
@@ -143,12 +143,12 @@ public actor SecurityModelValidator {
     /// Performs DNS TXT validation when cache is stale or absent. DEBUG "started" logs only here.
     private func performFreshValidation() async -> Bool {
         #if DEBUG
-        print("🔒 SecurityModelValidator.validateSecurityModel() started")
+        print("[SecurityModelValidator] validateSecurityModel() started")
         #endif
 
         guard !Task.isCancelled else {
             #if DEBUG
-            print("🔒 Task cancelled")
+            print("[SecurityModelValidator] Task cancelled")
             #endif
             return false
         }
@@ -178,7 +178,7 @@ public actor SecurityModelValidator {
                     validationState = .success
                     
                     #if DEBUG
-                    print("🔒 SecurityModelValidator] Success via domain: \(domain)")
+                    print("[SecurityModelValidator] Success via domain: \(domain)")
                     #endif
                     
                     return true
@@ -188,7 +188,7 @@ public actor SecurityModelValidator {
                     validationState = .failedPermanent
                     
                     #if DEBUG
-                    print("🔒 SecurityModelValidator] Permanent failure: '\(config.expectedSecurityModel)' not in TXT record from \(domain)")
+                    print("[SecurityModelValidator] Permanent failure: '\(config.expectedSecurityModel)' not in TXT record from \(domain)")
                     #endif
                     
                     return false
@@ -196,7 +196,7 @@ public actor SecurityModelValidator {
             } catch {
                 // Transient error (network, DNS failure, timeout, etc.) → try next domain
                 #if DEBUG
-                print("🔒 SecurityModelValidator] Transient DNS error on \(domain): \(error)")
+                print("[SecurityModelValidator] Transient DNS error on \(domain): \(error)")
                 #endif
                 
                 // Continue to backup domain
@@ -207,7 +207,7 @@ public actor SecurityModelValidator {
         // If we reach here, both domains failed with transient errors
         validationState = .failedTransient
         #if DEBUG
-        print("🔒 SecurityModelValidator] All domains failed with transient errors")
+        print("[SecurityModelValidator] All domains failed with transient errors")
         #endif
         return false
     }
@@ -283,7 +283,7 @@ public actor SecurityModelValidator {
             validationState = .pending
             lastValidationTime = nil
             #if DEBUG
-            print("🔄 Reset transient state → pending, cache invalidated")
+            print("[SecurityModelValidator] Reset transient state → pending, cache invalidated")
             #endif
         }
     }
@@ -430,7 +430,7 @@ public actor SecurityModelValidator {
         }
 
         #if DEBUG
-        print("📜 [Parse TXT Record] Parsed models: \(models)")
+        print("[SecurityModelValidator] Parsed TXT models: \(models)")
         #endif
 
         return models

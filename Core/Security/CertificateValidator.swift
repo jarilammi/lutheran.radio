@@ -17,7 +17,7 @@ import Foundation
 /// ## Key Responsibilities
 /// - Performs system trust evaluation (includes ATS SPKI pinning and chain validation).
 /// - Verifies the leaf certificate's full DER SHA-256 fingerprint.
-/// - Implements a 10-minute validation cache.
+/// - Implements a 1-hour validation cache.
 /// - Enforces the certificate transition window with device/server time-skew protection
 ///   (see ``<doc:Security-Invariants>``).
 ///
@@ -38,9 +38,6 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
     /// caches and transition state that would be lost with additional instances.
     public static let shared = CertificateValidator()
     
-    internal var pinnedCertFingerprintDigest: CertificateFingerprint {
-        SecurityConfiguration.current.pinnedLeafFingerprintDigest
-    }
     /// Barrier flag to allow leniency during transition, mitigating date manipulation risks.
     /// Defaults to true (lenient, trusting ATS on mismatch); set to false if manipulation detected (e.g., via server time check).
     var allowTransitionLeniency: Bool = true
@@ -97,18 +94,13 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
     /// - Important: Do not change in production.
     internal var currentDate: @Sendable () -> Date = { Date() }
     
-    /// Determines if the current date falls within the defined transition period.
-    private var isInTransitionPeriod: Bool {
-        return SecurityConfiguration.current.isInTransitionWindow
-    }
-    
     /// Validates a server trust object received during a URL authentication challenge.
     ///
     /// This is the primary entry point used by `URLSession` delegate challenge handlers.
     /// It performs the full security evaluation (system trust + fingerprint pinning)
     /// while respecting the current transition window and time-skew policy.
     ///
-    /// Results are cached for 10 minutes. The method is safe to call from any context;
+    /// Results are cached for 1 hour. The method is safe to call from any context;
     /// all state access is actor-isolated.
     ///
     /// - Parameter serverTrust: The `SecTrust` from an `NSURLAuthenticationMethodServerTrust` challenge.
@@ -120,7 +112,7 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
            Date().timeIntervalSince(lastTime) < validationInterval,
            lastValidationResult {
             #if DEBUG
-            print("🔒 [CertificateValidator] Using cached valid result from \(lastTime)")
+            print("[CertificateValidator] Using cached valid result from \(lastTime)")
             #endif
             return true
         }
@@ -128,7 +120,7 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
         var error: CFError?
         if unsafe !SecTrustEvaluateWithError(serverTrust, &error) {
             #if DEBUG
-            print("🔒 [CertificateValidator] System trust evaluation failed: \(error?.localizedDescription ?? "Unknown error")")
+            print("[CertificateValidator] System trust evaluation failed: \(error?.localizedDescription ?? "Unknown error")")
             #endif
             lastValidationTime = Date()
             lastValidationResult = false
@@ -145,13 +137,13 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
             isValid = isPinnedValid
             #if DEBUG
             let now = Date()
-            print("🔒 [CertificateValidator] Fingerprint validation failed after transition window at \(now).")
+            print("[CertificateValidator] Fingerprint validation failed after transition window at \(now).")
             #endif
         } else if config.isInTransitionWindow {
             if !isPinnedValid {
                 #if DEBUG
                 let now = Date()
-                print("⚠️ [CertificateValidator] Fingerprint mismatch during transition window at \(now). " +
+                print("[CertificateValidator] Fingerprint mismatch during transition window at \(now). " +
                       "Leniency: \(allowTransitionLeniency ? "allowed (ATS fallback)" : "disabled")")
                 #endif
                 isValid = allowTransitionLeniency
@@ -162,7 +154,7 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
             isValid = isPinnedValid
             #if DEBUG
             let now = Date()
-            print("🔒 [CertificateValidator] Fingerprint validation failed before transition window at \(now).")
+            print("[CertificateValidator] Fingerprint validation failed before transition window at \(now).")
             #endif
         }
         
@@ -171,7 +163,7 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
         lastValidationResult = isValid
         
         #if DEBUG
-        print("🔒 [CertificateValidator] Certificate validation \(isValid ? "succeeded" : "failed") at \(nowForCache)")
+        print("[CertificateValidator] Certificate validation \(isValid ? "succeeded" : "failed") at \(nowForCache)")
         #endif
         
         return isValid
@@ -180,7 +172,7 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
     /// Performs proactive certificate validation for a stream URL using a HEAD request.
     ///
     /// This method is used by `DirectStreamingPlayer` for initial validation before playback
-    /// and for periodic re-validation (approximately every 10 minutes).
+    /// and for periodic re-validation (approximately every 1 hour).
     ///
     /// It creates an ephemeral `URLSession` with this actor as the delegate, issues a
     /// `HEAD` request, and returns the result of the subsequent challenge evaluation.
@@ -219,7 +211,7 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
                 let timeDiff = abs(deviceDate.timeIntervalSince(serverDate))
                 if timeDiff > tolerance {
                     #if DEBUG
-                    print("⚠️ [CertificateValidator] Device time manipulation suspected (diff: \(timeDiff)s)...")
+                    print("[CertificateValidator] Device time manipulation suspected (diff: \(timeDiff)s)...")
                     #endif
                     self.allowTransitionLeniency = false
                 } else {
@@ -234,7 +226,7 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
                     
                     if deviceInTransition && !serverInTransition {
                         #if DEBUG
-                        print("⚠️ [CertificateValidator] Transition period mismatch detected " +
+                        print("[CertificateValidator] Transition period mismatch detected " +
                               "(device in window, server not) → disabling leniency")
                         #endif
                         self.allowTransitionLeniency = false
@@ -243,13 +235,13 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
             }
             
             #if DEBUG
-            print("🔒 [CertificateValidator] HEAD request completed for \(url). Valid: \(isValid)")
+            print("[CertificateValidator] HEAD request completed for \(url). Valid: \(isValid)")
             #endif
             return isValid
             
         } catch {
             #if DEBUG
-            print("🔒 [CertificateValidator] HEAD request failed: \(error.localizedDescription)")
+            print("[CertificateValidator] HEAD request failed: \(error.localizedDescription)")
             #endif
             return false
         }
@@ -296,7 +288,7 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
               !certificateChain.isEmpty,
               let leafCertificate = certificateChain.first else {
             #if DEBUG
-            print("🔒 [CertificateValidator] Failed to get leaf certificate from chain")
+            print("[CertificateValidator] Failed to get leaf certificate from chain")
             #endif
             return false
         }
@@ -312,7 +304,7 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
         }
         #if DEBUG
         if !isValid {
-            print("🔒 [CertificateValidator] Fingerprint mismatch detected")
+            print("[CertificateValidator] Fingerprint mismatch detected")
         }
         #endif
         return isValid
@@ -325,7 +317,7 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
     internal func computeCertificateFingerprintDigest(for certificate: SecCertificate) -> CertificateFingerprint? {
         guard let certData = SecCertificateCopyData(certificate) as Data? else {
             #if DEBUG
-            print("🔒 [CertificateValidator] Failed to get certificate data")
+            print("[CertificateValidator] Failed to get certificate data")
             #endif
             return nil
         }
