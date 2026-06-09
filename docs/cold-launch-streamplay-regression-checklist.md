@@ -6,7 +6,7 @@ Regression guard for Lutheran Radio playback startup, resume, stream switching, 
 
 **Canonical agent rules:** [`CODING_AGENT.md`](../CODING_AGENT.md) — read first.
 
-**Last updated:** 2026-06-08
+**Last updated:** 2026-06-09
 
 ---
 
@@ -45,6 +45,7 @@ End with security impact, build status, localization needed.
 | `Lutheran Radio/SharedPlayerManager+SleepTimer.swift` | Sleep timer + MainActor notifications |
 | `Lutheran Radio/ViewController.swift` | Stream switch, tuning, UI, widget handlers |
 | `Lutheran Radio/WidgetRefreshManager.swift` | Debounced widget timeline reloads |
+| `LutheranRadioWidget/LutheranRadioWidget.swift` | `SwitchStreamIntent`, `WidgetToggleRadioIntent`, timeline providers |
 | `Core/Actors/SecurityModelValidator.swift` | DNS TXT validation (only place) |
 | `Core/Security/CertificateValidator.swift` | Runtime cert digest pinning |
 | `Core/Configuration/SecurityConfiguration.swift` | Security policy constants |
@@ -87,7 +88,7 @@ End with security impact, build status, localization needed.
 4. **Widget snapshot** — `PersistedWidgetState` via `loadPersistedWidgetState` / `savePersistedWidgetState` only.
 5. **Cold-launch model** — `setSelectedStreamModelOnly` without `AVPlayerItem`; secured attach in `setStream` → `preparePlayerItem`.
 6. **Widget pause/play** — Extension signals Darwin; main app uses `SharedPlayerManager.stop()` / `play()` — no duplicated player logic in widget.
-7. **Widget language switch** — `handleWidgetSwitchToLanguage` mirrors `completeStreamSwitch`: model-only → single `stop(.streamSwitch)` → `play()`.
+7. **Widget language switch** — Extension: `SwitchStreamIntent` → `signalWidgetSwitchAction` (App Group + Darwin only; never main-app `DirectStreamingPlayer.switchToStream` in extension). Main app: `handleWidgetSwitchToLanguage` mirrors `completeStreamSwitch`: model-only → single `stop(.streamSwitch)` → `play()`.
 
 ---
 
@@ -135,7 +136,8 @@ End with security impact, build status, localization needed.
 9. **ICY per language** — Fresh `LIVE ICY` for each switched language.
 10. **Widget playing-path switch** — `▶ [Widget Switch] Starting new stream using SharedPlayerManager.play()`; no extra play tap.
 11. **Explicit-pause switch block** — Widget pause then switch: `[Widget Switch] Blocked — userPaused, no auto-resume`.
-12. **Stream-failure switch** — After decode/network failure (not user pause): `markPlaybackStoppedByStreamFailure()` with intent unchanged (`.shouldBePlaying`); widget switch auto-resumes without extra play tap. See Section 12.4.
+12. **Stream-failure switch** — After decode/network failure (not user pause): `markPlaybackStoppedByStreamFailure()` with intent unchanged (`.shouldBePlaying`); widget switch auto-resumes without extra play tap. See Section 12.3.
+13. **Widget switch delivery** — `SwitchStreamIntent` must reach the main app via App Group + Darwin before §6.10 handler lines: `Found pending action: switch` with non-nil `Pending language: {code}`; then `Executing widget switch action to language:`. If pause/play Darwin works but switch produces zero pending-action logs, treat as extension routing regression (`isRunningInWidget`, `signalWidgetSwitchAction`), not ICY or stream failure.
 
 ---
 
@@ -219,6 +221,7 @@ xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.5 \
 [SharedPlayerManager] Visual state set to .playing before setStreamAndPlay
 [DirectStreamingPlayer] LIVE ICY [ensured after re-attach]: …
 [SharedPlayerManager] Rehydrating stream metadata from soft-pause stash
+[ViewController] Executing widget switch action to language: …
 [ViewController] ▶ [Widget Switch] Starting new stream using SharedPlayerManager.play()
 [ViewController] [Widget Switch] Blocked — userPaused, no auto-resume
 [DirectStreamingPlayer] Soft-pause resume declined — attached item language (…) != selected stream (…)
@@ -243,7 +246,7 @@ Session: cold launch → play sv → wait for item failed / `status_stream_unava
 | File | Purpose |
 |------|---------|
 | `initial-streamplay-start.txt` | Primary happy-path regression (1137-line capture, 2026-06-08) |
-| `long-test-txt.log` | Widget churn + stream-failure path |
+| `long-test-txt.log` | Widget pause/play churn and playing-path switch delivery |
 
 ### 12.5 Play-path DEBUG labels
 
@@ -299,7 +302,7 @@ These messages commonly appear during stream attach on Simulator and recover wit
 | `DirectStreamingPlayer` KVO, recreate, soft pause | 5, 8, 11 |
 | `SharedPlayerManager` play/stop/intent/save | 3, 5, 6, 7 |
 | `ViewController` switch, tuning, UI | 4, 6, 9 |
-| `WidgetRefreshManager`, widget extension | 7 |
+| `WidgetRefreshManager`, `LutheranRadioWidget`, `SwitchStreamIntent`, `isRunningInWidget` | 6, 7 |
 | `SharedPlayerManager+SleepTimer` | 10 |
 | Background images | 4.10, 9.5, 11.7 |
 | Localization only | 2.4 |

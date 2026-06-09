@@ -2814,37 +2814,19 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     /// Handles widget and URL scheme actions for playback control and stream switching.
     /// - Note: Relies on `DirectStreamingPlayer.isSwitchingStream` (set to `internal`) to coordinate stream switches and suppress unnecessary "stopped" status updates during transitions. Ensures smooth UI updates for widget and URL scheme interactions.
     public func checkForPendingWidgetActions() {
-        guard let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
-            #if DEBUG
-            print("[ViewController] ERROR: Failed to access shared UserDefaults")
-            #endif
+        guard let pending = SharedPlayerManager.shared.getPendingActionIfFresh(maxAge: 30.0) else {
             return
         }
-        
-        guard let pendingAction = sharedDefaults.string(forKey: "pendingAction"),
-              let actionId = sharedDefaults.string(forKey: "pendingActionId") else {
-            return
-        }
-        
-        let pendingTime = sharedDefaults.double(forKey: "pendingActionTime")
-        let pendingLanguage = sharedDefaults.string(forKey: "pendingLanguage")
-        let now = Date().timeIntervalSince1970
-        let actionAge = now - pendingTime
-        
+
+        let pendingAction = pending.action
+        let pendingLanguage = pending.parameter
+        let actionId = pending.actionId
+
         #if DEBUG
-        print("[ViewController] Found pending action: \(pendingAction), age: \(actionAge)s, ID: \(actionId)")
+        print("[ViewController] Found pending action: \(pendingAction), ID: \(actionId)")
         print("[ViewController] Pending language: \(pendingLanguage ?? "nil")")
         #endif
-        
-        // Expire actions after 30 seconds
-        guard actionAge < 30.0 else {
-            #if DEBUG
-            print("[ViewController] Action expired (age: \(actionAge)s), clearing")
-            #endif
-            SharedPlayerManager.shared.clearPendingAction(actionId: actionId)
-            return
-        }
-        
+
         // Clear action immediately to prevent re-processing
         SharedPlayerManager.shared.clearPendingAction(actionId: actionId)
         

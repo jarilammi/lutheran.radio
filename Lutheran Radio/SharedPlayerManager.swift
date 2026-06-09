@@ -361,13 +361,14 @@ actor SharedPlayerManager {
     }
     
     nonisolated func isRunningInWidget() -> Bool {
-        #if DEBUG
-        if Bundle.main.bundleIdentifier?.hasSuffix(".widget") == true {
-            print("Running in widget (bundle ID suffix)")
-        }
+        #if LUTHERAN_MAIN_APP
+        // Main app never owns widget intent execution; WidgetKit env covers Xcode previews only.
+        return ProcessInfo.processInfo.environment["WidgetKit"] != nil
+        #else
+        // Widget / Live Activity extension — bundle is radio.lutheran.Lutheran-Radio.LutheranRadioWidget
+        // (no ".widget" suffix), and App Intent perform() does not set WidgetKit env.
+        return true
         #endif
-        return Bundle.main.bundleIdentifier?.hasSuffix(".widget") == true ||
-        ProcessInfo.processInfo.environment["WidgetKit"] != nil
     }
     
     /// Nonisolated convenience for widget/extension code paths that run outside actor isolation
@@ -1140,26 +1141,12 @@ actor SharedPlayerManager {
     
     // This helper must be nonisolated because it's called from the nonisolated switchToStream
     nonisolated private func handleWidgetSwitch(to stream: DirectStreamingPlayer.Stream) {
-        Self.writeInstantFeedback(language: stream.languageCode)
+        // Preserve play-while-switching vs paused-while-switching: derive visual from
+        // loadSharedState (same source SwitchStreamIntent used before phase C round 3).
+        let state = loadSharedState()
+        let visualForSwitch: PlayerVisualState = state.isPlaying ? .playing : .userPaused
+        signalWidgetSwitchAction(visualState: visualForSwitch, language: stream.languageCode)
 
-        // Best-effort write of the combined snapshot from the widget side.
-        // Prefer the unified snapshot (or in-memory after any prior force in this process).
-        // The legacy "playerVisualState" read has been removed (writes retired).
-        // Main app will follow with authoritative saveCurrentState shortly.
-        let visualForSwitch: PlayerVisualState
-        if let combined = Self.loadPersistedWidgetState() {
-            visualForSwitch = combined.visualState
-        } else {
-            // Fresh widget extension process with no prior snapshot in this launch — safe default.
-            // The calling intent (SwitchStreamIntent) will have already persisted a snapshot
-            // with the correct visual derived from loadSharedState just before this path.
-            visualForSwitch = .prePlay
-        }
-        Self.persistWidgetSnapshot(visualState: visualForSwitch, language: stream.languageCode)
-        
-        scheduleWidgetAction(action: "switch", parameter: stream.languageCode)
-        notifyMainApp(action: "switch", parameter: stream.languageCode)
-        
         #if DEBUG
         print("[SharedPlayerManager] Widget stream switch scheduled: \(stream.languageCode)")
         #endif
@@ -1214,6 +1201,19 @@ actor SharedPlayerManager {
         forcePersistVisualState(visualState)
         let actionId = scheduleWidgetAction(action: action)
         notifyMainApp(action: action)
+        return actionId
+    }
+
+    /// Optimistic stream-switch widget path: instant feedback, snapshot, schedule, notify.
+    @discardableResult
+    nonisolated func signalWidgetSwitchAction(
+        visualState: PlayerVisualState,
+        language: String
+    ) -> String? {
+        Self.writeInstantFeedback(language: language)
+        Self.persistWidgetSnapshot(visualState: visualState, language: language)
+        let actionId = scheduleWidgetAction(action: "switch", parameter: language)
+        notifyMainApp(action: "switch", parameter: language)
         return actionId
     }
 
@@ -1280,14 +1280,33 @@ actor SharedPlayerManager {
     /// Returns the currently pending widget action (if any), along with its parameter and unique ID.
     /// Used by the main app (typically in SceneDelegate or a notification handler) to process
     /// play/stop/switch requests originating from widgets or Control Center.
-    func getPendingAction() -> (action: String, parameter: String?, actionId: String)? {
+    nonisolated func getPendingAction() -> (action: String, parameter: String?, actionId: String)? {
         guard let action = sharedDefaults?.string(forKey: "pendingAction"),
               let actionId = sharedDefaults?.string(forKey: "pendingActionId") else {
             return nil
         }
-        
+
         let parameter = sharedDefaults?.string(forKey: "pendingLanguage")
         return (action, parameter, actionId)
+    }
+
+    /// Returns a pending widget action only if younger than `maxAge` seconds.
+    /// Expired actions are cleared automatically.
+    nonisolated func getPendingActionIfFresh(maxAge: TimeInterval = 30) -> (action: String, parameter: String?, actionId: String)? {
+        guard let pending = getPendingAction() else { return nil }
+
+        let pendingTime = sharedDefaults?.double(forKey: "pendingActionTime") ?? 0
+        let actionAge = Date().timeIntervalSince1970 - pendingTime
+
+        guard actionAge < maxAge else {
+            #if DEBUG
+            print("[SharedPlayerManager] Pending action expired (age: \(actionAge)s), clearing")
+            #endif
+            clearPendingAction(actionId: pending.actionId)
+            return nil
+        }
+
+        return pending
     }
     
     /// Clears a pending widget action only if the provided `actionId` still matches the current one.

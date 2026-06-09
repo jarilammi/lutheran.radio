@@ -547,30 +547,30 @@ public struct SwitchStreamIntent: AppIntent {
         print("[LutheranRadioWidget] SwitchStreamIntent.perform called for language: \(streamLanguageCode)")
         #endif
 
-        let actionId = SharedPlayerManager.shared.scheduleWidgetAction(action: "switch", parameter: streamLanguageCode)
-        SharedPlayerManager.writeInstantFeedback(language: streamLanguageCode)
-        SharedPlayerManager.shared.notifyMainApp(action: "switch", parameter: streamLanguageCode)
-
         let manager = SharedPlayerManager.shared
+
+        guard let targetStream = manager.availableStreams.first(where: { $0.languageCode == streamLanguageCode }) else {
+            #if DEBUG
+            print("[LutheranRadioWidget] SwitchStreamIntent: Language stream not found")
+            #endif
+            return .result()
+        }
+
+        // Route through switchToStream → handleWidgetSwitch → signalWidgetSwitchAction
+        // (same path as LiveActivitySwitchStreamIntent).
+        await manager.switchToStream(targetStream)
+
         let state = manager.loadSharedState()
-
-        // Stream switch keeps the current play/pause state (only language changes)
-        let visualState: PlayerVisualState = state.isPlaying ? .playing : .userPaused
-
-        // Architectural unification: write the snapshot optimistically with the *new* language
-        // + preserved visual. This means providers' early loadPersistedWidgetState() return
-        // delivers correct optimistic state for *all* widget actions (play/pause/switch).
-        SharedPlayerManager.persistWidgetSnapshot(visualState: visualState, language: streamLanguageCode)
-
+        let visualState = SharedPlayerManager.loadPersistedVisualStateDirect()
         await WidgetRefreshManager.shared.refreshIfNeeded(
-            visualState: visualState,          // ← authoritative source
+            visualState: visualState,
             currentLanguage: streamLanguageCode,
             hasError: state.hasError,
             immediate: true
         )
 
         #if DEBUG
-        print("[LutheranRadioWidget] SwitchStreamIntent: posted switch to \(streamLanguageCode) (ID: \(actionId ?? "nil"))")
+        print("[LutheranRadioWidget] SwitchStreamIntent completed for \(streamLanguageCode)")
         #endif
 
         return .result()
