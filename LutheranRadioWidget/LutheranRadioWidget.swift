@@ -249,19 +249,31 @@ struct SmallWidgetView: View {
             .widgetURL(URL(string: "lutheranradio://open"))
         } else {
             VStack(spacing: 4) {
-                Text(entry.currentStation)
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundColor(.primary)
-                    .lineLimit(1)
-                
                 Text(entry.statusMessage)
                     .font(.caption2)
                     .foregroundColor(entry.visualState.textColor.swiftUIColor)
                     .lineLimit(1)
-                
-                Spacer()
-                
+
+                if entry.availableStreams.count > 1 {
+                    let topRow = Array(entry.availableStreams.prefix(3))
+                    let bottomRow = Array(entry.availableStreams.dropFirst(3).prefix(2))
+
+                    VStack(spacing: 3) {
+                        HStack(spacing: 4) {
+                            ForEach(topRow, id: \.languageCode) { stream in
+                                smallWidgetStreamFlagButton(for: stream)
+                            }
+                        }
+                        HStack(spacing: 4) {
+                            ForEach(bottomRow, id: \.languageCode) { stream in
+                                smallWidgetStreamFlagButton(for: stream)
+                            }
+                        }
+                    }
+                }
+
+                Spacer(minLength: 0)
+
                 Button(intent: WidgetToggleRadioIntent()) {
                     Image(systemName: entry.visualState.isActivelyPlaying ? "pause.fill" : "play.fill")
                         .font(.title2)
@@ -272,6 +284,25 @@ struct SmallWidgetView: View {
             .padding(8)
             .background(Color(.systemBackground))
         }
+    }
+
+    @ViewBuilder
+    private func smallWidgetStreamFlagButton(for stream: DirectStreamingPlayer.Stream) -> some View {
+        let isSelected = stream.languageCode == entry.currentLanguageCode
+
+        Button(intent: SwitchStreamIntent(streamLanguageCode: stream.languageCode)) {
+            Text(stream.flag)
+                .font(.subheadline)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 4)
+                .background(isSelected ? Color.blue.opacity(0.2) : Color.gray.opacity(0.08))
+                .cornerRadius(6)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(isSelected ? Color.blue : Color.clear, lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
     }
 }
 
