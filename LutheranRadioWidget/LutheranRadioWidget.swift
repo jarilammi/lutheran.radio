@@ -331,66 +331,96 @@ struct MediumWidgetView: View {
             .padding()
             .widgetURL(URL(string: "lutheranradio://open"))
         } else {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
+            VStack(spacing: 6) {
+                HStack {
                     Text(String(localized: "lutheran_radio_title"))
                         .font(.caption)
                         .fontWeight(.semibold)
                         .foregroundColor(.secondary)
-                    
-                    Text(entry.currentStation)
-                        .font(.headline)
-                        .foregroundColor(.primary)
-                        .lineLimit(2)
-                    
-                    Text(entry.statusMessage)
-                        .font(.caption)
-                        .foregroundColor(entry.visualState.textColor.swiftUIColor)
-                    
+                        .lineLimit(1)
                     Spacer()
-                }
-                
-                Spacer()
-                
-                VStack(spacing: 8) {
                     Button(intent: WidgetToggleRadioIntent()) {
-                        VStack(spacing: 2) {
-                            Image(systemName: entry.visualState.isActivelyPlaying ? "pause.fill" : "play.fill")
-                                .font(.title)
-                                .foregroundColor(entry.visualState.buttonTintColor.swiftUIColor)
-                            Text(entry.visualState.isActivelyPlaying ? String(localized: "status_playing") : String(localized: "status_paused"))
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
+                        Image(systemName: entry.visualState.isActivelyPlaying ? "pause.fill" : "play.fill")
+                            .font(.title3)
+                            .foregroundColor(entry.visualState.buttonTintColor.swiftUIColor)
                     }
                     .buttonStyle(.plain)
-                    
-                    if entry.availableStreams.count > 1 {
-                        let currentStreamCode = getCurrentStreamCode(from: entry.currentStation)
-                        let alternativeStreams = entry.availableStreams.filter { $0.languageCode != currentStreamCode }.prefix(2)
-                        
-                        ForEach(Array(alternativeStreams), id: \.languageCode) { stream in
-                            Button(intent: SwitchStreamIntent(streamLanguageCode: stream.languageCode)) {
-                                Text(stream.flag)
-                                    .font(.caption)
-                            }
-                            .buttonStyle(.plain)
+                }
+
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(entry.currentStation)
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Spacer(minLength: 0)
+                    Text(entry.statusMessage)
+                        .font(.caption2)
+                        .foregroundColor(entry.visualState.textColor.swiftUIColor)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+
+                if entry.visualState.isActivelyPlaying {
+                    let languageName = entry.availableStreams
+                        .first { $0.languageCode == entry.currentLanguageCode }?
+                        .language ?? entry.currentStation
+
+                    Text(widgetProgramDisplayTitle(
+                        metadata: entry.streamMetadata,
+                        visualState: entry.visualState,
+                        languageName: languageName
+                    ))
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    if let speaker = widgetProgramSpeakerLine(metadata: entry.streamMetadata) {
+                        Text(speaker)
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+
+                if entry.availableStreams.count > 1 {
+                    HStack(spacing: 6) {
+                        ForEach(entry.availableStreams, id: \.languageCode) { stream in
+                            mediumWidgetStreamFlagButton(for: stream)
                         }
                     }
                 }
+
+                Spacer(minLength: 0)
             }
-            .padding()
+            .padding(10)
             .background(Color(.systemBackground))
         }
     }
-    
-    private func getCurrentStreamCode(from stationName: String) -> String {
-        for stream in entry.availableStreams {
-            if stationName.contains(stream.language) {
-                return stream.languageCode
-            }
+
+    @ViewBuilder
+    private func mediumWidgetStreamFlagButton(for stream: DirectStreamingPlayer.Stream) -> some View {
+        let isSelected = stream.languageCode == entry.currentLanguageCode
+
+        Button(intent: SwitchStreamIntent(streamLanguageCode: stream.languageCode)) {
+            Text(stream.flag)
+                .font(.subheadline)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 4)
+                .background(isSelected ? Color.blue.opacity(0.2) : Color.gray.opacity(0.08))
+                .cornerRadius(6)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(isSelected ? Color.blue : Color.clear, lineWidth: 1)
+                )
         }
-        return "en"
+        .buttonStyle(.plain)
     }
 }
 
