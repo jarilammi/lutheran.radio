@@ -12,28 +12,143 @@ import Foundation
 
 // MARK: - Shared Helpers
 
-/// Primary program title for widget display, with localized fallback.
-private func widgetProgramDisplayTitle(
-    metadata: StreamProgramMetadata?,
-    visualState: PlayerVisualState,
-    languageName: String
-) -> String {
-    if let title = metadata?.programTitle, !title.isEmpty {
-        return title
+private enum WidgetMetadataEmphasis {
+    case active
+    case subdued
+    case placeholder
+
+    var opacity: Double {
+        switch self {
+        case .active: 1.0
+        case .subdued: 0.55
+        case .placeholder: 0.45
+        }
     }
-    if visualState.isActivelyPlaying {
-        return unsafe String(
-            format: String(localized: "live_activity_program_fallback", defaultValue: "%@ · Live Stream"),
-            languageName
-        )
-    }
-    return String(localized: "no_track_info", defaultValue: "No track information")
 }
 
-/// Secondary speaker line when parsed from ICY metadata.
+private struct WidgetNowPlayingDisplayModel {
+    let programTitle: String
+    let speakerLine: String
+    let speakerVisible: Bool
+    let emphasis: WidgetMetadataEmphasis
+}
+
+private func widgetLiveStreamFallback(languageName: String) -> String {
+    unsafe String(
+        format: String(localized: "live_activity_program_fallback", defaultValue: "%@ · Live Stream"),
+        languageName
+    )
+}
+
 private func widgetProgramSpeakerLine(metadata: StreamProgramMetadata?) -> String? {
     guard let speaker = metadata?.speaker, !speaker.isEmpty else { return nil }
     return speaker
+}
+
+private func widgetNowPlayingDisplayModel(from entry: SimpleEntry) -> WidgetNowPlayingDisplayModel {
+    let languageName = entry.availableStreams
+        .first { $0.languageCode == entry.currentLanguageCode }?
+        .language ?? entry.currentStation
+    let metadata = entry.streamMetadata
+    let state = entry.visualState
+    let liveFallback = widgetLiveStreamFallback(languageName: languageName)
+    let noTrack = String(localized: "no_track_info", defaultValue: "No track information")
+    let speaker = widgetProgramSpeakerLine(metadata: metadata)
+
+    let programTitle: String
+    let emphasis: WidgetMetadataEmphasis
+
+    switch state {
+    case .playing:
+        programTitle = metadata?.programTitle.flatMap { $0.isEmpty ? nil : $0 } ?? liveFallback
+        emphasis = .active
+    case .prePlay:
+        programTitle = metadata?.programTitle.flatMap { $0.isEmpty ? nil : $0 } ?? liveFallback
+        emphasis = .subdued
+    case .userPaused:
+        if let title = metadata?.programTitle, !title.isEmpty {
+            programTitle = title
+            emphasis = .subdued
+        } else {
+            programTitle = noTrack
+            emphasis = .placeholder
+        }
+    case .thermalPaused, .securityLocked:
+        if let title = metadata?.programTitle, !title.isEmpty {
+            programTitle = title
+            emphasis = .subdued
+        } else {
+            programTitle = noTrack
+            emphasis = .placeholder
+        }
+    }
+
+    let speakerVisible = speaker != nil && (state.isActivelyPlaying || state == .userPaused || state == .prePlay)
+
+    return WidgetNowPlayingDisplayModel(
+        programTitle: programTitle,
+        speakerLine: speaker ?? "\u{00A0}",
+        speakerVisible: speakerVisible,
+        emphasis: emphasis
+    )
+}
+
+private enum WidgetMetadataLayout {
+    case medium
+    case large
+
+    var titleFont: Font {
+        switch self {
+        case .medium: .caption.weight(.medium)
+        case .large: .subheadline.weight(.semibold)
+        }
+    }
+
+    var speakerFont: Font { self == .medium ? .caption2 : .caption }
+
+    var titleLineLimit: Int { self == .medium ? 1 : 2 }
+
+    var titleHeight: CGFloat { self == .medium ? 18 : 44 }
+
+    var speakerHeight: CGFloat { self == .medium ? 14 : 18 }
+
+    var textAlignment: TextAlignment { self == .medium ? .leading : .center }
+
+    var stackAlignment: HorizontalAlignment { self == .medium ? .leading : .center }
+
+    var frameAlignment: Alignment { self == .medium ? .leading : .center }
+}
+
+/// Fixed-height program title and speaker slots for medium and large widgets.
+private struct WidgetMetadataRegion: View {
+    let model: WidgetNowPlayingDisplayModel
+    let layout: WidgetMetadataLayout
+
+    var body: some View {
+        VStack(alignment: layout.stackAlignment, spacing: 2) {
+            Text(model.programTitle)
+                .font(layout.titleFont)
+                .foregroundStyle(.primary)
+                .multilineTextAlignment(layout.textAlignment)
+                .lineLimit(layout.titleLineLimit)
+                .minimumScaleFactor(0.85)
+                .truncationMode(.tail)
+                .opacity(model.emphasis.opacity)
+                .contentTransition(.opacity)
+                .frame(maxWidth: .infinity, minHeight: layout.titleHeight, maxHeight: layout.titleHeight, alignment: layout.frameAlignment)
+
+            Text(model.speakerLine)
+                .font(layout.speakerFont)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(layout.textAlignment)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .opacity(model.speakerVisible ? model.emphasis.opacity : 0)
+                .contentTransition(.opacity)
+                .frame(maxWidth: .infinity, minHeight: layout.speakerHeight, maxHeight: layout.speakerHeight, alignment: layout.frameAlignment)
+        }
+        .frame(maxWidth: .infinity, alignment: layout.frameAlignment)
+    }
 }
 
 /// Returns whether the main app has recently updated shared state.
@@ -331,6 +446,8 @@ struct MediumWidgetView: View {
             .padding()
             .widgetURL(URL(string: "lutheranradio://open"))
         } else {
+            let metadata = widgetNowPlayingDisplayModel(from: entry)
+
             VStack(spacing: 6) {
                 HStack {
                     Text(String(localized: "lutheran_radio_title"))
@@ -362,32 +479,9 @@ struct MediumWidgetView: View {
                         .truncationMode(.tail)
                 }
 
-                if entry.visualState.isActivelyPlaying {
-                    let languageName = entry.availableStreams
-                        .first { $0.languageCode == entry.currentLanguageCode }?
-                        .language ?? entry.currentStation
+                WidgetMetadataRegion(model: metadata, layout: .medium)
 
-                    Text(widgetProgramDisplayTitle(
-                        metadata: entry.streamMetadata,
-                        visualState: entry.visualState,
-                        languageName: languageName
-                    ))
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundColor(.primary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                    if let speaker = widgetProgramSpeakerLine(metadata: entry.streamMetadata) {
-                        Text(speaker)
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                }
+                Spacer(minLength: 4)
 
                 if entry.availableStreams.count > 1 {
                     HStack(spacing: 6) {
@@ -396,9 +490,8 @@ struct MediumWidgetView: View {
                         }
                     }
                 }
-
-                Spacer(minLength: 0)
             }
+            .frame(maxHeight: .infinity, alignment: .top)
             .padding(10)
             .background(Color(.systemBackground))
         }
@@ -448,6 +541,8 @@ struct LargeWidgetView: View {
             .padding()
             .widgetURL(URL(string: "lutheranradio://open"))
         } else {
+            let metadata = widgetNowPlayingDisplayModel(from: entry)
+
             VStack(spacing: 12) {
                 HStack {
                     Text(String(localized: "lutheran_radio_title"))
@@ -461,53 +556,31 @@ struct LargeWidgetView: View {
                     }
                     .buttonStyle(.plain)
                 }
-                
+
                 VStack(spacing: 4) {
                     Text(entry.currentStation)
                         .font(.title2)
                         .fontWeight(.semibold)
                         .foregroundColor(.primary)
-                    
+
                     Text(entry.statusMessage)
                         .font(.subheadline)
                         .foregroundColor(entry.visualState.textColor.swiftUIColor)
-                    
-                    if entry.visualState.isActivelyPlaying {
-                        let languageName = entry.availableStreams
-                            .first { $0.languageCode == entry.currentLanguageCode }?
-                            .language ?? entry.currentStation
-                        
-                        Text(widgetProgramDisplayTitle(
-                            metadata: entry.streamMetadata,
-                            visualState: entry.visualState,
-                            languageName: languageName
-                        ))
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.primary)
-                        .multilineTextAlignment(.center)
-                        .lineLimit(3)
-                        .minimumScaleFactor(0.85)
-                        
-                        if let speaker = widgetProgramSpeakerLine(metadata: entry.streamMetadata) {
-                            Text(speaker)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .lineLimit(2)
-                                .multilineTextAlignment(.center)
-                        }
-                    }
                 }
-                
+
+                WidgetMetadataRegion(model: metadata, layout: .large)
+
+                Spacer(minLength: 4)
+
                 Divider()
-                
+
                 LazyVGrid(columns: [
                     GridItem(.flexible()),
                     GridItem(.flexible())
                 ], spacing: 8) {
                     ForEach(entry.availableStreams, id: \.languageCode) { stream in
                         let isSelected = entry.currentStation.contains(stream.language)
-                        
+
                         Button(intent: SwitchStreamIntent(streamLanguageCode: stream.languageCode)) {
                             HStack(spacing: 4) {
                                 Text(stream.flag)
@@ -528,9 +601,8 @@ struct LargeWidgetView: View {
                         .buttonStyle(.plain)
                     }
                 }
-                
-                Spacer()
             }
+            .frame(maxHeight: .infinity, alignment: .top)
             .padding()
             .background(Color(.systemBackground))
         }

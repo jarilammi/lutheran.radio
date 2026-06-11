@@ -788,9 +788,9 @@ actor SharedPlayerManager {
         // Main app path — soft pause keeps the secured item for gapless same-stream resume.
         DirectStreamingPlayer.shared.stop()
 
-        // Clear parsed widget metadata so paused snapshots hide program lines (P5-11).
-        // Retain raw ICY in nowPlayingStreamMetadata for same-stream resume re-hydrate.
-        currentStreamMetadata = nil
+        // Keep parsed metadata in the snapshot so widgets can show a subdued last-known
+        // program line while paused. Raw ICY in nowPlayingStreamMetadata is unchanged
+        // for same-stream soft-pause resume re-hydrate.
 
         // Always save after stop
         await saveCurrentState()
@@ -1211,7 +1211,7 @@ actor SharedPlayerManager {
         language: String
     ) -> String? {
         Self.writeInstantFeedback(language: language)
-        Self.persistWidgetSnapshot(visualState: visualState, language: language)
+        Self.persistWidgetSnapshot(visualState: visualState, language: language, clearStreamMetadata: true)
         let actionId = scheduleWidgetAction(action: "switch", parameter: language)
         notifyMainApp(action: "switch", parameter: language)
         return actionId
@@ -1419,13 +1419,23 @@ actor SharedPlayerManager {
     nonisolated static func persistWidgetSnapshot(
         visualState: PlayerVisualState,
         language: String,
-        streamMetadata: StreamProgramMetadata? = nil
+        streamMetadata: StreamProgramMetadata? = nil,
+        clearStreamMetadata: Bool = false
     ) {
+        let resolvedMetadata: StreamProgramMetadata?
+        if clearStreamMetadata {
+            resolvedMetadata = nil
+        } else if let streamMetadata {
+            resolvedMetadata = streamMetadata
+        } else {
+            resolvedMetadata = loadPersistedWidgetState()?.streamMetadata
+        }
+
         let snapshot = PersistedWidgetState(
             visualState: visualState,
             currentLanguage: language,
             lastLanguageChangeTime: Date(),
-            streamMetadata: streamMetadata
+            streamMetadata: resolvedMetadata
         )
         let encoder = JSONEncoder()
         if let data = try? encoder.encode(snapshot) {
