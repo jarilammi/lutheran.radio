@@ -95,14 +95,14 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     /// - Accessibility: Labeled for VoiceOver with dynamic font support.
     let titleLabel: UILabel = {
         let label = UILabel()
-        label.text = String(localized: "lutheran_radio_title")
+        label.text = String(localized: "lutheran_radio_title", table: "Localizable")
         label.textAlignment = .center
         label.font = UIFont.preferredFont(forTextStyle: .title1)
         label.adjustsFontForContentSizeCategory = true
         label.textColor = .label
         label.translatesAutoresizingMaskIntoConstraints = false
         label.isAccessibilityElement = true
-        label.accessibilityLabel = String(localized: "lutheran_radio_title")
+        label.accessibilityLabel = String(localized: "lutheran_radio_title", table: "Localizable")
         return label
     }()
     
@@ -137,7 +137,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         button.translatesAutoresizingMaskIntoConstraints = false
         button.isAccessibilityElement = true
         button.accessibilityTraits = .button
-        button.accessibilityHint = String(localized: "accessibility_hint_play_pause")
+        button.accessibilityHint = String(localized: "accessibility_hint_play_pause", table: "Localizable")
         return button
     }()
 
@@ -149,14 +149,14 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         button.translatesAutoresizingMaskIntoConstraints = false
         button.isAccessibilityElement = true
         button.accessibilityTraits = .button
-        button.accessibilityLabel = String(localized: "accessibility_label_sleep_timer")
-        button.accessibilityHint = String(localized: "accessibility_hint_sleep_timer")
+        button.accessibilityLabel = String(localized: "accessibility_label_sleep_timer", table: "Localizable")
+        button.accessibilityHint = String(localized: "accessibility_hint_sleep_timer", table: "Localizable")
         return button
     }()
     
     let statusLabel: UILabel = {
         let label = UILabel()
-        label.text = String(localized: "status_connecting")
+        label.text = String(localized: "status_connecting", table: "Localizable")
         label.textAlignment = .center
         label.font = UIFont.preferredFont(forTextStyle: .body)
         label.adjustsFontForContentSizeCategory = true
@@ -181,14 +181,14 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         slider.maximumTrackTintColor = .tertiaryLabel
         slider.translatesAutoresizingMaskIntoConstraints = false
         slider.isAccessibilityElement = true
-        slider.accessibilityLabel = String(localized: "accessibility_label_volume")
-        slider.accessibilityHint = String(localized: "accessibility_hint_volume")
+        slider.accessibilityLabel = String(localized: "accessibility_label_volume", table: "Localizable")
+        slider.accessibilityHint = String(localized: "accessibility_hint_volume", table: "Localizable")
         return slider
     }()
     
     let metadataLabel: UILabel = {
         let label = UILabel()
-        label.text = String(localized: "no_track_info")
+        label.text = String(localized: "no_track_info", table: "Localizable")
         label.textAlignment = .center
         label.font = UIFont.preferredFont(forTextStyle: .callout)
         label.adjustsFontForContentSizeCategory = true
@@ -198,7 +198,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         label.adjustsFontSizeToFitWidth = true
         label.minimumScaleFactor = 0.75
         label.isAccessibilityElement = true
-        label.accessibilityHint = String(localized: "accessibility_hint_metadata")
+        label.accessibilityHint = String(localized: "accessibility_hint_metadata", table: "Localizable")
         return label
     }()
     
@@ -207,8 +207,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         view.tintColor = .tintColor
         view.translatesAutoresizingMaskIntoConstraints = false
         view.isAccessibilityElement = true
-        view.accessibilityLabel = String(localized: "accessibility_label_airplay")
-        view.accessibilityHint = String(localized: "accessibility_hint_airplay")
+        view.accessibilityLabel = String(localized: "accessibility_label_airplay", table: "Localizable")
+        view.accessibilityHint = String(localized: "accessibility_hint_airplay", table: "Localizable")
         return view
     }()
     
@@ -416,7 +416,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         // Add custom accessibility actions for playPauseButton
         playPauseButton.accessibilityCustomActions = [
             UIAccessibilityCustomAction(
-                name: NSLocalizedString("toggle_playback", comment: "Accessibility action to toggle playback"),
+                name: String(localized: "toggle_playback", defaultValue: "Toggle Playback", table: "Localizable", comment: "Accessibility action to toggle playback"),
                 target: self,
                 selector: #selector(togglePlayback)
             )
@@ -425,12 +425,12 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         // Add custom accessibility actions for volumeSlider
         volumeSlider.accessibilityCustomActions = [
             UIAccessibilityCustomAction(
-                name: NSLocalizedString("increase_volume", comment: "Accessibility action to increase volume"),
+                name: String(localized: "increase_volume", defaultValue: "Increase Volume", table: "Localizable", comment: "Accessibility action to increase volume"),
                 target: self,
                 selector: #selector(increaseVolume)
             ),
             UIAccessibilityCustomAction(
-                name: NSLocalizedString("decrease_volume", comment: "Accessibility action to decrease volume"),
+                name: String(localized: "decrease_volume", defaultValue: "Decrease Volume", table: "Localizable", comment: "Accessibility action to decrease volume"),
                 target: self,
                 selector: #selector(decreaseVolume)
             )
@@ -440,7 +440,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) { [weak self] (controller: Self, previousTraitCollection: UITraitCollection) in
             guard let self else { return }
             self.updateMetadataLabel(
-                text: self.metadataLabel.text ?? String(localized: "no_track_info")
+                text: self.metadataLabel.text ?? String(localized: "no_track_info", table: "Localizable")
             )
         }
         
@@ -479,7 +479,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         // Set initial volume slider position (UI only)
         let volumeToUse = preferredVolume()
         volumeSlider.value = volumeToUse
-        volumeSlider.accessibilityValue = unsafe String(format: String(localized: "accessibility_value_volume"), Int(volumeToUse * 100))
+        volumeSlider.accessibilityValue = unsafe String(format: String(localized: "accessibility_value_volume", table: "Localizable"), Int(volumeToUse * 100))
         #if DEBUG
         print("[ViewController] Set initial volumeSlider to \(volumeToUse)")
         #endif
@@ -768,7 +768,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                         self.applySpeakerVisuals(for: metadata, potentialNames: potentialNames)
                     }
                 } else {
-                    self.metadataLabel.text = String(localized: "no_track_info")
+                    self.metadataLabel.text = String(localized: "no_track_info", table: "Localizable")
                     if !self.isSleepTimerInteractionActive {
                         self.updateNowPlayingInfo()
                         self.speakerImageView.isHidden = true
@@ -781,12 +781,12 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     private func showSecurityModelAlert() {
         let alert = UIAlertController(
-            title: String(localized: "security_model_error_title"),
-            message: String(localized: "security_model_error_message"),
+            title: String(localized: "security_model_error_title", table: "Localizable"),
+            message: String(localized: "security_model_error_message", table: "Localizable"),
             preferredStyle: .alert
         )
         
-        alert.addAction(UIAlertAction(title: String(localized: "alert_retry"), style: .default, handler: { [weak self] _ in
+        alert.addAction(UIAlertAction(title: String(localized: "alert_retry", table: "Localizable"), style: .default, handler: { [weak self] _ in
             guard let self else { return }
             
             Task { @MainActor in   // ← Keeps UI work on main + gives us async context
@@ -812,7 +812,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             }
         }))
         
-        alert.addAction(UIAlertAction(title: String(localized: "ok"), style: .cancel, handler: nil))
+        alert.addAction(UIAlertAction(title: String(localized: "ok", table: "Localizable"), style: .cancel, handler: nil))
         
         present(alert, animated: true, completion: nil)
     }
@@ -824,19 +824,19 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         guard presentedViewController == nil else { return }
         
         let alert = UIAlertController(
-            title: String(localized: "ssl_transition_title"),
-            message: String(localized: "ssl_transition_message"),
+            title: String(localized: "ssl_transition_title", table: "Localizable"),
+            message: String(localized: "ssl_transition_message", table: "Localizable"),
             preferredStyle: .alert
         )
         
-        alert.addAction(UIAlertAction(title: String(localized: "alert_continue"), style: .default, handler: { [weak self] _ in
+        alert.addAction(UIAlertAction(title: String(localized: "alert_continue", table: "Localizable"), style: .default, handler: { [weak self] _ in
             guard self != nil else { return }
             Task { @MainActor in
                 await SharedPlayerManager.shared.userRequestedPlay()
             }
         }))
         
-        alert.addAction(UIAlertAction(title: String(localized: "ok"), style: .cancel, handler: nil))
+        alert.addAction(UIAlertAction(title: String(localized: "ok", table: "Localizable"), style: .cancel, handler: nil))
         
         present(alert, animated: true, completion: nil)
     }
@@ -846,21 +846,21 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         configureSleepTimerButtonMenu()
         sleepTimerButton.accessibilityIdentifier = "sleepTimerButton"
         playPauseButton.accessibilityIdentifier = "playPauseButton"
-        playPauseButton.accessibilityHint = String(localized: "accessibility_hint_play_pause")
-        playPauseButton.accessibilityLabel = String(localized: "accessibility_label_play")  // e.g., "Play" in Localizable.strings
+        playPauseButton.accessibilityHint = String(localized: "accessibility_hint_play_pause", table: "Localizable")
+        playPauseButton.accessibilityLabel = String(localized: "accessibility_label_play", table: "Localizable")  // e.g., "Play" in Localizable.strings
         playPauseButton.accessibilityTraits = [.button, .playsSound]  // Hints that it triggers sound
         
         volumeSlider.addTarget(self, action: #selector(volumeChanged(_:)), for: .valueChanged)
         volumeSlider.accessibilityIdentifier = "volumeSlider"
-        volumeSlider.accessibilityHint = String(localized: "accessibility_hint_volume")
-        volumeSlider.accessibilityLabel = String(localized: "accessibility_label_volume")  // e.g., "Volume"
+        volumeSlider.accessibilityHint = String(localized: "accessibility_hint_volume", table: "Localizable")
+        volumeSlider.accessibilityLabel = String(localized: "accessibility_label_volume", table: "Localizable")  // e.g., "Volume"
         volumeSlider.accessibilityTraits = .adjustable  // Default, but explicit for clarity
-        volumeSlider.accessibilityValue = unsafe String(format: String(localized: "accessibility_value_volume"), Int(volumeSlider.value * 100))  // e.g., "50 percent"
+        volumeSlider.accessibilityValue = unsafe String(format: String(localized: "accessibility_value_volume", table: "Localizable"), Int(volumeSlider.value * 100))  // e.g., "50 percent"
         
         // Add AirPlay button tap feedback
         airplayButton.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(airplayTapped)))
-        airplayButton.accessibilityLabel = String(localized: "accessibility_label_airplay")  // e.g., "AirPlay picker"
-        airplayButton.accessibilityHint = String(localized: "accessibility_hint_airplay")  // e.g., "Double tap to select audio output"
+        airplayButton.accessibilityLabel = String(localized: "accessibility_label_airplay", table: "Localizable")  // e.g., "AirPlay picker"
+        airplayButton.accessibilityHint = String(localized: "accessibility_hint_airplay", table: "Localizable")  // e.g., "Double tap to select audio output"
     }
     
     @objc private func airplayTapped() {
@@ -990,12 +990,12 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     private func showDataUsageNotification() {
         let alert = UIAlertController(
-            title: String(localized: "mobile_data_usage_title"),
-            message: String(localized: "mobile_data_usage_message"),
+            title: String(localized: "mobile_data_usage_title", table: "Localizable"),
+            message: String(localized: "mobile_data_usage_message", table: "Localizable"),
             preferredStyle: .alert
         )
-        alert.addAction(UIAlertAction(title: String(localized: "ok"), style: .default, handler: nil))
-        alert.addAction(UIAlertAction(title: String(localized: "dont_show_again"), style: .default, handler: { _ in
+        alert.addAction(UIAlertAction(title: String(localized: "ok", table: "Localizable"), style: .default, handler: nil))
+        alert.addAction(UIAlertAction(title: String(localized: "dont_show_again", table: "Localizable"), style: .default, handler: { _ in
             UserDefaults.standard.set(true, forKey: UserDefaultsKeys.hasDismissedDataUsageNotification)
         }))
         present(alert, animated: true, completion: nil)
@@ -1174,11 +1174,11 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 // Show alert only if not already presenting one (security error path unchanged)
                 if presentedViewController == nil {
                     let alert = UIAlertController(
-                        title: String(localized: "security_model_error_title"),
-                        message: String(localized: "security_model_error_message"),
+                        title: String(localized: "security_model_error_title", table: "Localizable"),
+                        message: String(localized: "security_model_error_message", table: "Localizable"),
                         preferredStyle: .alert
                     )
-                    alert.addAction(UIAlertAction(title: String(localized: "ok"), style: .default))
+                    alert.addAction(UIAlertAction(title: String(localized: "ok", table: "Localizable"), style: .default))
                     present(alert, animated: true)
                 }
             }
@@ -1241,12 +1241,12 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     private func updateUIForNoInternet() {
         safeUpdateStatusLabel(
-            text: String(localized: "status_no_internet"),
+            text: String(localized: "status_no_internet", table: "Localizable"),
             backgroundColor: .systemGray,
             textColor: .white,
             isPermanentError: false
         )
-        metadataLabel.text = String(localized: "no_track_info")
+        metadataLabel.text = String(localized: "no_track_info", table: "Localizable")
         updatePlayPauseButton(isPlaying: false)
     }
     
@@ -1299,15 +1299,15 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         // Text
         switch visualState {
         case .playing:
-            statusLabel.text = String(localized: "status_playing")
+            statusLabel.text = String(localized: "status_playing", table: "Localizable")
         case .userPaused:
-            statusLabel.text = String(localized: "status_paused")
+            statusLabel.text = String(localized: "status_paused", table: "Localizable")
         case .thermalPaused:
-            statusLabel.text = String(localized: "status_thermal_paused")
+            statusLabel.text = String(localized: "status_thermal_paused", table: "Localizable")
         case .prePlay:
-            statusLabel.text = String(localized: "status_connecting")
+            statusLabel.text = String(localized: "status_connecting", table: "Localizable")
         case .securityLocked:
-            statusLabel.text = String(localized: "status_security_failed")
+            statusLabel.text = String(localized: "status_security_failed", table: "Localizable")
             
             // Alert is presented here — most convenient place
             if !hasShownSecurityAlert {
@@ -1342,7 +1342,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     @objc private func volumeChanged(_ sender: UISlider) {
         streamingPlayer.setVolume(sender.value)
-        sender.accessibilityValue = unsafe String(format: String(localized: "accessibility_value_volume"), Int(sender.value * 100))  // e.g., "75 percent"
+        sender.accessibilityValue = unsafe String(format: String(localized: "accessibility_value_volume", table: "Localizable"), Int(sender.value * 100))  // e.g., "75 percent"
         persistPreferredVolume(sender.value)
     }
     
@@ -1360,8 +1360,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         }
         
         playPauseButton.accessibilityLabel = isPlaying
-        ? String(localized: "accessibility_label_play_pause")
-        : String(localized: "accessibility_label_play")
+        ? String(localized: "accessibility_label_play_pause", table: "Localizable")
+        : String(localized: "accessibility_label_play", table: "Localizable")
     }
     
     private func setupBackgroundParallax() {
@@ -1947,7 +1947,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             
             if !state.isPlaying {
                 safeUpdateStatusLabel(
-                    text: String(localized: "status_connecting"),
+                    text: String(localized: "status_connecting", table: "Localizable"),
                     backgroundColor: .systemYellow,
                     textColor: .label,
                     isPermanentError: false
@@ -2036,7 +2036,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
 
         if cachedSleepTimerRemaining != nil {
             children.append(UIAction(
-                title: String(localized: "sleep_timer_cancel_timer"),
+                title: String(localized: "sleep_timer_cancel_timer", table: "Localizable"),
                 attributes: .destructive
             ) { [weak self] _ in
                 self?.handleSleepTimerCancelSelected()
@@ -2044,10 +2044,10 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         }
 
         let presets: [(minutes: Int, title: String)] = [
-            (15, String(localized: "sleep_timer_preset_15_min")),
-            (30, String(localized: "sleep_timer_preset_30_min")),
-            (45, String(localized: "sleep_timer_preset_45_min")),
-            (60, String(localized: "sleep_timer_preset_60_min"))
+            (15, String(localized: "sleep_timer_preset_15_min", table: "Localizable")),
+            (30, String(localized: "sleep_timer_preset_30_min", table: "Localizable")),
+            (45, String(localized: "sleep_timer_preset_45_min", table: "Localizable")),
+            (60, String(localized: "sleep_timer_preset_60_min", table: "Localizable"))
         ]
 
         for preset in presets {
@@ -2057,7 +2057,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         }
 
         sleepTimerButton.menu = UIMenu(
-            title: String(localized: "sleep_timer_sheet_title"),
+            title: String(localized: "sleep_timer_sheet_title", table: "Localizable"),
             options: .displayInline,
             children: children
         )
@@ -2145,13 +2145,13 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                     self.speakerImageView.image = speakerImage
                     self.speakerImageView.isHidden = false
                     self.speakerImageHeightConstraint?.constant = 100
-                    self.speakerImageView.accessibilityLabel = "Photo of \(speaker)"
+                    self.speakerImageView.accessibilityLabel = unsafe String(format: String(localized: "accessibility_label_photo_of_format", defaultValue: "Photo of %@", table: "Localizable", comment: "Accessibility label for speaker photo. %@ is the speaker or program name."), speaker)
                 }, completion: nil)
             } else {
                 speakerImageView.image = speakerImage
                 speakerImageView.isHidden = false
                 speakerImageHeightConstraint?.constant = 100
-                speakerImageView.accessibilityLabel = "Photo of \(speaker)"
+                speakerImageView.accessibilityLabel = unsafe String(format: String(localized: "accessibility_label_photo_of_format", defaultValue: "Photo of %@", table: "Localizable", comment: "Accessibility label for speaker photo. %@ is the speaker or program name."), speaker)
             }
         } else if let placeholderImage = UIImage(named: "radio-placeholder") {
             if animated {
@@ -2159,13 +2159,13 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                     self.speakerImageView.image = placeholderImage
                     self.speakerImageView.isHidden = false
                     self.speakerImageHeightConstraint?.constant = 100
-                    self.speakerImageView.accessibilityLabel = "Lutheran Radio Logo"
+                    self.speakerImageView.accessibilityLabel = String(localized: "accessibility_label_lutheran_radio_logo", defaultValue: "Lutheran Radio Logo", table: "Localizable", comment: "Accessibility label for the placeholder logo image.")
                 }, completion: nil)
             } else {
                 speakerImageView.image = placeholderImage
                 speakerImageView.isHidden = false
                 speakerImageHeightConstraint?.constant = 100
-                speakerImageView.accessibilityLabel = "Lutheran Radio Logo"
+                speakerImageView.accessibilityLabel = String(localized: "accessibility_label_lutheran_radio_logo", defaultValue: "Lutheran Radio Logo", table: "Localizable", comment: "Accessibility label for the placeholder logo image.")
             }
         } else {
             #if DEBUG
@@ -2246,7 +2246,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             sleepTimerButton.tintColor = .systemIndigo
             let minutes = max(1, (remaining + 59) / 60)
             sleepTimerButton.accessibilityValue = unsafe String(
-                format: String(localized: "sleep_timer_accessibility_remaining"),
+                format: String(localized: "sleep_timer_accessibility_remaining", table: "Localizable"),
                 minutes
             )
         } else {
@@ -3037,7 +3037,7 @@ extension ViewController {
         statusLabel.accessibilityLabel = text
         
         // Announce status changes to VoiceOver only for play/pause states
-        if text == String(localized: "status_playing") || text == String(localized: "status_paused") {
+        if text == String(localized: "status_playing", table: "Localizable") || text == String(localized: "status_paused", table: "Localizable") {
             unsafe UIAccessibility.post(notification: .announcement, argument: text)
         }
     }
@@ -3060,9 +3060,9 @@ extension ViewController {
         
         // Accessibility reads full text regardless of truncation.
         // Visible text stays as track info only; prefix "Now Playing" for VoiceOver when streaming.
-        let noTrackInfo = String(localized: "no_track_info")
+        let noTrackInfo = String(localized: "no_track_info", table: "Localizable")
         if text != noTrackInfo {
-            let nowPlaying = String(localized: "Now Playing")
+            let nowPlaying = String(localized: "Now Playing", defaultValue: "Now Playing", table: "Localizable")
             metadataLabel.accessibilityLabel = "\(nowPlaying): \(text)"
         } else {
             metadataLabel.accessibilityLabel = text
@@ -3200,14 +3200,14 @@ extension ViewController {
         let newValue = min(volumeSlider.value + 0.1, volumeSlider.maximumValue)
         volumeSlider.setValue(newValue, animated: true)
         volumeChanged(volumeSlider)
-        unsafe UIAccessibility.post(notification: .announcement, argument: String(format: NSLocalizedString("volume_set_to", comment: ""), Int(newValue * 100)))
+        unsafe UIAccessibility.post(notification: .announcement, argument: String(format: String(localized: "volume_set_to", defaultValue: "Volume set to %d percent", table: "Localizable", comment: ""), Int(newValue * 100)))
     }
     
     @objc private func decreaseVolume() {
         let newValue = max(volumeSlider.value - 0.1, volumeSlider.minimumValue)
         volumeSlider.setValue(newValue, animated: true)
         volumeChanged(volumeSlider)
-        unsafe UIAccessibility.post(notification: .announcement, argument: String(format: NSLocalizedString("volume_set_to", comment: ""), Int(newValue * 100)))
+        unsafe UIAccessibility.post(notification: .announcement, argument: String(format: String(localized: "volume_set_to", defaultValue: "Volume set to %d percent", table: "Localizable", comment: ""), Int(newValue * 100)))
     }
     
     private func safeUpdateStatusLabel(text: String, backgroundColor: UIColor, textColor: UIColor, isPermanentError: Bool) {
@@ -3222,22 +3222,22 @@ extension ViewController {
             
             // Permanent error state is now driven by SecurityModelValidator.isPermanentlyInvalid + intent.
             
-            if text != String(localized: "status_playing") {
+            if text != String(localized: "status_playing", table: "Localizable") {
                 self.saveStateForWidget()
             }
             
             // Announce ALL important status changes
             let importantStatuses: Set<String> = [
-                String(localized: "status_connecting"),
-                String(localized: "status_playing"),
-                String(localized: "status_paused"),
-                String(localized: "status_paused_call"),
-                String(localized: "status_no_internet"),
-                String(localized: "status_stream_unavailable"),
-                String(localized: "status_failed"),
-                String(localized: "status_security_failed"),
-                String(localized: "status_stopped"),
-                String(localized: "status_ssl_transition")
+                String(localized: "status_connecting", table: "Localizable"),
+                String(localized: "status_playing", table: "Localizable"),
+                String(localized: "status_paused", table: "Localizable"),
+                String(localized: "status_paused_call", table: "Localizable"),
+                String(localized: "status_no_internet", table: "Localizable"),
+                String(localized: "status_stream_unavailable", table: "Localizable"),
+                String(localized: "status_failed", table: "Localizable"),
+                String(localized: "status_security_failed", table: "Localizable"),
+                String(localized: "status_stopped", table: "Localizable"),
+                String(localized: "status_ssl_transition", table: "Localizable")
             ]
             
             if importantStatuses.contains(text) {
@@ -3321,16 +3321,16 @@ extension ViewController: StreamingPlayerDelegate {
 
                     if self.presentedViewController == nil {
                         let alert = UIAlertController(
-                            title: String(localized: "stream_unavailable_title"),
-                            message: String(localized: "stream_unavailable_message"),
+                            title: String(localized: "stream_unavailable_title", table: "Localizable"),
+                            message: String(localized: "stream_unavailable_message", table: "Localizable"),
                             preferredStyle: .alert
                         )
-                        alert.addAction(UIAlertAction(title: String(localized: "alert_retry"), style: .default) { _ in
+                        alert.addAction(UIAlertAction(title: String(localized: "alert_retry", table: "Localizable"), style: .default) { _ in
                             Task { @MainActor in
                                 await SharedPlayerManager.shared.userRequestedPlay()
                             }
                         })
-                        alert.addAction(UIAlertAction(title: String(localized: "ok"), style: .cancel, handler: nil))
+                        alert.addAction(UIAlertAction(title: String(localized: "ok", table: "Localizable"), style: .cancel, handler: nil))
                         self.present(alert, animated: true)
                     }
                 }
@@ -3429,7 +3429,7 @@ extension ViewController: StreamingPlayerDelegate {
                         print("[ViewController] Widget switch blocked resume — .userPaused")
                         #endif
                         updatePlayPauseButton(isPlaying: false)
-                        safeUpdateStatusLabel(text: String(localized: "status_paused"),
+                        safeUpdateStatusLabel(text: String(localized: "status_paused", table: "Localizable"),
                                               backgroundColor: .systemYellow,
                                               textColor: .label,
                                               isPermanentError: false)
@@ -3438,7 +3438,7 @@ extension ViewController: StreamingPlayerDelegate {
                     // Feedback and save
                     playHapticFeedback(style: .medium)
                     unsafe UIAccessibility.post(notification: .announcement,
-                                        argument: String(localized: "switched_to_language \(targetStream.language)"))
+                                        argument: String(localized: "switched_to_language \(targetStream.language)", table: "Localizable"))
                     
                     // remains inside the lang-switch subcase of widget action dispatch).
                     saveStateForWidget()

@@ -13,7 +13,7 @@ import UIKit
 ///
 /// Features:
 /// - **Configuration**: Sets flag emoji and accessibility label from `DirectStreamingPlayer.Stream`; supports selection states with color changes.
-/// - **Accessibility**: Traits as buttons with dynamic labels (e.g., "Select English"); no borders for clean UI.
+/// - **Accessibility**: Traits as buttons with dynamic localized labels (e.g. "Select English" or equivalent in the current locale); no borders for clean UI.
 /// - **Integration**: Part of horizontal UICollectionView in `ViewController.swift`; triggers stream switches via delegate.
 /// - **Privacy Note**: Purely local; no network or data storage involved.
 ///
@@ -57,7 +57,7 @@ class LanguageCell: UICollectionViewCell {
     func configure(with stream: DirectStreamingPlayer.Stream) {
         flagLabel.text = stream.flag
         isAccessibilityElement = true
-        accessibilityLabel = "Select \(stream.language)"
+        accessibilityLabel = unsafe String(format: String(localized: "select_language_accessibility", defaultValue: "Select %@", table: "Localizable", comment: "Accessibility label for language cell. %@ is the localized language name."), stream.language)
         accessibilityTraits = .button
         if isSelected { accessibilityTraits.insert(.selected) }
     }

@@ -397,29 +397,29 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// Available streams by language.
     /// - Note: Static array; URLs must be HTTPS for security.
     static let availableStreams = [
-        Stream(title: NSLocalizedString("lutheran_radio_title", comment: "Title for Lutheran Radio") + " - " +
-               NSLocalizedString("language_english", comment: "English language option"),
-               language: NSLocalizedString("language_english", comment: "English language option"),
+        Stream(title: String(localized: "lutheran_radio_title", defaultValue: "Lutheran Radio", table: "Localizable", comment: "Title for Lutheran Radio") + " - " +
+               String(localized: "language_english", defaultValue: "English", table: "Localizable", comment: "English language option"),
+               language: String(localized: "language_english", defaultValue: "English", table: "Localizable", comment: "English language option"),
                languageCode: "en",
                flag: "🇺🇸"),
-        Stream(title: NSLocalizedString("lutheran_radio_title", comment: "Title for Lutheran Radio") + " - " +
-               NSLocalizedString("language_german", comment: "German language option"),
-               language: NSLocalizedString("language_german", comment: "German language option"),
+        Stream(title: String(localized: "lutheran_radio_title", defaultValue: "Lutheran Radio", table: "Localizable", comment: "Title for Lutheran Radio") + " - " +
+               String(localized: "language_german", defaultValue: "German", table: "Localizable", comment: "German language option"),
+               language: String(localized: "language_german", defaultValue: "German", table: "Localizable", comment: "German language option"),
                languageCode: "de",
                flag: "🇩🇪"),
-        Stream(title: NSLocalizedString("lutheran_radio_title", comment: "Title for Lutheran Radio") + " - " +
-               NSLocalizedString("language_finnish", comment: "Finnish language option"),
-               language: NSLocalizedString("language_finnish", comment: "Finnish language option"),
+        Stream(title: String(localized: "lutheran_radio_title", defaultValue: "Lutheran Radio", table: "Localizable", comment: "Title for Lutheran Radio") + " - " +
+               String(localized: "language_finnish", defaultValue: "Finnish", table: "Localizable", comment: "Finnish language option"),
+               language: String(localized: "language_finnish", defaultValue: "Finnish", table: "Localizable", comment: "Finnish language option"),
                languageCode: "fi",
                flag: "🇫🇮"),
-        Stream(title: NSLocalizedString("lutheran_radio_title", comment: "Title for Lutheran Radio") + " - " +
-               NSLocalizedString("language_swedish", comment: "Swedish language option"),
-               language: NSLocalizedString("language_swedish", comment: "Swedish language option"),
+        Stream(title: String(localized: "lutheran_radio_title", defaultValue: "Lutheran Radio", table: "Localizable", comment: "Title for Lutheran Radio") + " - " +
+               String(localized: "language_swedish", defaultValue: "Swedish", table: "Localizable", comment: "Swedish language option"),
+               language: String(localized: "language_swedish", defaultValue: "Swedish", table: "Localizable", comment: "Swedish language option"),
                languageCode: "sv",
                flag: "🇸🇪"),
-        Stream(title: NSLocalizedString("lutheran_radio_title", comment: "Title for Lutheran Radio") + " - " +
-               NSLocalizedString("language_estonian", comment: "Estonian language option"),
-               language: NSLocalizedString("language_estonian", comment: "Estonian language option"),
+        Stream(title: String(localized: "lutheran_radio_title", defaultValue: "Lutheran Radio", table: "Localizable", comment: "Title for Lutheran Radio") + " - " +
+               String(localized: "language_estonian", defaultValue: "Estonian", table: "Localizable", comment: "Estonian language option"),
+               language: String(localized: "language_estonian", defaultValue: "Estonian", table: "Localizable", comment: "Estonian language option"),
                languageCode: "et",
                flag: "🇪🇪"),
     ]
@@ -938,7 +938,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         lastEmittedStatus = incoming
         
         // Compute localized string once for UI / logs / delegate (backward compatible)
-        let localizedStatus = reasonKey.map { NSLocalizedString($0, comment: "") } ?? ""
+        let localizedStatus = reasonKey.map { String(localized: String.LocalizationValue($0), table: "Localizable") } ?? ""
         
         onStatusChange?(isPlaying, localizedStatus)
         
@@ -3370,13 +3370,13 @@ extension DirectStreamingPlayer {
         var statusString: String {
             switch self {
             case .securityFailure:
-                return String(localized: "status_security_failed")
+                return String(localized: "status_security_failed", table: "Localizable")
             case .permanentFailure:
-                return String(localized: "status_failed")
+                return String(localized: "status_failed", table: "Localizable")
             case .transientFailure:
-                return String(localized: "status_buffering")
+                return String(localized: "status_buffering", table: "Localizable")
             case .unknown:
-                return String(localized: "status_connecting")
+                return String(localized: "status_connecting", table: "Localizable")
             }
         }
         
