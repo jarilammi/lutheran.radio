@@ -48,11 +48,11 @@ private enum WidgetMetadataLayout {
 
     var speakerHeight: CGFloat { self == .medium ? 14 : 18 }
 
-    var textAlignment: TextAlignment { self == .medium ? .leading : .center }
-
-    var stackAlignment: HorizontalAlignment { self == .medium ? .leading : .center }
-
-    var frameAlignment: Alignment { self == .medium ? .leading : .center }
+    // Leading alignment on .large for visual consistency with the leading header,
+    // station/status block, and the left-to-right flow of the 3-column language grid
+    var textAlignment: TextAlignment { self == .medium ? .leading : .leading }
+    var stackAlignment: HorizontalAlignment { self == .medium ? .leading : .leading }
+    var frameAlignment: Alignment { self == .medium ? .leading : .leading }
 }
 
 /// Fixed-height program title and speaker slots for medium and large widgets.
@@ -510,12 +510,15 @@ struct LargeWidgetView: View {
 
                 Divider()
 
-                LazyVGrid(columns: [
-                    GridItem(.flexible()),
-                    GridItem(.flexible())
-                ], spacing: 8) {
+                // 3-column grid on large. With the current 5 streams this yields a balanced
+                // 3 + 2 layout; scales cleanly to larger sets (e.g. 21).
+                // isSelected now uses the same robust languageCode check as small/medium.
+                LazyVGrid(
+                    columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3),
+                    spacing: 8
+                ) {
                     ForEach(entry.availableStreams, id: \.languageCode) { stream in
-                        let isSelected = entry.currentStation.contains(stream.language)
+                        let isSelected = stream.languageCode == entry.currentLanguageCode
 
                         Button(intent: SwitchStreamIntent(streamLanguageCode: stream.languageCode)) {
                             HStack(spacing: 4) {
@@ -524,9 +527,10 @@ struct LargeWidgetView: View {
                                 Text(stream.language)
                                     .font(.caption)
                                     .fontWeight(isSelected ? .semibold : .regular)
+                                    .lineLimit(1)
                             }
                             .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
+                            .padding(.vertical, 6) // slightly more generous for labeled buttons on large
                             .background(isSelected ? Color.blue.opacity(0.2) : Color.gray.opacity(0.1))
                             .cornerRadius(6)
                             .overlay(
