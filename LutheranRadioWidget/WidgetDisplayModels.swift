@@ -17,7 +17,7 @@ import Foundation
 // and Dynamic Island expanded region). Widget- and LA-specific layout details
 // (fonts, spacing, alignment) stay in the respective view files.
 //
-// All user-visible strings use String(localized:) with the Localizable table.
+// All user-visible strings use String(localized: "key", table: "Localizable", ...) with explicit table.
 
 internal enum WidgetMetadataEmphasis {
     case active
@@ -43,7 +43,7 @@ internal struct WidgetNowPlayingDisplayModel {
 /// Returns the localized "X · Live Stream" fallback used when no ICY programTitle.
 internal func widgetLiveStreamFallback(languageName: String) -> String {
     unsafe String(
-        format: String(localized: "live_activity_program_fallback", defaultValue: "%@ · Live Stream"),
+        format: String(localized: "live_activity_program_fallback", defaultValue: "%@ · Live Stream", table: "Localizable"),
         languageName
     )
 }
@@ -64,7 +64,7 @@ internal func widgetNowPlayingDisplayModel(
     let metadata = streamMetadata
     let state = visualState
     let liveFallback = widgetLiveStreamFallback(languageName: languageName)
-    let noTrack = String(localized: "no_track_info", defaultValue: "No track information")
+    let noTrack = String(localized: "no_track_info", defaultValue: "No track information", table: "Localizable")
     let speaker = widgetProgramSpeakerLine(metadata: metadata)
 
     let programTitle: String
@@ -122,11 +122,11 @@ internal func displayLanguageName(for code: String) -> String {
     // Fallback mapping (covers the languages used in LA alt buttons + common preview cases).
     // Uses the same keys as the previous private getLanguageName in the Live Activity file.
     switch code {
-    case "en": return String(localized: "language_english")
-    case "de": return String(localized: "language_german")
-    case "fi": return String(localized: "language_finnish")
-    case "sv": return String(localized: "language_swedish")
-    case "et": return String(localized: "language_estonian")
+    case "en": return String(localized: "language_english", table: "Localizable")
+    case "de": return String(localized: "language_german", table: "Localizable")
+    case "fi": return String(localized: "language_finnish", table: "Localizable")
+    case "sv": return String(localized: "language_swedish", table: "Localizable")
+    case "et": return String(localized: "language_estonian", table: "Localizable")
     default: return code.capitalized
     }
 }

@@ -27,13 +27,13 @@ private func getStatusColor(_ visualState: PlayerVisualState) -> Color {
 private func getCurrentStreamStatus(visualState: PlayerVisualState) -> String {
     let hasError = SharedPlayerManager.shared.loadSharedState().hasError
     if hasError {
-        return String(localized: "Connection error", defaultValue: "Connection error")
+        return String(localized: "Connection error", defaultValue: "Connection error", table: "Localizable")
     } else if visualState == .thermalPaused {
-        return String(localized: "status_thermal_paused", defaultValue: "Thermal pause")
+        return String(localized: "status_thermal_paused", defaultValue: "Thermal pause", table: "Localizable")
     } else if visualState.isActivelyPlaying {
-        return String(localized: "LIVE", defaultValue: "Live")
+        return String(localized: "LIVE", defaultValue: "Live", table: "Localizable")
     } else {
-        return String(localized: "Ready", defaultValue: "Ready")
+        return String(localized: "Ready", defaultValue: "Ready", table: "Localizable")
     }
 }
 
@@ -403,7 +403,7 @@ struct LockScreenLiveActivityView: View {
             HStack {
                 Image(systemName: "radio")
                     .foregroundColor(.white)
-                Text(String(localized: "lutheran_radio_title"))
+                Text(String(localized: "lutheran_radio_title", table: "Localizable"))
                     .font(.headline)
                     .fontWeight(.semibold)
                 Spacer()
@@ -462,8 +462,8 @@ struct LockScreenLiveActivityView: View {
                             .font(.largeTitle)
                             .foregroundColor(context.state.visualState.buttonTintColor.swiftUIColor)
                         Text(context.state.visualState.isActivelyPlaying
-                             ? String(localized: "status_paused", defaultValue: "Paused")
-                             : String(localized: "Play", defaultValue: "Play"))
+                             ? String(localized: "status_paused", defaultValue: "Paused", table: "Localizable")
+                             : String(localized: "Play", defaultValue: "Play", table: "Localizable"))
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
