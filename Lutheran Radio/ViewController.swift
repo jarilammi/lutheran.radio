@@ -63,7 +63,7 @@ import Core
 ///   Initialization → Lifecycle Methods → Public Interface (SceneDelegate/widget entry points) →
 ///   Protocol conformances → Private implementation grouped by concern.
 @MainActor
-class ViewController: UIViewController, UICollectionViewDelegate, UICollectionViewDataSource, UIScrollViewDelegate, AVAudioPlayerDelegate {
+class ViewController: UIViewController, AVAudioPlayerDelegate {
     // MARK: - Private Properties and Constants
     /// Key for tracking if the user has dismissed the mobile data usage warning.
     /// - Note: Stored in standard UserDefaults for persistence across launches.
@@ -78,8 +78,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     // Widget play/pause action debouncing (prevents rapid taps from widget causing AVFoundation thrashing)
     private var lastWidgetActionTime: Date = .distantPast
     private let widgetActionDebounceInterval: TimeInterval = 0.65
-    
-    private var lastCollectionViewSize: CGSize = .zero
     
     /// Last visual state applied by `updateUI(for:)`; used to skip redundant UI work during stop cascades.
     private var lastAppliedVisualState: PlayerVisualState?
@@ -106,28 +104,10 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         return label
     }()
     
-    let languageCollectionView: UICollectionView = {
-        let layout = UICollectionViewFlowLayout()
-        layout.scrollDirection = .horizontal
-        layout.minimumLineSpacing = 0
-        layout.minimumInteritemSpacing = 10   // horizontal gap between flags (the value the centering math must match)
-        let cv = UICollectionView(frame: .zero, collectionViewLayout: layout)
-        cv.translatesAutoresizingMaskIntoConstraints = false
-        cv.showsHorizontalScrollIndicator = false
-        cv.backgroundColor = .systemBackground
-        cv.isAccessibilityElement = false // Prevent the collection view itself from being focused; cells are accessible
-        cv.accessibilityTraits = .none
-        cv.contentInsetAdjustmentBehavior = .never   // Important: sectionInset alone must control centering; default .automatic injects safe-area insets that break the math
-        return cv
-    }()
-    
-    let selectionIndicator: UIView = {
-        let view = UIView()
-        view.backgroundColor = .systemRed.withAlphaComponent(0.7)
-        view.translatesAutoresizingMaskIntoConstraints = false
-        view.isAccessibilityElement = false
-        return view
-    }()
+    /// Composed language/flag selector (custom horizontal scroller + red tuning needle).
+    /// Phase 1 extraction: owns collection, indicator, all needle math, and collection protocols.
+    /// ViewController retains selectedStreamIndex + all playback intent / stream switch logic.
+    let languageSelectorView = LanguageSelectorView()
     
     let playPauseButton: UIButton = {
         let button = UIButton(type: .system)
@@ -308,12 +288,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     private var deferredBackgroundFlushTask: Task<Void, Never>?
     
     private var selectedStreamIndex: Int = 0
-    private var isRotating = false
-    private var lastRotationTime: Date? // To debounce rapid rotations
-    private let rotationDebounceInterval: TimeInterval = 0.5 // 500ms
     
     private var isInitialSetupComplete = false
-    private var isInitialScrollLocked = true
     private var hasShownDataUsageNotification = false
     
     let speakerImageView: UIImageView = {
@@ -329,9 +305,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     
     /// Height constraint for the speaker image (set in code).
     private var speakerImageHeightConstraint: NSLayoutConstraint?
-
-    /// Drives the tuning needle X position via Auto Layout so layout passes do not override it.
-    private var needleCenterXConstraint: NSLayoutConstraint?
     
     // MARK: - Audio and Streaming
     // New streaming player
@@ -347,9 +320,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     private var hasInternetConnection = true
     private var connectivityCheckTimer: Timer?
     private var lastConnectionAttemptTime: Date?
-    private var didPositionNeedle = false
-    /// Needle X is already correct within this many points — skip redundant layout/appear updates.
-    private let selectionIndicatorPositionEpsilon: CGFloat = 0.5
     private var isTuningSoundPlaying = false
     private var tuningPlayer: AVAudioPlayer?
     private var lastTuningSoundTime: Date?
@@ -358,7 +328,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
     private var streamSwitchTask: Task<Void, Never>?
     private var lastStreamSwitchTime: Date?
     private let streamSwitchDebounceInterval: TimeInterval = 1.0
-    private var pendingStreamIndex: Int?
     private var isDeallocating = false // Flag to prevent operations during deallocation
     private var hasPlayedSpecialTuningSound = false // Flag to ensure special sound plays only once
     private var hasShownSecurityAlert = false // Flag to ensure security alert is shown only once
@@ -455,26 +424,22 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         setupDarwinNotificationListener()
         setupUI()
         
-        languageCollectionView.delegate = self
-        languageCollectionView.dataSource = self
-        languageCollectionView.register(LanguageCell.self, forCellWithReuseIdentifier: "LanguageCell")
-        languageCollectionView.bounces = false
-        languageCollectionView.isScrollEnabled = false
-        
         // Calculate initial stream index (synchronous part)
         let currentLocale = Locale.current
         let languageCode = currentLocale.language.languageCode?.identifier ?? "en"
         let initialIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.languageCode == languageCode }) ?? 0
         selectedStreamIndex = initialIndex
         
-        languageCollectionView.reloadData()
-        languageCollectionView.layoutIfNeeded()
+        // Wire the extracted selector (collection + needle now live inside LanguageSelectorView).
+        // Selection *notification* goes to owner; owner keeps full optimistic prePlay + switch + intent logic.
+        languageSelectorView.onSelectionChanged = { [weak self] newIndex in
+            self?.handleLanguageSelection(at: newIndex)
+        }
         
-        let indexPath = IndexPath(item: initialIndex, section: 0)
-        languageCollectionView.selectItem(at: indexPath, animated: false, scrollPosition: .centeredHorizontally)
-        centerCollectionViewContent()
-        // Needle positioning on cold launch: viewDidLayoutSubviews width-change guard only
-        // (collection bounds/sectionInset are not final here).
+        languageSelectorView.reloadData()
+        languageSelectorView.setSelectedIndex(initialIndex, isInitial: true, caller: "initialSetup")
+        // Needle positioning on cold launch now handled inside LanguageSelectorView (width guard + isInitial path).
+        // The old isInitialScrollLocked unlock is performed internally by the view.
         
         // Set initial volume slider position (UI only)
         let volumeToUse = preferredVolume()
@@ -483,10 +448,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         #if DEBUG
         print("[ViewController] Set initial volumeSlider to \(volumeToUse)")
         #endif
-        
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-            self?.isInitialScrollLocked = false
-        }
         
         setupControls()
         setupNetworkMonitoring()
@@ -582,12 +543,8 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         super.viewDidLayoutSubviews()
         // Only react to *width* changes. Height-only shifts (e.g. long metadata pushing
         // the contentStackView taller) must not retrigger needle positioning.
-        // Never pass isInitial:true from a layout callback — that path is only for true
-        // one-time setup in viewDidLoad.
-        if languageCollectionView.frame.width != lastCollectionViewSize.width {
-            updateSelectionIndicator(to: selectedStreamIndex, isInitial: false)
-            lastCollectionViewSize = languageCollectionView.frame.size
-        }
+        // Forward to the extracted LanguageSelectorView (it owns lastCollectionViewSize + epsilon guard + needle math).
+        languageSelectorView.notifyLayoutChange(currentSelectedIndex: selectedStreamIndex)
     }
     
     private func preferredVolume() -> Float {
@@ -871,63 +828,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 self.airplayButton.transform = .identity
             }
         }
-    }
-    
-    private func centerCollectionViewContent() {
-        guard languageCollectionView.bounds.width > 0, DirectStreamingPlayer.availableStreams.count > 0 else {
-            #if DEBUG
-            print("[ViewController] centerCollectionViewContent: Invalid bounds or no streams, width=\(languageCollectionView.bounds.width)")
-            #endif
-            return
-        }
-        languageCollectionView.layoutIfNeeded()
-        guard let layout = languageCollectionView.collectionViewLayout as? UICollectionViewFlowLayout else {
-            #if DEBUG
-            print("[ViewController] centerCollectionViewContent: Invalid layout, aborting")
-            #endif
-            return
-        }
-        // Read the actual configured values so the centering math always matches what the layout will draw.
-        let totalItems = DirectStreamingPlayer.availableStreams.count
-        let cellWidth = layout.itemSize.width
-        let spacing = layout.minimumInteritemSpacing
-        let totalCellWidth = (cellWidth * CGFloat(totalItems)) + (spacing * CGFloat(totalItems - 1))
-        let collectionViewWidth = languageCollectionView.bounds.width
-        let inset = max((collectionViewWidth - totalCellWidth) / 2, 0)
-        layout.sectionInset = UIEdgeInsets(top: 0, left: inset, bottom: 0, right: inset)
-        layout.invalidateLayout()
-        
-        #if DEBUG
-        print("[ViewController] centerCollectionViewContent: totalCellWidth=\(totalCellWidth), collectionViewWidth=\(collectionViewWidth), inset=\(inset), bounds=\(languageCollectionView.bounds)")
-        #endif
-    }
-
-    /// Pure mathematical derivation of the tuning needle (selectionIndicator) center X.
-    /// Mirrors the exact 50pt/10pt/inset formula from centerCollectionViewContent so we are
-    /// independent of UICollectionView layoutAttributes timing during cold-start metadata storms
-    /// and orientation changes.
-    private func centerXForIndex(_ index: Int) -> CGFloat {
-        let totalItems = DirectStreamingPlayer.availableStreams.count
-        guard languageCollectionView.bounds.width > 0, totalItems > 0 else {
-            return languageCollectionView.bounds.midX
-        }
-        guard let layout = languageCollectionView.collectionViewLayout as? UICollectionViewFlowLayout else {
-            return languageCollectionView.bounds.midX
-        }
-        let safeIndex = min(max(index, 0), totalItems - 1)
-        // Derive from the live layout configuration (set in one place + delegate) so the
-        // needle math always matches the actual cell positions the collection view will draw.
-        let cellWidth = layout.itemSize.width
-        let spacing = layout.minimumInteritemSpacing
-        let totalCellWidth = (cellWidth * CGFloat(totalItems)) + (spacing * CGFloat(totalItems - 1))
-        let collectionViewWidth = languageCollectionView.bounds.width
-        let inset = max((collectionViewWidth - totalCellWidth) / 2, 0)
-        let rawCenter = inset + (cellWidth / 2) + (CGFloat(safeIndex) * (cellWidth + spacing))
-        // Safe half-width even if the indicator frame hasn't been sized yet
-        let halfWidth = max(selectionIndicator.frame.width / 2, 2)
-        let minX = halfWidth
-        let maxX = collectionViewWidth - halfWidth
-        return max(minX, min(maxX, rawCenter))
     }
     
     // MARK: - Network and Interruption Handling
@@ -1747,7 +1647,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         backgroundImageView.layer.zPosition = -1
         
         view.addSubview(titleLabel)
-        view.addSubview(languageCollectionView)
+        view.addSubview(languageSelectorView)
         let controlsStackView = UIStackView(arrangedSubviews: [playPauseButton, sleepTimerButton, statusLabel])
         controlsStackView.axis = .horizontal
         controlsStackView.spacing = 20
@@ -1765,8 +1665,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         view.addSubview(contentStackView)
         
         view.addSubview(airplayButton)
-        languageCollectionView.addSubview(selectionIndicator)
-        languageCollectionView.bringSubviewToFront(selectionIndicator)   // correct parent; needle must sit above the flag cells
         
         NSLayoutConstraint.activate([
             titleLabel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 40),
@@ -1787,16 +1685,13 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             contentStackView.topAnchor.constraint(equalTo: volumeSlider.bottomAnchor, constant: 20),
             contentStackView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             contentStackView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
-            languageCollectionView.topAnchor.constraint(equalTo: contentStackView.bottomAnchor, constant: 20),
-            languageCollectionView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            languageCollectionView.widthAnchor.constraint(equalTo: view.widthAnchor),
-            languageCollectionView.heightAnchor.constraint(equalToConstant: 50),
-            speakerImageView.topAnchor.constraint(equalTo: languageCollectionView.bottomAnchor, constant: 20),
+            languageSelectorView.topAnchor.constraint(equalTo: contentStackView.bottomAnchor, constant: 20),
+            languageSelectorView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            languageSelectorView.widthAnchor.constraint(equalTo: view.widthAnchor),
+            languageSelectorView.heightAnchor.constraint(equalToConstant: 50),
+            speakerImageView.topAnchor.constraint(equalTo: languageSelectorView.bottomAnchor, constant: 20),
             speakerImageView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             speakerImageView.widthAnchor.constraint(equalToConstant: 100),
-            selectionIndicator.widthAnchor.constraint(equalToConstant: 4),
-            selectionIndicator.heightAnchor.constraint(equalTo: languageCollectionView.heightAnchor, multiplier: 0.8),
-            selectionIndicator.centerYAnchor.constraint(equalTo: languageCollectionView.centerYAnchor),
             airplayButton.topAnchor.constraint(equalTo: speakerImageView.bottomAnchor, constant: 20),
             airplayButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             airplayButton.widthAnchor.constraint(equalToConstant: 44),
@@ -1805,10 +1700,9 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         speakerImageHeightConstraint = speakerImageView.heightAnchor.constraint(equalToConstant: 50)
         speakerImageHeightConstraint?.isActive = true
 
-        // Create the horizontal position constraint for the tuning needle once.
-        // We update its .constant in updateSelectionIndicator instead of mutating .center.x.
-        needleCenterXConstraint = selectionIndicator.centerXAnchor.constraint(equalTo: languageCollectionView.leadingAnchor, constant: 0)
-        needleCenterXConstraint?.isActive = true
+        // NOTE: LanguageSelectorView now internally creates its collectionView + selectionIndicator,
+        // adds the indicator as subview of the collection, and activates its own needleCenterXConstraint.
+        // All needle math and layout delegate work is encapsulated there.
     }
     
     @objc private func handleMemoryWarning() {
@@ -1896,7 +1790,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             print("[ViewController] Skipping tuning sound: Debouncing, time since last: \(now.timeIntervalSince(lastTime))s")
             #endif
             if let index {
-                updateSelectionIndicator(to: index, isInitial: false, caller: "playTuningSound-debounced", animationDuration: 0.3)
+                languageSelectorView.setSelectedIndex(index, isInitial: false, animationDuration: 0.3, caller: "playTuningSound-debounced")
             }
             try? await Task.sleep(for: .seconds(0.3))
             return
@@ -1931,11 +1825,11 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             let clipDuration = tuningPlayer?.duration ?? 1.0
             let needleAnimationDuration = min(max(clipDuration, 0.25), 2.5)
             if let index {
-                updateSelectionIndicator(
-                    to: index,
+                languageSelectorView.setSelectedIndex(
+                    index,
                     isInitial: false,
-                    caller: "playTuningSound",
-                    animationDuration: didPlay ? needleAnimationDuration : 0.3
+                    animationDuration: didPlay ? needleAnimationDuration : 0.3,
+                    caller: "playTuningSound"
                 )
             }
             
@@ -2281,133 +2175,16 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         #endif
     }
     
-    // MARK: - Selection Indicator
-    private func updateSelectionIndicator(
-        to index: Int,
-        isInitial: Bool = false,
-        caller: String = #function,
-        animationDuration: TimeInterval? = nil
-    ) {
-        // SINGLE SOURCE OF TRUTH
-        // • During normal operation (pause, play, network hiccups, etc.) → always use selectedStreamIndex
-        // • Only on true initial load → accept the passed index
-        let targetIndex = isInitial ? index : selectedStreamIndex
-        
-        // Safety guard
-        let safeIndex = min(max(targetIndex, 0), DirectStreamingPlayer.availableStreams.count - 1)
-        
-        #if DEBUG
-        print("[ViewController] updateSelectionIndicator: Moving to index=\(safeIndex) (selectedStreamIndex=\(selectedStreamIndex), isInitial=\(isInitial), caller=\(caller))")
-        #endif
-        
+    // MARK: - Language selection handling (orchestration stays in ViewController; visuals delegated to LanguageSelectorView)
+    
+    /// Owner-side handler for a user tap on a language flag.
+    /// Contains the full original optimistic prePlay + debounce + completeStreamSwitch orchestration.
+    /// Visual selection (selectItem + needle) is driven through languageSelectorView.setSelectedIndex.
+    private func handleLanguageSelection(at newIndex: Int) {
         guard !isDeallocating else { return }
         
-        guard safeIndex >= 0 && safeIndex < DirectStreamingPlayer.availableStreams.count else {
-            #if DEBUG
-            print("[ViewController] updateSelectionIndicator: Invalid index \(safeIndex), streams count=\(DirectStreamingPlayer.availableStreams.count)")
-            #endif
-            return
-        }
-        
-        // Needle constraints are set once in setupUI(). Never re-parent or re-activate them here.
-        // Repeated addSubview + NSLayoutConstraint.activate creates duplicate/ambiguous constraints
-        // that conflict with the manual .center.x mutation and cause the needle to drift or snap.
-        if selectionIndicator.superview != languageCollectionView {
-            languageCollectionView.addSubview(selectionIndicator)
-            selectionIndicator.translatesAutoresizingMaskIntoConstraints = false
-            // constraints intentionally NOT re-activated here
-        }
-        
-        // Important for fault tolerance:
-        // Always re-apply the centering insets before we compute or trust anything.
-        // This guarantees the same math that positions the cells is active.
-        centerCollectionViewContent()
-        languageCollectionView.layoutIfNeeded()
-        
-        let indexPath = IndexPath(item: safeIndex, section: 0)
-        
-        // Prefer the *actual* cell center from the layout engine. This guarantees the needle
-        // sits on the real flag cell no matter what effective insets or timing the collection
-        // view is using. Fall back to the pure math only if attributes are not available yet.
-        let cellCenterX: CGFloat
-        if let layoutAttributes = languageCollectionView.layoutAttributesForItem(at: indexPath) {
-            let cellFrame = layoutAttributes.frame
-            cellCenterX = cellFrame.midX
-            #if DEBUG
-            let derived = centerXForIndex(safeIndex)
-            print("[ViewController] updateSelectionIndicator: Moving to index=\(safeIndex), using actual midX=\(cellCenterX) (derived was \(derived), delta=\(cellCenterX - derived)), cellFrame=\(cellFrame), bounds=\(languageCollectionView.bounds), isInitial=\(isInitial), caller=\(caller)")
-            #endif
-        } else {
-            cellCenterX = centerXForIndex(safeIndex)
-            #if DEBUG
-            print("[ViewController] updateSelectionIndicator: No layout attributes for indexPath=\(indexPath) — falling back to derived centerX=\(cellCenterX)")
-            #endif
-        }
-        
-        // Skip if the collection view has no width yet (still early in layout)
-        guard languageCollectionView.bounds.width > 0 else {
-            #if DEBUG
-            print("[ViewController] updateSelectionIndicator: Skipping — collection view has zero width")
-            #endif
-            needleCenterXConstraint?.constant = cellCenterX
-            return
-        }
-        
-        let currentNeedleX = needleCenterXConstraint?.constant ?? selectionIndicator.center.x
-        if abs(currentNeedleX - cellCenterX) <= selectionIndicatorPositionEpsilon {
-            #if DEBUG
-            print("[ViewController] updateSelectionIndicator: Skipping — already at target X=\(cellCenterX) (caller=\(caller))")
-            #endif
-            return
-        }
-        
-        let duration = animationDuration ?? (isInitial ? 0.0 : 0.3)
-        let usesNeedlePulse = !isInitial && duration > 0
-        UIView.animate(withDuration: duration) {
-            self.needleCenterXConstraint?.constant = cellCenterX
-            self.languageCollectionView.layoutIfNeeded()
-            self.selectionIndicator.transform = usesNeedlePulse ? CGAffineTransform(scaleX: 1.5, y: 1.0) : .identity
-        } completion: { _ in
-            if usesNeedlePulse {
-                UIView.animate(withDuration: 0.1) {
-                    self.selectionIndicator.transform = .identity
-                }
-            }
-            self.didPositionNeedle = true
-            #if DEBUG
-            print("[ViewController] updateSelectionIndicator: Animation completed, final center.x=\(self.selectionIndicator.center.x) (didPositionNeedle=true)")
-            #endif
-        }
-    }
-    
-    // MARK: - UICollectionView DataSource and Delegate
-    func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
-        DirectStreamingPlayer.availableStreams.count
-    }
-    
-    func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
-        guard let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "LanguageCell", for: indexPath) as? LanguageCell else {
-            fatalError("Failed to dequeue LanguageCell — check cell registration and identifier")
-        }
-        
-        let stream = DirectStreamingPlayer.availableStreams[indexPath.item]
-        cell.configure(with: stream)
-        return cell
-    }
-    
-    // MARK: - UICollectionView Delegate
-    func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
-        guard !isRotating else {  // Suppress during rotation
-            #if DEBUG
-            print("[ViewController] Suppressed didSelect during rotation")
-            #endif
-            return
-        }
-        
-        let newIndex = indexPath.item
-        
         #if DEBUG
-        print("[ViewController] collectionView:didSelectItemAt called for index \(newIndex)")
+        print("[ViewController] handleLanguageSelection called for index \(newIndex)")
         #endif
         
         // OPTIMISTIC YELLOW BEFORE NEEDLE: When the user is currently playing (or will auto-resume),
@@ -2428,7 +2205,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 )
                 self.updateUI(for: .prePlay)
             } else {
-                self.updateSelectionIndicator(to: newIndex, isInitial: false, caller: "didSelectItemAt")
+                self.languageSelectorView.setSelectedIndex(newIndex, isInitial: false, caller: "handleLanguageSelection")
             }
         }
         
@@ -2436,7 +2213,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         let now = Date()
         if let lastTime = lastStreamSwitchTime, now.timeIntervalSince(lastTime) < streamSwitchDebounceInterval {
             #if DEBUG
-            print("[ViewController] collectionView:didSelectItemAt: Debouncing stream switch, time since last: \(now.timeIntervalSince(lastTime))s")
+            print("[ViewController] handleLanguageSelection: Debouncing stream switch, time since last: \(now.timeIntervalSince(lastTime))s")
             #endif
             return
         }
@@ -2445,13 +2222,13 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
         streamSwitchWorkItem?.cancel()
         let workItem = DispatchWorkItem { [weak self] in
             guard let self = self else { return }
-            let stream = DirectStreamingPlayer.availableStreams[newIndex]  // use newIndex instead of indexPath.item
+            let stream = DirectStreamingPlayer.availableStreams[newIndex]
             self.scheduleDeferredBackgroundImageForStreamSwitch(stream)
             
             // Wait for tuning sound to complete if playing
             if self.isTuningSoundPlaying {
                 #if DEBUG
-                print("[ViewController] collectionView:didSelectItemAt: Waiting for tuning sound to complete")
+                print("[ViewController] handleLanguageSelection: Waiting for tuning sound to complete")
                 #endif
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
                     guard let self = self else { return }
@@ -2544,7 +2321,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 self.deferredBackgroundFlushTask = nil
                 self.updateBackground(for: stream)
                 self.updateUI(for: .userPaused)
-                self.updateSelectionIndicator(to: index)
+                self.languageSelectorView.setSelectedIndex(index, caller: "completeStreamSwitch-userPaused")
                 return
             }
             
@@ -2575,7 +2352,7 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 #if DEBUG
                 print("[ViewController] [completeStreamSwitch] Blocked play() after tuning sound")
                 #endif
-                updateSelectionIndicator(to: index)
+                languageSelectorView.setSelectedIndex(index, caller: "completeStreamSwitch-blockedPlay")
                 return
             }
             
@@ -2610,33 +2387,6 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             print("[ViewController] completeStreamSwitch: Switched to stream \(stream.language), index=\(index)")
             #endif
         }
-    }
-    
-    // MARK: - UICollectionViewDelegateFlowLayout
-    func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, sizeForItemAt indexPath: IndexPath) -> CGSize {
-        let cellWidth: CGFloat = 50
-        #if DEBUG
-        print("Cell size for item \(indexPath.item): width = \(cellWidth), height = 50")
-        #endif
-        return CGSize(width: cellWidth, height: 50)
-    }
-    
-    func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, minimumLineSpacingForSectionAt section: Int) -> CGFloat {
-        let spacing = 10.0
-        #if DEBUG
-        print("Minimum line spacing for section \(section): \(spacing)")
-        #endif
-        return spacing
-    }
-
-    func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, minimumInteritemSpacingForSectionAt section: Int) -> CGFloat {
-        // Horizontal spacing between items in the horizontal flag row.
-        // Must match layout.minimumInteritemSpacing and the centering math.
-        let spacing: CGFloat = 10.0
-        #if DEBUG
-        print("Minimum inter-item spacing for section \(section): \(spacing)")
-        #endif
-        return spacing
     }
     
     // MARK: - Widget Action Handlers (No Tuning Sounds)
@@ -2759,22 +2509,21 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
                 self.updateBackground(for: targetStream)
                 self.updateUserDefaultsLanguage(languageCode)
                 
-                let indexPath = IndexPath(item: targetIndex, section: 0)
-                self.languageCollectionView.selectItem(at: indexPath, animated: true, scrollPosition: .centeredHorizontally)
+                self.languageSelectorView.setSelectedIndex(targetIndex, animated: true, caller: "widgetSwitch")
                 
                 guard shouldResumeAfterSwitch else {
                     #if DEBUG
                     print("[ViewController] [Widget Switch] Blocked — userPaused, no auto-resume")
                     #endif
                     await SharedPlayerManager.shared.clearSoftPauseMetadataStashForLanguageChange()
-                    self.updateSelectionIndicator(to: targetIndex)
+                    self.languageSelectorView.setSelectedIndex(targetIndex, caller: "widgetSwitch-paused")
                     self.updateUI(for: .userPaused)
                     SharedPlayerManager.shared.clearPendingAction(actionId: actionId)
                     return
                 }
                 
                 await SharedPlayerManager.shared.resetToPrePlayForNewStream()
-                self.updateSelectionIndicator(to: targetIndex)
+                self.languageSelectorView.setSelectedIndex(targetIndex, caller: "widgetSwitch-prePlay")
                 self.updateUI(for: .prePlay)
                 
                 #if DEBUG
@@ -2852,9 +2601,29 @@ class ViewController: UIViewController, UICollectionViewDelegate, UICollectionVi
             // (widgets, Control Center, lockscreen, CarPlay). Avoids the old heavy
             // handleWidgetPlayAction + raw play() which pulled in tuning-sound waits
             // and full stream re-setup even on simple resume.
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
+                // If a widget switch was recently scheduled (to select a lang while paused) and a play
+                // tap followed immediately, cancel the deferred switch workItem. Its selection effect
+                // is now covered by the alignment inside play() + the sync below; letting the workItem
+                // run could issue a late stop() on the stream we just started.
+                self?.pendingWidgetSwitchWorkItem?.cancel()
+                self?.pendingWidgetSwitchWorkItem = nil
+
                 await SharedPlayerManager.shared.userRequestedPlay()
 
+                // After play (which now defensively aligns the model to the persisted language from
+                // any preceding widget switch signal), sync the in-app language selector + needle
+                // so the main UI reflects the language that is actually playing. This prevents the
+                // "en selected in widget/needle, but fi audible" desync observed in the 2026-06-12
+                // re-capture of initial-streamplay-start.txt.
+                guard let self else { return }
+                let playingLang = DirectStreamingPlayer.shared.selectedStream.languageCode
+                if let targetIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.languageCode == playingLang }) {
+                    if self.selectedStreamIndex != targetIndex {
+                        self.selectedStreamIndex = targetIndex
+                    }
+                    self.languageSelectorView.setSelectedIndex(targetIndex, caller: "widgetPlay-synced")
+                }
             }
         case "pause":
             #if DEBUG
@@ -2972,9 +2741,8 @@ extension ViewController {
             // writes the combined PersistedWidgetState snapshot.
             updateUserDefaultsLanguage(targetStream.languageCode)
             
-            // UI update
-            let indexPath = IndexPath(item: targetIndex, section: 0)
-            languageCollectionView.selectItem(at: indexPath, animated: true, scrollPosition: .centeredHorizontally)
+            // UI update (language selector owns the collection + needle)
+            languageSelectorView.setSelectedIndex(targetIndex, animated: true, caller: "externalLanguageSwitch")
             
             // Optimistic yellow + actor reset for external language switch shortcut.
             // We reset the actor to .prePlay here (same as the flag tap path) so that any
@@ -3407,11 +3175,7 @@ extension ViewController: StreamingPlayerDelegate {
                     
                     // Update UI (safe on @MainActor)
                     selectedStreamIndex = newIndex
-                    languageCollectionView.selectItem(at: IndexPath(row: newIndex, section: 0),
-                                                      animated: true,
-                                                      scrollPosition: .centeredHorizontally)
-                    
-                    updateSelectionIndicator(to: newIndex)
+                    languageSelectorView.setSelectedIndex(newIndex, animated: true, caller: "handleSceneCommand-switch")
                     updateBackground(for: targetStream)
                     
                     // Respect visual state — only resume if not user-paused

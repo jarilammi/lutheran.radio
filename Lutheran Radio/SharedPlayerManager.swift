@@ -638,6 +638,24 @@ actor SharedPlayerManager {
         }
         #endif
 
+        // Defensive alignment: ensure DirectStreamingPlayer.selectedStream matches the language persisted
+        // in the widget snapshot (preferredWidgetLanguage). Widget SwitchStreamIntent performs an
+        // optimistic persistWidgetSnapshot + schedules a "switch" Darwin action; if a follow-on "play"
+        // (or userRequestedPlay from widget tap) is processed before the main-app's async
+        // handleWidgetSwitchToLanguage workItem runs setSelectedStreamModelOnly, playback would
+        // otherwise start the stale stream while the snapshot/UI reflect the newly chosen language.
+        // This hardens the single source of truth after the LanguageSelectorView extraction and
+        // rapid widget switch+play sequences observed in re-captured initial-streamplay-start.txt.
+        let preferredLang = Self.preferredWidgetLanguage()
+        if DirectStreamingPlayer.shared.selectedStream.languageCode != preferredLang {
+            if let synced = DirectStreamingPlayer.availableStreams.first(where: { $0.languageCode == preferredLang }) {
+                #if DEBUG
+                print("[SharedPlayerManager] Aligning selectedStream to preferred widget language \(preferredLang) (was \(DirectStreamingPlayer.shared.selectedStream.languageCode)) before setStreamAndPlay")
+                #endif
+                await DirectStreamingPlayer.shared.setSelectedStreamModelOnly(to: synced)
+            }
+        }
+
         let stream = DirectStreamingPlayer.shared.selectedStream
         #if DEBUG
         print("[SharedPlayerManager] Setting stream to: \(stream)")
