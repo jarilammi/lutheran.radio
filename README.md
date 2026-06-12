@@ -49,6 +49,8 @@ The app is fully localized in the following languages:
 
 All AI coding agents (Claude, Grok, Cursor, Aider, Windsurf, etc.) **must** follow [`CODING_AGENT.md`](CODING_AGENT.md) as their permanent system prompt / project instructions.
 
+`CODING_AGENT.md` is the authoritative source. `AGENTS.md` is a local non-authoritative convenience copy (for tooling or environments that expect a file named `AGENTS.md` at the repository root). Permanent changes to rules, security policy, or build requirements must be made in `CODING_AGENT.md`; the copy may be refreshed from it as needed.
+
 This ensures every single change respects the same required security model, localization rules, and build gates.
 
 ### Prerequisites

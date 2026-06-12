@@ -284,8 +284,9 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     // • Clean Xcode // MARK outline navigation
     // • Single place for the documented URL pattern + security_model injection rules
     //
-    // All production URLs are built with the current expectedSecurityModel from
-    // SecurityConfiguration (never hard-coded or duplicated elsewhere in this file).
+    // All production URLs are built with the current `expectedSecurityModel` from
+    // `SecurityConfiguration` (never hard-coded or duplicated elsewhere in this file).
+    // See `Core/Configuration/SecurityConfiguration.swift`.
 
     // MARK: - Stream URL Construction Rules
     //
@@ -305,7 +306,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     //
     // • Port is always 443 (TLS on standard port)
     // • Path is always "/lutheranradio.mp3"
-    // • Query parameter "security_model" = current appSecurityModel ("brenham" as of version 26.6.0)
+    // • Query parameter "security_model" = current expected security model (from SecurityConfiguration)
     //
     // This design achieves:
     // 1. Geographic load distribution (lower latency)
@@ -313,12 +314,12 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     // 3. Future-proof version gating via DNS TXT record
     //
     // WHEN RELEASING A NEW SECURITY MODEL (certificate rotation, etc.):
-    // 1. Change the constant below to the new codename (e.g. "brenham")
-    // 2. Add the new codename to securitymodels.lutheran.radio TXT record
-    // 3. Update README.md Security Model History table
-    // 4. Ship app update → all users automatically switch on next launch
+    // 1. Update `expectedSecurityModel` in `Core/Configuration/SecurityConfiguration.swift`
+    // 2. Add the new codename to the TXT record on securitymodels.lutheran.radio
+    // 3. Append a row to the Security Model History table in README.md
+    // 4. Ship the app update → users on the new version will validate against the new model
     //
-    // DO NOT reuse old codenames — see history table to avoid collisions.
+    // DO NOT reuse old codenames — see the history table in README.md to avoid collisions.
     private enum RegionDetector {
         static var currentRegion: Region {
             let tz = TimeZone.current.identifier
