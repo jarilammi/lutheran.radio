@@ -124,8 +124,8 @@ struct LutheranRadioWidget: Widget {
         AppIntentConfiguration(kind: kind, intent: RadioWidgetConfiguration.self, provider: Provider()) { entry in
             LutheranRadioWidgetEntryView(entry: entry)
         }
-        .configurationDisplayName(String(localized: "lutheran_radio_title"))
-        .description(String(localized: "Control playback and switch between language streams."))
+        .configurationDisplayName(String(localized: "lutheran_radio_title", table: "Localizable"))
+        .description(String(localized: "Control playback and switch between language streams.", defaultValue: "Control playback and switch between language streams.", table: "Localizable"))
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
     }
 }
@@ -136,9 +136,9 @@ struct Provider: AppIntentTimelineProvider {
         SimpleEntry(
             date: Date(),
             visualState: .prePlay,
-            currentStation: "🇺🇸 " + String(localized: "language_english"),
+            currentStation: "🇺🇸 " + String(localized: "language_english", table: "Localizable"),
             currentLanguageCode: "en",
-            statusMessage: String(localized: "Ready to play"),
+            statusMessage: String(localized: "Ready to play", defaultValue: "Ready to play", table: "Localizable"),
             streamMetadata: nil,
             availableStreams: SharedPlayerManager.shared.availableStreams,
             configuration: RadioWidgetConfiguration()
@@ -163,13 +163,13 @@ struct Provider: AppIntentTimelineProvider {
 
         let statusMessage: String = {
             if visualState == .thermalPaused {
-                return String(localized: "status_thermal_paused", defaultValue: "Thermal pause")
+                return String(localized: "status_thermal_paused", defaultValue: "Thermal pause", table: "Localizable")
             } else if hasError {
-                return String(localized: "Connection error", defaultValue: "Connection error")
+                return String(localized: "Connection error", defaultValue: "Connection error", table: "Localizable")
             } else if visualState == .playing {
-                return String(localized: "status_playing", defaultValue: "Playing")
+                return String(localized: "status_playing", defaultValue: "Playing", table: "Localizable")
             } else {
-                return String(localized: "Ready", defaultValue: "Ready")
+                return String(localized: "Ready", defaultValue: "Ready", table: "Localizable")
             }
         }()
         
@@ -202,13 +202,13 @@ struct Provider: AppIntentTimelineProvider {
 
         let statusMessage: String = {
             if visualState == .thermalPaused {
-                return String(localized: "status_thermal_paused", defaultValue: "Thermal pause")
+                return String(localized: "status_thermal_paused", defaultValue: "Thermal pause", table: "Localizable")
             } else if hasError {
-                return String(localized: "Connection error", defaultValue: "Connection error")
+                return String(localized: "Connection error", defaultValue: "Connection error", table: "Localizable")
             } else if visualState == .playing {
-                return String(localized: "status_playing", defaultValue: "Playing")
+                return String(localized: "status_playing", defaultValue: "Playing", table: "Localizable")
             } else {
-                return String(localized: "Ready", defaultValue: "Ready")
+                return String(localized: "Ready", defaultValue: "Ready", table: "Localizable")
             }
         }()
 
@@ -288,7 +288,7 @@ struct SmallWidgetView: View {
                     .font(.title2)
                     .foregroundColor(.secondary)
                 
-                Text(String(localized: "tap_to_open"))
+                Text(String(localized: "tap_to_open", table: "Localizable"))
                     .font(.caption)
                     .fontWeight(.medium)
                     .foregroundColor(.primary)
@@ -369,11 +369,11 @@ struct MediumWidgetView: View {
                     Image(systemName: "radio")
                         .font(.largeTitle)
                         .foregroundColor(.secondary)
-                    Text(String(localized: "tap_to_open"))
+                    Text(String(localized: "tap_to_open", table: "Localizable"))
                         .font(.subheadline)
                         .fontWeight(.medium)
                         .foregroundColor(.primary)
-                    Text(String(localized: "open_app_first"))
+                    Text(String(localized: "open_app_first", table: "Localizable"))
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
@@ -386,7 +386,7 @@ struct MediumWidgetView: View {
 
             VStack(spacing: 6) {
                 HStack {
-                    Text(String(localized: "lutheran_radio_title"))
+                    Text(String(localized: "lutheran_radio_title", table: "Localizable"))
                         .font(.caption)
                         .fontWeight(.semibold)
                         .foregroundColor(.secondary)
@@ -465,11 +465,11 @@ struct LargeWidgetView: View {
                 Image(systemName: "radio")
                     .font(.system(size: 60))
                     .foregroundColor(.secondary)
-                Text(String(localized: "tap_to_open"))
+                Text(String(localized: "tap_to_open", table: "Localizable"))
                     .font(.title3)
                     .fontWeight(.medium)
                     .foregroundColor(.primary)
-                Text(String(localized: "open_app_first"))
+                Text(String(localized: "open_app_first", table: "Localizable"))
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                 Spacer()
@@ -481,7 +481,7 @@ struct LargeWidgetView: View {
 
             VStack(spacing: 12) {
                 HStack {
-                    Text(String(localized: "lutheran_radio_title"))
+                    Text(String(localized: "lutheran_radio_title", table: "Localizable"))
                         .font(.headline)
                         .fontWeight(.bold)
                     Spacer()
@@ -692,25 +692,25 @@ private func makePreviewEntry(
 
     // Prefer real streams (nonisolated accessor from SharedPlayerManager).
     // When synthesizing (isolated preview canvas), build using the general form requested:
-    //   String(localized: "lutheran_radio_title") + " - " + previewLanguageName(...)
+    //   String(localized: "lutheran_radio_title", table: "Localizable") + " - " + previewLanguageName(...)
     // plus a small set of additional languages so the medium/large flag grids have content.
     let streams: [DirectStreamingPlayer.Stream] =
         SharedPlayerManager.shared.availableStreams.isEmpty
         ? [
             .init(
-                title: String(localized: "lutheran_radio_title") + " - " + languageName,
+                title: String(localized: "lutheran_radio_title", table: "Localizable") + " - " + languageName,
                 language: languageName,
                 languageCode: currentLanguageCode,
                 flag: flag
             ),
             .init(
-                title: String(localized: "lutheran_radio_title") + " - " + displayLanguageName(for: "de"),
+                title: String(localized: "lutheran_radio_title", table: "Localizable") + " - " + displayLanguageName(for: "de"),
                 language: displayLanguageName(for: "de"),
                 languageCode: "de",
                 flag: displayFlag(for: "de")
             ),
             .init(
-                title: String(localized: "lutheran_radio_title") + " - " + displayLanguageName(for: "fi"),
+                title: String(localized: "lutheran_radio_title", table: "Localizable") + " - " + displayLanguageName(for: "fi"),
                 language: displayLanguageName(for: "fi"),
                 languageCode: "fi",
                 flag: displayFlag(for: "fi")
@@ -734,7 +734,7 @@ private func makePreviewEntry(
 #Preview("1. userPaused + nil metadata", traits: .sizeThatFitsLayout) {
     MediumWidgetView(entry: makePreviewEntry(
         visualState: .userPaused,
-        statusMessage: String(localized: "Ready", defaultValue: "Ready"),
+        statusMessage: String(localized: "Ready", defaultValue: "Ready", table: "Localizable"),
         programTitle: nil,
         speaker: nil
     ))
@@ -744,7 +744,7 @@ private func makePreviewEntry(
 #Preview("2. userPaused + title only", traits: .sizeThatFitsLayout) {
     LargeWidgetView(entry: makePreviewEntry(
         visualState: .userPaused,
-        statusMessage: String(localized: "Ready", defaultValue: "Ready"),
+        statusMessage: String(localized: "Ready", defaultValue: "Ready", table: "Localizable"),
         programTitle: "Evening Prayer",
         speaker: nil
     ))
@@ -754,7 +754,7 @@ private func makePreviewEntry(
 #Preview("3. userPaused + title + speaker", traits: .sizeThatFitsLayout) {
     MediumWidgetView(entry: makePreviewEntry(
         visualState: .userPaused,
-        statusMessage: String(localized: "Ready", defaultValue: "Ready"),
+        statusMessage: String(localized: "Ready", defaultValue: "Ready", table: "Localizable"),
         programTitle: "Sermon Title Here",
         speaker: "Rev. Martin Luther"
     ))
@@ -764,7 +764,7 @@ private func makePreviewEntry(
 #Preview("4. prePlay + nil (stream switch)", traits: .sizeThatFitsLayout) {
     LargeWidgetView(entry: makePreviewEntry(
         visualState: .prePlay,
-        statusMessage: String(localized: "Ready", defaultValue: "Ready"),
+        statusMessage: String(localized: "Ready", defaultValue: "Ready", table: "Localizable"),
         programTitle: nil,
         speaker: nil
     ))
@@ -774,7 +774,7 @@ private func makePreviewEntry(
 #Preview("5. playing + nil (ICY pending)", traits: .sizeThatFitsLayout) {
     MediumWidgetView(entry: makePreviewEntry(
         visualState: .playing,
-        statusMessage: String(localized: "status_playing", defaultValue: "Playing"),
+        statusMessage: String(localized: "status_playing", defaultValue: "Playing", table: "Localizable"),
         programTitle: nil,
         speaker: nil
     ))
@@ -784,7 +784,7 @@ private func makePreviewEntry(
 #Preview("6. playing + title", traits: .sizeThatFitsLayout) {
     LargeWidgetView(entry: makePreviewEntry(
         visualState: .playing,
-        statusMessage: String(localized: "status_playing", defaultValue: "Playing"),
+        statusMessage: String(localized: "status_playing", defaultValue: "Playing", table: "Localizable"),
         programTitle: "The Means of Grace",
         speaker: nil
     ))
@@ -794,7 +794,7 @@ private func makePreviewEntry(
 #Preview("7. playing + title + speaker", traits: .sizeThatFitsLayout) {
     MediumWidgetView(entry: makePreviewEntry(
         visualState: .playing,
-        statusMessage: String(localized: "status_playing", defaultValue: "Playing"),
+        statusMessage: String(localized: "status_playing", defaultValue: "Playing", table: "Localizable"),
         programTitle: "Daily Chapel",
         speaker: "Dr. John T. Pless"
     ))
@@ -804,7 +804,7 @@ private func makePreviewEntry(
 #Preview("8. thermalPaused + metadata", traits: .sizeThatFitsLayout) {
     LargeWidgetView(entry: makePreviewEntry(
         visualState: .thermalPaused,
-        statusMessage: String(localized: "status_thermal_paused", defaultValue: "Thermal pause"),
+        statusMessage: String(localized: "status_thermal_paused", defaultValue: "Thermal pause", table: "Localizable"),
         programTitle: "Last Known Program",
         speaker: "Speaker Name"
     ))
@@ -816,7 +816,7 @@ private func makePreviewEntry(
         visualState: .securityLocked,
         currentStation: "🇩🇪 Deutsch",
         currentLanguageCode: "de",
-        statusMessage: String(localized: "Connection error", defaultValue: "Connection error"),
+        statusMessage: String(localized: "Connection error", defaultValue: "Connection error", table: "Localizable"),
         programTitle: "Protected Content",
         speaker: nil
     ))
@@ -826,7 +826,7 @@ private func makePreviewEntry(
 #Preview("10. securityLocked + nil (placeholder)", traits: .sizeThatFitsLayout) {
     LargeWidgetView(entry: makePreviewEntry(
         visualState: .securityLocked,
-        statusMessage: String(localized: "Connection error", defaultValue: "Connection error"),
+        statusMessage: String(localized: "Connection error", defaultValue: "Connection error", table: "Localizable"),
         programTitle: nil,
         speaker: nil
     ))

@@ -97,10 +97,10 @@ struct LutheranRadioWidgetControl: ControlWidget {
                 Label {
                     VStack(alignment: .leading, spacing: 1) {
                         Text(value.visualState == .thermalPaused
-                             ? String(localized: "status_thermal_paused", defaultValue: "Thermal pause")
+                             ? String(localized: "status_thermal_paused", defaultValue: "Thermal pause", table: "Localizable")
                              : (value.visualState == .playing
-                                ? String(localized: "status_playing", defaultValue: "Playing")
-                                : String(localized: "status_stopped", defaultValue: "Stopped")))
+                                ? String(localized: "status_playing", defaultValue: "Playing", table: "Localizable")
+                                : String(localized: "status_stopped", defaultValue: "Stopped", table: "Localizable")))
                         .font(.caption2)
                         Text(value.currentStation)
                             .font(.caption2)
@@ -134,7 +134,7 @@ extension LutheranRadioWidgetControl {
         func previewValue(configuration: NoOpControlConfiguration) -> Value {
             Value(
                 visualState: .prePlay,
-                currentStation: "🇺🇸 " + String(localized: "language_english")
+                currentStation: "🇺🇸 " + String(localized: "language_english", table: "Localizable")
             )
         }
         
