@@ -38,27 +38,16 @@ private func getCurrentStreamStatus(visualState: PlayerVisualState) -> String {
 }
 
 /// Returns the localized display name for a language code.
+/// Now forwards to the shared general implementation in WidgetDisplayModels (prefers
+/// real availableStreams when present + established localized fallback mapping).
 private func getLanguageName(_ code: String) -> String {
-    switch code {
-    case "en": return String(localized: "language_english")
-    case "de": return String(localized: "language_german")
-    case "fi": return String(localized: "language_finnish")
-    case "sv": return String(localized: "language_swedish")
-    case "et": return String(localized: "language_estonian")
-    default: return "Unknown"
-    }
+    displayLanguageName(for: code)
 }
 
 /// Returns the flag emoji for a language code.
+/// Now forwards to the shared general implementation.
 private func getStreamFlag(_ code: String) -> String {
-    switch code {
-    case "en": return "🇺🇸"
-    case "de": return "🇩🇪"
-    case "fi": return "🇫🇮"
-    case "sv": return "🇸🇪"
-    case "et": return "🇪🇪"
-    default: return "🌍"
-    }
+    displayFlag(for: code)
 }
 
 /// Returns up to 3 alternative language codes (excluding the current one).
@@ -67,29 +56,9 @@ private func getAlternativeStreams(current: String) -> [String] {
     return Array(allStreams.filter { $0 != current }.prefix(3))
 }
 
-/// Primary program title for Live Activity display, with localized fallback.
-private func programDisplayTitle(
-    metadata: StreamProgramMetadata?,
-    visualState: PlayerVisualState,
-    languageCode: String
-) -> String {
-    if let title = metadata?.programTitle, !title.isEmpty {
-        return title
-    }
-    if visualState.isActivelyPlaying {
-        return unsafe String(
-            format: String(localized: "live_activity_program_fallback", defaultValue: "%@ · Live Stream"),
-            getLanguageName(languageCode)
-        )
-    }
-    return String(localized: "no_track_info", defaultValue: "No track information")
-}
-
-/// Secondary speaker line when parsed from ICY metadata.
-private func programSpeakerLine(metadata: StreamProgramMetadata?) -> String? {
-    guard let speaker = metadata?.speaker, !speaker.isEmpty else { return nil }
-    return speaker
-}
+// Unified program title + speaker resolver now lives in WidgetDisplayModels.swift
+// (along with WidgetMetadataEmphasis). Live Activity computes languageName locally
+// for the fallback string and passes the resolved model into the fixed metadata region.
 
 // MARK: - Live Activity Intents (updated for SSOT + Swift 6)
 
@@ -240,6 +209,15 @@ struct LutheranRadioLiveActivityWidget: Widget {
                 
                 DynamicIslandExpandedRegion(.center) {
                     let currentLanguage = SharedPlayerManager.preferredWidgetLanguage()
+                    // Use the shared display model so the title is always present and the speaker line
+                    // reserves vertical space (via \u{00A0} + opacity) for layout stability.
+                    let languageName = SharedPlayerManager.shared.availableStreams
+                        .first { $0.languageCode == currentLanguage }?.language ?? getLanguageName(currentLanguage)
+                    let metadataModel = widgetNowPlayingDisplayModel(
+                        visualState: context.state.visualState,
+                        streamMetadata: context.state.streamMetadata,
+                        languageName: languageName
+                    )
                     VStack(spacing: 6) {
                         VStack(spacing: 2) {
                             Text(getCurrentStreamStatus(visualState: context.state.visualState))
@@ -247,24 +225,24 @@ struct LutheranRadioLiveActivityWidget: Widget {
                                 .fontWeight(.medium)
                                 .foregroundColor(context.state.visualState.textColor.swiftUIColor)
                             
-                            if context.state.visualState.isActivelyPlaying {
-                                Text(programDisplayTitle(
-                                    metadata: context.state.streamMetadata,
-                                    visualState: context.state.visualState,
-                                    languageCode: currentLanguage
-                                ))
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .foregroundColor(.primary)
-                                    .lineLimit(2)
-                                    .multilineTextAlignment(.center)
-                                
-                                if let speaker = programSpeakerLine(metadata: context.state.streamMetadata) {
-                                    Text(speaker)
-                                        .font(.system(size: 9))
-                                        .foregroundColor(.secondary)
-                                        .lineLimit(1)
-                                }
-                            }
+                            // Fixed metadata region (no conditional insertion) using shared model + emphasis.
+                            Text(metadataModel.programTitle)
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundColor(.primary)
+                                .lineLimit(2)
+                                .minimumScaleFactor(0.85)
+                                .truncationMode(.tail)
+                                .multilineTextAlignment(.center)
+                                .opacity(metadataModel.emphasis.opacity)
+                                .frame(maxWidth: .infinity, minHeight: 18, maxHeight: 22, alignment: .center)
+                            
+                            Text(metadataModel.speakerLine)
+                                .font(.system(size: 9))
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                                .opacity(metadataModel.speakerVisible ? metadataModel.emphasis.opacity : 0)
+                                .frame(maxWidth: .infinity, minHeight: 12, maxHeight: 14, alignment: .center)
                         }
                         
                         ScrollView(.horizontal, showsIndicators: false) {
@@ -357,21 +335,18 @@ struct LutheranRadioLiveActivityWidget: Widget {
                             }
                         }
                         
-                        if let title = context.state.streamMetadata?.programTitle, !title.isEmpty {
-                            Text(title)
-                                .font(.system(size: 8, weight: .medium))
-                                .foregroundColor(.secondary)
-                                .lineLimit(1)
-                        } else {
-                            Text(programDisplayTitle(
-                                metadata: context.state.streamMetadata,
-                                visualState: context.state.visualState,
-                                languageCode: currentLanguage
-                            ))
-                                .font(.system(size: 8, weight: .medium))
-                                .foregroundColor(.secondary)
-                                .lineLimit(1)
-                        }
+                        // Use shared model for title (compact leading shows only while actively; model yields metadata or live fallback).
+                        let languageName = SharedPlayerManager.shared.availableStreams
+                            .first { $0.languageCode == currentLanguage }?.language ?? getLanguageName(currentLanguage)
+                        let compactModel = widgetNowPlayingDisplayModel(
+                            visualState: context.state.visualState,
+                            streamMetadata: context.state.streamMetadata,
+                            languageName: languageName
+                        )
+                        Text(compactModel.programTitle)
+                            .font(.system(size: 8, weight: .medium))
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
                     }
                 }
             } compactTrailing: {
@@ -415,11 +390,20 @@ struct LockScreenLiveActivityView: View {
     
     var body: some View {
         let currentLanguage = SharedPlayerManager.preferredWidgetLanguage()
+        // Compute language display name from authoritative streams (full set) for consistent live fallback.
+        let languageName = SharedPlayerManager.shared.availableStreams
+            .first { $0.languageCode == currentLanguage }?.language ?? getLanguageName(currentLanguage)
+        let metadataModel = widgetNowPlayingDisplayModel(
+            visualState: context.state.visualState,
+            streamMetadata: context.state.streamMetadata,
+            languageName: languageName
+        )
+        
         VStack(spacing: 12) {
             HStack {
                 Image(systemName: "radio")
                     .foregroundColor(.white)
-                Text(LocalizedStringKey("lutheran_radio_title"))
+                Text(String(localized: "lutheran_radio_title"))
                     .font(.headline)
                     .fontWeight(.semibold)
                 Spacer()
@@ -432,26 +416,28 @@ struct LockScreenLiveActivityView: View {
                 .font(.subheadline)
                 .foregroundColor(context.state.visualState.textColor.swiftUIColor)
             
-            if context.state.visualState.isActivelyPlaying {
-                VStack(spacing: 4) {
-                    Text(programDisplayTitle(
-                        metadata: context.state.streamMetadata,
-                        visualState: context.state.visualState,
-                        languageCode: currentLanguage
-                    ))
-                        .font(.headline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.primary)
-                        .multilineTextAlignment(.center)
-                        .lineLimit(3)
-                    
-                    if let speaker = programSpeakerLine(metadata: context.state.streamMetadata) {
-                        Text(speaker)
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
-                    }
-                }
+            // Fixed metadata region using the shared display model + emphasis.
+            // Both title and speaker lines are always laid out (speaker uses \u{00A0} when absent
+            // and opacity 0) so the region does not jump when playback state or ICY metadata changes.
+            VStack(spacing: 4) {
+                Text(metadataModel.programTitle)
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primary)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.85)
+                    .truncationMode(.tail)
+                    .opacity(metadataModel.emphasis.opacity)
+                    .frame(maxWidth: .infinity, minHeight: 44, maxHeight: 48, alignment: .center)
+                
+                Text(metadataModel.speakerLine)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .opacity(metadataModel.speakerVisible ? metadataModel.emphasis.opacity : 0)
+                    .frame(maxWidth: .infinity, minHeight: 20, maxHeight: 22, alignment: .center)
             }
             
             HStack(spacing: 20) {
@@ -475,7 +461,9 @@ struct LockScreenLiveActivityView: View {
                         Image(systemName: context.state.visualState.isActivelyPlaying ? "pause.circle.fill" : "play.circle.fill")
                             .font(.largeTitle)
                             .foregroundColor(context.state.visualState.buttonTintColor.swiftUIColor)
-                        Text(context.state.visualState.isActivelyPlaying ? LocalizedStringKey("status_paused") : LocalizedStringKey("Play"))
+                        Text(context.state.visualState.isActivelyPlaying
+                             ? String(localized: "status_paused", defaultValue: "Paused")
+                             : String(localized: "Play", defaultValue: "Play"))
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }

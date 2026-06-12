@@ -10,86 +10,22 @@ import SwiftUI
 import WidgetKit
 import Foundation
 
-// MARK: - Shared Helpers
+// MARK: - Shared Display Logic
+//
+// WidgetMetadataEmphasis, WidgetNowPlayingDisplayModel, and the core resolver
+// now live in WidgetDisplayModels.swift (shared with Live Activity code).
+// The thin adapter below preserves the existing call sites for medium/large widgets.
 
-private enum WidgetMetadataEmphasis {
-    case active
-    case subdued
-    case placeholder
-
-    var opacity: Double {
-        switch self {
-        case .active: 1.0
-        case .subdued: 0.55
-        case .placeholder: 0.45
-        }
-    }
-}
-
-private struct WidgetNowPlayingDisplayModel {
-    let programTitle: String
-    let speakerLine: String
-    let speakerVisible: Bool
-    let emphasis: WidgetMetadataEmphasis
-}
-
-private func widgetLiveStreamFallback(languageName: String) -> String {
-    unsafe String(
-        format: String(localized: "live_activity_program_fallback", defaultValue: "%@ · Live Stream"),
-        languageName
-    )
-}
-
-private func widgetProgramSpeakerLine(metadata: StreamProgramMetadata?) -> String? {
-    guard let speaker = metadata?.speaker, !speaker.isEmpty else { return nil }
-    return speaker
-}
-
+// Adapter: computes language name from the entry's streams (full 21-lang list)
+// then delegates to the shared resolver.
 private func widgetNowPlayingDisplayModel(from entry: SimpleEntry) -> WidgetNowPlayingDisplayModel {
     let languageName = entry.availableStreams
         .first { $0.languageCode == entry.currentLanguageCode }?
         .language ?? entry.currentStation
-    let metadata = entry.streamMetadata
-    let state = entry.visualState
-    let liveFallback = widgetLiveStreamFallback(languageName: languageName)
-    let noTrack = String(localized: "no_track_info", defaultValue: "No track information")
-    let speaker = widgetProgramSpeakerLine(metadata: metadata)
-
-    let programTitle: String
-    let emphasis: WidgetMetadataEmphasis
-
-    switch state {
-    case .playing:
-        programTitle = metadata?.programTitle.flatMap { $0.isEmpty ? nil : $0 } ?? liveFallback
-        emphasis = .active
-    case .prePlay:
-        programTitle = metadata?.programTitle.flatMap { $0.isEmpty ? nil : $0 } ?? liveFallback
-        emphasis = .subdued
-    case .userPaused:
-        if let title = metadata?.programTitle, !title.isEmpty {
-            programTitle = title
-            emphasis = .subdued
-        } else {
-            programTitle = noTrack
-            emphasis = .placeholder
-        }
-    case .thermalPaused, .securityLocked:
-        if let title = metadata?.programTitle, !title.isEmpty {
-            programTitle = title
-            emphasis = .subdued
-        } else {
-            programTitle = noTrack
-            emphasis = .placeholder
-        }
-    }
-
-    let speakerVisible = speaker != nil && (state.isActivelyPlaying || state == .userPaused || state == .prePlay)
-
-    return WidgetNowPlayingDisplayModel(
-        programTitle: programTitle,
-        speakerLine: speaker ?? "\u{00A0}",
-        speakerVisible: speakerVisible,
-        emphasis: emphasis
+    return widgetNowPlayingDisplayModel(
+        visualState: entry.visualState,
+        streamMetadata: entry.streamMetadata,
+        languageName: languageName
     )
 }
 
@@ -718,3 +654,179 @@ public struct RadioWidgetConfiguration: WidgetConfigurationIntent {
         IntentDescription("Configuration for Lutheran Radio widget.")
     }
 }
+
+// MARK: - SwiftUI Preview Matrix
+//
+// Exhaustive previews for the shared WidgetNowPlayingDisplayModel + emphasis
+// across PlayerVisualState values and metadata presence (nil / title only / title + speaker).
+// The same model is used by Live Activity.
+//
+// Use the Xcode canvas to inspect emphasis levels (active / subdued / placeholder)
+// and confirm the title + speaker slots remain stable (no conditional insertion).
+
+#if DEBUG
+
+private func makePreviewEntry(
+    visualState: PlayerVisualState,
+    currentStation: String? = nil,
+    currentLanguageCode: String = "en",
+    statusMessage: String = "Playing",
+    programTitle: String? = nil,
+    speaker: String? = nil
+) -> SimpleEntry {
+    // Resolve language name + flag from code in a general way (prefers real streams;
+    // falls back to the established localized mapping). This replaces the previous
+    // hard-coded "🇺🇸 English" / "Lutheran Radio - English" defaults.
+    let languageName = displayLanguageName(for: currentLanguageCode)
+    let flag = displayFlag(for: currentLanguageCode)
+    let station = currentStation ?? "\(flag) \(languageName)"
+
+    let metadata: StreamProgramMetadata? =
+        (programTitle != nil || speaker != nil)
+        ? StreamProgramMetadata(programTitle: programTitle, speaker: speaker)
+        : nil
+
+    // Prefer real streams (nonisolated accessor from SharedPlayerManager).
+    // When synthesizing (isolated preview canvas), build using the general form requested:
+    //   String(localized: "lutheran_radio_title") + " - " + previewLanguageName(...)
+    // plus a small set of additional languages so the medium/large flag grids have content.
+    let streams: [DirectStreamingPlayer.Stream] =
+        SharedPlayerManager.shared.availableStreams.isEmpty
+        ? [
+            .init(
+                title: String(localized: "lutheran_radio_title") + " - " + languageName,
+                language: languageName,
+                languageCode: currentLanguageCode,
+                flag: flag
+            ),
+            .init(
+                title: String(localized: "lutheran_radio_title") + " - " + displayLanguageName(for: "de"),
+                language: displayLanguageName(for: "de"),
+                languageCode: "de",
+                flag: displayFlag(for: "de")
+            ),
+            .init(
+                title: String(localized: "lutheran_radio_title") + " - " + displayLanguageName(for: "fi"),
+                language: displayLanguageName(for: "fi"),
+                languageCode: "fi",
+                flag: displayFlag(for: "fi")
+            )
+          ]
+        : SharedPlayerManager.shared.availableStreams
+
+    return SimpleEntry(
+        date: Date(),
+        visualState: visualState,
+        currentStation: station,
+        currentLanguageCode: currentLanguageCode,
+        statusMessage: statusMessage,
+        streamMetadata: metadata,
+        availableStreams: streams,
+        configuration: RadioWidgetConfiguration()
+    )
+}
+
+// userPaused + nil metadata (shows placeholder)
+#Preview("1. userPaused + nil metadata", traits: .sizeThatFitsLayout) {
+    MediumWidgetView(entry: makePreviewEntry(
+        visualState: .userPaused,
+        statusMessage: String(localized: "Ready", defaultValue: "Ready"),
+        programTitle: nil,
+        speaker: nil
+    ))
+}
+
+// userPaused + title only (subdued last-known, no speaker)
+#Preview("2. userPaused + title only", traits: .sizeThatFitsLayout) {
+    LargeWidgetView(entry: makePreviewEntry(
+        visualState: .userPaused,
+        statusMessage: String(localized: "Ready", defaultValue: "Ready"),
+        programTitle: "Evening Prayer",
+        speaker: nil
+    ))
+}
+
+// userPaused + title + speaker (subdued)
+#Preview("3. userPaused + title + speaker", traits: .sizeThatFitsLayout) {
+    MediumWidgetView(entry: makePreviewEntry(
+        visualState: .userPaused,
+        statusMessage: String(localized: "Ready", defaultValue: "Ready"),
+        programTitle: "Sermon Title Here",
+        speaker: "Rev. Martin Luther"
+    ))
+}
+
+// prePlay + nil metadata (stream switch during connect)
+#Preview("4. prePlay + nil (stream switch)", traits: .sizeThatFitsLayout) {
+    LargeWidgetView(entry: makePreviewEntry(
+        visualState: .prePlay,
+        statusMessage: String(localized: "Ready", defaultValue: "Ready"),
+        programTitle: nil,
+        speaker: nil
+    ))
+}
+
+// playing + nil metadata (ICY pending / live fallback active)
+#Preview("5. playing + nil (ICY pending)", traits: .sizeThatFitsLayout) {
+    MediumWidgetView(entry: makePreviewEntry(
+        visualState: .playing,
+        statusMessage: String(localized: "status_playing", defaultValue: "Playing"),
+        programTitle: nil,
+        speaker: nil
+    ))
+}
+
+// playing + title (active, no speaker)
+#Preview("6. playing + title", traits: .sizeThatFitsLayout) {
+    LargeWidgetView(entry: makePreviewEntry(
+        visualState: .playing,
+        statusMessage: String(localized: "status_playing", defaultValue: "Playing"),
+        programTitle: "The Means of Grace",
+        speaker: nil
+    ))
+}
+
+// playing + title + speaker (active)
+#Preview("7. playing + title + speaker", traits: .sizeThatFitsLayout) {
+    MediumWidgetView(entry: makePreviewEntry(
+        visualState: .playing,
+        statusMessage: String(localized: "status_playing", defaultValue: "Playing"),
+        programTitle: "Daily Chapel",
+        speaker: "Dr. John T. Pless"
+    ))
+}
+
+// thermalPaused with metadata (subdued)
+#Preview("8. thermalPaused + metadata", traits: .sizeThatFitsLayout) {
+    LargeWidgetView(entry: makePreviewEntry(
+        visualState: .thermalPaused,
+        statusMessage: String(localized: "status_thermal_paused", defaultValue: "Thermal pause"),
+        programTitle: "Last Known Program",
+        speaker: "Speaker Name"
+    ))
+}
+
+// securityLocked with metadata (subdued, red tint on other elements)
+#Preview("9. securityLocked + metadata", traits: .sizeThatFitsLayout) {
+    MediumWidgetView(entry: makePreviewEntry(
+        visualState: .securityLocked,
+        currentStation: "🇩🇪 Deutsch",
+        currentLanguageCode: "de",
+        statusMessage: String(localized: "Connection error", defaultValue: "Connection error"),
+        programTitle: "Protected Content",
+        speaker: nil
+    ))
+}
+
+// securityLocked without metadata (placeholder)
+#Preview("10. securityLocked + nil (placeholder)", traits: .sizeThatFitsLayout) {
+    LargeWidgetView(entry: makePreviewEntry(
+        visualState: .securityLocked,
+        statusMessage: String(localized: "Connection error", defaultValue: "Connection error"),
+        programTitle: nil,
+        speaker: nil
+    ))
+}
+
+#endif
+
