@@ -1159,10 +1159,22 @@ actor SharedPlayerManager {
     
     // This helper must be nonisolated because it's called from the nonisolated switchToStream
     nonisolated private func handleWidgetSwitch(to stream: DirectStreamingPlayer.Stream) {
-        // Preserve play-while-switching vs paused-while-switching: derive visual from
-        // loadSharedState (same source SwitchStreamIntent used before phase C round 3).
-        let state = loadSharedState()
-        let visualForSwitch: PlayerVisualState = state.isPlaying ? .playing : .userPaused
+        // Preserve the current play/pause (or other) visual across language switch for the
+        // optimistic PersistedWidgetState snapshot. Must use loadPersistedVisualStateDirect()
+        // (prefers the combined snapshot written by widget pause/play signals via
+        // forcePersistVisualState / persistWidgetSnapshot) rather than loadSharedState().isPlaying.
+        //
+        // The legacy "isPlaying" bool is only written by main-app performActualSave and lags
+        // after widget pause (snapshot = .userPaused but bool remains true). This caused
+        // "pause on widget → change language on widget → resume on widget" to write an
+        // erroneous .playing snapshot, desyncing the SSOT, making the resume toggle decide
+        // the wrong action, and deferring actual audio start until main-app foreground
+        // reconciliation + play().
+        //
+        // Using the snapshot visual ensures switch while paused carries .userPaused + new
+        // language; the follow-on "play" pending + preferred-lang alignment inside play()
+        // then starts the correct stream.
+        let visualForSwitch = Self.loadPersistedVisualStateDirect()
         signalWidgetSwitchAction(visualState: visualForSwitch, language: stream.languageCode)
 
         #if DEBUG
@@ -1639,7 +1651,10 @@ extension SharedPlayerManager {
             
             // FIXED: Use instant feedback for 15 seconds (increased from 10)
             if age < 15.0 {
-                let isPlaying = sharedDefaults?.bool(forKey: "isPlaying") ?? false
+                // Prefer the just-written PersistedWidgetState snapshot (updated by widget
+                // signals) for isPlaying; fall back to legacy bool only for very old data.
+                let isPlaying = Self.loadPersistedWidgetState()?.visualState.isActivelyPlaying
+                    ?? (sharedDefaults?.bool(forKey: "isPlaying") ?? false)
                 let hasError = sharedDefaults?.bool(forKey: "hasError") ?? false
                 
                 #if DEBUG
@@ -1660,7 +1675,11 @@ extension SharedPlayerManager {
         }
         
         // Normal state loading
-        let isPlaying = sharedDefaults?.bool(forKey: "isPlaying") ?? false
+        // Prefer the combined PersistedWidgetState snapshot (SSOT, written by both main app
+        // and widget pause/play/switch signals) for isPlaying. Legacy "isPlaying" bool is
+        // only a fallback for pre-snapshot installs.
+        let isPlaying = Self.loadPersistedWidgetState()?.visualState.isActivelyPlaying
+            ?? (sharedDefaults?.bool(forKey: "isPlaying") ?? false)
         // Language is returned via the preferred helper (combined snapshot first).
         // This gives the large majority of call sites (Live Activities, many ViewController
         // paths, etc.) the authoritative language with no further changes.
