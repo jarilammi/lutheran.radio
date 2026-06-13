@@ -110,50 +110,13 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     /// ViewController performs hierarchy addition + constraints and drives via the narrow hooks
     /// at the correct moments. All heavy logic moved verbatim (behavior preserved).
     let backgroundImageController = BackgroundImageController()
-    
-    let playPauseButton: UIButton = {
-        let button = UIButton(type: .system)
-        let config = UIImage.SymbolConfiguration(weight: .bold)
-        button.setImage(UIImage(systemName: "play.fill", withConfiguration: config), for: .normal)
-        button.tintColor = .tintColor
-        button.translatesAutoresizingMaskIntoConstraints = false
-        button.isAccessibilityElement = true
-        button.accessibilityTraits = .button
-        button.accessibilityHint = String(localized: "accessibility_hint_play_pause", table: "Localizable")
-        return button
-    }()
 
-    let sleepTimerButton: UIButton = {
-        let button = UIButton(type: .system)
-        let config = UIImage.SymbolConfiguration(pointSize: 22, weight: .medium)
-        button.setImage(UIImage(systemName: "moon.zzz", withConfiguration: config), for: .normal)
-        button.tintColor = .secondaryLabel
-        button.translatesAutoresizingMaskIntoConstraints = false
-        button.isAccessibilityElement = true
-        button.accessibilityTraits = .button
-        button.accessibilityLabel = String(localized: "accessibility_label_sleep_timer", table: "Localizable")
-        button.accessibilityHint = String(localized: "accessibility_hint_sleep_timer", table: "Localizable")
-        return button
-    }()
-    
-    let statusLabel: UILabel = {
-        let label = UILabel()
-        label.text = String(localized: "status_connecting", table: "Localizable")
-        label.textAlignment = .center
-        label.font = UIFont.preferredFont(forTextStyle: .body)
-        label.adjustsFontForContentSizeCategory = true
-        label.backgroundColor = .systemYellow
-        label.textColor = .black
-        label.layer.cornerRadius = 8
-        label.clipsToBounds = true
-        label.translatesAutoresizingMaskIntoConstraints = false
-        label.adjustsFontSizeToFitWidth = true
-        label.minimumScaleFactor = 0.75
-        label.lineBreakMode = .byTruncatingTail
-        label.isAccessibilityElement = true
-        return label
-    }()
-    
+    // Phase 3: playback controls (play/pause + sleep timer button + status pill) and now-playing metadata/speaker
+    // are composed views. Owner (VC) wires a few buttons for menus/animation and calls narrow setters at the
+    // right moments. All visual rendering for these elements is now encapsulated; intent + sleep countdown logic stay here.
+    let playbackControlsView = PlaybackControlsView()
+    let nowPlayingMetadataView = NowPlayingMetadataView()
+
     let volumeSlider: UISlider = {
         let slider = UISlider()
         slider.minimumValue = 0.0
@@ -166,22 +129,6 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         slider.accessibilityLabel = String(localized: "accessibility_label_volume", table: "Localizable")
         slider.accessibilityHint = String(localized: "accessibility_hint_volume", table: "Localizable")
         return slider
-    }()
-    
-    let metadataLabel: UILabel = {
-        let label = UILabel()
-        label.text = String(localized: "no_track_info", table: "Localizable")
-        label.textAlignment = .center
-        label.font = UIFont.preferredFont(forTextStyle: .callout)
-        label.adjustsFontForContentSizeCategory = true
-        label.textColor = .secondaryLabel
-        label.numberOfLines = 0
-        label.translatesAutoresizingMaskIntoConstraints = false
-        label.adjustsFontSizeToFitWidth = true
-        label.minimumScaleFactor = 0.75
-        label.isAccessibilityElement = true
-        label.accessibilityHint = String(localized: "accessibility_hint_metadata", table: "Localizable")
-        return label
     }()
     
     let airplayButton: AVRoutePickerView = {
@@ -259,20 +206,6 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     private var isInitialSetupComplete = false
     private var hasShownDataUsageNotification = false
     
-    let speakerImageView: UIImageView = {
-        let imageView = UIImageView()
-        imageView.contentMode = .scaleAspectFit
-        imageView.translatesAutoresizingMaskIntoConstraints = false
-        imageView.isHidden = true // Hidden by default
-        imageView.layer.cornerRadius = 10
-        imageView.clipsToBounds = true
-        imageView.isAccessibilityElement = false
-        return imageView
-    }()
-    
-    /// Height constraint for the speaker image (set in code).
-    private var speakerImageHeightConstraint: NSLayoutConstraint?
-    
     // MARK: - Audio and Streaming
     // New streaming player
     nonisolated private let streamingPlayer: DirectStreamingPlayer
@@ -312,9 +245,6 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     private static let sleepTimerPostScheduleUISettleNs: UInt64 = 300_000_000
     /// Full SF Symbol + deferred ICY speaker flush after audio has settled.
     private static let sleepTimerDeferredVisualSettleNs: UInt64 = 500_000_000
-    private lazy var sleepTimerSymbolConfig = UIImage.SymbolConfiguration(pointSize: 22, weight: .medium)
-    private lazy var sleepTimerInactiveImage = UIImage(systemName: "moon.zzz", withConfiguration: sleepTimerSymbolConfig)
-    private lazy var sleepTimerActiveImage = UIImage(systemName: "moon.zzz.fill", withConfiguration: sleepTimerSymbolConfig)
     
     // Testable accessors
     @objc var isPlayingState: Bool {
@@ -349,8 +279,8 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         view.backgroundColor = .systemBackground
         // processed image cache limit is now configured inside BackgroundImageController (Phase 2)
         
-        // Add custom accessibility actions for playPauseButton
-        playPauseButton.accessibilityCustomActions = [
+        // Add custom accessibility actions for playPauseButton (now owned by playbackControlsView)
+        playbackControlsView.playPauseButton.accessibilityCustomActions = [
             UIAccessibilityCustomAction(
                 name: String(localized: "toggle_playback", defaultValue: "Toggle Playback", table: "Localizable", comment: "Accessibility action to toggle playback"),
                 target: self,
@@ -375,8 +305,8 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         // Register for preferred content size category changes
         registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) { [weak self] (controller: Self, previousTraitCollection: UITraitCollection) in
             guard let self else { return }
-            self.updateMetadataLabel(
-                text: self.metadataLabel.text ?? String(localized: "no_track_info", table: "Localizable")
+            nowPlayingMetadataView.setMetadata(
+                nowPlayingMetadataView.metadataLabel.text ?? String(localized: "no_track_info", table: "Localizable")
             )
         }
         
@@ -658,37 +588,25 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
                 return
             }
             
-            // Process metadata on background (regex is cheap and thread-safe)
-            var potentialNames: [String] = []
-            if let metadata = metadata {
-                do {
-                    let regex = try NSRegularExpression(pattern: "\\b[A-Z][a-z]+(?:\\s[A-Z][a-z]+)*\\b")
-                    let matches = regex.matches(in: metadata, range: NSRange(metadata.startIndex..., in: metadata))
-                    potentialNames = matches.compactMap { match in
-                        Range(match.range, in: metadata).map { String(metadata[$0]) }
-                    }
-                } catch {
-                    #if DEBUG
-                    print("🔴 Regex failed in onMetadataChange: \(error)")
-                    #endif
-                }
-            }
+            // Process metadata on background (regex is cheap and thread-safe).
+            // Phase 3: regex helper now lives in nowPlayingMetadataView (small pure helper); use it to avoid duplication.
+            let potentialNames: [String] = metadata.map { nowPlayingMetadataView.potentialNames(from: $0) } ?? []
             
             // Hop to main for UI updates only
-            DispatchQueue.main.async {
+            DispatchQueue.main.async { [self] in
                 if let metadata = metadata {
-                    self.metadataLabel.text = metadata
+                    self.nowPlayingMetadataView.setMetadata(metadata)
                     if self.isSleepTimerInteractionActive {
                         self.pendingMetadataVisualRefresh = metadata
                     } else {
                         self.updateNowPlayingInfo(title: metadata)
-                        self.applySpeakerVisuals(for: metadata, potentialNames: potentialNames)
+                        self.nowPlayingMetadataView.applySpeakerVisuals(for: metadata, potentialNames: potentialNames)
                     }
                 } else {
-                    self.metadataLabel.text = String(localized: "no_track_info", table: "Localizable")
+                    self.nowPlayingMetadataView.setMetadata(String(localized: "no_track_info", table: "Localizable"))
                     if !self.isSleepTimerInteractionActive {
                         self.updateNowPlayingInfo()
-                        self.speakerImageView.isHidden = true
+                        self.nowPlayingMetadataView.speakerImageView.isHidden = true
                     }
                 }
                 self.saveStateForWidget()
@@ -759,13 +677,14 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     }
     
     private func setupControls() {
-        playPauseButton.addTarget(self, action: #selector(togglePlayback), for: .touchUpInside)
+        // Phase 3: targets and identifiers now on the composed controls view's buttons
+        playbackControlsView.playPauseButton.addTarget(self, action: #selector(togglePlayback), for: .touchUpInside)
         configureSleepTimerButtonMenu()
-        sleepTimerButton.accessibilityIdentifier = "sleepTimerButton"
-        playPauseButton.accessibilityIdentifier = "playPauseButton"
-        playPauseButton.accessibilityHint = String(localized: "accessibility_hint_play_pause", table: "Localizable")
-        playPauseButton.accessibilityLabel = String(localized: "accessibility_label_play", table: "Localizable")  // e.g., "Play" in Localizable.strings
-        playPauseButton.accessibilityTraits = [.button, .playsSound]  // Hints that it triggers sound
+        playbackControlsView.sleepTimerButton.accessibilityIdentifier = "sleepTimerButton"
+        playbackControlsView.playPauseButton.accessibilityIdentifier = "playPauseButton"
+        playbackControlsView.playPauseButton.accessibilityHint = String(localized: "accessibility_hint_play_pause", table: "Localizable")
+        playbackControlsView.playPauseButton.accessibilityLabel = String(localized: "accessibility_label_play", table: "Localizable")  // e.g., "Play" in Localizable.strings
+        playbackControlsView.playPauseButton.accessibilityTraits = [.button, .playsSound]  // Hints that it triggers sound
         
         volumeSlider.addTarget(self, action: #selector(volumeChanged(_:)), for: .valueChanged)
         volumeSlider.accessibilityIdentifier = "volumeSlider"
@@ -1106,8 +1025,8 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
             textColor: .white,
             isPermanentError: false
         )
-        metadataLabel.text = String(localized: "no_track_info", table: "Localizable")
-        updatePlayPauseButton(isPlaying: false)
+        nowPlayingMetadataView.setMetadata(String(localized: "no_track_info", table: "Localizable"))
+        playbackControlsView.setPlayPause(isPlaying: false)
     }
     
     // MARK: - Playback Control Methods
@@ -1156,40 +1075,17 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         }
         lastAppliedVisualState = visualState
         
-        // Text
-        switch visualState {
-        case .playing:
-            statusLabel.text = String(localized: "status_playing", table: "Localizable")
-        case .userPaused:
-            statusLabel.text = String(localized: "status_paused", table: "Localizable")
-        case .thermalPaused:
-            statusLabel.text = String(localized: "status_thermal_paused", table: "Localizable")
-        case .prePlay:
-            statusLabel.text = String(localized: "status_connecting", table: "Localizable")
-        case .securityLocked:
-            statusLabel.text = String(localized: "status_security_failed", table: "Localizable")
-            
+        // Phase 3: pill text/colors + play/pause icon now driven through the composed view (exact same values).
+        // Security alert for .securityLocked stays in the owner (single place for that side effect).
+        playbackControlsView.applyVisualState(visualState)
+        
+        if visualState == .securityLocked {
             // Alert is presented here — most convenient place
             if !hasShownSecurityAlert {
                 hasShownSecurityAlert = true
                 showSecurityModelAlert()
             }
         }
-        
-        // Colors from the enum (this is now the only source of truth)
-        statusLabel.backgroundColor = visualState.backgroundColor
-        statusLabel.textColor = visualState.textColor
-        
-        // Button image
-        let config = UIImage.SymbolConfiguration(pointSize: 24, weight: .bold)
-        let imageName = visualState.isActivelyPlaying ? "pause.fill" : "play.fill"
-        playPauseButton.setImage(UIImage(systemName: imageName, withConfiguration: config), for: .normal)
-        
-        // Optional but VERY nice — button tint now follows the state too
-        // playPauseButton.tintColor = visualState.buttonTintColor
-        
-        // Accessibility
-        statusLabel.accessibilityLabel = statusLabel.text
         
         // This is the single place that translates a `PlayerVisualState` into concrete UI.
         // All call sites (SSOT, widget actions, network recovery, stream switches, etc.)
@@ -1204,24 +1100,6 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         streamingPlayer.setVolume(sender.value)
         sender.accessibilityValue = unsafe String(format: String(localized: "accessibility_value_volume", table: "Localizable"), Int(sender.value * 100))  // e.g., "75 percent"
         persistPreferredVolume(sender.value)
-    }
-    
-    private func updatePlayPauseButton(isPlaying: Bool, animated: Bool = false) {
-        let imageName = isPlaying ? "pause.fill" : "play.fill"
-        let config = UIImage.SymbolConfiguration(weight: .bold)
-        let newImage = UIImage(systemName: imageName, withConfiguration: config)
-        
-        if animated {
-            UIView.transition(with: playPauseButton, duration: 0.22, options: .transitionCrossDissolve, animations: {
-                self.playPauseButton.setImage(newImage, for: .normal)
-            })
-        } else {
-            playPauseButton.setImage(newImage, for: .normal)
-        }
-        
-        playPauseButton.accessibilityLabel = isPlaying
-        ? String(localized: "accessibility_label_play_pause", table: "Localizable")
-        : String(localized: "accessibility_label_play", table: "Localizable")
     }
     
     private func setupUI() {
@@ -1240,16 +1118,17 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         
         view.addSubview(titleLabel)
         view.addSubview(languageSelectorView)
-        let controlsStackView = UIStackView(arrangedSubviews: [playPauseButton, sleepTimerButton, statusLabel])
-        controlsStackView.axis = .horizontal
-        controlsStackView.spacing = 20
-        controlsStackView.alignment = .center
-        controlsStackView.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(controlsStackView)
+
+        // Phase 3: use the composed controls view (internal stack + sizes for play/sleep/status pill).
+        // External constraints only touch the container (top/center/height + volume below it).
+        view.addSubview(playbackControlsView)
         view.addSubview(volumeSlider)
-        
-        view.addSubview(speakerImageView)
-        let contentStackView = UIStackView(arrangedSubviews: [metadataLabel])
+
+        // Phase 3: metadata label is driven by the composed metadata view (contentStack still used for
+        // identical vertical spacing/leading/trailing to language selector). Speaker image is vended
+        // and placed exactly where it was (below language selector).
+        view.addSubview(nowPlayingMetadataView.speakerImageView)
+        let contentStackView = UIStackView(arrangedSubviews: [nowPlayingMetadataView.metadataLabel])
         contentStackView.axis = .vertical
         contentStackView.alignment = .center
         contentStackView.spacing = 10
@@ -1261,17 +1140,10 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         NSLayoutConstraint.activate([
             titleLabel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 40),
             titleLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            controlsStackView.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 20),
-            controlsStackView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            controlsStackView.heightAnchor.constraint(equalToConstant: 50),
-            statusLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 120),
-            statusLabel.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor, multiplier: 0.4),
-            statusLabel.heightAnchor.constraint(equalToConstant: 40),
-            playPauseButton.widthAnchor.constraint(equalToConstant: 50),
-            playPauseButton.heightAnchor.constraint(equalToConstant: 50),
-            sleepTimerButton.widthAnchor.constraint(equalToConstant: 44),
-            sleepTimerButton.heightAnchor.constraint(equalToConstant: 44),
-            volumeSlider.topAnchor.constraint(equalTo: controlsStackView.bottomAnchor, constant: 20),
+            playbackControlsView.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 20),
+            playbackControlsView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            playbackControlsView.heightAnchor.constraint(equalToConstant: 50),
+            volumeSlider.topAnchor.constraint(equalTo: playbackControlsView.bottomAnchor, constant: 20),
             volumeSlider.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 40),
             volumeSlider.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -40),
             contentStackView.topAnchor.constraint(equalTo: volumeSlider.bottomAnchor, constant: 20),
@@ -1281,20 +1153,22 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
             languageSelectorView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             languageSelectorView.widthAnchor.constraint(equalTo: view.widthAnchor),
             languageSelectorView.heightAnchor.constraint(equalToConstant: 50),
-            speakerImageView.topAnchor.constraint(equalTo: languageSelectorView.bottomAnchor, constant: 20),
-            speakerImageView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            speakerImageView.widthAnchor.constraint(equalToConstant: 100),
-            airplayButton.topAnchor.constraint(equalTo: speakerImageView.bottomAnchor, constant: 20),
+            nowPlayingMetadataView.speakerImageView.topAnchor.constraint(equalTo: languageSelectorView.bottomAnchor, constant: 20),
+            nowPlayingMetadataView.speakerImageView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            nowPlayingMetadataView.speakerImageView.widthAnchor.constraint(equalToConstant: 100),
+            airplayButton.topAnchor.constraint(equalTo: nowPlayingMetadataView.speakerImageView.bottomAnchor, constant: 20),
             airplayButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             airplayButton.widthAnchor.constraint(equalToConstant: 44),
             airplayButton.heightAnchor.constraint(equalToConstant: 44)
         ])
-        speakerImageHeightConstraint = speakerImageView.heightAnchor.constraint(equalToConstant: 50)
-        speakerImageHeightConstraint?.isActive = true
+        nowPlayingMetadataView.speakerImageHeightConstraint = nowPlayingMetadataView.speakerImageView.heightAnchor.constraint(equalToConstant: 50)
+        nowPlayingMetadataView.speakerImageHeightConstraint?.isActive = true
 
         // NOTE: LanguageSelectorView now internally creates its collectionView + selectionIndicator,
         // adds the indicator as subview of the collection, and activates its own needleCenterXConstraint.
         // All needle math and layout delegate work is encapsulated there.
+        // Phase 3: PlaybackControlsView owns its internal horizontal stack + pill/button sizing.
+        // NowPlayingMetadataView owns the metadata label + speaker image + apply logic.
     }
     
     @objc private func handleMemoryWarning() {
@@ -1427,7 +1301,7 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
             let manager = SharedPlayerManager.shared
             let state = manager.loadSharedState()
             
-            updatePlayPauseButton(isPlaying: true, animated: true)
+            playbackControlsView.setPlayPause(isPlaying: true, animated: true)
             
             if !state.isPlaying {
                 safeUpdateStatusLabel(
@@ -1540,12 +1414,13 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
             })
         }
 
-        sleepTimerButton.menu = UIMenu(
+        // Phase 3: menu is attached to the button owned by playbackControlsView (configure + handlers stay in VC)
+        playbackControlsView.sleepTimerButton.menu = UIMenu(
             title: String(localized: "sleep_timer_sheet_title", table: "Localizable"),
             options: .displayInline,
             children: children
         )
-        sleepTimerButton.showsMenuAsPrimaryAction = true
+        playbackControlsView.sleepTimerButton.showsMenuAsPrimaryAction = true
     }
 
     @MainActor
@@ -1570,7 +1445,7 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
             self.beginLocalSleepTimerDisplay(remaining: confirmed, deferImageSwap: true)
             try? await Task.sleep(nanoseconds: Self.sleepTimerDeferredVisualSettleNs)
             guard !Task.isCancelled else { return }
-            self.applySleepTimerButtonAppearance(remaining: confirmed, deferImageSwap: false)
+            playbackControlsView.applySleepTimerButtonAppearance(remaining: confirmed, deferImageSwap: false)
             self.finishSleepTimerInteraction(applyDeferredVisuals: true)
             self.backgroundImageController.rescheduleDeferredAfterModalIfNeeded()
         }
@@ -1598,65 +1473,11 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         guard applyDeferredVisuals, let metadata = pendingMetadataVisualRefresh else { return }
         pendingMetadataVisualRefresh = nil
         updateNowPlayingInfo(title: metadata)
-        applySpeakerVisuals(
+        nowPlayingMetadataView.applySpeakerVisuals(
             for: metadata,
-            potentialNames: potentialNames(from: metadata),
+            potentialNames: nowPlayingMetadataView.potentialNames(from: metadata),
             animated: false
         )
-    }
-
-    private func potentialNames(from metadata: String) -> [String] {
-        do {
-            let regex = try NSRegularExpression(pattern: "\\b[A-Z][a-z]+(?:\\s[A-Z][a-z]+)*\\b")
-            let matches = regex.matches(in: metadata, range: NSRange(metadata.startIndex..., in: metadata))
-            return matches.compactMap { match in
-                Range(match.range, in: metadata).map { String(metadata[$0]) }
-            }
-        } catch {
-            return []
-        }
-    }
-
-    @MainActor
-    private func applySpeakerVisuals(for metadata: String, potentialNames: [String], animated: Bool = true) {
-        let specificSpeakers = Set(["Jari Lammi"])
-        let matchedSpeaker = potentialNames.first(where: { specificSpeakers.contains($0) })
-
-        if let speaker = matchedSpeaker,
-           let speakerImage = UIImage(named: "\(speaker.lowercased().replacingOccurrences(of: " ", with: "_"))_photo") {
-            if animated {
-                UIView.transition(with: speakerImageView, duration: 0.3, options: .transitionCrossDissolve, animations: {
-                    self.speakerImageView.image = speakerImage
-                    self.speakerImageView.isHidden = false
-                    self.speakerImageHeightConstraint?.constant = 100
-                    self.speakerImageView.accessibilityLabel = unsafe String(format: String(localized: "accessibility_label_photo_of_format", defaultValue: "Photo of %@", table: "Localizable", comment: "Accessibility label for speaker photo. %@ is the speaker or program name."), speaker)
-                }, completion: nil)
-            } else {
-                speakerImageView.image = speakerImage
-                speakerImageView.isHidden = false
-                speakerImageHeightConstraint?.constant = 100
-                speakerImageView.accessibilityLabel = unsafe String(format: String(localized: "accessibility_label_photo_of_format", defaultValue: "Photo of %@", table: "Localizable", comment: "Accessibility label for speaker photo. %@ is the speaker or program name."), speaker)
-            }
-        } else if let placeholderImage = UIImage(named: "radio-placeholder") {
-            if animated {
-                UIView.transition(with: speakerImageView, duration: 0.3, options: .transitionCrossDissolve, animations: {
-                    self.speakerImageView.image = placeholderImage
-                    self.speakerImageView.isHidden = false
-                    self.speakerImageHeightConstraint?.constant = 100
-                    self.speakerImageView.accessibilityLabel = String(localized: "accessibility_label_lutheran_radio_logo", defaultValue: "Lutheran Radio Logo", table: "Localizable", comment: "Accessibility label for the placeholder logo image.")
-                }, completion: nil)
-            } else {
-                speakerImageView.image = placeholderImage
-                speakerImageView.isHidden = false
-                speakerImageHeightConstraint?.constant = 100
-                speakerImageView.accessibilityLabel = String(localized: "accessibility_label_lutheran_radio_logo", defaultValue: "Lutheran Radio Logo", table: "Localizable", comment: "Accessibility label for the placeholder logo image.")
-            }
-        } else {
-            #if DEBUG
-            print("🔴 Still failed to load radio-placeholder from Assets.xcassets")
-            #endif
-            speakerImageView.isHidden = true
-        }
     }
 
     @objc private func sleepTimerStateDidChange(_ notification: Notification) {
@@ -1689,7 +1510,7 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     @MainActor
     private func beginLocalSleepTimerDisplay(remaining: Int, deferImageSwap: Bool = false) {
         cachedSleepTimerRemaining = remaining
-        applySleepTimerButtonAppearance(remaining: remaining, deferImageSwap: deferImageSwap)
+        playbackControlsView.applySleepTimerButtonAppearance(remaining: remaining, deferImageSwap: deferImageSwap)
         configureSleepTimerButtonMenu()
 
         sleepTimerDisplayTask?.cancel()
@@ -1707,7 +1528,7 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
 
                 remainingSeconds -= 1
                 self.cachedSleepTimerRemaining = remainingSeconds > 0 ? remainingSeconds : nil
-                self.applySleepTimerButtonAppearance(remaining: self.cachedSleepTimerRemaining)
+                self.playbackControlsView.applySleepTimerButtonAppearance(remaining: self.cachedSleepTimerRemaining)
             }
         }
     }
@@ -1717,27 +1538,8 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         sleepTimerDisplayTask?.cancel()
         sleepTimerDisplayTask = nil
         cachedSleepTimerRemaining = nil
-        applySleepTimerButtonAppearance(remaining: nil)
+        playbackControlsView.applySleepTimerButtonAppearance(remaining: nil)
         configureSleepTimerButtonMenu()
-    }
-
-    @MainActor
-    private func applySleepTimerButtonAppearance(remaining: Int?, deferImageSwap: Bool = false) {
-        if let remaining, remaining > 0 {
-            if !deferImageSwap {
-                sleepTimerButton.setImage(sleepTimerActiveImage, for: .normal)
-            }
-            sleepTimerButton.tintColor = .systemIndigo
-            let minutes = max(1, (remaining + 59) / 60)
-            sleepTimerButton.accessibilityValue = unsafe String(
-                format: String(localized: "sleep_timer_accessibility_remaining", table: "Localizable"),
-                minutes
-            )
-        } else {
-            sleepTimerButton.setImage(sleepTimerInactiveImage, for: .normal)
-            sleepTimerButton.tintColor = .secondaryLabel
-            sleepTimerButton.accessibilityValue = nil
-        }
     }
 
     // MARK: - Lifecycle (deinit)
@@ -2385,47 +2187,11 @@ extension ViewController {
 
 extension ViewController {
     func updateStatusLabel(text: String, backgroundColor: UIColor, textColor: UIColor) {
-        if statusLabel.text == text { return }
+        // Phase 3: forward to composed controls view (pill state)
+        playbackControlsView.setStatus(text: text, backgroundColor: backgroundColor, textColor: textColor)
         
-        statusLabel.text = text
-        statusLabel.backgroundColor = backgroundColor
-        statusLabel.textColor = textColor
-        statusLabel.accessibilityLabel = text
-        
-        // Announce status changes to VoiceOver only for play/pause states
+        // Announce status changes to VoiceOver only for play/pause states (kept in owner per original)
         if text == String(localized: "status_playing", table: "Localizable") || text == String(localized: "status_paused", table: "Localizable") {
-            unsafe UIAccessibility.post(notification: .announcement, argument: text)
-        }
-    }
-    
-    func updateMetadataLabel(text: String) {
-        if metadataLabel.text == text { return }
-        
-        // Enable hyphenation via attributed text
-        let paragraphStyle = NSMutableParagraphStyle()
-        paragraphStyle.hyphenationFactor = 1.0  // Full hyphenation
-        
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: metadataLabel.font ?? UIFont.preferredFont(forTextStyle: .callout),
-            .foregroundColor: metadataLabel.textColor ?? .secondaryLabel,
-            .paragraphStyle: paragraphStyle
-        ]
-        
-        let attributedText = NSAttributedString(string: text, attributes: attributes)
-        metadataLabel.attributedText = attributedText
-        
-        // Accessibility reads full text regardless of truncation.
-        // Visible text stays as track info only; prefix "Now Playing" for VoiceOver when streaming.
-        let noTrackInfo = String(localized: "no_track_info", table: "Localizable")
-        if text != noTrackInfo {
-            let nowPlaying = String(localized: "Now Playing", defaultValue: "Now Playing", table: "Localizable")
-            metadataLabel.accessibilityLabel = "\(nowPlaying): \(text)"
-        } else {
-            metadataLabel.accessibilityLabel = text
-        }
-        
-        // Announce metadata changes if significant
-        if text != noTrackInfo {
             unsafe UIAccessibility.post(notification: .announcement, argument: text)
         }
     }
@@ -2454,19 +2220,20 @@ extension ViewController {
     ///
     /// - SeeAlso: `handleUserTogglePlayback()`, `handleTogglePlayback()` (public wrapper for SceneDelegate)
     @objc private func togglePlayback() {
-        // Instant visual press feedback
+        // Instant visual press feedback (Phase 3: button now lives in playbackControlsView)
+        let targetButton = playbackControlsView.playPauseButton
         UIView.animate(withDuration: 0.1, animations: {
-            self.playPauseButton.transform = CGAffineTransform(scaleX: 0.95, y: 0.95)
+            targetButton.transform = CGAffineTransform(scaleX: 0.95, y: 0.95)
         }) { _ in
             UIView.animate(withDuration: 0.1) {
-                self.playPauseButton.transform = .identity
+                targetButton.transform = .identity
             }
         }
         
         // Prevent multiple rapid taps
-        playPauseButton.isUserInteractionEnabled = false
+        targetButton.isUserInteractionEnabled = false
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-            self?.playPauseButton.isUserInteractionEnabled = true
+            self?.playbackControlsView.playPauseButton.isUserInteractionEnabled = true
         }
         
         Task { @MainActor in
@@ -2552,12 +2319,8 @@ extension ViewController {
     private func safeUpdateStatusLabel(text: String, backgroundColor: UIColor, textColor: UIColor, isPermanentError: Bool) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            if self.statusLabel.text == text { return } // Skip redundant updates
-            
-            self.statusLabel.text = text
-            self.statusLabel.backgroundColor = backgroundColor
-            self.statusLabel.textColor = textColor
-            self.statusLabel.accessibilityLabel = text   // always keep in sync
+            // Phase 3: use the setter (it contains the redundant-text skip)
+            self.playbackControlsView.setStatus(text: text, backgroundColor: backgroundColor, textColor: textColor)
             
             // Permanent error state is now driven by SecurityModelValidator.isPermanentlyInvalid + intent.
             
@@ -2629,13 +2392,16 @@ extension ViewController: StreamingPlayerDelegate {
             // These now run *after* updateUI so they can override the label color/alerts when needed
             if let reasonKey = reasonKey {
                 if reasonKey == "status_ssl_transition" {
-                    self.statusLabel.backgroundColor = .systemOrange
-                    self.statusLabel.textColor = .white
+                    // Color-only override after updateUI (text is already correct)
+                    let lbl = playbackControlsView.statusLabel
+                    lbl.backgroundColor = .systemOrange
+                    lbl.textColor = .white
                     self.showSSLTransitionAlert()
                     
                 } else if reasonKey == "status_no_internet" {
-                    self.statusLabel.backgroundColor = .systemGray
-                    self.statusLabel.textColor = .white
+                    let lbl = playbackControlsView.statusLabel
+                    lbl.backgroundColor = .systemGray
+                    lbl.textColor = .white
                     self.updateUIForNoInternet()
                     
                 } else if reasonKey == "status_stream_unavailable" || reasonKey == "status_failed" {
@@ -2653,10 +2419,8 @@ extension ViewController: StreamingPlayerDelegate {
                     let correctedVisualState = await SharedPlayerManager.shared.currentVisualState
                     self.updateUI(for: correctedVisualState)
                     
-                    self.statusLabel.text = String(localized: String.LocalizationValue(reasonKey))
-                    self.statusLabel.backgroundColor = .systemRed
-                    self.statusLabel.textColor = .white
-                    self.statusLabel.accessibilityLabel = self.statusLabel.text
+                    let reasonText = String(localized: String.LocalizationValue(reasonKey))
+                    playbackControlsView.setStatus(text: reasonText, backgroundColor: .systemRed, textColor: .white)
 
                     if self.presentedViewController == nil {
                         let alert = UIAlertController(
@@ -2763,7 +2527,7 @@ extension ViewController: StreamingPlayerDelegate {
                         #if DEBUG
                         print("[ViewController] Widget switch blocked resume — .userPaused")
                         #endif
-                        updatePlayPauseButton(isPlaying: false)
+                        playbackControlsView.setPlayPause(isPlaying: false)
                         safeUpdateStatusLabel(text: String(localized: "status_paused", table: "Localizable"),
                                               backgroundColor: .systemYellow,
                                               textColor: .label,
