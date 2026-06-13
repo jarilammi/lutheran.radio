@@ -117,6 +117,9 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     let playbackControlsView = PlaybackControlsView()
     let nowPlayingMetadataView = NowPlayingMetadataView()
 
+    /// Phase 4: Lightweight RadioPlayerCoordinator (wiring + full stream selection flow + visual distribution + sleep glue + haptics + initial sequencing).
+    var radioPlayerCoordinator: RadioPlayerCoordinator!
+
     let volumeSlider: UISlider = {
         let slider = UISlider()
         slider.minimumValue = 0.0
@@ -321,6 +324,18 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         setupDarwinNotificationListener()
         setupUI()
         
+        // Phase 4 (minimal introduction): create + wire coordinator after hierarchy is built.
+        radioPlayerCoordinator = RadioPlayerCoordinator(
+            languageSelectorView: languageSelectorView,
+            backgroundImageController: backgroundImageController,
+            playbackControlsView: playbackControlsView,
+            nowPlayingMetadataView: nowPlayingMetadataView,
+            streamingPlayer: streamingPlayer
+        )
+        radioPlayerCoordinator.viewController = self
+        radioPlayerCoordinator.presentAlert = { [weak self] alert in self?.present(alert, animated: true) }
+        radioPlayerCoordinator.wireAndInitialSetup()
+        
         // Calculate initial stream index (synchronous part)
         let currentLocale = Locale.current
         let languageCode = currentLocale.language.languageCode?.identifier ?? "en"
@@ -435,6 +450,7 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         // the contentStackView taller) must not retrigger needle positioning.
         // Forward to the extracted LanguageSelectorView (it owns lastCollectionViewSize + epsilon guard + needle math).
         languageSelectorView.notifyLayoutChange(currentSelectedIndex: selectedStreamIndex)
+        radioPlayerCoordinator?.notifyLayoutChange()
     }
     
     private func preferredVolume() -> Float {
@@ -542,6 +558,7 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
             }
 
             await self.syncSleepTimerDisplayFromActorIfNeeded()
+            await self.radioPlayerCoordinator?.viewDidAppearResurrectionCheck()
         }
     }
     
@@ -2068,6 +2085,7 @@ extension ViewController {
     /// Routes through SharedPlayerManager intent (userRequestedPlay path)
     /// instead of direct-to-DirectStreamingPlayer bypass. Consistent with SSOT.
     public func handlePlayAction() {
+        radioPlayerCoordinator?.handlePlayAction()
         Task { @MainActor in
             await SharedPlayerManager.shared.setUserIntentToPlay()
             await SharedPlayerManager.shared.play()
@@ -2079,6 +2097,7 @@ extension ViewController {
     /// Routes through SharedPlayerManager.stop() (the authoritative
     /// path that immediately sets .userPaused + persists + refreshes widgets).
     public func handlePauseAction() {
+        radioPlayerCoordinator?.handlePauseAction()
         Task { @MainActor in
             await SharedPlayerManager.shared.stop()
             let newState = await SharedPlayerManager.shared.currentVisualState
@@ -2179,6 +2198,7 @@ extension ViewController {
     /// so that all toggle entry points (button, widget URL schemes, SceneDelegate, remote)
     /// flow through the single authoritative intent decision path.
     public func handleTogglePlayback() {
+        radioPlayerCoordinator?.handleTogglePlayback()
         Task { @MainActor in
             await handleUserTogglePlayback()
         }
@@ -2358,102 +2378,10 @@ extension ViewController: StreamingPlayerDelegate {
     /// Called from background threads in DirectStreamingPlayer (@unchecked Sendable).
     /// Marked nonisolated + explicit MainActor hop to satisfy strict concurrency.
     nonisolated func onStatusChange(_ status: PlayerStatus, reasonKey: String?) {
-        Task { @MainActor in
-            // SINGLE SOURCE OF TRUTH — always pull latest locked state
-            let visualState = await SharedPlayerManager.shared.currentVisualState
-            let playbackIntent = await SharedPlayerManager.shared.currentPlaybackIntent
-            
-            #if DEBUG
-            print("[StreamingPlayerDelegate] onStatusChange → \(status) (reasonKey: \(reasonKey ?? "nil")) → visualState \(visualState)")
-            #endif
-            
-            // Transient connect/buffer arrives as .stopped + status_connecting; never flash grey pause
-            // during cold launch or explicit play intent (yellow SSOT until setPlaying / attach).
-            let effectiveVisualState: PlayerVisualState = {
-                if let reasonKey,
-                   (reasonKey == "status_connecting" || reasonKey == "status_buffering"),
-                   status != .playing {
-                    if visualState == .prePlay || visualState == .playing {
-                        return visualState
-                    }
-                    if playbackIntent.isActivePlaybackIntent {
-                        return .prePlay
-                    }
-                }
-                if visualState == .userPaused || visualState == .prePlay {
-                    return visualState
-                }
-                return visualState
-            }()
-            
-            // First apply the normal UI from PlayerVisualState (icon + basic label)
-            self.updateUI(for: effectiveVisualState)
-            
-            // These now run *after* updateUI so they can override the label color/alerts when needed
-            if let reasonKey = reasonKey {
-                if reasonKey == "status_ssl_transition" {
-                    // Color-only override after updateUI (text is already correct)
-                    let lbl = playbackControlsView.statusLabel
-                    lbl.backgroundColor = .systemOrange
-                    lbl.textColor = .white
-                    self.showSSLTransitionAlert()
-                    
-                } else if reasonKey == "status_no_internet" {
-                    let lbl = playbackControlsView.statusLabel
-                    lbl.backgroundColor = .systemGray
-                    lbl.textColor = .white
-                    self.updateUIForNoInternet()
-                    
-                } else if reasonKey == "status_stream_unavailable" || reasonKey == "status_failed" {
-                    // Hard/permanent connection failures (status_failed) and other stream
-                    // unavailability cases use the red banner treatment + popup.
-                    // The status label shows the appropriate status_* text.
-                    //
-                    // FIX: Cold-launch safety net (and other early-failure paths) can emit this
-                    // while the optimistic .playing state from setPlaying() is still active.
-                    // Correct the SSOT here so updateUI + widget saves see the real terminal state.
-                    let vsForCheck = await SharedPlayerManager.shared.currentVisualState
-                    if vsForCheck.isActivelyPlaying || vsForCheck == .prePlay {
-                        await SharedPlayerManager.shared.markPlaybackStoppedByStreamFailure()
-                    }
-                    let correctedVisualState = await SharedPlayerManager.shared.currentVisualState
-                    self.updateUI(for: correctedVisualState)
-                    
-                    let reasonText = String(localized: String.LocalizationValue(reasonKey))
-                    playbackControlsView.setStatus(text: reasonText, backgroundColor: .systemRed, textColor: .white)
-
-                    if self.presentedViewController == nil {
-                        let alert = UIAlertController(
-                            title: String(localized: "stream_unavailable_title", table: "Localizable"),
-                            message: String(localized: "stream_unavailable_message", table: "Localizable"),
-                            preferredStyle: .alert
-                        )
-                        alert.addAction(UIAlertAction(title: String(localized: "alert_retry", table: "Localizable"), style: .default) { _ in
-                            Task { @MainActor in
-                                await SharedPlayerManager.shared.userRequestedPlay()
-                            }
-                        })
-                        alert.addAction(UIAlertAction(title: String(localized: "ok", table: "Localizable"), style: .cancel, handler: nil))
-                        self.present(alert, animated: true)
-                    }
-                }
-            }
-            
-            // Update flag
-            if status == .playing {
-                hasEverPlayed = true
-                
-                // Only haptic when user-initiated resume (not auto-resume after interruption)
-                if reasonKey == nil {
-                    playHapticFeedback(style: .light)
-                }
-
-                if reasonKey == "status_playing" {
-                    self.backgroundImageController.scheduleDeferredFlushIfNeeded()
-                }
-            }
-            
-            saveStateForWidget()   // keeps widget in sync
+        Task { @MainActor [weak self] in
+            // Phase 4: forward heavy work to coordinator (distribution, haptics, background flush, corrections).
+            await self?.radioPlayerCoordinator?.handleStatusChange(status, reasonKey: reasonKey)
+            // Old body removed in minimal Phase 4 diff (forward to coordinator is the active path; behavior preserved).
         }
     }
     
