@@ -53,6 +53,8 @@ final class NowPlayingMetadataView {
         label.textColor = .secondaryLabel
         label.numberOfLines = 0
         label.translatesAutoresizingMaskIntoConstraints = false
+        label.isAccessibilityElement = true
+        label.accessibilityHint = String(localized: "accessibility_hint_metadata", table: "Localizable")
         self.metadataLabel = label
 
         // Speaker image (exact creation from ViewController)
