@@ -82,12 +82,6 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     /// Last visual state applied by `updateUI(for:)`; used to skip redundant UI work during stop cascades.
     private var lastAppliedVisualState: PlayerVisualState?
     
-    /// Flag indicating if the device is in Low Power Mode (iOS 26+).
-    /// - Returns: `true` if low power mode is enabled, triggering UI/processing optimizations.
-    private var isLowEfficiencyMode: Bool {
-        ProcessInfo.processInfo.isLowPowerModeEnabled
-    }
-    
     // MARK: - UI Elements
     /// The main title label displaying "Lutheran Radio".
     /// - Accessibility: Labeled for VoiceOver with dynamic font support.
@@ -108,6 +102,14 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     /// Phase 1 extraction: owns collection, indicator, all needle math, and collection protocols.
     /// ViewController retains selectedStreamIndex + all playback intent / stream switch logic.
     let languageSelectorView = LanguageSelectorView()
+
+    /// Background image + Core Image processing (Phase 2 extraction).
+    /// Owns the full-bleed backgroundImageView, all CI filtering (dark/light morphology + controls),
+    /// caching, in-flight coalescing, cold-launch + stream-switch deferral (attach + ICY stable),
+    /// low-power fast path, energy efficiency (LPM parallax + raw image), and parallax.
+    /// ViewController performs hierarchy addition + constraints and drives via the narrow hooks
+    /// at the correct moments. All heavy logic moved verbatim (behavior preserved).
+    let backgroundImageController = BackgroundImageController()
     
     let playPauseButton: UIButton = {
         let button = UIButton(type: .system)
@@ -192,27 +194,6 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         return view
     }()
     
-    // MARK: - Background and Image Processing
-    private let backgroundImageView: UIImageView = {
-        let imageView = UIImageView()
-        imageView.contentMode = .scaleAspectFill
-        imageView.translatesAutoresizingMaskIntoConstraints = false
-        imageView.tintColor = UIColor.gray
-        imageView.alpha = 0.1
-        imageView.isAccessibilityElement = false
-        return imageView
-    }()
-    
-    /// Mapping of language codes to background image asset names.
-    /// - Note: Used for dynamic backgrounds based on selected stream.
-    private let backgroundImages: [String: String] = [
-        "en": "north_america",
-        "de": "germany",
-        "fi": "finland",
-        "sv": "sweden",
-        "et": "estonia"
-    ]
-    
     // MARK: - Haptic Engine
     /// Manages the `CHHapticEngine` for providing tactile feedback during user interactions (e.g., play/pause, stream switching).
     /// - Features:
@@ -272,20 +253,6 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
             return nil
         }
     }()
-    
-    // MARK: - Image Processing
-    private let imageProcessingQueue = DispatchQueue(label: "radio.lutheran.imageProcessing", qos: .utility)
-    private let imageProcessingContext = CIContext(options: [.useSoftwareRenderer: false])
-    /// Cache for processed background images to avoid redundant CIImage filtering.
-    /// - Note: Limited to 5 items (one per language) to manage memory.
-    private var processedImageCache = NSCache<NSString, UIImage>()
-    /// Coalesces overlapping background processing for the same cache key before NSCache is populated.
-    private var inFlightImageProcessing: [String: Task<UIImage?, Never>] = [:]
-    private let cacheQueue = DispatchQueue(label: "radio.lutheran.imageCache", qos: .utility)
-    /// Cold launch: defer CIFilter + main-thread apply until first stream attach is stable.
-    private var deferBackgroundImageUntilPlaybackStable = false
-    private var pendingBackgroundStream: DirectStreamingPlayer.Stream?
-    private var deferredBackgroundFlushTask: Task<Void, Never>?
     
     private var selectedStreamIndex: Int = 0
     
@@ -380,7 +347,7 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
-        processedImageCache.countLimit = 5  // One per language, as there are 5 streams
+        // processed image cache limit is now configured inside BackgroundImageController (Phase 2)
         
         // Add custom accessibility actions for playPauseButton
         playPauseButton.accessibilityCustomActions = [
@@ -465,7 +432,6 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         setupWidgetActionPolling()
         setupFastWidgetActionChecking()
         isInitialSetupComplete = true
-        setupBackgroundParallax()
 
         NotificationCenter.default.addObserver(
             self,
@@ -478,15 +444,9 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
             await self?.syncSleepTimerDisplayFromActorIfNeeded()
         }
         
-        // Energy Efficiency Optimizations (iOS 26)
-        updateForEnergyEfficiency()
-        
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(energyEfficiencyChanged),
-            name: Notification.Name("NSProcessInfoPowerStateDidChangeNotification"),
-            object: nil
-        )
+        // Energy Efficiency Optimizations (iOS 26) — now owned by BackgroundImageController (Phase 2).
+        // The controller self-registers for power state notifications and reacts using its last stream.
+        backgroundImageController.updateForEnergyEfficiency()
         
         // === Asynchronous initialization (required for Swift 6 concurrency) ===
         Task { @MainActor [weak self] in
@@ -506,8 +466,8 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
             await self.streamingPlayer.setSelectedStreamModelOnly(to: initialStream)
             
             self.updateUserDefaultsLanguage(initialStream.languageCode)
-            self.deferBackgroundImageUntilPlaybackStable = true
-            self.pendingBackgroundStream = initialStream
+            // Phase 2: deferral state is now owned by BackgroundImageController (cold launch path preserved).
+            backgroundImageController.scheduleDeferredForStreamSwitch(initialStream)
             
             await self.playSpecialTuningSound()
             
@@ -1264,387 +1224,19 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         : String(localized: "accessibility_label_play", table: "Localizable")
     }
     
-    private func setupBackgroundParallax() {
-        backgroundImageView.addParallaxEffect(intensity: 10.0)
-    }
-    
-    /// Updates the background image based on the selected stream's language.
-    /// - Parameter stream: The current stream providing language code.
-    /// - Note: Caches processed images; applies filters async for performance.
-    /// - SeeAlso: `processImageAsync(imageName:cacheKey:stream:isDarkMode:)` for filtering details.
-    /// After cold launch, run background CIFilter only once stream attach is stable so HAL
-    /// and main-thread UIImageView work do not contend with first-play audio or early gestures.
-    private func isDeferredBackgroundFlushReady() -> Bool {
-        DirectStreamingPlayer.shared.isPlaybackAttachStable()
-            && DirectStreamingPlayer.shared.hasReceivedLiveStreamMetadata
-    }
-
-    private func cancelDeferredBackgroundFlushForModalInteraction() {
-        deferredBackgroundFlushTask?.cancel()
-        deferredBackgroundFlushTask = nil
-    }
-
-    private func rescheduleDeferredBackgroundImageFlushAfterModalIfNeeded() {
-        guard deferBackgroundImageUntilPlaybackStable, pendingBackgroundStream != nil else { return }
-        scheduleDeferredBackgroundImageFlushIfNeeded()
-    }
-
-    /// Defers CIFilter + apply until the new stream attach is stable (stream switch while playing).
-    private func scheduleDeferredBackgroundImageForStreamSwitch(_ stream: DirectStreamingPlayer.Stream) {
-        deferredBackgroundFlushTask?.cancel()
-        deferredBackgroundFlushTask = nil
-        deferBackgroundImageUntilPlaybackStable = true
-        pendingBackgroundStream = stream
-    }
-
-    private func scheduleDeferredBackgroundImageFlushIfNeeded() {
-        guard deferBackgroundImageUntilPlaybackStable,
-              let stream = pendingBackgroundStream else { return }
-        guard deferredBackgroundFlushTask == nil else { return }
-
-        deferredBackgroundFlushTask = Task { @MainActor [weak self] in
-            defer { self?.deferredBackgroundFlushTask = nil }
-            guard let self else { return }
-
-            for _ in 0..<40 {
-                if Task.isCancelled { return }
-                if self.isDeferredBackgroundFlushReady() { break }
-                try? await Task.sleep(for: .milliseconds(100))
-            }
-            guard self.isDeferredBackgroundFlushReady() else { return }
-
-            // Brief settle after LIVE ICY before heavy CIContext + IOSurface apply.
-            try? await Task.sleep(for: .milliseconds(800))
-            guard !Task.isCancelled else { return }
-
-            self.deferBackgroundImageUntilPlaybackStable = false
-            self.pendingBackgroundStream = nil
-            #if DEBUG
-            print("[ViewController] Flushing deferred background image for \(stream.languageCode)")
-            #endif
-            self.updateBackground(for: stream, skipCrossDissolve: true)
-        }
-    }
-
-    private func updateBackground(for stream: DirectStreamingPlayer.Stream, skipCrossDissolve: Bool = false) {
-        if deferBackgroundImageUntilPlaybackStable {
-            pendingBackgroundStream = stream
-            #if DEBUG
-            print("[ViewController] Background image deferred until playback attach is stable (\(stream.languageCode))")
-            #endif
-            return
-        }
-
-        guard let imageName = backgroundImages[stream.languageCode] else {
-            DispatchQueue.main.async {
-                self.backgroundImageView.image = nil
-            }
-            return
-        }
-        
-        let maxPixelDimension = backgroundProcessingMaxPixelDimension()
-        let cacheKey = "\(imageName)_\(traitCollection.userInterfaceStyle.rawValue)_\(Int(maxPixelDimension))"
-        let isDarkMode = traitCollection.userInterfaceStyle == .dark  // Capture on main thread
-        
-        if isLowEfficiencyMode {
-            // Low efficiency: Skip heavy processing/caching to save battery/CPU
-            // Load raw image directly (lightweight) and apply without filters
-            if let rawImage = UIImage(named: imageName) {
-                DispatchQueue.main.async { [weak self] in
-                    guard let self = self else { return }
-                    self.backgroundImageView.image = rawImage
-                    // ... Add any existing non-processing code here, e.g., constraints or animations if needed ...
-                    // For example, if you have fade-in animation:
-                    UIView.transition(with: self.backgroundImageView, duration: 0.5, options: .transitionCrossDissolve) {
-                        self.backgroundImageView.image = rawImage
-                    } completion: { _ in }
-                }
-            }
-            return
-        }
-        
-        // Normal mode: Proceed with caching and full processing
-        cacheQueue.async { [weak self] in
-            guard let self = self else { return }
-            
-            DispatchQueue.main.async {
-                if let cachedImage = self.processedImageCache.object(forKey: cacheKey as NSString) {
-                    self.applyProcessedImage(cachedImage, for: stream, skipCrossDissolve: skipCrossDissolve)
-                    return
-                }
-                
-                // Process image on background queue (kick-off from main to satisfy isolation)
-                self.processImageAsync(
-                    imageName: imageName,
-                    cacheKey: cacheKey,
-                    stream: stream,
-                    isDarkMode: isDarkMode,
-                    maxPixelDimension: maxPixelDimension
-                )
-            }
-        }
-    }
-    
-    /// Display width (including background bleed) at 2× native scale — caps CIFilter work at display quality.
-    private func backgroundProcessingMaxPixelDimension() -> CGFloat {
-        let screenScale = view.window?.windowScene?.screen.scale ?? traitCollection.displayScale
-        let bounds = view.bounds
-        guard bounds.width > 1 else {
-            return ceil(393 * 2 * screenScale)
-        }
-        let displayWidth = bounds.width + 40
-        return ceil(displayWidth * 2 * screenScale)
-    }
-
-    /// Scales the image so its longest edge is at most `maxPixelDimension` before the filter chain.
-    /// - Returns: Downscaled image and scale factor applied (1.0 when no downscale was needed).
-    nonisolated private func downscaledForProcessing(_ image: CIImage, maxPixelDimension: CGFloat) -> (CIImage, CGFloat) {
-        let extent = image.extent
-        guard extent.width > 0, extent.height > 0, maxPixelDimension > 0 else {
-            return (image, 1)
-        }
-        let longestEdge = max(extent.width, extent.height)
-        guard longestEdge > maxPixelDimension else {
-            return (image, 1)
-        }
-        let scale = maxPixelDimension / longestEdge
-        return (image.transformed(by: CGAffineTransform(scaleX: scale, y: scale)), scale)
-    }
-
-    /// Processes and applies background image filters asynchronously.
-    /// - Parameter imageName: Name of the base image asset.
-    /// - Parameter cacheKey: Unique key for caching (includes interface style and processing size).
-    /// - Parameter stream: Current stream for language-specific image.
-    /// - Parameter isDarkMode: `true` if dark mode filters should be applied.
-    /// - Parameter maxPixelDimension: Upper bound on longest edge in pixels before filters run.
-    /// - Note: Uses CIContext for efficiency; caches results to reduce CPU usage in low-power mode.
-    private func processImageAsync(
-        imageName: String,
-        cacheKey: String,
-        stream: DirectStreamingPlayer.Stream,
-        isDarkMode: Bool,
-        maxPixelDimension: CGFloat
-    ) {
-        if let inFlight = inFlightImageProcessing[cacheKey] {
-            Task { @MainActor [weak self] in
-                guard let self, let image = await inFlight.value else { return }
-                self.applyProcessedImage(image, for: stream)
-            }
-            #if DEBUG
-            print("Background image processing coalesced for \(stream.languageCode), cacheKey=\(cacheKey)")
-            #endif
-            return
-        }
-
-        guard let baseImage = UIImage(named: imageName) else {
-            backgroundImageView.image = nil
-            return
-        }
-
-        let task = Task<UIImage?, Never> { @MainActor [weak self] in
-            guard let self else { return nil }
-
-            let finalImage: UIImage? = await withCheckedContinuation { continuation in
-                self.imageProcessingQueue.async { [weak self] in
-                    guard let self else {
-                        continuation.resume(returning: nil)
-                        return
-                    }
-
-                    let result = autoreleasepool { () -> UIImage? in
-                        guard let ciImage = CIImage(image: baseImage) else {
-                            return baseImage
-                        }
-
-                        let (scaledImage, processingScale) = self.downscaledForProcessing(ciImage, maxPixelDimension: maxPixelDimension)
-                        var processedImage = scaledImage
-
-                        #if DEBUG
-                        print(
-                            "Processing image for \(stream.languageCode), mode: \(isDarkMode ? "dark" : "light"), "
-                                + "sourceExtent=\(ciImage.extent.integral), processingExtent=\(scaledImage.extent.integral), "
-                                + "maxPx=\(Int(maxPixelDimension)), scale=\(unsafe String(format: "%.3f", processingScale))"
-                        )
-                        #endif
-
-                        // Apply filters based on interface style.
-                        // Methods are pure CPU transforms (no actor state) → nonisolated for Swift 6.
-                        if isDarkMode {
-                            processedImage = self.applyDarkModeFilters(to: processedImage, morphologyScale: processingScale)
-                        } else {
-                            processedImage = self.applyLightModeFilters(to: processedImage, morphologyScale: processingScale)
-                        }
-
-                        guard let cgImage = self.imageProcessingContext.createCGImage(processedImage, from: processedImage.extent) else {
-                            #if DEBUG
-                            print("Failed to convert CIImage to CGImage - using base image as fallback")
-                            #endif
-                            return baseImage
-                        }
-
-                        let converted = UIImage(cgImage: cgImage)
-                        #if DEBUG
-                        print("Successfully converted processed image to UIImage - size: \(converted.size)")
-                        #endif
-                        return converted
-                    }
-                    continuation.resume(returning: result)
-                }
-            }
-
-            defer { self.inFlightImageProcessing.removeValue(forKey: cacheKey) }
-
-            if let finalImage {
-                self.processedImageCache.setObject(finalImage, forKey: cacheKey as NSString)
-            }
-            return finalImage
-        }
-
-        inFlightImageProcessing[cacheKey] = task
-
-        Task { @MainActor [weak self] in
-            guard let self, let image = await task.value else { return }
-            self.applyProcessedImage(image, for: stream)
-        }
-    }
-    
-    nonisolated private func applyDarkModeFilters(to image: CIImage, morphologyScale: CGFloat = 1) -> CIImage {
-        var processedImage = image
-        
-        // Invert colors
-        if let invertFilter = CIFilter(name: "CIColorInvert") {
-            invertFilter.setValue(processedImage, forKey: kCIInputImageKey)
-            if let outputImage = invertFilter.outputImage {
-                processedImage = outputImage
-                #if DEBUG
-                print("Dark mode: Applied CIColorInvert - extent: \(processedImage.extent)")
-                #endif
-            }
-        }
-        
-        // Adjust contrast and brightness
-        if let controlsFilter = CIFilter(name: "CIColorControls") {
-            controlsFilter.setValue(processedImage, forKey: kCIInputImageKey)
-            controlsFilter.setValue(1.3, forKey: kCIInputContrastKey)
-            controlsFilter.setValue(0.2, forKey: kCIInputBrightnessKey)
-            if let outputImage = controlsFilter.outputImage {
-                processedImage = outputImage
-                #if DEBUG
-                print("Dark mode: Applied CIColorControls - extent: \(processedImage.extent)")
-                #endif
-            }
-        }
-        
-        // Morphology (radius scaled to match visual effect after pre-filter downscale)
-        if let dilateFilter = CIFilter(name: "CIMorphologyMaximum") {
-            dilateFilter.setValue(processedImage, forKey: kCIInputImageKey)
-            dilateFilter.setValue(4.0 * morphologyScale, forKey: kCIInputRadiusKey)
-            if let outputImage = dilateFilter.outputImage {
-                processedImage = outputImage
-                #if DEBUG
-                print("Dark mode: Applied CIMorphologyMaximum - extent: \(processedImage.extent)")
-                #endif
-            }
-        }
-        
-        return processedImage
-    }
-
-    nonisolated private func applyLightModeFilters(to image: CIImage, morphologyScale: CGFloat = 1) -> CIImage {
-        var processedImage = image
-        
-        // Color controls
-        if let controlsFilter = CIFilter(name: "CIColorControls") {
-            controlsFilter.setValue(processedImage, forKey: kCIInputImageKey)
-            controlsFilter.setValue(1.3, forKey: kCIInputContrastKey)
-            controlsFilter.setValue(-0.2, forKey: kCIInputBrightnessKey)
-            if let outputImage = controlsFilter.outputImage {
-                processedImage = outputImage
-                #if DEBUG
-                print("Light mode: Applied CIColorControls - extent: \(processedImage.extent)")
-                #endif
-            }
-        }
-        
-        // Morphology operations (radius scaled to match visual effect after pre-filter downscale)
-        if let dilateFilter = CIFilter(name: "CIMorphologyMaximum") {
-            dilateFilter.setValue(processedImage, forKey: kCIInputImageKey)
-            dilateFilter.setValue(5.0 * morphologyScale, forKey: kCIInputRadiusKey)
-            if let outputImage = dilateFilter.outputImage {
-                processedImage = outputImage
-                #if DEBUG
-                print("Light mode: Applied CIMorphologyMaximum - extent: \(processedImage.extent)")
-                #endif
-            }
-        }
-        
-        if let erodeFilter = CIFilter(name: "CIMorphologyMinimum") {
-            erodeFilter.setValue(processedImage, forKey: kCIInputImageKey)
-            erodeFilter.setValue(1.0 * morphologyScale, forKey: kCIInputRadiusKey)
-            if let outputImage = erodeFilter.outputImage {
-                processedImage = outputImage
-                #if DEBUG
-                print("Light mode: Applied CIMorphologyMinimum - extent: \(processedImage.extent)")
-                #endif
-            }
-        }
-        
-        return processedImage
-    }
-    
-    private func applyProcessedImage(
-        _ image: UIImage,
-        for stream: DirectStreamingPlayer.Stream,
-        skipCrossDissolve: Bool = false
-    ) {
-        // This runs on main thread
-        let screen = view.window?.windowScene?.screen
-        let screenSize = screen?.bounds.size ?? CGSize(width: 375, height: 667) // Fallback to default iPhone size if nil
-        let isSmallScreen = screenSize.height < 1600
-        let targetAlpha: CGFloat = traitCollection.userInterfaceStyle == .dark ? 0.3 : 0.15
-
-        if isSmallScreen {
-            let imageSize = image.size
-            let screenAspect = screenSize.width / screenSize.height
-            let imageAspect = imageSize.width / imageSize.height
-            let scaleFactor = min(0.85, screenAspect / imageAspect)
-            backgroundImageView.transform = CGAffineTransform(scaleX: scaleFactor, y: scaleFactor)
-        } else {
-            backgroundImageView.transform = .identity
-        }
-
-        if skipCrossDissolve {
-            backgroundImageView.image = image
-            backgroundImageView.alpha = targetAlpha
-            backgroundImageView.addParallaxEffect(intensity: 10.0)
-            #if DEBUG
-            print("Background update completed - alpha: \(backgroundImageView.alpha), image: \(backgroundImageView.image != nil ? "set" : "nil")")
-            #endif
-            return
-        }
-
-        backgroundImageView.image = image
-        backgroundImageView.addParallaxEffect(intensity: 10.0)
-
-        UIView.transition(with: backgroundImageView, duration: 0.5, options: .transitionCrossDissolve, animations: {
-            self.backgroundImageView.alpha = targetAlpha
-        }, completion: { _ in
-            #if DEBUG
-            print("Background update completed - alpha: \(self.backgroundImageView.alpha), image: \(self.backgroundImageView.image != nil ? "set" : "nil")")
-            #endif
-        })
-    }
-    
     private func setupUI() {
-        view.addSubview(backgroundImageView)
+        // Phase 2: backgroundImageView is now owned and configured by BackgroundImageController.
+        // We only add it to the hierarchy and apply the full-bleed (parallax bleed) constraints here.
+        let bgView = backgroundImageController.backgroundImageView
+        view.addSubview(bgView)
         // Modern + cleaner: activate directly, no unnecessary stored array
         NSLayoutConstraint.activate([
-            backgroundImageView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: -20),
-            backgroundImageView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: 20),
-            backgroundImageView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: -20),
-            backgroundImageView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: 20)
+            bgView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: -20),
+            bgView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: 20),
+            bgView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: -20),
+            bgView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: 20)
         ])
-        backgroundImageView.layer.zPosition = -1
+        bgView.layer.zPosition = -1
         
         view.addSubview(titleLabel)
         view.addSubview(languageSelectorView)
@@ -1710,13 +1302,11 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         print("[ViewController] Received memory warning")
         #endif
         
-        // Clear image cache to free memory
-        DispatchQueue.main.async { [weak self] in
-            self?.processedImageCache.removeAllObjects()
-            #if DEBUG
-            print("[ViewController] Cleared processed image cache")
-            #endif
-        }
+        // Clear image cache to free memory (Phase 2: delegated to BackgroundImageController)
+        backgroundImageController.clearCache()
+        #if DEBUG
+        print("[ViewController] Requested background image cache clear (handled by BackgroundImageController)")
+        #endif
     }
     
     // MARK: - Audio Setup
@@ -1961,7 +1551,7 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     @MainActor
     private func handleSleepTimerPresetSelected(minutes: Int) {
         isSleepTimerInteractionActive = true
-        cancelDeferredBackgroundFlushForModalInteraction()
+        backgroundImageController.cancelDeferredForModalInteraction()
 
         let totalSeconds = max(1, minutes * 60)
         Task { @MainActor [weak self] in
@@ -1982,14 +1572,14 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
             guard !Task.isCancelled else { return }
             self.applySleepTimerButtonAppearance(remaining: confirmed, deferImageSwap: false)
             self.finishSleepTimerInteraction(applyDeferredVisuals: true)
-            self.rescheduleDeferredBackgroundImageFlushAfterModalIfNeeded()
+            self.backgroundImageController.rescheduleDeferredAfterModalIfNeeded()
         }
     }
 
     @MainActor
     private func handleSleepTimerCancelSelected() {
         isSleepTimerInteractionActive = true
-        cancelDeferredBackgroundFlushForModalInteraction()
+        backgroundImageController.cancelDeferredForModalInteraction()
 
         Task { @MainActor [weak self] in
             guard let self else { return }
@@ -1998,7 +1588,7 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
             await SharedPlayerManager.shared.cancelSleepTimer()
             self.configureSleepTimerButtonMenu()
             self.finishSleepTimerInteraction(applyDeferredVisuals: true)
-            self.rescheduleDeferredBackgroundImageFlushAfterModalIfNeeded()
+            self.backgroundImageController.rescheduleDeferredAfterModalIfNeeded()
         }
     }
 
@@ -2223,7 +1813,7 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         let workItem = DispatchWorkItem { [weak self] in
             guard let self = self else { return }
             let stream = DirectStreamingPlayer.availableStreams[newIndex]
-            self.scheduleDeferredBackgroundImageForStreamSwitch(stream)
+            self.backgroundImageController.scheduleDeferredForStreamSwitch(stream)
             
             // Wait for tuning sound to complete if playing
             if self.isTuningSoundPlaying {
@@ -2314,12 +1904,10 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
 
                 await SharedPlayerManager.shared.clearSoftPauseMetadataStashForLanguageChange()
                 
-                // ← SINGLE SOURCE OF TRUTH
-                self.deferBackgroundImageUntilPlaybackStable = false
-                self.pendingBackgroundStream = nil
-                self.deferredBackgroundFlushTask?.cancel()
-                self.deferredBackgroundFlushTask = nil
-                self.updateBackground(for: stream)
+                // Phase 2: background deferral state machine now lives in BackgroundImageController.
+                // Explicit clear + immediate update for the userPaused early-return path (behavior preserved).
+                self.backgroundImageController.cancelPendingDeferral()
+                self.backgroundImageController.update(for: stream)
                 self.updateUI(for: .userPaused)
                 self.languageSelectorView.setSelectedIndex(index, caller: "completeStreamSwitch-userPaused")
                 return
@@ -2506,7 +2094,7 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
                 self.streamingPlayer.resetInitialPlaybackCountersForNewStream()
                 
                 self.selectedStreamIndex = targetIndex
-                self.updateBackground(for: targetStream)
+                self.backgroundImageController.update(for: targetStream)
                 self.updateUserDefaultsLanguage(languageCode)
                 
                 self.languageSelectorView.setSelectedIndex(targetIndex, animated: true, caller: "widgetSwitch")
@@ -2713,7 +2301,7 @@ extension ViewController {
             }
             
             selectedStreamIndex = targetIndex
-            updateBackground(for: targetStream)
+            backgroundImageController.update(for: targetStream)
             streamingPlayer.isSwitchingStream = true
             
             #if DEBUG
@@ -2840,23 +2428,6 @@ extension ViewController {
         if text != noTrackInfo {
             unsafe UIAccessibility.post(notification: .announcement, argument: text)
         }
-    }
-    
-    private func updateForEnergyEfficiency() {
-        if isLowEfficiencyMode {
-            // Reduce CPU/GPU usage: Remove parallax and lower image quality
-            backgroundImageView.motionEffects.forEach { backgroundImageView.removeMotionEffect($0) }
-            // Optionally, reduce alpha or hide non-essential UI elements if needed
-        } else {
-            // Re-enable parallax if it was set up
-            setupBackgroundParallax()
-        }
-        // Trigger background update with current stream to apply image processing changes
-        updateBackground(for: DirectStreamingPlayer.availableStreams[selectedStreamIndex])
-    }
-    
-    @objc private func energyEfficiencyChanged() {
-        updateForEnergyEfficiency()
     }
     
     // MARK: - Accessibility and Haptic Helpers
@@ -3114,7 +2685,7 @@ extension ViewController: StreamingPlayerDelegate {
                 }
 
                 if reasonKey == "status_playing" {
-                    self.scheduleDeferredBackgroundImageFlushIfNeeded()
+                    self.backgroundImageController.scheduleDeferredFlushIfNeeded()
                 }
             }
             
@@ -3176,7 +2747,7 @@ extension ViewController: StreamingPlayerDelegate {
                     // Update UI (safe on @MainActor)
                     selectedStreamIndex = newIndex
                     languageSelectorView.setSelectedIndex(newIndex, animated: true, caller: "handleSceneCommand-switch")
-                    updateBackground(for: targetStream)
+                    backgroundImageController.update(for: targetStream)
                     
                     // Respect visual state — only resume if not user-paused
                     try? await Task.sleep(for: .seconds(0.5))
@@ -3223,40 +2794,5 @@ extension ViewController: StreamingPlayerDelegate {
             // Clear the pending action (actor-isolated)
             SharedPlayerManager.shared.clearPendingAction(actionId: actionId)
         }
-    }
-}
-
-// MARK: - Parallax Effect Extension
-/// Extends UIView with device motion-based parallax effects.
-extension UIView {
-    /// Adds horizontal and vertical tilt effects for a 3D-like appearance.
-    /// - Parameter intensity: Magnitude of the tilt (e.g., 10.0 for subtle effect).
-    /// - Note: Removes existing effects first to prevent conflicts.
-    func addParallaxEffect(intensity: CGFloat) {
-        // Remove any existing motion effects to avoid conflicts
-        motionEffects.forEach { removeMotionEffect($0) }
-        
-        // Horizontal tilt effect
-        let horizontalMotion = UIInterpolatingMotionEffect(
-            keyPath: "center.x",
-            type: .tiltAlongHorizontalAxis
-        )
-        horizontalMotion.minimumRelativeValue = -intensity
-        horizontalMotion.maximumRelativeValue = intensity
-        
-        // Vertical tilt effect
-        let verticalMotion = UIInterpolatingMotionEffect(
-            keyPath: "center.y",
-            type: .tiltAlongVerticalAxis
-        )
-        verticalMotion.minimumRelativeValue = -intensity
-        verticalMotion.maximumRelativeValue = intensity
-        
-        // Group the effects
-        let motionGroup = UIMotionEffectGroup()
-        motionGroup.motionEffects = [horizontalMotion, verticalMotion]
-        
-        // Apply to the view
-        addMotionEffect(motionGroup)
     }
 }
