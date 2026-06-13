@@ -1030,6 +1030,11 @@ actor SharedPlayerManager {
     /// This method feeds the intent-driven paths. Any legacy fallback
     /// is only for very old installs that never wrote a PersistedWidgetState snapshot.
     private func ensureVisualStateLoaded() {
+        // Run legacy isPlaying → PersistedWidgetState migration early. This is the primary
+        // restoration point for actor-owned currentVisualState / currentPlaybackIntent on
+        // cold launch and after process resurrection. Safe and idempotent.
+        Self.migrateLegacyIsPlayingIfNeeded()
+
         guard !hasLoadedVisualStateFromPersistence else { return }
         
         // Combined snapshot is authoritative — including `.prePlay` (cold launch / connecting).
@@ -1380,6 +1385,57 @@ actor SharedPlayerManager {
         return decoded
     }
 
+    // MARK: - Legacy Migration
+
+    /// Migrates users from the old `isPlaying` boolean (pre snapshot unification) to the
+    /// `PersistedWidgetState` snapshot model.
+    ///
+    /// This should be called early during state restoration (e.g. via `loadPersistedWidgetState`
+    /// for widget providers, and `ensureVisualStateLoaded` for the first access to
+    /// `currentVisualState` / `currentPlaybackIntent` after launch).
+    ///
+    /// Safe to call multiple times. Only performs work if a migration is needed.
+    nonisolated static func migrateLegacyIsPlayingIfNeeded() {
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return }
+
+        // Already have a snapshot → nothing to do. Direct key inspection prevents recursion
+        // when this is invoked from inside loadPersistedWidgetState() (which covers static
+        // widget timeline provider paths that read the snapshot without going through the actor).
+        if defaults.data(forKey: "persistedWidgetState") != nil {
+            return
+        }
+
+        // Check legacy key
+        let hasLegacyKey = defaults.object(forKey: "isPlaying") != nil
+
+        guard hasLegacyKey else {
+            // No legacy data and no snapshot → nothing to migrate
+            return
+        }
+
+        let legacyIsPlaying = defaults.bool(forKey: "isPlaying")
+
+        // Create a minimal but valid PersistedWidgetState from the legacy value.
+        let migratedVisualState: PlayerVisualState = legacyIsPlaying ? .playing : .userPaused
+
+        // Build a snapshot. During migration there is (by definition) no snapshot yet,
+        // so use the direct legacy "currentLanguage" fallback (same ultimate default that
+        // preferredWidgetLanguage and load paths use). Do not call preferredWidgetLanguage()
+        // here to keep the migration self-contained.
+        let currentLanguage = defaults.string(forKey: "currentLanguage") ?? "en"
+
+        // Persist the new snapshot (this becomes the new source of truth).
+        // Uses the public static writer so lastLanguageChangeTime and metadata merge rules are applied.
+        Self.persistWidgetSnapshot(visualState: migratedVisualState, language: currentLanguage)
+
+        // Clean up the legacy key so we don't carry old data forever.
+        defaults.removeObject(forKey: "isPlaying")
+
+        #if DEBUG
+        print("🔄 [SharedPlayerManager] Migrated legacy isPlaying=\(legacyIsPlaying) → PersistedWidgetState")
+        #endif
+    }
+
     // MARK: - Persisted Widget State (visual + language snapshot)
 
     /// Combined snapshot that carries both visual intent and language.
@@ -1421,6 +1477,13 @@ actor SharedPlayerManager {
         currentLanguage: String,
         streamMetadata: StreamProgramMetadata?
     )? {
+        // Run legacy migration first (cheap & idempotent). This ensures that pre-snapshot
+        // installs that only ever wrote the "isPlaying" bool (and never a PersistedWidgetState)
+        // get upgraded to the current SSOT before any reader decides "no snapshot present".
+        // The migrate implementation uses a direct key check for the snapshot blob so there
+        // is no recursion even though loadPersistedWidgetState is one of the trigger points.
+        migrateLegacyIsPlayingIfNeeded()
+
         guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return nil }
 
         // Preferred (and now only) path: the unified PersistedWidgetState snapshot.
