@@ -22,7 +22,6 @@
 
 import UIKit
 @unsafe @preconcurrency import AVFoundation
-import CoreHaptics
 import WidgetKit
 import Core
 
@@ -37,6 +36,7 @@ final class RadioPlayerCoordinator {
     private let backgroundImageController: BackgroundImageController
     private let playbackControlsView: PlaybackControlsView
     private let nowPlayingMetadataView: NowPlayingMetadataView
+    private let hapticsController = HapticsController()
     nonisolated private let streamingPlayer: DirectStreamingPlayer
 
     // Weak back-ref for the few services that remain difficult to move in a single mechanical phase
@@ -79,54 +79,6 @@ final class RadioPlayerCoordinator {
     private var lastWidgetSwitchTime: Date?
     private var pendingWidgetSwitchWorkItem: DispatchWorkItem?
 
-    // MARK: - Haptic engine (moved; triggering centralized here)
-    private lazy var hapticEngine: CHHapticEngine? = {
-        do {
-            let engine = try CHHapticEngine()
-            engine.playsHapticsOnly = true
-
-            engine.resetHandler = { [weak self] in
-                do {
-                    try self?.hapticEngine?.start()
-                    Task { @MainActor [weak self] in
-                        guard let self else { return }
-                        #if DEBUG
-                        print("[RadioPlayerCoordinator] Haptic engine restarted after reset")
-                        #endif
-                    }
-                } catch {
-                    #if DEBUG
-                    print("[RadioPlayerCoordinator] Failed to restart haptic engine after reset: \(error)")
-                    #endif
-                }
-            }
-
-            engine.stoppedHandler = { reason in
-                #if DEBUG
-                print("[RadioPlayerCoordinator] Haptic engine stopped: reason \(reason.rawValue)")
-                #endif
-                if reason != .systemError && reason != .engineDestroyed {
-                    do {
-                        try engine.start()
-                        #if DEBUG
-                        print("[RadioPlayerCoordinator] Haptic engine auto-restarted")
-                        #endif
-                    } catch {
-                        #if DEBUG
-                        print("[RadioPlayerCoordinator] Failed to auto-restart haptic engine: \(error)")
-                        #endif
-                    }
-                }
-            }
-            return engine
-        } catch {
-            #if DEBUG
-            print("[RadioPlayerCoordinator] Haptics unavailable during creation: \(error)")
-            #endif
-            return nil
-        }
-    }()
-
     // MARK: - Init / Wiring
     init(
         languageSelectorView: LanguageSelectorView,
@@ -160,11 +112,8 @@ final class RadioPlayerCoordinator {
         languageSelectorView.reloadData()
         languageSelectorView.setSelectedIndex(initialIndex, isInitial: true, caller: "coordinatorInitialSetup")
 
-        // Haptics early init (if hardware supports)
-        if CHHapticEngine.capabilitiesForHardware().supportsHaptics {
-            _ = hapticEngine
-            startHapticEngine()
-        }
+        // Haptics early init (if hardware supports) — now delegated to tiny controller (P5+ extraction)
+        hapticsController.prepareIfSupported()
 
         // Sleep timer observer (glue)
         NotificationCenter.default.addObserver(
@@ -756,62 +705,9 @@ final class RadioPlayerCoordinator {
         }
     }
 
-    // MARK: - Haptics (moved + triggering centralized)
-    private func startHapticEngine() {
-        guard let engine = hapticEngine else { return }
-        do {
-            try engine.start()
-            #if DEBUG
-            print("[RadioPlayerCoordinator] Haptic engine started successfully")
-            #endif
-        } catch {
-            #if DEBUG
-            print("[RadioPlayerCoordinator] Failed to start haptic engine: \(error)")
-            #endif
-        }
-    }
-
+    // MARK: - Haptics (tiny controller extraction P5+; thin forward only — behavior preserved)
     func playHapticFeedback(style: UIImpactFeedbackGenerator.FeedbackStyle) {
-        guard !ProcessInfo.processInfo.isLowPowerModeEnabled else {
-            #if DEBUG
-            print("[RadioPlayerCoordinator] Haptics skipped in Low Power Mode")
-            #endif
-            return
-        }
-
-        guard CHHapticEngine.capabilitiesForHardware().supportsHaptics,
-              let engine = hapticEngine else {
-            #if DEBUG
-            print("[RadioPlayerCoordinator] Haptics not supported or engine unavailable")
-            #endif
-            return
-        }
-
-        do {
-            try engine.start()
-
-            let intensityValue: Float = (style == .heavy) ? 1.0 : 0.7
-            let sharpnessValue: Float = (style == .heavy) ? 1.0 : 0.5
-
-            let intensity = CHHapticEventParameter(parameterID: .hapticIntensity, value: intensityValue)
-            let sharpness = CHHapticEventParameter(parameterID: .hapticSharpness, value: sharpnessValue)
-            let event = CHHapticEvent(eventType: .hapticTransient, parameters: [intensity, sharpness], relativeTime: 0)
-
-            let pattern = try CHHapticPattern(events: [event], parameters: [])
-            let player = try engine.makePlayer(with: pattern)
-
-            try player.start(atTime: CHHapticTimeImmediate)
-
-            #if DEBUG
-            print("[RadioPlayerCoordinator] Haptic played: style=\(style), intensity=\(intensityValue), sharpness=\(sharpnessValue)")
-            #endif
-        } catch {
-            #if DEBUG
-            print("[RadioPlayerCoordinator] Failed to play haptic: \(error.localizedDescription)")
-            #endif
-            let fallback = UIImpactFeedbackGenerator(style: style)
-            fallback.impactOccurred()
-        }
+        hapticsController.playHapticFeedback(style: style)
     }
 
     // MARK: - Tuning sounds (moved with state; part of stream selection delight flow)
