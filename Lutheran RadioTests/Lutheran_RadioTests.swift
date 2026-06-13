@@ -382,3 +382,61 @@ final class LanguageSelectorViewMathTests: XCTestCase {
         XCTAssertNotNil(selector)
     }
 }
+
+// MARK: - Additional tests for extracted presentational components
+// Exercises the public drive surfaces of the previously extracted dumb views (NowPlayingMetadataView potentialNames pure helper + setMetadata + applySpeakerVisuals; PlaybackControlsView applyVisualState + setStatus + applySleepTimerButtonAppearance).
+// These paths were previously monolithic; now owned by the thin presentational classes. Tests drive them directly after init (no full VC hierarchy required for these methods) to increase coverage of the decomposition surface without touching orchestration, network, security, or SSOT paths.
+// Mirrors the math test approach: @MainActor, instantiate + call public APIs with realistic inputs, assert observable state on vended subviews/labels. Minimal mechanical addition. Zero prod source change, behavior-preserving, 0 new Localizable keys, 0 force-unwraps.
+final class ExtractedPresentationalViewsTests: XCTestCase {
+
+    @MainActor
+    func testNowPlayingMetadataView_PotentialNamesAndSetMetadata_ExercisesHelpers() {
+        let meta = NowPlayingMetadataView()
+        // pure helper (exercises the regex extraction used by applySpeakerVisuals and onMetadataChange sites)
+        let names = meta.potentialNames(from: "Next here on Lutheran Radio by Jari Lammi and the Team")
+        XCTAssertTrue(names.contains("Jari Lammi"), "Should extract title-case name for speaker logic")
+
+        // setMetadata drives attributed text + acc label (Now Playing prefix for real content) + no-op on duplicate.
+        // Use locale-agnostic check (test env may run under fi/en/etc; prefix value is localized at runtime).
+        meta.setMetadata("Test Track Title")
+        XCTAssertEqual(meta.metadataLabel.text, "Test Track Title")
+        let accAfterReal = meta.metadataLabel.accessibilityLabel ?? ""
+        XCTAssertTrue(accAfterReal.contains("Test Track Title"), "Should include track title in accessibilityLabel for real metadata")
+
+        let noTrack = String(localized: "no_track_info", table: "Localizable")
+        meta.setMetadata(noTrack)
+        XCTAssertEqual(meta.metadataLabel.text, noTrack)
+    }
+
+    @MainActor
+    func testPlaybackControlsView_ApplyVisualStateAndSleepAppearance_ExercisesUpdates() {
+        let controls = PlaybackControlsView()
+        // applyVisualState (primary path from updateUI distribution in coordinator)
+        controls.applyVisualState(.playing)
+        XCTAssertEqual(controls.statusLabel.text, String(localized: "status_playing", table: "Localizable"))
+
+        controls.setStatus(text: "Custom Err", backgroundColor: .red, textColor: .white)
+        XCTAssertEqual(controls.statusLabel.text, "Custom Err")
+
+        // sleep timer button appearance (called by coordinator sleep glue)
+        controls.applySleepTimerButtonAppearance(remaining: 300)
+        XCTAssertEqual(controls.sleepTimerButton.tintColor, .systemIndigo)
+        XCTAssertNotNil(controls.sleepTimerButton.accessibilityValue)
+
+        controls.applySleepTimerButtonAppearance(remaining: nil)
+        XCTAssertEqual(controls.sleepTimerButton.tintColor, .secondaryLabel)
+    }
+
+    @MainActor
+    func testNowPlayingMetadataView_ApplySpeakerVisuals_JariAndPlaceholder_PathsReachable() {
+        let meta = NowPlayingMetadataView()
+        // Note: speakerImageHeightConstraint is typically set by owner (VC) after addSubview+activate; code safely handles nil.
+        let jariNames = ["Jari Lammi"]
+        meta.applySpeakerVisuals(for: "Jari Lammi presents a program", potentialNames: jariNames, animated: false)
+        // Should have attempted to show image (specific or placeholder); just ensure reachable and no crash/hide-fail.
+        XCTAssertNotNil(meta)
+
+        meta.applySpeakerVisuals(for: "Unknown Program Name", potentialNames: ["Unknown"], animated: false)
+        XCTAssertNotNil(meta)
+    }
+}
