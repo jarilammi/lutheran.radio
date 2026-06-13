@@ -79,8 +79,11 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     private var lastWidgetActionTime: Date = .distantPast
     private let widgetActionDebounceInterval: TimeInterval = 0.65
     
-    /// Last visual state applied by `updateUI(for:)`; used to skip redundant UI work during stop cascades.
-    private var lastAppliedVisualState: PlayerVisualState?
+    // NOTE (P5 dedup): lastAppliedVisualState, selectedStreamIndex (mirror only for legacy sync spots),
+    // tuning*, streamSwitch*, sleep UI*, hasShownSecurityAlert, hasPlayedSpecialTuningSound, hasEverPlayed
+    // and related orchestration state now live exclusively in RadioPlayerCoordinator. VC keeps only
+    // what is required for the thin host surface (network flags, isDeallocating, test accessors,
+    // widget polling debounce/processed set, pending widget switch work item).
     
     // MARK: - UI Elements
     /// The main title label displaying "Lutheran Radio".
@@ -144,66 +147,11 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         return view
     }()
     
-    // MARK: - Haptic Engine
-    /// Manages the `CHHapticEngine` for providing tactile feedback during user interactions (e.g., play/pause, stream switching).
-    /// - Features:
-    ///   - **Low Power Mode Support**: Skips haptics when `ProcessInfo.processInfo.isLowPowerModeEnabled` is true to conserve battery (iOS 26+ optimization).
-    ///   - **Reset Handling**: Automatically restarts the engine on interruptions (e.g., app backgrounding) via `resetHandler`.
-    ///   - **Stopped Handling**: Restarts the engine unless stopped due to fatal errors (`.systemError`) or destruction (`.engineDestroyed`).
-    ///   - **Fallback Mechanism**: Uses `UIImpactFeedbackGenerator` if `CHHapticEngine` fails to ensure reliable feedback.
-    ///   - **Hardware Check**: Verifies haptic support via `CHHapticEngine.capabilitiesForHardware().supportsHaptics` before initialization.
-    /// - Note: Optimized for low-latency feedback with `playsHapticsOnly = true`. Debug logs provide detailed feedback on engine state.
-    private lazy var hapticEngine: CHHapticEngine? = {
-        do {
-            let engine = try CHHapticEngine()
-            engine.playsHapticsOnly = true
-            
-            // Reset handler – now correctly captures weak self inside the @MainActor Task
-            engine.resetHandler = { [weak self] in
-                do {
-                    try self?.hapticEngine?.start()
-                    
-                    // Capture weak self HERE (Apple-recommended pattern for nonisolated → MainActor hop)
-                    Task { @MainActor [weak self] in
-                        guard let self else { return }
-                        #if DEBUG
-                        print("[ViewController] Haptic engine restarted after reset")
-                        #endif
-                    }
-                } catch {
-                    #if DEBUG
-                    print("[ViewController] Failed to restart haptic engine after reset: \(error)")
-                    #endif
-                }
-            }
-            
-            // Stopped handler (unchanged – no self capture)
-            engine.stoppedHandler = { reason in
-                #if DEBUG
-                print("[ViewController] Haptic engine stopped: reason \(reason.rawValue)")
-                #endif
-                if reason != .systemError && reason != .engineDestroyed {
-                    do {
-                        try engine.start()
-                        #if DEBUG
-                        print("[ViewController] Haptic engine auto-restarted")
-                        #endif
-                    } catch {
-                        #if DEBUG
-                        print("[ViewController] Failed to auto-restart haptic engine: \(error)")
-                        #endif
-                    }
-                }
-            }
-            return engine
-        } catch {
-            #if DEBUG
-            print("[ViewController] Haptics unavailable during creation: \(error)")
-            #endif
-            return nil
-        }
-    }()
+    // P5 dedup: local hapticEngine lazy + handlers removed (single owner in RadioPlayerCoordinator).
+    // The early init call site in viewDidLoad was removed; wireAndInitialSetup performs equivalent.
     
+    // P5 dedup: selectedStreamIndex kept as thin mirror only for a few legacy sync sites in checkForPending/play paths
+    // that read it before delegating. All orchestration mutates the one in RadioPlayerCoordinator.
     private var selectedStreamIndex: Int = 0
     
     private var isInitialSetupComplete = false
@@ -215,7 +163,6 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     private let audioQueue = DispatchQueue(label: "radio.lutheran.audio", qos: .userInitiated)
 
     private let appLaunchTime = Date()
-    private var hasEverPlayed = false
     private var isPlaying = false
     // All decision logic, guards, and resurrection control now live exclusively in SharedPlayerManager.currentPlaybackIntent.
     private var networkMonitor: NWPathMonitor?
@@ -223,31 +170,20 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     private var hasInternetConnection = true
     private var connectivityCheckTimer: Timer?
     private var lastConnectionAttemptTime: Date?
+    private var isDeallocating = false // Flag to prevent operations during deallocation
+
+    // NOTE (P5): Most orchestration state removed (see above). Retained for the *special* cold-launch tuning sound path only
+    // (the one path that stays in VC host because it is the unique user of AVAudioPlayerDelegate + TuningSoundCoordinator gate):
+    private var hasPlayedSpecialTuningSound = false
     private var isTuningSoundPlaying = false
     private var tuningPlayer: AVAudioPlayer?
-    private var lastTuningSoundTime: Date?
-    private var streamSwitchWorkItem: DispatchWorkItem?
-    /// Cancels an in-flight `completeStreamSwitch` when the user selects another flag.
-    private var streamSwitchTask: Task<Void, Never>?
-    private var lastStreamSwitchTime: Date?
-    private let streamSwitchDebounceInterval: TimeInterval = 1.0
-    private var isDeallocating = false // Flag to prevent operations during deallocation
-    private var hasPlayedSpecialTuningSound = false // Flag to ensure special sound plays only once
-    private var hasShownSecurityAlert = false // Flag to ensure security alert is shown only once
+    // (lastTuningSoundTime + regular playTuningSound/stopTuningSound fully removed; regular tuning delight now only in coordinator.)
 
-    /// MainActor-local countdown for sleep-timer button/accessibility (no per-second actor hops).
-    private var sleepTimerDisplayTask: Task<Void, Never>?
-    /// Local countdown cache; seeded optimistically on set, synced once on foreground.
-    private var cachedSleepTimerRemaining: Int?
-    /// Suppresses speaker / Now Playing visual work during sleep-timer menu selection.
-    private var isSleepTimerInteractionActive = false
-    private var pendingMetadataVisualRefresh: String?
-    /// Lets UIMenu teardown finish before the sleep-timer actor hop.
-    private static let sleepTimerMenuSettleNs: UInt64 = 250_000_000
-    /// Tint-only feedback after intent is scheduled; image swap waits longer.
-    private static let sleepTimerPostScheduleUISettleNs: UInt64 = 300_000_000
-    /// Full SF Symbol + deferred ICY speaker flush after audio has settled.
-    private static let sleepTimerDeferredVisualSettleNs: UInt64 = 500_000_000
+    // Retained (P5): sleep interaction suppression state for the onMetadataChange callback (which lives in VC because it is registered on the streamingPlayer here).
+    // The coordinator's sleep handlers set the authoritative flag; we sync it here so the callback sees the window and stashes to both copies so coordinator finish can consume.
+    // internal (not private) so RadioPlayerCoordinator (same module, via weak viewController) can sync the flag/pending for the metadata suppression window that is observed from VC's onMetadataChange callback.
+    var isSleepTimerInteractionActive = false
+    var pendingMetadataVisualRefresh: String?
     
     // Testable accessors
     @objc var isPlayingState: Bool {
@@ -315,11 +251,8 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         
         // Playback audio session is configured in DirectStreamingPlayer.init (single owner).
         
-        // Initialize haptic engine early if hardware supports haptics
-        if CHHapticEngine.capabilitiesForHardware().supportsHaptics {
-            _ = hapticEngine // Trigger lazy initialization
-            startHapticEngine()
-        }
+        // P5: Haptic engine init + start moved to RadioPlayerCoordinator.wireAndInitialSetup() (single owner of haptics).
+        // Local hapticEngine lazy + startHapticEngine/playHapticFeedback bodies deleted (calls forwarded).
         
         setupDarwinNotificationListener()
         setupUI()
@@ -336,22 +269,12 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         radioPlayerCoordinator.presentAlert = { [weak self] alert in self?.present(alert, animated: true) }
         radioPlayerCoordinator.wireAndInitialSetup()
         
-        // Calculate initial stream index (synchronous part)
+        // P5 dedup: no instance selectedStreamIndex mutation or onSelectionChanged wiring here (coordinator owns).
+        // Compute a local initialIndex only for the cold-launch Task below (to pick the starting stream model).
         let currentLocale = Locale.current
         let languageCode = currentLocale.language.languageCode?.identifier ?? "en"
         let initialIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.languageCode == languageCode }) ?? 0
-        selectedStreamIndex = initialIndex
-        
-        // Wire the extracted selector (collection + needle now live inside LanguageSelectorView).
-        // Selection *notification* goes to owner; owner keeps full optimistic prePlay + switch + intent logic.
-        languageSelectorView.onSelectionChanged = { [weak self] newIndex in
-            self?.handleLanguageSelection(at: newIndex)
-        }
-        
-        languageSelectorView.reloadData()
-        languageSelectorView.setSelectedIndex(initialIndex, isInitial: true, caller: "initialSetup")
-        // Needle positioning on cold launch now handled inside LanguageSelectorView (width guard + isInitial path).
-        // The old isInitialScrollLocked unlock is performed internally by the view.
+        selectedStreamIndex = initialIndex  // Seed thin mirror for viewDidLayoutSubviews notifyLayoutChange (width-claim) so initial locale-driven needle is not stomped by stale 0 (regression guard, matches widget play sync sites)
         
         // Set initial volume slider position (UI only)
         let volumeToUse = preferredVolume()
@@ -378,16 +301,8 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         setupFastWidgetActionChecking()
         isInitialSetupComplete = true
 
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(sleepTimerStateDidChange(_:)),
-            name: SleepTimerNotification.stateDidChange,
-            object: nil
-        )
-
-        Task { @MainActor [weak self] in
-            await self?.syncSleepTimerDisplayFromActorIfNeeded()
-        }
+        // P5: Sleep timer notification observer + initial sync now owned exclusively by RadioPlayerCoordinator (added in wireAndInitialSetup + viewDidAppearResurrectionCheck).
+        // VC no longer observes or syncs the sleep UI glue.
         
         // Energy Efficiency Optimizations (iOS 26) — now owned by BackgroundImageController (Phase 2).
         // The controller self-registers for power state notifications and reacts using its last stream.
@@ -410,7 +325,7 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
             // Stream model and UI only; secured AVPlayerItem is created once in setStreamAndPlay after tuning.
             await self.streamingPlayer.setSelectedStreamModelOnly(to: initialStream)
             
-            self.updateUserDefaultsLanguage(initialStream.languageCode)
+            radioPlayerCoordinator?.updateUserDefaultsLanguage(initialStream.languageCode)
             // Phase 2: deferral state is now owned by BackgroundImageController (cold launch path preserved).
             backgroundImageController.scheduleDeferredForStreamSwitch(initialStream)
             
@@ -557,7 +472,7 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
                 #endif
             }
 
-            await self.syncSleepTimerDisplayFromActorIfNeeded()
+            // P5: sleep timer display sync removed from here (coordinator performs it inside viewDidAppearResurrectionCheck).
             await self.radioPlayerCoordinator?.viewDidAppearResurrectionCheck()
         }
     }
@@ -615,6 +530,8 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
                     self.nowPlayingMetadataView.setMetadata(metadata)
                     if self.isSleepTimerInteractionActive {
                         self.pendingMetadataVisualRefresh = metadata
+                        // Also stash to coordinator copy so its finishSleepTimerInteraction (which owns consumption) sees it.
+                        radioPlayerCoordinator?.pendingMetadataVisualRefresh = metadata
                     } else {
                         self.updateNowPlayingInfo(title: metadata)
                         self.nowPlayingMetadataView.applySpeakerVisuals(for: metadata, potentialNames: potentialNames)
@@ -631,72 +548,14 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         }
     }
     
-    private func showSecurityModelAlert() {
-        let alert = UIAlertController(
-            title: String(localized: "security_model_error_title", table: "Localizable"),
-            message: String(localized: "security_model_error_message", table: "Localizable"),
-            preferredStyle: .alert
-        )
-        
-        alert.addAction(UIAlertAction(title: String(localized: "alert_retry", table: "Localizable"), style: .default, handler: { [weak self] _ in
-            guard let self else { return }
-            
-            Task { @MainActor in   // ← Keeps UI work on main + gives us async context
-                // Reset transient failures (now async)
-                self.streamingPlayer.resetTransientErrors()
-                
-                // Validate using the shared actor — automatic actor hop via await
-                let isValid = await SecurityModelValidator.shared.validateSecurityModel()
-                
-                if isValid {
-                    await SharedPlayerManager.shared.userRequestedPlay()
-                } else {
-                    // Optional: distinguish failure type for better UX/logging
-                    let isPermanent = await SecurityModelValidator.shared.isPermanentlyInvalid
-                    
-                    #if DEBUG
-                    print("Retry failed — permanent? \(isPermanent)")
-                    #endif
-                    
-                    // Could re-show alert or show different message
-                    // For now: just log / do nothing extra
-                }
-            }
-        }))
-        
-        alert.addAction(UIAlertAction(title: String(localized: "ok", table: "Localizable"), style: .cancel, handler: nil))
-        
-        present(alert, animated: true, completion: nil)
-    }
-    
-    // MARK: - SSL Transition Alert
-    
-    private func showSSLTransitionAlert() {
-        // Prevent multiple alerts
-        guard presentedViewController == nil else { return }
-        
-        let alert = UIAlertController(
-            title: String(localized: "ssl_transition_title", table: "Localizable"),
-            message: String(localized: "ssl_transition_message", table: "Localizable"),
-            preferredStyle: .alert
-        )
-        
-        alert.addAction(UIAlertAction(title: String(localized: "alert_continue", table: "Localizable"), style: .default, handler: { [weak self] _ in
-            guard self != nil else { return }
-            Task { @MainActor in
-                await SharedPlayerManager.shared.userRequestedPlay()
-            }
-        }))
-        
-        alert.addAction(UIAlertAction(title: String(localized: "ok", table: "Localizable"), style: .cancel, handler: nil))
-        
-        present(alert, animated: true, completion: nil)
-    }
+    // P5 dedup: showSecurityModelAlert + showSSLTransitionAlert removed (their creation + presentation logic now lives inside RadioPlayerCoordinator.updateUI/handleStatusChange using the injected presentAlert hook).
+    // No call sites remain in VC.
     
     private func setupControls() {
         // Phase 3: targets and identifiers now on the composed controls view's buttons
         playbackControlsView.playPauseButton.addTarget(self, action: #selector(togglePlayback), for: .touchUpInside)
-        configureSleepTimerButtonMenu()
+        // P5: menu construction (and all sleep countdown/menu state machine) now in coordinator.
+        radioPlayerCoordinator?.configureSleepTimerButtonMenu()
         playbackControlsView.sleepTimerButton.accessibilityIdentifier = "sleepTimerButton"
         playbackControlsView.playPauseButton.accessibilityIdentifier = "playPauseButton"
         playbackControlsView.playPauseButton.accessibilityHint = String(localized: "accessibility_hint_play_pause", table: "Localizable")
@@ -765,13 +624,13 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
                     #if DEBUG
                     print("[ViewController] Network monitor detected reconnection")
                     #endif
-                    self.stopTuningSound()
+                    self.radioPlayerCoordinator?.stopTuningSound()
                     self.handleNetworkReconnection()
                 } else if !isConnected && wasConnected {
                     #if DEBUG
                     print("[ViewController] Network disconnected - stopping playback and tuning sound")
                     #endif
-                    self.stopTuningSound()
+                    self.radioPlayerCoordinator?.stopTuningSound()
                     self.stopPlayback()
                     self.updateUIForNoInternet()
                     // Playback intent (userPaused / securityLocked) is now authoritative in SharedPlayerManager.
@@ -821,7 +680,7 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
             if isPlaying {
                 stopPlayback()
             }
-            stopTuningSound()
+            radioPlayerCoordinator?.stopTuningSound()
             
         case .ended:
             guard let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt else { return }
@@ -997,53 +856,17 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     /// - SeeAlso: `togglePlayback()`, `handlePlayAction()`, `handlePauseAction()`, `handleTogglePlayback()`, `updateUI(for:)`
     @MainActor
     private func handleUserTogglePlayback() async {
-        let manager = SharedPlayerManager.shared
-        let visualState = await manager.currentVisualState
-        
-        if visualState.isActivelyPlaying {
-            // User wants to pause
-            await manager.stop()
-            self.isPlaying = false
-        } else {
-            // User explicitly wants to play → bypass resurrection protection
-            await manager.setUserIntentToPlay()
-            self.isPlaying = true
-            
-            // OPTIMISTIC UI: show yellow "Connecting" immediately while the background
-            // work (tuning sound wait, validation, server selection, AVPlayer setup) runs.
-            // The final updateUI at the bottom will correct to the real terminal state.
-            self.updateUI(for: .prePlay)
-            
-            await manager.play()
-        }
-        
-        // saveCurrentState() (PersistedWidgetState snapshot + WidgetRefreshManager trigger).
-        let newState = await manager.currentVisualState
-        self.updateUI(for: newState)
-        self.updateNowPlayingInfo()
+        // P5 dedup: single implementation lives in RadioPlayerCoordinator (orchestration owner).
+        // VC retains the method for the @objc togglePlayback + public handleTogglePlayback call sites.
+        await radioPlayerCoordinator?.handleUserTogglePlayback()
     }
     
     private func updateNowPlayingInfo(title: String? = nil) {
-        #if LUTHERAN_MAIN_APP
-        Task {
-            if let title {
-                await SharedPlayerManager.shared.didUpdateStreamMetadata(title)
-            } else {
-                await SharedPlayerManager.shared.updateNowPlayingInfo()
-            }
-        }
-        #endif
+        radioPlayerCoordinator?.updateNowPlayingInfo(title: title)
     }
     
     private func updateUIForNoInternet() {
-        safeUpdateStatusLabel(
-            text: String(localized: "status_no_internet", table: "Localizable"),
-            backgroundColor: .systemGray,
-            textColor: .white,
-            isPermanentError: false
-        )
-        nowPlayingMetadataView.setMetadata(String(localized: "no_track_info", table: "Localizable"))
-        playbackControlsView.setPlayPause(isPlaying: false)
+        radioPlayerCoordinator?.updateUIForNoInternet()
     }
     
     // MARK: - Playback Control Methods
@@ -1051,66 +874,21 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     /// Pauses playback and updates UI/status.
     /// - Note: Sets manual pause flag and routes through SharedPlayerManager to ensure .userPaused state is set.
     private func pausePlayback() {
-        #if DEBUG
-        // Called from lockscreen / Control Center / MPRemoteCommandCenter paths.
-        // Widget-initiated pauses now route directly through SharedPlayerManager.stop()
-        // (clean authoritative path that immediately locks .userPaused).
-        print("[ViewController] pausePlayback called (lockscreen / remote command)")
-        #endif
-        
-        Task { @MainActor in
-            await SharedPlayerManager.shared.stop()
-            self.isPlaying = false                    // ← critical for nowPlayingInfo + toggle
-            let newState = await SharedPlayerManager.shared.currentVisualState
-            self.updateUI(for: newState)
-            self.updateNowPlayingInfo()
-        }
+        // P5 dedup: implementation in coordinator.
+        radioPlayerCoordinator?.pausePlayback()
     }
     
     // MARK: - Manual Pause (user tap)
     private func stopPlayback() {
-        #if DEBUG
-        print("[ViewController] stopPlayback called")
-        #endif
-        
-        Task { @MainActor in
-            await SharedPlayerManager.shared.stop()
-            self.isPlaying = false                    // ← critical for nowPlayingInfo
-            let newState = await SharedPlayerManager.shared.currentVisualState
-            self.updateUI(for: newState)
-            self.updateNowPlayingInfo()
-        }
+        // P5 dedup: implementation in coordinator.
+        radioPlayerCoordinator?.stopPlayback()
     }
     
     @MainActor
     private func updateUI(for visualState: PlayerVisualState) {
-        if lastAppliedVisualState == visualState {
-            #if DEBUG
-            print("[ViewController] updateUI → skipped (already applied \(visualState))")
-            #endif
-            return
-        }
-        lastAppliedVisualState = visualState
-        
-        // Phase 3: pill text/colors + play/pause icon now driven through the composed view (exact same values).
-        // Security alert for .securityLocked stays in the owner (single place for that side effect).
-        playbackControlsView.applyVisualState(visualState)
-        
-        if visualState == .securityLocked {
-            // Alert is presented here — most convenient place
-            if !hasShownSecurityAlert {
-                hasShownSecurityAlert = true
-                showSecurityModelAlert()
-            }
-        }
-        
-        // This is the single place that translates a `PlayerVisualState` into concrete UI.
-        // All call sites (SSOT, widget actions, network recovery, stream switches, etc.)
-        // must go through here so that the UI cannot drift from the authoritative state.
-        
-        #if DEBUG
-        print("[ViewController] updateUI → applied \(visualState) (bg=\(visualState.backgroundColor), tint=\(visualState.buttonTintColor))")
-        #endif
+        // P5 dedup: the skip-last + distribution + security alert side-effect logic lives in coordinator (single owner).
+        // VC keeps a 1-line forwarder for the remaining call sites in host-owned paths (network, interruptions, legacy widget action).
+        radioPlayerCoordinator?.updateUI(for: visualState)
     }
     
     @objc private func volumeChanged(_ sender: UISlider) {
@@ -1261,92 +1039,9 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
             tuningPlayer = nil
         }
     }
-    
-    /// Modern async version - preferred in 2026 Swift code.
-    /// When `animateNeedleTo` is set, the selection needle sweeps over the clip duration (or a short fallback if debounced).
-    func playTuningSound(animateNeedleTo index: Int? = nil) async {
-        let now = Date()
-        if let lastTime = lastTuningSoundTime, now.timeIntervalSince(lastTime) < 1.0 {
-            #if DEBUG
-            print("[ViewController] Skipping tuning sound: Debouncing, time since last: \(now.timeIntervalSince(lastTime))s")
-            #endif
-            if let index {
-                languageSelectorView.setSelectedIndex(index, isInitial: false, animationDuration: 0.3, caller: "playTuningSound-debounced")
-            }
-            try? await Task.sleep(for: .seconds(0.3))
-            return
-        }
-        
-        lastTuningSoundTime = now
-        
-        let soundIndex = Int.random(in: 1...3)
-        guard let tuningURL = Bundle.main.url(forResource: "tuning_sound_\(soundIndex)", withExtension: "wav") else {
-            #if DEBUG
-            print("[ViewController] Error: tuning_sound_\(soundIndex).wav not found in bundle")
-            #endif
-            return
-        }
-        
-        do {
-            streamingPlayer.setupAudioSession()
-            
-            tuningPlayer = try AVAudioPlayer(contentsOf: tuningURL)
-            tuningPlayer?.delegate = self
-            tuningPlayer?.volume = 1.0
-            tuningPlayer?.numberOfLoops = 0
-            tuningPlayer?.prepareToPlay()
-            
-            let didPlay = tuningPlayer?.play() ?? false
-            isTuningSoundPlaying = didPlay
-            
-            #if DEBUG
-            print(didPlay ? "[ViewController] Tuning sound \(soundIndex) started playing" : "[ViewController] Failed to start tuning sound \(soundIndex)")
-            #endif
-            
-            let clipDuration = tuningPlayer?.duration ?? 1.0
-            let needleAnimationDuration = min(max(clipDuration, 0.25), 2.5)
-            if let index {
-                languageSelectorView.setSelectedIndex(
-                    index,
-                    isInitial: false,
-                    animationDuration: didPlay ? needleAnimationDuration : 0.3,
-                    caller: "playTuningSound"
-                )
-            }
-            
-            // Optimistic UI update (still on MainActor)
-            let manager = SharedPlayerManager.shared
-            let state = manager.loadSharedState()
-            
-            playbackControlsView.setPlayPause(isPlaying: true, animated: true)
-            
-            if !state.isPlaying {
-                safeUpdateStatusLabel(
-                    text: String(localized: "status_connecting", table: "Localizable"),
-                    backgroundColor: .systemYellow,
-                    textColor: .label,
-                    isPermanentError: false
-                )
-            }
-            
-            if didPlay, let duration = tuningPlayer?.duration {
-                await TuningSoundCoordinator.shared.notifyPlaybackStarted(estimatedDuration: duration)
-                await TuningSoundCoordinator.shared.waitForActivePlaybackToFinishIfNeeded()
-            } else {
-                await TuningSoundCoordinator.shared.notifyNoActivePlayback()
-                if index != nil {
-                    try? await Task.sleep(for: .seconds(0.3))
-                }
-            }
-            
-        } catch {
-            #if DEBUG
-            print("[ViewController] Error loading tuning sound \(soundIndex): \(error.localizedDescription)")
-            #endif
-            await TuningSoundCoordinator.shared.notifyNoActivePlayback()
-        }
-    }
-    
+
+    // Retained solely to support the special cold-launch tuning clip (AVAudioPlayerDelegate set on tuningPlayer in playSpecialTuningSound).
+    // Regular tuning paths no longer use these (P5 dedup removed regular playTuningSound body + stopTuningSound).
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
         Task { @MainActor in
             guard player === tuningPlayer else { return }
@@ -1371,205 +1066,25 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         }
     }
     
-    private func stopTuningSound() {
-        // Snapshot the MainActor-isolated property on the actor, BEFORE entering the Sendable closure.
-        // This is the required pattern for Swift 6 / approachable concurrency.
-        let player = self.tuningPlayer
-
-        audioQueue.async {
-            if player?.isPlaying == true {
-                player?.stop()
-                #if DEBUG
-                print("[ViewController] Tuning sound stopped via AVAudioPlayer")
-                #endif
-            }
-
-            // State mutation must hop to MainActor (safe, no Sendable violation).
-            Task { @MainActor [weak self] in
-                guard let self = self else { return }
-                self.isTuningSoundPlaying = false
-                self.tuningPlayer = nil
-                await TuningSoundCoordinator.shared.notifyPlaybackFinished(source: .cancelled)
-                #if DEBUG
-                print("[ViewController] isTuningSoundPlaying set to false (from stopTuningSound)")
-                #endif
-            }
-        }
-    }
+    // P5 dedup: regular playTuningSound / stopTuningSound + their state removed (orchestration now exclusively in RadioPlayerCoordinator.playTuningSound for switch delight flows).
+    // Special tuning sound (cold-launch only, integrates TuningSoundCoordinator gate + AV delegate for finish) remains here because it is called from the host viewDidLoad Task and the AVAudioPlayerDelegate conformance is on ViewController.
+    // The two audioPlayer* delegate impls below are retained solely for the special clip path.
     
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        sleepTimerDisplayTask?.cancel()
-        sleepTimerDisplayTask = nil
+        // P5: sleepTimerDisplayTask cancel removed (owned by coordinator deinit + its stopLocal).
     }
 
-    // MARK: - Sleep Timer UI
-
-    @MainActor
-    private func configureSleepTimerButtonMenu() {
-        var children: [UIMenuElement] = []
-
-        if cachedSleepTimerRemaining != nil {
-            children.append(UIAction(
-                title: String(localized: "sleep_timer_cancel_timer", table: "Localizable"),
-                attributes: .destructive
-            ) { [weak self] _ in
-                self?.handleSleepTimerCancelSelected()
-            })
-        }
-
-        let presets: [(minutes: Int, title: String)] = [
-            (15, String(localized: "sleep_timer_preset_15_min", table: "Localizable")),
-            (30, String(localized: "sleep_timer_preset_30_min", table: "Localizable")),
-            (45, String(localized: "sleep_timer_preset_45_min", table: "Localizable")),
-            (60, String(localized: "sleep_timer_preset_60_min", table: "Localizable"))
-        ]
-
-        for preset in presets {
-            children.append(UIAction(title: preset.title) { [weak self] _ in
-                self?.handleSleepTimerPresetSelected(minutes: preset.minutes)
-            })
-        }
-
-        // Phase 3: menu is attached to the button owned by playbackControlsView (configure + handlers stay in VC)
-        playbackControlsView.sleepTimerButton.menu = UIMenu(
-            title: String(localized: "sleep_timer_sheet_title", table: "Localizable"),
-            options: .displayInline,
-            children: children
-        )
-        playbackControlsView.sleepTimerButton.showsMenuAsPrimaryAction = true
-    }
-
-    @MainActor
-    private func handleSleepTimerPresetSelected(minutes: Int) {
-        isSleepTimerInteractionActive = true
-        backgroundImageController.cancelDeferredForModalInteraction()
-
-        let totalSeconds = max(1, minutes * 60)
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            await Task.yield()
-            try? await Task.sleep(nanoseconds: Self.sleepTimerMenuSettleNs)
-            let confirmed = await SharedPlayerManager.shared.setSleepTimer(
-                duration: TimeInterval(totalSeconds)
-            )
-            guard let confirmed else {
-                self.finishSleepTimerInteraction(applyDeferredVisuals: false)
-                return
-            }
-            try? await Task.sleep(nanoseconds: Self.sleepTimerPostScheduleUISettleNs)
-            guard !Task.isCancelled else { return }
-            self.beginLocalSleepTimerDisplay(remaining: confirmed, deferImageSwap: true)
-            try? await Task.sleep(nanoseconds: Self.sleepTimerDeferredVisualSettleNs)
-            guard !Task.isCancelled else { return }
-            playbackControlsView.applySleepTimerButtonAppearance(remaining: confirmed, deferImageSwap: false)
-            self.finishSleepTimerInteraction(applyDeferredVisuals: true)
-            self.backgroundImageController.rescheduleDeferredAfterModalIfNeeded()
-        }
-    }
-
-    @MainActor
-    private func handleSleepTimerCancelSelected() {
-        isSleepTimerInteractionActive = true
-        backgroundImageController.cancelDeferredForModalInteraction()
-
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            await Task.yield()
-            self.stopLocalSleepTimerDisplay()
-            await SharedPlayerManager.shared.cancelSleepTimer()
-            self.configureSleepTimerButtonMenu()
-            self.finishSleepTimerInteraction(applyDeferredVisuals: true)
-            self.backgroundImageController.rescheduleDeferredAfterModalIfNeeded()
-        }
-    }
-
-    @MainActor
-    private func finishSleepTimerInteraction(applyDeferredVisuals: Bool) {
-        isSleepTimerInteractionActive = false
-        guard applyDeferredVisuals, let metadata = pendingMetadataVisualRefresh else { return }
-        pendingMetadataVisualRefresh = nil
-        updateNowPlayingInfo(title: metadata)
-        nowPlayingMetadataView.applySpeakerVisuals(
-            for: metadata,
-            potentialNames: nowPlayingMetadataView.potentialNames(from: metadata),
-            animated: false
-        )
-    }
-
-    @objc private func sleepTimerStateDidChange(_ notification: Notification) {
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            let isActive = notification.userInfo?[SleepTimerNotification.Key.isActive] as? Bool ?? false
-            if !isActive {
-                self.stopLocalSleepTimerDisplay()
-                return
-            }
-            if let remaining = notification.userInfo?[SleepTimerNotification.Key.remainingSeconds] as? Int,
-               remaining > 0,
-               self.cachedSleepTimerRemaining == nil {
-                self.beginLocalSleepTimerDisplay(remaining: remaining)
-            }
-        }
-    }
-
-    /// One-shot actor read on launch/foreground — not a polling loop.
-    @MainActor
-    private func syncSleepTimerDisplayFromActorIfNeeded() async {
-        let remaining = await SharedPlayerManager.shared.sleepTimerRemainingSeconds
-        if let remaining, remaining > 0 {
-            beginLocalSleepTimerDisplay(remaining: remaining)
-        } else if cachedSleepTimerRemaining != nil {
-            stopLocalSleepTimerDisplay()
-        }
-    }
-
-    @MainActor
-    private func beginLocalSleepTimerDisplay(remaining: Int, deferImageSwap: Bool = false) {
-        cachedSleepTimerRemaining = remaining
-        playbackControlsView.applySleepTimerButtonAppearance(remaining: remaining, deferImageSwap: deferImageSwap)
-        configureSleepTimerButtonMenu()
-
-        sleepTimerDisplayTask?.cancel()
-        sleepTimerDisplayTask = Task { @MainActor [weak self] in
-            guard let self, !Task.isCancelled else { return }
-            var remainingSeconds = self.cachedSleepTimerRemaining ?? 0
-
-            while remainingSeconds > 0, !Task.isCancelled {
-                do {
-                    try await Task.sleep(for: .seconds(1))
-                } catch {
-                    return
-                }
-                guard !Task.isCancelled else { return }
-
-                remainingSeconds -= 1
-                self.cachedSleepTimerRemaining = remainingSeconds > 0 ? remainingSeconds : nil
-                self.playbackControlsView.applySleepTimerButtonAppearance(remaining: self.cachedSleepTimerRemaining)
-            }
-        }
-    }
-
-    @MainActor
-    private func stopLocalSleepTimerDisplay() {
-        sleepTimerDisplayTask?.cancel()
-        sleepTimerDisplayTask = nil
-        cachedSleepTimerRemaining = nil
-        playbackControlsView.applySleepTimerButtonAppearance(remaining: nil)
-        configureSleepTimerButtonMenu()
-    }
+    // P5 dedup: entire sleep timer UI glue (configure menu + preset/cancel handlers + finish + stateDidChange + sync + begin/stopLocal display + the 3 *Settle consts + instance vars)
+    // removed from VC. Single implementation + observer lives in RadioPlayerCoordinator (wired in wireAndInitialSetup).
+    // configure call site in setupControls now forwards to coordinator. Observers and viewWillDisappear cancel for this concern removed.
 
     // MARK: - Lifecycle (deinit)
     /// Cleans up resources, observers, and audio players to prevent leaks.
     /// - Note: Sets `isDeallocating` to avoid operations during teardown.
     deinit {
         isDeallocating = true
-        sleepTimerDisplayTask?.cancel()
-        NotificationCenter.default.removeObserver(
-            self,
-            name: SleepTimerNotification.stateDidChange,
-            object: nil
-        )
+        // P5: sleep notif observer remove removed (no longer added by VC; coordinator manages its own).
         
         #if DEBUG
         print("[ViewController] deinit starting")
@@ -1584,372 +1099,17 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         #endif
     }
     
-    // MARK: - Language selection handling (orchestration stays in ViewController; visuals delegated to LanguageSelectorView)
+    // P5 dedup: handleLanguageSelection + completeStreamSwitch + updateUserDefaultsLanguage (full orchestration + debounce + prePlay optimistic + tuning + intent reset + background deferral + play sequencing)
+    // removed. Single source now in RadioPlayerCoordinator (wired via onSelectionChanged closure set in wireAndInitialSetup; no overwrite here).
+    // The languageSelectorView.onSelectionChanged wiring that pointed here has been removed so the coordinator's handler is authoritative.
     
-    /// Owner-side handler for a user tap on a language flag.
-    /// Contains the full original optimistic prePlay + debounce + completeStreamSwitch orchestration.
-    /// Visual selection (selectItem + needle) is driven through languageSelectorView.setSelectedIndex.
-    private func handleLanguageSelection(at newIndex: Int) {
-        guard !isDeallocating else { return }
-        
-        #if DEBUG
-        print("[ViewController] handleLanguageSelection called for index \(newIndex)")
-        #endif
-        
-        // OPTIMISTIC YELLOW BEFORE NEEDLE: When the user is currently playing (or will auto-resume),
-        // immediately tell the actor we are now in .prePlay for this new stream (this also resets
-        // the cold-launch budget for the target stream). This makes the actor SSOT yellow early,
-        // so all subsequent delegate callbacks during the teardown of the old stream and the
-        // tuning sound will see .prePlay and keep the yellow instead of flashing back to green.
-        // Playing path: needle sweeps during tuning sound in completeStreamSwitch.
-        // Paused path: move the needle immediately on tap.
-        selectedStreamIndex = newIndex
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            let vs = await SharedPlayerManager.shared.currentVisualState
-            if vs.shouldAutoPlayOrResume {
-                let intent = await SharedPlayerManager.shared.currentPlaybackIntent
-                await SharedPlayerManager.shared.resetToPrePlayForNewStream(
-                    preserveActiveSleepTimer: intent == .sleepTimer
-                )
-                self.updateUI(for: .prePlay)
-            } else {
-                self.languageSelectorView.setSelectedIndex(newIndex, isInitial: false, caller: "handleLanguageSelection")
-            }
-        }
-        
-        // Debounce stream switch
-        let now = Date()
-        if let lastTime = lastStreamSwitchTime, now.timeIntervalSince(lastTime) < streamSwitchDebounceInterval {
-            #if DEBUG
-            print("[ViewController] handleLanguageSelection: Debouncing stream switch, time since last: \(now.timeIntervalSince(lastTime))s")
-            #endif
-            return
-        }
-        lastStreamSwitchTime = now
-        
-        streamSwitchWorkItem?.cancel()
-        let workItem = DispatchWorkItem { [weak self] in
-            guard let self = self else { return }
-            let stream = DirectStreamingPlayer.availableStreams[newIndex]
-            self.backgroundImageController.scheduleDeferredForStreamSwitch(stream)
-            
-            // Wait for tuning sound to complete if playing
-            if self.isTuningSoundPlaying {
-                #if DEBUG
-                print("[ViewController] handleLanguageSelection: Waiting for tuning sound to complete")
-                #endif
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
-                    guard let self = self else { return }
-                    self.completeStreamSwitch(stream: stream, index: newIndex)
-                }
-            } else {
-                self.completeStreamSwitch(stream: stream, index: newIndex)
-            }
-        }
-        streamSwitchWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: workItem) // Reduced delay for responsiveness
-    }
-    
-    private func updateUserDefaultsLanguage(_ languageCode: String) {
-        let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared")
-
-        // The legacy separate "currentLanguage" key is no longer written directly.
-        // saveCombinedWidgetState writes the single authoritative PersistedWidgetState snapshot.
-        // We still bump lastUpdateTime for the widget "isAppRunning" check and freshness.
-        sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "lastUpdateTime")
-        sharedDefaults?.synchronize()
-
-        // Architectural shift: Persist language together with current visual state
-        // so the widget's robust fallback (loadPersistedWidgetState) gets the correct
-        // language without extra forcing or freshness heuristics.
-        Task {
-            await SharedPlayerManager.shared.saveCombinedWidgetState(language: languageCode)
-        }
-
-        // The language setter is the single owner of prompt widget language propagation.
-        // Every call guarantees an immediate timeline reload carrying the new language.
-        WidgetRefreshManager.shared.refreshIfNeeded(
-            visualState: .prePlay,
-            currentLanguage: languageCode,
-            hasError: false,
-            immediate: true
-        )
-
-        #if DEBUG
-        print("[ViewController] MAIN APP: Updated UserDefaults language to: \(languageCode)")
-        #endif
-    }
-    
-    private func completeStreamSwitch(stream: DirectStreamingPlayer.Stream, index: Int) {
-        // Immediate non-async work. The language setter owns prompt widget refresh.
-        updateUserDefaultsLanguage(stream.languageCode)
-        
-        self.selectedStreamIndex = index
-        saveStateForWidget()
-        
-        // Mark switch start immediately so state-saving can suppress spam
-        self.lastStreamSwitchTime = Date()
-        
-        streamSwitchTask?.cancel()
-        streamSwitchTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            guard !Task.isCancelled else { return }
-            
-            let visualState = await SharedPlayerManager.shared.currentVisualState
-            let playbackIntent = await SharedPlayerManager.shared.currentPlaybackIntent
-            
-            #if DEBUG
-            print("[ViewController] completeStreamSwitch started – currentVisualState = \(visualState), playbackIntent = \(playbackIntent), stream = \(stream.languageCode)")
-            #endif
-            
-            // Model-only first — defer ping/prepare until after tuning (playing) or manual play().
-            await self.streamingPlayer.setSelectedStreamModelOnly(to: stream)
-            self.streamingPlayer.resetTransientErrors()
-            
-            #if DEBUG
-            print("[ViewController] [completeStreamSwitch] Updated stream model to \(stream.languageCode) (works for both playing and userPaused)")
-            #endif
-            
-            // Capture authoritative intent BEFORE any stop() or state mutation.
-            // Visual `.userPaused` after stream failure must not block switch resume.
-            let shouldResumeAfterSwitch = playbackIntent.isActivePlaybackIntent
-            
-            // === STRONG GUARD: Never auto-resume if user explicitly paused ===
-            guard shouldResumeAfterSwitch else {
-                #if DEBUG
-                print("🚫 [completeStreamSwitch] Blocked — userPaused, no auto-resume")
-                #endif
-
-                await SharedPlayerManager.shared.clearSoftPauseMetadataStashForLanguageChange()
-                
-                // Phase 2: background deferral state machine now lives in BackgroundImageController.
-                // Explicit clear + immediate update for the userPaused early-return path (behavior preserved).
-                self.backgroundImageController.cancelPendingDeferral()
-                self.backgroundImageController.update(for: stream)
-                self.updateUI(for: .userPaused)
-                self.languageSelectorView.setSelectedIndex(index, caller: "completeStreamSwitch-userPaused")
-                return
-            }
-            
-            #if DEBUG
-            print("[ViewController] ▶ [completeStreamSwitch] Allowed resume during stream switch (was playing)")
-            #endif
-            
-            // Stop before tuning; secured item is created once in SharedPlayerManager.play().
-            await withCheckedContinuation { continuation in
-                streamingPlayer.stop(
-                    reason: .streamSwitch,
-                    completion: { continuation.resume() },
-                    silent: true
-                )
-            }
-            guard !Task.isCancelled else { return }
-            
-            // Explicitly reset the cold-launch attempt counters for the *new* stream.
-            // This prevents previous stream's ICY noise / safety net exhaustion from causing
-            // a false status_stream_unavailable red alert on a normal user language switch.
-            streamingPlayer.resetInitialPlaybackCountersForNewStream()
-            
-            // Tuning before network ping / AVPlayerItem prepare (stream attach follows in play()).
-            await playTuningSound(animateNeedleTo: index)
-            guard !Task.isCancelled else { return }
-            
-            guard shouldResumeAfterSwitch else {
-                #if DEBUG
-                print("[ViewController] [completeStreamSwitch] Blocked play() after tuning sound")
-                #endif
-                languageSelectorView.setSelectedIndex(index, caller: "completeStreamSwitch-blockedPlay")
-                return
-            }
-            
-            #if DEBUG
-            print("[ViewController] completeStreamSwitch → calling SharedPlayerManager.play() after tuning")
-            #endif
-            
-            updateUserDefaultsLanguage(stream.languageCode)
-            
-            // Tap-time reset in didSelectItemAt already set .prePlay + hold for optimistic yellow.
-            // Skip redundant actor reset when the hold is already active.
-            if await SharedPlayerManager.shared.isStreamSwitchPrePlayHoldActive {
-                #if DEBUG
-                print("[ViewController] [completeStreamSwitch] Skipping redundant resetToPrePlayForNewStream — tap already set .prePlay hold")
-                #endif
-            } else {
-                let intent = await SharedPlayerManager.shared.currentPlaybackIntent
-                await SharedPlayerManager.shared.resetToPrePlayForNewStream(
-                    preserveActiveSleepTimer: intent == .sleepTimer
-                )
-            }
-            updateUI(for: .prePlay)
-            
-            await SharedPlayerManager.shared.play()
-            guard !Task.isCancelled else { return }
-            await Task.yield()
-            
-            // play() already performs the authoritative saveCurrentState + snapshot.
-            // Language propagation handled by updateUserDefaultsLanguage call above.
-            
-            #if DEBUG
-            print("[ViewController] completeStreamSwitch: Switched to stream \(stream.language), index=\(index)")
-            #endif
-        }
-    }
-    
-    // MARK: - Widget Action Handlers (No Tuning Sounds)
-
-    /// Handle widget play action without tuning sounds
-    private func handleWidgetPlayAction() {
-        #if DEBUG
-        print("[ViewController] Widget Play action - forcing playback (main app style)")
-        #endif
-        
-        // The modern path (clearUserPausedLockIfNeeded + play) drives authoritative intent.
-        
-        Task { @MainActor in
-            await SharedPlayerManager.shared.clearUserPausedLockIfNeeded()
-            
-            #if DEBUG
-            print("[ViewController] ▶ Widget Play button → calling SharedPlayerManager.play()")
-            #endif
-            
-            await SharedPlayerManager.shared.play()
-            #if DEBUG
-            print("[ViewController] Widget Play button: SharedPlayerManager.play() succeeded")
-            #endif
-            
-            // No extra poke required; providers saw optimistic state via intent's persistWidgetSnapshot
-            // (or forcePersist for play/pause) + early loadPersistedWidgetState return.
-            #if DEBUG
-            print("[ViewController] Widget play action completed")
-            #endif
-        }
-    }
-
-    /// Handle widget pause action
-    private func handleWidgetPauseAction() {
-        // Authoritative .userPaused is set inside SharedPlayerManager.stop() / markAsUserPaused() (already called by this path).
-        
-        // Write critical non-display state synchronously (pending action clear + lastUserPauseTime barrier).
-        // Display state is persisted via SharedPlayerManager.stop() → performActualSave; providers prefer the snapshot.
-        if let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared") {
-            // Clear any stale "play" pending action that could race with this pause
-            if sharedDefaults.string(forKey: "pendingAction") == "play" {
-                sharedDefaults.removeObject(forKey: "pendingAction")
-                sharedDefaults.removeObject(forKey: "pendingActionId")
-                sharedDefaults.removeObject(forKey: "pendingActionTime")
-                sharedDefaults.removeObject(forKey: "pendingLanguage")
-            }
-            
-            // Record a hard barrier timestamp that all recovery/nudge paths can consult
-            sharedDefaults.set(Date().timeIntervalSince1970, forKey: "lastUserPauseTime")
-            sharedDefaults.synchronize()
-            
-            // Also update the authoritative in-actor timestamp so recovery paths
-            // using wasRecentlyUserPaused() see the pause without relying on raw UD + defensive sync.
-            Task {
-                await SharedPlayerManager.shared.recordUserPauseTimestamp()
-            }
-        }
-        
-        // Route through the clean authoritative stop path (SharedPlayerManager.stop).
-        // stop() immediately locks .userPaused on the actor at the very top, persists the JSON,
-        // notifies Darwin, and triggers proper widget refresh. This is the same clean path
-        // used for explicit user pauses (remote commands, etc.) and avoids the old
-        // pausePlayback() indirection for widget-initiated pauses.
-        Task { @MainActor in
-            await SharedPlayerManager.shared.stop()
-            self.isPlaying = false
-            let newState = await SharedPlayerManager.shared.currentVisualState
-            self.updateUI(for: newState)
-            self.updateNowPlayingInfo()
-        }
-    }
+    // P5 dedup: private handleWidgetPlayAction / handleWidgetPauseAction bodies removed (logic lives in coordinator equivalents or direct manager calls in checkForPendingWidgetActions).
+    // The pause call site below now delegates. Play uses the direct authoritative path (per comments in checkForPending).
 
     /// Handles widget-initiated stream switching to a specific language without playing tuning sounds.
     public func handleWidgetSwitchToLanguage(_ languageCode: String, actionId: String) {
-        guard !processedActionIds.contains(actionId) else { return }
-        processedActionIds.insert(actionId)
-        
-        // Debounce
-        let now = Date()
-        if let last = lastWidgetSwitchTime, now.timeIntervalSince(last) < 2.0 {
-            return
-        }
-        lastWidgetSwitchTime = now
-        
-        pendingWidgetSwitchWorkItem?.cancel()
-        
-        let workItem = DispatchWorkItem { [weak self] in
-            guard let self = self else { return }
-            
-            Task { @MainActor in
-                self.streamingPlayer.isSwitchingStream = true
-                defer { self.streamingPlayer.isSwitchingStream = false }
-                
-                guard let targetStream = DirectStreamingPlayer.availableStreams.first(where: { $0.languageCode == languageCode }),
-                      let targetIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.languageCode == languageCode }) else {
-                    #if DEBUG
-                    print("[ViewController] Widget switch: target stream not found for \(languageCode)")
-                    #endif
-                    return
-                }
-                
-                let playbackIntent = await SharedPlayerManager.shared.currentPlaybackIntent
-                let shouldResumeAfterSwitch = playbackIntent.isActivePlaybackIntent
-                
-                // Model-only first — secured item is created once in SharedPlayerManager.play().
-                await self.streamingPlayer.setSelectedStreamModelOnly(to: targetStream)
-                self.streamingPlayer.resetTransientErrors()
-                
-                await withCheckedContinuation { continuation in
-                    self.streamingPlayer.stop(
-                        reason: .streamSwitch,
-                        completion: { continuation.resume() },
-                        silent: true
-                    )
-                }
-                
-                self.streamingPlayer.resetInitialPlaybackCountersForNewStream()
-                
-                self.selectedStreamIndex = targetIndex
-                self.backgroundImageController.update(for: targetStream)
-                self.updateUserDefaultsLanguage(languageCode)
-                
-                self.languageSelectorView.setSelectedIndex(targetIndex, animated: true, caller: "widgetSwitch")
-                
-                guard shouldResumeAfterSwitch else {
-                    #if DEBUG
-                    print("[ViewController] [Widget Switch] Blocked — userPaused, no auto-resume")
-                    #endif
-                    await SharedPlayerManager.shared.clearSoftPauseMetadataStashForLanguageChange()
-                    self.languageSelectorView.setSelectedIndex(targetIndex, caller: "widgetSwitch-paused")
-                    self.updateUI(for: .userPaused)
-                    SharedPlayerManager.shared.clearPendingAction(actionId: actionId)
-                    return
-                }
-                
-                await SharedPlayerManager.shared.resetToPrePlayForNewStream()
-                self.languageSelectorView.setSelectedIndex(targetIndex, caller: "widgetSwitch-prePlay")
-                self.updateUI(for: .prePlay)
-                
-                #if DEBUG
-                print("[ViewController] ▶ [Widget Switch] Starting new stream using SharedPlayerManager.play() — main app path")
-                #endif
-                
-                await SharedPlayerManager.shared.play()
-                
-                #if DEBUG
-                print("[ViewController] Widget switch: SharedPlayerManager.play() succeeded")
-                print("[ViewController] Widget switch completed (authoritative save covered by play())")
-                #endif
-                
-                SharedPlayerManager.shared.clearPendingAction(actionId: actionId)
-            }
-        }
-        
-        pendingWidgetSwitchWorkItem = workItem
-        DispatchQueue.main.async(execute: workItem)
+        // P5 dedup: full implementation (processed guard, debounce, workItem, stop/set/play flow, intent checks) lives in RadioPlayerCoordinator.
+        radioPlayerCoordinator?.handleWidgetSwitchToLanguage(languageCode, actionId: actionId)
     }
     
     // MARK: - Widget and URL Scheme Handling
@@ -2028,6 +1188,7 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
                 if let targetIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.languageCode == playingLang }) {
                     if self.selectedStreamIndex != targetIndex {
                         self.selectedStreamIndex = targetIndex
+                        radioPlayerCoordinator?.selectedStreamIndex = targetIndex
                     }
                     self.languageSelectorView.setSelectedIndex(targetIndex, caller: "widgetPlay-synced")
                 }
@@ -2060,7 +1221,8 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
                     #endif
                     return
                 }
-                self.handleWidgetPauseAction()
+                // P5: delegate to coordinator (single orchestration for widget pause glue).
+                radioPlayerCoordinator?.handleWidgetPauseAction()
             }
         default:
             #if DEBUG
@@ -2085,11 +1247,8 @@ extension ViewController {
     /// Routes through SharedPlayerManager intent (userRequestedPlay path)
     /// instead of direct-to-DirectStreamingPlayer bypass. Consistent with SSOT.
     public func handlePlayAction() {
+        // P5: thin delegate (coordinator owns the intent + play sequencing).
         radioPlayerCoordinator?.handlePlayAction()
-        Task { @MainActor in
-            await SharedPlayerManager.shared.setUserIntentToPlay()
-            await SharedPlayerManager.shared.play()
-        }
     }
 
     /// Public method to pause playback (callable from SceneDelegate)
@@ -2097,98 +1256,15 @@ extension ViewController {
     /// Routes through SharedPlayerManager.stop() (the authoritative
     /// path that immediately sets .userPaused + persists + refreshes widgets).
     public func handlePauseAction() {
+        // P5: thin delegate.
         radioPlayerCoordinator?.handlePauseAction()
-        Task { @MainActor in
-            await SharedPlayerManager.shared.stop()
-            let newState = await SharedPlayerManager.shared.currentVisualState
-            updateUI(for: newState)
-        }
     }
 
     /// Public method to switch to a specific language stream (callable from SceneDelegate).
     /// - Parameter languageCode: The ISO language code to switch to (e.g., "en", "de", "fi", "sv", "et").
     public func handleSwitchToLanguage(_ languageCode: String) {
-        Task { @MainActor in
-            #if DEBUG
-            print("[ViewController] handleSwitchToLanguage started for: \(languageCode)")
-            #endif
-            
-            guard let targetStream = DirectStreamingPlayer.availableStreams.first(where: { $0.languageCode == languageCode }),
-                  let targetIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.languageCode == languageCode }) else {
-                #if DEBUG
-                print("[ViewController] handleSwitchToLanguage: target stream not found for \(languageCode)")
-                #endif
-                return
-            }
-            
-            selectedStreamIndex = targetIndex
-            backgroundImageController.update(for: targetStream)
-            streamingPlayer.isSwitchingStream = true
-            
-            #if DEBUG
-            print("[ViewController] Starting silent stop for switch to \(languageCode)")
-            #endif
-            
-            // Updated: use semantic reason (no more isSwitchingStream flag)
-            streamingPlayer.stop(
-                reason: .streamSwitch,      // ← NEW
-                silent: true                // ← kept exactly as before
-            )
-            
-            #if DEBUG
-            print("[ViewController] Playing tuning sound")
-            #endif
-            await playTuningSound(animateNeedleTo: targetIndex)
-            
-            streamingPlayer.resetTransientErrors()
-            
-            #if DEBUG
-            print("[ViewController] Setting stream to: \(targetStream.language)")
-            #endif
-            await streamingPlayer.setStream(to: targetStream)
-            // Retired legacy direct-write helper; route through the modern path that also
-            // writes the combined PersistedWidgetState snapshot.
-            updateUserDefaultsLanguage(targetStream.languageCode)
-            
-            // UI update (language selector owns the collection + needle)
-            languageSelectorView.setSelectedIndex(targetIndex, animated: true, caller: "externalLanguageSwitch")
-            
-            // Optimistic yellow + actor reset for external language switch shortcut.
-            // We reset the actor to .prePlay here (same as the flag tap path) so that any
-            // transient callbacks during the switch see the correct SSOT and do not flash green.
-            if await SharedPlayerManager.shared.canProceedWithPlayback() {
-                await SharedPlayerManager.shared.resetToPrePlayForNewStream()
-                updateUI(for: .prePlay)
-            }
-            
-            // Language switch is a user action; we now ask the SSOT (currentPlaybackIntent via canProceedWithPlayback).
-            // This removes one of the last places the stale flag controlled playback flow.
-            if await SharedPlayerManager.shared.canProceedWithPlayback() {
-                #if DEBUG
-                print("[ViewController] ▶ Starting playback after switch (intent allows)")
-                #endif
-                
-                // Small delay to let AVPlayerItem settle
-                try? await Task.sleep(for: .seconds(0.5))
-                
-                handlePlayAction()   // Uses new path with markAsPlaying()
-                
-            } else {
-                #if DEBUG
-                print("[ViewController] ⏸ Intent blocks playback after switch (userPaused or securityLocked)")
-                #endif
-                // Still update UI to paused state
-                updateUI(for: .userPaused)
-            }
-            
-            streamingPlayer.isSwitchingStream = false
-            
-            #if DEBUG
-            print("[ViewController] handleSwitchToLanguage completed for \(languageCode)")
-            #endif
-            
-            // the snapshot write + WidgetRefreshManager. (Language prompt via setter.)
-        }
+        // P5 dedup: full external switch orchestration (stop + tuning + setStream + userDefaults + reset + play sequencing + UI) lives in RadioPlayerCoordinator.
+        radioPlayerCoordinator?.handleSwitchToLanguage(languageCode)
     }
 
     /// Public method to toggle play/pause state
@@ -2198,10 +1274,8 @@ extension ViewController {
     /// so that all toggle entry points (button, widget URL schemes, SceneDelegate, remote)
     /// flow through the single authoritative intent decision path.
     public func handleTogglePlayback() {
+        // P5: thin delegate (both the coordinator shim and the internal handleUserTogglePlayback forward are covered by this).
         radioPlayerCoordinator?.handleTogglePlayback()
-        Task { @MainActor in
-            await handleUserTogglePlayback()
-        }
     }
 }
 
@@ -2217,19 +1291,7 @@ extension ViewController {
     }
     
     // MARK: - Accessibility and Haptic Helpers
-    private func startHapticEngine() {
-        guard let engine = hapticEngine else { return }
-        do {
-            try engine.start()
-            #if DEBUG
-            print("[ViewController] Haptic engine started successfully")
-            #endif
-        } catch {
-            #if DEBUG
-            print("[ViewController] Failed to start haptic engine: \(error)")
-            #endif
-        }
-    }
+    // P5: startHapticEngine removed (no local engine; coordinator owns haptics).
     
     // MARK: - Toggle Playback
     /// Primary @objc entry point for user-initiated play/pause (button tap + remote commands).
@@ -2261,66 +1323,9 @@ extension ViewController {
         }
     }
     
-    // MARK: - Play Haptic Feedback
-    /// Plays haptic feedback for user interactions (e.g., play/pause) using `CHHapticEngine` with a fallback to `UIImpactFeedbackGenerator`.
-    /// - Parameter style: The feedback style (`.heavy` for play, `.medium` for pause).
-    /// - Features:
-    ///   - **Low Power Mode**: Skips haptics if `ProcessInfo.processInfo.isLowPowerModeEnabled` is true to conserve battery.
-    ///   - **Hardware Check**: Ensures haptic support via `CHHapticEngine.capabilitiesForHardware().supportsHaptics`.
-    ///   - **Custom Feedback**: Maps `.heavy` to intensity=1.0/sharpness=1.0 and `.medium` to intensity=0.7/sharpness=0.5 for distinct tactile feel.
-    ///   - **Fallback**: Uses `UIImpactFeedbackGenerator` if `CHHapticEngine` fails (e.g., engine not started or hardware issue).
-    /// - Note: Feedback is played synchronously after ensuring the engine is running. Debug logs track success/failure.
-    /// - SeeAlso: `hapticEngine` for details on haptic engine initialization and management.
-    private func playHapticFeedback(style: UIImpactFeedbackGenerator.FeedbackStyle) {
-        // Early exit in Low Power Mode to conserve battery
-        guard !ProcessInfo.processInfo.isLowPowerModeEnabled else {
-            #if DEBUG
-            print("[ViewController] Haptics skipped in Low Power Mode")
-            #endif
-            return
-        }
-        
-        // Check hardware support early
-        guard CHHapticEngine.capabilitiesForHardware().supportsHaptics,
-              let engine = hapticEngine else {
-            #if DEBUG
-            print("[ViewController] Haptics not supported or engine unavailable")
-            #endif
-            return
-        }
-        
-        do {
-            // Explicitly start the engine if it's not running. This is synchronous and throws if it can't start.
-            try engine.start()
-            
-            // Map style to custom intensity/sharpness (the custom vibration logic)
-            let intensityValue: Float = (style == .heavy) ? 1.0 : 0.7
-            let sharpnessValue: Float = (style == .heavy) ? 1.0 : 0.5
-            
-            // Create a simple transient event (short custom vibration)
-            let intensity = CHHapticEventParameter(parameterID: .hapticIntensity, value: intensityValue)
-            let sharpness = CHHapticEventParameter(parameterID: .hapticSharpness, value: sharpnessValue)
-            let event = CHHapticEvent(eventType: .hapticTransient, parameters: [intensity, sharpness], relativeTime: 0)
-            
-            // Create pattern and player
-            let pattern = try CHHapticPattern(events: [event], parameters: [])
-            let player = try engine.makePlayer(with: pattern)
-            
-            // Play immediately
-            try player.start(atTime: CHHapticTimeImmediate)
-            
-            #if DEBUG
-            print("[ViewController] Haptic played: style=\(style), intensity=\(intensityValue), sharpness=\(sharpnessValue)")
-            #endif
-        } catch {
-            #if DEBUG
-            print("[ViewController] Failed to play haptic: \(error.localizedDescription)")
-            #endif
-            // Fallback to UIImpactFeedbackGenerator if custom fails (but still respect LPM via the early guard)
-            let fallback = UIImpactFeedbackGenerator(style: style)
-            fallback.impactOccurred()
-        }
-    }
+    // P5 dedup: playHapticFeedback (and the companion startHapticEngine) removed from VC.
+    // All call sites updated to radioPlayerCoordinator?.playHapticFeedback(...) or removed with the deleted bodies.
+    // Single implementation + engine live in RadioPlayerCoordinator.
     
     @objc private func increaseVolume() {
         let newValue = min(volumeSlider.value + 0.1, volumeSlider.maximumValue)
@@ -2438,6 +1443,7 @@ extension ViewController: StreamingPlayerDelegate {
                     
                     // Update UI (safe on @MainActor)
                     selectedStreamIndex = newIndex
+                    radioPlayerCoordinator?.selectedStreamIndex = newIndex
                     languageSelectorView.setSelectedIndex(newIndex, animated: true, caller: "handleSceneCommand-switch")
                     backgroundImageController.update(for: targetStream)
                     
@@ -2456,14 +1462,14 @@ extension ViewController: StreamingPlayerDelegate {
                         print("[ViewController] Widget switch blocked resume — .userPaused")
                         #endif
                         playbackControlsView.setPlayPause(isPlaying: false)
-                        safeUpdateStatusLabel(text: String(localized: "status_paused", table: "Localizable"),
+                        radioPlayerCoordinator?.safeUpdateStatusLabel(text: String(localized: "status_paused", table: "Localizable"),
                                               backgroundColor: .systemYellow,
                                               textColor: .label,
                                               isPermanentError: false)
                     }
                     
                     // Feedback and save
-                    playHapticFeedback(style: .medium)
+                    radioPlayerCoordinator?.playHapticFeedback(style: .medium)
                     unsafe UIAccessibility.post(notification: .announcement,
                                         argument: String(localized: "switched_to_language \(targetStream.language)", table: "Localizable"))
                     

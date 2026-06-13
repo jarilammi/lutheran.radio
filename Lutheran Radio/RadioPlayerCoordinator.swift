@@ -67,8 +67,10 @@ final class RadioPlayerCoordinator {
     // Sleep timer UI glue state + Task (verbatim; deep coupling to SharedPlayerManager + SleepTimer remains)
     private var sleepTimerDisplayTask: Task<Void, Never>?
     private var cachedSleepTimerRemaining: Int?
-    private var isSleepTimerInteractionActive = false
-    private var pendingMetadataVisualRefresh: String?
+    // internal for cross-sync with VC's onMetadataChange suppression check (same sleep interaction window)
+    var isSleepTimerInteractionActive = false
+    // internal so VC metadata callback (kept in host) can cross-stash during sleep interaction window
+    var pendingMetadataVisualRefresh: String?
     private static let sleepTimerMenuSettleNs: UInt64 = 250_000_000
     private static let sleepTimerPostScheduleUISettleNs: UInt64 = 300_000_000
     private static let sleepTimerDeferredVisualSettleNs: UInt64 = 500_000_000
@@ -431,7 +433,7 @@ final class RadioPlayerCoordinator {
     // MARK: - Core orchestration (moved verbatim from ViewController with only ownership adjustments)
 
     @MainActor
-    private func handleUserTogglePlayback() async {
+    func handleUserTogglePlayback() async {
         let manager = SharedPlayerManager.shared
         let visualState = await manager.currentVisualState
 
@@ -504,7 +506,7 @@ final class RadioPlayerCoordinator {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: workItem)
     }
 
-    private func updateUserDefaultsLanguage(_ languageCode: String) {
+    func updateUserDefaultsLanguage(_ languageCode: String) {
         let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared")
         sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "lastUpdateTime")
         sharedDefaults?.synchronize()
@@ -670,7 +672,7 @@ final class RadioPlayerCoordinator {
         #endif
     }
 
-    private func updateUIForNoInternet() {
+    func updateUIForNoInternet() {
         safeUpdateStatusLabel(
             text: String(localized: "status_no_internet", table: "Localizable"),
             backgroundColor: .systemGray,
@@ -681,7 +683,7 @@ final class RadioPlayerCoordinator {
         playbackControlsView.setPlayPause(isPlaying: false)
     }
 
-    private func pausePlayback() {
+    func pausePlayback() {
         #if DEBUG
         print("[RadioPlayerCoordinator] pausePlayback called (lockscreen / remote command)")
         #endif
@@ -694,7 +696,7 @@ final class RadioPlayerCoordinator {
         }
     }
 
-    private func stopPlayback() {
+    func stopPlayback() {
         #if DEBUG
         print("[RadioPlayerCoordinator] stopPlayback called")
         #endif
@@ -708,7 +710,7 @@ final class RadioPlayerCoordinator {
     }
 
     // Thin now-playing + widget save (duplicated from original thin helpers; identical behavior)
-    private func updateNowPlayingInfo(title: String? = nil) {
+    func updateNowPlayingInfo(title: String? = nil) {
         #if LUTHERAN_MAIN_APP
         Task {
             if let title {
@@ -726,7 +728,7 @@ final class RadioPlayerCoordinator {
         }
     }
 
-    private func safeUpdateStatusLabel(text: String, backgroundColor: UIColor, textColor: UIColor, isPermanentError: Bool) {
+    func safeUpdateStatusLabel(text: String, backgroundColor: UIColor, textColor: UIColor, isPermanentError: Bool) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             self.playbackControlsView.setStatus(text: text, backgroundColor: backgroundColor, textColor: textColor)
@@ -912,7 +914,7 @@ final class RadioPlayerCoordinator {
         }
     }
 
-    private func stopTuningSound() {
+    func stopTuningSound() {
         tuningPlayer?.stop()
         tuningPlayer = nil
         isTuningSoundPlaying = false
@@ -922,7 +924,7 @@ final class RadioPlayerCoordinator {
     }
 
     // MARK: - Sleep timer UI glue (moved verbatim)
-    private func configureSleepTimerButtonMenu() {
+    func configureSleepTimerButtonMenu() {
         var children: [UIMenuElement] = []
 
         if cachedSleepTimerRemaining != nil {
@@ -958,6 +960,7 @@ final class RadioPlayerCoordinator {
     @MainActor
     private func handleSleepTimerPresetSelected(minutes: Int) {
         isSleepTimerInteractionActive = true
+        viewController?.isSleepTimerInteractionActive = true
         backgroundImageController.cancelDeferredForModalInteraction()
 
         let totalSeconds = max(1, minutes * 60)
@@ -986,6 +989,7 @@ final class RadioPlayerCoordinator {
     @MainActor
     private func handleSleepTimerCancelSelected() {
         isSleepTimerInteractionActive = true
+        viewController?.isSleepTimerInteractionActive = true
         backgroundImageController.cancelDeferredForModalInteraction()
 
         Task { @MainActor [weak self] in
@@ -1002,8 +1006,10 @@ final class RadioPlayerCoordinator {
     @MainActor
     private func finishSleepTimerInteraction(applyDeferredVisuals: Bool) {
         isSleepTimerInteractionActive = false
+        viewController?.isSleepTimerInteractionActive = false
         guard applyDeferredVisuals, let metadata = pendingMetadataVisualRefresh else { return }
         pendingMetadataVisualRefresh = nil
+        viewController?.pendingMetadataVisualRefresh = nil
         updateNowPlayingInfo(title: metadata)
         nowPlayingMetadataView.applySpeakerVisuals(
             for: metadata,
