@@ -379,7 +379,7 @@ final class BackgroundImageController {
         }
     }
 
-    // SAFETY / moved from ViewController (Phase 2): pure CPU filter chain, no shared mutable state.
+    // SAFETY / moved from ViewController: pure CPU filter chain, no shared mutable state.
     nonisolated private func applyDarkModeFilters(to image: CIImage, morphologyScale: CGFloat = 1) -> CIImage {
         var processedImage = image
 
@@ -422,7 +422,7 @@ final class BackgroundImageController {
         return processedImage
     }
 
-    // SAFETY / moved from ViewController (Phase 2): pure CPU filter chain, no shared mutable state.
+    // SAFETY / moved from ViewController: pure CPU filter chain, no shared mutable state.
     nonisolated private func applyLightModeFilters(to image: CIImage, morphologyScale: CGFloat = 1) -> CIImage {
         var processedImage = image
 

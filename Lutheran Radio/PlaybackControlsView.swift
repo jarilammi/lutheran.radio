@@ -3,18 +3,18 @@
 //  Lutheran Radio
 //
 //  Encapsulates the playback controls bar: play/pause button, sleep timer button (menu attachment point for owner),
-//  and the status pill (colored rounded label driven by PlayerVisualState).
+//  and the playback status (colored rounded label driven by PlayerVisualState).
 //
 //  Created by Jari Lammi on 13.6.2026.
 //
 
 import UIKit
 
-/// Self-contained presentational view for the top controls row (play/pause + sleep timer + status pill).
+/// Self-contained presentational view for the top controls row (play/pause + sleep timer + playback status).
 ///
 /// Responsibilities (moved verbatim from ViewController):
-/// - Creation and configuration of the three sub-elements (initial images, colors, corner styling for pill, accessibility).
-/// - Internal horizontal UIStackView + sizing constraints (50x50 play, 44x44 sleep, pill min-width + height + relative max).
+/// - Creation and configuration of the three sub-elements (initial images, colors, corner styling for playback status, accessibility).
+/// - Internal horizontal UIStackView + sizing constraints (50x50 play, 44x44 sleep, playback status min-width + height + relative max).
 /// - Dumb update APIs: applyVisualState (main path from updateUI), setStatus (legacy/error paths), setPlayPause (with optional cross-dissolve), applySleepTimerButtonAppearance (image/tint/accValue for countdown).
 ///
 /// The owner (ViewController) retains:
@@ -24,7 +24,7 @@ import UIKit
 /// - Accessibility custom actions and any higher-level orchestration.
 ///
 /// All observable behavior (initial appearance, status color/text changes, play/pause icon swap with/without animation,
-/// sleep timer icon + indigo tint + remaining minutes acc value, pill cornerRadius=8) must remain pixel- and timing-identical.
+/// sleep timer icon + indigo tint + remaining minutes acc value, playback status cornerRadius=8) must remain pixel- and timing-identical.
 ///
 /// No new Localizable strings. No force-unwraps on production paths. No security or intent logic here.
 @MainActor
@@ -37,7 +37,7 @@ final class PlaybackControlsView: UIView {
     /// Exposed so owner can drive press animation + temporary isUserInteractionEnabled rate-limit inside togglePlayback.
     public private(set) var playPauseButton: UIButton
 
-    /// Exposed for any remaining direct-site compatibility during the mechanical phase (prefer the setters below).
+    /// Exposed for any remaining direct-site compatibility (prefer the setters below).
     public private(set) var statusLabel: UILabel
 
     // MARK: - Sleep timer images (moved verbatim from ViewController)
@@ -121,7 +121,7 @@ final class PlaybackControlsView: UIView {
 
     // MARK: - Public drive API (dumb presentational updates — owner owns visual state + sleep logic)
 
-    /// Primary path from ViewController.updateUI(for:). Sets pill text/color (from PlayerVisualState) + play/pause icon.
+    /// Primary path from ViewController.updateUI(for:). Sets playback status text/color (from PlayerVisualState) + play/pause icon.
     /// Security alert side-effect for .securityLocked remains in the owner.
     func applyVisualState(_ visualState: PlayerVisualState) {
         // Text (exact cases from the original single source of truth in updateUI)

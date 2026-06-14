@@ -1288,7 +1288,7 @@ actor SharedPlayerManager {
         guard Self.hasActiveWidgets else {
             Self.refreshHasActiveWidgetsStatus()
             #if DEBUG
-            print("🧹 [SharedPlayerManager] Suppressing instant feedback write (no active widgets configured — write suppression)")
+            print("[SharedPlayerManager] Suppressing instant feedback write (no active widgets configured — write suppression)")
             #endif
             return
         }
@@ -1310,7 +1310,7 @@ actor SharedPlayerManager {
         // Privacy gate: suppress liveness timestamp (and thus "app was recently running" signal) when no widgets installed.
         guard Self.hasActiveWidgets else {
             #if DEBUG
-            print("🧹 [SharedPlayerManager] Suppressing liveness timestamp bump (no active widgets — write suppression)")
+            print("[SharedPlayerManager] Suppressing liveness timestamp bump (no active widgets — write suppression)")
             #endif
             return
         }
@@ -1371,7 +1371,7 @@ actor SharedPlayerManager {
         if isPrivacySuppressed {
             Self.refreshHasActiveWidgetsStatus()
             #if DEBUG
-            print("🧹 [SharedPlayerManager] Privacy gate active for scheduleWidgetAction (no active widgets) — allowing transient pending command, suppressing persistent writes")
+            print("[SharedPlayerManager] Privacy gate active for scheduleWidgetAction (no active widgets) — allowing transient pending command, suppressing persistent writes")
             #endif
         }
 
@@ -1576,7 +1576,7 @@ actor SharedPlayerManager {
         // Privacy gate (see persistWidgetSnapshot for rationale and hasActiveWidgets docs).
         guard Self.hasActiveWidgets else {
             #if DEBUG
-            print("🧹 [SharedPlayerManager] Suppressing savePersistedWidgetState (no active widgets — write suppression)")
+            print("[SharedPlayerManager] Suppressing savePersistedWidgetState (no active widgets — write suppression)")
             #endif
             return
         }
@@ -1649,7 +1649,7 @@ actor SharedPlayerManager {
         guard Self.hasActiveWidgets else {
             Self.refreshHasActiveWidgetsStatus() // fire-and-forget re-detect so a later play/foreground after adding widget can resume writes
             #if DEBUG
-            print("🧹 [SharedPlayerManager] Suppressing widget state write (no active widgets configured — write suppression)")
+            print("[SharedPlayerManager] Suppressing widget state write (no active widgets configured — write suppression)")
             #endif
             return
         }
@@ -1761,7 +1761,7 @@ actor SharedPlayerManager {
     func persistStreamMetadataForWidgets() {
         guard Self.hasActiveWidgets else {
             #if DEBUG
-            print("🧹 [SharedPlayerManager] Suppressing persistStreamMetadataForWidgets (no active widgets — privacy mode)")
+            print("[SharedPlayerManager] Suppressing persistStreamMetadataForWidgets (no active widgets — privacy mode)")
             #endif
             return
         }
@@ -1779,7 +1779,7 @@ actor SharedPlayerManager {
     func saveCombinedWidgetState(language: String) {
         guard Self.hasActiveWidgets else {
             #if DEBUG
-            print("🧹 [SharedPlayerManager] Suppressing saveCombinedWidgetState (no active widgets — write suppression)")
+            print("[SharedPlayerManager] Suppressing saveCombinedWidgetState (no active widgets — write suppression)")
             #endif
             return
         }
@@ -1875,7 +1875,7 @@ extension SharedPlayerManager {
         // (savePersisted is also guarded, but we avoid the work and the downstream refreshIfNeeded scheduling).
         guard Self.hasActiveWidgets else {
             #if DEBUG
-            print("🧹 [SharedPlayerManager] Suppressing performActualSave writes + refresh scheduling (no active widgets — write suppression)")
+            print("[SharedPlayerManager] Suppressing performActualSave writes + refresh scheduling (no active widgets — write suppression)")
             #endif
             return
         }
@@ -2081,7 +2081,7 @@ extension SharedPlayerManager {
         defaults.synchronize()
 
         #if DEBUG
-        print("🧹 [SharedPlayerManager] Removed all local playback/widget keys (privacy clear)")
+        print("[SharedPlayerManager] Removed all local playback/widget keys (privacy clear)")
         #endif
     }
 
@@ -2119,7 +2119,7 @@ extension SharedPlayerManager {
         // refreshHasActiveWidgetsStatus once a widget has been re-added.
         WidgetRefreshManager.setHasActiveLutheranWidgets(false)
         #if DEBUG
-        print("🧹 [SharedPlayerManager] hasActiveWidgets forced false after privacy clear (suppressing re-writes until re-detect)")
+        print("[SharedPlayerManager] hasActiveWidgets forced false after privacy clear (suppressing re-writes until re-detect)")
         #endif
 
         // 6. End any Live Activity (privacy: no visible "I was listening" on lock screen / Dynamic Island)
@@ -2131,7 +2131,7 @@ extension SharedPlayerManager {
         NotificationCenter.default.post(name: .localStateCleared, object: nil)
 
         #if DEBUG
-        print("🧹 [SharedPlayerManager] Local state fully cleared — playback stopped, snapshot removed, LA ended")
+        print("[SharedPlayerManager] Local state fully cleared — playback stopped, snapshot removed, LA ended")
         #endif
     }
 }

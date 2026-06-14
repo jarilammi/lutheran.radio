@@ -172,7 +172,7 @@ final class LanguageSelectorView: UIView, UICollectionViewDelegate, UICollection
     // centerCollectionViewContent, epsilon skip, isInitial fast path, 0-duration initial, pulse animation on
     // non-initial sweeps, caller tagging for debug, all early-return guards).
     // This guarantees identical needle position and animation behavior on cold launch, stream switch,
-    // rotation, and dynamic width changes. See viewcontroller-decomposition-prompt.txt Phase 1.
+    // rotation, and dynamic width changes. See viewcontroller-decomposition-prompt.txt for extraction history.
     private func centerCollectionViewContent() {
         guard collectionView.bounds.width > 0, DirectStreamingPlayer.availableStreams.count > 0 else {
             #if DEBUG

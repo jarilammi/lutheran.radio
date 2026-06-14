@@ -102,11 +102,11 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     }()
     
     /// Composed language/flag selector (custom horizontal scroller + red tuning needle).
-    /// Phase 1 extraction: owns collection, indicator, all needle math, and collection protocols.
+    /// Owns collection, indicator, all needle math, and collection protocols.
     /// ViewController retains selectedStreamIndex + all playback intent / stream switch logic.
     let languageSelectorView = LanguageSelectorView()
 
-    /// Background image + Core Image processing (Phase 2 extraction).
+    /// Background image + Core Image processing.
     /// Owns the full-bleed backgroundImageView, all CI filtering (dark/light morphology + controls),
     /// caching, in-flight coalescing, cold-launch + stream-switch deferral (attach + ICY stable),
     /// low-power fast path, energy efficiency (LPM parallax + raw image), and parallax.
@@ -114,13 +114,13 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     /// at the correct moments. All heavy logic moved verbatim (behavior preserved).
     let backgroundImageController = BackgroundImageController()
 
-    // Phase 3: playback controls (play/pause + sleep timer button + status pill) and now-playing metadata/speaker
+    // Playback controls (play/pause + sleep timer button + playback status) and now-playing metadata/speaker
     // are composed views. Owner (VC) wires a few buttons for menus/animation and calls narrow setters at the
     // right moments. All visual rendering for these elements is now encapsulated; intent + sleep countdown logic stay here.
     let playbackControlsView = PlaybackControlsView()
     let nowPlayingMetadataView = NowPlayingMetadataView()
 
-    /// Phase 4: Lightweight RadioPlayerCoordinator (wiring + full stream selection flow + visual distribution + sleep glue + haptics + initial sequencing).
+    /// Lightweight RadioPlayerCoordinator (wiring + full stream selection flow + visual distribution + sleep glue + haptics + initial sequencing).
     var radioPlayerCoordinator: RadioPlayerCoordinator!
 
     let volumeSlider: UISlider = {
@@ -216,7 +216,7 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
-        // processed image cache limit is now configured inside BackgroundImageController (Phase 2)
+        // Processed image cache limit is now configured inside BackgroundImageController.
         
         // Add custom accessibility actions for playPauseButton (now owned by playbackControlsView)
         playbackControlsView.playPauseButton.accessibilityCustomActions = [
@@ -251,13 +251,13 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         
         // Playback audio session is configured in DirectStreamingPlayer.init (single owner).
         
-        // P5: Haptic engine init + start moved to RadioPlayerCoordinator.wireAndInitialSetup() (single owner of haptics).
+        // Haptic engine init + start is owned by RadioPlayerCoordinator.wireAndInitialSetup() (single owner of haptics).
         // Local hapticEngine lazy + startHapticEngine/playHapticFeedback bodies deleted (calls forwarded).
         
         setupDarwinNotificationListener()
         setupUI()
         
-        // Phase 4 (minimal introduction): create + wire coordinator after hierarchy is built.
+        // Create + wire coordinator after hierarchy is built.
         radioPlayerCoordinator = RadioPlayerCoordinator(
             languageSelectorView: languageSelectorView,
             backgroundImageController: backgroundImageController,
@@ -269,7 +269,7 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         radioPlayerCoordinator.presentAlert = { [weak self] alert in self?.present(alert, animated: true) }
         radioPlayerCoordinator.wireAndInitialSetup()
         
-        // P5 dedup: no instance selectedStreamIndex mutation or onSelectionChanged wiring here (coordinator owns).
+        // No instance selectedStreamIndex mutation or onSelectionChanged wiring here (coordinator owns).
         // Compute initial language preferring the PersistedWidgetState last language (via SSOT helper)
         // so the early seed, persist snapshot, player model, updateUserDefaultsLanguage, *and* the
         // coordinator's needle (set in wireAndInitialSetup) are consistent for "last stream remembered".
@@ -304,10 +304,10 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         setupFastWidgetActionChecking()
         isInitialSetupComplete = true
 
-        // P5: Sleep timer notification observer + initial sync now owned exclusively by RadioPlayerCoordinator (added in wireAndInitialSetup + viewDidAppearResurrectionCheck).
+        // Sleep timer notification observer + initial sync is owned exclusively by RadioPlayerCoordinator (added in wireAndInitialSetup + viewDidAppearResurrectionCheck).
         // VC no longer observes or syncs the sleep UI glue.
         
-        // Energy Efficiency Optimizations (iOS 26) — now owned by BackgroundImageController (Phase 2).
+        // Energy Efficiency Optimizations (iOS 26) — now owned by BackgroundImageController.
         // The controller self-registers for power state notifications and reacts using its last stream.
         backgroundImageController.updateForEnergyEfficiency()
         
@@ -325,7 +325,7 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
             // Stream model and UI only; secured AVPlayerItem is created once in setStreamAndPlay after tuning.
             await self.streamingPlayer.setSelectedStreamModelOnly(to: initialStream)
             
-            // Phase 2: deferral state is now owned by BackgroundImageController (cold launch path preserved).
+            // Background deferral state is now owned by BackgroundImageController (cold launch path preserved).
             // Actual image processing is deferred until playback is stable; choosing the initial lang
             // for prep is acceptable (not an "I listened" signal).
             backgroundImageController.scheduleDeferredForStreamSwitch(initialStream)
@@ -510,7 +510,7 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
                 #endif
             }
 
-            // P5: sleep timer display sync removed from here (coordinator performs it inside viewDidAppearResurrectionCheck).
+            // Sleep timer display sync is performed inside viewDidAppearResurrectionCheck (coordinator).
             await self.radioPlayerCoordinator?.viewDidAppearResurrectionCheck()
         }
     }
@@ -559,7 +559,7 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
             }
             
             // Process metadata on background (regex is cheap and thread-safe).
-            // Phase 3: regex helper now lives in nowPlayingMetadataView (small pure helper); use it to avoid duplication.
+            // The regex helper now lives in nowPlayingMetadataView (small pure helper); use it to avoid duplication.
             let potentialNames: [String] = metadata.map { nowPlayingMetadataView.potentialNames(from: $0) } ?? []
             
             // Hop to main for UI updates only
@@ -586,13 +586,13 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         }
     }
     
-    // P5 dedup: showSecurityModelAlert + showSSLTransitionAlert removed (their creation + presentation logic now lives inside RadioPlayerCoordinator.updateUI/handleStatusChange using the injected presentAlert hook).
+    // showSecurityModelAlert + showSSLTransitionAlert removed (their creation + presentation logic lives inside RadioPlayerCoordinator.updateUI/handleStatusChange using the injected presentAlert hook).
     // No call sites remain in VC.
     
     private func setupControls() {
-        // Phase 3: targets and identifiers now on the composed controls view's buttons
+        // Targets and identifiers are on the composed controls view's buttons
         playbackControlsView.playPauseButton.addTarget(self, action: #selector(togglePlayback), for: .touchUpInside)
-        // P5: menu construction (and all sleep countdown/menu state machine) now in coordinator.
+        // Menu construction (and all sleep countdown/menu state machine) is in coordinator.
         radioPlayerCoordinator?.configureSleepTimerButtonMenu()
         playbackControlsView.sleepTimerButton.accessibilityIdentifier = "sleepTimerButton"
         playbackControlsView.playPauseButton.accessibilityIdentifier = "playPauseButton"
@@ -918,13 +918,13 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     
     // MARK: - Manual Pause (user tap)
     private func stopPlayback() {
-        // P5 dedup: implementation in coordinator.
+        // Implementation in coordinator.
         radioPlayerCoordinator?.stopPlayback()
     }
     
     @MainActor
     private func updateUI(for visualState: PlayerVisualState) {
-        // P5 dedup: the skip-last + distribution + security alert side-effect logic lives in coordinator (single owner).
+        // The skip-last + distribution + security alert side-effect logic lives in coordinator (single owner).
         // VC keeps a 1-line forwarder for the remaining call sites in host-owned paths (network, interruptions, legacy widget action).
         radioPlayerCoordinator?.updateUI(for: visualState)
     }
@@ -936,7 +936,7 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     }
     
     private func setupUI() {
-        // Phase 2: backgroundImageView is now owned and configured by BackgroundImageController.
+        // backgroundImageView is owned and configured by BackgroundImageController.
         // We only add it to the hierarchy and apply the full-bleed (parallax bleed) constraints here.
         let bgView = backgroundImageController.backgroundImageView
         view.addSubview(bgView)
@@ -952,12 +952,12 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         view.addSubview(titleLabel)
         view.addSubview(languageSelectorView)
 
-        // Phase 3: use the composed controls view (internal stack + sizes for play/sleep/status pill).
+        // Use the composed controls view (internal stack + sizes for play/sleep/playback status).
         // External constraints only touch the container (top/center/height + volume below it).
         view.addSubview(playbackControlsView)
         view.addSubview(volumeSlider)
 
-        // Phase 3: metadata label is driven by the composed metadata view (contentStack still used for
+        // Metadata label is driven by the composed metadata view (contentStack still used for
         // identical vertical spacing/leading/trailing to language selector). Speaker image is vended
         // and placed exactly where it was (below language selector).
         view.addSubview(nowPlayingMetadataView.speakerImageView)
@@ -1000,7 +1000,7 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         // NOTE: LanguageSelectorView now internally creates its collectionView + selectionIndicator,
         // adds the indicator as subview of the collection, and activates its own needleCenterXConstraint.
         // All needle math and layout delegate work is encapsulated there.
-        // Phase 3: PlaybackControlsView owns its internal horizontal stack + pill/button sizing.
+        // PlaybackControlsView owns its internal horizontal stack + playback status/button sizing.
         // NowPlayingMetadataView owns the metadata label + speaker image + apply logic.
     }
     
@@ -1009,7 +1009,7 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         print("[ViewController] Received memory warning")
         #endif
         
-        // Clear image cache to free memory (Phase 2: delegated to BackgroundImageController)
+        // Clear image cache to free memory (delegated to BackgroundImageController)
         backgroundImageController.clearCache()
         #if DEBUG
         print("[ViewController] Requested background image cache clear (handled by BackgroundImageController)")
@@ -1104,16 +1104,16 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         }
     }
     
-    // P5 dedup: regular playTuningSound / stopTuningSound + their state removed (orchestration now exclusively in RadioPlayerCoordinator.playTuningSound for switch delight flows).
+    // Regular playTuningSound / stopTuningSound + their state removed (orchestration exclusively in RadioPlayerCoordinator.playTuningSound for switch delight flows).
     // Special tuning sound (cold-launch only, integrates TuningSoundCoordinator gate + AV delegate for finish) remains here because it is called from the host viewDidLoad Task and the AVAudioPlayerDelegate conformance is on ViewController.
     // The two audioPlayer* delegate impls below are retained solely for the special clip path.
     
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        // P5: sleepTimerDisplayTask cancel removed (owned by coordinator deinit + its stopLocal).
+        // sleepTimerDisplayTask cancel owned by coordinator deinit + its stopLocal.
     }
 
-    // P5 dedup: entire sleep timer UI glue (configure menu + preset/cancel handlers + finish + stateDidChange + sync + begin/stopLocal display + the 3 *Settle consts + instance vars)
+    // Entire sleep timer UI glue (configure menu + preset/cancel handlers + finish + stateDidChange + sync + begin/stopLocal display + the 3 *Settle consts + instance vars)
     // removed from VC. Single implementation + observer lives in RadioPlayerCoordinator (wired in wireAndInitialSetup).
     // configure call site in setupControls now forwards to coordinator. Observers and viewWillDisappear cancel for this concern removed.
 
@@ -1122,7 +1122,7 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     /// - Note: Sets `isDeallocating` to avoid operations during teardown.
     deinit {
         isDeallocating = true
-        // P5: sleep notif observer remove removed (no longer added by VC; coordinator manages its own).
+        // Sleep notif observer remove: no longer added by VC; coordinator manages its own.
         
         #if DEBUG
         print("[ViewController] deinit starting")
@@ -1259,7 +1259,7 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
                     #endif
                     return
                 }
-                // P5: delegate to coordinator (single orchestration for widget pause glue).
+                // Delegate to coordinator (single orchestration for widget pause glue).
                 radioPlayerCoordinator?.handleWidgetPauseAction()
             }
         default:
@@ -1285,7 +1285,7 @@ extension ViewController {
     /// Routes through SharedPlayerManager intent (userRequestedPlay path)
     /// instead of direct-to-DirectStreamingPlayer bypass. Consistent with SSOT.
     public func handlePlayAction() {
-        // P5: thin delegate (coordinator owns the intent + play sequencing).
+        // Thin delegate (coordinator owns the intent + play sequencing).
         radioPlayerCoordinator?.handlePlayAction()
     }
 
@@ -1294,14 +1294,14 @@ extension ViewController {
     /// Routes through SharedPlayerManager.stop() (the authoritative
     /// path that immediately sets .userPaused + persists + refreshes widgets).
     public func handlePauseAction() {
-        // P5: thin delegate.
+        // Thin delegate.
         radioPlayerCoordinator?.handlePauseAction()
     }
 
     /// Public method to switch to a specific language stream (callable from SceneDelegate).
     /// - Parameter languageCode: The ISO language code to switch to (e.g., "en", "de", "fi", "sv", "et").
     public func handleSwitchToLanguage(_ languageCode: String) {
-        // P5 dedup: full external switch orchestration (stop + tuning + setStream + userDefaults + reset + play sequencing + UI) lives in RadioPlayerCoordinator.
+        // Full external switch orchestration (stop + tuning + setStream + userDefaults + reset + play sequencing + UI) lives in RadioPlayerCoordinator.
         radioPlayerCoordinator?.handleSwitchToLanguage(languageCode)
     }
 
@@ -1312,14 +1312,14 @@ extension ViewController {
     /// so that all toggle entry points (button, widget URL schemes, SceneDelegate, remote)
     /// flow through the single authoritative intent decision path.
     public func handleTogglePlayback() {
-        // P5: thin delegate (both the coordinator shim and the internal handleUserTogglePlayback forward are covered by this).
+        // Thin delegate (both the coordinator shim and the internal handleUserTogglePlayback forward are covered by this).
         radioPlayerCoordinator?.handleTogglePlayback()
     }
 }
 
 extension ViewController {
     func updateStatusLabel(text: String, backgroundColor: UIColor, textColor: UIColor) {
-        // Phase 3: forward to composed controls view (pill state)
+        // Forward to composed controls view (playback status)
         playbackControlsView.setStatus(text: text, backgroundColor: backgroundColor, textColor: textColor)
         
         // Announce status changes to VoiceOver only for play/pause states (kept in owner per original)
@@ -1329,7 +1329,7 @@ extension ViewController {
     }
     
     // MARK: - Accessibility and Haptic Helpers
-    // P5: startHapticEngine removed (no local engine; coordinator owns haptics).
+    // startHapticEngine removed (no local engine; coordinator owns haptics).
     
     // MARK: - Toggle Playback
     /// Primary @objc entry point for user-initiated play/pause (button tap + remote commands).
@@ -1340,7 +1340,7 @@ extension ViewController {
     ///
     /// - SeeAlso: `handleUserTogglePlayback()`, `handleTogglePlayback()` (public wrapper for SceneDelegate)
     @objc private func togglePlayback() {
-        // Instant visual press feedback (Phase 3: button now lives in playbackControlsView)
+        // Instant visual press feedback (button lives in playbackControlsView)
         let targetButton = playbackControlsView.playPauseButton
         UIView.animate(withDuration: 0.1, animations: {
             targetButton.transform = CGAffineTransform(scaleX: 0.95, y: 0.95)
@@ -1382,7 +1382,7 @@ extension ViewController {
     private func safeUpdateStatusLabel(text: String, backgroundColor: UIColor, textColor: UIColor, isPermanentError: Bool) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            // Phase 3: use the setter (it contains the redundant-text skip)
+            // Use the setter (it contains the redundant-text skip)
             self.playbackControlsView.setStatus(text: text, backgroundColor: backgroundColor, textColor: textColor)
             
             // Permanent error state is now driven by SecurityModelValidator.isPermanentlyInvalid + intent.
@@ -1422,9 +1422,9 @@ extension ViewController: StreamingPlayerDelegate {
     /// Marked nonisolated + explicit MainActor hop to satisfy strict concurrency.
     nonisolated func onStatusChange(_ status: PlayerStatus, reasonKey: String?) {
         Task { @MainActor [weak self] in
-            // Phase 4: forward heavy work to coordinator (distribution, haptics, background flush, corrections).
+            // Forward heavy work to coordinator (distribution, haptics, background flush, corrections).
             await self?.radioPlayerCoordinator?.handleStatusChange(status, reasonKey: reasonKey)
-            // Old body removed in minimal Phase 4 diff (forward to coordinator is the active path; behavior preserved).
+            // Old body removed in the minimal diff (forward to coordinator is the active path; behavior preserved).
         }
     }
     

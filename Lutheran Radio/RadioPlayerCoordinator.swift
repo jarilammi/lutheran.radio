@@ -2,7 +2,7 @@
 //  RadioPlayerCoordinator.swift
 //  Lutheran Radio
 //
-//  Lightweight @MainActor orchestration layer introduced in Phase 4 of the ViewController decomposition.
+//  Lightweight @MainActor orchestration layer (introduced during ViewController decomposition).
 //  Owns wiring of the extracted presentational components (LanguageSelectorView, BackgroundImageController,
 //  PlaybackControlsView, NowPlayingMetadataView), the full stream-selection flows, distribution of every
 //  visual/metadata/background update, sleep-timer UI state machine glue (notification observer + sync +
@@ -39,7 +39,7 @@ final class RadioPlayerCoordinator {
     private let hapticsController = HapticsController()
     nonisolated private let streamingPlayer: DirectStreamingPlayer
 
-    // Weak back-ref for the few services that remain difficult to move in a single mechanical phase
+    // Weak back-ref for the few services that remain difficult to move in a single mechanical pass
     // (primarily presenting security/stream alerts that were previously implemented directly on VC,
     // and saveStateForWidget which is a one-line thin forwarder). All heavy decision paths stay here.
     weak var viewController: ViewController?
