@@ -144,8 +144,11 @@ final class RadioPlayerCoordinator {
     /// bestInitialLanguageCode (preferredLanguages match) to a user-friendly initial stream instead
     /// of always English. This produces the fresh non-identifying initial state for the no-snapshot
     /// (post-clear or no-widgets) case while giving better everyday UX on the reseed.
+    ///
+    /// Awaitable so the DirectStreamingPlayer model sync completes before the clear flow returns
+    /// (prevents races where an immediate post-clear play tap would see a stale pre-clear selectedStream).
     @MainActor
-    private func resetLanguageSelectorToInitialLocale() {
+    private func resetLanguageSelectorToInitialLocale() async {
         let languageCode = SharedPlayerManager.preferredMainAppInitialLanguageCode()
         let initialIndex = DirectStreamingPlayer.indexForLanguageCode(languageCode)
         selectedStreamIndex = initialIndex
@@ -158,9 +161,7 @@ final class RadioPlayerCoordinator {
         // stale pre-clear selection. Launch paths already do an explicit setSelectedStreamModelOnly for
         // the same reason.
         let stream = DirectStreamingPlayer.streamForLanguageCode(languageCode)
-        Task { @MainActor in
-            await DirectStreamingPlayer.shared.setSelectedStreamModelOnly(to: stream)
-        }
+        await DirectStreamingPlayer.shared.setSelectedStreamModelOnly(to: stream)
     }
 
     /// Called from the async portion of VC viewDidLoad Task after tuning sound + model-only set.
@@ -1062,7 +1063,7 @@ final class RadioPlayerCoordinator {
                     backgroundColor: .systemGray,
                     textColor: .white
                 )
-                self.resetLanguageSelectorToInitialLocale()
+                await self.resetLanguageSelectorToInitialLocale()
                 self.playHapticFeedback(style: .heavy)
                 self.configureSleepTimerButtonMenu()
             }

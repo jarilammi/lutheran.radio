@@ -315,7 +315,7 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         Task { @MainActor [weak self] in
             guard let self else { return }
             
-            let initialStream = DirectStreamingPlayer.availableStreams[initialIndex]
+            let initialStream = SharedPlayerManager.streamForLanguageCode(languageCode)
             
             // In-memory UI + model setup only (selector needle, player selectedStream).
             // These are required for the app to be usable on launch and do not re-create

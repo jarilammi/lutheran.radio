@@ -218,8 +218,7 @@ struct LutheranRadioLiveActivityWidget: Widget {
                     let currentLanguage = SharedPlayerManager.preferredWidgetLanguage()
                     // Use the shared display model so the title is always present and the speaker line
                     // reserves vertical space (via \u{00A0} + opacity) for layout stability.
-                    let languageName = SharedPlayerManager.shared.availableStreams
-                        .first { $0.languageCode == currentLanguage }?.language ?? getLanguageName(currentLanguage)
+                    let languageName = SharedPlayerManager.streamForLanguageCode(currentLanguage).language
                     let metadataModel = widgetNowPlayingDisplayModel(
                         visualState: context.state.visualState,
                         streamMetadata: context.state.streamMetadata,
@@ -343,8 +342,7 @@ struct LutheranRadioLiveActivityWidget: Widget {
                         }
                         
                         // Use shared model for title (compact leading shows only while actively; model yields metadata or live fallback).
-                        let languageName = SharedPlayerManager.shared.availableStreams
-                            .first { $0.languageCode == currentLanguage }?.language ?? getLanguageName(currentLanguage)
+                        let languageName = SharedPlayerManager.streamForLanguageCode(currentLanguage).language
                         let compactModel = widgetNowPlayingDisplayModel(
                             visualState: context.state.visualState,
                             streamMetadata: context.state.streamMetadata,
@@ -398,8 +396,7 @@ struct LockScreenLiveActivityView: View {
     var body: some View {
         let currentLanguage = SharedPlayerManager.preferredWidgetLanguage()
         // Compute language display name from authoritative streams (full set) for consistent live fallback.
-        let languageName = SharedPlayerManager.shared.availableStreams
-            .first { $0.languageCode == currentLanguage }?.language ?? getLanguageName(currentLanguage)
+        let languageName = SharedPlayerManager.streamForLanguageCode(currentLanguage).language
         let metadataModel = widgetNowPlayingDisplayModel(
             visualState: context.state.visualState,
             streamMetadata: context.state.streamMetadata,

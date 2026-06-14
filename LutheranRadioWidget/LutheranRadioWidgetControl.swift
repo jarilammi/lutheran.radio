@@ -158,20 +158,20 @@ extension LutheranRadioWidgetControl {
             if UserDefaults(suiteName: "group.radio.lutheran.shared") == nil {
                 let vs = await manager.currentVisualState
                 let lang = SharedPlayerManager.preferredWidgetLanguage()
-                let stream = manager.availableStreams.first(where: { $0.languageCode == lang }) ?? manager.availableStreams[0]
+                let stream = SharedPlayerManager.streamForLanguageCode(lang)
                 return (vs, stream.flag + " " + stream.language)
             }
             
             // The unified snapshot is the single source of truth.
             if let combined = SharedPlayerManager.loadPersistedWidgetState() {
-                let stream = manager.availableStreams.first(where: { $0.languageCode == combined.currentLanguage }) ?? manager.availableStreams[0]
+                let stream = SharedPlayerManager.streamForLanguageCode(combined.currentLanguage)
                 return (combined.visualState, stream.flag + " " + stream.language)
             }
             
             // Ultimate fallback for installs that never wrote a combined snapshot.
             let vs = await manager.currentVisualState
             let lang = SharedPlayerManager.preferredWidgetLanguage()
-            let stream = manager.availableStreams.first(where: { $0.languageCode == lang }) ?? manager.availableStreams[0]
+            let stream = SharedPlayerManager.streamForLanguageCode(lang)
             let station = stream.flag + " " + stream.language
             return (vs, station)
         }

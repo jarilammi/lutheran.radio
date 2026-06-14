@@ -429,20 +429,42 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// Best initial radio stream languageCode for the main app UI (LanguageSelectorView needle position,
     /// early cold-launch seeds, background images, and the post-clear cold-launch auto-play choice).
     ///
-    /// Walks the user's ordered `Locale.preferredLanguages` list (the same list that drives which
-    /// Localizable.xcstrings localization the app bundle uses), extracts the primary language subtag
-    /// ("fi-FI" → "fi", "en-US" → "en"), and returns the first code that is one of our five supported
-    /// radio streams (en, de, fi, sv, et).
+    /// Prefers the localizations that the *main bundle actually resolved* for the current run
+    /// (Bundle.main.preferredLocalizations, in user preference order). This captures the effective
+    /// app language the UI is presenting ("Finnish on a fi device", simulator Application Language
+    /// overrides via -AppleLanguages, etc.). We walk the full ordered list and return the first
+    /// subtag that matches one of our five supported radio streams (en, de, fi, sv, et). This ensures
+    /// the initial needle and auto-play stream match the localized experience when the presented
+    /// language is a supported radio language.
     ///
-    /// Ultimate fallback is "en" (the first/English stream). This produces a user-friendly starting
-    /// selection on first-run or after privacy clear, while still being a non-identifying default.
+    /// Falls back to walking the user's `Locale.preferredLanguages` (the list that also drives
+    /// Localizable.xcstrings), then Locale.current. Ultimate fallback "en".
+    ///
+    /// This produces a user-friendly starting selection on first-run or after privacy clear,
+    /// while still being a non-identifying default.
     ///
     /// Distinct from widget privacy paths: `SharedPlayerManager.preferredWidgetLanguage()` (and all
     /// widget/Live Activity providers) intentionally hard-fallback to "en" with *no* device locale
-    /// probing when `loadPersistedWidgetState()` is absent. This prevents writing any language signal
-    /// into the App Group when no widgets are configured (writes suppressed).
+    /// probing when `loadPersistedWidgetState()` is absent (or hasActiveWidgets is false post-clear).
+    /// This prevents writing any language signal into the App Group when no widgets are configured
+    /// (writes suppressed). The main-app path (preferredMainAppInitialLanguageCode) always uses
+    /// bestInitial on no-snapshot so post-clear reseed + launch play get the right lang.
     static func bestInitialLanguageCode() -> String {
         let supported = Set(Self.availableStreams.map { $0.languageCode })
+
+        // 1. Bundle's resolved preferredLocalizations first (the localizations the app actually
+        //    selected for strings/UI this run). Walking the full list (not just .first) gives the
+        //    highest user-preference radio lang that the bundle accepted, which reliably reflects
+        //    simulator scheme overrides and device UI language even when Locale.preferredLanguages
+        //    leads with the dev language or another entry.
+        for raw in Bundle.main.preferredLocalizations {
+            let candidate = raw.split(separator: "-").first.map(String.init) ?? raw
+            if supported.contains(candidate) {
+                return candidate
+            }
+        }
+
+        // 2. User's ordered preferredLanguages (drives strings + explicit user ordering).
         for raw in Locale.preferredLanguages {
             // preferredLanguages values are BCP-47-like: "fi", "fi-FI", "en-US", "zh-Hans-CN" etc.
             let candidate = raw.split(separator: "-").first.map(String.init) ?? raw
@@ -450,6 +472,13 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 return candidate
             }
         }
+
+        // 3. Last-chance current locale subtag.
+        if let current = Locale.current.language.languageCode?.identifier,
+           supported.contains(current) {
+            return current
+        }
+
         return "en"
     }
 

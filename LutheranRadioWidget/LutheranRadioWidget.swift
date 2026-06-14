@@ -154,10 +154,9 @@ struct Provider: AppIntentTimelineProvider {
         
         let manager = SharedPlayerManager.shared
         
-        // Safer stream selection
-        let currentStream = manager.availableStreams.first { $0.languageCode == currentLanguage }
-            ?? manager.availableStreams.first
-            ?? manager.availableStreams[0]          // final fallback (should never happen)
+        // Use the centralized facade (delegates to DirectStreamingPlayer.streamForLanguageCode
+        // with its documented English default). Removes duplicated first/??/ [0] logic.
+        let currentStream = SharedPlayerManager.streamForLanguageCode(currentLanguage)
         
         let currentStation = currentStream.flag + " " + currentStream.language
 
@@ -197,7 +196,8 @@ struct Provider: AppIntentTimelineProvider {
         let manager = SharedPlayerManager.shared
         let (currentLanguage, hasError, visualState, streamMetadata) = await getPendingOrCurrentState(manager: manager)
 
-        let currentStream = manager.availableStreams.first { $0.languageCode == currentLanguage } ?? manager.availableStreams[0]
+        // Use the centralized facade (see SharedPlayerManager.streamForLanguageCode).
+        let currentStream = SharedPlayerManager.streamForLanguageCode(currentLanguage)
         let currentStation = currentStream.flag + " " + currentStream.language
 
         let statusMessage: String = {

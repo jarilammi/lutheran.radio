@@ -668,7 +668,8 @@ actor SharedPlayerManager {
         if let snapshot = Self.loadPersistedWidgetState() {
             let preferredLang = snapshot.currentLanguage
             if DirectStreamingPlayer.shared.selectedStream.languageCode != preferredLang {
-                if let synced = DirectStreamingPlayer.availableStreams.first(where: { $0.languageCode == preferredLang }) {
+                let synced = Self.streamForLanguageCode(preferredLang)
+                if synced.languageCode == preferredLang {
                     #if DEBUG
                     print("[SharedPlayerManager] Aligning selectedStream to persisted widget language \(preferredLang) (was \(DirectStreamingPlayer.shared.selectedStream.languageCode)) before setStreamAndPlay")
                     #endif
@@ -1359,13 +1360,19 @@ actor SharedPlayerManager {
     /// Returns the generated action ID, or `nil` if the App Group is unavailable.
     @discardableResult
     nonisolated func scheduleWidgetAction(action: String, parameter: String? = nil) -> String? {
-        // Privacy gate (pendingAction* keys are optimistic "I just did something" signals; write suppression when no widgets).
-        guard Self.hasActiveWidgets else {
+        // Privacy gate for *persistent* state (snapshot, liveness, instantFeedbackLanguage, metadata).
+        // Transient one-shot command keys (pendingAction*, pendingLanguage) are *still written*
+        // even when !hasActiveWidgets (post-clear or no widgets configured). This guarantees the
+        // first widget play/pause/switch after a privacy clear always delivers its Darwin +
+        // pending so the main app can act. For "play" this lands in the post-clear guard which
+        // legitimately re-creates the snapshot only on the success path. Persistent writes remain
+        // suppressed until re-detect + explicit action success.
+        let isPrivacySuppressed = !Self.hasActiveWidgets
+        if isPrivacySuppressed {
             Self.refreshHasActiveWidgetsStatus()
             #if DEBUG
-            print("🧹 [SharedPlayerManager] Suppressing scheduleWidgetAction / pending keys (no active widgets — write suppression)")
+            print("🧹 [SharedPlayerManager] Privacy gate active for scheduleWidgetAction (no active widgets) — allowing transient pending command, suppressing persistent writes")
             #endif
-            return nil
         }
 
         guard let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
@@ -1733,6 +1740,20 @@ actor SharedPlayerManager {
             return combined.currentLanguage
         }
         return DirectStreamingPlayer.bestInitialLanguageCode()
+    }
+
+    /// Facade over `DirectStreamingPlayer.streamForLanguageCode`.
+    /// Returns the Stream for the given code, or the English default (first stream) if not found.
+    /// Use this (instead of inline `availableStreams.first(where:...) ?? availableStreams[0]`)
+    /// from both main app and widget extension code for a single source of the defaulting rule.
+    nonisolated static func streamForLanguageCode(_ languageCode: String) -> DirectStreamingPlayer.Stream {
+        DirectStreamingPlayer.streamForLanguageCode(languageCode)
+    }
+
+    /// Facade over `DirectStreamingPlayer.indexForLanguageCode`.
+    /// Returns the index for the given code (suitable for LanguageSelectorView etc.), or 0 if not found.
+    nonisolated static func indexForLanguageCode(_ languageCode: String) -> Int {
+        DirectStreamingPlayer.indexForLanguageCode(languageCode)
     }
 
     #if LUTHERAN_MAIN_APP
