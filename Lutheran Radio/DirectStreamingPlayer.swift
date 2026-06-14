@@ -423,7 +423,49 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                languageCode: "et",
                flag: "🇪🇪"),
     ]
-    
+
+    // MARK: - Initial language helpers (centralized for main-app reseed + cold launch)
+
+    /// Best initial radio stream languageCode for the main app UI (LanguageSelectorView needle position,
+    /// early cold-launch seeds, background images, and the post-clear cold-launch auto-play choice).
+    ///
+    /// Walks the user's ordered `Locale.preferredLanguages` list (the same list that drives which
+    /// Localizable.xcstrings localization the app bundle uses), extracts the primary language subtag
+    /// ("fi-FI" → "fi", "en-US" → "en"), and returns the first code that is one of our five supported
+    /// radio streams (en, de, fi, sv, et).
+    ///
+    /// Ultimate fallback is "en" (the first/English stream). This produces a user-friendly starting
+    /// selection on first-run or after privacy clear, while still being a non-identifying default.
+    ///
+    /// Distinct from widget privacy paths: `SharedPlayerManager.preferredWidgetLanguage()` (and all
+    /// widget/Live Activity providers) intentionally hard-fallback to "en" with *no* device locale
+    /// probing when `loadPersistedWidgetState()` is absent. This prevents writing any language signal
+    /// into the App Group when no widgets are configured (writes suppressed).
+    static func bestInitialLanguageCode() -> String {
+        let supported = Set(Self.availableStreams.map { $0.languageCode })
+        for raw in Locale.preferredLanguages {
+            // preferredLanguages values are BCP-47-like: "fi", "fi-FI", "en-US", "zh-Hans-CN" etc.
+            let candidate = raw.split(separator: "-").first.map(String.init) ?? raw
+            if supported.contains(candidate) {
+                return candidate
+            }
+        }
+        return "en"
+    }
+
+    /// Returns the index of the stream for the given languageCode (suitable for LanguageSelectorView
+    /// and selectedStreamIndex). Returns 0 (English) if the code is not one of the supported streams.
+    /// Replaces all the previous repeated `firstIndex(where: ...) ?? 0` for initial selection paths.
+    static func indexForLanguageCode(_ languageCode: String) -> Int {
+        availableStreams.firstIndex(where: { $0.languageCode == languageCode }) ?? 0
+    }
+
+    /// Returns the Stream matching the languageCode, or the English default (index 0) if not found.
+    /// Used for safe lookup from a code we believe is valid (initial choice, model-only set, etc.).
+    static func streamForLanguageCode(_ languageCode: String) -> Stream {
+        availableStreams.first(where: { $0.languageCode == languageCode }) ?? availableStreams[0]
+    }
+
     /// A radio stream server endpoint (EU or US cluster).
     struct Server {
         let name: String
@@ -891,10 +933,17 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                         #endif
                         return
                     }
-                    #if DEBUG
-                    print("[DirectStreamingPlayer] safeOnStatusChange: STABLE final state (isPlaying=\(isPlaying), key='\(reasonKey ?? "nil")') → forcing widget save")
-                    #endif
-                    await SharedPlayerManager.shared.saveCurrentState()
+                    let vis = await SharedPlayerManager.shared.currentVisualState
+                    if vis.mustSuppressResurrection {
+                        #if DEBUG
+                        print("[DirectStreamingPlayer] safeOnStatusChange: stable stopped (isPlaying=\(isPlaying), key='\(reasonKey ?? "nil")') while sticky pause — skipping force save (explicit stop path already persisted correct visual+lang)")
+                        #endif
+                    } else {
+                        #if DEBUG
+                        print("[DirectStreamingPlayer] safeOnStatusChange: STABLE final state (isPlaying=\(isPlaying), key='\(reasonKey ?? "nil")') → forcing widget save")
+                        #endif
+                        await SharedPlayerManager.shared.saveCurrentState()
+                    }
                 }
             } else {
                 #if DEBUG
@@ -1018,14 +1067,9 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         self.audioSession = .sharedInstance()
         self.pathMonitor = NWPathMonitorAdapter()
         
-        let currentLocale = Locale.current
-        let languageCode = currentLocale.language.languageCode?.identifier
-        
-        if let stream = Self.availableStreams.first(where: { $0.languageCode == languageCode }) {
-            selectedStream = stream
-        } else {
-            selectedStream = Self.availableStreams[0]
-        }
+        // Use the centralized preference-respecting helper (bestInitialLanguageCode).
+        // Previously duplicated fragile Locale.current + ?? [0] logic here and in the other init.
+        selectedStream = Self.streamForLanguageCode(Self.bestInitialLanguageCode())
         
         #if DEBUG
         isTesting = NSClassFromString("XCTestCase") != nil
@@ -1233,14 +1277,9 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         self.audioSession = audioSession
         self.pathMonitor = pathMonitor
         
-        let currentLocale = Locale.current
-        let languageCode = currentLocale.language.languageCode?.identifier
-        
-        if let stream = Self.availableStreams.first(where: { $0.languageCode == languageCode }) {
-            selectedStream = stream
-        } else {
-            selectedStream = Self.availableStreams[0]
-        }
+        // Use the centralized preference-respecting helper (bestInitialLanguageCode).
+        // Previously duplicated fragile Locale.current + ?? [0] logic here and in the designated init.
+        selectedStream = Self.streamForLanguageCode(Self.bestInitialLanguageCode())
         
         #if DEBUG
         isTesting = NSClassFromString("XCTestCase") != nil
@@ -1416,7 +1455,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         // This catches all internal/resume paths that bypass the public play() method
         // (stream switches, tuning sound completion, audio session reactivation, etc.).
         // Now uses the intent helper (second execution-engine site wired to currentPlaybackIntent).
-        // Sticky .userPaused / .securityLocked behavior preserved exactly.
+        // Sticky .userPaused / .securityLocked / .cleared (privacy clear) behavior preserved exactly.
         guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
             #if DEBUG
             print("🚫 [Deep Play Guard] Blocked by playbackIntent = \(await SharedPlayerManager.shared.currentPlaybackIntent)")
@@ -1871,7 +1910,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         // authoritative playback intent via canProceedWithPlayback().
         // (Previously visualState.shouldAutoPlayOrResume; now consistent with public play()
         // and deep createAndStartPlayer paths.)
-        // Sticky .userPaused / .securityLocked behavior preserved exactly.
+        // Sticky .userPaused / .securityLocked / .cleared (privacy clear) behavior preserved exactly.
         guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
             #if DEBUG
             print("[DirectStreamingPlayer] startPlayback: resurrection suppressed by playbackIntent = \(await SharedPlayerManager.shared.currentPlaybackIntent)")

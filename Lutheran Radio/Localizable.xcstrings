@@ -1043,7 +1043,6 @@
       }
     },
     "accessibility_label_pause" : {
-      "extractionState" : "manual",
       "localizations" : {
         "da" : {
           "stringUnit" : {
@@ -1171,7 +1170,8 @@
             "value" : "Pausa"
           }
         }
-      }
+      },
+      "extractionState" : "manual"
     },
     "accessibility_label_photo_of_format" : {
       "comment" : "Accessibility label for speaker photo. %@ is the speaker or program name.",
@@ -2210,6 +2210,526 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Igen"
+          }
+        }
+      }
+    },
+    "clear_local_state_confirm" : {
+      "localizations" : {
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ryd"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Löschen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Borrar"
+          }
+        },
+        "et" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kustuta"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tyhjennä"
+          }
+        },
+        "fit" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tyhjennä"
+          }
+        },
+        "fo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reinsa"
+          }
+        },
+        "gag" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Temizle"
+          }
+        },
+        "is" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hreinsa"
+          }
+        },
+        "kl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nungortiguk"
+          }
+        },
+        "lt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Išvalyti"
+          }
+        },
+        "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notīrīt"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tøm"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wissen"
+          }
+        },
+        "nn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tøm"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wyczyść"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Очистить"
+          }
+        },
+        "se" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sihko"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vymazať"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rensa"
+          }
+        }
+      }
+    },
+    "clear_local_state_done" : {
+      "localizations" : {
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ryddet"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gelöscht"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cleared"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Borrado"
+          }
+        },
+        "et" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kustutatud"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tyhjennetty"
+          }
+        },
+        "fit" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tyhjennetty"
+          }
+        },
+        "fo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reinsað"
+          }
+        },
+        "gag" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Temizlendi"
+          }
+        },
+        "is" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hreinsað"
+          }
+        },
+        "kl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nungortigineqarpoq"
+          }
+        },
+        "lt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Išvalyta"
+          }
+        },
+        "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notīrīts"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tømt"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gewist"
+          }
+        },
+        "nn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tømt"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wyczyszczono"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Очищено"
+          }
+        },
+        "se" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sihkkojuvvon"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vymazané"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rensad"
+          }
+        }
+      }
+    },
+    "clear_local_state_message" : {
+      "localizations" : {
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dette vil stoppe afspilning, fjerne widget- og Live Activity-data og rydde nylig lytteaktivitet fra denne enhed. Handlingen kan ikke fortrydes."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dadurch wird die Wiedergabe gestoppt, Widget- und Live-Activity-Daten entfernt und der letzte Hörstatus von diesem Gerät gelöscht. Die Aktion kann nicht rückgängig gemacht werden."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This will stop playback, remove widget and Live Activity data, and clear recent listening state from this device. The action cannot be undone."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esto detendrá la reproducción, eliminará los datos del widget y de Live Activity, y borrará el estado reciente de escucha de este dispositivo. La acción no se puede deshacer."
+          }
+        },
+        "et" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "See peatab esituse, eemaldab vidina ja Live Activity andmed ning kustutab hiljutise kuulamise oleku sellest seadmest. Toimingut ei saa tagasi võtta."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tämä pysäyttää toiston, poistaa widget- ja Live Activity -tiedot sekä tyhjentää viimeisimmän kuuntelutilan tältä laitteelta. Toimintoa ei voi peruuttaa."
+          }
+        },
+        "fit" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tämä pysäyttää toiston, poistaa widget- ja Live Activity -tiedot sekä tyhjentää viimeisimmän kuuntelutilan tältä laitteelta. Toimintoa ei voi peruuttaa."
+          }
+        },
+        "fo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hetta steðgar avspæling, fjarheldur widget og Live Activity dáta, og reinsar nýggjasta lýðingastøðu frá hesum tóleindini. Gerðin kann ikki angrast."
+          }
+        },
+        "gag" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bu, oynatmayı durdurur, widget ve Live Activity verilerini kaldırır ve bu cihazdan son dinleme durumunu temizler. İşlem geri alınamaz."
+          }
+        },
+        "is" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Þetta mun stöðva afspilun, fjarlægja græju- og Live Activity gögn og hreinsa nýlega hlustunarstöðu af þessu tæki. Aðgerðin er ekki afturkræf."
+          }
+        },
+        "kl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una playback nungortippaa, widget aamma Live Activity data peerpai, uani device-mi kingullermik tusarnaarneq nungortippaa. Suliaq anguniagassanngilaq."
+          }
+        },
+        "lt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tai sustabdys atkūrimą, pašalins valdiklio ir Live Activity duomenis bei išvalys naujausią klausymo būseną iš šio įrenginio. Veiksmo negalima atšaukti."
+          }
+        },
+        "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tas apturēs atskaņošanu, noņems logrīka un Live Activity datus un notīrīs neseno klausīšanās stāvokli no šīs ierīces. Darbību nevar atsaukt."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dette vil stoppe avspilling, fjerne widget- og Live Activity-data og tømme nylig lytteaktivitet fra denne enheten. Handlingen kan ikke angres."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hiermee wordt het afspelen gestopt, widget- en Live Activity-gegevens verwijderd en de recente luisterstatus van dit apparaat gewist. De actie kan niet ongedaan worden gemaakt."
+          }
+        },
+        "nn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dette vil stoppe avspeling, fjerne widget- og Live Activity-data og tømme nyleg lyttestatus frå denne eininga. Handlinga kan ikkje angrast."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spowoduje to zatrzymanie odtwarzania, usunięcie danych widżetu i Live Activity oraz wyczyszczenie ostatniego stanu słuchania z tego urządzenia. Tej czynności nie można cofnąć."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Это остановит воспроизведение, удалит данные виджета и Live Activity и очистит недавнее состояние прослушивания с этого устройства. Действие нельзя отменить."
+          }
+        },
+        "se" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dát čuožžastit čuojastusa, sihko widget ja Live Activity dáhta ja sihko dáid áigge čuojastusa dáhta dáin čuoččastahkan. Dahku ii sáhte čorget."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Týmto sa zastaví prehrávanie, odstránia sa údaje widgetu a Live Activity a vymaže sa nedávny stav počúvania z tohto zariadenia. Túto akciu nie je možné vrátiť späť."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Detta stoppar uppspelningen, tar bort widget- och Live Activity-data och rensar den senaste lyssningsstatusen från den här enheten. Åtgärden kan inte ångras."
+          }
+        }
+      }
+    },
+    "clear_local_state_title" : {
+      "localizations" : {
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ryd lokal afspilningstilstand"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lokalen Wiedergabestatus löschen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear local playback state"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Borrar estado de reproducción local"
+          }
+        },
+        "et" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kustuta kohalik esituse olek"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tyhjennä paikallinen toistotila"
+          }
+        },
+        "fit" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tyhjennä paikallinen toistotila"
+          }
+        },
+        "fo" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reinsa lokal avspælingarstøðu"
+          }
+        },
+        "gag" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lokal oynatma durumunu temizle"
+          }
+        },
+        "is" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hreinsa staðbundinn afspilunarstöðu"
+          }
+        },
+        "kl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nungortiguk lokal afspilingsstatus"
+          }
+        },
+        "lt" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Išvalyti vietinę atkūrimo būseną"
+          }
+        },
+        "lv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notīrīt lokālo atskaņošanas stāvokli"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tøm lokal avspillingsstatus"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lokale afspeelstatus wissen"
+          }
+        },
+        "nn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tøm lokal avspillingsstatus"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wyczyść lokalny stan odtwarzania"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Очистить локальное состояние воспроизведения"
+          }
+        },
+        "se" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sihko báikkálaš čuojastusdil"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vymazať lokálny stav prehrávania"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rensa lokal uppspelningsstatus"
           }
         }
       }
@@ -8205,7 +8725,6 @@
     },
     "status_paused_call" : {
       "comment" : "Text for the \"paused on call\" status, indicating that playback is paused while the device is in a call.",
-      "isCommentAutoGenerated" : true,
       "localizations" : {
         "da" : {
           "stringUnit" : {
@@ -8333,10 +8852,10 @@
             "value" : "Pausad – Samtal pågår"
           }
         }
-      }
+      },
+      "isCommentAutoGenerated" : true
     },
     "status_playback_failed_format" : {
-      "extractionState" : "manual",
       "localizations" : {
         "da" : {
           "stringUnit" : {
@@ -8464,7 +8983,8 @@
             "value" : "Uppspelning misslyckades: %@"
           }
         }
-      }
+      },
+      "extractionState" : "manual"
     },
     "status_playing" : {
       "localizations" : {
@@ -9898,7 +10418,6 @@
     },
     "switched_to_language %@" : {
       "comment" : "Voiceover announcement announcing the language switch. The placeholder value is replaced with the actual language name.",
-      "isCommentAutoGenerated" : true,
       "localizations" : {
         "da" : {
           "stringUnit" : {
@@ -10026,7 +10545,8 @@
             "value" : "Bytt till %@"
           }
         }
-      }
+      },
+      "isCommentAutoGenerated" : true
     },
     "tap_to_open" : {
       "localizations" : {

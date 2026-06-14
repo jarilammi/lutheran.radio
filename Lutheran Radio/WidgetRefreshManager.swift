@@ -29,8 +29,58 @@ final class WidgetRefreshManager: @unchecked Sendable {
     private var refreshCount = 0
     private var adaptiveInterval: TimeInterval = 0.5
     private static let prePlayToPlayingCoalesceWindow: TimeInterval = 0.3
+
+    // MARK: - Privacy support (widget presence gating for write suppression)
+    // Single source of truth for active Lutheran Radio widgets (home widget + Control Center kind).
+    // Used by SharedPlayerManager write paths to suppress re-population of persistedWidgetState,
+    // instantFeedback*, pendingAction*, lastUpdateTime, etc. when no Lutheran widgets are configured.
+    // After an explicit clearAllLocalState the flag is forced false even
+    // if configs still list the widget (prevents immediate re-write of a fresh snapshot on next play
+    // until explicit re-detect on foreground or subsequent detection).
+    // Widget providers (LutheranRadioWidget.swift, Control, LiveActivity) already early-return
+    // to safe .prePlay + preferred language defaults when loadPersistedWidgetState() == nil.
+    // The canonical list of our widget kinds lives in `ourWidgetKinds`.
+    //
+    // Concurrency: nonisolated(unsafe) justified because:
+    // - Updates are serialized exclusively through @MainActor entry points (refreshHasActiveWidgets, setHasActiveLutheranWidgets, performRefresh).
+    // - The containing class is already @unchecked Sendable (existing pattern in this file for WidgetKit/refresh state).
+    // - Reads are best-effort cache for a privacy optimization gate (occasional stale true -> one extra write is harmless; false when should be true just delays a write until next foreground detect).
+    // - Matches the risk profile of other timestamp/liveness mutable state already managed here.
+    nonisolated(unsafe) static private var _hasActiveLutheranWidgets: Bool = false
+    // Nonisolated getter so it can be read from nonisolated static write-guard paths in SharedPlayerManager
+    // (and widget extension code) while updates remain serialized on @MainActor.
+    nonisolated static var hasActiveLutheranWidgets: Bool { unsafe _hasActiveLutheranWidgets }
+
+    @MainActor
+    static func setHasActiveLutheranWidgets(_ value: Bool) {
+        unsafe _hasActiveLutheranWidgets = value
+    }
+
+    /// Re-queries WidgetCenter.currentConfigurations() and updates the hasActiveLutheranWidgets flag.
+    /// Primary call sites: sceneDidBecomeActive / foreground (SceneDelegate), after clear (forced false
+    /// first, then re-detect allowed on next foreground), and opportunistic on write attempts when suppressed.
+    @MainActor
+    func refreshHasActiveWidgets() async {
+        do {
+            let configs = try await WidgetCenter.shared.currentConfigurations()
+            let hasActive = configs.contains { Self.ourWidgetKinds.contains($0.kind) }
+            Self.setHasActiveLutheranWidgets(hasActive)
+            #if DEBUG
+            print("[WidgetRefreshManager] Active Lutheran widgets re-detected for privacy gate: \(hasActive) (configs: \(configs.count))")
+            #endif
+        } catch {
+            #if DEBUG
+            print("[WidgetRefreshManager] refreshHasActiveWidgets failed: \(error.localizedDescription)")
+            #endif
+        }
+    }
     
     private init() {}
+
+    // Single source for the widget kind identifiers we own (home widget + Control Center widget).
+    // Used by the privacy hasActiveLutheranWidgets gate in refresh paths. Centralizing here means
+    // adding a new widget kind in the future only requires one edit.
+    private static let ourWidgetKinds = ["LutheranRadioWidget", "radio.lutheran.LutheranRadio.LutheranRadioWidget"]
     
     // MARK: - Modern API (only public entry point)
     
@@ -266,17 +316,20 @@ final class WidgetRefreshManager: @unchecked Sendable {
         
         do {
             let configs = try await WidgetCenter.shared.currentConfigurations()
-            
-            if !configs.isEmpty {
+
+            let hasActive = configs.contains { Self.ourWidgetKinds.contains($0.kind) }
+            Self.setHasActiveLutheranWidgets(hasActive)
+
+            if hasActive {
                 WidgetCenter.shared.reloadTimelines(ofKind: "LutheranRadioWidget")
                 WidgetCenter.shared.reloadTimelines(ofKind: "radio.lutheran.LutheranRadio.LutheranRadioWidget")
                 
                 #if DEBUG
-                print("[WidgetRefreshManager] Widget refresh executed (widgets active: \(configs.count)) — visualState: \(state.debugVisualStateLabel), lang: \(state.currentLanguage)")
+                print("[WidgetRefreshManager] Widget refresh executed (our widgets active) — visualState: \(state.debugVisualStateLabel), lang: \(state.currentLanguage)")
                 #endif
             } else {
                 #if DEBUG
-                print("[WidgetRefreshManager] Skipped widget refresh: No active widgets configured")
+                print("[WidgetRefreshManager] Skipped widget refresh: No active Lutheran widgets configured (write suppression active)")
                 #endif
             }
         } catch {

@@ -270,11 +270,14 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         radioPlayerCoordinator.wireAndInitialSetup()
         
         // P5 dedup: no instance selectedStreamIndex mutation or onSelectionChanged wiring here (coordinator owns).
-        // Compute a local initialIndex only for the cold-launch Task below (to pick the starting stream model).
-        let currentLocale = Locale.current
-        let languageCode = currentLocale.language.languageCode?.identifier ?? "en"
-        let initialIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.languageCode == languageCode }) ?? 0
-        selectedStreamIndex = initialIndex  // Seed thin mirror for viewDidLayoutSubviews notifyLayoutChange (width-claim) so initial locale-driven needle is not stomped by stale 0 (regression guard, matches widget play sync sites)
+        // Compute initial language preferring the PersistedWidgetState last language (via SSOT helper)
+        // so the early seed, persist snapshot, player model, updateUserDefaultsLanguage, *and* the
+        // coordinator's needle (set in wireAndInitialSetup) are consistent for "last stream remembered".
+        // Falls back via bestInitialLanguageCode (robust preferredLanguages) when no snapshot
+        // (first-run / clear / privacy). Uses the shared indexForLanguageCode helper.
+        let languageCode = SharedPlayerManager.preferredMainAppInitialLanguageCode()
+        let initialIndex = DirectStreamingPlayer.indexForLanguageCode(languageCode)
+        selectedStreamIndex = initialIndex  // Seed thin mirror for viewDidLayoutSubviews notifyLayoutChange (width-claim) so initial needle is not stomped by stale 0 (regression guard)
         
         // Set initial volume slider position (UI only)
         let volumeToUse = preferredVolume()
@@ -314,36 +317,71 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
             
             let initialStream = DirectStreamingPlayer.availableStreams[initialIndex]
             
-            // Seed snapshot before any path calls ensureVisualStateLoaded (player init, status_connecting).
-            SharedPlayerManager.persistWidgetSnapshot(
-                visualState: .prePlay,
-                language: initialStream.languageCode
-            )
-            await SharedPlayerManager.shared.refreshVisualStateFromPersistence()
+            // In-memory UI + model setup only (selector needle, player selectedStream).
+            // These are required for the app to be usable on launch and do not re-create
+            // "recently deleted" persisted data (snapshot, lastUpdateTime, language liveness signals).
             self.updateUI(for: .prePlay)
             
             // Stream model and UI only; secured AVPlayerItem is created once in setStreamAndPlay after tuning.
             await self.streamingPlayer.setSelectedStreamModelOnly(to: initialStream)
             
-            radioPlayerCoordinator?.updateUserDefaultsLanguage(initialStream.languageCode)
             // Phase 2: deferral state is now owned by BackgroundImageController (cold launch path preserved).
+            // Actual image processing is deferred until playback is stable; choosing the initial lang
+            // for prep is acceptable (not an "I listened" signal).
             backgroundImageController.scheduleDeferredForStreamSwitch(initialStream)
             
             await self.playSpecialTuningSound()
             
             let visualState = await SharedPlayerManager.shared.currentVisualState
+            let intent = await SharedPlayerManager.shared.currentPlaybackIntent
             #if DEBUG
-            print("[ViewController] After tuning — visualState = \(visualState)")
+            print("[ViewController] After tuning — visualState = \(visualState), intent = \(intent)")
             #endif
             
-            guard visualState == .prePlay || visualState.shouldAutoPlayOrResume else {
+            // Post-clear cold launch first play (visual .prePlay + .cleared intent, or normal prePlay):
+            // the guard now allows the success path. We deliberately perform identifying writes
+            // (persist seed, updateUserDefaultsLanguage which bumps lastUpdateTime + saveCombined +
+            // refresh) ONLY after the guard passes. This ensures recently deleted data is not
+            // re-created by launch setup until either (a) explicit manual play or (b) the successful
+            // post-clear cold-start play. If the guard blocks, no such writes occur.
+            // The initialStream language here now comes from the centralized bestInitialLanguageCode
+            // (preferredLanguages match) rather than the old fragile Locale.current path.
+            guard visualState == .prePlay || visualState.shouldAutoPlayOrResume || intent == .cleared else {
                 #if DEBUG
                 print("[ViewController] Blocked initial playback — state = \(visualState)")
                 #endif
                 return
             }
             
+            if intent == .cleared {
+                #if DEBUG
+                print("[ViewController] post-clear cold launch — allowing initial playback and state creation")
+                #endif
+            }
+            
             guard self.hasInternetConnection else { return }
+            
+            // Identifying / persistence writes (snapshot seed, lastUpdateTime bump, combined state,
+            // widget refresh) happen here — only on the path that will actually start the post-clear
+            // first play. This satisfies the "deleted data not re-created until play or post-clear cold launch".
+            // Seed snapshot here (after guard) rather than before player init; status handling and
+            // prePlay visual now tolerate the timing.
+            //
+            // Post-clear + widget-installed: the clear path forces hasActiveWidgets=false (to avoid
+            // immediate re-population of identifying state). On the *successful post-clear cold-start play*
+            // we are now at the permitted moment to (re)create the snapshot with the reseeded language
+            // (bestInitialLanguageCode via the captured initialStream). Re-query here so the gate in
+            // persistWidgetSnapshot / saveCombined opens for this explicit first write.
+            if !SharedPlayerManager.hasActiveWidgets {
+                await WidgetRefreshManager.shared.refreshHasActiveWidgets()
+            }
+            SharedPlayerManager.persistWidgetSnapshot(
+                visualState: .prePlay,
+                language: initialStream.languageCode
+            )
+            await SharedPlayerManager.shared.refreshVisualStateFromPersistence()
+            
+            radioPlayerCoordinator?.updateUserDefaultsLanguage(initialStream.languageCode)
             
             #if DEBUG
             print("[ViewController] Starting initial stream playback after tuning (single source)")

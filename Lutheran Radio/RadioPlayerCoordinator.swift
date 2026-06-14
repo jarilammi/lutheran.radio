@@ -103,10 +103,12 @@ final class RadioPlayerCoordinator {
             self?.handleLanguageSelection(at: newIndex)
         }
 
-        // Initial locale-driven index (mirrors prior VC logic exactly)
-        let currentLocale = Locale.current
-        let languageCode = currentLocale.language.languageCode?.identifier ?? "en"
-        let initialIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.languageCode == languageCode }) ?? 0
+        // Initial index: prefers last stream from PersistedWidgetState (SSOT) so the tuning needle
+        // reflects "last stream remembered" on cold launch / resurrection. Falls back via
+        // bestInitialLanguageCode (robust preferredLanguages match) only for first-run / post-clear /
+        // privacy-no-widgets cases (distinct from widget "en" default).
+        let languageCode = SharedPlayerManager.preferredMainAppInitialLanguageCode()
+        let initialIndex = DirectStreamingPlayer.indexForLanguageCode(languageCode)
         selectedStreamIndex = initialIndex
 
         languageSelectorView.reloadData()
@@ -123,23 +125,67 @@ final class RadioPlayerCoordinator {
             object: nil
         )
 
+        // Privacy clear observer.
+        // Reacts to SharedPlayerManager.clearAllLocalState() from any path (sleep menu, future settings, etc.).
+        // After clear the intent is .cleared (blocks proceed) while visual is .prePlay for clean UI.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(localStateCleared(_:)),
+            name: .localStateCleared,
+            object: nil
+        )
+
         // Energy hook already self-registered inside BackgroundImageController; no-op here.
         backgroundImageController.updateForEnergyEfficiency()
+    }
+
+    /// Re-seeds the language selector after clearAllLocalState.
+    /// When loadPersistedWidgetState() == nil (the post-clear / privacy case), falls back via
+    /// bestInitialLanguageCode (preferredLanguages match) to a user-friendly initial stream instead
+    /// of always English. This produces the fresh non-identifying initial state for the no-snapshot
+    /// (post-clear or no-widgets) case while giving better everyday UX on the reseed.
+    @MainActor
+    private func resetLanguageSelectorToInitialLocale() {
+        let languageCode = SharedPlayerManager.preferredMainAppInitialLanguageCode()
+        let initialIndex = DirectStreamingPlayer.indexForLanguageCode(languageCode)
+        selectedStreamIndex = initialIndex
+        languageSelectorView.reloadData()
+        languageSelectorView.setSelectedIndex(initialIndex, isInitial: true, caller: "clearLocalState")
+
+        // Keep the DirectStreamingPlayer model in sync with the reseeded initial locale (post-clear).
+        // This ensures any subsequent saveCurrentState / persist (after hasActiveWidgets re-detect when
+        // a widget is installed) or alignment logic sees the main-app bestInitial choice rather than a
+        // stale pre-clear selection. Launch paths already do an explicit setSelectedStreamModelOnly for
+        // the same reason.
+        let stream = DirectStreamingPlayer.streamForLanguageCode(languageCode)
+        Task { @MainActor in
+            await DirectStreamingPlayer.shared.setSelectedStreamModelOnly(to: stream)
+        }
     }
 
     /// Called from the async portion of VC viewDidLoad Task after tuning sound + model-only set.
     /// Owns the resurrection guard + SharedPlayerManager.play() launch for cold start (prePlay path).
     func performColdLaunchPlaybackIfAllowed(initialStream: DirectStreamingPlayer.Stream) async {
         let visualState = await SharedPlayerManager.shared.currentVisualState
+        let intent = await SharedPlayerManager.shared.currentPlaybackIntent
         #if DEBUG
-        print("[RadioPlayerCoordinator] After tuning — visualState = \(visualState)")
+        print("[RadioPlayerCoordinator] After tuning — visualState = \(visualState), intent = \(intent)")
         #endif
 
-        guard visualState == .prePlay || visualState.shouldAutoPlayOrResume else {
+        // Allow .prePlay (normal cold or post-clear) even if visual guard would be strict.
+        // .cleared intent alone does not block the post-clear cold-start success path (it only
+        // prevents auto-recovery before explicit play or the successful initial play()).
+        let canStartPostClearPlay = visualState == .prePlay || visualState.shouldAutoPlayOrResume || intent == .cleared
+        guard canStartPostClearPlay else {
             #if DEBUG
             print("[RadioPlayerCoordinator] Blocked initial playback — state = \(visualState)")
             #endif
             return
+        }
+        if intent == .cleared {
+            #if DEBUG
+            print("[RadioPlayerCoordinator] post-clear cold launch — allowing initial playback (intent will be cleared by play())")
+            #endif
         }
 
         // VC still owns hasInternetConnection flag for this guard (network observer stays in host for now)
@@ -232,7 +278,7 @@ final class RadioPlayerCoordinator {
                 handlePlayAction()
             } else {
                 #if DEBUG
-                print("[RadioPlayerCoordinator] ⏸ Intent blocks playback after switch (userPaused or securityLocked)")
+                print("[RadioPlayerCoordinator] ⏸ Intent blocks playback after switch (userPaused, securityLocked, or cleared)")
                 #endif
                 updateUI(for: .userPaused)
             }
@@ -845,6 +891,17 @@ final class RadioPlayerCoordinator {
             })
         }
 
+        // "Clear local playback state" (destructive action in sleep timer menu).
+        // Clears recent playback/widget/Live Activity state from the App Group.
+        // Does not touch any security or Core data.
+        children.append(UIAction(
+            title: String(localized: "clear_local_state_title", table: "Localizable"),
+            image: UIImage(systemName: "trash"),
+            attributes: .destructive
+        ) { [weak self] _ in
+            self?.confirmAndClearLocalState()
+        })
+
         playbackControlsView.sleepTimerButton.menu = UIMenu(
             title: String(localized: "sleep_timer_sheet_title", table: "Localizable"),
             options: .displayInline,
@@ -975,6 +1032,54 @@ final class RadioPlayerCoordinator {
         configureSleepTimerButtonMenu()
     }
 
+    // MARK: - Privacy clear (Clear local playback state)
+    // Wired from the destructive item in the sleep timer menu.
+    // Uses the SSOT clearAllLocalState (engine stop + reset to .prePlay visual + .cleared intent
+    // without persist, removes all local UD keys, ends LA, forces no-widgets gate, posts notification).
+    // We drive the UI to clean .prePlay (no sticky .userPaused mixing) + reseed language selector
+    // (device locale fallback) + rebuild menu. A transient confirmation status is shown using the
+    // prePlay chrome so the destructive action has clear feedback without yellow "connecting".
+    // Recently deleted data is not re-created by this action or the immediate post-clear launch
+    // setup; it is only (re)created on explicit play or the successful post-clear cold-start play path.
+
+    @MainActor
+    private func confirmAndClearLocalState() {
+        let alert = UIAlertController(
+            title: String(localized: "clear_local_state_title", table: "Localizable"),
+            message: String(localized: "clear_local_state_message", table: "Localizable"),
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: String(localized: "ok", table: "Localizable"), style: .cancel))
+        alert.addAction(UIAlertAction(title: String(localized: "clear_local_state_confirm", table: "Localizable"), style: .destructive) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                await SharedPlayerManager.clearAllLocalState()
+                self.updateUI(for: .prePlay)
+                // Transient confirmation using prePlay chrome (no grey userPaused for clear).
+                self.playbackControlsView.setStatus(
+                    text: String(localized: "clear_local_state_done", table: "Localizable"),
+                    backgroundColor: .systemGray,
+                    textColor: .white
+                )
+                self.resetLanguageSelectorToInitialLocale()
+                self.playHapticFeedback(style: .heavy)
+                self.configureSleepTimerButtonMenu()
+            }
+        })
+        presentAlert?(alert)
+    }
+
+    @objc private func localStateCleared(_ notification: Notification) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            // Keep menu and local timer display in sync (mirrors sleepTimerStateDidChange pattern).
+            // Primary UI reset + language reseed for the explicit menu path lives in confirmAndClearLocalState.
+            stopLocalSleepTimerDisplay()
+            configureSleepTimerButtonMenu()
+        }
+    }
+
     // MARK: - View layout forwarding helpers (called by VC)
     func notifyLayoutChange() {
         languageSelectorView.notifyLayoutChange(currentSelectedIndex: selectedStreamIndex)
@@ -999,6 +1104,12 @@ final class RadioPlayerCoordinator {
         case .userPaused, .thermalPaused, .securityLocked:
             #if DEBUG
             print("[RadioPlayerCoordinator] viewDidAppear → \(visualState) → SKIPPING auto-play (resurrection prevented)")
+            #endif
+        case .prePlay where (await SharedPlayerManager.shared.currentPlaybackIntent == .cleared):
+            // Post-clear launch: visual is deliberately .prePlay; the .cleared intent
+            // blocks recovery. The cold-launch Task (post-guard) will drive the success path.
+            #if DEBUG
+            print("[RadioPlayerCoordinator] viewDidAppear → prePlay with .cleared intent (post-clear) → SKIPPING (cold launch will proceed)")
             #endif
         }
 
@@ -1027,6 +1138,17 @@ final class RadioPlayerCoordinator {
         #endif
 
         let effectiveVisualState: PlayerVisualState = {
+            // .cleared (post-privacy-clear blocker) must never produce sticky .userPaused visuals
+            // or block the post-clear cold-launch path. Treat it like a clean prePlay candidate so
+            // early status_connecting from player init and post-clear launches see ready state
+            // (no grey "paused cold" and no yellow flash mixing).
+            if playbackIntent == .cleared {
+                if (reasonKey == "status_connecting" || reasonKey == "status_buffering") && status != .playing {
+                    return .prePlay
+                }
+                return .prePlay
+            }
+
             if let reasonKey,
                (reasonKey == "status_connecting" || reasonKey == "status_buffering"),
                status != .playing {
@@ -1037,6 +1159,22 @@ final class RadioPlayerCoordinator {
                     return .prePlay
                 }
             }
+
+            // Strong protection for explicit *user pause* (.userPaused visual or intent) on terminal
+            // statuses (status_stopped etc. from KVO on live streams while paused). We must not
+            // regress a grey paused UI to yellow "yhditää"/.prePlay. 
+            // Post "Clear local state" the reset now uses .prePlay visual + .cleared intent (the
+            // intent alone blocks); this prevents .userPaused (grey) from leaking into post-clear
+            // cold launches or causing "Blocked initial playback".
+            // The language selector is independently reseeded to a clean initial locale.
+            // Security has its own red. Only target real .userPaused here.
+            if status == .stopped || status == .paused
+                || reasonKey == "status_stopped" || reasonKey == "status_paused" {
+                if visualState == .userPaused || playbackIntent == .userPaused {
+                    return .userPaused
+                }
+            }
+
             if visualState == .userPaused || visualState == .prePlay {
                 return visualState
             }
@@ -1044,6 +1182,16 @@ final class RadioPlayerCoordinator {
         }()
 
         self.updateUI(for: effectiveVisualState)
+
+        // If we had to correct the UI to .userPaused for a real sticky user pause (despite the
+        // actor having loaded a stale .prePlay), repair the in-memory SSOT immediately so that
+        // any follow-on save uses the correct visual.
+        // Never do this repair for .cleared (which intentionally uses .prePlay visual).
+        if effectiveVisualState == .userPaused && visualState == .prePlay && playbackIntent == .userPaused {
+            Task {
+                await SharedPlayerManager.shared.setVisualState(.userPaused)
+            }
+        }
 
         if let reasonKey = reasonKey {
             if reasonKey == "status_ssl_transition" {

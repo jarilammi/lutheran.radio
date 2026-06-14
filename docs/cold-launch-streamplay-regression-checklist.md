@@ -83,7 +83,7 @@ End with security impact, build status, localization needed.
 ## 3. Architecture (single sources of truth)
 
 1. **Server selection** — `urlWithOptimalServer(for:)` in `DirectStreamingPlayer`; no ad-hoc host selection.
-2. **Playback intent** — `currentPlaybackIntent` / `PlaybackIntent` is authoritative for “user wants audio.” Do not conflate with grey `.userPaused` visual after stream failure.
+2. **Playback intent** — `currentPlaybackIntent` / `PlaybackIntent` is authoritative for “user wants audio.” Includes `.cleared` (from privacy clear) as a sticky blocker (isStickyPauseOrLock) alongside `.userPaused` / `.securityLocked`. Do not conflate with grey `.userPaused` visual after stream failure.
 3. **Visual state** — `currentVisualState` / `PlayerVisualState` drives UI only; switch auto-resume gates on `playbackIntent.isActivePlaybackIntent`.
 4. **Widget snapshot** — `PersistedWidgetState` via `loadPersistedWidgetState` / `savePersistedWidgetState` only.
 5. **Cold-launch model** — `setSelectedStreamModelOnly` without `AVPlayerItem`; secured attach in `setStream` → `preparePlayerItem`.
@@ -104,6 +104,8 @@ End with security impact, build status, localization needed.
 8. **DNS on launch** — Security model validation completes; failure blocks playback.
 9. **ICY arrival** — `LIVE ICY [ensured after re-attach]:` for launched language.
 10. **Background image** — One `Processing image for {lang}` per cold launch; duplicate cache-key races coalesce.
+11. **Post-clear cold launch (first play after privacy clear)** — After `clearAllLocalState`, next launch lands on `.prePlay` visual + non-sticky intent (no leaked `.userPaused`); early `status_connecting` does not produce grey paused or yellow flash; the post-tuning guard passes with "post-clear cold launch — allowing..." label; identifying writes (snapshot, lastUpdateTime, etc.) occur only after the guard as part of the successful post-clear play (not in pre-guard setup). `resetStateToClearedForPrivacy` now uses `.prePlay` visual. The privacy-clear unit test asserts the new visual + blocker intent.
+    The language reseed (selector needle + initialStream for the post-clear auto-play) now uses the centralized `DirectStreamingPlayer.bestInitialLanguageCode()` (walks `Locale.preferredLanguages` for a supported stream) + `indexForLanguageCode` / `streamForLanguageCode` helpers. This replaces the previous duplicated fragile `Locale.current.language.languageCode ?? "en"` paths (which often produced English even on fi/sv/etc. devices). Post-clear reseed in `resetLanguageSelectorToInitialLocale` and the VC/coordinator initial calc now respect the user's actual preferences while preserving the no-snapshot privacy guarantee and the "writes only after successful post-clear play" rule. `preferredWidgetLanguage` now uses `bestInitialLanguageCode` for its no-snapshot fallback when `hasActiveWidgets` is true (widget configured, writes allowed); it still hard-defaults to "en" (with write suppression) when the flag is false (no widgets or post-clear forced-false). This prevents "en" poisoning of the snapshot for normal widget users while keeping the privacy no-signal property for cleared/high-risk cases.
 
 ---
 
@@ -177,6 +179,7 @@ End with security impact, build status, localization needed.
 4. **Needle during tuning** — Needle sweeps during tuning clip on playing path.
 5. **Background image coalesce** — One pass per cache key; alpha and dimensions unchanged.
 6. **Error UI on failure** — Red banner / alert on stream failure; grey pause chrome without sticky pause intent.
+7. **Clear local state visual** — Destructive clear action uses `.prePlay` visual (via direct engine stop + reset) + transient confirmation status; never leaves SSOT in `.userPaused`. Post-clear launches and status callbacks never mix `.userPaused` grey with the clear path. "Cleared" confirmation (or equivalent) appears without yellow connecting.
 
 ---
 
@@ -227,6 +230,9 @@ xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.5 \
 [DirectStreamingPlayer] Soft-pause resume declined — attached item language (…) != selected stream (…)
 [DirectStreamingPlayer] Attached item language mismatch — performing clean stop
 [SharedPlayerManager] performActualSave: snapshot unchanged — skipping persist
+[ViewController] post-clear cold launch — allowing initial playback and state creation
+[RadioPlayerCoordinator] post-clear cold launch — allowing initial playback (intent will be cleared by play())
+[SharedPlayerManager] resetStateToClearedForPrivacy — in-memory SSOT reset to .prePlay + .cleared intent (no persist; .cleared blocks recovery until explicit play)
 ```
 
 ### 12.3 Stream-failure switch verification (manual  `long-test-txt.log`)
@@ -300,11 +306,12 @@ These messages commonly appear during stream attach on Simulator and recover wit
 |-----------------|------------------|
 | `Core/Security/*`, `SecurityModelValidator`, `Info.plist` | 1, 2 |
 | `DirectStreamingPlayer` KVO, recreate, soft pause | 5, 8, 11 |
-| `SharedPlayerManager` play/stop/intent/save | 3, 5, 6, 7 |
-| `ViewController` switch, tuning, UI | 4, 6, 9 |
+| `SharedPlayerManager` play/stop/intent/save + clear paths | 3, 4 (post-clear), 5, 6, 7 |
+| `ViewController` switch, tuning, UI + initial Task defer | 4, 6, 9 |
 | `WidgetRefreshManager`, `LutheranRadioWidget`, `SwitchStreamIntent`, `isRunningInWidget` | 6, 7 |
-| `SharedPlayerManager+SleepTimer` | 10 |
+| `SharedPlayerManager+SleepTimer` + clear menu | 10 |
 | Background images | 4.10, 9.5, 11.7 |
+| Privacy clear / post-clear cold launch (visual + no re-creation of deleted data) | 4 (new), 9 (new), 12.2 (new markers), 13 |
 | Localization only | 2.4 |
 | Mechanical refactor / rename | 2, 3, 11, 12 |
 

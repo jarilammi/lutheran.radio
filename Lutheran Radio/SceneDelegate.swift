@@ -57,9 +57,12 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             viewController.checkForPendingWidgetActions()
         }
         
+        // Privacy: refresh the hasActiveLutheranWidgets flag (single source for write gating)
+        // *before* the liveness/save so that if a widget was (re)added while backgrounded, writes resume.
         // Save current state when becoming active (in case widget needs fresh data)
-        // → non-blocking / fire-and-forget
-        Task {
+        // → non-blocking / fire-and-forget. The save paths now consult the refreshed flag.
+        Task { @MainActor in
+            await WidgetRefreshManager.shared.refreshHasActiveWidgets()
             await SharedPlayerManager.shared.recordWidgetLiveness()
             await SharedPlayerManager.shared.saveCurrentState()
         }

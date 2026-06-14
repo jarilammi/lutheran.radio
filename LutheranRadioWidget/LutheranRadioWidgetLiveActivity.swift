@@ -62,6 +62,13 @@ private func getAlternativeStreams(current: String) -> [String] {
 
 // MARK: - Live Activity Intents (updated for SSOT + Swift 6)
 
+// Privacy note: Live Activities observe state via the PersistedWidgetState snapshot (write suppression / clear local state support)
+// (or loadSharedState fallbacks). When absent after clearAllLocalState() or because
+// SharedPlayerManager.hasActiveWidgets == false (no Lutheran widgets/Control installed),
+// the LA ends on clear and subsequent presentations fall back to neutral prePlay-like UI.
+// See WidgetRefreshManager.hasActiveLutheranWidgets (the single source) and the write guards
+// in SharedPlayerManager (persist/save/writeInstantFeedback/bump/schedule/performActualSave etc.).
+
 struct LiveActivityTogglePlaybackIntent: AppIntent {
     nonisolated static var title: LocalizedStringResource { "Toggle Lutheran Radio Playback" }
     nonisolated static var description: IntentDescription {

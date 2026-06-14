@@ -57,6 +57,9 @@ struct ToggleRadioIntent: SetValueIntent {
         
         // Brave: also force-persist the full visual state JSON from the widget process.
         // This makes the next Control Widget timeline / currentValue read the correct icon immediately.
+        // (The inner persist / schedule paths are gated by hasActiveWidgets; when the Control widget
+        // itself is present the flag is true. After a main-app privacy clear the snapshot will be absent
+        // until re-detect, and providers fall back gracefully.)
         let targetVisualState: PlayerVisualState = value ? .playing : .userPaused
         let action = value ? "play" : "pause"
         // Same optimistic path as WidgetToggleRadioIntent: snapshot + pendingAction + Darwin notify.

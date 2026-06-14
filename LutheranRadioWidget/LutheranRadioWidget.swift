@@ -239,6 +239,15 @@ struct Provider: AppIntentTimelineProvider {
 
         // Snapshot-first (modern path for all current installs). Single simple fallback for
         // first-launch or installs that have never persisted a snapshot.
+        //
+        // Privacy (write suppression when no widgets configured / clear local state):
+        // loadPersistedWidgetState() returns nil (we fall back to safe .prePlay + preferredWidgetLanguage(),
+        // which is "en" + suppressed writes for post-clear/no-widgets, or bestInitial when hasActiveWidgets).
+        // after the "Clear local playback state" action (sleep timer menu) or when the
+        // main app has suppressed all writes because no LutheranRadioWidget / LutheranRadioWidgetControl
+        // is currently installed (WidgetRefreshManager.hasActiveLutheranWidgets + SharedPlayerManager guards
+        // on persist/save/writeInstant/bump/schedule/pending/liveness paths). The App Group then carries
+        // no recent language/visual/metadata/liveness signal.
         if let combined = SharedPlayerManager.loadPersistedWidgetState() {
             return (combined.currentLanguage, false, combined.visualState, combined.streamMetadata)
         }

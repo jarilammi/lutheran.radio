@@ -20,7 +20,7 @@ import UIKit
 // make their own "should I play?" decisions.
 //
 // Complements `PlayerVisualState` (what the UI shows) with explicit play/pause intent.
-// Sticky `.userPaused` and `.securityLocked` block resurrection until cleared by user play.
+// Sticky `.userPaused`, `.securityLocked`, and `.cleared` (privacy clear) block resurrection until cleared by explicit user play.
 //
 //
 
@@ -44,12 +44,19 @@ import UIKit
 ///                    certificate pinning failure, 403 from streaming server, etc.).
 ///                    This is a hard, permanent blocker until the next successful
 ///                    explicit play that passes full security validation.
+/// - cleared:         Explicit user-initiated privacy clear ("Clear local playback state").
+///                    Visual state is set to .userPaused (grey) so the reset does not show
+///                    yellow "connecting". Language selector is reseeded to a clean initial
+///                    locale independently. This is a hard resurrection blocker (like
+///                    .userPaused / .securityLocked). Only an explicit user play action clears it.
+///                    Used so that internal recovery paths cannot spontaneously restart after clear.
 enum PlaybackIntent: Codable, Equatable {
     case shouldBePlaying
     case shouldBePaused
     case userPaused
     case sleepTimer
     case securityLocked
+    case cleared
 }
 
 extension PlaybackIntent {
@@ -59,8 +66,10 @@ extension PlaybackIntent {
     }
 
     /// Sticky blockers that only an explicit user play may clear.
+    /// Includes .cleared for the privacy "Clear local playback state" path so that
+    /// all DirectStreamingPlayer recovery / proceed guards treat it as a hard stop.
     var isStickyPauseOrLock: Bool {
-        self == .userPaused || self == .securityLocked
+        self == .userPaused || self == .securityLocked || self == .cleared
     }
 }
 
