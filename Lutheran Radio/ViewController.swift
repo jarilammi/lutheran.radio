@@ -29,7 +29,7 @@
 ///
 /// Key Interactions:
 /// - **Language Switching**: Uses `UICollectionView` with flags; updates stream in `DirectStreamingPlayer.swift` and saves to UserDefaults for widgets.
-/// - **Playback**: Toggles via `togglePlayback()`; monitors network (`NWPathMonitor`) and shows data usage alerts on cellular.
+/// - **Playback**: Toggles via `togglePlayback()`; monitors network (`NWPathMonitor`) and shows the 3-choice cellular data permission prompt on expensive networks (decision + persistence extracted to CellularPermissionManager).
 /// - **Background Handling**: Integrates with `RadioLiveActivityManager.swift` for Live Activities on backgrounding; saves state via `SharedPlayerManager.swift`.
 /// - **Widget/URL Handling**: Public methods like `handlePlayAction()` process schemes from `SceneDelegate.swift`.
 ///
@@ -65,11 +65,17 @@ import Core
 @MainActor
 class ViewController: UIViewController, AVAudioPlayerDelegate {
     // MARK: - Private Properties and Constants
-    /// Key for tracking if the user has dismissed the mobile data usage warning.
-    /// - Note: Stored in standard UserDefaults for persistence across launches.
-    private enum UserDefaultsKeys {
-        static let hasDismissedDataUsageNotification = "hasDismissedDataUsageNotification"
-    }
+    
+    // NOTE: lastAppliedVisualState, selectedStreamIndex (mirror only for legacy sync spots),
+    // tuning*, streamSwitch*, sleep UI*, hasShownSecurityAlert, hasPlayedSpecialTuningSound, hasEverPlayed
+    // and related orchestration state now live exclusively in RadioPlayerCoordinator. VC keeps only
+    // what is required for the thin host surface (network flags, isDeallocating, test accessors,
+    // widget polling debounce/processed set, pending widget switch work item).
+    
+    // Cellular permission state + migration + per-launch prompting is fully extracted to CellularPermissionManager
+    // (owned here because the network path handler + alert presentation remain in the retained thin host surface
+    // per decomposition guardrails; the manager contains no security or streaming logic).
+    private let cellularPermissionManager = CellularPermissionManager()
     
     private var lastWidgetSwitchTime: Date?
     private var pendingWidgetSwitchWorkItem: DispatchWorkItem?
@@ -78,12 +84,6 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     // Widget play/pause action debouncing (prevents rapid taps from widget causing AVFoundation thrashing)
     private var lastWidgetActionTime: Date = .distantPast
     private let widgetActionDebounceInterval: TimeInterval = 0.65
-    
-    // NOTE (P5 dedup): lastAppliedVisualState, selectedStreamIndex (mirror only for legacy sync spots),
-    // tuning*, streamSwitch*, sleep UI*, hasShownSecurityAlert, hasPlayedSpecialTuningSound, hasEverPlayed
-    // and related orchestration state now live exclusively in RadioPlayerCoordinator. VC keeps only
-    // what is required for the thin host surface (network flags, isDeallocating, test accessors,
-    // widget polling debounce/processed set, pending widget switch work item).
     
     // MARK: - UI Elements
     /// The main title label displaying "Lutheran Radio".
@@ -147,15 +147,14 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         return view
     }()
     
-    // P5 dedup: local hapticEngine lazy + handlers removed (single owner in RadioPlayerCoordinator).
+    // Local hapticEngine lazy + handlers removed (single owner in RadioPlayerCoordinator).
     // The early init call site in viewDidLoad was removed; wireAndInitialSetup performs equivalent.
     
-    // P5 dedup: selectedStreamIndex kept as thin mirror only for a few legacy sync sites in checkForPending/play paths
+    // selectedStreamIndex kept as thin mirror only for a few legacy sync sites in checkForPending/play paths
     // that read it before delegating. All orchestration mutates the one in RadioPlayerCoordinator.
     private var selectedStreamIndex: Int = 0
     
     private var isInitialSetupComplete = false
-    private var hasShownDataUsageNotification = false
     
     // MARK: - Audio and Streaming
     // New streaming player
@@ -288,6 +287,9 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         #endif
         
         setupControls()
+        // Reset per-launch cellular permission flags early (before network monitoring can fire the expensive path).
+        // The manager itself seeds the persisted permission + does legacy migration on init.
+        cellularPermissionManager.resetPerLaunchFlags()
         setupNetworkMonitoring()
         setupInterruptionHandling()
         setupRouteChangeHandling()
@@ -641,10 +643,12 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
             let isConnected = path.status == .satisfied
             let isExpensive = path.isExpensive
             DispatchQueue.main.async {
-                // Mobile data notification logic
-                if isConnected && isExpensive && !self.hasShownDataUsageNotification && !UserDefaults.standard.bool(forKey: UserDefaultsKeys.hasDismissedDataUsageNotification) {
-                    self.showDataUsageNotification()
-                    self.hasShownDataUsageNotification = true
+                // Smarter cellular / metered data permission prompt (replaces the prior binary "don't show again" once-per-launch alert).
+                // Decision, persistence, migration, and per-launch guards live in the extracted CellularPermissionManager.
+                // The prompt is shown only on the isExpensive branch; security reconnection / validation logic below is untouched.
+                if self.cellularPermissionManager.shouldShowPrompt(isConnected: isConnected, isExpensive: isExpensive) {
+                    self.showCellularDataAlert()
+                    self.cellularPermissionManager.markPromptedThisLaunch()
                 }
 
                 // Existing network status handling
@@ -681,16 +685,36 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         setupConnectivityCheckTimer()
     }
     
-    private func showDataUsageNotification() {
+    private func showCellularDataAlert() {
         let alert = UIAlertController(
             title: String(localized: "mobile_data_usage_title", table: "Localizable"),
             message: String(localized: "mobile_data_usage_message", table: "Localizable"),
             preferredStyle: .alert
         )
-        alert.addAction(UIAlertAction(title: String(localized: "ok", table: "Localizable"), style: .default, handler: nil))
-        alert.addAction(UIAlertAction(title: String(localized: "dont_show_again", table: "Localizable"), style: .default, handler: { _ in
-            UserDefaults.standard.set(true, forKey: UserDefaultsKeys.hasDismissedDataUsageNotification)
-        }))
+
+        // "Always Allow" — persist .alwaysAllow (also writes legacy compat flag) and allow playback on cellular.
+        alert.addAction(UIAlertAction(title: String(localized: "cellular_always_allow", table: "Localizable"), style: .default) { [weak self] _ in
+            guard let self else { return }
+            self.cellularPermissionManager.setAlwaysAllow()
+            self.cellularPermissionManager.markPromptedThisLaunch()
+        })
+
+        // "Allow for This Session" — in-memory only until next launch; no permanent write beyond the session flag.
+        alert.addAction(UIAlertAction(title: String(localized: "cellular_allow_this_session", table: "Localizable"), style: .default) { [weak self] _ in
+            guard let self else { return }
+            self.cellularPermissionManager.setSessionAllow()
+            self.cellularPermissionManager.markPromptedThisLaunch()
+        })
+
+        // "Not Now" — treat as explicit user pause for this launch on cellular; stop via SSOT so intent becomes .userPaused,
+        // widgets/Live Activities update, and no auto-resurrection until next explicit user play. Prompt will re-appear on next launch for .ask.
+        alert.addAction(UIAlertAction(title: String(localized: "cellular_not_now", table: "Localizable"), style: .cancel) { [weak self] _ in
+            guard let self else { return }
+            self.cellularPermissionManager.setAsk()
+            self.cellularPermissionManager.markPromptedThisLaunch()
+            self.stopPlayback()
+        })
+
         present(alert, animated: true, completion: nil)
     }
     
@@ -894,7 +918,7 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     /// - SeeAlso: `togglePlayback()`, `handlePlayAction()`, `handlePauseAction()`, `handleTogglePlayback()`, `updateUI(for:)`
     @MainActor
     private func handleUserTogglePlayback() async {
-        // P5 dedup: single implementation lives in RadioPlayerCoordinator (orchestration owner).
+        // Single implementation lives in RadioPlayerCoordinator (orchestration owner).
         // VC retains the method for the @objc togglePlayback + public handleTogglePlayback call sites.
         await radioPlayerCoordinator?.handleUserTogglePlayback()
     }
@@ -912,7 +936,7 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     /// Pauses playback and updates UI/status.
     /// - Note: Sets manual pause flag and routes through SharedPlayerManager to ensure .userPaused state is set.
     private func pausePlayback() {
-        // P5 dedup: implementation in coordinator.
+        // Implementation in coordinator.
         radioPlayerCoordinator?.pausePlayback()
     }
     
@@ -1079,7 +1103,7 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     }
 
     // Retained solely to support the special cold-launch tuning clip (AVAudioPlayerDelegate set on tuningPlayer in playSpecialTuningSound).
-    // Regular tuning paths no longer use these (P5 dedup removed regular playTuningSound body + stopTuningSound).
+    // Regular tuning paths no longer use these (removed regular playTuningSound body + stopTuningSound).
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
         Task { @MainActor in
             guard player === tuningPlayer else { return }
@@ -1137,16 +1161,16 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         #endif
     }
     
-    // P5 dedup: handleLanguageSelection + completeStreamSwitch + updateUserDefaultsLanguage (full orchestration + debounce + prePlay optimistic + tuning + intent reset + background deferral + play sequencing)
+    // handleLanguageSelection + completeStreamSwitch + updateUserDefaultsLanguage (full orchestration + debounce + prePlay optimistic + tuning + intent reset + background deferral + play sequencing)
     // removed. Single source now in RadioPlayerCoordinator (wired via onSelectionChanged closure set in wireAndInitialSetup; no overwrite here).
     // The languageSelectorView.onSelectionChanged wiring that pointed here has been removed so the coordinator's handler is authoritative.
     
-    // P5 dedup: private handleWidgetPlayAction / handleWidgetPauseAction bodies removed (logic lives in coordinator equivalents or direct manager calls in checkForPendingWidgetActions).
+    // private handleWidgetPlayAction / handleWidgetPauseAction bodies removed (logic lives in coordinator equivalents or direct manager calls in checkForPendingWidgetActions).
     // The pause call site below now delegates. Play uses the direct authoritative path (per comments in checkForPending).
 
     /// Handles widget-initiated stream switching to a specific language without playing tuning sounds.
     public func handleWidgetSwitchToLanguage(_ languageCode: String, actionId: String) {
-        // P5 dedup: full implementation (processed guard, debounce, workItem, stop/set/play flow, intent checks) lives in RadioPlayerCoordinator.
+        // Full implementation (processed guard, debounce, workItem, stop/set/play flow, intent checks) lives in RadioPlayerCoordinator.
         radioPlayerCoordinator?.handleWidgetSwitchToLanguage(languageCode, actionId: actionId)
     }
     
@@ -1361,7 +1385,7 @@ extension ViewController {
         }
     }
     
-    // P5 dedup: playHapticFeedback (and the companion startHapticEngine) removed from VC.
+    // playHapticFeedback (and the companion startHapticEngine) removed from VC.
     // All call sites updated to radioPlayerCoordinator?.playHapticFeedback(...) or removed with the deleted bodies.
     // Single implementation + engine live in RadioPlayerCoordinator.
     

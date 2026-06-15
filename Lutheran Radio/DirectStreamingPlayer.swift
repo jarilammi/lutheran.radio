@@ -101,7 +101,7 @@ enum PlayerStatus {
 ///   - No telemetry or reporting endpoints.
 ///   - No unnecessary background network activity.
 /// - **Minimal Anonymous Preferences**:
-///   - Stores only a boolean for mobile data usage notification preference.
+///   - Stores the user's cellular data permission preference (ternary: ask/alwaysAllow/sessionAllow) + legacy compat flag (migration only from prior boolean).
 ///   - Cannot be used for user identification or tracking.
 ///   - Enhances user experience without compromising privacy.
 ///   - Fully deleted when the app is removed.
