@@ -67,4 +67,44 @@ final class SharedPlayerManagerPlaybackIntentTests: XCTestCase {
         XCTAssertEqual(intentAfter, .shouldBePlaying)
         XCTAssertTrue(canProceedAfter)
     }
+
+    // MARK: - Siri / AppShortcut intent path coverage (minimal, exercises the exact SSOT calls
+    // used by PlayRadioIntent / PauseRadioIntent / SwitchToLanguageIntent perform() bodies).
+
+    func testSiriPlayIntentPathClearsUserPausedAndSetsShouldBePlaying() async {
+        await manager.stop()
+
+        var intent = await manager.currentPlaybackIntent
+        XCTAssertEqual(intent, .userPaused)
+
+        // Mirrors the generic (no-language) body of PlayRadioIntent.perform
+        await manager.setUserIntentToPlay()
+        await manager.play()
+
+        intent = await manager.currentPlaybackIntent
+        let visual = await manager.currentVisualState
+        XCTAssertEqual(intent, .shouldBePlaying)
+        XCTAssertEqual(visual, .playing)
+    }
+
+    func testSiriSwitchLanguageIntentUsesResetThenPlay() async {
+        await manager.setUserIntentToPlay()
+        await manager.play()
+
+        let streams = manager.availableStreams
+        guard streams.count >= 2 else { return }
+        let other = streams[1]
+
+        // Exact sequence from SwitchToLanguageIntent + documented switch path in SharedPlayerManager table
+        await manager.resetToPrePlayForNewStream()
+        await manager.switchToStream(other)
+        await manager.setUserIntentToPlay()
+        await manager.play()
+
+        let intent = await manager.currentPlaybackIntent
+        XCTAssertEqual(intent, .shouldBePlaying)
+
+        let current = SharedPlayerManager.streamForLanguageCode(other.languageCode)
+        XCTAssertEqual(current.languageCode, other.languageCode)
+    }
 }

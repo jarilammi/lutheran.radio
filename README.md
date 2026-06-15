@@ -6,33 +6,35 @@
 
 Listen to Lutheran Radio on iOS.
 
+Siri Shortcuts and voice control are supported out of the box ("Hey Siri, play Lutheran Radio", "Play Lutheran Radio in Finnish", "Pause Lutheran Radio", etc.). The shortcuts appear automatically in the Shortcuts app and Spotlight with zero configuration.
+
 ## Localizations
 <table style="border: none;">
 <tr>
 <td width="40%" style="border: none;">
 
 The app is fully localized in the following languages:
-- Danish (da)
-- German (de)
 - English (en)
-- Spanish (es)
-- Estonian (et)
-- Finnish (fi)
-- Tornedalen Finnish (fit)
-- Faroese (fo)
-- Gagauz (gag)
-- Icelandic (is)
-- Greenlandic (kl)
-- Lithuanian (lt)
-- Latvian (lv)
-- Norwegian Bokmål (nb)
+- Danish (da)
 - Dutch (nl)
+- Estonian (et)
+- Faroese (fo)
+- Finnish (fi)
+- Gagauz (gag)
+- German (de)
+- Icelandic (is)
+- Kalaallisut (kl)
+- Latvian (lv)
+- Lithuanian (lt)
+- North Sámi (se)
+- Norwegian Bokmål (nb)
 - Norwegian Nynorsk (nn)
 - Polish (pl)
 - Russian (ru)
-- Northern Sami (se)
 - Slovak (sk)
+- Spanish (es)
 - Swedish (sv)
+- Tornedalen Finnish (fit)
 
 </td>
 <td width="60%" style="border: none;">
