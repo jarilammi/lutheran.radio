@@ -141,6 +141,7 @@ struct LutheranRadioLiveActivityWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: LutheranRadioLiveActivityAttributes.self) { context in
             LockScreenLiveActivityView(context: context)
+                .widgetURL(URL(string: "lutheranradio://open"))
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
@@ -384,6 +385,7 @@ struct LutheranRadioLiveActivityWidget: Widget {
                     }
                 }
             }
+            .widgetURL(URL(string: "lutheranradio://open"))
         }
     }
 }
@@ -499,5 +501,6 @@ struct LockScreenLiveActivityView: View {
         .padding()
         .background(Color.black.opacity(0.8))
         .cornerRadius(12)
+        .widgetURL(URL(string: "lutheranradio://open"))
     }
 }

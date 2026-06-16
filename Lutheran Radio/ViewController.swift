@@ -1339,6 +1339,18 @@ extension ViewController {
         // Thin delegate (both the coordinator shim and the internal handleUserTogglePlayback forward are covered by this).
         radioPlayerCoordinator?.handleTogglePlayback()
     }
+
+    /// Public method called when the user taps the Live Activity (Lock Screen or Dynamic Island)
+    /// or uses other "open" deep links from widgets.
+    ///
+    /// Simply foregrounds the app and runs the coordinator's resurrection / state sync check.
+    /// Respects all sticky .userPaused / .securityLocked rules exactly like viewDidAppear.
+    /// No new playback intent is created here — this is pure navigation / surface activation.
+    public func handleOpenFromLiveActivity() {
+        Task { @MainActor in
+            await radioPlayerCoordinator?.viewDidAppearResurrectionCheck()
+        }
+    }
 }
 
 extension ViewController {
