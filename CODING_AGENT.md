@@ -17,6 +17,45 @@ It is live on the App Store: https://apps.apple.com/fi/app/lutheran-radio/id6738
 - Updates to this file must be approved by the repository owner and documented in a PR with security review.
 - All changes must include a security impact assessment.
 
+## Documentation & Comment Standards for AI Coding Agents (Gradual, Incremental Improvement)
+
+These standards are defined as part of the permanent instructions in this file. The objective is that documentation and comments across the codebase improve organically and continuously: every time an agent reads, edits, or rewrites code (bug fixes, refactors, new features, streaming/player changes, widget work, security updates, etc.), the surrounding documentation is left in a strictly better state for the next agent than it was found.
+
+Agents must apply these standards to all new code and to any symbol or file they touch. Legacy surfaces are improved opportunistically as they are revisited.
+
+### Core Principles
+- **Self-contained and referenceable**: Major headings, file-level headers, and top-level `///` documentation must be copy-pasteable as standalone context while still conveying the necessary "why", constraints, and links.
+- **"Why" over "what"**: Code expresses behavior. Comments and docs must explain the *reasoning* — security implications, Apple platform constraints (background audio, strict Swift 6 concurrency, MIE/EMTE, C interop boundaries, etc.), trade-offs, and historical context.
+- **Explicit invariants and guardrails**: Use clear callouts such as "Security Invariant:", "Never ... because ...", and "AGENT NOTE: Single source of truth — any change here must also update ...".
+- **Structured `///` documentation** on public, internal, and important fileprivate symbols:
+  - One-sentence summary.
+  - `- Parameters:`, `- Returns:`, `- Throws:` (when applicable).
+  - `- Precondition:`, `- Postcondition:`, `- Complexity:` (when non-obvious).
+  - `- Important:`, `- Note:`, `- Warning:`.
+  - `- SeeAlso:` (required — link to the relevant DocC article using ``<doc:Security-Invariants>`` or ``<doc:Architecture>``, a specific `README.md` section, another type, or this file).
+  - Actor isolation, `Sendable`, and thread-safety notes.
+  - Memory-safety or unsafe justification.
+  - Brief example usage for non-obvious flows.
+- **SAFETY: and SECURITY: justifications** (mandatory pairing): Every `unsafe { … }`, `@unchecked Sendable`, `nonisolated(unsafe)`, legacy bare `@preconcurrency import`, or force-unwrap (outside test files) must have a `// SAFETY: …` or `// SECURITY: …` comment explaining why the choice is correct and why a safer alternative was not viable. Follow the patterns already established in `Core/Actors/SecurityModelValidator.swift` and `Core/Security/`.
+- **Consistent terminology and cross-linking**: Use exact names from `SecurityConfiguration` (`expectedSecurityModel`, `pinnedLeafFingerprintDigest`, `isInTransitionWindow`, `pinnedFingerprintDigests`, etc.). Security-related edits must preserve and strengthen links between implementation, DocC articles, `README.md`, and this file.
+- **Verification-ready commands**: Any build, test, DNS, or certificate verification commands appearing in comments or docs must be directly copy-pasteable with expected success indicators.
+- **Layered permanent sources** (read in this order for security work):
+  1. This file (rules + standards).
+  2. `Core/Core.docc/Articles/Security-Invariants.md` (formal invariants).
+  3. `Core/Core.docc/Articles/Architecture.md` (design rationale and layering).
+  4. `README.md` security sections (operational details, history table, verification commands).
+  5. Implementation (`///` + inline `// SAFETY:` comments).
+- **Test documentation**: Tests should state the specific invariant, permanent/transient error case, or behavioral property they protect (see existing Core test patterns).
+
+### Mandatory on Every Edit or Rewrite
+- Changing the signature, observable behavior, implementation, or ownership of any symbol requires adding or upgrading its `///` documentation to meet the structure above (at minimum: summary + returns/throws where relevant + `- SeeAlso:` + one "Why"/invariant element).
+- Any edit that introduces or touches an unsafe construct, `@unchecked Sendable`, etc., must add or improve the paired `// SAFETY:` justification in the same change.
+- File-level documentation (header comments or module `///`) for non-trivial files should state purpose, the key invariants the file upholds, and links to the DocC articles and this file.
+- After the change, the edited source file(s) and their associated documentation must be more self-contained, better cross-linked, and richer in explicit reasoning than before.
+- Security, Core/, streaming, certificate, DNS, or state-management work must also re-confirm the "Core Framework Surface Area" rules and the single-source-of-truth requirements in this file.
+
+These rules are especially strict for anything that could affect security invariants or the documented single sources of truth. Purely mechanical warning-cleanup or dead-code removal may treat them as strong direction rather than hard gates, but the build/test gates still apply.
+
 ## Required Rules
 
 1. **Security Model**
@@ -160,7 +199,7 @@ The `Core` framework is the **single source of truth** for all security decision
 3. Run the two xcodebuild commands above when you have the final implementation.
    For pure compiler warning cleanup, dead code removal, or mechanical refactoring, the lighter rules under "Build Gate Exceptions for Mechanical / Warning / Refactoring Work" apply.
    When running both gates in the same environment, execute them sequentially (build first, then test) to avoid transient build-database contention.
-4. Update `README.md` and relevant docs/ files if behavior changes.
+4. Update `README.md`, relevant `docs/` files, and DocC articles (when security policy or architecture changes). **Improve inline source comments and `///` documentation per the "Documentation & Comment Standards for AI Coding Agents" section above.** Behavior changes must be reflected in the authoritative sources. Every touched file must be left in a better state for future agents (more self-contained, better "Why"/invariants, stronger cross-links).
 5. Never commit broken builds.
 
 ## When You Make Changes
@@ -174,6 +213,8 @@ The `Core` framework is the **single source of truth** for all security decision
 - Clean up legacy variables, functions or otherwise unneccessarily duplicated code.
 - Use modern Swift patterns (actors, async/await, `#available`, strict concurrency).
 - Never use force-unwraps (`!`) on security or networking paths.
+- Documentation and comment upgrades performed (be specific: e.g. "upgraded `///` on `play()` with `- SeeAlso:`, added Precondition and 'Why this uses urlWithOptimalServer', inserted AGENT NOTE about PersistedWidgetState single source of truth, added `// SAFETY:` for the remaining AVFoundation import site").
+- Every edited source file and its documentation is now strictly more usable by a future agent than before the change (self-contained sections, explicit reasoning, required links).
 
 ## Security Model History Reference (Do Not Modify – See README.md)
 
@@ -207,6 +248,7 @@ Operate in full agentic mode at all times:
 - Before writing any code that touches security, certificate validation, streaming URLs, DNS validation, or the security model, run:
   `find . -name "CertificateFingerprint.swift" -o -name "CertificateValidator.swift" -o -name "SecurityConfiguration.swift" -o -name "SecurityModelValidator.swift" | head -5`
   and confirm you are reading from inside `Core/`. If the files are not under `Core/`, stop and ask before proceeding.
+- Treat documentation and comment quality as a first-class part of the deliverable. Apply the Documentation & Comment Standards section on every file or symbol edited. This ensures that over time and across normal engineering changes, the comments and docs steadily improve for both human engineers and future agents.
 - After every suggestion, include exact diff or full file, security impact, and build status.
 
 ## Common Pitfalls
