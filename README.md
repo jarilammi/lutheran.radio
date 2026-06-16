@@ -8,6 +8,22 @@ Listen to Lutheran Radio on iOS.
 
 Siri Shortcuts and voice control are supported out of the box ("Hey Siri, play Lutheran Radio", "Play Lutheran Radio in Finnish", "Pause Lutheran Radio", etc.). The shortcuts appear automatically in the Shortcuts app and Spotlight with zero configuration.
 
+## Contents
+
+- [Localizations](#localizations)
+- [Local Development and Contributing](#local-development-and-contributing)
+  - [AI Coding Instructions](#ai-coding-instructions)
+  - [Agent Verification Commands](#agent-verification-commands)
+  - [Prerequisites](#prerequisites)
+  - [Swift Build Settings](#swift-build-settings)
+  - [Troubleshooting](#troubleshooting)
+- [Security Implementation](#security-implementation)
+  - [Certificate Pinning](#certificate-pinning)
+  - [Memory Safety (Compile-Time and Runtime)](#memory-safety-compile-time-and-runtime)
+  - [Security Model Validation](#security-model-validation)
+  - [Single Sources of Truth — Key Files Agents Must Know Intimately](#single-sources-of-truth--key-files-agents-must-know-intimately)
+  - [Security Model History](#security-model-history)
+
 ## Localizations
 <table style="border: none;">
 <tr>
@@ -54,6 +70,86 @@ All AI coding agents (Claude, Grok, Cursor, Aider, Windsurf, etc.) **must** foll
 `CODING_AGENT.md` is the authoritative source. `AGENTS.md` is a local non-authoritative convenience copy (for tooling or environments that expect a file named `AGENTS.md` at the repository root). Permanent changes to rules, security policy, or build requirements must be made in `CODING_AGENT.md`; the copy may be refreshed from it as needed.
 
 This ensures every single change respects the same required security model, localization rules, and build gates.
+
+**Reading order for security work (mandatory for agents):**
+
+When performing work that touches security, certificates, DNS validation, streaming URLs, the `Core/` framework, or this README's security sections, read in this exact order:
+
+1. [`CODING_AGENT.md`](CODING_AGENT.md) (permanent rules, build gates, Documentation & Comment Standards, defensive Swift practices, single-source-of-truth principles)
+2. `Core/Core.docc/Articles/Security-Invariants.md` (formal invariants — best read as built DocC in Xcode)
+3. `Core/Core.docc/Articles/Architecture.md` (layered design and component responsibilities)
+4. This README (operational details, live verification commands, Security Model History table, cache/transition behavior)
+
+**Agent checklist before any security-related edit:**
+- Run: `find . -name "CertificateFingerprint.swift" -o -name "CertificateValidator.swift" -o -name "SecurityConfiguration.swift" -o -name "SecurityModelValidator.swift" | head -5` and confirm every result is under `./Core/`.
+- Re-confirm current values via `SecurityConfiguration.current` (never hard-code).
+- Use exact symbols: `expectedSecurityModel`, `pinnedLeafFingerprintDigest`, `pinnedFingerprintDigests`, `isInTransitionWindow`, `pinnedLeafFingerprint`, `SecurityConfiguration.current`, `SecurityModelValidator`, `CertificateValidator`.
+- After the change, the edited files (including docs) must be strictly more self-contained, with stronger "Why", explicit invariants, and cross-links than before.
+- Run the clean build + test gates (see below) and include status in the PR.
+
+See the "Documentation & Comment Standards for AI Coding Agents" section in `CODING_AGENT.md` — every edit must apply them (self-contained sections, "Why" over "what", `// SAFETY:` / `Security Invariant:` callouts, `- SeeAlso:`, consistent terminology).
+
+### Agent Verification Commands
+
+These commands are the minimum set agents (and humans) should run at the start of any session involving security, Core changes, or docs updates to this README. All blocks are copy-paste ready.
+
+**1. Confirm you are reading the correct single source of truth (mandatory before any security edit):**
+
+```bash
+find . -name "CertificateFingerprint.swift" -o -name "CertificateValidator.swift" -o -name "SecurityConfiguration.swift" -o -name "SecurityModelValidator.swift" | head -5
+```
+
+Expected: All four results must be under `./Core/`. If not, stop and ask.
+
+**2. Fetch current live security models (cross-check against snapshot and `expectedSecurityModel`):**
+
+```bash
+# Current active models (primary domain)
+dig +short +dnssec TXT securitymodels.lutheran.radio
+
+# Full response with DNSSEC details and RRSIG
+dig +dnssec TXT securitymodels.lutheran.radio | grep -E "(^securitymodels|flags:|AD:|RRSIG)"
+```
+
+**3. Verify pinned certificate material (SPKI for ATS + leaf for runtime parity):**
+
+```bash
+# SPKI (matches Info.plist NSPinnedLeafIdentities)
+openssl s_client -connect livestream.lutheran.radio:443 -servername livestream.lutheran.radio < /dev/null 2>/dev/null \
+| openssl x509 -pubkey -noout \
+| openssl pkey -pubin -inform pem -outform der \
+| openssl dgst -sha256 -binary \
+| base64
+
+# Note: The authoritative runtime pin is the DER SHA-256 digest in SecurityConfiguration (see snapshot above). Colon-hex is for docs only.
+```
+
+**4. Run the mandatory build & test gates (execute sequentially; see CODING_AGENT.md for mechanical-work exceptions):**
+
+```bash
+# Clean build (iPhone 17 simulator, iOS 26.5)
+xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.5 \
+  -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17' clean build
+# Look for: ** BUILD SUCCEEDED **
+
+# Full test suite
+xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.5 \
+  -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17' clean test
+# Look for: ** TEST SUCCEEDED **
+
+# Fast path when working on Core / security / networking
+xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.5 \
+  -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17' clean test -testPlan Core
+# Look for: ** TEST SUCCEEDED **
+```
+
+**5. (Optional but recommended for security work) Build DocC for the best invariants/architecture reading experience:**
+
+```bash
+# In Xcode: Product → Build Documentation, then search for "Core" or "Security-Invariants"
+```
+
+Cross-reference: "Current Security Snapshot" and "Single Sources of Truth — Key Files" tables above, the AI checklist, and the exact gates in [`CODING_AGENT.md`](CODING_AGENT.md).
 
 ### Prerequisites
  - Xcode 26+ (Swift 6.3 toolchain; language mode `SWIFT_VERSION = 6`)
@@ -104,7 +200,37 @@ After cleaning, retry the build and test steps above.
 
 # Security Implementation
 
+> **For AI coding agents and security reviewers**  
+> Read sources in this exact order before proposing or reviewing any change that touches security, DNS, certificates, streaming URLs, the `Core/` framework, or this README's security content (per [`CODING_AGENT.md`](CODING_AGENT.md)):
+>
+> 1. `CODING_AGENT.md` (permanent rules + Documentation & Comment Standards)
+> 2. `Core/Core.docc/Articles/Security-Invariants.md` (formal invariants)
+> 3. `Core/Core.docc/Articles/Architecture.md`
+> 4. This README (operational details, verification commands, history table)
+>
+> **Security Invariant:** The `Core` framework (exactly three subdirectories) is the single source of truth for every security decision. No security logic, constants, or validation may be duplicated in the main app, widget, or tests (except narrow `#if DEBUG` test seams that are compiled out of Release). See the full table of invariants in ``<doc:Security-Invariants>``.
+
+### Current Security Snapshot (Authoritative Values for Agents & Reviewers)
+
+| Item                          | Value / Note                                                                                                                                                                                                 | Source (always use via `Core/`) |
+|-------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------|
+| `expectedSecurityModel`       | `"brenham"` (must be present in the live TXT for streaming to be allowed)                                                                                                                                    | `SecurityConfiguration.swift` (via `SecurityConfiguration.current`) |
+| Live active models (DNS TXT)  | `houston,starbase,fredericksburg,brenham`                                                                                                                                                                    | `dig +short +dnssec TXT securitymodels.lutheran.radio` (primary + backup fallback) |
+| Runtime leaf pin (authoritative) | `CertificateFingerprint` (raw 32-byte SHA-256 DER digest). Never compare hex strings at runtime.                                                                                                             | `pinnedLeafFingerprintDigest` |
+| Operator/docs view of pin     | Colon-hex (uppercase): `CC:F7:8E:09:EF:F3:3D:9A:5D:8B:B0:5C:74:28:0D:F6:BE:14:1C:C4:47:F9:69:C2:90:2C:43:97:66:8B:3D:CC`                                                                                       | `pinnedLeafFingerprint` (derived) |
+| Acceptable digests for validator | `pinnedFingerprintDigests` (list form; currently contains only the leaf)                                                                                                                                     | `SecurityConfiguration.current` |
+| Transition window             | 2026-07-27 00:00:00 GMT through 2026-08-26 23:59:59 GMT (`isInTransitionWindow`)                                                                                                                             | `transitionWindowStart` / `transitionWindowEnd` |
+| Time-skew protection          | `maxAllowedTimeSkew = 300` seconds. Any device vs. server `Date` header skew > 5 min disables leniency even inside the window.                                                                                | `SecurityConfiguration` |
+| Model validation cache        | 1 hour (3600 s), success-only, in `UserDefaults` (`modelCacheDuration`). Failures always re-query.                                                                                                           | `SecurityConfiguration` + `SecurityModelValidator` |
+| Certificate validation cache  | 10 minutes (in `CertificateValidator`)                                                                                                                                                                       | `Core/Security/CertificateValidator.swift` |
+
+**AGENT NOTE:** Obtain everything via `SecurityConfiguration.current`. Before editing any file listed in the "Single Sources of Truth" table below (or touching DNS TXT / certificate logic), re-run the `find` command from the AI checklist above and confirm results are inside `./Core/`. The brenham row in the history table below is intentionally left as published for this change.
+
+See also: ``<doc:Security-Invariants>``, ``<doc:Architecture>``, [`CODING_AGENT.md`](CODING_AGENT.md#documentation--comment-standards-for-ai-coding-agents) (Documentation Standards).
+
 ## Certificate Pinning
+
+**Security Invariant:** Runtime full-certificate pinning is performed exclusively by `CertificateValidator` (in `Core/Security/`) against `SecurityConfiguration.pinnedFingerprintDigests` (via `pinnedLeafFingerprintDigest`). Comparison uses constant-time `CertificateFingerprint.constantTimeMatches`. ATS SPKI pinning in `Info.plist` provides the baseline; the runtime layer adds defense-in-depth. Colon-hex values are never used for runtime decisions.
 
 The app implements certificate pinning to prevent man-in-the-middle (MITM) attacks. Key details:
 
@@ -112,6 +238,8 @@ The app implements certificate pinning to prevent man-in-the-middle (MITM) attac
 2. **Pinned Value (runtime):** SHA-256 digest of the leaf certificate DER (32 bytes), stored as ```CertificateFingerprint``` in ```Core/Configuration/SecurityConfiguration.swift``` as ```pinnedLeafFingerprintDigest```
 3. **Pinned Value (operator / docs):** OpenSSL-style colon-hex (uppercase), derived from the digest — ```CC:F7:8E:09:EF:F3:3D:9A:5D:8B:B0:5C:74:28:0D:F6:BE:14:1C:C4:47:F9:69:C2:90:2C:43:97:66:8B:3D:CC```
 4. **Location:** SPKI in ```Info.plist``` (```NSAppTransportSecurity > NSPinnedDomains```); runtime digest policy in ```SecurityConfiguration```; comparison in ```Core/Security/CertificateValidator.swift``` via ```Core/Security/CertificateFingerprint.swift```
+
+See also: ``<doc:Security-Invariants>`` (Invariant 2), the "Current Security Snapshot" table, "Single Sources of Truth" table, and [`CODING_AGENT.md`](CODING_AGENT.md) (pinned fingerprint rules + never bypass full-certificate pinning).
 
 ### Dual Pinning Methods
 
@@ -138,6 +266,8 @@ The app also detects potential device time manipulation by comparing the device 
 
 This check enhances security without additional dependencies, while protecting app users and preserving a seamless streaming experience under normal conditions.
 
+See also: ``<doc:Security-Invariants>`` (Invariant 3 — Transition Window & Time-Skew Protection), `CertificateValidator`, and the snapshot table above.
+
 ### Certificate Renewal Strategy
 
 To ensure uninterrupted service during SSL certificate renewals, the app includes a strategic transition system:
@@ -145,9 +275,11 @@ To ensure uninterrupted service during SSL certificate renewals, the app include
 - **Transition Period:** One month before certificate expiry
 - **User Experience:** During the transition period, the app trusts ATS validation if the pinned fingerprint fails, allowing streaming to continue with a debug warning (visible in DEBUG builds)
 - **Security Protection:** Transition support is automatically enabled during the defined period, with strict enforcement of the pinned fingerprint outside this window
-- **Implementation:** Controlled via `Core/Security/CertificateValidator.swift` with predefined transition start and expiry dates
+- **Implementation:** Controlled via `Core/Security/CertificateValidator.swift` with predefined transition start and expiry dates (exposed via `isInTransitionWindow` on `SecurityConfiguration.current`)
 
 This approach prevents service disruption during certificate updates while maintaining security through continued ATS enforcement and time-bounded operation.
+
+See also: the "Current Security Snapshot" (exact window dates) and ``<doc:Security-Invariants>``.
 
 ### Why SHA-256?
 
@@ -183,16 +315,22 @@ The app enables additional MIE options for stricter memory protections:
 - `com.apple.security.hardened-process.checked-allocations.enable-pure-data = true`: Enforces pure data allocations to prevent executable code in data regions.
 - `com.apple.security.hardened-process.checked-allocations.no-tagged-receive = true`: Disallows receipt of tagged pointers from untrusted sources, preserving tag integrity.
 
+See also: [`CODING_AGENT.md`](CODING_AGENT.md) (Strict Memory Safety (SE-0458) + "Defensive Swift Practices" + force-unwrap rules), `docs/SAFETY_PATTERNS.tex` (authoritative safe Swift idioms and preferred alternatives to `!` / `as!`), and the "Single Sources of Truth" table (zero-copy patterns in `SecurityModelValidator` and `CertificateFingerprint`).
+
 ## Security Model Validation
+
+**Security Invariant:** The app **must** successfully validate that its embedded `expectedSecurityModel` (from `SecurityConfiguration.current`) appears in the comma-separated TXT record returned by `securitymodels.lutheran.radio` (or the backup) **before any streaming is allowed**. Validation is performed exclusively by `SecurityModelValidator` (an actor). Permanent failure (model absent) disables streaming for the lifetime of the process. Successful validations are cached for exactly 1 hour (success-only).
 
 The app performs security model validation to confirm that the version in use matches an approved security implementation before streaming content. This protects against compromised or obsolete app versions.
 
 1. **Primary domain:** `securitymodels.lutheran.radio`
    **Backup domain:** `securitymodels.lutheranradio.sk` (smart fallback)
 2. **Mechanism:** Queries DNS TXT records from the ordered list of domains. On success (expected model present), caches result for 1 hour. Permanent failure aborts immediately; transient errors trigger fallback to the backup domain only.
-3. **Pinned Value:** Defined in `Core/Configuration/SecurityConfiguration.swift` as `expectedSecurityModel` (currently `"brenham"`)
-4. **Location:** Enforced by the actor `Core/Actors/SecurityModelValidator.swift` (single source of truth for validation)
+3. **Pinned Value:** Defined in `Core/Configuration/SecurityConfiguration.swift` as `expectedSecurityModel` (currently `"brenham"`, always read via `SecurityConfiguration.current`)
+4. **Location:** Enforced by the actor `Core/Actors/SecurityModelValidator.swift` (single source of truth for validation — see the Key Files table)
 5. **Behavior:** If the app’s security model isn’t in the TXT record, playback is permanently disabled with a user-facing error message
+
+See also: "Current Security Snapshot", "Agent Verification Commands", ``<doc:Security-Invariants>`` (Invariant 1), and [`CODING_AGENT.md`](CODING_AGENT.md) (Security Model + DNS TXT Validation Specifics).
 
 ### Why DNS TXT Records?
 
@@ -220,6 +358,8 @@ Because of these characteristics, the DNS TXT record serves as a useful but not 
 
 This design provides a practical balance between security, simplicity, and resilience (aided by the 1-hour success-only cache).
 
+See also: the full "Current Validation Behavior" and cache details below, ``<doc:Security-Invariants>``, and [`CODING_AGENT.md`](CODING_AGENT.md) (DNS TXT Validation Specifics — the app does **not** use `kDNSServiceFlagsValidate`; consult README "Why DNS TXT Records?" for the latest DNSSEC/AD status and verification commands).
+
 **Verifying DNSSEC Status**
 To check the current TXT record and DNSSEC-related information:
 
@@ -241,14 +381,16 @@ To check the current valid security models:
 dig +short +dnssec TXT securitymodels.lutheran.radio
 ```
 
-Example output:
+Example output (captured live; always re-verify with `dig` before relying on it):
 
 ```
-"dc,florida,tampa,atlanta,birmingham,houston,starbase"
-TXT 13 3 600 20260328052556 20260326032556 34505 lutheran.radio. CEZx+X3J947EaeiH/hevPZUJvaovpylfY9vLdMb75ohAW3MFuNg9RbnZ 5cjnVglSPo43UCk97UZwkQcREaNY0Q==
+"houston,starbase,fredericksburg,brenham"
+TXT 13 3 600 20260617214613 20260615194613 34505 lutheran.radio. QxvICfbGgR53kNoI+Nrxp3AMjxxUgro+y08IQu16KhlAhOaLRXw952za h9JnMwkPa7IG5wHgZquv7dk3P9sZOg==
 ```
 
-Compare this output to ```expectedSecurityModel``` in ```Core/Configuration/SecurityConfiguration.swift``` (currently ```brenham```). If the app’s model isn’t listed, validation fails permanently. To update the list, modify the TXT record for ```securitymodels.lutheran.radio``` through the DNS management interface for the ```lutheran.radio``` domain.
+Compare this output to ```expectedSecurityModel``` in ```Core/Configuration/SecurityConfiguration.swift``` (currently ```brenham```, obtained via `SecurityConfiguration.current`). If the app’s model isn’t listed, validation fails permanently. To update the list, modify the TXT record for ```securitymodels.lutheran.radio``` through the DNS management interface for the ```lutheran.radio``` domain.
+
+See also: ``<doc:Security-Invariants>`` (Invariant 1), [`CODING_AGENT.md`](CODING_AGENT.md) (Security Model rules).
 
 ### Security Model Validation Cache
 
@@ -278,36 +420,29 @@ To manually inspect or clear the cache:
 
 This feature enhances availability while maintaining the app's privacy-first principles, reducing unnecessary network calls.
 
-### Security Isolation Architecture
+### Single Sources of Truth — Key Files Agents Must Know Intimately
 
-All security-critical constants (expected model name, `pinnedLeafFingerprintDigest`, transition window dates) are centralized in `Core/Configuration/SecurityConfiguration.swift` (colon-hex fingerprint strings are derived views for operators and docs).
-The DNS TXT record validation logic lives in `Core/Actors/SecurityModelValidator.swift` (actor-isolated; `Span<UInt8>` TXT parser with zero-copy `rdata` borrow in the DNS-SD callback; entry point `validateSecurityModel()`).
-Runtime full-certificate (DER SHA-256) digest validation with transition-window leniency lives in `Core/Security/CertificateValidator.swift`, using `Core/Security/CertificateFingerprint.swift` for digest storage, hashing, and constant-time comparison.
+**Security Invariant:** All security-critical constants, policy, and validation logic live **only** inside the `Core/` framework (exactly three subdirectories). `DirectStreamingPlayer.swift` and other consumers must obtain values exclusively through the public surface of `SecurityConfiguration.current`, `SecurityModelValidator`, and `CertificateValidator`. Duplication of policy or validation outside `Core/` is forbidden and will not pass security review.
 
-This refactor:
-- Improves maintainability and testability
-- Enforces Swift 6 strict concurrency and strict memory-safety build settings on all targets
-- Keeps identical runtime behavior and security guarantees
-- Does **not** change the current model ("brenham"), fingerprints, transition period, or any validation rules
+| File / Symbol                                              | Responsibility                                                                 | Important notes for agents |
+|------------------------------------------------------------|--------------------------------------------------------------------------------|----------------------------|
+| `Core/Configuration/SecurityConfiguration.swift`           | Single source of truth for all policy and constants (`expectedSecurityModel`, `pinnedLeafFingerprintDigest`, `pinnedFingerprintDigests`, `isInTransitionWindow`, `transitionWindow*`, `maxAllowedTimeSkew`, `modelCacheDuration`, `securityModelDomains`, `current`) | Never duplicate these values elsewhere. Colon-hex views (`pinnedLeafFingerprint`, `pinnedFingerprints`) are for README/openssl parity only. |
+| `Core/Actors/SecurityModelValidator.swift`                 | Actor-isolated DNS TXT security model validation against `securitymodels.lutheran.radio` (and backup) | Uses `Span<UInt8>` / `UTF8Span` for zero-copy `rdata` borrow in the `dns_sd` callback. 1-hour success-only cache. Distinguishes permanent vs. transient failures. Entry point: `validateSecurityModel()`. The **only** place DNS TXT logic is allowed. |
+| `Core/Security/CertificateFingerprint.swift`               | 32-byte SHA-256 DER digest type + stack-local hashing via `Data.span` + constant-time `constantTimeMatches` | Runtime code must never compare hex strings. Materializes colon-hex only for docs/tooling. |
+| `Core/Security/CertificateValidator.swift`                 | Runtime full-certificate (DER) pinning + 10-minute cache + transition window + device/server time-skew protection | Complements (does not replace) ATS SPKI pinning from `Info.plist`. Uses `pinnedFingerprintDigests`. Time skew > 5 min permanently disables leniency for the process. |
+| `DirectStreamingPlayer.swift` (and streaming delegates)    | Main audio engine; embeds security model in stream URLs; consumes validators | Consumes the Core single sources of truth. No policy duplication. |
 
-`DirectStreamingPlayer.swift` and `Core/Security/CertificateValidator.swift` now consume these shared components instead of duplicating logic.
+**Core Framework Surface Area (mandatory rule):** Any new security logic, certificate handling, or validation must be added inside `Core/` under the appropriate subdirectory (`Configuration/`, `Actors/`, or `Security/`) and exposed through the existing public types. Duplication in the main app, `LutheranRadioWidget/`, or elsewhere is not permitted.
 
-**Core module layout (three subdirectories only):**
-- `Core/Configuration/` — policy and constants (`SecurityConfiguration`)
-- `Core/Actors/` — DNS TXT validation actor (`SecurityModelValidator`)
-- `Core/Security/` — digest type and hashing (`CertificateFingerprint`) + runtime validator (`CertificateValidator`)
+The authoritative security invariants and architecture are documented in the `Core` framework's DocC catalog (preferred reading experience: build DocC in Xcode via Product → Build Documentation, or search "Core" in the Developer Documentation window).
 
-The authoritative security invariants and architecture are documented in the
-`Core` framework's DocC catalog. The best reading experience is inside Xcode:
-
-- Open the **Developer Documentation** window and search for “Core”, or
-- Build documentation for the `Core` target (Product → Build Documentation).
-
-The source articles are also available on GitHub:
+Source articles (also on GitHub):
 - [Security Invariants](https://github.com/jarilammi/lutheran.radio/blob/HEAD/Core/Core.docc/Articles/Security-Invariants.md)
-- [Architecture](https://github.com/jarilammi/lutheran.radio/blob/HEAD/Core/Core.docc/Articles/Architecture.md).
+- [Architecture](https://github.com/jarilammi/lutheran.radio/blob/HEAD/Core/Core.docc/Articles/Architecture.md)
 
-New security logic must be placed inside the appropriate `Core/` subdirectory. Duplication in the main app or widget is not permitted.
+See also: the "Current Security Snapshot" table above, [`CODING_AGENT.md`](CODING_AGENT.md) (Key Files table + Core Framework Surface Area rule + "before writing any code..." checklist), ``<doc:Security-Invariants>``, ``<doc:Architecture>``.
+
+`DirectStreamingPlayer.swift` and `Core/Security/CertificateValidator.swift` now consume these shared components instead of duplicating logic. The prior refactor improved maintainability/testability while enforcing Swift 6 strict concurrency + `SWIFT_STRICT_MEMORY_SAFETY = YES` on all targets and preserving identical runtime behavior and security guarantees.
 
 ### Security Model TXT Record Usage
 
@@ -315,7 +450,9 @@ Lutheran Radio's security system uses a DNS TXT record to ensure only trusted ap
 
 ### Security Model History
 
-To avoid naming collisions, each security model name should be unique and not match any previously used name. This helps prevent unintended compatibility with older app versions.
+This table is the source of truth for the historical record of security models (per [`CODING_AGENT.md`](CODING_AGENT.md)). 
+
+**Security Invariant:** Each security model name must be unique and never reused. Reusing a prior name could allow an obsolete app version to pass DNS TXT validation. Live active models are determined solely by the current DNS TXT record (see "Current Security Snapshot" and verification commands above). The table below records introduction and deprecation for auditing and safe name selection.
 
 | Security Model Name | Valid From         | Valid Until        | App Version Introduced |
 |---------------------|--------------------|--------------------|------------------------|
@@ -340,19 +477,31 @@ To avoid naming collisions, each security model name should be unique and not ma
 - **Valid Until:** The date when the security model was deprecated (or "(ongoing)" if still active).
 - **App Version Introduced:** The app version where this security model was first implemented.
 - **Valid From Dates:** Reflect the App Store publication date for the app version introducing the security model, ensuring alignment with public availability.
-- When adding a new security model, append a new row to this table and update the DNS TXT record accordingly (see "Verifying the Security Model" above).
+- Cross-check live TXT (via the Agent Verification Commands) for the set of currently active models. This table is the historical source of truth.
 
-When introducing a new security model:
+When introducing a new security model (requires security review + documentation upgrade):
 
-1. Choose a unique name not listed in the table (e.g., a distinct city or codename).
-2. Update `expectedSecurityModel` in `Core/Configuration/SecurityConfiguration.swift`.
-3. Add the new name to the DNS TXT record for `securitymodels.lutheran.radio`.
+1. Choose a unique name not listed in the table (e.g., a distinct city or codename). Confirm it has never been used.
+2. Update `expectedSecurityModel` in `Core/Configuration/SecurityConfiguration.swift` (the only allowed location).
+3. Add the new name to the DNS TXT record for `securitymodels.lutheran.radio` (primary) and ensure the backup is consistent.
 4. Append a new row to the table above with the current date, app version, and name.
+5. Update the "Current Security Snapshot" and any live example outputs in this README.
+6. Improve surrounding documentation per the Documentation & Comment Standards in [`CODING_AGENT.md`](CODING_AGENT.md) (add "Why", Security Invariant callouts, cross-links to ``<doc:Security-Invariants>`` and the Architecture article, update agent checklist context if needed).
+7. Run the mandatory find command + build/test gates. Include security impact assessment in the PR.
+
+See also: ``<doc:Security-Invariants>`` (Invariant 1 and "Enforcement"), "Verifying the Security Model" section above, [`CODING_AGENT.md`](CODING_AGENT.md) (Security Model rules + "Current model = brenham" + response style requirements).
 
 ### Why Track Security Model Names?
 
-Security model names (e.g., ```brenham```) are embedded in the app and validated against the DNS TXT record. Once a name is used, it becomes part of the app's history and may still exist in older versions. Reusing a name could allow an older version to pass validation in some cases. By maintaining this table, we ensure that:
+Security model names (e.g., ```brenham```) are embedded in the app and validated against the DNS TXT record before any streaming is permitted. Once a name is used, it becomes part of the app's permanent history and may still exist in older App Store versions. Reusing a name could allow an older version to pass validation in some cases.
+
+**Why this matters (explicit invariant):** The DNS TXT mechanism plus the history table together provide a forward-only, collision-resistant way to rotate the approved security implementation without breaking the "no bypass" rule or requiring clients to trust arbitrary future names.
+
+By maintaining this table we ensure that:
 
 - New security model names are unique and avoid collisions with past names.
-- The history of security models is transparent for debugging and auditing.
-- Contributors can easily pick a fresh name (e.g., a unique city, codename, or identifier) when implementing a new security model.
+- The complete history of security models is transparent for debugging, auditing, and security reviews.
+- Contributors and agents can easily pick a fresh name (e.g., a unique city, codename, or identifier) when implementing a new security model.
+- Future agents reading this file have the full context required by the layered permanent sources order in `CODING_AGENT.md`.
+
+Every change that touches this section must leave the file strictly more usable for the next agent (better self-contained reasoning, explicit links, and up-to-date verification commands).
