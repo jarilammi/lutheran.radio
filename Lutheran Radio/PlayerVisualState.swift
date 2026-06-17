@@ -5,6 +5,34 @@
 //  Created by Jari Lammi on 18.3.2026.
 //
 
+// SHARED: Cross-target source (main app + LutheranRadioWidgetExtension)
+//
+// Single physical file on disk, compiled into both targets via Xcode
+// File System Synchronized Group + membershipExceptions (see project.pbxproj).
+//
+// Purpose:
+// Defines the core value types for visual playback state and user intent
+// (`PlayerVisualState`, `PlaybackIntent`, `StopReason`, `PlaybackAttachContext`)
+// that are used for UI, widgets, Live Activities, and App Intents.
+//
+// Key invariants:
+// - `PlayerVisualState` + `PlaybackIntent` (via `SharedPlayerManager`) are
+//   the Single Source of Truth answering "what should the UI/widget show?"
+//   and "does the user want audio playing?";
+// - `.userPaused`, `.securityLocked`, and `.cleared` are sticky resurrection
+//   blockers; only explicit user play clears them.
+// - These types are persisted (Codable) in `PersistedWidgetState` for
+//   cross-process optimistic state. No PII.
+// - This file contains *no* security logic. Security decisions live only in
+//   `Core/` (see CODING_AGENT.md "Core Framework Surface Area").
+//
+// - SeeAlso: `SharedPlayerManager` (the actor owning mutation + persistence),
+//   `PersistedWidgetState`, CODING_AGENT.md (Single Source of Truth Principles,
+//   "Cross-target shared source files (non-Core)"), README.md (Single Sources
+//   of Truth table).
+// - AGENT NOTE: Any change to these enums or their semantics must also update
+//   the resurrection tables and guards inside SharedPlayerManager.swift.
+
 import Foundation
 import UIKit
 

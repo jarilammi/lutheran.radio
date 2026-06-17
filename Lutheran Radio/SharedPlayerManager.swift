@@ -5,6 +5,38 @@
 //  Created by Jari Lammi on 7.6.2025.
 //
 
+// SHARED: Cross-target source (main app + LutheranRadioWidgetExtension)
+//
+// Single physical file on disk, compiled into both targets via Xcode
+// File System Synchronized Group + membershipExceptions (see project.pbxproj).
+//
+// Purpose:
+// The central actor and Single Source of Truth for all cross-process
+// playback state between the main app, home screen widgets, Control Center
+// widgets, Live Activities, and App Intents.
+//
+// Key invariants (see detailed tables in this file):
+// - `PersistedWidgetState` (nested struct) + `loadPersistedWidgetState()` /
+//   `savePersistedWidgetState(...)` is the authoritative snapshot for widgets/LAs.
+// - `currentPlaybackIntent` / `PlaybackIntent` + `PlayerVisualState` drive all
+//   resurrection, auto-play, and UI decisions. Widget paths must go through
+//   the actor's static facade or signals; never duplicate intent logic.
+// - Sticky states (`.userPaused`, `.securityLocked`, `.cleared`) block
+//   resurrection until the next explicit user play.
+// - Privacy: `hasActiveLutheranWidgets` gate suppresses writes when no widgets
+//   are present. All data is anonymous (no timestamps/history/PII).
+// - This file contains *no* security policy or validation. Security lives
+//   exclusively in `Core/` (see CODING_AGENT.md "Core Framework Surface Area").
+//
+// - SeeAlso: `PlayerVisualState.swift`, `WidgetRefreshManager.swift`,
+//   `PersistedWidgetState`, `DirectStreamingPlayer.swift` (owns AVPlayer),
+//   CODING_AGENT.md (Single Source of Truth Principles + the full "Cross-target
+//   shared source files (non-Core)" guidance), README.md (Key Files table).
+//
+// AGENT NOTE: This is one of the documented single sources of truth.
+// Bypassing it for widget or playback intent logic creates drift and is
+// forbidden.
+
 import Foundation
 import AVFoundation
 import Core

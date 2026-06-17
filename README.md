@@ -442,6 +442,16 @@ Source articles (also on GitHub):
 
 See also: the "Current Security Snapshot" table above, [`CODING_AGENT.md`](CODING_AGENT.md) (Key Files table + Core Framework Surface Area rule + "before writing any code..." checklist), ``<doc:Security-Invariants>``, ``<doc:Architecture>``.
 
+**Non-security cross-target shared sources (app + widget)**
+
+A small number of files under `Lutheran Radio/` are compiled into both the main app and `LutheranRadioWidgetExtension` (via File System Synchronized Group membership exceptions, no separate framework). These implement widget / Live Activity state:
+
+- `SharedPlayerManager.swift` (actor + `PersistedWidgetState`)
+- `PlayerVisualState.swift`
+- `WidgetRefreshManager.swift`, `StreamProgramMetadata.swift`, `LutheranRadioLiveActivityAttributes.swift`
+
+Each carries an explicit "SHARED" header block listing the invariants and pointing back here and to `CODING_AGENT.md`. New non-security shared logic should be added to one of these (or documented here) rather than duplicated. Security items stay in `Core/`.
+
 `DirectStreamingPlayer.swift` and `Core/Security/CertificateValidator.swift` now consume these shared components instead of duplicating logic. The prior refactor improved maintainability/testability while enforcing Swift 6 strict concurrency + `SWIFT_STRICT_MEMORY_SAFETY = YES` on all targets and preserving identical runtime behavior and security guarantees.
 
 ### Security Model TXT Record Usage

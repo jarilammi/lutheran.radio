@@ -146,6 +146,39 @@ The architecture has converged on a small number of authoritative paths. New cod
 
 Bypassing these for new logic creates drift and is discouraged.
 
+**Cross-target shared source files (non-Core)**
+
+The following source files (physically under `Lutheran Radio/`) are intentionally
+compiled into *both* the main "Lutheran Radio" app target and
+`LutheranRadioWidgetExtension`:
+
+- `SharedPlayerManager.swift` (actor + nested `PersistedWidgetState` + static
+  facades for persistence and signaling)
+- `PlayerVisualState.swift` (`PlayerVisualState`, `PlaybackIntent`, related enums)
+- `WidgetRefreshManager.swift` (debouncing + active-widgets privacy gate)
+- `StreamProgramMetadata.swift`
+- `LutheranRadioLiveActivityAttributes.swift`
+
+Mechanism: Xcode File System Synchronized Group with `membershipExceptions`
+in the project file (no separate `Shared/` directory or second framework target
+is required today).
+
+These files implement the widget/Live Activity state SSOTs. All widget providers,
+intents, and Live Activities must obtain state via the documented paths above.
+The files carry prominent "SHARED" file headers with invariants.
+
+**Rule**: Do not add new files to this cross-target set without also:
+- Adding the identical header block.
+- Updating this section and the file headers.
+- Verifying that the code remains appropriate outside `Core/`.
+
+Security-related code, certificate handling, or DNS validation is **never**
+allowed here — it belongs exclusively in `Core/Configuration/`, `Core/Actors/`,
+or `Core/Security/`.
+
+See the file headers and `README.md` "Single Sources of Truth — Key Files" for
+more.
+
 ### Error Handling
 - Prefer explicit modeling of permanent vs transient errors (see the existing `hasPermanentError` + `StreamErrorType` pattern) over boolean flags or implicit assumptions.
 - Typed throws and `Result` types are preferred on internal boundaries where they improve clarity.
@@ -181,6 +214,7 @@ These guidelines exist because the cost of a force-unwrap or a data race in a ba
 | `Info.plist`                                      | ATS pinning (SPKI + domain)                                                    | Never edit without updating `SecurityConfiguration` and validator              |
 | `LutheranRadioWidget/`                            | Home-screen widget                                                             | Must respect same security rules via shared `Core` module                      |
 | `docs/`                                           | All architecture & security decision records                                   | Read before any major change                                                   |
+| `SharedPlayerManager.swift` + `PlayerVisualState.swift` (and 3 siblings) | Cross-target non-security state for widgets / Live Activities (via synchronized group membership) | Single physical copy. See "Cross-target shared source files (non-Core)" above and the SHARED header in each file. Never duplicate widget state logic. |
 
 ### Core Framework Surface Area (Mandatory Knowledge)
 

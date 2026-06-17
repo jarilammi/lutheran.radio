@@ -8,6 +8,29 @@
 //  Now fully aligned with PlayerVisualState as the Single Source of Truth (SSOT).
 //
 
+// SHARED: Cross-target source (main app + LutheranRadioWidgetExtension)
+//
+// Single physical file on disk, compiled into both targets via Xcode
+// File System Synchronized Group + membershipExceptions (see project.pbxproj).
+//
+// Purpose:
+// @MainActor coordinator for debounced, coalesced `WidgetCenter.reloadTimelines`
+// calls. Prevents spam while ensuring widgets and Live Activities reflect the
+// latest `PlayerVisualState` promptly.
+//
+// Key invariants:
+// - 100% driven by `PlayerVisualState` (the SSOT).
+// - Respects the privacy gate `hasActiveLutheranWidgets` (via
+//   `WidgetRefreshManager` + `SharedPlayerManager`) to suppress writes when no
+//   Lutheran widgets are installed.
+// - Coalesces `.prePlay` → `.playing` and dedupes sticky states.
+// - This file contains *no* security logic. Security decisions live only in
+//   `Core/` (see CODING_AGENT.md "Core Framework Surface Area").
+//
+// - SeeAlso: `SharedPlayerManager` (calls `refreshIfNeeded`), `PlayerVisualState`,
+//   `PersistedWidgetState`, CODING_AGENT.md (Single Source of Truth Principles
+//   + "Cross-target shared source files (non-Core)"), README.md.
+
 import Foundation
 import WidgetKit
 

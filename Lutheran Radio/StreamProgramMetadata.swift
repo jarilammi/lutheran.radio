@@ -5,6 +5,28 @@
 //  Parsed ICY/Shoutcast program metadata for widgets and Live Activities.
 //
 
+// SHARED: Cross-target source (main app + LutheranRadioWidgetExtension)
+//
+// Single physical file on disk, compiled into both targets via Xcode
+// File System Synchronized Group + membershipExceptions (see project.pbxproj).
+//
+// Purpose:
+// Lightweight value type + parser for ICY `StreamTitle` metadata. Used by
+// widgets and Live Activities to show program/sermon title and speaker.
+//
+// Key invariants:
+// - Pure value type: `Codable`, `Hashable`, `Sendable`, `Equatable`.
+// - Owned by `SharedPlayerManager`; stored inside `PersistedWidgetState`.
+// - No PII, no history. Anonymous only.
+// - Parsing is best-effort for common radio formats ("Title", "Speaker - Title",
+//   "Title by Speaker").
+// - This file contains *no* security logic. Security decisions live only in
+//   `Core/` (see CODING_AGENT.md "Core Framework Surface Area").
+//
+// - SeeAlso: `SharedPlayerManager`, `PlayerVisualState`, `PersistedWidgetState`
+//   (contains this), CODING_AGENT.md (Single Source of Truth Principles +
+//   "Cross-target shared source files (non-Core)"), README.md.
+
 import Foundation
 
 /// Lightweight, anonymous program metadata from the active audio stream.
