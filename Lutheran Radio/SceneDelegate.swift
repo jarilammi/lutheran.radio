@@ -13,11 +13,14 @@ import UIKit
 ///
 /// Core Responsibilities:
 /// - **Lifecycle Events**: Handles foreground/background transitions with state saves via `SharedPlayerManager.swift`; checks pending widget actions on active.
-/// - **Widget Communication**: Processes `lutheranradio://` schemes (e.g., play/pause/switch) from widgets, delegating to public methods in `ViewController.swift`.
-/// - **URL Handling**: Supports deep links for playback control; integrates with `AppDelegate.swift` for app-wide lifecycle.
+/// - **Widget Communication**: Processes `lutheranradio://` schemes (e.g., play/pause/switch, "open") from widgets and Live Activities, delegating to public methods in `ViewController.swift`.
+/// - **URL Handling**: Single entry point for deep links. Widget-action URLs are parsed and dispatched first for actionId deduplication; everything else flows through `handleURLScheme`. Uses `rootViewController(in:)` + `ParsedWidgetAction` (the extracted helpers) to avoid duplication and respect scene window context.
 /// - **Privacy Note**: No external data in schemes; all actions local to app state.
 ///
+/// The extraction of `ParsedWidgetAction` and `rootViewController(in:)` centralizes the previously repeated VC lookup and query parsing. All "open" handling for Live Activity taps correctly surfaces the app without forcing playback (see resurrection check).
+///
 /// For related background features, see `RadioLiveActivityManager.swift`. Ensures seamless widget-to-app handoff without tracking.
+/// - SeeAlso: `ViewController.handleOpenFromLiveActivity`, `ViewController.handleWidgetAction`, `SharedPlayerManager` (pending actions)
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     /// The main window for the app's user interface.
     var window: UIWindow?
@@ -35,7 +38,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         
         // Handle any URLs that were used to launch the app
         if let urlContext = connectionOptions.urlContexts.first {
-            handleURLScheme(urlContext.url)
+            handleURLScheme(urlContext.url, from: scene)
         }
     }
 
@@ -103,88 +106,93 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         #endif
     }
 
-    /// Called when the app is opened via URL scheme
+    /// Called when the app is opened via URL scheme from widgets or Live Activities.
     func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
         guard let url = URLContexts.first?.url,
               url.scheme == "lutheranradio" else {
             return
         }
-        
-        if url.host == "widget-action",
-           let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-           let action = components.queryItems?.first(where: { $0.name == "action" })?.value,
-           let actionId = components.queryItems?.first(where: { $0.name == "actionId" })?.value {
-            let parameter = components.queryItems?.first(where: { $0.name == "parameter" })?.value
-            
-            // Get the ViewController instance
-            if let windowScene = scene as? UIWindowScene,
-               let window = windowScene.windows.first,
-               let viewController = window.rootViewController as? ViewController {
-                if action == "switch", let languageCode = parameter {
-                    viewController.handleWidgetSwitchToLanguage(languageCode, actionId: actionId)
+
+        // Widget-action URLs are special: they carry an `actionId` for deduplication
+        // and are processed immediately (bypassing the general handler). This path
+        // is used by certain widget-to-app signaling flows.
+        if let action = ParsedWidgetAction.from(url) {
+            if let viewController = rootViewController(in: scene) {
+                if action.action == "switch", let languageCode = action.parameter {
+                    viewController.handleWidgetSwitchToLanguage(languageCode, actionId: action.actionId)
                     Task {
-                        SharedPlayerManager.shared.clearPendingAction(actionId: actionId)
+                        SharedPlayerManager.shared.clearPendingAction(actionId: action.actionId)
                     }
                 } else {
-                    viewController.handleWidgetAction(action: action, parameter: parameter, actionId: actionId)
+                    viewController.handleWidgetAction(action: action.action, parameter: action.parameter, actionId: action.actionId)
                 }
             }
             return
         }
-        
-        // Other lutheranradio:// hosts (play, pause, toggle, switch, open from Live Activity / home widgets) go through the common handler
-        handleURLScheme(url)
+
+        // Simple deep links (including "open" from tapping Live Activities or widgets)
+        // go through the unified handler, which will surface the app and/or perform
+        // the requested playback control. See handleOpenFromLiveActivity for the
+        // "open" resurrection path that respects .userPaused / .securityLocked.
+        handleURLScheme(url, from: scene)
     }
 
-    /// Handles incoming URL schemes from widgets or external sources
-    private func handleURLScheme(_ url: URL) {
+    /// Handles `lutheranradio://` deep links for playback control and foregrounding.
+    ///
+    /// This is the common path after any `widget-action` special cases. Callers
+    /// may pass the originating `scene` so that the root ViewController can be
+    /// resolved reliably even during early lifecycle or open events.
+    ///
+    /// - Parameters:
+    ///   - url: The deep link URL.
+    ///   - scene: Optional `UIScene` from the calling context (preferred for VC lookup).
+    /// - SeeAlso: `ParsedWidgetAction`, `rootViewController(in:)`, `ViewController.handleOpenFromLiveActivity`
+    private func handleURLScheme(_ url: URL, from scene: UIScene? = nil) {
         guard url.scheme == "lutheranradio" else {
             #if DEBUG
             print("[SceneDelegate] Invalid URL scheme: \(url.scheme ?? "nil"), expected 'lutheranradio'")
             #endif
             return
         }
-        
+
         #if DEBUG
         print("[SceneDelegate] Handling URL scheme: \(url.absoluteString)")
         #endif
-        
-        // Ensure we have access to the view controller
-        guard let viewController = window?.rootViewController as? ViewController else {
+
+        guard let viewController = rootViewController(in: scene) else {
             #if DEBUG
             print("[SceneDelegate] Unable to get ViewController from window")
             #endif
             return
         }
-        
+
         switch url.host {
         case "play":
             #if DEBUG
             print("[SceneDelegate] Handling play action from widget")
             #endif
-            viewController.handlePlayAction() // Use public method
-            
+            viewController.handlePlayAction()
+
         case "pause":
             #if DEBUG
             print("[SceneDelegate] Handling pause action from widget")
             #endif
-            viewController.handlePauseAction() // Use public method
-            
+            viewController.handlePauseAction()
+
         case "toggle":
             #if DEBUG
             print("[SceneDelegate] Handling toggle action from widget")
             #endif
-            viewController.handleTogglePlayback() // Use public method
-            
+            viewController.handleTogglePlayback()
+
         case "open":
             #if DEBUG
             print("[SceneDelegate] Handling open from Live Activity or widget tap")
             #endif
             viewController.handleOpenFromLiveActivity()
-            
+
         case "switch":
-            // Handle stream switch from widget
-            // Expected format: lutheranradio://switch?language=en
+            // Expected format: lutheranradio://switch?language=en (or ?param=...)
             if let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
                let queryItems = components.queryItems,
                let languageItem = queryItems.first(where: { $0.name == "language" || $0.name == "param" }),
@@ -192,18 +200,66 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 #if DEBUG
                 print("[SceneDelegate] Handling switch to language: \(languageCode)")
                 #endif
-                viewController.handleSwitchToLanguage(languageCode) // Use public method
+                viewController.handleSwitchToLanguage(languageCode)
             } else {
                 #if DEBUG
                 print("[SceneDelegate] Invalid switch URL format: \(url.absoluteString)")
                 #endif
             }
-            
+
         default:
             #if DEBUG
             print("[SceneDelegate] Unknown URL host: \(url.host ?? "nil")")
             #endif
             break
         }
+    }
+
+    // MARK: - Extracted URL Helpers
+
+    /// Parsed representation of a `lutheranradio://widget-action` URL.
+    ///
+    /// These carry the action name, a unique `actionId` (for dedup), and an optional
+    /// parameter (e.g. language code for switches). They are handled with priority
+    /// in `openURLContexts` because they come from the widget extension process.
+    ///
+    /// - SeeAlso: `SceneDelegate.scene(_:openURLContexts:)`, `ViewController.handleWidgetAction`
+    private struct ParsedWidgetAction {
+        let action: String
+        let actionId: String
+        let parameter: String?
+
+        /// Parses the required fields from a widget-action URL.
+        /// Returns nil if host or mandatory query items are missing.
+        static func from(_ url: URL) -> ParsedWidgetAction? {
+            guard url.host == "widget-action",
+                  let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+                  let action = components.queryItems?.first(where: { $0.name == "action" })?.value,
+                  let actionId = components.queryItems?.first(where: { $0.name == "actionId" })?.value
+            else { return nil }
+
+            let parameter = components.queryItems?.first(where: { $0.name == "parameter" })?.value
+            return ParsedWidgetAction(action: action, actionId: actionId, parameter: parameter)
+        }
+    }
+
+    /// Resolves the root `ViewController` that receives widget/URL scheme commands.
+    ///
+    /// When a `UIScene` is supplied (typical during `openURLContexts` and launch),
+    /// its window is preferred. This avoids races where the delegate's stored
+    /// `window` has not yet been updated for the active scene.
+    ///
+    /// Falls back to `self.window`.
+    ///
+    /// - Parameter scene: The scene associated with the current URL or lifecycle event.
+    /// - Returns: The root ViewController if it is the expected type.
+    /// - Note: Single extraction point for all VC lookups in this delegate.
+    /// - SeeAlso: `handleURLScheme(_:from:)`
+    private func rootViewController(in scene: UIScene? = nil) -> ViewController? {
+        if let windowScene = scene as? UIWindowScene,
+           let vc = windowScene.windows.first?.rootViewController as? ViewController {
+            return vc
+        }
+        return window?.rootViewController as? ViewController
     }
 }
