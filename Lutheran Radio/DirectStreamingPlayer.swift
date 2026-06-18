@@ -1068,12 +1068,17 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     }
 
     /// Called on every user-initiated language/stream switch (flag-tap via completeStreamSwitch,
-    /// widget via handleWidgetSwitchToLanguage, Siri/shortcut via switchToStream model-only helper).
+    /// widget via handleWidgetSwitchToLanguage, Siri/shortcut, or any path that ends up
+    /// calling `switchToStream`).
+    ///
     /// Gives the *new* stream a clean startup attempt budget (retryCount = 0) so that
     /// transient ICY noise or safety-net exhaustion from the *previous* stream cannot
     /// trigger a false-positive status_stream_unavailable (red banner + popup).
     ///
     /// Resets cold-launch recovery counters so each stream switch gets a fresh attempt budget.
+    ///
+    /// AGENT NOTE: Prefer calling `switchToStream(_:)` (or the higher-level coordinator paths)
+    /// rather than manually calling the individual reset + stop steps.
     func resetInitialPlaybackCountersForNewStream() {
         initialPlaybackRetryCount = 0
         hasStartedPlaying = false   // defensive; the preceding stop() already does this for most paths
@@ -1758,19 +1763,79 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         ensureICYAttached()
     }
 
-    // MARK: - Stream Switching (the simpler fallback)
+    // MARK: - Stream Switching (Single Source of Truth for engine prep)
 
+    /// Prepares the engine for a user-initiated stream/language change (the canonical
+    /// preparation step for all stream choice paths).
+    ///
+    /// This method is the **single place** that performs the common engine-side work
+    /// required when the user (via flags, widget, Siri, shortcuts, etc.) selects a
+    /// different Lutheran Radio stream:
+    ///
+    /// - Records the new selected stream via the model-only path (no AVPlayerItem is
+    ///   created or attached yet — that happens later in `setStreamAndPlay` or `play()`).
+    /// - Clears transient error state.
+    /// - If the language actually changes, performs a silent `.streamSwitch` stop and
+    ///   waits for completion.
+    /// - Resets the per-stream playback attempt counters (`resetInitialPlaybackCountersForNewStream`)
+    ///   so the new stream receives a fresh budget.
+    ///
+    /// - Parameter stream: The target stream.
+    ///
+    /// - Important: This performs **only engine preparation**. It does **not**:
+    ///   - Start or attach playback.
+    ///   - Play any tuning sound (that is main-app delight, owned by `RadioPlayerCoordinator`).
+    ///   - Mutate `SharedPlayerManager` visual state, `currentPlaybackIntent`, or persisted snapshot.
+    ///   - Update the language selector, background images, or any UI.
+    ///   - Decide whether to call `resetToPrePlayForNewStream` or `play()`.
+    ///
+    /// Callers must `await` this when they need teardown to be complete before the next step
+    /// (tuning, resetToPrePlay, or `play()`).
+    ///
+    /// Typical usage (in `RadioPlayerCoordinator`):
+    /// ```
+    /// await streamingPlayer.switchToStream(target)
+    /// if mainApp { await playTuningSound(...) }
+    /// await SharedPlayerManager.shared.resetToPrePlayForNewStream(...)
+    /// await SharedPlayerManager.shared.play()
+    /// ```
+    ///
+    /// - SeeAlso: `setSelectedStreamModelOnly(to:)`, `resetInitialPlaybackCountersForNewStream()`,
+    ///   `SharedPlayerManager.resetToPrePlayForNewStream(preserveActiveSleepTimer:)`,
+    ///   `SharedPlayerManager.play()`, `RadioPlayerCoordinator.completeStreamSwitch`,
+    ///   `RadioPlayerCoordinator.handleWidgetSwitchToLanguage`, <doc:Architecture>,
+    ///   CODING_AGENT.md (Single Source of Truth Principles + "Cross-target shared source files").
+    ///
+    /// AGENT NOTE: Any future higher-level "initiateStreamSwitch" (in SPM or elsewhere)
+    /// should use this method for the engine portion rather than duplicating the four steps.
+    @MainActor
     func switchToStream(_ stream: Stream) async {
         let previousLanguage = selectedStream.languageCode
         let newLanguage = stream.languageCode
-        
-        if previousLanguage != newLanguage {
-            stop(reason: .streamSwitch, silent: true)
-        }
-        
-        resetInitialPlaybackCountersForNewStream()
-        resetTransientErrors()
+        let isLanguageChange = previousLanguage != newLanguage
+
+        // Set model first (matches the pattern used by the current coordinator switch paths).
         await setSelectedStreamModelOnly(to: stream)
+        resetTransientErrors()
+
+        if isLanguageChange {
+            #if DEBUG
+            print("[DirectStreamingPlayer] switchToStream — awaiting silent .streamSwitch stop (\(previousLanguage) → \(newLanguage))")
+            #endif
+            await withCheckedContinuation { continuation in
+                stop(
+                    reason: .streamSwitch,
+                    completion: { continuation.resume() },
+                    silent: true
+                )
+            }
+        }
+
+        resetInitialPlaybackCountersForNewStream()
+
+        #if DEBUG
+        print("[DirectStreamingPlayer] switchToStream engine prep complete for \(newLanguage)")
+        #endif
     }
     
     // MARK: - Stream Switching (Single Source of Truth)

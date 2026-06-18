@@ -292,7 +292,18 @@ final class RadioPlayerCoordinator {
         }
     }
 
-    // Widget switch (no tuning) — full flow owned here
+    /// Widget / Live Activity / pending-action reconciliation for a stream switch.
+    ///
+    /// This is the silent (no tuning) mirror of `completeStreamSwitch`.
+    /// It receives the action after the widget wrote optimistic state + pending + Darwin signal.
+    /// Performs the authoritative main-app work and clears the pending action.
+    ///
+    /// - Important: Must never play tuning sound. Must respect `currentPlaybackIntent`
+    ///   (do not resume if the user had explicitly paused).
+    ///
+    /// - SeeAlso: `completeStreamSwitch`, `SwitchStreamIntent.perform` (in widget target),
+    ///   `DirectStreamingPlayer.switchToStream`, `SharedPlayerManager` (for intent + resetToPrePlay),
+    ///   CODING_AGENT.md (SSOTs for widget state).
     func handleWidgetSwitchToLanguage(_ languageCode: String, actionId: String) {
         guard !processedActionIds.contains(actionId) else { return }
         processedActionIds.insert(actionId)
@@ -323,18 +334,9 @@ final class RadioPlayerCoordinator {
                 let playbackIntent = await SharedPlayerManager.shared.currentPlaybackIntent
                 let shouldResumeAfterSwitch = playbackIntent.isActivePlaybackIntent
 
-                await self.streamingPlayer.setSelectedStreamModelOnly(to: targetStream)
-                self.streamingPlayer.resetTransientErrors()
-
-                await withCheckedContinuation { continuation in
-                    self.streamingPlayer.stop(
-                        reason: .streamSwitch,
-                        completion: { continuation.resume() },
-                        silent: true
-                    )
-                }
-
-                self.streamingPlayer.resetInitialPlaybackCountersForNewStream()
+                // Single call for the common engine prep that both main-app flag switches
+                // and widget reconciliation use. See DirectStreamingPlayer.switchToStream.
+                await self.streamingPlayer.switchToStream(targetStream)
 
                 self.selectedStreamIndex = targetIndex
                 self.backgroundImageController.update(for: targetStream)
@@ -427,6 +429,25 @@ final class RadioPlayerCoordinator {
     private var processedActionIds: Set<String> = []
 
     // MARK: - Core orchestration (moved verbatim from ViewController with only ownership adjustments)
+
+    // MARK: Stream choice / language switch paths (architectural note)
+    //
+    // All user-driven "change stream" flows converge on two documented responsibilities:
+    // - `DirectStreamingPlayer.switchToStream(_:)` — the single source for *engine* prep
+    //   (model, transient reset, stop teardown, counter reset). Await it when ordering matters.
+    // - This coordinator — owns timing, main-app-only tuning delight, selector/background
+    //   UI side effects, and the exact moment `SharedPlayerManager.resetToPrePlayForNewStream`
+    //   + `.play()` are called.
+    // - `SharedPlayerManager` — owns the visual/intent state, holdPrePlay guard,
+    //   `resetToPrePlayForNewStream`, resurrection rules, and cross-process widget signaling.
+    //
+    // Widget paths go through optimistic + pending + Darwin, then land here via
+    // `handleWidgetSwitchToLanguage` (deliberately omits tuning and some early UI).
+    //
+    // AGENT NOTE: If you are introducing a higher-level `initiateStreamSwitch` API
+    // (e.g. on SharedPlayerManager), the engine part must go through
+    // `DirectStreamingPlayer.switchToStream`. UI/tuning must stay here or be explicitly
+    // signalled. Do not duplicate the four engine steps. See the `///` on switchToStream.
 
     @MainActor
     func handleUserTogglePlayback() async {
@@ -523,6 +544,17 @@ final class RadioPlayerCoordinator {
         #endif
     }
 
+    /// Main-app flag-tap stream switch completion (after debounce and optional prior tuning wait).
+    ///
+    /// Owns the full main-app-specific sequence:
+    /// - engine prep via `DirectStreamingPlayer.switchToStream`
+    /// - tuning sound + needle animation timing (main-app delight only)
+    /// - hold-prePlay check to avoid duplicate `resetToPrePlayForNewStream`
+    /// - `SharedPlayerManager.play()` with correct intent
+    ///
+    /// - SeeAlso: `handleWidgetSwitchToLanguage` (the silent mirror), `handleLanguageSelection`,
+    ///   `DirectStreamingPlayer.switchToStream`, `SharedPlayerManager.resetToPrePlayForNewStream`,
+    ///   CODING_AGENT.md.
     private func completeStreamSwitch(stream: DirectStreamingPlayer.Stream, index: Int) {
         updateUserDefaultsLanguage(stream.languageCode)
 
@@ -546,10 +578,6 @@ final class RadioPlayerCoordinator {
             await self.streamingPlayer.setSelectedStreamModelOnly(to: stream)
             self.streamingPlayer.resetTransientErrors()
 
-            #if DEBUG
-            print("[RadioPlayerCoordinator] [completeStreamSwitch] Updated stream model to \(stream.languageCode) (works for both playing and userPaused)")
-            #endif
-
             let shouldResumeAfterSwitch = playbackIntent.isActivePlaybackIntent
 
             guard shouldResumeAfterSwitch else {
@@ -570,16 +598,10 @@ final class RadioPlayerCoordinator {
             print("[RadioPlayerCoordinator] ▶ [completeStreamSwitch] Allowed resume during stream switch (was playing)")
             #endif
 
-            await withCheckedContinuation { continuation in
-                streamingPlayer.stop(
-                    reason: .streamSwitch,
-                    completion: { continuation.resume() },
-                    silent: true
-                )
-            }
+            // Engine preparation (stop + model + counters) is now a single awaited call.
+            // The implementation in DirectStreamingPlayer guarantees stop has completed before returning.
+            await streamingPlayer.switchToStream(stream)
             guard !Task.isCancelled else { return }
-
-            streamingPlayer.resetInitialPlaybackCountersForNewStream()
 
             await playTuningSound(animateNeedleTo: index)
             guard !Task.isCancelled else { return }

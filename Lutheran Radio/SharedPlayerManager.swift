@@ -878,10 +878,19 @@ actor SharedPlayerManager {
         #endif
     }
     
-    /// Nonisolated entry point for stream switching.
+    /// Nonisolated entry point for stream switching (signaling + dispatch).
     ///
-    /// Widget path schedules the switch via App Group + Darwin notification and returns immediately.
-    /// Main app path forwards to `DirectStreamingPlayer`.
+    /// - Widget / extension paths: immediately schedule optimistic state + pending action
+    ///   via App Group + Darwin (the actual engine work happens later in the main app).
+    /// - Main-app path (Siri, shortcuts, some legacy): forwards to
+    ///   `DirectStreamingPlayer.switchToStream` (the engine prep SSOT).
+    ///
+    /// Full UI stream choice (flag taps) goes through `RadioPlayerCoordinator` so that
+    /// tuning delight, needle animation, and precise `resetToPrePlayForNewStream` + `play()`
+    /// timing stay correctly owned.
+    ///
+    /// - SeeAlso: `DirectStreamingPlayer.switchToStream`, `RadioPlayerCoordinator`,
+    ///   `handleWidgetSwitch`, CODING_AGENT.md.
     nonisolated func switchToStream(_ stream: DirectStreamingPlayer.Stream) async {
         if isRunningInWidget() {
             // Widget path must stay nonisolated and synchronous/fast
