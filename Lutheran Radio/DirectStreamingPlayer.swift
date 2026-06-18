@@ -1792,22 +1792,36 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// Callers must `await` this when they need teardown to be complete before the next step
     /// (tuning, resetToPrePlay, or `play()`).
     ///
-    /// Typical usage (in `RadioPlayerCoordinator`):
+    /// Typical main-app usage (from `RadioPlayerCoordinator.completeStreamSwitch` — the
+    /// canonical flag-tap orchestration):
     /// ```
-    /// await streamingPlayer.switchToStream(target)
-    /// if mainApp { await playTuningSound(...) }
-    /// await SharedPlayerManager.shared.resetToPrePlayForNewStream(...)
+    /// // (optimistic prePlay + hold may already be set by handleLanguageSelection)
+    /// await streamingPlayer.switchToStream(stream)
+    /// await playTuningSound(animateNeedleTo: index)
+    /// if !holdActive {
+    ///     await SharedPlayerManager.shared.resetToPrePlayForNewStream(...)
+    /// }
     /// await SharedPlayerManager.shared.play()
+    /// ```
+    ///
+    /// Widget / reconciliation path uses the engine method directly (no tuning):
+    /// ```
+    /// await streamingPlayer.switchToStream(targetStream)
+    /// // ... index/background/UI ...
+    /// if shouldResume { await resetToPrePlay...; await play() }
     /// ```
     ///
     /// - SeeAlso: `setSelectedStreamModelOnly(to:)`, `resetInitialPlaybackCountersForNewStream()`,
     ///   `SharedPlayerManager.resetToPrePlayForNewStream(preserveActiveSleepTimer:)`,
-    ///   `SharedPlayerManager.play()`, `RadioPlayerCoordinator.completeStreamSwitch`,
-    ///   `RadioPlayerCoordinator.handleWidgetSwitchToLanguage`, <doc:Architecture>,
-    ///   CODING_AGENT.md (Single Source of Truth Principles + "Cross-target shared source files").
+    ///   `SharedPlayerManager.play()`, `SharedPlayerManager.switchToStream`,
+    ///   `RadioPlayerCoordinator.completeStreamSwitch`,
+    ///   `RadioPlayerCoordinator.handleWidgetSwitchToLanguage`,
+    ///   `RadioPlayerCoordinator.handleLanguageSelection`,
+    ///   <doc:Architecture>, CODING_AGENT.md (Single Source of Truth Principles).
     ///
-    /// AGENT NOTE: Any future higher-level "initiateStreamSwitch" (in SPM or elsewhere)
-    /// should use this method for the engine portion rather than duplicating the four steps.
+    /// AGENT NOTE: This is the *only* place the four engine prep steps are allowed.
+    /// All call sites (coordinator, SPM forwarding, future intents) must go through here.
+    /// Never duplicate setModel + reset + stop + counterReset.
     @MainActor
     func switchToStream(_ stream: Stream) async {
         let previousLanguage = selectedStream.languageCode

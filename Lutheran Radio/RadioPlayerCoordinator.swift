@@ -432,22 +432,36 @@ final class RadioPlayerCoordinator {
 
     // MARK: Stream choice / language switch paths (architectural note)
     //
-    // All user-driven "change stream" flows converge on two documented responsibilities:
-    // - `DirectStreamingPlayer.switchToStream(_:)` — the single source for *engine* prep
-    //   (model, transient reset, stop teardown, counter reset). Await it when ordering matters.
-    // - This coordinator — owns timing, main-app-only tuning delight, selector/background
-    //   UI side effects, and the exact moment `SharedPlayerManager.resetToPrePlayForNewStream`
-    //   + `.play()` are called.
-    // - `SharedPlayerManager` — owns the visual/intent state, holdPrePlay guard,
-    //   `resetToPrePlayForNewStream`, resurrection rules, and cross-process widget signaling.
+    // All user-driven "change stream" flows converge on clearly separated responsibilities
+    // (see CODING_AGENT.md Single Source of Truth Principles):
     //
-    // Widget paths go through optimistic + pending + Darwin, then land here via
-    // `handleWidgetSwitchToLanguage` (deliberately omits tuning and some early UI).
+    // - `DirectStreamingPlayer.switchToStream(_:)` — the **single source of truth** for
+    //   *engine preparation* on any user-initiated choice (flag, widget, Siri, etc.).
+    //   Performs: set model, reset transients, awaited silent streamSwitch stop (lang change),
+    //   reset per-stream attempt counters. Always await when ordering with stop/play matters.
     //
-    // AGENT NOTE: If you are introducing a higher-level `initiateStreamSwitch` API
-    // (e.g. on SharedPlayerManager), the engine part must go through
-    // `DirectStreamingPlayer.switchToStream`. UI/tuning must stay here or be explicitly
-    // signalled. Do not duplicate the four engine steps. See the `///` on switchToStream.
+    // - `RadioPlayerCoordinator` (this type):
+    //   - `completeStreamSwitch` — canonical **main-app** full orchestration for flag taps.
+    //     Owns tuning sound, prePlay hold coordination, intent guards, play sequencing,
+    //     and UI side effects. The primary "user tapped a language" path.
+    //   - `handleWidgetSwitchToLanguage` — silent (no tuning) mirror for widget reconciliation.
+    //   - `handleSwitchToLanguage` — external (Siri/shortcut) path (kept on legacy attach
+    //     style for minimality; still routes through SPM for intent).
+    //   - `handleLanguageSelection` — entry from LanguageSelectorView taps (debounce +
+    //     optimistic prePlay when appropriate, then delegates to completeStreamSwitch).
+    //
+    // - `SharedPlayerManager` — owns `currentVisualState`, `currentPlaybackIntent`,
+    //   `resetToPrePlayForNewStream`, resurrection rules, persisted widget snapshot,
+    //   cross-process Darwin signaling, and the actual `play()` / `stop()` execution.
+    //
+    // Widget paths originate from optimistic state + pending action + Darwin notification,
+    // then land in `handleWidgetSwitchToLanguage`.
+    //
+    // AGENT NOTE: Never re-introduce manual "setSelectedStreamModelOnly + resetTransient
+    // + stop + resetCounters" sequences. Route engine work exclusively through
+    // `DirectStreamingPlayer.switchToStream`. Main-app UX sequence lives in
+    // `completeStreamSwitch`. See the structured `///` on both methods and on
+    // SPM.switchToStream. Update this block and the method docs on any change.
 
     @MainActor
     func handleUserTogglePlayback() async {
@@ -544,17 +558,52 @@ final class RadioPlayerCoordinator {
         #endif
     }
 
-    /// Main-app flag-tap stream switch completion (after debounce and optional prior tuning wait).
+    /// Canonical main-app orchestration for a user-initiated stream/language change
+    /// from the flag selector (or equivalent main-app UI).
     ///
-    /// Owns the full main-app-specific sequence:
-    /// - engine prep via `DirectStreamingPlayer.switchToStream`
-    /// - tuning sound + needle animation timing (main-app delight only)
-    /// - hold-prePlay check to avoid duplicate `resetToPrePlayForNewStream`
-    /// - `SharedPlayerManager.play()` with correct intent
+    /// This is the single, well-documented owner of the complete flag-tap experience
+    /// in the main app:
     ///
-    /// - SeeAlso: `handleWidgetSwitchToLanguage` (the silent mirror), `handleLanguageSelection`,
-    ///   `DirectStreamingPlayer.switchToStream`, `SharedPlayerManager.resetToPrePlayForNewStream`,
-    ///   CODING_AGENT.md.
+    /// 1. Snapshot / UserDefaults / widget refresh side effects for the chosen language.
+    /// 2. Optimistic `.prePlay` hold (usually established by caller in
+    ///    `handleLanguageSelection` when intent permits) for instant yellow needle/ring.
+    /// 3. Intent guard: never auto-resume when the user has an explicit `.userPaused`
+    ///    (or security/cleared) intent.
+    /// 4. Engine preparation via the **single source of truth**
+    ///    `DirectStreamingPlayer.switchToStream(_:)` — model, transient-error reset,
+    ///    awaited silent `.streamSwitch` stop (when language actually changes), and
+    ///    per-stream playback counter reset.
+    /// 5. Main-app-only tuning sound + animated needle movement (delight / UX only).
+    /// 6. Conditional `resetToPrePlayForNewStream` (skipped when the tap already
+    ///    established the hold via `isStreamSwitchPrePlayHoldActive`).
+    /// 7. `SharedPlayerManager.play()` (or the matching paused UI) and final
+    ///    selector / background / Now Playing sync.
+    ///
+    /// - Parameters:
+    ///   - stream: The target `Stream` chosen by the user.
+    ///   - index: The index in `DirectStreamingPlayer.availableStreams` (used for
+    ///            selector sync and background).
+    ///
+    /// - Important: Widget / Live Activity reconciliation deliberately bypasses
+    ///   this method and calls `handleWidgetSwitchToLanguage` (no tuning sound,
+    ///   different optimistic timing via Darwin + pending actions).
+    ///   External Siri/shortcut paths use `handleSwitchToLanguage` (kept on the
+    ///   older attach style for minimality).
+    ///
+    /// - SeeAlso: `handleLanguageSelection`, `handleWidgetSwitchToLanguage`,
+    ///   `DirectStreamingPlayer.switchToStream`, `SharedPlayerManager.play`,
+    ///   `SharedPlayerManager.resetToPrePlayForNewStream`,
+    ///   `SharedPlayerManager.currentPlaybackIntent`,
+    ///   CODING_AGENT.md (Single Source of Truth Principles + "Cross-target shared source files"),
+    ///   <doc:Architecture>.
+    ///
+    /// AGENT NOTE: completeStreamSwitch is the authoritative main-app sequence for
+    /// "user tapped a language flag". Future changes to switch UX, timing, side
+    /// effects (haptics already elsewhere, Live Activity refresh, analytics, etc.)
+    /// should be made here. The four engine steps must never be duplicated —
+    /// always go through `DirectStreamingPlayer.switchToStream`. This method and
+    /// the engine SSOT together replace the old scattered setModel/reset/stop/reset
+    /// blocks.
     private func completeStreamSwitch(stream: DirectStreamingPlayer.Stream, index: Int) {
         updateUserDefaultsLanguage(stream.languageCode)
 
@@ -575,10 +624,15 @@ final class RadioPlayerCoordinator {
             print("[RadioPlayerCoordinator] completeStreamSwitch started – currentVisualState = \(visualState), playbackIntent = \(playbackIntent), stream = \(stream.languageCode)")
             #endif
 
-            await self.streamingPlayer.setSelectedStreamModelOnly(to: stream)
-            self.streamingPlayer.resetTransientErrors()
-
             let shouldResumeAfterSwitch = playbackIntent.isActivePlaybackIntent
+
+            // Engine preparation is performed via the SSOT for *every* user-initiated
+            // stream choice (both the resume/play path and the explicit-paused path).
+            // This replaces all prior manual setSelectedStreamModelOnly + resetTransientErrors
+            // sites inside this method. switchToStream guarantees ordering (model first,
+            // awaited stop when language changes, fresh counters).
+            await streamingPlayer.switchToStream(stream)
+            guard !Task.isCancelled else { return }
 
             guard shouldResumeAfterSwitch else {
                 #if DEBUG
@@ -597,11 +651,6 @@ final class RadioPlayerCoordinator {
             #if DEBUG
             print("[RadioPlayerCoordinator] ▶ [completeStreamSwitch] Allowed resume during stream switch (was playing)")
             #endif
-
-            // Engine preparation (stop + model + counters) is now a single awaited call.
-            // The implementation in DirectStreamingPlayer guarantees stop has completed before returning.
-            await streamingPlayer.switchToStream(stream)
-            guard !Task.isCancelled else { return }
 
             await playTuningSound(animateNeedleTo: index)
             guard !Task.isCancelled else { return }
