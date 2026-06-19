@@ -47,8 +47,28 @@ Agents must apply these standards to all new code and to any symbol or file they
   5. Implementation (`///` + inline `// SAFETY:` comments).
 - **Test documentation**: Tests should state the specific invariant, permanent/transient error case, or behavioral property they protect (see existing Core test patterns).
 
+### Avoiding Over-Documentation
+Heavy structured documentation is a deliberate investment for security invariants, single sources of truth, and surfaces that future agents will need with limited surrounding context. It should be applied with clear scope rather than uniformly to every symbol.
+
+- Apply the full structured `///` (one-sentence summary + `- Parameters:`, `- Returns:`, `- Throws:`, `- Precondition:`, `- Postcondition:`, `- SeeAlso:`, and AGENT NOTE where relevant) to:
+  - Public or cross-target API surfaces
+  - Documented single sources of truth
+  - Core/ security symbols
+  - New canonical entry points or orchestrators
+
+- For internal/private helpers, wiring methods, and shims: a concise purpose statement together with the key constraint or invariant is sufficient. The complete structured form is not required.
+
+- When performing mechanical refactors, call-site consolidation, or renames:
+  - Update the authoritative docs (SSOT tables, canonical method contracts, and the relevant sections in this file) only if behavior, ownership, or invariants changed.
+  - Do not expand documentation volume on every shim or private method solely because it was part of the edited set.
+  - "Strictly better state for the next agent" means the critical invariants and canonical responsibilities are clearer and easier to locate; it does not require adding explanatory text to unrelated symbols.
+
+- Prefer a single authoritative location for detailed rules (for example the resurrection table and intent tables in SharedPlayerManager.swift, the SSOT lists here, and the Core DocC articles) and use targeted cross-references rather than repeating the same explanations across many files and methods.
+
+- File-level headers for non-Core shared sources should clearly state purpose, ownership, and key invariants, but keep them focused.
+
 ### Mandatory on Every Edit or Rewrite
-- Changing the signature, observable behavior, implementation, or ownership of any symbol requires adding or upgrading its `///` documentation to meet the structure above (at minimum: summary + returns/throws where relevant + `- SeeAlso:` + one "Why"/invariant element).
+- Changing the signature, observable behavior, implementation, or ownership of an authoritative symbol (public API, single source of truth, Core security surface, or newly designated canonical) requires adding or upgrading its `///` documentation to the structured form. For other symbols, add only what is needed to make the key responsibility and constraints clear.
 - Any edit that introduces or touches an unsafe construct, `@unchecked Sendable`, etc., must add or improve the paired `// SAFETY:` justification in the same change.
 - File-level documentation (header comments or module `///`) for non-trivial files should state purpose, the key invariants the file upholds, and links to the DocC articles and this file.
 - After the change, the edited source file(s) and their associated documentation must be more self-contained, better cross-linked, and richer in explicit reasoning than before.
