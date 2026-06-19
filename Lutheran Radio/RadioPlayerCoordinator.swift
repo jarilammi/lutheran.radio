@@ -201,10 +201,23 @@ final class RadioPlayerCoordinator {
     }
 
     // MARK: - Public shims (forwarded from VC's public API surface for SceneDelegate / widgets)
+    /// Thin public shim for explicit "play" requests from SceneDelegate (lutheranradio://play),
+    /// legacy widget URL schemes, and handleSwitchToLanguage.
+    ///
+    /// Delegates to the designated authoritative entry `SharedPlayerManager.userRequestedPlay()`.
+    /// Previously duplicated the set+play sequence; now a one-line forward (semantics identical).
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/userRequestedPlay()``,
+    ///   ViewController.handlePlayAction,
+    ///   RadioPlayerCoordinator.handleSwitchToLanguage,
+    ///   CODING_AGENT.md (Single Source of Truth Principles).
+    ///
+    /// AGENT NOTE: Keep this shim thin. If ordering of configureNowPlaying vs. other
+    /// MainActor work ever matters for a call site, evaluate here but prefer routing
+    /// all explicit starts to userRequestedPlay.
     func handlePlayAction() {
         Task { @MainActor in
-            await SharedPlayerManager.shared.setUserIntentToPlay()
-            await SharedPlayerManager.shared.play()
+            await SharedPlayerManager.shared.userRequestedPlay()
         }
     }
 
@@ -373,7 +386,9 @@ final class RadioPlayerCoordinator {
     /// 3. Intent guard using `SharedPlayerManager.currentPlaybackIntent`:
     ///    do not auto-resume when the user had explicitly paused.
     /// 4. Conditional `resetToPrePlayForNewStream` + `.prePlay` UI when resuming.
-    /// 5. `SharedPlayerManager.play()` (or the matching paused UI).
+    /// 5. `SharedPlayerManager.play()` — here the *internal* direct play() is allowed
+    ///    because we have already consulted `isActivePlaybackIntent` (armed state).
+    ///    See userRequestedPlay Precondition for the four permitted direct-play cases.
     /// 6. Clearing of the originating `actionId` (pending action) on all exit paths.
     /// 7. VoiceOver announcement using the revived `"switched_to_language %@"` key
     ///    (posted on both the resume and the explicit-paused exit paths).
@@ -396,6 +411,7 @@ final class RadioPlayerCoordinator {
     ///
     /// - SeeAlso: `completeStreamSwitch`, `handleWidgetSwitchToLanguage`,
     ///   `DirectStreamingPlayer.switchToStream`, `SharedPlayerManager.play`,
+    ///   `SharedPlayerManager.userRequestedPlay` (for contrast with direct armed play()),
     ///   `SharedPlayerManager.resetToPrePlayForNewStream`,
     ///   `SharedPlayerManager.currentPlaybackIntent`,
     ///   `announceSwitchedToLanguage(_:)`,
@@ -454,21 +470,29 @@ final class RadioPlayerCoordinator {
     }
 
     // Widget play/pause action helpers (no tuning sounds)
+    /// Vestigial shim retained for any remaining direct callers.
+    ///
+    /// Now delegates to `userRequestedPlay()` (the designated explicit-play path).
+    /// Previously performed only `clearUserPausedLockIfNeeded() + play()` (weaker;
+    /// bypassed full `setUserIntentToPlay` double-save + NowPlaying configure).
+    /// Primary widget "play" path is already checkForPendingWidgetActions → userRequestedPlay.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/userRequestedPlay()``,
+    ///   ViewController.checkForPendingWidgetActions,
+    ///   CODING_AGENT.md.
+    ///
+    /// AGENT NOTE: Prefer the pending + checkForPending + userRequestedPlay route for
+    /// all widget-originated play. If this shim is ever removed, audit call sites
+    /// (currently none outside comments) and update the resurrection table comment.
     func handleWidgetPlayAction() {
         #if DEBUG
-        print("[RadioPlayerCoordinator] Widget Play action - forcing playback (main app style)")
+        print("[RadioPlayerCoordinator] Widget Play action → routing via designated userRequestedPlay()")
         #endif
 
         Task { @MainActor in
-            await SharedPlayerManager.shared.clearUserPausedLockIfNeeded()
-
+            await SharedPlayerManager.shared.userRequestedPlay()
             #if DEBUG
-            print("[RadioPlayerCoordinator] ▶ Widget Play button → calling SharedPlayerManager.play()")
-            #endif
-
-            await SharedPlayerManager.shared.play()
-            #if DEBUG
-            print("[RadioPlayerCoordinator] Widget Play button: SharedPlayerManager.play() succeeded")
+            print("[RadioPlayerCoordinator] Widget Play (via userRequestedPlay) completed")
             #endif
         }
     }
@@ -529,6 +553,13 @@ final class RadioPlayerCoordinator {
     //   - `handleLanguageSelection` — entry from LanguageSelectorView taps (debounce +
     //     optimistic prePlay when appropriate, then delegates to completeStreamSwitch).
     //
+    // - Playback initiation (separate SSOT from stream choice):
+    //   - Explicit user "start/resume" requests use `SharedPlayerManager.userRequestedPlay()`
+    //     (the designated single entry). See handlePlayAction,
+    //     handleUserTogglePlayback (play branch), and all external surfaces.
+    //   - Internal orchestration after intent armed, cold launch, and recovery may call
+    //     `play()` directly (documented on the method).
+    //
     // - `SharedPlayerManager` — owns `currentVisualState`, `currentPlaybackIntent`,
     //   `resetToPrePlayForNewStream`, resurrection rules, persisted widget snapshot,
     //   cross-process Darwin signaling, and the actual `play()` / `stop()` execution.
@@ -542,9 +573,11 @@ final class RadioPlayerCoordinator {
     // + stop + resetCounters" sequences anywhere. Route engine work exclusively through
     // `DirectStreamingPlayer.switchToStream`. Main-app flag UX lives in `completeStreamSwitch`.
     // Widget reconciliation lives in `switchToStreamFromWidget`. Siri/external use SPM.switchToStream
-    // + reset/play (non-UI paths). See the structured `///` on the two coordinator canonicals,
+    // + reset + userRequestedPlay (non-UI paths).
+    // All explicit play initiation must use userRequestedPlay (or end at the armed `play()` sites).
+    // See the structured `///` on userRequestedPlay + play, the two coordinator canonicals,
     // on DirectStreamingPlayer.switchToStream, and on SPM.switchToStream.
-    // Update this block + all four `///` docs together on any architecture change.
+    // Update this block + the four `///` docs together on any architecture change.
 
     @MainActor
     func handleUserTogglePlayback() async {
@@ -555,6 +588,8 @@ final class RadioPlayerCoordinator {
             await manager.stop()
             // isPlaying flag update is performed by the caller (VC) where it was previously mutated
         } else {
+            // Play branch of toggle: arm intent then play. (For pure "play" requests,
+            // callers should prefer userRequestedPlay(); toggle is the SSOT for button/remote toggle.)
             await manager.setUserIntentToPlay()
             // isPlaying = true is performed by caller for legacy paths
 
@@ -661,6 +696,10 @@ final class RadioPlayerCoordinator {
     ///    established the hold via `isStreamSwitchPrePlayHoldActive`).
     /// 7. `SharedPlayerManager.play()` (or the matching paused UI) and final
     ///    selector / background / Now Playing sync.
+    ///
+    /// Note: inside the play branch we call set + play directly because this is the
+    /// conditional toggle decision point. Pure explicit-play requests use the
+    /// designated `userRequestedPlay()`. See designation.
     /// 8. VoiceOver announcement via `"switched_to_language %@"` using the
     ///    localized `stream.language` name (both the playing and the paused-exit paths).
     ///
@@ -677,6 +716,7 @@ final class RadioPlayerCoordinator {
     ///
     /// - SeeAlso: `handleLanguageSelection`, `handleWidgetSwitchToLanguage`,
     ///   `DirectStreamingPlayer.switchToStream`, `SharedPlayerManager.play`,
+    ///   `SharedPlayerManager.userRequestedPlay` (contrast: here play() is post-armed internal),
     ///   `SharedPlayerManager.resetToPrePlayForNewStream`,
     ///   `SharedPlayerManager.currentPlaybackIntent`,
     ///   CODING_AGENT.md (Single Source of Truth Principles + "Cross-target shared source files"),

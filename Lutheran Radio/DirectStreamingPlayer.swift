@@ -1813,7 +1813,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     ///
     /// - SeeAlso: `setSelectedStreamModelOnly(to:)`, `resetInitialPlaybackCountersForNewStream()`,
     ///   `SharedPlayerManager.resetToPrePlayForNewStream(preserveActiveSleepTimer:)`,
-    ///   `SharedPlayerManager.play()`, `SharedPlayerManager.switchToStream`,
+    ///   `SharedPlayerManager.play()`, `SharedPlayerManager.userRequestedPlay()`,
+    ///   `SharedPlayerManager.switchToStream`,
     ///   `RadioPlayerCoordinator.completeStreamSwitch`,
     ///   `RadioPlayerCoordinator.switchToStreamFromWidget(to:index:actionId:)`,
     ///   `RadioPlayerCoordinator.handleWidgetSwitchToLanguage`,
@@ -1825,6 +1826,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// cold-launch model seeding) must go through here. Never duplicate setModel + reset + stop + counterReset.
     /// The two RadioPlayerCoordinator canonicals (completeStreamSwitch for main-app flag taps,
     /// switchToStreamFromWidget for widget reconciliation) are the preferred callers for user-driven changes.
+    /// Note: after switchToStream on an active-intent path, the subsequent `play()` (direct) is the
+    /// "internal armed" case; explicit starts use `userRequestedPlay()`. See designation.
     @MainActor
     func switchToStream(_ stream: Stream) async {
         let previousLanguage = selectedStream.languageCode

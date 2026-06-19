@@ -53,8 +53,9 @@ import Core
 /// - Haptic feedback, background image processing with caching, network monitoring, and interruption handling
 ///
 /// All playback user intents (in-app buttons, remote commands, Control Center, widgets, URL schemes)
-/// are routed through `handleUserTogglePlayback()` (the internal Single Source of Truth) which then
-/// updates `PlayerVisualState` and calls `updateUI(for:)`.
+/// ultimately route through `userRequestedPlay()` (designated explicit-play entry) or
+/// `handleUserTogglePlayback()` (the toggle SSOT inside the coordinator). See the
+/// `userRequestedPlay` Precondition and AGENT NOTE for the explicit vs. internal distinction.
 ///
 /// See the detailed architecture article in the file header above for the complete interaction model,
 /// widget action debouncing strategy, and low-power mode behavior.
@@ -394,6 +395,9 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
             
             // ONE central call — play() waits on TuningSoundCoordinator until the special clip finishes.
             // viewDidAppear will NOT trigger another play() for .prePlay.
+            // Cold-launch initial playback: permitted direct call to play() after coordinator
+            // guard (see RadioPlayerCoordinator.performColdLaunchPlaybackIfAllowed and
+            // userRequestedPlay Precondition in SPM). Not an "explicit tap" path.
             await SharedPlayerManager.shared.play()
             self.restoreVolume()
         }
@@ -768,6 +772,10 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
                     print("[ViewController] ▶ [Interruption Guard] Allowed resume after interruption")
                     #endif
                     
+                    // Recovery path after AV interruption .shouldResume (guard already verified
+                    // canProceed / !sticky via shouldAutoPlayOrResume). Direct SPM.play() is
+                    // permitted here (recovery + intent already known active per the
+                    // userRequestedPlay Precondition).
                     await SharedPlayerManager.shared.play()
                 }
             }
@@ -797,7 +805,12 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         case .newDeviceAvailable:
             try? AVAudioSession.sharedInstance().setActive(true)
             Task { @MainActor in
-                await SharedPlayerManager.shared.play()
+                // Route-change recovery: only proceed if intent permits (defensive; SPM.play
+                // would also block). This is a technical recovery path, not explicit user play.
+                // (See userRequestedPlay Precondition for permitted direct play() cases.)
+                if await SharedPlayerManager.shared.canProceedWithPlayback() {
+                    await SharedPlayerManager.shared.play()
+                }
             }
         case .categoryChange:
             try? AVAudioSession.sharedInstance().setActive(true)
@@ -878,10 +891,18 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
             
             if isValid {
                 #if DEBUG
-                print("[ViewController] Validation succeeded after reconnection - attempting playback")
+                print("[ViewController] Validation succeeded after reconnection - attempting playback (via SPM.play for intent consistency)")
                 #endif
                 
-                _ = await self.streamingPlayer.play()
+                // Recovery after network: call through SPM.play() (permitted recovery path)
+                // rather than raw engine play(). SPM.play() will still early-return on sticky
+                // .userPaused etc. (engine also guards via canProceed, but this is clearer).
+                // Recovery sites may use direct play() only when intent already known active
+                // (see userRequestedPlay Precondition); otherwise route via SPM surface so
+                // resurrection table / intent remains authoritative.
+                if await SharedPlayerManager.shared.canProceedWithPlayback() {
+                    await SharedPlayerManager.shared.play()
+                }
                 
             } else {
                 #if DEBUG
@@ -1224,12 +1245,11 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
             // Widget play: clear any user pause lock then play. Do NOT reset to prePlay here
             // (resetToPrePlayForNewStream is only for language stream switches).
             // Hoisted weak-self form (proven pattern elsewhere in this file) — avoids implicit self capture / compiler error.
-            // Route widget play through the documented user-requested entry point.
-            // userRequestedPlay() properly clears .userPaused, resets cold-launch guards,
-            // and calls play() — the correct lightweight path for external triggers
-            // (widgets, Control Center, lockscreen, CarPlay). Avoids the old heavy
-            // handleWidgetPlayAction + raw play() which pulled in tuning-sound waits
-            // and full stream re-setup even on simple resume.
+            // Route widget play through the documented designated entry point.
+            // `userRequestedPlay()` properly clears .userPaused, resets guards,
+            // configures NowPlaying, and calls play(). This is the required path for
+            // external explicit triggers (widgets via pending+Darwin, Control Center,
+            // lockscreen, CarPlay, LA, Siri). See the userRequestedPlay AGENT NOTE + Precondition.
             Task { @MainActor [weak self] in
                 // If a widget switch was recently scheduled (to select a lang while paused) and a play
                 // tap followed immediately, cancel the deferred switch workItem. Its selection effect
@@ -1304,12 +1324,17 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
 // MARK: - Public Methods for URL Scheme Handling
 extension ViewController {
 
-    /// Public method to start playback (callable from SceneDelegate)
+    /// Public method to start playback (callable from SceneDelegate for lutheranradio://play,
+    /// and used by some legacy widget URL and switch-to-lang flows).
     ///
-    /// Routes through SharedPlayerManager intent (userRequestedPlay path)
-    /// instead of direct-to-DirectStreamingPlayer bypass. Consistent with SSOT.
+    /// Delegates to coordinator shim which now forwards to the designated
+    /// `SharedPlayerManager.userRequestedPlay()` (authoritative explicit-play entry).
+    ///
+    /// - SeeAlso: RadioPlayerCoordinator.handlePlayAction,
+    ///   ``SharedPlayerManager/userRequestedPlay()``,
+    ///   CODING_AGENT.md.
     public func handlePlayAction() {
-        // Thin delegate (coordinator owns the intent + play sequencing).
+        // Thin delegate (coordinator shim owns the forward to userRequestedPlay).
         radioPlayerCoordinator?.handlePlayAction()
     }
 
@@ -1486,12 +1511,14 @@ extension ViewController: StreamingPlayerDelegate {
             switch action {
             case "play":
                 if visualState.shouldAutoPlayOrResume || !state.isPlaying {
-                    // Explicit user intent from widget → clear paused state
-                    await manager.setUserIntentToPlay()
-                    
+                    // Legacy widget-URL "play" path. Uses set + toggle (which does set+play in else).
+                    // Primary widget play path is now the pending "play" case above which goes
+                    // straight to userRequestedPlay (the designation). This path still achieves
+                    // intent arming.
                     #if DEBUG
-                    print("[ViewController] ▶ Widget 'play' action → calling handleUserTogglePlayback (SSOT)")
+                    print("[ViewController] ▶ Widget 'play' (legacy URL) → handleUserTogglePlayback")
                     #endif
+                    await manager.setUserIntentToPlay()
                     await handleUserTogglePlayback()
                 } else {
                     #if DEBUG

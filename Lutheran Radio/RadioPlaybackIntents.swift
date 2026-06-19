@@ -78,6 +78,15 @@ struct RadioLanguageQuery: EntityQuery {
 
 // MARK: - Play Intent (generic or parameterized by language)
 
+/// Siri / Shortcuts / App Intent entry for explicit play or "play in language".
+///
+/// Always terminates via `SharedPlayerManager.userRequestedPlay()` (the designated
+/// authoritative explicit-play entry). Parameterized language cases do resetToPrePlay +
+/// switchToStream before the play request.
+///
+/// - SeeAlso: ``SharedPlayerManager/userRequestedPlay()``, ``SharedPlayerManager/setUserIntentToPlay()``,
+///   RadioPlayerCoordinator.handleSwitchToLanguage,
+///   CODING_AGENT.md (Single Source of Truth Principles), <doc:Architecture>.
 struct PlayRadioIntent: AppIntent {
     nonisolated static var title: LocalizedStringResource { "Play Lutheran Radio" }
     nonisolated static var description: IntentDescription {
@@ -108,23 +117,23 @@ struct PlayRadioIntent: AppIntent {
                 #if DEBUG
                 print("[RadioPlaybackIntents] PlayRadioIntent: requested language not found, falling back to generic play")
                 #endif
-                await manager.setUserIntentToPlay()
-                await manager.play()
+                // Route through the authoritative explicit entry (designation).
+                await manager.userRequestedPlay()
                 return .result()
             }
 
             // Follow the documented switch + play path from the resurrection table and
-            // RadioPlayerCoordinator / widget switch paths: reset then switch, then explicit
-            // setUserIntentToPlay + play() to clear .userPaused / .cleared and drive the
-            // guarded execution (security, cold-launch guards, metadata, Now Playing, etc.).
+            // RadioPlayerCoordinator / widget switch paths. Then use userRequestedPlay()
+            // (the single designated entry) to guarantee setUserIntentToPlay + play for
+            // clearing sticky states and driving the guarded engine.
             await manager.resetToPrePlayForNewStream()
             await manager.switchToStream(targetStream)
         }
 
         // Generic play / resume (or continuation after a parameterized switch above).
-        // setUserIntentToPlay clears sticky userPaused/cleared and arms .shouldBePlaying.
-        await manager.setUserIntentToPlay()
-        await manager.play()
+        // `userRequestedPlay()` is the designated explicit-play entry point.
+        // It performs configure (main-app) + setUserIntentToPlay() + play().
+        await manager.userRequestedPlay()
 
         #if DEBUG
         print("[RadioPlaybackIntents] PlayRadioIntent completed")
@@ -164,6 +173,12 @@ struct PauseRadioIntent: AppIntent {
 
 // MARK: - Switch Language Intent (explicit language change + play)
 
+/// Siri / Shortcuts intent for language switch + play.
+///
+/// Uses reset + switchToStream followed by the designated `userRequestedPlay()`
+/// (ensures intent arming + execution through `play()`).
+///
+/// - SeeAlso: ``SharedPlayerManager/userRequestedPlay()``.
 struct SwitchToLanguageIntent: AppIntent {
     nonisolated static var title: LocalizedStringResource { "Switch to %@" }
     nonisolated static var description: IntentDescription {
@@ -195,14 +210,13 @@ struct SwitchToLanguageIntent: AppIntent {
 
         // Mirror the canonical switch flow used for in-app flag taps (completeStreamSwitch)
         // and widget reconciliation (switchToStreamFromWidget). Uses resetToPrePlayForNewStream
-        // + SPM.switchToStream (which for main-app forwards to engine) + setUserIntent + play().
-        // This ensures the cold-launch-like prePlay visual, intent clearing, and
-        // subsequent play() path are taken (see SharedPlayerManager resurrection table).
+        // + SPM.switchToStream (which for main-app forwards to engine) + then the designated
+        // userRequestedPlay() entry (set + play). This ensures the prePlay visual, sticky
+        // clear, and guarded execution (see resurrection table).
         // External/Siri paths intentionally bypass main-app tuning/needle UX.
         await manager.resetToPrePlayForNewStream()
         await manager.switchToStream(targetStream)
-        await manager.setUserIntentToPlay()
-        await manager.play()
+        await manager.userRequestedPlay()
 
         #if DEBUG
         print("[RadioPlaybackIntents] SwitchToLanguageIntent completed for \(language.id)")

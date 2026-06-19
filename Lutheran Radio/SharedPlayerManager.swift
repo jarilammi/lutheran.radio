@@ -132,6 +132,10 @@ import os
 /// preserving (and making explicit) sticky `.userPaused` / `.securityLocked` resurrection
 /// protection. Visual state remains the source of truth for UI/widget display.
 ///
+/// AGENT NOTE: Every explicit user play request surface must route through
+/// `userRequestedPlay()`. Update this table + the `userRequestedPlay`/`play` docs +
+/// the architecture block in RadioPlayerCoordinator together on any change.
+///
 /// | From State      | Trigger / Event                                   | Guard / Condition                                              | To State        | Resurrection Behavior / Notes |
 /// |-----------------|---------------------------------------------------|-----------------------------------------------------------------|-----------------|-------------------------------|
 /// | .prePlay        | Cold launch first play                            | Security valid + inside 25s window (or first time)              | .playing        | Sets `initialPlaybackHasRun = true` |
@@ -140,7 +144,7 @@ import os
 /// | .playing        | User-initiated stream/language switch             | `resetToPrePlayForNewStream()` then `play()`                    | .prePlay → .playing | Special bypass of the ".playing guard" in play() |
 /// | .playing        | AV interruption, stall, or thermal event          | `attemptResurrectionIfAllowed()` or player recovery nudges      | .playing        | Only proceeds if `shouldAutoPlayOrResume` |
 /// | any             | Security validation failure (DNS/403/cert)        | Inside `play()` guard or StreamingSessionDelegate 403 handler   | .securityLocked | Permanent until explicit successful play |
-/// | .userPaused     | User explicitly taps play (any surface)           | `userRequestedPlay()` or widget play path                       | .prePlay        | Resume via `.shouldBePlaying` in `play()` |
+/// | .userPaused     | User explicitly taps play (any surface)           | `userRequestedPlay()` (all explicit surfaces: button, widget-pending+check, LA, Siri, remote, URL) | .prePlay        | Resume via `.shouldBePlaying` in `play()` (widget signals reach here via Darwin → checkForPendingWidgetActions → userRequestedPlay) |
 /// | .thermalPaused  | Device cools sufficiently                         | DirectStreamingPlayer thermal recovery logic                    | .playing        | Only via `shouldAutoResumeOnThermalRecovery` |
 /// | any             | App foreground, interruption.ended(.shouldResume) | `restoreVisualStateRespectingUserIntent()`                      | (unchanged or forced .userPaused) | Applies inline resurrection suppression (if mustSuppressResurrection → .userPaused) |
 ///
@@ -477,11 +481,35 @@ actor SharedPlayerManager {
         self.currentVisualState = state
     }
     
-    /// Public async entry point for playing.
+    /// Public async entry point for playing / resuming (the execution engine).
     ///
-    /// Performs security validation, clears any sticky `.userPaused` lock for explicit user actions,
-    /// respects the cold-launch resurrection window, and drives the real player via `DirectStreamingPlayer`.
-    /// Widget callers take the optimistic instant-feedback path.
+    /// This is the central implementation of playback start. It is **not** the public
+    /// entry for new explicit user requests — those must go through `userRequestedPlay()`.
+    ///
+    /// Responsibilities (order matters for resurrection / one-shot / intent correctness):
+    /// - ensureVisualStateLoaded + (main) configureNowPlaying + cancelSleep
+    /// - `clearUserPausedLockIfNeeded()` (defensive top-level clear)
+    /// - Classify context (cold / streamSwitch / resume) + resurrectionProtectionRelaxed
+    /// - Early returns for stickyPauseOrLock, already-playing (outside relaxed), duplicate prePlay
+    /// - Security validation (DNS TXT + cert) → on fail: securityLocked + return
+    /// - setPlaying() (optimistic visual)
+    /// - Widget branch (optimistic) or main: soft-pause resume, alignment, setStreamAndPlay
+    ///
+    /// Direct calls are permitted only for the cases documented on `userRequestedPlay()`.
+    ///
+    /// - SeeAlso: ``userRequestedPlay()``, ``setUserIntentToPlay()``,
+    ///   ``clearUserPausedLockIfNeeded()``, ``canProceedWithPlayback()``,
+    ///   ``attemptResurrectionIfAllowed()``,
+    ///   RadioPlayerCoordinator (canonical switch methods + shims),
+    ///   CODING_AGENT.md, <doc:Architecture>, <doc:Security-Invariants>.
+    ///
+    /// AGENT NOTE (SSOT): After any edit to guards, classification, or early returns here,
+    /// re-verify:
+    ///   1. widget resume after .userPaused reaches the engine when signaled
+    ///   2. cold launch still allowed exactly once via the one-shot + relaxed window
+    ///   3. explicit .userPaused remains sticky even inside 25s window
+    /// Cross-update the resurrection table below, userRequestedPlay doc, and
+    /// coordinator architecture comment.
     func play() async {
         ensureVisualStateLoaded()
         let preserveSleepTimerForStreamSwitch =
@@ -500,6 +528,12 @@ actor SharedPlayerManager {
         // Note: Always clear .userPaused / .cleared / elapsed-sleep-timer locks at the absolute top of play()
         // This covers widget play, Control Center, lock screen, and Siri — everything.
         await clearUserPausedLockIfNeeded()
+
+        // AGENT NOTE: Explicit user play requests must have already run setUserIntentToPlay()
+        // (via userRequestedPlay or equivalent arming before internal orchestration play()).
+        // See the Precondition on userRequestedPlay(). If you are adding a call to play()
+        // here or in a caller, confirm it is one of the four permitted cases or route via
+        // the designated entry.
         
         #if DEBUG
         print("[SharedPlayerManager] SharedPlayerManager.play() ENTERED – currentPlaybackIntent = \(currentPlaybackIntent), currentVisualState = \(currentVisualState)")
@@ -775,8 +809,40 @@ actor SharedPlayerManager {
         }
     }
     
-    /// Called whenever the *user* explicitly taps Play (in-app button, lockscreen, Control Center, widgets, CarPlay…).
-    /// This **exactly** mirrors the PLAY branch in `togglePlayback()` so there is zero behavioral difference.
+    /// Called whenever the *user* explicitly requests playback start or resume
+    /// (in-app button, lock screen, Control Center, home widgets via pending, Live Activity,
+    /// Siri/Shortcuts, CarPlay, URL schemes, security retry, etc.).
+    ///
+    /// This is the **single authoritative explicit-play entry point**.
+    ///
+    /// Contract (in order):
+    /// 1. (Main-app only) `configureNowPlayingControlsIfNeeded()`
+    /// 2. `setUserIntentToPlay()` — forces `.prePlay` on sticky pause/clear, does
+    ///    `updatePlaybackIntent(to: .shouldBePlaying)`, double-saves.
+    /// 3. `play()` — the execution engine (defensive clear, classify cold/stream-switch/resume,
+    ///    sticky/one-shot/security guards, setPlaying, engine drive).
+    ///
+    /// - Precondition: Must be used for every *explicit user* "start playing" surface.
+    ///   Raw `play()` is reserved for cold-launch initial, post-intent-armed internal
+    ///   orchestration (end of canonical switch methods when active), technical recovery
+    ///   via `attemptResurrectionIfAllowed()`, and the private widget branch inside `play()`.
+    ///
+    /// - Postcondition: `currentPlaybackIntent` is `.shouldBePlaying` (or derived) and
+    ///   (if allowed) playback proceeds or is initiated.
+    ///
+    /// - SeeAlso: ``play()``, ``setUserIntentToPlay()``, ``clearUserPausedLockIfNeeded()``,
+    ///   ``currentPlaybackIntent``, ``attemptResurrectionIfAllowed()``,
+    ///   RadioPlayerCoordinator.completeStreamSwitch,
+    ///   RadioPlayerCoordinator.switchToStreamFromWidget,
+    ///   CODING_AGENT.md (Single Source of Truth Principles),
+    ///   <doc:Architecture>, PlayerVisualState.swift (resurrection table cross-ref).
+    ///
+    /// AGENT NOTE: This method + `play()` are the SSOT for playback initiation semantics.
+    /// Any new call site (new intent, CarPlay, etc.) must use userRequestedPlay() for
+    /// explicit user play. Direct `play()` without prior arming is only for the four
+    /// permitted internal/recovery/cold cases listed in the Precondition. Update this doc,
+    /// the resurrection table, and the architecture block in RadioPlayerCoordinator together.
+    /// Never duplicate the set + play sequence.
     func userRequestedPlay() async {
         #if DEBUG
         print("SharedPlayerManager.userRequestedPlay() — setUserIntentToPlay + play() for explicit user intent")

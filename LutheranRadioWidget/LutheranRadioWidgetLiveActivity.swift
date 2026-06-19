@@ -69,6 +69,22 @@ private func getAlternativeStreams(current: String) -> [String] {
 // See WidgetRefreshManager.hasActiveLutheranWidgets (the single source) and the write guards
 // in SharedPlayerManager (persist/save/writeInstantFeedback/bump/schedule/performActualSave etc.).
 
+/// AppIntent for toggling playback from Live Activity (Dynamic Island / Lock Screen).
+///
+/// - Important: The "play/resume" direction (when not actively playing) routes through
+///   `SharedPlayerManager.userRequestedPlay()` — the single authoritative explicit-play
+///   entry point. This ensures `setUserIntentToPlay()` runs before `play()`'s resurrection,
+///   one-shot, and sticky-intent guards. The "pause" direction uses direct `stop()` (correct
+///   for immediate sticky lock).
+///
+/// - SeeAlso: ``SharedPlayerManager/userRequestedPlay()``, ``SharedPlayerManager/play()``,
+///   <doc:Architecture>, CODING_AGENT.md (Single Source of Truth Principles).
+///
+/// AGENT NOTE: Live Activity runs in an extension process with a fresh actor snapshot.
+/// Unlike the home-screen widget (which uses signalWidgetPendingAction + Darwin +
+/// checkForPendingWidgetActions → userRequestedPlay), LA calls the manager facade directly.
+/// This is acceptable because userRequestedPlay is the public contract. Do not add direct
+/// `play()` calls here; keep routing through userRequestedPlay for the start case.
 struct LiveActivityTogglePlaybackIntent: AppIntent {
     nonisolated static var title: LocalizedStringResource { "Toggle Lutheran Radio Playback" }
     nonisolated static var description: IntentDescription {
@@ -86,7 +102,11 @@ struct LiveActivityTogglePlaybackIntent: AppIntent {
         if visualState.isActivelyPlaying {
             await manager.stop()
         } else {
-            await manager.play()   // ← Fixed: no more 'try'
+            // Route explicit "start from Live Activity" through the authoritative
+            // explicit-play entry point (`userRequestedPlay()`). This guarantees
+            // `setUserIntentToPlay()` (sticky clear + .shouldBePlaying) before
+            // `play()`'s guards. Matches home-widget + remote + Siri paths.
+            await manager.userRequestedPlay()
         }
         
         #if DEBUG

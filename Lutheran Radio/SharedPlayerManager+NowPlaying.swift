@@ -30,6 +30,7 @@ private enum NowPlayingRemoteCommands {
         
         center.playCommand.isEnabled = true
         center.playCommand.addTarget { _ in
+            // Explicit hardware/software remote play must go through designated entry.
             Task { await SharedPlayerManager.shared.userRequestedPlay() }
             return .success
         }
@@ -47,6 +48,7 @@ private enum NowPlayingRemoteCommands {
                 if isActivelyPlaying {
                     await SharedPlayerManager.shared.stop()
                 } else {
+                    // Toggle play branch from remote also uses designated entry.
                     await SharedPlayerManager.shared.userRequestedPlay()
                 }
             }

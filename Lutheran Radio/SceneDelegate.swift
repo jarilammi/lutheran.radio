@@ -171,6 +171,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             #if DEBUG
             print("[SceneDelegate] Handling play action from widget")
             #endif
+            // Routes (via VC + coordinator shim) to userRequestedPlay() — the designation.
             viewController.handlePlayAction()
 
         case "pause":
