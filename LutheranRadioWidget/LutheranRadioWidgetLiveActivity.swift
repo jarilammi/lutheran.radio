@@ -77,14 +77,22 @@ private func getAlternativeStreams(current: String) -> [String] {
 ///   one-shot, and sticky-intent guards. The "pause" direction uses direct `stop()` (correct
 ///   for immediate sticky lock).
 ///
+///   Explicit user play requests (Live Activity toggle, home widget, Siri, remote commands)
+///   are distinct from internal continuation: only the latter may call `play()`
+///   directly after a prior `userRequestedPlay()` or equivalent has already set intent
+///   (see `completeStreamSwitch` / `switchToStreamFromWidget` resume branches).
+///
 /// - SeeAlso: ``SharedPlayerManager/userRequestedPlay()``, ``SharedPlayerManager/play()``,
 ///   <doc:Architecture>, CODING_AGENT.md (Single Source of Truth Principles).
 ///
-/// AGENT NOTE: Live Activity runs in an extension process with a fresh actor snapshot.
-/// Unlike the home-screen widget (which uses signalWidgetPendingAction + Darwin +
-/// checkForPendingWidgetActions → userRequestedPlay), LA calls the manager facade directly.
-/// This is acceptable because userRequestedPlay is the public contract. Do not add direct
-/// `play()` calls here; keep routing through userRequestedPlay for the start case.
+/// AGENT NOTE: Live Activity is treated as an explicit user action surface
+/// (similar to home-widget pending actions and remote commands). It runs in an
+/// extension process with a fresh actor snapshot, so it calls the manager facade
+/// directly. All explicit play/resume requests must go through
+/// `userRequestedPlay()`. Direct `play()` is reserved for internal continuation
+/// after intent is already active (specifically the resume branches
+/// inside `completeStreamSwitch` and `switchToStreamFromWidget`), cold launch,
+/// and technical recovery. Do not introduce direct `play()` calls from here.
 struct LiveActivityTogglePlaybackIntent: AppIntent {
     nonisolated static var title: LocalizedStringResource { "Toggle Lutheran Radio Playback" }
     nonisolated static var description: IntentDescription {
@@ -102,10 +110,11 @@ struct LiveActivityTogglePlaybackIntent: AppIntent {
         if visualState.isActivelyPlaying {
             await manager.stop()
         } else {
-            // Route explicit "start from Live Activity" through the authoritative
-            // explicit-play entry point (`userRequestedPlay()`). This guarantees
-            // `setUserIntentToPlay()` (sticky clear + .shouldBePlaying) before
-            // `play()`'s guards. Matches home-widget + remote + Siri paths.
+            // Explicit user action from Live Activity (treated as an explicit play surface).
+            // Must go through userRequestedPlay() (not raw play()) so that setUserIntentToPlay()
+            // and the full guard sequence run. Distinction: internal continuation
+            // (post-intent resume in the two canonical switch methods) is the only case
+            // allowed to call play() directly.
             await manager.userRequestedPlay()
         }
         

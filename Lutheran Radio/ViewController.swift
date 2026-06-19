@@ -875,6 +875,50 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         task.resume()
     }
     
+    /// Handles network reconnection (and active connectivity poll success) by re-validating
+    /// the security model and conditionally resuming playback.
+    ///
+    /// This is invoked from the `NWPathMonitor` `pathUpdateHandler` when `isConnected && !wasConnected`,
+    /// and from `performActiveConnectivityCheck` when a live probe succeeds while
+    /// `hasInternetConnection` was previously false.
+    ///
+    /// Flow:
+    /// 1. Force `hasInternetConnection = true`.
+    /// 2. Reset transient streaming errors on the engine.
+    /// 3. Perform explicit security re-validation via `SecurityModelValidator`.
+    /// 4. On success **and** only if `currentPlaybackIntent` permits (`canProceedWithPlayback`),
+    ///    call `SharedPlayerManager.play()` (technical recovery path).
+    /// 5. On validation failure, present a one-time security alert (if none is already shown).
+    ///
+    /// - Important: Reconnection is a **technical recovery**, not an explicit user play/resume.
+    ///   It must never call `userRequestedPlay()`. Doing so would invoke `setUserIntentToPlay()`,
+    ///   clearing any `.userPaused`, `.cleared`, or similar sticky lock and violating the
+    ///   resurrection protection contract.
+    /// - Precondition: Called only on the main actor (enforced by the Task { @MainActor } and
+    ///   the NWPathMonitor dispatch).
+    /// - Postcondition: If playback resumes, it does so through the authoritative SPM path
+    ///   (visual state, persistence, Now Playing, and widget/LA snapshots are updated by `play()`).
+    ///   If intent is `.userPaused` / `.securityLocked` / `.cleared`, no playback is started.
+    /// - Note: The explicit `validateSecurityModel()` success check is the preserved
+    ///   reconnection trigger condition. `SPM.play()` will validate again internally (safe).
+    /// - SeeAlso: ``SharedPlayerManager/play()``, ``SharedPlayerManager/userRequestedPlay()``,
+    ///   ``SharedPlayerManager/canProceedWithPlayback()``, ``SharedPlayerManager/currentPlaybackIntent``,
+    ///   `DirectStreamingPlayer.resetTransientErrors()`, `SecurityModelValidator.validateSecurityModel()`,
+    ///   `setupNetworkMonitoring()`, `performActiveConnectivityCheck()`,
+    ///   RadioPlayerCoordinator (other recovery patterns: interruption, route change, cold launch),
+    ///   <doc:Architecture>, CODING_AGENT.md (Single Source of Truth Principles + permitted `play()` cases).
+    ///
+    /// AGENT NOTE: Prior to the intent model, this method performed the direct low-level call
+    /// `_ = await self.streamingPlayer.play()` inside the `if isValid` block. That bypassed
+    /// `currentPlaybackIntent`, `canProceedWithPlayback`, `setPlaying` / visual updates,
+    /// `saveCurrentState` (widgets, Live Activities, Now Playing), and the single source of truth
+    /// for resurrection. Even after engine guards were added, the call site itself was not
+    /// authoritative. The current pattern (`canProceed ? SPM.play() : nothing`) is the correct
+    /// technical-recovery usage of the permitted direct `play()` case. It matches the style used
+    /// for route-change recovery and guarded interruption `.shouldResume`. `userRequestedPlay()`
+    /// is deliberately reserved for button taps, widget play actions, remote commands, Siri, etc.
+    ///
+    /// This path no longer bypasses the playback intent model.
     private func handleNetworkReconnection() {
         hasInternetConnection = true
         
@@ -886,7 +930,8 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
             // 1. Reset transient failures
             self.streamingPlayer.resetTransientErrors()
             
-            // 2. Re-validate using the shared actor
+            // 2. Re-validate using the shared actor (this success condition is the preserved
+            //    trigger for the reconnection playback attempt per historical behavior).
             let isValid = await SecurityModelValidator.shared.validateSecurityModel()
             
             if isValid {
@@ -894,12 +939,14 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
                 print("[ViewController] Validation succeeded after reconnection - attempting playback (via SPM.play for intent consistency)")
                 #endif
                 
-                // Recovery after network: call through SPM.play() (permitted recovery path)
-                // rather than raw engine play(). SPM.play() will still early-return on sticky
-                // .userPaused etc. (engine also guards via canProceed, but this is clearer).
-                // Recovery sites may use direct play() only when intent already known active
-                // (see userRequestedPlay Precondition); otherwise route via SPM surface so
-                // resurrection table / intent remains authoritative.
+                // Recovery after network: call through SPM.play() (permitted technical recovery path)
+                // rather than raw engine play(). The canProceed guard ensures we only proceed for
+                // active intents (.shouldBePlaying); sticky states (.userPaused, .securityLocked,
+                // .cleared) cause an early return here and we never reach clearUserPausedLockIfNeeded
+                // inside play().
+                //
+                // Contrast with userRequestedPlay(), which always does setUserIntentToPlay() first.
+                // Using that here would incorrectly resurrect after an explicit user pause.
                 if await SharedPlayerManager.shared.canProceedWithPlayback() {
                     await SharedPlayerManager.shared.play()
                 }

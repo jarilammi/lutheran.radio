@@ -607,6 +607,47 @@ final class RadioPlayerCoordinator {
     // and `play()` for the full analysis and "keep as-is" rule.
     // Update this block + the `///` docs on the four symbols together on any architecture change.
 
+    /// Thin coordinator for explicit user toggle actions (in-app play/pause button,
+    /// remote commands, Control Center, lock-screen toggle, `handleTogglePlayback` public
+    /// shim, and legacy widget URL "play"/"pause" paths).
+    ///
+    /// Reads the current `PlayerVisualState` (SSOT) and dispatches to the appropriate
+    /// manager action:
+    /// - If actively playing: calls `stop()` (establishes sticky `.userPaused` immediately).
+    /// - Else: pushes immediate `.prePlay` visual for responsive connecting feedback,
+    ///   then routes through the designated explicit-play entry `userRequestedPlay()`.
+    ///
+    /// After the action, always refreshes UI + Now Playing info from the resulting
+    /// authoritative state so that button chrome, status, metadata, and widget snapshots
+    /// are consistent.
+    ///
+    /// - Precondition: Must be called on the @MainActor (enforced by declaration).
+    /// - Postcondition: `currentVisualState` reflects the after-toggle value; UI and
+    ///   NowPlaying have been driven from it.
+    ///
+    /// - Note: This is the *toggle decision surface* for explicit user actions. It is
+    ///   deliberately distinct from internal continuation after an active playback intent
+    ///   (see the resume branches of the canonical switch methods).
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/userRequestedPlay()``,
+    ///   ``SharedPlayerManager/stop()``,
+    ///   `handlePlayAction()`,
+    ///   `handleTogglePlayback()`,
+    ///   `ViewController.togglePlayback()`,
+    ///   `ViewController.handleTogglePlayback()`,
+    ///   CODING_AGENT.md (Single Source of Truth Principles),
+    ///   <doc:Architecture>.
+    ///
+    /// AGENT NOTE: handleUserTogglePlayback handles *explicit user toggles* (button/remote/LA-adjacent
+    /// surfaces that flip play/pause based on current visual). It is not an "internal continuation"
+    /// site. The two canonical switch orchestrators (`completeStreamSwitch`,
+    /// `switchToStreamFromWidget`) read `isActivePlaybackIntent` themselves and, when resuming,
+    /// call `SharedPlayerManager.play()` directly after `resetToPrePlayForNewStream`. Those
+    /// paths must *not* be altered to use `userRequestedPlay()` or this toggle method.
+    /// This method (and the surfaces that call it) must always terminate their play branch at
+    /// `userRequestedPlay()`. Update the `///` docs on `userRequestedPlay`, the two canonicals,
+    /// and the architecture block in this file together on any change to the explicit vs.
+    /// continuation rule.
     @MainActor
     func handleUserTogglePlayback() async {
         let manager = SharedPlayerManager.shared
@@ -616,14 +657,14 @@ final class RadioPlayerCoordinator {
             await manager.stop()
             // isPlaying flag update is performed by the caller (VC) where it was previously mutated
         } else {
-            // Play branch of toggle: set active intent then play. (For pure "play" requests,
-            // callers should prefer `userRequestedPlay()`; toggle is the SSOT for button/remote toggle.)
-            await manager.setUserIntentToPlay()
-            // isPlaying = true is performed by caller for legacy paths
-
+            // Route the play/resume case through the designated explicit-play entry point
+            // (`userRequestedPlay`) for consistency with handlePlayAction, handleWidgetPlayAction,
+            // remote toggle, Siri, LA toggle, widget pending reconciliation, etc.
+            // Immediate .prePlay is preserved (setUserIntentToPlay also establishes .prePlay
+            // internally for resume-from-pause/clear cases) so connecting feedback timing is
+            // unchanged. The trailing updateUI + updateNowPlayingInfo still run after the await.
             self.updateUI(for: .prePlay)
-
-            await manager.play()
+            await manager.userRequestedPlay()
         }
 
         let newState = await manager.currentVisualState
