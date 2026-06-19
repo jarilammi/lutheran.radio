@@ -1513,8 +1513,8 @@ extension ViewController: StreamingPlayerDelegate {
                 if visualState.shouldAutoPlayOrResume || !state.isPlaying {
                     // Legacy widget-URL "play" path. Uses set + toggle (which does set+play in else).
                     // Primary widget play path is now the pending "play" case above which goes
-                    // straight to userRequestedPlay (the designation). This path still achieves
-                    // intent arming.
+                    // straight to `userRequestedPlay()` (the designation). This path still sets
+                    // an active playback intent via `setUserIntentToPlay()`.
                     #if DEBUG
                     print("[ViewController] ▶ Widget 'play' (legacy URL) → handleUserTogglePlayback")
                     #endif

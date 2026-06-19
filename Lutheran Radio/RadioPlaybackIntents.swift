@@ -176,7 +176,7 @@ struct PauseRadioIntent: AppIntent {
 /// Siri / Shortcuts intent for language switch + play.
 ///
 /// Uses reset + switchToStream followed by the designated `userRequestedPlay()`
-/// (ensures intent arming + execution through `play()`).
+/// (ensures `setUserIntentToPlay()` + execution through `play()`).
 ///
 /// - SeeAlso: ``SharedPlayerManager/userRequestedPlay()``.
 struct SwitchToLanguageIntent: AppIntent {

@@ -530,10 +530,10 @@ actor SharedPlayerManager {
         await clearUserPausedLockIfNeeded()
 
         // AGENT NOTE: Explicit user play requests must have already run setUserIntentToPlay()
-        // (via userRequestedPlay or equivalent arming before internal orchestration play()).
-        // See the Precondition on userRequestedPlay(). If you are adding a call to play()
-        // here or in a caller, confirm it is one of the four permitted cases or route via
-        // the designated entry.
+        // (via `userRequestedPlay()` or by establishing an active playback intent before an
+        // internal `play()` call). See the Precondition on `userRequestedPlay()`. If you are
+        // adding a call to `play()` here or in a caller, confirm it is one of the four
+        // permitted cases or route via the designated entry.
         
         #if DEBUG
         print("[SharedPlayerManager] SharedPlayerManager.play() ENTERED – currentPlaybackIntent = \(currentPlaybackIntent), currentVisualState = \(currentVisualState)")
@@ -823,9 +823,10 @@ actor SharedPlayerManager {
     ///    sticky/one-shot/security guards, setPlaying, engine drive).
     ///
     /// - Precondition: Must be used for every *explicit user* "start playing" surface.
-    ///   Raw `play()` is reserved for cold-launch initial, post-intent-armed internal
-    ///   orchestration (end of canonical switch methods when active), technical recovery
-    ///   via `attemptResurrectionIfAllowed()`, and the private widget branch inside `play()`.
+    ///   Raw `play()` is reserved for cold-launch initial, internal continuation when
+    ///   playback intent is already active (end of the canonical switch resume paths),
+    ///   technical recovery via `attemptResurrectionIfAllowed()`, and the private widget
+    ///   branch inside `play()`.
     ///
     /// - Postcondition: `currentPlaybackIntent` is `.shouldBePlaying` (or derived) and
     ///   (if allowed) playback proceeds or is initiated.
@@ -838,10 +839,11 @@ actor SharedPlayerManager {
     ///   <doc:Architecture>, PlayerVisualState.swift (resurrection table cross-ref).
     ///
     /// AGENT NOTE: This method + `play()` are the SSOT for playback initiation semantics.
-    /// Any new call site (new intent, CarPlay, etc.) must use userRequestedPlay() for
-    /// explicit user play. Direct `play()` without prior arming is only for the four
-    /// permitted internal/recovery/cold cases listed in the Precondition. Update this doc,
-    /// the resurrection table, and the architecture block in RadioPlayerCoordinator together.
+    /// Any new call site (new intent, CarPlay, etc.) must use `userRequestedPlay()` for
+    /// explicit user play. Direct `play()` (without a preceding explicit play request)
+    /// is only for the four permitted internal/recovery/cold cases listed in the
+    /// Precondition. Update this doc, the resurrection table, and the architecture block
+    /// in RadioPlayerCoordinator together.
     /// Never duplicate the set + play sequence.
     func userRequestedPlay() async {
         #if DEBUG
@@ -1215,14 +1217,14 @@ actor SharedPlayerManager {
             var loadedVisual = combined.visualState
             // Defensive anti-regression for *user pause only*: if we had an explicit sticky .userPaused
             // in memory (from stop/mark) and the snapshot contains .prePlay (stale from prior switch/cold),
-            // keep the grey paused visual and re-arm intent. (Post-clear relaunches have no snapshot
+            // keep the grey paused visual and re-establish the intent. (Post-clear relaunches have no snapshot
             // and fall through to the .prePlay default below; the in-process clear uses .userPaused
             // visual + .cleared intent directly.) Security uses its own red visual.
             if hadStickyUserPause && loadedVisual == .prePlay {
                 loadedVisual = .userPaused
             }
             currentVisualState = loadedVisual
-            // Arm the playback intent from persisted visual for sticky pause/lock cases.
+            // Set the playback intent from persisted visual for sticky pause/lock cases.
             // This ensures `currentPlaybackIntent.isStickyPauseOrLock` (and thus canProceedWithPlayback
             // + recovery guards) remains correct after process resurrection, ensure calls from KVO
             // status paths, or widget timeline reloads. The snapshot is the SSOT for what to *show*;

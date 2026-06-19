@@ -372,58 +372,76 @@ final class RadioPlayerCoordinator {
         DispatchQueue.main.async(execute: workItem)
     }
 
-    /// Canonical path for stream switches originating from the widget (or Live Activity).
+    /// Canonical (silent) stream-switch orchestration for widget and Live Activity reconciliation.
     ///
-    /// This is the silent (no tuning sound, no needle animation) counterpart to
-    /// `completeStreamSwitch`. It owns the common post-guard orchestration that both
-    /// widget reconciliation and (future) other non-flag-tap main-app paths may share:
+    /// This is the non-tuning, non-animating counterpart to `completeStreamSwitch`. It is the
+    /// single place that reconciles an optimistic widget/LA language choice (signaled via
+    /// `signalWidgetSwitchAction` + Darwin "switch" pending) with the authoritative engine
+    /// and main-app visual/intent state.
     ///
-    /// 1. Engine preparation via the **single source of truth**
-    ///    `DirectStreamingPlayer.switchToStream(_:)` (model update, transient reset,
-    ///    awaited silent `.streamSwitch` stop on language change, fresh attempt counters).
-    /// 2. UI mirrors: `selectedStreamIndex`, background image, UserDefaults language,
-    ///    language selector position.
-    /// 3. Intent guard using `SharedPlayerManager.currentPlaybackIntent`:
-    ///    do not auto-resume when the user had explicitly paused.
-    /// 4. Conditional `resetToPrePlayForNewStream` + `.prePlay` UI when resuming.
-    /// 5. `SharedPlayerManager.play()` — here the *internal* direct play() is allowed
-    ///    because we have already consulted `isActivePlaybackIntent` (armed state).
-    ///    See userRequestedPlay Precondition for the four permitted direct-play cases.
-    /// 6. Clearing of the originating `actionId` (pending action) on all exit paths.
-    /// 7. VoiceOver announcement using the revived `"switched_to_language %@"` key
-    ///    (posted on both the resume and the explicit-paused exit paths).
+    /// Responsibilities (executed in order):
+    /// 1. Read `currentPlaybackIntent` once at entry and derive `shouldResumeAfterSwitch`
+    ///    (`isActivePlaybackIntent`).
+    /// 2. Engine preparation exclusively via `DirectStreamingPlayer.switchToStream(_:)`
+    ///    (the SSOT: model update, transient reset, awaited stop for lang change, counter reset).
+    /// 3. Mirror selection + chrome (index, background, UserDefaults language, selector view).
+    /// 4. If `!shouldResumeAfterSwitch`: clear soft-pause stash, force `.userPaused` visual,
+    ///    announce, clear the `actionId`, and return (no playback started).
+    /// 5. If resuming: `resetToPrePlayForNewStream()` (defensive clear + `.prePlay` + hold +
+    ///    one-shot reset), update UI to `.prePlay`, then `SharedPlayerManager.play()`.
+    /// 6. Announce + clear pending `actionId`.
+    ///
+    /// **Direct `play()` rule (authoritative):** The call to `play()` in the resume branch is
+    /// the *internal continuation in the active-intent resume branch* (after `isActivePlaybackIntent`
+    /// was already true). It is one of the four explicitly permitted direct `play()` sites
+    /// (see `userRequestedPlay` Precondition).
+    /// All *explicit* user play/resume requests (widget play pending, toggle buttons, remote
+    /// commands, Siri Play, LA start, security retry, etc.) must go through `userRequestedPlay()`.
+    /// This site must **not** be changed to `userRequestedPlay()`; doing so would blur the
+    /// distinction, risk overriding concurrent pause intents, and break symmetry with
+    /// `completeStreamSwitch`. See the Precondition on `userRequestedPlay()` (permitted
+    /// direct `play()` cases) and the matching rule on `completeStreamSwitch`.
     ///
     /// - Parameters:
-    ///   - stream: The target `DirectStreamingPlayer.Stream`.
-    ///   - index: Index into `availableStreams` (for selector + background sync).
-    ///   - actionId: Pending widget action identifier to clear after processing
-    ///               (may be cleared by callers in some scheduling paths as well).
+    ///   - stream: Target stream chosen by the widget/LA action.
+    ///   - index: Index of `stream` in `DirectStreamingPlayer.availableStreams` (used for
+    ///            selector + background sync only).
+    ///   - actionId: The pending action identifier from the widget signal (used for dedup
+    ///               and to clear the transient command after reconciliation).
     ///
-    /// - Precondition: Must be called while `streamingPlayer.isSwitchingStream == true`
-    ///   (caller is responsible for the defer/reset). Runs on the @MainActor.
-    /// - Postcondition: The engine model is updated, intent is respected, and any
-    ///   pending action for `actionId` has been cleared. Visual state is either
-    ///   `.prePlay` (if resuming) or `.userPaused`.
+    /// - Precondition: Caller must have set `streamingPlayer.isSwitchingStream = true`
+    ///   for the duration (this method does not own the flag). Must run on the @MainActor.
+    /// - Postcondition: Engine model and UI selection reflect `stream`. If the pre-switch
+    ///   intent was active, playback proceeds (or is initiated) for the new stream; otherwise
+    ///   the selection is left in `.userPaused`. The `actionId` has been cleared.
     ///
-    /// - Important: This method must **never** play a tuning sound or schedule needle
-    ///   animation. Those belong exclusively to the main-app flag tap path in
-    ///   `completeStreamSwitch`.
+    /// - Important: This method **never** plays the tuning sound and never animates the
+    ///   needle. Those effects are owned exclusively by `completeStreamSwitch`.
+    /// - Important: Widget switch semantics deliberately differ from Siri
+    ///   `SwitchToLanguageIntent`: the latter always forces playback via `userRequestedPlay()`
+    ///   after its switch (imperative "play in X"). Widget reconciliation preserves the
+    ///   paused/playing choice that was current at the moment the widget action was issued.
     ///
-    /// - SeeAlso: `completeStreamSwitch`, `handleWidgetSwitchToLanguage`,
-    ///   `DirectStreamingPlayer.switchToStream`, `SharedPlayerManager.play`,
-    ///   `SharedPlayerManager.userRequestedPlay` (for contrast with direct armed play()),
-    ///   `SharedPlayerManager.resetToPrePlayForNewStream`,
-    ///   `SharedPlayerManager.currentPlaybackIntent`,
+    /// - SeeAlso: `completeStreamSwitch`,
+    ///   `handleWidgetSwitchToLanguage`,
+    ///   `DirectStreamingPlayer.switchToStream`,
+    ///   ``SharedPlayerManager/play()``,
+    ///   ``SharedPlayerManager/userRequestedPlay()``,
+    ///   ``SharedPlayerManager/resetToPrePlayForNewStream(preserveActiveSleepTimer:)``,
+    ///   ``SharedPlayerManager/currentPlaybackIntent``,
     ///   `announceSwitchedToLanguage(_:)`,
     ///   CODING_AGENT.md (Single Source of Truth Principles),
     ///   <doc:Architecture>.
     ///
-    /// AGENT NOTE: switchToStreamFromWidget is now the authoritative non-tuning stream-switch
-    /// orchestration for widget/LA reconciliation. Any additional cross-cutting behavior
-    /// on the widget switch path (Live Activity refresh on switch, haptics policy, etc.)
-    /// should be added here, not duplicated in callers. The four engine steps live only
-    /// in `DirectStreamingPlayer.switchToStream`. This + completeStreamSwitch give the
-    /// architecture two clearly named, side-by-side canonicals.
+    /// AGENT NOTE: switchToStreamFromWidget + completeStreamSwitch are the two canonical
+    /// stream-choice orchestrators. Both use the identical pattern for the resume case:
+    /// read isActivePlaybackIntent → guard → resetToPrePlayForNewStream (if resuming) →
+    /// direct `play()`. This is *not* an explicit request site. Update this `///`, the
+    /// parallel doc on `completeStreamSwitch`, the architecture block comment, the
+    /// userRequestedPlay Precondition, and the resurrection table together on any change.
+    /// The justification for keeping the direct call (resurrection guards, race behavior,
+    /// explicit-vs-continuation distinction, symmetry with completeStreamSwitch) lives in
+    /// these `///` headers and the Precondition.
     private func switchToStreamFromWidget(to stream: DirectStreamingPlayer.Stream, index: Int, actionId: String) async {
         let playbackIntent = await SharedPlayerManager.shared.currentPlaybackIntent
         let shouldResumeAfterSwitch = playbackIntent.isActivePlaybackIntent
@@ -458,6 +476,11 @@ final class RadioPlayerCoordinator {
         print("[RadioPlayerCoordinator] ▶ [Widget Switch] Starting new stream using SharedPlayerManager.play() — main app path")
         #endif
 
+        // Direct `play()` after `isActivePlaybackIntent` check + resetToPrePlayForNewStream.
+        // This is the permitted internal continuation when playback intent was already active.
+        // See the rule stated in the `///` above and the Precondition on `userRequestedPlay()`.
+        // Do NOT change this site to `userRequestedPlay()`; that would be semantically incorrect
+        // for a continuation-of-active-intent switch and would break symmetry with completeStreamSwitch.
         await SharedPlayerManager.shared.play()
 
         #if DEBUG
@@ -557,8 +580,11 @@ final class RadioPlayerCoordinator {
     //   - Explicit user "start/resume" requests use `SharedPlayerManager.userRequestedPlay()`
     //     (the designated single entry). See handlePlayAction,
     //     handleUserTogglePlayback (play branch), and all external surfaces.
-    //   - Internal orchestration after intent armed, cold launch, and recovery may call
-    //     `play()` directly (documented on the method).
+    //   - Internal continuation when playback intent is already active (the resume branches
+    //     of the two canonical switch methods `completeStreamSwitch` and `switchToStreamFromWidget`),
+    //     cold launch, and recovery may call `play()` directly. The rule and justification
+    //     are stated in the `///` docs on those methods and the Precondition on
+    //     `userRequestedPlay()`.
     //
     // - `SharedPlayerManager` — owns `currentVisualState`, `currentPlaybackIntent`,
     //   `resetToPrePlayForNewStream`, resurrection rules, persisted widget snapshot,
@@ -574,10 +600,12 @@ final class RadioPlayerCoordinator {
     // `DirectStreamingPlayer.switchToStream`. Main-app flag UX lives in `completeStreamSwitch`.
     // Widget reconciliation lives in `switchToStreamFromWidget`. Siri/external use SPM.switchToStream
     // + reset + userRequestedPlay (non-UI paths).
-    // All explicit play initiation must use userRequestedPlay (or end at the armed `play()` sites).
-    // See the structured `///` on userRequestedPlay + play, the two coordinator canonicals,
-    // on DirectStreamingPlayer.switchToStream, and on SPM.switchToStream.
-    // Update this block + the four `///` docs together on any architecture change.
+    // All explicit play initiation must use userRequestedPlay (or end at the permitted direct
+    // `play()` sites after an active playback intent check). The two canonical switch resume
+    // branches deliberately use direct `play()` (internal continuation of active intent).
+    // See the `///` on `switchToStreamFromWidget`, `completeStreamSwitch`, `userRequestedPlay`,
+    // and `play()` for the full analysis and "keep as-is" rule.
+    // Update this block + the `///` docs on the four symbols together on any architecture change.
 
     @MainActor
     func handleUserTogglePlayback() async {
@@ -588,8 +616,8 @@ final class RadioPlayerCoordinator {
             await manager.stop()
             // isPlaying flag update is performed by the caller (VC) where it was previously mutated
         } else {
-            // Play branch of toggle: arm intent then play. (For pure "play" requests,
-            // callers should prefer userRequestedPlay(); toggle is the SSOT for button/remote toggle.)
+            // Play branch of toggle: set active intent then play. (For pure "play" requests,
+            // callers should prefer `userRequestedPlay()`; toggle is the SSOT for button/remote toggle.)
             await manager.setUserIntentToPlay()
             // isPlaying = true is performed by caller for legacy paths
 
@@ -677,58 +705,63 @@ final class RadioPlayerCoordinator {
     }
 
     /// Canonical main-app orchestration for a user-initiated stream/language change
-    /// from the flag selector (or equivalent main-app UI).
+    /// Canonical main-app stream-switch orchestration for flag taps in the language selector.
     ///
-    /// This is the single, well-documented owner of the complete flag-tap experience
-    /// in the main app:
+    /// This is the full-experience counterpart to the silent `switchToStreamFromWidget`.
+    /// It is the single owner of everything that happens when the user taps a language
+    /// flag while the main UI is visible (optimistic prePlay, tuning sound, needle animation,
+    /// intent-conditional continuation, Now Playing updates).
     ///
-    /// 1. Snapshot / UserDefaults / widget refresh side effects for the chosen language.
-    /// 2. Optimistic `.prePlay` hold (usually established by caller in
-    ///    `handleLanguageSelection` when intent permits) for instant yellow needle/ring.
-    /// 3. Intent guard: never auto-resume when the user has an explicit `.userPaused`
-    ///    (or security/cleared) intent.
-    /// 4. Engine preparation via the **single source of truth**
-    ///    `DirectStreamingPlayer.switchToStream(_:)` — model, transient-error reset,
-    ///    awaited silent `.streamSwitch` stop (when language actually changes), and
-    ///    per-stream playback counter reset.
-    /// 5. Main-app-only tuning sound + animated needle movement (delight / UX only).
-    /// 6. Conditional `resetToPrePlayForNewStream` (skipped when the tap already
-    ///    established the hold via `isStreamSwitchPrePlayHoldActive`).
-    /// 7. `SharedPlayerManager.play()` (or the matching paused UI) and final
-    ///    selector / background / Now Playing sync.
+    /// Responsibilities (executed in order inside the debounced Task):
+    /// 1. Snapshot language + save widget state.
+    /// 2. (In caller `handleLanguageSelection`) optimistic `.prePlay` UI when the prior
+    ///    visual permitted auto-resume.
+    /// 3. Engine prep via `DirectStreamingPlayer.switchToStream` (SSOT).
+    /// 4. Intent guard using a snapshot of `currentPlaybackIntent.isActivePlaybackIntent`.
+    /// 5. If not resuming: clear soft-pause, force `.userPaused` UI, announce, return.
+    /// 6. If resuming: optional tuning sound + needle animation, second guard,
+    ///    conditional `resetToPrePlayForNewStream` (skips when hold already active),
+    ///    set `.prePlay` UI, then `SharedPlayerManager.play()`.
+    /// 7. Final announce.
     ///
-    /// Note: inside the play branch we call set + play directly because this is the
-    /// conditional toggle decision point. Pure explicit-play requests use the
-    /// designated `userRequestedPlay()`. See designation.
-    /// 8. VoiceOver announcement via `"switched_to_language %@"` using the
-    ///    localized `stream.language` name (both the playing and the paused-exit paths).
+    /// **Direct `play()` rule (authoritative):** Inside the active-intent resume branch we
+    /// call `play()` directly. This is internal continuation after a prior explicit action
+    /// (or the initial launch) established an active playback intent (`isActivePlaybackIntent`).
+    /// It is deliberately *not* routed through `userRequestedPlay()`. The same rule and
+    /// justification apply to the resume branch of `switchToStreamFromWidget`. See the full
+    /// rule in the Precondition on `userRequestedPlay()` and the matching note on
+    /// `switchToStreamFromWidget`.
     ///
     /// - Parameters:
-    ///   - stream: The target `Stream` chosen by the user.
-    ///   - index: The index in `DirectStreamingPlayer.availableStreams` (used for
-    ///            selector sync and background).
+    ///   - stream: The target `Stream` chosen by the user tap.
+    ///   - index: Index in `DirectStreamingPlayer.availableStreams` (drives selector
+    ///            final position and background controller).
     ///
-    /// - Important: Widget / Live Activity reconciliation deliberately bypasses
-    ///   this method and calls `handleWidgetSwitchToLanguage` (no tuning sound,
-    ///   different optimistic timing via Darwin + pending actions).
-    ///   External Siri/shortcut paths use `handleSwitchToLanguage` (kept on the
-    ///   older attach style for minimality).
+    /// - Important: Widget and Live Activity reconciliation paths *must not* call this
+    ///   method. They go through `handleWidgetSwitchToLanguage` → `switchToStreamFromWidget`
+    ///   (no tuning, no needle, different optimistic timing).
+    /// - Important: External Siri / shortcut / deep-link switch uses `handleSwitchToLanguage`
+    ///   (kept on a lighter attach style) which ends by calling through to `userRequestedPlay()`
+    ///   (because a Siri "switch to X" is treated as an imperative play request).
     ///
-    /// - SeeAlso: `handleLanguageSelection`, `handleWidgetSwitchToLanguage`,
-    ///   `DirectStreamingPlayer.switchToStream`, `SharedPlayerManager.play`,
-    ///   `SharedPlayerManager.userRequestedPlay` (contrast: here play() is post-armed internal),
-    ///   `SharedPlayerManager.resetToPrePlayForNewStream`,
-    ///   `SharedPlayerManager.currentPlaybackIntent`,
+    /// - SeeAlso: `handleLanguageSelection`,
+    ///   `switchToStreamFromWidget(to:index:actionId:)`,
+    ///   `handleWidgetSwitchToLanguage`,
+    ///   `handleSwitchToLanguage`,
+    ///   `DirectStreamingPlayer.switchToStream`,
+    ///   ``SharedPlayerManager/play()``,
+    ///   ``SharedPlayerManager/userRequestedPlay()``,
+    ///   ``SharedPlayerManager/resetToPrePlayForNewStream(preserveActiveSleepTimer:)``,
+    ///   ``SharedPlayerManager/currentPlaybackIntent``,
     ///   CODING_AGENT.md (Single Source of Truth Principles + "Cross-target shared source files"),
     ///   <doc:Architecture>.
     ///
-    /// AGENT NOTE: completeStreamSwitch is the authoritative main-app sequence for
-    /// "user tapped a language flag". Future changes to switch UX, timing, side
-    /// effects (haptics already elsewhere, Live Activity refresh, analytics, etc.)
-    /// should be made here. The four engine steps must never be duplicated —
-    /// always go through `DirectStreamingPlayer.switchToStream`. This method and
-    /// the engine SSOT together replace the old scattered setModel/reset/stop/reset
-    /// blocks.
+    /// AGENT NOTE: completeStreamSwitch and switchToStreamFromWidget are a matched pair of
+    /// canonicals. They must continue to use the same pattern for active-intent playback
+    /// continuation (direct `play()` after the guard + reset). Changing one without the other,
+    /// or routing either resume site to `userRequestedPlay()`, would violate the designation.
+    /// Keep the "update together" set in sync: these two `///` docs + architecture block +
+    /// userRequestedPlay Precondition + resurrection table.
     private func completeStreamSwitch(stream: DirectStreamingPlayer.Stream, index: Int) {
         updateUserDefaultsLanguage(stream.languageCode)
 
@@ -793,6 +826,11 @@ final class RadioPlayerCoordinator {
             print("[RadioPlayerCoordinator] completeStreamSwitch → calling SharedPlayerManager.play() after tuning")
             #endif
 
+            // Direct `play()` here (and the symmetric site in switchToStreamFromWidget) is the
+            // permitted internal continuation inside the active-intent resume branch. We reach
+            // it only after `isActivePlaybackIntent` was already true. Explicit play requests
+            // use `userRequestedPlay()`. See the `///` rule above and the Precondition on
+            // `userRequestedPlay()`.
             updateUserDefaultsLanguage(stream.languageCode)
 
             if await SharedPlayerManager.shared.isStreamSwitchPrePlayHoldActive {
