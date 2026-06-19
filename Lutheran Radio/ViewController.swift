@@ -35,6 +35,7 @@
 ///
 /// Accessibility: VoiceOver announcements for status/metadata; hyphenation for long text. For lifecycle events, see `SceneDelegate.swift` and `AppDelegate.swift`.
 import UIKit
+import SwiftUI
 @unsafe @preconcurrency import AVFoundation
 import AVKit
 import Network
@@ -102,27 +103,28 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         return label
     }()
     
-    /// Composed language/flag selector (custom horizontal scroller + red tuning needle).
-    /// Owns collection, indicator, all needle math, and collection protocols.
-    /// ViewController retains selectedStreamIndex + all playback intent / stream switch logic.
-    let languageSelectorView = LanguageSelectorView()
-
-    /// Background image + Core Image processing.
-    /// Owns the full-bleed backgroundImageView, all CI filtering (dark/light morphology + controls),
-    /// caching, in-flight coalescing, cold-launch + stream-switch deferral (attach + ICY stable),
-    /// low-power fast path, energy efficiency (LPM parallax + raw image), and parallax.
-    /// ViewController performs hierarchy addition + constraints and drives via the narrow hooks
-    /// at the correct moments. All heavy logic moved verbatim (behavior preserved).
+    /// Background image + Core Image processing (unchanged).
     let backgroundImageController = BackgroundImageController()
 
-    // Playback controls (play/pause + sleep timer button + playback status) and now-playing metadata/speaker
-    // are composed views. Owner (VC) wires a few buttons for menus/animation and calls narrow setters at the
-    // right moments. All visual rendering for these elements is now encapsulated; intent + sleep countdown logic stay here.
-    let playbackControlsView = PlaybackControlsView()
-    let nowPlayingMetadataView = NowPlayingMetadataView()
+    /// @Observable model for SwiftUI composed views (LanguageSelector, Controls, Metadata).
+    /// Coordinator pushes visualState / selectedStreamIndex / currentMetadata into it.
+    var playerViewModel: PlayerViewModel!
+
+    // Pure SwiftUI composed views hosted for the existing UIKit layout (low-risk incremental).
+    private lazy var languageSelectorHostingController = UIHostingController(rootView: LanguageSelectorView(viewModel: PlayerViewModel.makeMock()))
+    private lazy var playbackControlsHostingController = UIHostingController(rootView: PlaybackControlsView(viewModel: PlayerViewModel.makeMock()))
+    private lazy var nowPlayingMetadataHostingController = UIHostingController(rootView: NowPlayingMetadataView(viewModel: PlayerViewModel.makeMock()))
+
+    // Drop-in names for addSubview / constraint sites (use .view of the hosting controller).
+    var languageSelectorView: UIView { languageSelectorHostingController.view }
+    var playbackControlsView: UIView { playbackControlsHostingController.view }
+    // Note: speaker image + metadata label are now inside the hosted NowPlayingMetadataView.
+    // We host the whole thing in one place and adjust in setupUI.
 
     /// Lightweight RadioPlayerCoordinator (wiring + full stream selection flow + visual distribution + sleep glue + haptics + initial sequencing).
     var radioPlayerCoordinator: RadioPlayerCoordinator!
+
+    // playerViewModel declared above as the driver for the modern SwiftUI composed views.
 
     let volumeSlider: UISlider = {
         let slider = UISlider()
@@ -218,14 +220,7 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         view.backgroundColor = .systemBackground
         // Processed image cache limit is now configured inside BackgroundImageController.
         
-        // Add custom accessibility actions for playPauseButton (now owned by playbackControlsView)
-        playbackControlsView.playPauseButton.accessibilityCustomActions = [
-            UIAccessibilityCustomAction(
-                name: String(localized: "toggle_playback", defaultValue: "Toggle Playback", table: "Localizable", comment: "Accessibility action to toggle playback"),
-                target: self,
-                selector: #selector(togglePlayback)
-            )
-        ]
+        // Accessibility custom actions for play/pause now handled inside SwiftUI PlaybackControlsView.
         
         // Add custom accessibility actions for volumeSlider
         volumeSlider.accessibilityCustomActions = [
@@ -241,14 +236,6 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
             )
         ]
         
-        // Register for preferred content size category changes
-        registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) { [weak self] (controller: Self, previousTraitCollection: UITraitCollection) in
-            guard let self else { return }
-            nowPlayingMetadataView.setMetadata(
-                nowPlayingMetadataView.metadataLabel.text ?? String(localized: "no_track_info", table: "Localizable")
-            )
-        }
-        
         // Playback audio session is configured in DirectStreamingPlayer.init (single owner).
         
         // Haptic engine init + start is owned by RadioPlayerCoordinator.wireAndInitialSetup() (single owner of haptics).
@@ -259,12 +246,20 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         
         // Create + wire coordinator after hierarchy is built.
         radioPlayerCoordinator = RadioPlayerCoordinator(
-            languageSelectorView: languageSelectorView,
             backgroundImageController: backgroundImageController,
-            playbackControlsView: playbackControlsView,
-            nowPlayingMetadataView: nowPlayingMetadataView,
             streamingPlayer: streamingPlayer
         )
+        // Create the observable VM and attach it so the coordinator can drive SwiftUI state
+        // in parallel with the UIKit presentational views. Action closures are wired inside
+        // wireAndInitialSetup when the VM reference is present.
+        playerViewModel = PlayerViewModel()
+        radioPlayerCoordinator.viewModel = playerViewModel
+
+        // Re-host the SwiftUI views with the real (non-mock) VM now that it exists.
+        languageSelectorHostingController.rootView = LanguageSelectorView(viewModel: playerViewModel)
+        playbackControlsHostingController.rootView = PlaybackControlsView(viewModel: playerViewModel)
+        nowPlayingMetadataHostingController.rootView = NowPlayingMetadataView(viewModel: playerViewModel)
+
         radioPlayerCoordinator.viewController = self
         radioPlayerCoordinator.presentAlert = { [weak self] alert in self?.present(alert, animated: true) }
         radioPlayerCoordinator.wireAndInitialSetup()
@@ -278,6 +273,10 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         let languageCode = SharedPlayerManager.preferredMainAppInitialLanguageCode()
         let initialIndex = DirectStreamingPlayer.indexForLanguageCode(languageCode)
         selectedStreamIndex = initialIndex  // Seed thin mirror for viewDidLayoutSubviews notifyLayoutChange (width-claim) so initial needle is not stomped by stale 0 (regression guard)
+
+        // Seed the SwiftUI VM's index so that any early SwiftUI rendering sees the correct initial selection
+        // (coordinator will keep it in sync on subsequent updateUI calls).
+        playerViewModel?.selectedStreamIndex = initialIndex
         
         // Set initial volume slider position (UI only)
         let volumeToUse = preferredVolume()
@@ -407,8 +406,7 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         super.viewDidLayoutSubviews()
         // Only react to *width* changes. Height-only shifts (e.g. long metadata pushing
         // the contentStackView taller) must not retrigger needle positioning.
-        // Forward to the extracted LanguageSelectorView (it owns lastCollectionViewSize + epsilon guard + needle math).
-        languageSelectorView.notifyLayoutChange(currentSelectedIndex: selectedStreamIndex)
+        // SwiftUI LanguageSelectorView uses matchedGeometryEffect; no manual notify needed.
         radioPlayerCoordinator?.notifyLayoutChange()
     }
     
@@ -564,27 +562,21 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
                 return
             }
             
-            // Process metadata on background (regex is cheap and thread-safe).
-            // The regex helper now lives in nowPlayingMetadataView (small pure helper); use it to avoid duplication.
-            let potentialNames: [String] = metadata.map { nowPlayingMetadataView.potentialNames(from: $0) } ?? []
-            
-            // Hop to main for UI updates only
+            // Hop to main for UI updates only.
+            // SwiftUI NowPlayingMetadataView handles its own text + photo using VM.currentMetadata.
             DispatchQueue.main.async { [self] in
                 if let metadata = metadata {
-                    self.nowPlayingMetadataView.setMetadata(metadata)
+                    radioPlayerCoordinator?.syncMetadataToViewModel(metadata)
                     if self.isSleepTimerInteractionActive {
                         self.pendingMetadataVisualRefresh = metadata
-                        // Also stash to coordinator copy so its finishSleepTimerInteraction (which owns consumption) sees it.
                         radioPlayerCoordinator?.pendingMetadataVisualRefresh = metadata
                     } else {
                         self.updateNowPlayingInfo(title: metadata)
-                        self.nowPlayingMetadataView.applySpeakerVisuals(for: metadata, potentialNames: potentialNames)
                     }
                 } else {
-                    self.nowPlayingMetadataView.setMetadata(String(localized: "no_track_info", table: "Localizable"))
+                    radioPlayerCoordinator?.syncMetadataToViewModel(nil)
                     if !self.isSleepTimerInteractionActive {
                         self.updateNowPlayingInfo()
-                        self.nowPlayingMetadataView.speakerImageView.isHidden = true
                     }
                 }
                 self.saveStateForWidget()
@@ -596,15 +588,10 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     // No call sites remain in VC.
     
     private func setupControls() {
-        // Targets and identifiers are on the composed controls view's buttons
-        playbackControlsView.playPauseButton.addTarget(self, action: #selector(togglePlayback), for: .touchUpInside)
-        // Menu construction (and all sleep countdown/menu state machine) is in coordinator.
-        radioPlayerCoordinator?.configureSleepTimerButtonMenu()
-        playbackControlsView.sleepTimerButton.accessibilityIdentifier = "sleepTimerButton"
-        playbackControlsView.playPauseButton.accessibilityIdentifier = "playPauseButton"
-        playbackControlsView.playPauseButton.accessibilityHint = String(localized: "accessibility_hint_play_pause", table: "Localizable")
-        playbackControlsView.playPauseButton.accessibilityLabel = String(localized: "accessibility_label_play", table: "Localizable")  // e.g., "Play" in Localizable.strings
-        playbackControlsView.playPauseButton.accessibilityTraits = [.button, .playsSound]  // Hints that it triggers sound
+        // SwiftUI PlaybackControlsView owns its own Buttons and taps (wired to viewModel).
+        // Sleep menu logic remains in coordinator but attachment to UIKit button is removed for modernization.
+        // Accessibility and identifiers are now inside the SwiftUI views.
+        radioPlayerCoordinator?.configureSleepTimerButtonMenu()  // may no-op after modernization; kept for compatibility path
         
         volumeSlider.addTarget(self, action: #selector(volumeChanged(_:)), for: .valueChanged)
         volumeSlider.accessibilityIdentifier = "volumeSlider"
@@ -1049,17 +1036,11 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         view.addSubview(playbackControlsView)
         view.addSubview(volumeSlider)
 
-        // Metadata label is driven by the composed metadata view (contentStack still used for
-        // identical vertical spacing/leading/trailing to language selector). Speaker image is vended
-        // and placed exactly where it was (below language selector).
-        view.addSubview(nowPlayingMetadataView.speakerImageView)
-        let contentStackView = UIStackView(arrangedSubviews: [nowPlayingMetadataView.metadataLabel])
-        contentStackView.axis = .vertical
-        contentStackView.alignment = .center
-        contentStackView.spacing = 10
-        contentStackView.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(contentStackView)
-        
+        // Hosted SwiftUI NowPlayingMetadataView (clean VStack + photo + contentTransition).
+        // Placed where the old contentStack + speaker image lived.
+        view.addSubview(nowPlayingMetadataHostingController.view)
+        nowPlayingMetadataHostingController.view.translatesAutoresizingMaskIntoConstraints = false
+
         view.addSubview(airplayButton)
         
         NSLayoutConstraint.activate([
@@ -1071,23 +1052,18 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
             volumeSlider.topAnchor.constraint(equalTo: playbackControlsView.bottomAnchor, constant: 20),
             volumeSlider.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 40),
             volumeSlider.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -40),
-            contentStackView.topAnchor.constraint(equalTo: volumeSlider.bottomAnchor, constant: 20),
-            contentStackView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
-            contentStackView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
-            languageSelectorView.topAnchor.constraint(equalTo: contentStackView.bottomAnchor, constant: 20),
+            nowPlayingMetadataHostingController.view.topAnchor.constraint(equalTo: volumeSlider.bottomAnchor, constant: 20),
+            nowPlayingMetadataHostingController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            nowPlayingMetadataHostingController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+            languageSelectorView.topAnchor.constraint(equalTo: nowPlayingMetadataHostingController.view.bottomAnchor, constant: 20),
             languageSelectorView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             languageSelectorView.widthAnchor.constraint(equalTo: view.widthAnchor),
             languageSelectorView.heightAnchor.constraint(equalToConstant: 50),
-            nowPlayingMetadataView.speakerImageView.topAnchor.constraint(equalTo: languageSelectorView.bottomAnchor, constant: 20),
-            nowPlayingMetadataView.speakerImageView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            nowPlayingMetadataView.speakerImageView.widthAnchor.constraint(equalToConstant: 100),
-            airplayButton.topAnchor.constraint(equalTo: nowPlayingMetadataView.speakerImageView.bottomAnchor, constant: 20),
+            airplayButton.topAnchor.constraint(equalTo: nowPlayingMetadataHostingController.view.bottomAnchor, constant: 120), // space for photo inside hosted view
             airplayButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             airplayButton.widthAnchor.constraint(equalToConstant: 44),
             airplayButton.heightAnchor.constraint(equalToConstant: 44)
         ])
-        nowPlayingMetadataView.speakerImageHeightConstraint = nowPlayingMetadataView.speakerImageView.heightAnchor.constraint(equalToConstant: 50)
-        nowPlayingMetadataView.speakerImageHeightConstraint?.isActive = true
 
         // NOTE: LanguageSelectorView now internally creates its collectionView + selectionIndicator,
         // adds the indicator as subview of the collection, and activates its own needleCenterXConstraint.
@@ -1319,7 +1295,7 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
                         self.selectedStreamIndex = targetIndex
                         radioPlayerCoordinator?.selectedStreamIndex = targetIndex
                     }
-                    self.languageSelectorView.setSelectedIndex(targetIndex, caller: "widgetPlay-synced")
+                    self.playerViewModel?.selectedStreamIndex = targetIndex // SwiftUI observes VM
                 }
             }
         case "pause":
@@ -1427,8 +1403,8 @@ extension ViewController {
 
 extension ViewController {
     func updateStatusLabel(text: String, backgroundColor: UIColor, textColor: UIColor) {
-        // Forward to composed controls view (playback status)
-        playbackControlsView.setStatus(text: text, backgroundColor: backgroundColor, textColor: textColor)
+        // Status now rendered inside SwiftUI PlaybackControlsView (driven by VM.visualState)
+        // playbackControlsView.setStatus was UIKit path.
         
         // Announce status changes to VoiceOver only for play/pause states (kept in owner per original)
         if text == String(localized: "status_playing", table: "Localizable") || text == String(localized: "status_paused", table: "Localizable") {
@@ -1448,22 +1424,8 @@ extension ViewController {
     ///
     /// - SeeAlso: `handleUserTogglePlayback()`, `handleTogglePlayback()` (public wrapper for SceneDelegate)
     @objc private func togglePlayback() {
-        // Instant visual press feedback (button lives in playbackControlsView)
-        let targetButton = playbackControlsView.playPauseButton
-        UIView.animate(withDuration: 0.1, animations: {
-            targetButton.transform = CGAffineTransform(scaleX: 0.95, y: 0.95)
-        }) { _ in
-            UIView.animate(withDuration: 0.1) {
-                targetButton.transform = .identity
-            }
-        }
-        
-        // Prevent multiple rapid taps
-        targetButton.isUserInteractionEnabled = false
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-            self?.playbackControlsView.playPauseButton.isUserInteractionEnabled = true
-        }
-        
+        // SwiftUI PlaybackControlsView provides its own press feedback via Button.
+        // Rapid-tap guard is handled inside the VM/coordinator paths if needed.
         Task { @MainActor in
             await self.handleUserTogglePlayback()
         }
@@ -1490,8 +1452,8 @@ extension ViewController {
     private func safeUpdateStatusLabel(text: String, backgroundColor: UIColor, textColor: UIColor, isPermanentError: Bool) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            // Use the setter (it contains the redundant-text skip)
-            self.playbackControlsView.setStatus(text: text, backgroundColor: backgroundColor, textColor: textColor)
+            // Status updated via VM.visualState -> SwiftUI PlaybackControlsView
+            // (no direct setStatus on hosted view).
             
             // Permanent error state is now driven by SecurityModelValidator.isPermanentlyInvalid + intent.
             
