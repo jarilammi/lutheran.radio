@@ -36,6 +36,11 @@
 // AGENT NOTE: This is one of the documented single sources of truth.
 // Bypassing it for widget or playback intent logic creates drift and is
 // forbidden.
+//
+// SSOT consolidation (eb52d3b6): PersistedWidgetState became the complete
+// authoritative snapshot (visualState + currentLanguage + hasError + streamMetadata).
+// Legacy keys (isPlaying, playerVisualState, currentLanguage, hasError bool)
+// are now read-only fallbacks for pre-snapshot installs only.
 
 import Foundation
 import AVFoundation
@@ -84,21 +89,18 @@ import os
 /// - `.userPaused` — explicit user pause/stop. Set in `stop()`, `markAsUserPaused()`,
 ///   `setUserPaused()`. Cleared only by `setUserIntentToPlay()` or widget play paths
 ///   that call `clearUserPausedLockIfNeeded()`.
-/// - `.cleared` — privacy clear. Set via `resetStateToClearedForPrivacy()`. Cleared by the
-///   same explicit play paths (now generalized in clearUserPausedLockIfNeeded).
+///   (Why this guard exists: an explicit user pause action must never be overridden by
+///   cold-launch, resurrection, recovery, or KVO paths.)
 /// - `.securityLocked` — permanent security failure (DNS TXT fail, 403, cert error).
 ///   Set in `play()` guard and `setSecurityLocked()`. Persists until next explicit play
 ///   that passes validation.
-/// - `.cleared` — explicit privacy clear (Clear local playback state). Set only via
-///   `resetStateToClearedForPrivacy()` (called from `clearAllLocalState`). The .cleared intent
-///   is the hard blocker for this process (canProceedWithPlayback, play() entry, recovery, etc.)
-///   until an explicit user play. Visual is reset to .prePlay (clean ready) so the clear action
-///   itself produces no yellow connecting flash and post-clear cold launches see a clean
-///   first-play candidate. On the next launch (no snapshot) we default to .prePlay + proceed
-///   with normal cold-launch initial playback (same as a brand-new install; the prior specific
-///   stream is not remembered). Recently deleted data (snapshot, lastUpdateTime, etc.) is not
-///   re-created by launch setup until either an explicit play button or the successful post-clear
-///   cold-start play path.
+///   (Why this guard exists: a failing security validation is authoritative and permanent
+///   for this process until an explicit user play succeeds; protects the security model.)
+/// - `.cleared` — explicit privacy clear. Set via `resetStateToClearedForPrivacy()`
+///   (called from `clearAllLocalState`). Cleared only by explicit play paths
+///   (via `clearUserPausedLockIfNeeded()`).
+///   (Why this guard exists: user-initiated privacy clear is a hard resurrection
+///   blocker that forces clean .prePlay; post-clear launches must not replay prior state.)
 ///
 /// **Cold-Launch Grace Period** (defined in this actor):
 /// - `initializationSettlingPeriod = 5.0` seconds (see `Constants`)
@@ -418,6 +420,8 @@ actor SharedPlayerManager {
     }
     
     private func _recordUserPauseTimestampInternal() async {
+        // Purpose: record authoritative in-actor timestamp for wasRecentlyUserPaused.
+        // Key constraint: cross-process readers (widgets) continue to use lastUserPauseTime in UserDefaults.
         lastUserPauseTimestamp = Date().timeIntervalSince1970
     }
 
@@ -525,6 +529,8 @@ actor SharedPlayerManager {
     }
 
     private func _forceSetCurrentVisualState(_ state: PlayerVisualState) {
+        // Purpose: apply forced visual update from widget forcePersistVisualState path.
+        // Key constraint: only invoked via Task hop from nonisolated public surface; sets the loaded guard.
         currentVisualState = state
         hasLoadedVisualStateFromPersistence = true
     }
@@ -1710,13 +1716,14 @@ actor SharedPlayerManager {
     // MARK: - PlayerVisualState Persistence & Restoration (Private)
 
     private func saveVisualState() {
-        // Intentionally a no-op for persistence.
-        // All visual + language state flows through the PersistedWidgetState snapshot
-        // written by performActualSave and the widget intent paths. The call sites
-        // remain for in-memory discipline and resurrection protection.
+        // Purpose: no-op retained after eb52d3b6 PersistedWidgetState SSOT consolidation.
+        // Key constraint: authoritative writes now occur only via performActualSave +
+        // persistWidgetSnapshot; call sites preserved solely for resurrection path structure.
     }
 
     private func loadVisualState() -> PlayerVisualState {
+        // Purpose: legacy reader for actor in-memory state init / resurrection.
+        // Key constraint: snapshot (PersistedWidgetState) is always preferred; legacy JSON only for pre-snapshot installs.
         // Prefer the combined snapshot for actor in-memory initialization
         // (both main app and widget extension processes). Legacy key is migration-only.
         if let combined = Self.loadPersistedWidgetState() {
@@ -1731,14 +1738,20 @@ actor SharedPlayerManager {
 
     // MARK: - Legacy Migration
 
-    /// Historical one-time migration from the pre-2026 `isPlaying` boolean (and related
-    /// separate keys) to the unified `PersistedWidgetState` snapshot.
+    /// One-time legacy migration from the retired pre-snapshot `isPlaying` boolean
+    /// (and related separate keys) into the unified `PersistedWidgetState` snapshot.
     ///
-    /// Retired for normal/current installs: once a snapshot exists this is a no-op.
+    /// This is **idempotent and a complete no-op** once any `persistedWidgetState`
+    /// snapshot exists (enforced via direct key check to prevent recursion when called
+    /// from `loadPersistedWidgetState`).
+    ///
     /// Retained solely for very old installs that only ever wrote the legacy bool.
     ///
+    /// - Note: Can safely be removed after all pre-snapshot installs have upgraded
+    ///   (or after a major version bump + sufficient time). It is the final bridge
+    ///   from the old bool model to PersistedWidgetState as the sole SSOT.
+    ///
     /// Called from `loadPersistedWidgetState()` and `ensureVisualStateLoaded()`.
-    /// Safe to call multiple times.
     nonisolated static func migrateLegacyIsPlayingIfNeeded() {
         guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return }
 
