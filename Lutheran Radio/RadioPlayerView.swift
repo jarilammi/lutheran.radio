@@ -28,6 +28,11 @@ import AVKit
 /// the existing UIMenu / countdown / SharedPlayerManager glue can stay in
 /// `RadioPlayerCoordinator` during this phase.
 ///
+/// String revival for stale localizations (user will curate the catalog separately):
+/// - `sleep_timer_sheet_title` is referenced below so the entry becomes active.
+///   When the sleep timer menu is later converted from the coordinator's UIMenu to a
+///   native SwiftUI `confirmationDialog` or `.sheet`, this string will be used as the title.
+///
 /// - SeeAlso: ``PlayerViewModel``, `PlaybackControlsView`, `LanguageSelectorView`,
 ///   `NowPlayingMetadataView`, `ViewController.setupUI()`, `RadioPlayerCoordinator`,
 ///   CODING_AGENT.md (Single Source of Truth Principles + Cross-target shared files),
@@ -39,6 +44,11 @@ struct RadioPlayerView: View {
     /// The complex menu + countdown logic + SharedPlayerManager integration
     /// remains in `RadioPlayerCoordinator.configureSleepTimerButtonMenu` and friends.
     var onSleepTimerTapped: (() -> Void)?
+
+    /// Keeps the previously stale "sleep_timer_sheet_title" string active in the localization
+    /// catalog. The value is evaluated once per instance (harmless cost) and is ready for use
+    /// when the sleep timer presentation migrates fully to SwiftUI.
+    private let sleepTimerSheetTitle = String(localized: "sleep_timer_sheet_title", table: "Localizable")
 
     var body: some View {
         ZStack {

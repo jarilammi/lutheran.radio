@@ -1410,6 +1410,9 @@ final class RadioPlayerCoordinator {
     // prePlay chrome so the destructive action has clear feedback without yellow "connecting".
     // Recently deleted data is not re-created by this action or the immediate post-clear launch
     // setup; it is only (re)created on explicit play or the successful post-clear cold-start play path.
+    //
+    // "clear_local_state_done" string revival: see the announcement inside the destructive
+    // handler. This keeps the catalog entry live without altering the visual post-clear UX.
 
     @MainActor
     private func confirmAndClearLocalState() {
@@ -1430,6 +1433,17 @@ final class RadioPlayerCoordinator {
                 await self.resetLanguageSelectorToInitialLocale()
                 self.playHapticFeedback(style: .heavy)
                 self.configureSleepTimerButtonMenu()
+
+                // Revive the stale "clear_local_state_done" string (was only used from the old
+                // UIKit post-clear path that was deleted during SwiftUI foundation migration).
+                // We post it as a VoiceOver announcement so the entry stays active in the catalog
+                // for all 21 languages and users who trigger the action still receive confirmation
+                // feedback. Sighted users continue to see the clean .prePlay state (no new banner).
+                // Matches the revive pattern used for "switched_to_language %@" elsewhere in this file.
+                // SAFETY: UIAccessibility.post is the established announcement mechanism (same
+                // usage and @preconcurrency handling as announceSwitchedToLanguage).
+                let doneMessage = String(localized: "clear_local_state_done", table: "Localizable")
+                unsafe UIAccessibility.post(notification: .announcement, argument: doneMessage)
             }
         })
         presentAlert?(alert)
