@@ -71,6 +71,8 @@ All AI coding agents (Claude, Grok, Cursor, Aider, Windsurf, etc.) **must** foll
 
 This ensures every single change respects the same required security model, localization rules, and build gates.
 
+Grok users should also read [`GROK_TOOLS.md`](GROK_TOOLS.md). It documents the tools available to Grok and contains Lutheran Radio-specific examples and verification commands.
+
 **Reading order for security work (mandatory for agents):**
 
 When performing work that touches security, certificates, DNS validation, streaming URLs, the `Core/` framework, or this README's security sections, read in this exact order:

@@ -41,10 +41,11 @@ Agents must apply these standards to all new code and to any symbol or file they
 - **Verification-ready commands**: Any build, test, DNS, or certificate verification commands appearing in comments or docs must be directly copy-pasteable with expected success indicators.
 - **Layered permanent sources** (read in this order for security work):
   1. This file (rules + standards).
-  2. `Core/Core.docc/Articles/Security-Invariants.md` (formal invariants).
-  3. `Core/Core.docc/Articles/Architecture.md` (design rationale and layering).
-  4. `README.md` security sections (operational details, history table, verification commands).
-  5. Implementation (`///` + inline `// SAFETY:` comments).
+  2. `GROK_TOOLS.md` (Grok tool reference — **mandatory for Grok**)
+  3. `Core/Core.docc/Articles/Security-Invariants.md` (formal invariants).
+  4. `Core/Core.docc/Articles/Architecture.md` (design rationale and layering).
+  5. `README.md` security sections (operational details, history table, verification commands).
+  6. Implementation (`///` + inline `// SAFETY:` comments).
 - **Test documentation**: Tests should state the specific invariant, permanent/transient error case, or behavioral property they protect (see existing Core test patterns).
 
 ### Avoiding Over-Documentation
