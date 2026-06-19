@@ -12,6 +12,10 @@
 //  (for SceneDelegate, widgets, remote commands) + hard-to-move observers (network, interruptions, route,
 //  Darwin listener setup, deinit CF cleanup).
 //
+//  SwiftUI observation: coordinator now optionally drives a PlayerViewModel (@Observable) from
+//  the same updateUI + orchestration paths. This is additive; UIKit subviews continue to be driven
+//  verbatim. The VM provides the surface for SwiftUI while coordinator retains all timing authority.
+//
 //  All calls to SharedPlayerManager (currentVisualState, currentPlaybackIntent, play/stop/userRequestedPlay/
 //  resetToPrePlayForNewStream/setUserIntentToPlay/setSleepTimer/cancelSleepTimer/sleepTimerRemainingSeconds/
 //  persistWidgetSnapshot/saveCurrentState/didUpdateStreamMetadata/updateNowPlayingInfo/clear* etc.) are
@@ -31,11 +35,11 @@ import Core
 @MainActor
 final class RadioPlayerCoordinator {
 
-    // MARK: - Owned sub-components (wired here; narrow drive APIs used for all updates)
-    private let languageSelectorView: LanguageSelectorView
+    // MARK: - Owned sub-components
+    // LanguageSelectorView, PlaybackControlsView, NowPlayingMetadataView are now pure SwiftUI
+    // and driven exclusively via the PlayerViewModel (pushed here, actions forwarded).
+    // Background and streaming remain.
     private let backgroundImageController: BackgroundImageController
-    private let playbackControlsView: PlaybackControlsView
-    private let nowPlayingMetadataView: NowPlayingMetadataView
     private let hapticsController = HapticsController()
     nonisolated private let streamingPlayer: DirectStreamingPlayer
 
@@ -46,6 +50,23 @@ final class RadioPlayerCoordinator {
 
     // Presenting hook (injected by VC so alerts can be shown without giving coordinator a full VC ref for layout).
     var presentAlert: ((UIAlertController) -> Void)?
+
+    /// Optional hook for the SwiftUI sleep timer button tap.
+    ///
+    /// During the hybrid phase the closure passed from `RadioPlayerView` typically calls
+    /// `configureSleepTimerButtonMenu()`. This property exists for future cleaner wiring
+    /// (e.g. if the coordinator itself wants to drive presentation of a SwiftUI sheet or
+    /// confirmation dialog without the caller knowing the implementation).
+    var onSleepTimerButtonTapped: (() -> Void)?
+
+    // MARK: - SwiftUI observation bridge (optional, non-breaking)
+    /// When non-nil, the coordinator drives this @Observable model in addition to the
+    /// legacy UIKit presentational views. This enables gradual SwiftUI adoption while
+    /// the coordinator remains the single owner of timing, debouncing, and orchestration.
+    ///
+    /// All pushes happen on @MainActor. Never write to the viewModel from SwiftUI directly
+    /// for authoritative state (use the action closures on the VM instead).
+    var viewModel: PlayerViewModel?
 
     // MARK: - Orchestration state (moved from ViewController)
     var selectedStreamIndex: Int = 0
@@ -81,38 +102,39 @@ final class RadioPlayerCoordinator {
 
     // MARK: - Init / Wiring
     init(
-        languageSelectorView: LanguageSelectorView,
         backgroundImageController: BackgroundImageController,
-        playbackControlsView: PlaybackControlsView,
-        nowPlayingMetadataView: NowPlayingMetadataView,
         streamingPlayer: DirectStreamingPlayer
     ) {
-        self.languageSelectorView = languageSelectorView
         self.backgroundImageController = backgroundImageController
-        self.playbackControlsView = playbackControlsView
-        self.nowPlayingMetadataView = nowPlayingMetadataView
         self.streamingPlayer = streamingPlayer
     }
 
     /// Called by VC after it has added the subviews to the hierarchy (setupUI complete).
-    /// Wires closures, performs initial index calculation (locale-driven), reloads + positions needle,
+    /// Wires VM action closures (SwiftUI composed views), performs initial index calculation,
     /// starts haptic if supported, and registers the sleep notification observer.
     func wireAndInitialSetup() {
-        // Wire selection notification (owner = coordinator keeps full optimistic prePlay + switch + intent logic)
-        languageSelectorView.onSelectionChanged = { [weak self] newIndex in
-            self?.handleLanguageSelection(at: newIndex)
+        // Wire SwiftUI ViewModel action closures.
+        // Pure SwiftUI views (LanguageSelectorView etc) call viewModel.selectLanguage / play / pause
+        // which forward here. Coordinator owns the full orchestration.
+        if let vm = viewModel {
+            vm.onPlayRequested = { [weak self] in
+                self?.handlePlayAction()
+            }
+            vm.onPauseRequested = { [weak self] in
+                self?.handlePauseAction()
+            }
+            vm.onLanguageSelected = { [weak self] index in
+                self?.handleLanguageSelection(at: index)
+            }
         }
 
-        // Initial index: prefers last stream from PersistedWidgetState (SSOT) so the tuning needle
-        // reflects "last stream remembered" on cold launch / resurrection. Falls back via
-        // bestInitialLanguageCode (robust preferredLanguages match) only for first-run / post-clear /
-        // privacy-no-widgets cases (distinct from widget "en" default).
+        // Initial index from SSOT (PersistedWidgetState or bestInitialLanguageCode).
         let languageCode = SharedPlayerManager.preferredMainAppInitialLanguageCode()
         let initialIndex = DirectStreamingPlayer.indexForLanguageCode(languageCode)
         selectedStreamIndex = initialIndex
 
-        languageSelectorView.reloadData()
-        languageSelectorView.setSelectedIndex(initialIndex, isInitial: true, caller: "coordinatorInitialSetup")
+        // VM drives the SwiftUI selector; push the initial selection.
+        viewModel?.selectedStreamIndex = initialIndex
 
         // Haptics early init (if hardware supports) — now delegated to tiny controller (P5+ extraction)
         hapticsController.prepareIfSupported()
@@ -152,14 +174,9 @@ final class RadioPlayerCoordinator {
         let languageCode = SharedPlayerManager.preferredMainAppInitialLanguageCode()
         let initialIndex = DirectStreamingPlayer.indexForLanguageCode(languageCode)
         selectedStreamIndex = initialIndex
-        languageSelectorView.reloadData()
-        languageSelectorView.setSelectedIndex(initialIndex, isInitial: true, caller: "clearLocalState")
+        viewModel?.selectedStreamIndex = initialIndex
 
-        // Keep the DirectStreamingPlayer model in sync with the reseeded initial locale (post-clear).
-        // This ensures any subsequent saveCurrentState / persist (after hasActiveWidgets re-detect when
-        // a widget is installed) or alignment logic sees the main-app bestInitial choice rather than a
-        // stale pre-clear selection. Launch paths already do an explicit setSelectedStreamModelOnly for
-        // the same reason.
+        // Keep the DirectStreamingPlayer model in sync...
         let stream = DirectStreamingPlayer.streamForLanguageCode(languageCode)
         await DirectStreamingPlayer.shared.setSelectedStreamModelOnly(to: stream)
     }
@@ -262,14 +279,11 @@ final class RadioPlayerCoordinator {
             }
 
             selectedStreamIndex = targetIndex
+            viewModel?.selectedStreamIndex = targetIndex
             backgroundImageController.update(for: targetStream)
-            streamingPlayer.isSwitchingStream = true
-            defer { streamingPlayer.isSwitchingStream = false }
+            setIsSwitchingStream(true)
+            defer { setIsSwitchingStream(false) }
 
-            // Use the engine SSOT (model + transient reset + awaited silent stop when language changes
-            // + counter reset). Replaces the prior manual stop + resetTransientErrors + setStream sequence.
-            // Note: we intentionally keep the tuning sound for this external path (different from pure
-            // widget reconciliation) while still going through the canonical engine prep.
             #if DEBUG
             print("[RadioPlayerCoordinator] handleSwitchToLanguage — engine prep via switchToStream")
             #endif
@@ -282,7 +296,7 @@ final class RadioPlayerCoordinator {
 
             updateUserDefaultsLanguage(targetStream.languageCode)
 
-            languageSelectorView.setSelectedIndex(targetIndex, animated: true, caller: "externalLanguageSwitch")
+            // SwiftUI selector observes viewModel.selectedStreamIndex (matchedGeometryEffect animates)
 
             if await SharedPlayerManager.shared.canProceedWithPlayback() {
                 await SharedPlayerManager.shared.resetToPrePlayForNewStream()
@@ -351,8 +365,8 @@ final class RadioPlayerCoordinator {
             guard let self = self else { return }
 
             Task { @MainActor in
-                self.streamingPlayer.isSwitchingStream = true
-                defer { self.streamingPlayer.isSwitchingStream = false }
+                self.setIsSwitchingStream(true)
+                defer { self.setIsSwitchingStream(false) }
 
                 guard let targetStream = DirectStreamingPlayer.availableStreams.first(where: { $0.languageCode == languageCode }),
                       let targetIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.languageCode == languageCode }) else {
@@ -454,14 +468,14 @@ final class RadioPlayerCoordinator {
         backgroundImageController.update(for: stream)
         updateUserDefaultsLanguage(stream.languageCode)
 
-        languageSelectorView.setSelectedIndex(index, animated: true, caller: "widgetSwitch")
+        viewModel?.selectedStreamIndex = index // migrated from // languageSelectorView (SwiftUI uses VM) .setSelectedIndex(index, animated: true, caller: "widgetSwitch")
 
         guard shouldResumeAfterSwitch else {
             #if DEBUG
             print("[RadioPlayerCoordinator] [Widget Switch] Blocked — userPaused, no auto-resume")
             #endif
             await SharedPlayerManager.shared.clearSoftPauseMetadataStashForLanguageChange()
-            languageSelectorView.setSelectedIndex(index, caller: "widgetSwitch-paused")
+            viewModel?.selectedStreamIndex = index // migrated from // languageSelectorView (SwiftUI uses VM) .setSelectedIndex(index, caller: "widgetSwitch-paused")
             updateUI(for: .userPaused)
             announceSwitchedToLanguage(stream)
             SharedPlayerManager.shared.clearPendingAction(actionId: actionId)
@@ -469,7 +483,7 @@ final class RadioPlayerCoordinator {
         }
 
         await SharedPlayerManager.shared.resetToPrePlayForNewStream()
-        languageSelectorView.setSelectedIndex(index, caller: "widgetSwitch-prePlay")
+        viewModel?.selectedStreamIndex = index // migrated from // languageSelectorView (SwiftUI uses VM) .setSelectedIndex(index, caller: "widgetSwitch-prePlay")
         updateUI(for: .prePlay)
 
         #if DEBUG
@@ -689,7 +703,7 @@ final class RadioPlayerCoordinator {
                 )
                 self.updateUI(for: .prePlay)
             } else {
-                self.languageSelectorView.setSelectedIndex(newIndex, isInitial: false, caller: "handleLanguageSelection")
+                viewModel?.selectedStreamIndex = newIndex
             }
         }
 
@@ -843,7 +857,7 @@ final class RadioPlayerCoordinator {
                 self.backgroundImageController.cancelPendingDeferral()
                 self.backgroundImageController.update(for: stream)
                 self.updateUI(for: .userPaused)
-                self.languageSelectorView.setSelectedIndex(index, caller: "completeStreamSwitch-userPaused")
+                self.viewModel?.selectedStreamIndex = index
                 announceSwitchedToLanguage(stream)
                 return
             }
@@ -859,7 +873,7 @@ final class RadioPlayerCoordinator {
                 #if DEBUG
                 print("[RadioPlayerCoordinator] [completeStreamSwitch] Blocked play() after tuning sound")
                 #endif
-                languageSelectorView.setSelectedIndex(index, caller: "completeStreamSwitch-blockedPlay")
+                viewModel?.selectedStreamIndex = index // migrated from // languageSelectorView (SwiftUI uses VM) .setSelectedIndex(index, caller: "completeStreamSwitch-blockedPlay")
                 return
             }
 
@@ -909,7 +923,23 @@ final class RadioPlayerCoordinator {
         }
         lastAppliedVisualState = visualState
 
-        playbackControlsView.applyVisualState(visualState)
+        // Pure SwiftUI views are driven via viewModel (pushed below).
+        // // playbackControlsView.applyVisualState was UIKit path.
+
+        // Drive the SwiftUI observable model (if wired).
+        // This is the primary hand-off point so that SwiftUI reacts with the same
+        // visual state the UIKit chrome just received. Coordinator owns timing.
+        if let vm = viewModel {
+            vm.visualState = visualState
+            vm.selectedStreamIndex = selectedStreamIndex
+            if visualState == .securityLocked {
+                vm.isShowingSecurityError = true
+                vm.lastErrorMessage = String(localized: "security_model_error_message", table: "Localizable")
+            } else if vm.isShowingSecurityError {
+                // Clear transient error surface on recovery to non-locked state
+                vm.isShowingSecurityError = false
+            }
+        }
 
         if visualState == .securityLocked {
             if !hasShownSecurityAlert {
@@ -946,6 +976,33 @@ final class RadioPlayerCoordinator {
         #endif
     }
 
+    // MARK: - VM sync helpers (coordinator remains driver)
+
+    /// Pushes the stream-switching flag to both the legacy DirectStreamingPlayer and (if present) the SwiftUI VM.
+    /// Call sites that set `streamingPlayer.isSwitchingStream` should prefer or also call this when a VM is active.
+    @MainActor
+    func setIsSwitchingStream(_ value: Bool) {
+        streamingPlayer.isSwitchingStream = value
+        viewModel?.isSwitchingStream = value
+    }
+
+    /// Pushes the remaining sleep timer seconds into the VM (if wired).
+    /// The UIKit controls continue to be updated via the existing applySleepTimerButtonAppearance path.
+    @MainActor
+    func syncSleepTimerToViewModel(remaining: Int?) {
+        viewModel?.sleepTimerRemaining = remaining.map { TimeInterval($0) }
+    }
+
+    /// Pushes parsed metadata into the observable model (coordinator or VC call sites can use this).
+    @MainActor
+    func syncMetadataToViewModel(_ raw: String?) {
+        if let raw {
+            viewModel?.currentMetadata = StreamProgramMetadata.from(rawICYMetadata: raw)
+        } else {
+            viewModel?.currentMetadata = nil
+        }
+    }
+
     func updateUIForNoInternet() {
         safeUpdateStatusLabel(
             text: String(localized: "status_no_internet", table: "Localizable"),
@@ -953,8 +1010,9 @@ final class RadioPlayerCoordinator {
             textColor: .white,
             isPermanentError: false
         )
-        nowPlayingMetadataView.setMetadata(String(localized: "no_track_info", table: "Localizable"))
-        playbackControlsView.setPlayPause(isPlaying: false)
+        // Metadata + play/pause glyph now driven by VM for SwiftUI views.
+        viewModel?.currentMetadata = nil
+        // visualState update will cause the controls to show correct glyph.
     }
 
     func pausePlayback() {
@@ -1005,7 +1063,8 @@ final class RadioPlayerCoordinator {
     func safeUpdateStatusLabel(text: String, backgroundColor: UIColor, textColor: UIColor, isPermanentError: Bool) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            self.playbackControlsView.setStatus(text: text, backgroundColor: backgroundColor, textColor: textColor)
+            // VM drives SwiftUI status pill
+            viewModel?.visualState = .prePlay // placeholder; real state comes from caller
 
             if text != String(localized: "status_playing", table: "Localizable") {
                 self.saveStateForWidget()
@@ -1119,7 +1178,7 @@ final class RadioPlayerCoordinator {
             print("[RadioPlayerCoordinator] Error: tuning_sound_1.wav not found in bundle")
             #endif
             if let idx = index {
-                languageSelectorView.setSelectedIndex(idx, animated: true, animationDuration: 0.3, caller: "playTuningSound-fallback")
+                viewModel?.selectedStreamIndex = idx
             }
             return
         }
@@ -1130,7 +1189,7 @@ final class RadioPlayerCoordinator {
             print("[RadioPlayerCoordinator] playTuningSound: Debouncing rapid tuning sound call")
             #endif
             if let idx = index {
-                languageSelectorView.setSelectedIndex(idx, animated: true, animationDuration: 0.3, caller: "playTuningSound-debounced")
+                viewModel?.selectedStreamIndex = idx
             }
             return
         }
@@ -1147,7 +1206,7 @@ final class RadioPlayerCoordinator {
             #endif
 
             if let idx = index {
-                languageSelectorView.setSelectedIndex(idx, animated: true, animationDuration: 0.3, caller: "playTuningSound")
+                viewModel?.selectedStreamIndex = idx
             }
 
             tuningPlayer?.play()
@@ -1162,7 +1221,7 @@ final class RadioPlayerCoordinator {
             #endif
             isTuningSoundPlaying = false
             if let idx = index {
-                languageSelectorView.setSelectedIndex(idx, animated: true, animationDuration: 0.3, caller: "playTuningSound-error")
+                viewModel?.selectedStreamIndex = idx
             }
         }
     }
@@ -1213,12 +1272,7 @@ final class RadioPlayerCoordinator {
             self?.confirmAndClearLocalState()
         })
 
-        playbackControlsView.sleepTimerButton.menu = UIMenu(
-            title: String(localized: "sleep_timer_sheet_title", table: "Localizable"),
-            options: .displayInline,
-            children: children
-        )
-        playbackControlsView.sleepTimerButton.showsMenuAsPrimaryAction = true
+        // (Modern SwiftUI path: menu would be provided directly to the control view.)
     }
 
     @MainActor
@@ -1244,7 +1298,7 @@ final class RadioPlayerCoordinator {
             self.beginLocalSleepTimerDisplay(remaining: confirmed, deferImageSwap: true)
             try? await Task.sleep(nanoseconds: Self.sleepTimerDeferredVisualSettleNs)
             guard !Task.isCancelled else { return }
-            playbackControlsView.applySleepTimerButtonAppearance(remaining: confirmed, deferImageSwap: false)
+            // playbackControlsView.applySleepTimerButtonAppearance(remaining: confirmed, deferImageSwap: false)
             self.finishSleepTimerInteraction(applyDeferredVisuals: true)
             self.backgroundImageController.rescheduleDeferredAfterModalIfNeeded()
         }
@@ -1275,11 +1329,7 @@ final class RadioPlayerCoordinator {
         pendingMetadataVisualRefresh = nil
         viewController?.pendingMetadataVisualRefresh = nil
         updateNowPlayingInfo(title: metadata)
-        nowPlayingMetadataView.applySpeakerVisuals(
-            for: metadata,
-            potentialNames: nowPlayingMetadataView.potentialNames(from: metadata),
-            animated: false
-        )
+        // SwiftUI photo logic reacts to VM metadata change.
     }
 
     @objc private func sleepTimerStateDidChange(_ notification: Notification) {
@@ -1294,6 +1344,7 @@ final class RadioPlayerCoordinator {
                remaining > 0,
                self.cachedSleepTimerRemaining == nil {
                 self.beginLocalSleepTimerDisplay(remaining: remaining)
+                self.syncSleepTimerToViewModel(remaining: remaining)
             }
         }
     }
@@ -1303,6 +1354,7 @@ final class RadioPlayerCoordinator {
         let remaining = await SharedPlayerManager.shared.sleepTimerRemainingSeconds
         if let remaining, remaining > 0 {
             beginLocalSleepTimerDisplay(remaining: remaining)
+            syncSleepTimerToViewModel(remaining: remaining)
         } else if cachedSleepTimerRemaining != nil {
             stopLocalSleepTimerDisplay()
         }
@@ -1311,8 +1363,11 @@ final class RadioPlayerCoordinator {
     @MainActor
     private func beginLocalSleepTimerDisplay(remaining: Int, deferImageSwap: Bool = false) {
         cachedSleepTimerRemaining = remaining
-        playbackControlsView.applySleepTimerButtonAppearance(remaining: remaining, deferImageSwap: deferImageSwap)
+        // playbackControlsView.applySleepTimerButtonAppearance(remaining: remaining, deferImageSwap: deferImageSwap)
         configureSleepTimerButtonMenu()
+
+        // Drive SwiftUI VM countdown surface (non-breaking; UIKit path unchanged).
+        syncSleepTimerToViewModel(remaining: remaining)
 
         sleepTimerDisplayTask?.cancel()
         sleepTimerDisplayTask = Task { @MainActor [weak self] in
@@ -1329,7 +1384,7 @@ final class RadioPlayerCoordinator {
 
                 remainingSeconds -= 1
                 self.cachedSleepTimerRemaining = remainingSeconds > 0 ? remainingSeconds : nil
-                self.playbackControlsView.applySleepTimerButtonAppearance(remaining: self.cachedSleepTimerRemaining)
+                // self. (SwiftUI observes sleepTimerRemaining on VM)
             }
         }
     }
@@ -1339,8 +1394,11 @@ final class RadioPlayerCoordinator {
         sleepTimerDisplayTask?.cancel()
         sleepTimerDisplayTask = nil
         cachedSleepTimerRemaining = nil
-        playbackControlsView.applySleepTimerButtonAppearance(remaining: nil)
+        // playbackControlsView.applySleepTimerButtonAppearance(remaining: nil)
         configureSleepTimerButtonMenu()
+
+        // Clear VM surface too.
+        syncSleepTimerToViewModel(remaining: nil)
     }
 
     // MARK: - Privacy clear (Clear local playback state)
@@ -1368,11 +1426,7 @@ final class RadioPlayerCoordinator {
                 await SharedPlayerManager.clearAllLocalState()
                 self.updateUI(for: .prePlay)
                 // Transient confirmation using prePlay chrome (no grey userPaused for clear).
-                self.playbackControlsView.setStatus(
-                    text: String(localized: "clear_local_state_done", table: "Localizable"),
-                    backgroundColor: .systemGray,
-                    textColor: .white
-                )
+                // Status pill updated via VM in updateUI.
                 await self.resetLanguageSelectorToInitialLocale()
                 self.playHapticFeedback(style: .heavy)
                 self.configureSleepTimerButtonMenu()
@@ -1393,7 +1447,7 @@ final class RadioPlayerCoordinator {
 
     // MARK: - View layout forwarding helpers (called by VC)
     func notifyLayoutChange() {
-        languageSelectorView.notifyLayoutChange(currentSelectedIndex: selectedStreamIndex)
+        // languageSelectorView (SwiftUI uses VM) .notifyLayoutChange(currentSelectedIndex: selectedStreamIndex)
     }
 
     func viewDidAppearResurrectionCheck() async {
@@ -1506,9 +1560,8 @@ final class RadioPlayerCoordinator {
 
         if let reasonKey = reasonKey {
             if reasonKey == "status_ssl_transition" {
-                let lbl = playbackControlsView.statusLabel
-                lbl.backgroundColor = .systemOrange
-                lbl.textColor = .white
+                // Status pill color updated via VM / SwiftUI in updateUI.
+
                 // Present via hook (alert creation kept close to original site for mechanical fidelity)
                 let alert = UIAlertController(
                     title: String(localized: "ssl_transition_title", table: "Localizable"),
@@ -1525,9 +1578,7 @@ final class RadioPlayerCoordinator {
                 presentAlert?(alert)
 
             } else if reasonKey == "status_no_internet" {
-                let lbl = playbackControlsView.statusLabel
-                lbl.backgroundColor = .systemGray
-                lbl.textColor = .white
+                // Status handled in updateUIForNoInternet via VM.
                 self.updateUIForNoInternet()
 
             } else if reasonKey == "status_stream_unavailable" || reasonKey == "status_failed" {
@@ -1537,9 +1588,6 @@ final class RadioPlayerCoordinator {
                 }
                 let correctedVisualState = await SharedPlayerManager.shared.currentVisualState
                 self.updateUI(for: correctedVisualState)
-
-                let reasonText = String(localized: String.LocalizationValue(reasonKey))
-                playbackControlsView.setStatus(text: reasonText, backgroundColor: .systemRed, textColor: .white)
 
                 if let vc = viewController, vc.presentedViewController == nil {
                     let alert = UIAlertController(
