@@ -1508,47 +1508,18 @@ extension ViewController: StreamingPlayerDelegate {
                 }
                 
             case "switch":
-                if let languageCode = parameter,
-                   let targetStream = DirectStreamingPlayer.availableStreams.first(where: { $0.languageCode == languageCode }),
-                   let newIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.languageCode == languageCode }) {
-                    
-                    // Note: switchToStream is now async
-                    await SharedPlayerManager.shared.switchToStream(targetStream)
-                    
-                    // Update UI (safe on @MainActor)
-                    selectedStreamIndex = newIndex
-                    radioPlayerCoordinator?.selectedStreamIndex = newIndex
-                    languageSelectorView.setSelectedIndex(newIndex, animated: true, caller: "handleSceneCommand-switch")
-                    backgroundImageController.update(for: targetStream)
-                    
-                    // Respect visual state — only resume if not user-paused
-                    try? await Task.sleep(for: .seconds(0.5))
-                    
-                    let finalVisualState = await manager.currentVisualState
-                    if finalVisualState.shouldAutoPlayOrResume && !state.isPlaying {
-                        #if DEBUG
-                        print("[ViewController] ▶ Widget switch → resuming playback (user intent)")
-                        #endif
-                        await manager.setUserIntentToPlay()
-                        await SharedPlayerManager.shared.play()
-                    } else if !finalVisualState.shouldAutoPlayOrResume {
-                        #if DEBUG
-                        print("[ViewController] Widget switch blocked resume — .userPaused")
-                        #endif
-                        playbackControlsView.setPlayPause(isPlaying: false)
-                        radioPlayerCoordinator?.safeUpdateStatusLabel(text: String(localized: "status_paused", table: "Localizable"),
-                                              backgroundColor: .systemYellow,
-                                              textColor: .label,
-                                              isPermanentError: false)
-                    }
-                    
-                    // Feedback and save
-                    radioPlayerCoordinator?.playHapticFeedback(style: .medium)
-                    unsafe UIAccessibility.post(notification: .announcement,
-                                        argument: String(localized: "switched_to_language \(targetStream.language)", table: "Localizable"))
-                    
-                    // remains inside the lang-switch subcase of widget action dispatch).
-                    saveStateForWidget()
+                if let languageCode = parameter {
+                    #if DEBUG
+                    print("[ViewController] Widget switch action reached legacy handleWidgetAction path — delegating to canonical coordinator handler (primary routes use handleWidgetSwitchToLanguage + switchToStreamFromWidget)")
+                    #endif
+                    // Primary call sites (SceneDelegate widget-action + checkForPendingWidgetActions)
+                    // already special-case "switch" and call handleWidgetSwitchToLanguage directly.
+                    // This case is legacy/unreachable in current routing. Delegation ensures that
+                    // even if hit, we do not duplicate manual engine sequences or UI logic.
+                    // The processedActionIds guard inserted at top of this method will cause the
+                    // inner handler to early-return; the trailing clearPending + save below still run.
+                    // Any real switch work will have been driven by the canonical path.
+                    handleWidgetSwitchToLanguage(languageCode, actionId: actionId)
                 }
                 
             default:

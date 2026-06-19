@@ -222,6 +222,18 @@ final class RadioPlayerCoordinator {
         }
     }
 
+    /// External / Siri / deep-link / shortcut driven language switch entry point.
+    ///
+    /// Performs engine prep via `DirectStreamingPlayer.switchToStream`, plays the
+    /// special tuning sound + needle animation (unlike pure widget reconciliation),
+    /// respects current playback intent, and ends by announcing the switch to
+    /// VoiceOver via `announceSwitchedToLanguage`.
+    ///
+    /// - Parameter languageCode: Target ISO code (must match one of the 5 streams).
+    ///
+    /// - SeeAlso: `completeStreamSwitch`, `switchToStreamFromWidget(to:index:actionId:)`,
+    ///   `announceSwitchedToLanguage(_:)`, SceneDelegate (URL handling),
+    ///   RadioPlaybackIntents (related Siri flow).
     func handleSwitchToLanguage(_ languageCode: String) {
         Task { @MainActor in
             #if DEBUG
@@ -239,27 +251,22 @@ final class RadioPlayerCoordinator {
             selectedStreamIndex = targetIndex
             backgroundImageController.update(for: targetStream)
             streamingPlayer.isSwitchingStream = true
+            defer { streamingPlayer.isSwitchingStream = false }
 
+            // Use the engine SSOT (model + transient reset + awaited silent stop when language changes
+            // + counter reset). Replaces the prior manual stop + resetTransientErrors + setStream sequence.
+            // Note: we intentionally keep the tuning sound for this external path (different from pure
+            // widget reconciliation) while still going through the canonical engine prep.
             #if DEBUG
-            print("[RadioPlayerCoordinator] Starting silent stop for switch to \(languageCode)")
+            print("[RadioPlayerCoordinator] handleSwitchToLanguage — engine prep via switchToStream")
             #endif
-
-            streamingPlayer.stop(
-                reason: .streamSwitch,
-                silent: true
-            )
+            await streamingPlayer.switchToStream(targetStream)
 
             #if DEBUG
-            print("[RadioPlayerCoordinator] Playing tuning sound")
+            print("[RadioPlayerCoordinator] Playing tuning sound (external switch path)")
             #endif
             await playTuningSound(animateNeedleTo: targetIndex)
 
-            streamingPlayer.resetTransientErrors()
-
-            #if DEBUG
-            print("[RadioPlayerCoordinator] Setting stream to: \(targetStream.language)")
-            #endif
-            await streamingPlayer.setStream(to: targetStream)
             updateUserDefaultsLanguage(targetStream.languageCode)
 
             languageSelectorView.setSelectedIndex(targetIndex, animated: true, caller: "externalLanguageSwitch")
@@ -284,7 +291,7 @@ final class RadioPlayerCoordinator {
                 updateUI(for: .userPaused)
             }
 
-            streamingPlayer.isSwitchingStream = false
+            announceSwitchedToLanguage(targetStream)
 
             #if DEBUG
             print("[RadioPlayerCoordinator] handleSwitchToLanguage completed for \(languageCode)")
@@ -292,18 +299,29 @@ final class RadioPlayerCoordinator {
         }
     }
 
-    /// Widget / Live Activity / pending-action reconciliation for a stream switch.
+    /// Entry point for widget / Live Activity / pending-action reconciliation of a stream/language switch.
     ///
-    /// This is the silent (no tuning) mirror of `completeStreamSwitch`.
-    /// It receives the action after the widget wrote optimistic state + pending + Darwin signal.
-    /// Performs the authoritative main-app work and clears the pending action.
+    /// Performs guard, deduplication, and debounce, then delegates to the canonical
+    /// `switchToStreamFromWidget(to:index:actionId:)` for the actual engine + intent + play orchestration.
+    /// Never plays tuning sound or animates the needle (those are main-app flag-tap only).
     ///
-    /// - Important: Must never play tuning sound. Must respect `currentPlaybackIntent`
-    ///   (do not resume if the user had explicitly paused).
+    /// - Parameters:
+    ///   - languageCode: Target stream language code (e.g. "en", "fi").
+    ///   - actionId: Unique ID for this pending widget action (used for dedup + clearing).
     ///
-    /// - SeeAlso: `completeStreamSwitch`, `SwitchStreamIntent.perform` (in widget target),
-    ///   `DirectStreamingPlayer.switchToStream`, `SharedPlayerManager` (for intent + resetToPrePlay),
-    ///   CODING_AGENT.md (SSOTs for widget state).
+    /// - Important: Must respect `currentPlaybackIntent`. Does not auto-resume when user has
+    ///   an explicit `.userPaused` (or `.securityLocked` / `.cleared`).
+    ///
+    /// - SeeAlso: `switchToStreamFromWidget(to:index:actionId:)`, `completeStreamSwitch`,
+    ///   `DirectStreamingPlayer.switchToStream`, `SharedPlayerManager.currentPlaybackIntent`,
+    ///   `SharedPlayerManager.resetToPrePlayForNewStream`, `SharedPlayerManager.play`,
+    ///   CODING_AGENT.md (Single Source of Truth Principles + "Cross-target shared source files"),
+    ///   <doc:Architecture>.
+    ///
+    /// AGENT NOTE: handleWidgetSwitchToLanguage is the *only* public entry for widget-driven
+    /// language changes into the main app. The actionId/processed/debounce wrapper must stay here.
+    /// Core orchestration (reset/switchToStream/play sequencing) lives in the private canonical below.
+    /// Update both this doc and the canonical on any change to the widget path.
     func handleWidgetSwitchToLanguage(_ languageCode: String, actionId: String) {
         guard !processedActionIds.contains(actionId) else { return }
         processedActionIds.insert(actionId)
@@ -328,54 +346,111 @@ final class RadioPlayerCoordinator {
                     #if DEBUG
                     print("[RadioPlayerCoordinator] Widget switch: target stream not found for \(languageCode)")
                     #endif
-                    return
-                }
-
-                let playbackIntent = await SharedPlayerManager.shared.currentPlaybackIntent
-                let shouldResumeAfterSwitch = playbackIntent.isActivePlaybackIntent
-
-                // Single call for the common engine prep that both main-app flag switches
-                // and widget reconciliation use. See DirectStreamingPlayer.switchToStream.
-                await self.streamingPlayer.switchToStream(targetStream)
-
-                self.selectedStreamIndex = targetIndex
-                self.backgroundImageController.update(for: targetStream)
-                self.updateUserDefaultsLanguage(languageCode)
-
-                self.languageSelectorView.setSelectedIndex(targetIndex, animated: true, caller: "widgetSwitch")
-
-                guard shouldResumeAfterSwitch else {
-                    #if DEBUG
-                    print("[RadioPlayerCoordinator] [Widget Switch] Blocked — userPaused, no auto-resume")
-                    #endif
-                    await SharedPlayerManager.shared.clearSoftPauseMetadataStashForLanguageChange()
-                    self.languageSelectorView.setSelectedIndex(targetIndex, caller: "widgetSwitch-paused")
-                    self.updateUI(for: .userPaused)
+                    // Still clear the action to avoid it sticking around.
                     SharedPlayerManager.shared.clearPendingAction(actionId: actionId)
                     return
                 }
 
-                await SharedPlayerManager.shared.resetToPrePlayForNewStream()
-                self.languageSelectorView.setSelectedIndex(targetIndex, caller: "widgetSwitch-prePlay")
-                self.updateUI(for: .prePlay)
-
-                #if DEBUG
-                print("[RadioPlayerCoordinator] ▶ [Widget Switch] Starting new stream using SharedPlayerManager.play() — main app path")
-                #endif
-
-                await SharedPlayerManager.shared.play()
-
-                #if DEBUG
-                print("[RadioPlayerCoordinator] Widget switch: SharedPlayerManager.play() succeeded")
-                print("[RadioPlayerCoordinator] Widget switch completed (authoritative save covered by play())")
-                #endif
-
-                SharedPlayerManager.shared.clearPendingAction(actionId: actionId)
+                await self.switchToStreamFromWidget(to: targetStream, index: targetIndex, actionId: actionId)
             }
         }
 
         pendingWidgetSwitchWorkItem = workItem
         DispatchQueue.main.async(execute: workItem)
+    }
+
+    /// Canonical path for stream switches originating from the widget (or Live Activity).
+    ///
+    /// This is the silent (no tuning sound, no needle animation) counterpart to
+    /// `completeStreamSwitch`. It owns the common post-guard orchestration that both
+    /// widget reconciliation and (future) other non-flag-tap main-app paths may share:
+    ///
+    /// 1. Engine preparation via the **single source of truth**
+    ///    `DirectStreamingPlayer.switchToStream(_:)` (model update, transient reset,
+    ///    awaited silent `.streamSwitch` stop on language change, fresh attempt counters).
+    /// 2. UI mirrors: `selectedStreamIndex`, background image, UserDefaults language,
+    ///    language selector position.
+    /// 3. Intent guard using `SharedPlayerManager.currentPlaybackIntent`:
+    ///    do not auto-resume when the user had explicitly paused.
+    /// 4. Conditional `resetToPrePlayForNewStream` + `.prePlay` UI when resuming.
+    /// 5. `SharedPlayerManager.play()` (or the matching paused UI).
+    /// 6. Clearing of the originating `actionId` (pending action) on all exit paths.
+    /// 7. VoiceOver announcement using the revived `"switched_to_language %@"` key
+    ///    (posted on both the resume and the explicit-paused exit paths).
+    ///
+    /// - Parameters:
+    ///   - stream: The target `DirectStreamingPlayer.Stream`.
+    ///   - index: Index into `availableStreams` (for selector + background sync).
+    ///   - actionId: Pending widget action identifier to clear after processing
+    ///               (may be cleared by callers in some scheduling paths as well).
+    ///
+    /// - Precondition: Must be called while `streamingPlayer.isSwitchingStream == true`
+    ///   (caller is responsible for the defer/reset). Runs on the @MainActor.
+    /// - Postcondition: The engine model is updated, intent is respected, and any
+    ///   pending action for `actionId` has been cleared. Visual state is either
+    ///   `.prePlay` (if resuming) or `.userPaused`.
+    ///
+    /// - Important: This method must **never** play a tuning sound or schedule needle
+    ///   animation. Those belong exclusively to the main-app flag tap path in
+    ///   `completeStreamSwitch`.
+    ///
+    /// - SeeAlso: `completeStreamSwitch`, `handleWidgetSwitchToLanguage`,
+    ///   `DirectStreamingPlayer.switchToStream`, `SharedPlayerManager.play`,
+    ///   `SharedPlayerManager.resetToPrePlayForNewStream`,
+    ///   `SharedPlayerManager.currentPlaybackIntent`,
+    ///   `announceSwitchedToLanguage(_:)`,
+    ///   CODING_AGENT.md (Single Source of Truth Principles),
+    ///   <doc:Architecture>.
+    ///
+    /// AGENT NOTE: switchToStreamFromWidget is now the authoritative non-tuning stream-switch
+    /// orchestration for widget/LA reconciliation. Any additional cross-cutting behavior
+    /// on the widget switch path (Live Activity refresh on switch, haptics policy, etc.)
+    /// should be added here, not duplicated in callers. The four engine steps live only
+    /// in `DirectStreamingPlayer.switchToStream`. This + completeStreamSwitch give the
+    /// architecture two clearly named, side-by-side canonicals.
+    private func switchToStreamFromWidget(to stream: DirectStreamingPlayer.Stream, index: Int, actionId: String) async {
+        let playbackIntent = await SharedPlayerManager.shared.currentPlaybackIntent
+        let shouldResumeAfterSwitch = playbackIntent.isActivePlaybackIntent
+
+        // Engine prep via the SSOT. Replaces all prior manual setSelected + reset + stop sites
+        // on the widget path.
+        await streamingPlayer.switchToStream(stream)
+
+        selectedStreamIndex = index
+        backgroundImageController.update(for: stream)
+        updateUserDefaultsLanguage(stream.languageCode)
+
+        languageSelectorView.setSelectedIndex(index, animated: true, caller: "widgetSwitch")
+
+        guard shouldResumeAfterSwitch else {
+            #if DEBUG
+            print("[RadioPlayerCoordinator] [Widget Switch] Blocked — userPaused, no auto-resume")
+            #endif
+            await SharedPlayerManager.shared.clearSoftPauseMetadataStashForLanguageChange()
+            languageSelectorView.setSelectedIndex(index, caller: "widgetSwitch-paused")
+            updateUI(for: .userPaused)
+            announceSwitchedToLanguage(stream)
+            SharedPlayerManager.shared.clearPendingAction(actionId: actionId)
+            return
+        }
+
+        await SharedPlayerManager.shared.resetToPrePlayForNewStream()
+        languageSelectorView.setSelectedIndex(index, caller: "widgetSwitch-prePlay")
+        updateUI(for: .prePlay)
+
+        #if DEBUG
+        print("[RadioPlayerCoordinator] ▶ [Widget Switch] Starting new stream using SharedPlayerManager.play() — main app path")
+        #endif
+
+        await SharedPlayerManager.shared.play()
+
+        #if DEBUG
+        print("[RadioPlayerCoordinator] Widget switch: SharedPlayerManager.play() succeeded")
+        print("[RadioPlayerCoordinator] Widget switch completed (authoritative save covered by play())")
+        #endif
+
+        announceSwitchedToLanguage(stream)
+        SharedPlayerManager.shared.clearPendingAction(actionId: actionId)
     }
 
     // Widget play/pause action helpers (no tuning sounds)
@@ -444,24 +519,32 @@ final class RadioPlayerCoordinator {
     //   - `completeStreamSwitch` — canonical **main-app** full orchestration for flag taps.
     //     Owns tuning sound, prePlay hold coordination, intent guards, play sequencing,
     //     and UI side effects. The primary "user tapped a language" path.
-    //   - `handleWidgetSwitchToLanguage` — silent (no tuning) mirror for widget reconciliation.
-    //   - `handleSwitchToLanguage` — external (Siri/shortcut) path (kept on legacy attach
-    //     style for minimality; still routes through SPM for intent).
+    //   - `switchToStreamFromWidget(to:index:actionId:)` — canonical **widget/LA reconciliation**
+    //     (silent, no tuning/needle). Thinly wrapped by `handleWidgetSwitchToLanguage`.
+    //   - `handleWidgetSwitchToLanguage` — public entry (with actionId dedup + debounce)
+    //     that delegates to the widget canonical.
+    //   - `handleSwitchToLanguage` — external (Siri/shortcut/deep-link) path. Uses the
+    //     engine SSOT + reset/play but is kept on a separate attach style for minimality;
+    //     does not go through completeStreamSwitch (no main-app tuning expected for external).
     //   - `handleLanguageSelection` — entry from LanguageSelectorView taps (debounce +
     //     optimistic prePlay when appropriate, then delegates to completeStreamSwitch).
     //
     // - `SharedPlayerManager` — owns `currentVisualState`, `currentPlaybackIntent`,
     //   `resetToPrePlayForNewStream`, resurrection rules, persisted widget snapshot,
     //   cross-process Darwin signaling, and the actual `play()` / `stop()` execution.
+    //   Its `switchToStream` is the nonisolated signaling façade: widget context → schedule
+    //   + Darwin; main-app context → forwards directly to engine.
     //
     // Widget paths originate from optimistic state + pending action + Darwin notification,
-    // then land in `handleWidgetSwitchToLanguage`.
+    // then land in `handleWidgetSwitchToLanguage` (or the Live Activity intent path via SPM).
     //
     // AGENT NOTE: Never re-introduce manual "setSelectedStreamModelOnly + resetTransient
-    // + stop + resetCounters" sequences. Route engine work exclusively through
-    // `DirectStreamingPlayer.switchToStream`. Main-app UX sequence lives in
-    // `completeStreamSwitch`. See the structured `///` on both methods and on
-    // SPM.switchToStream. Update this block and the method docs on any change.
+    // + stop + resetCounters" sequences anywhere. Route engine work exclusively through
+    // `DirectStreamingPlayer.switchToStream`. Main-app flag UX lives in `completeStreamSwitch`.
+    // Widget reconciliation lives in `switchToStreamFromWidget`. Siri/external use SPM.switchToStream
+    // + reset/play (non-UI paths). See the structured `///` on the two coordinator canonicals,
+    // on DirectStreamingPlayer.switchToStream, and on SPM.switchToStream.
+    // Update this block + all four `///` docs together on any architecture change.
 
     @MainActor
     func handleUserTogglePlayback() async {
@@ -578,6 +661,8 @@ final class RadioPlayerCoordinator {
     ///    established the hold via `isStreamSwitchPrePlayHoldActive`).
     /// 7. `SharedPlayerManager.play()` (or the matching paused UI) and final
     ///    selector / background / Now Playing sync.
+    /// 8. VoiceOver announcement via `"switched_to_language %@"` using the
+    ///    localized `stream.language` name (both the playing and the paused-exit paths).
     ///
     /// - Parameters:
     ///   - stream: The target `Stream` chosen by the user.
@@ -645,6 +730,7 @@ final class RadioPlayerCoordinator {
                 self.backgroundImageController.update(for: stream)
                 self.updateUI(for: .userPaused)
                 self.languageSelectorView.setSelectedIndex(index, caller: "completeStreamSwitch-userPaused")
+                announceSwitchedToLanguage(stream)
                 return
             }
 
@@ -684,6 +770,8 @@ final class RadioPlayerCoordinator {
             await SharedPlayerManager.shared.play()
             guard !Task.isCancelled else { return }
             await Task.yield()
+
+            announceSwitchedToLanguage(stream)
 
             #if DEBUG
             print("[RadioPlayerCoordinator] completeStreamSwitch: Switched to stream \(stream.language), index=\(index)")
@@ -821,6 +909,38 @@ final class RadioPlayerCoordinator {
                 unsafe UIAccessibility.post(notification: .announcement, argument: text)
             }
         }
+    }
+
+    // MARK: - Accessibility announcements
+
+    /// Posts a VoiceOver announcement that the stream language has changed.
+    ///
+    /// Revives the previously stale `"switched_to_language %@"` catalog entry
+    /// (introduced for a11y but orphaned during the RadioPlayerCoordinator extraction).
+    /// Called from the three canonical language-switch orchestration methods after the
+    /// target stream has been applied and the selection UI updated.
+    ///
+    /// Uses the exact registered key with %@ placeholder + `String(format:)` so the
+    /// extractor keeps the entry fresh and all 21 localizations remain active.
+    ///
+    /// - Parameter stream: The stream that was switched to. Its `.language` property
+    ///   already holds the localized human-readable name (e.g. "English", "Suomi").
+    /// - SeeAlso: `completeStreamSwitch`, `switchToStreamFromWidget(to:index:actionId:)`,
+    ///   `handleSwitchToLanguage`, `DirectStreamingPlayer.Stream.language`
+    private func announceSwitchedToLanguage(_ stream: DirectStreamingPlayer.Stream) {
+        // SAFETY: UIAccessibility.post is the standard API for VoiceOver announcements.
+        // The unsafe marker satisfies SWIFT_STRICT_MEMORY_SAFETY; this is the same
+        // pattern used for all other .announcement posts in this file and ViewController.
+        let announcement = unsafe String(
+            format: String(
+                localized: "switched_to_language %@",
+                defaultValue: "Switched to %@",
+                table: "Localizable",
+                comment: "Voiceover announcement announcing the language switch. The placeholder value is replaced with the actual language name."
+            ),
+            stream.language
+        )
+        unsafe UIAccessibility.post(notification: .announcement, argument: announcement)
     }
 
     // MARK: - Haptics (tiny controller extraction P5+; thin forward only — behavior preserved)

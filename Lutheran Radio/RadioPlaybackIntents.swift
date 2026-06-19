@@ -193,10 +193,12 @@ struct SwitchToLanguageIntent: AppIntent {
             return .result()
         }
 
-        // Mirror the canonical switch flow used for in-app flag taps and coordinator
-        // handleSwitchToLanguage (resetToPrePlayForNewStream + play after switch).
+        // Mirror the canonical switch flow used for in-app flag taps (completeStreamSwitch)
+        // and widget reconciliation (switchToStreamFromWidget). Uses resetToPrePlayForNewStream
+        // + SPM.switchToStream (which for main-app forwards to engine) + setUserIntent + play().
         // This ensures the cold-launch-like prePlay visual, intent clearing, and
         // subsequent play() path are taken (see SharedPlayerManager resurrection table).
+        // External/Siri paths intentionally bypass main-app tuning/needle UX.
         await manager.resetToPrePlayForNewStream()
         await manager.switchToStream(targetStream)
         await manager.setUserIntentToPlay()

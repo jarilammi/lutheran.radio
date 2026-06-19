@@ -880,20 +880,24 @@ actor SharedPlayerManager {
     
     /// Nonisolated entry point for stream switching (signaling + dispatch).
     ///
-    /// - Widget / extension paths: immediately schedule optimistic state + pending action
-    ///   via App Group + Darwin (the actual engine work happens later in the main app
-    ///   via `RadioPlayerCoordinator.handleWidgetSwitchToLanguage`).
-    /// - Main-app forwarding (Siri, shortcuts, legacy direct calls): forwards to
+    /// - Widget / extension paths (including Live Activity intents): immediately schedule
+    ///   optimistic state + pending action via App Group + Darwin. The authoritative
+    ///   main-app reconciliation then happens via `RadioPlayerCoordinator.handleWidgetSwitchToLanguage`
+    ///   → `switchToStreamFromWidget(to:index:actionId:)`.
+    /// - Main-app forwarding (Siri, shortcuts, some legacy): forwards directly to
     ///   `DirectStreamingPlayer.switchToStream` (the engine prep SSOT).
     ///
-    /// **Full UI stream choice from flag taps** must go through
+    /// **Full UI stream choice from flag taps in the main app** must go through
     /// `RadioPlayerCoordinator.completeStreamSwitch` (via `handleLanguageSelection`)
-    /// so that main-app-only tuning, needle animation, prePlay hold coordination,
+    /// so that main-app-only tuning sound, needle animation, prePlay hold coordination,
     /// and precise `resetToPrePlayForNewStream` + `play()` timing stay owned in one place.
     ///
-    /// - SeeAlso: `DirectStreamingPlayer.switchToStream`, `RadioPlayerCoordinator.completeStreamSwitch`,
-    ///   `RadioPlayerCoordinator.handleWidgetSwitchToLanguage`, CODING_AGENT.md
-    ///   (Single Source of Truth Principles + Cross-target shared source files).
+    /// - SeeAlso: `DirectStreamingPlayer.switchToStream`,
+    ///   `RadioPlayerCoordinator.completeStreamSwitch`,
+    ///   `RadioPlayerCoordinator.switchToStreamFromWidget(to:index:actionId:)`,
+    ///   `RadioPlayerCoordinator.handleWidgetSwitchToLanguage`,
+    ///   `RadioPlayerCoordinator.handleLanguageSelection`,
+    ///   CODING_AGENT.md (Single Source of Truth Principles + "Cross-target shared source files").
     nonisolated func switchToStream(_ stream: DirectStreamingPlayer.Stream) async {
         if isRunningInWidget() {
             // Widget path must stay nonisolated and synchronous/fast
@@ -914,7 +918,8 @@ actor SharedPlayerManager {
     /// a real language/stream switch behaves **exactly** like the initial
     /// cold-launch playback path.
     ///
-    /// Called from stream-switch paths (`didSelectItemAt`, `completeStreamSwitch`, widget/shortcut).
+    /// Called from stream-switch paths (`didSelectItemAt`, `completeStreamSwitch`,
+    /// `switchToStreamFromWidget`, Siri intents, widget/shortcut).
     /// Enables the cold-launch-like first-play path after a switch while preserving
     /// `.userPaused` / `.securityLocked` protection.
     ///

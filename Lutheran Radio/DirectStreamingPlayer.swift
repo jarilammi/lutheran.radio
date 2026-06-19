@@ -1815,13 +1815,16 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     ///   `SharedPlayerManager.resetToPrePlayForNewStream(preserveActiveSleepTimer:)`,
     ///   `SharedPlayerManager.play()`, `SharedPlayerManager.switchToStream`,
     ///   `RadioPlayerCoordinator.completeStreamSwitch`,
+    ///   `RadioPlayerCoordinator.switchToStreamFromWidget(to:index:actionId:)`,
     ///   `RadioPlayerCoordinator.handleWidgetSwitchToLanguage`,
     ///   `RadioPlayerCoordinator.handleLanguageSelection`,
     ///   <doc:Architecture>, CODING_AGENT.md (Single Source of Truth Principles).
     ///
     /// AGENT NOTE: This is the *only* place the four engine prep steps are allowed.
-    /// All call sites (coordinator, SPM forwarding, future intents) must go through here.
-    /// Never duplicate setModel + reset + stop + counterReset.
+    /// All call sites (coordinator canonicals, SPM forwarding, Siri intents, Live Activity signals,
+    /// cold-launch model seeding) must go through here. Never duplicate setModel + reset + stop + counterReset.
+    /// The two RadioPlayerCoordinator canonicals (completeStreamSwitch for main-app flag taps,
+    /// switchToStreamFromWidget for widget reconciliation) are the preferred callers for user-driven changes.
     @MainActor
     func switchToStream(_ stream: Stream) async {
         let previousLanguage = selectedStream.languageCode
