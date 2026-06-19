@@ -46,24 +46,25 @@ import Core
 
 /// The main view controller for the Lutheran Radio app.
 ///
-/// This class is responsible for:
-/// - Primary UI (title, language flag `UICollectionView`, playback controls, volume, metadata, AirPlay)
-/// - Audio streaming coordination via `DirectStreamingPlayer` (the single source of truth for the actual player)
-/// - Widget and Live Activity synchronization through `SharedPlayerManager` + `WidgetRefreshManager`
-/// - iOS 26+ energy-efficiency handling (Low Power Mode optimizations, parallax removal)
-/// - Haptic feedback, background image processing with caching, network monitoring, and interruption handling
+/// Thin host + lifecycle owner during the SwiftUI migration.
 ///
-/// All playback user intents (in-app buttons, remote commands, Control Center, widgets, URL schemes)
-/// ultimately route through `userRequestedPlay()` (designated explicit-play entry) or
-/// `handleUserTogglePlayback()` (the toggle SSOT inside the coordinator). See the
-/// `userRequestedPlay` Precondition and AGENT NOTE for the explicit vs. internal distinction.
+/// Responsibilities that remain here:
+/// - Hosting the background image layer (`BackgroundImageController`)
+/// - Owning the single `UIHostingController` that presents `RadioPlayerView`
+/// - Retaining a few hard-to-move observers (network, interruptions, route, Darwin widget actions)
+/// - Public entry points for SceneDelegate, widgets, Siri, and URL schemes (thin shims to coordinator / SPM)
 ///
-/// See the detailed architecture article in the file header above for the complete interaction model,
-/// widget action debouncing strategy, and low-power mode behavior.
+/// The primary player UI has been extracted into pure SwiftUI:
+/// `RadioPlayerView` (composition root) + `NowPlayingMetadataView` + `LanguageSelectorView` +
+/// `PlaybackControlsView` + `VolumeAndAirPlayRow`. All visual state is driven by `PlayerViewModel`,
+/// with orchestration remaining in `RadioPlayerCoordinator`.
 ///
-/// - Note: This is a large UIKit view controller (iOS 26.2+ only). Logical sections are grouped as:
-///   Initialization → Lifecycle Methods → Public Interface (SceneDelegate/widget entry points) →
-///   Protocol conformances → Private implementation grouped by concern.
+/// All playback user intents ultimately route through `userRequestedPlay()` or
+/// `handleUserTogglePlayback()` (see SSOT comments).
+///
+/// - Note: iOS 26.2+ only. See `RadioPlayerView` and the coordinator for the modern layout.
+/// - SeeAlso: `RadioPlayerView`, `PlayerViewModel`, `RadioPlayerCoordinator`,
+///   `DirectStreamingPlayer`, `SharedPlayerManager`, CODING_AGENT.md, <doc:Architecture>.
 @MainActor
 class ViewController: UIViewController, AVAudioPlayerDelegate {
     // MARK: - Private Properties and Constants
@@ -88,38 +89,28 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     private let widgetActionDebounceInterval: TimeInterval = 0.65
     
     // MARK: - UI Elements
-    /// The main title label displaying "Lutheran Radio".
-    /// - Accessibility: Labeled for VoiceOver with dynamic font support.
-    let titleLabel: UILabel = {
-        let label = UILabel()
-        label.text = String(localized: "lutheran_radio_title", table: "Localizable")
-        label.textAlignment = .center
-        label.font = UIFont.preferredFont(forTextStyle: .title1)
-        label.adjustsFontForContentSizeCategory = true
-        label.textColor = .label
-        label.translatesAutoresizingMaskIntoConstraints = false
-        label.isAccessibilityElement = true
-        label.accessibilityLabel = String(localized: "lutheran_radio_title", table: "Localizable")
-        return label
-    }()
-    
-    /// Background image + Core Image processing (unchanged).
+
+    /// Background image + Core Image processing (owned here for layout + energy efficiency hooks).
+    /// The actual visual presentation of the player now lives in the hosted `RadioPlayerView`.
     let backgroundImageController = BackgroundImageController()
 
     /// @Observable model for SwiftUI composed views (LanguageSelector, Controls, Metadata).
     /// Coordinator pushes visualState / selectedStreamIndex / currentMetadata into it.
     var playerViewModel: PlayerViewModel!
 
-    // Pure SwiftUI composed views hosted for the existing UIKit layout (low-risk incremental).
-    private lazy var languageSelectorHostingController = UIHostingController(rootView: LanguageSelectorView(viewModel: PlayerViewModel.makeMock()))
-    private lazy var playbackControlsHostingController = UIHostingController(rootView: PlaybackControlsView(viewModel: PlayerViewModel.makeMock()))
-    private lazy var nowPlayingMetadataHostingController = UIHostingController(rootView: NowPlayingMetadataView(viewModel: PlayerViewModel.makeMock()))
-
-    // Drop-in names for addSubview / constraint sites (use .view of the hosting controller).
-    var languageSelectorView: UIView { languageSelectorHostingController.view }
-    var playbackControlsView: UIView { playbackControlsHostingController.view }
-    // Note: speaker image + metadata label are now inside the hosted NowPlayingMetadataView.
-    // We host the whole thing in one place and adjust in setupUI.
+    /// Single UIHostingController for the entire player screen.
+    ///
+    /// Replaces the previous three separate hosting controllers + manual layout of
+    /// UIKit title/volume/airplay pieces. The composed `RadioPlayerView` owns the
+    /// vertical arrangement of the three modern SwiftUI subviews plus volume row.
+    private lazy var playerHostingController = UIHostingController(
+        rootView: RadioPlayerView(
+            viewModel: PlayerViewModel.makeMock(),
+            onSleepTimerTapped: { [weak self] in
+                self?.radioPlayerCoordinator?.configureSleepTimerButtonMenu()
+            }
+        )
+    )
 
     /// Lightweight RadioPlayerCoordinator (wiring + full stream selection flow + visual distribution + sleep glue + haptics + initial sequencing).
     var radioPlayerCoordinator: RadioPlayerCoordinator!
@@ -249,16 +240,19 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
             backgroundImageController: backgroundImageController,
             streamingPlayer: streamingPlayer
         )
-        // Create the observable VM and attach it so the coordinator can drive SwiftUI state
-        // in parallel with the UIKit presentational views. Action closures are wired inside
-        // wireAndInitialSetup when the VM reference is present.
+        // Create the observable VM and attach it so the coordinator can drive SwiftUI state.
+        // Action closures are wired inside wireAndInitialSetup.
         playerViewModel = PlayerViewModel()
         radioPlayerCoordinator.viewModel = playerViewModel
 
-        // Re-host the SwiftUI views with the real (non-mock) VM now that it exists.
-        languageSelectorHostingController.rootView = LanguageSelectorView(viewModel: playerViewModel)
-        playbackControlsHostingController.rootView = PlaybackControlsView(viewModel: playerViewModel)
-        nowPlayingMetadataHostingController.rootView = NowPlayingMetadataView(viewModel: playerViewModel)
+        // Replace the hosted root view with the real (non-mock) composed RadioPlayerView.
+        // This is the single source of the player UI surface going forward.
+        playerHostingController.rootView = RadioPlayerView(
+            viewModel: playerViewModel,
+            onSleepTimerTapped: { [weak self] in
+                self?.radioPlayerCoordinator?.configureSleepTimerButtonMenu()
+            }
+        )
 
         radioPlayerCoordinator.viewController = self
         radioPlayerCoordinator.presentAlert = { [weak self] alert in self?.present(alert, animated: true) }
@@ -1015,61 +1009,36 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     }
     
     private func setupUI() {
-        // backgroundImageView is owned and configured by BackgroundImageController.
-        // We only add it to the hierarchy and apply the full-bleed (parallax bleed) constraints here.
+        view.backgroundColor = .systemBackground
+
+        // Background image layer (full-bleed with parallax insets). Remains UIKit-owned
+        // for the duration of the incremental SwiftUI migration (energy efficiency, CI pipeline,
+        // deferral, etc. live in BackgroundImageController).
         let bgView = backgroundImageController.backgroundImageView
         view.addSubview(bgView)
-        // Modern + cleaner: activate directly, no unnecessary stored array
+        bgView.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            bgView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: -20),
-            bgView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: 20),
-            bgView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: -20),
-            bgView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: 20)
+            bgView.topAnchor.constraint(equalTo: view.topAnchor),
+            bgView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            bgView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            bgView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
         bgView.layer.zPosition = -1
-        
-        view.addSubview(titleLabel)
-        view.addSubview(languageSelectorView)
 
-        // Use the composed controls view (internal stack + sizes for play/sleep/playback status).
-        // External constraints only touch the container (top/center/height + volume below it).
-        view.addSubview(playbackControlsView)
-        view.addSubview(volumeSlider)
+        // Single SwiftUI player view (composes NowPlayingMetadataView + LanguageSelectorView
+        // + PlaybackControlsView + VolumeAndAirPlayRow). This replaces the previous three
+        // separate UIHostingControllers + manual interleaving of UIKit chrome.
+        addChild(playerHostingController)
+        view.addSubview(playerHostingController.view)
+        playerHostingController.view.translatesAutoresizingMaskIntoConstraints = false
+        playerHostingController.didMove(toParent: self)
 
-        // Hosted SwiftUI NowPlayingMetadataView (clean VStack + photo + contentTransition).
-        // Placed where the old contentStack + speaker image lived.
-        view.addSubview(nowPlayingMetadataHostingController.view)
-        nowPlayingMetadataHostingController.view.translatesAutoresizingMaskIntoConstraints = false
-
-        view.addSubview(airplayButton)
-        
         NSLayoutConstraint.activate([
-            titleLabel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 40),
-            titleLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            playbackControlsView.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 20),
-            playbackControlsView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            playbackControlsView.heightAnchor.constraint(equalToConstant: 50),
-            volumeSlider.topAnchor.constraint(equalTo: playbackControlsView.bottomAnchor, constant: 20),
-            volumeSlider.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 40),
-            volumeSlider.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -40),
-            nowPlayingMetadataHostingController.view.topAnchor.constraint(equalTo: volumeSlider.bottomAnchor, constant: 20),
-            nowPlayingMetadataHostingController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
-            nowPlayingMetadataHostingController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
-            languageSelectorView.topAnchor.constraint(equalTo: nowPlayingMetadataHostingController.view.bottomAnchor, constant: 20),
-            languageSelectorView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            languageSelectorView.widthAnchor.constraint(equalTo: view.widthAnchor),
-            languageSelectorView.heightAnchor.constraint(equalToConstant: 50),
-            airplayButton.topAnchor.constraint(equalTo: nowPlayingMetadataHostingController.view.bottomAnchor, constant: 120), // space for photo inside hosted view
-            airplayButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            airplayButton.widthAnchor.constraint(equalToConstant: 44),
-            airplayButton.heightAnchor.constraint(equalToConstant: 44)
+            playerHostingController.view.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            playerHostingController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            playerHostingController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            playerHostingController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
-
-        // NOTE: LanguageSelectorView now internally creates its collectionView + selectionIndicator,
-        // adds the indicator as subview of the collection, and activates its own needleCenterXConstraint.
-        // All needle math and layout delegate work is encapsulated there.
-        // PlaybackControlsView owns its internal horizontal stack + playback status/button sizing.
-        // NowPlayingMetadataView owns the metadata label + speaker image + apply logic.
     }
     
     @objc private func handleMemoryWarning() {

@@ -51,6 +51,14 @@ final class RadioPlayerCoordinator {
     // Presenting hook (injected by VC so alerts can be shown without giving coordinator a full VC ref for layout).
     var presentAlert: ((UIAlertController) -> Void)?
 
+    /// Optional hook for the SwiftUI sleep timer button tap.
+    ///
+    /// During the hybrid phase the closure passed from `RadioPlayerView` typically calls
+    /// `configureSleepTimerButtonMenu()`. This property exists for future cleaner wiring
+    /// (e.g. if the coordinator itself wants to drive presentation of a SwiftUI sheet or
+    /// confirmation dialog without the caller knowing the implementation).
+    var onSleepTimerButtonTapped: (() -> Void)?
+
     // MARK: - SwiftUI observation bridge (optional, non-breaking)
     /// When non-nil, the coordinator drives this @Observable model in addition to the
     /// legacy UIKit presentational views. This enables gradual SwiftUI adoption while

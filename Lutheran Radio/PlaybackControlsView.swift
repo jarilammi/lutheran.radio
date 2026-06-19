@@ -49,6 +49,7 @@ struct PlaybackControlsView: View {
                     .symbolEffect(.bounce, value: isActivelyPlaying)
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("playPauseButton")
             .accessibilityHint(String(localized: "accessibility_hint_play_pause", table: "Localizable"))
             .accessibilityLabel(
                 isActivelyPlaying
