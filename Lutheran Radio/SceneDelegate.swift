@@ -31,12 +31,18 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     ///   - session: The session the scene is connecting to.
     ///   - connectionOptions: Options for the connection.
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
-        // Use this method to optionally configure and attach the UIWindow `window` to the provided UIWindowScene `scene`.
-        // If using a storyboard, the `window` property will automatically be initialized and attached to the scene.
-        // This delegate does not imply the connecting scene or session are new (see `application:configurationForConnectingSceneSession` instead).
-        guard let _ = (scene as? UIWindowScene) else { return }
-        
-        // Handle any URLs that were used to launch the app
+        // Use this method to configure and attach the UIWindow `window` to the provided UIWindowScene `scene`.
+        // Since we have removed Main.storyboard, we must create the window and root ViewController
+        // programmatically. (The old storyboard-based automatic setup no longer applies.)
+        guard let windowScene = scene as? UIWindowScene else { return }
+
+        let window = UIWindow(windowScene: windowScene)
+        let viewController = ViewController()
+        window.rootViewController = viewController
+        self.window = window
+        window.makeKeyAndVisible()
+
+        // Handle any URLs that were used to launch the app (after root is attached)
         if let urlContext = connectionOptions.urlContexts.first {
             handleURLScheme(urlContext.url, from: scene)
         }

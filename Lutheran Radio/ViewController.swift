@@ -208,7 +208,16 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         super.init(coder: coder)
         self.streamingPlayer.setDelegate(self)
     }
-    
+
+    // UIResponder menu building override (defense-in-depth for storyboard removal).
+    //
+    // See AppDelegate.buildMenu(with:) for the full rationale. The menu / key command
+    // system walks the responder chain (window → rootViewController). By implementing
+    // here we ensure no part of the chain causes UIKit to fall back to loading "Main".
+    override func buildMenu(with builder: UIMenuBuilder) {
+        super.buildMenu(with: builder)
+    }
+
     // MARK: - Lifecycle Methods
     /// Initializes the view hierarchy and initial stream selection.
     /// - Note: Performs heavy setup; defers non-critical tasks with asyncAfter for better launch performance.
