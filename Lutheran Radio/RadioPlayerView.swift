@@ -3,8 +3,12 @@
 //  Lutheran Radio
 //
 //  Main player screen as a pure SwiftUI view.
-//  This replaces the complex hybrid UIKit layout of interleaved hosted views
-//  and legacy UILabel/UISlider elements.
+//  Composition root for the modern player chrome (title, playback controls, metadata,
+//  language tuner, and volume/airplay row). The decorative background remains in UIKit
+//  ownership (BackgroundImageController) and is visible through a large central spacer.
+//
+//  This replaced the prior hybrid UIKit layout. All vertical rhythm is now expressed
+//  declaratively with VStack + explicit paddings so that future layout experiments are cheap.
 //
 //  Created by Jari Lammi on 19.6.2026.
 //
@@ -14,27 +18,32 @@ import AVKit
 
 /// The main player interface built in SwiftUI.
 ///
-/// Composes the three previously extracted modern SwiftUI subviews
-/// (`NowPlayingMetadataView`, `LanguageSelectorView`, `PlaybackControlsView`)
-/// plus a volume + AirPlay control row.
+/// Composes `NowPlayingMetadataView`, `LanguageSelectorView`, `PlaybackControlsView` and
+/// `VolumeAndAirPlayRow` under a single composition root (`UIHostingController` in ViewController).
 ///
-/// Layout mirrors the intent of the prior UIKit arrangement but is now:
-/// - Single composition root (one `UIHostingController` in the host).
-/// - Declarative VStack + Spacers for the classic "title area / selector / controls / volume" rhythm.
-/// - Background image remains behind the hosting controller (owned by `BackgroundImageController`)
-///   for minimal-risk incremental migration.
+/// Current visual order (top to bottom):
+/// 1. Localized app title (establishes identity immediately under the status bar).
+/// 2. Primary playback controls (play/pause, sleep timer, status pill) — placed high for reachability.
+/// 3. Now-playing metadata + conditional speaker photo.
+/// 4. Language/flag "tuner" row with animated red needle (`LanguageSelectorView`).
+/// 5. Large spacer that leaves the central screen area visually open.
+/// 6. Volume slider + AirPlay row anchored near the bottom safe area.
 ///
-/// The sleep timer button forwards its tap via `onSleepTimerTapped` so that
-/// the existing UIMenu / countdown / SharedPlayerManager glue can stay in
-/// `RadioPlayerCoordinator` during this phase.
+/// The decorative map / logo background is deliberately kept in UIKit ownership
+/// (`BackgroundImageController`) behind this transparent hosting controller. This preserves
+/// parallax, energy-efficiency paths, CI filtering, and deferral logic without risk during
+/// the incremental SwiftUI migration.
 ///
-/// String revival for stale localizations (user will curate the catalog separately):
-/// - `sleep_timer_sheet_title` is referenced below so the entry becomes active.
-///   When the sleep timer menu is later converted from the coordinator's UIMenu to a
-///   native SwiftUI `confirmationDialog` or `.sheet`, this string will be used as the title.
+/// The sleep timer tap is forwarded so that the existing UIMenu + countdown +
+/// SharedPlayerManager integration can remain in `RadioPlayerCoordinator` for this phase.
+///
+/// String revival note: `sleep_timer_sheet_title` is materialized here to keep the localization
+/// entry live. It will be used directly when the sleep timer UI is later converted to a native
+/// SwiftUI sheet or confirmationDialog.
 ///
 /// - SeeAlso: ``PlayerViewModel``, `PlaybackControlsView`, `LanguageSelectorView`,
-///   `NowPlayingMetadataView`, `ViewController.setupUI()`, `RadioPlayerCoordinator`,
+///   `NowPlayingMetadataView`, `VolumeAndAirPlayRow`, `ViewController`,
+///   `RadioPlayerCoordinator`, `BackgroundImageController`,
 ///   CODING_AGENT.md (Single Source of Truth Principles + Cross-target shared files),
 ///   <doc:Architecture>.
 struct RadioPlayerView: View {
@@ -55,39 +64,57 @@ struct RadioPlayerView: View {
             // Background is provided by BackgroundImageController behind this hosted view.
             // We deliberately keep the background layer in UIKit ownership for this phase
             // (parallax, energy efficiency, deferral, CI processing). The SwiftUI layer
-            // is intentionally transparent.
+            // is intentionally transparent so the processed map/logo artwork shows through
+            // the central spacer region.
             Color.clear
 
             VStack(spacing: 0) {
-                // Now Playing metadata + speaker photo (when relevant).
-                // Padding chosen to give breathing room under the status bar / Dynamic Island.
-                NowPlayingMetadataView(viewModel: viewModel)
-                    .padding(.top, 24)
+                // Top title — localized app identity. Horizontal padding prevents the large title
+                // from hugging screen edges. Top padding sized for Dynamic Island / status bar clearance.
+                Text(String(localized: "lutheran_radio_title", defaultValue: "Lutheran Radio", table: "Localizable"))
+                    .font(.largeTitle.weight(.semibold))
+                    .padding(.top, 16)
                     .padding(.horizontal, 20)
+                    .padding(.bottom, 8)
 
-                Spacer(minLength: 24)
-
-                // Language / flag selector with animated red needle (matchedGeometryEffect).
-                LanguageSelectorView(viewModel: viewModel)
-                    .padding(.horizontal)
-
-                Spacer()
-
-                // Playback controls (play/pause + sleep timer + status pill).
+                // Playback controls (play/pause + sleep timer moon + status pill).
+                // Positioned early in the stack so the most frequent actions sit in a comfortable
+                // thumb zone near the top of the content area.
                 PlaybackControlsView(
                     viewModel: viewModel,
                     onSleepTimerTapped: onSleepTimerTapped
                 )
                 .padding(.horizontal, 24)
+                .padding(.bottom, 12)
 
-                // Volume + native AirPlay row (replaces the prior UIKit UISlider + AVRoutePickerView).
+                // Song / program metadata + optional speaker photo.
+                // Placed directly above the language selector so current-stream context sits
+                // adjacent to the tuner controls.
+                NowPlayingMetadataView(viewModel: viewModel)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 12)
+
+                // Flags row with red needle indicator.
+                // The needle's vertical registration is handled inside LanguageSelectorView
+                // via reserved clear space + .offset(y: -11).
+                LanguageSelectorView(viewModel: viewModel)
+                    .padding(.horizontal)
+                    .padding(.bottom, 6)
+
+                // Spacer reserves vertical real-estate in the middle of the screen.
+                // This keeps the full-bleed decorative background (map / logo images owned by
+                // BackgroundImageController) visible behind the transparent host. The minLength
+                // is chosen so the artwork remains prominent even as the top chrome grows.
+                Spacer(minLength: 80)
+
+                // Volume + native AirPlay row at the very bottom.
+                // Padding values chosen to feel anchored without colliding with the home indicator.
                 VolumeAndAirPlayRow()
                     .padding(.horizontal, 32)
-                    .padding(.top, 16)
+                    .padding(.top, 6)
                     .padding(.bottom, 34)
             }
         }
-        // Ensure the hosting view does not paint an opaque background that would hide the image layer.
         .background(Color.clear)
     }
 }

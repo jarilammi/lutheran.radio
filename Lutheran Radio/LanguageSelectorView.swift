@@ -10,19 +10,26 @@
 
 import SwiftUI
 
-/// Pure idiomatic SwiftUI view for the horizontal flag selector row.
+/// Pure idiomatic SwiftUI view for the horizontal flag selector row ("tuner").
 ///
-/// - Renders the five radio streams using their emoji flags from `DirectStreamingPlayer.availableStreams`.
-/// - Selection is bound directly to `PlayerViewModel.selectedStreamIndex`.
-/// - User taps call `viewModel.selectLanguage(at:)` (wired in coordinator to the full
-///   `handleLanguageSelection` + debounce + completeStreamSwitch + tuning sound path).
-/// - The "tuning needle" is a thin red indicator animated with `matchedGeometryEffect` + spring
-///   for the beautiful sweep that previously required complex layoutAttributes + centerX math.
-/// - Scroll is disabled (exact visual match to the prior non-scrolling centered row).
-/// - Selected flag receives accent tint (blue) to match prior `LanguageCell.isSelected` behavior.
+/// Renders the available streams as emoji flags using `DirectStreamingPlayer.availableStreams`
+/// (the single source of truth for the 21-language set and their visual order).
+///
+/// Selection drives `PlayerViewModel.selectedStreamIndex`; taps are forwarded via
+/// `viewModel.selectLanguage(at:)` and ultimately reach the full stream-switch path in
+/// `RadioPlayerCoordinator` (debounce + tuning sound + security + DirectStreamingPlayer swap).
+///
+/// The row is implemented as a plain `HStack` (no `ScrollView`) because the selector must remain
+/// a fixed, non-scrollable, perfectly centered set of five flags. The previous ScrollView +
+/// `.scrollDisabled(true)` form worked but carried unnecessary scrolling machinery.
+///
+/// The animated red "tuning needle" uses `matchedGeometryEffect` + the implicit spring to
+/// reproduce the classic sweep behavior that previously required manual Auto Layout math and
+/// collection-view layoutAttributes.
 ///
 /// - SeeAlso: ``PlayerViewModel``, `RadioPlayerCoordinator.handleLanguageSelection(at:)`,
-///   <doc:Architecture>, CODING_AGENT.md (Single Source of Truth Principles).
+///   `DirectStreamingPlayer.availableStreams`, <doc:Architecture>,
+///   CODING_AGENT.md (Single Source of Truth Principles + Cross-target shared files).
 struct LanguageSelectorView: View {
     @Bindable var viewModel: PlayerViewModel
 
@@ -33,18 +40,15 @@ struct LanguageSelectorView: View {
     }
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            LazyHStack(spacing: 10) {
-                ForEach(Array(streams.enumerated()), id: \.offset) { index, stream in
-                    flagView(for: stream, at: index)
-                }
+        HStack(spacing: 10) {
+            ForEach(Array(streams.enumerated()), id: \.offset) { index, stream in
+                flagView(for: stream, at: index)
             }
-            .frame(maxWidth: .infinity, alignment: .center)
         }
-        .scrollDisabled(true)
+        .frame(maxWidth: .infinity, alignment: .center)
         .frame(height: 56)
     }
-
+    
     private func flagView(for stream: DirectStreamingPlayer.Stream, at index: Int) -> some View {
         let isSelected = index == viewModel.selectedStreamIndex
 
@@ -61,24 +65,36 @@ struct LanguageSelectorView: View {
             .accessibilityLabel(makeAccessibilityLabel(for: stream))
             .accessibilityAddTraits(isSelected ? .isSelected : [])
 
-            // Reserve vertical space for the needle indicator (does not affect flag layout)
+            // Reserve vertical space for the needle indicator (does not affect flag layout).
+            // The 6 pt clear area + the overlay + the negative offset together place the needle
+            // so it sits just below the flag glyphs, exactly as the original UIKit design required.
             Color.clear
                 .frame(height: 6)
         }
         .overlay(alignment: .bottom) {
             if isSelected {
                 // The animated "tuning needle" — thin red vertical indicator.
-                // matchedGeometryEffect + spring animation produces the smooth sweep previously
-                // implemented with manual centerX constraints, layoutAttributes, and pulse.
+                // `matchedGeometryEffect` + the container's spring animation produces the smooth
+                // sweep that previously required manual centerX constraints + layoutAttributes.
                 Rectangle()
                     .fill(Color.red.opacity(0.7))
                     .frame(width: 4, height: 38)
+                    // Empirically tuned vertical registration. -11 pt pulls the needle up from the
+                    // overlay attachment point so its top aligns with the visual baseline of the
+                    // flag emoji row. Changing this value requires visual verification on device/sim.
+                    .offset(y: -11)
                     .matchedGeometryEffect(id: "needle", in: needleNamespace)
             }
         }
     }
 
     private func makeAccessibilityLabel(for stream: DirectStreamingPlayer.Stream) -> String {
+        // SAFETY: String(format:) with a catalog-provided format string is the established
+        // pattern for placeholder-bearing VoiceOver strings across the 21-language catalog.
+        // The format originates from Localizable.xcstrings (trusted) and the argument is a
+        // plain String. This is required to satisfy SWIFT_STRICT_MEMORY_SAFETY while keeping
+        // correct pluralization/positioning per language. See identical pattern in
+        // PlaybackControlsView.swift and RadioPlayerCoordinator.
         unsafe String(
             format: String(localized: "select_language_accessibility", defaultValue: "Select %@", table: "Localizable", comment: "Accessibility label for language flag button. %@ is the language name."),
             stream.language
