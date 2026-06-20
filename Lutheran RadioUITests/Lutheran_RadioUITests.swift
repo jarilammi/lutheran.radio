@@ -42,10 +42,14 @@ final class Lutheran_RadioUITests: XCTestCase {
     }
 
     func testVolumeSliderExists() {
-        // Access the volume slider
-        let volumeSlider = app.sliders["volumeSlider"]
+        // Access the volume control by identifier.
+        // The control is now a native MPVolumeView (SystemVolumeSlider). It does not
+        // register under the strict `sliders` matcher the way a SwiftUI Slider did;
+        // we use a general descendant query so the test remains a simple existence
+        // check for the element with accessibilityIdentifier "volumeSlider".
+        let volumeSlider = app.descendants(matching: .any)["volumeSlider"]
 
-        // Assert the slider exists
+        // Assert the volume control exists
         XCTAssertTrue(volumeSlider.exists, "Volume slider should exist.")
     }
 

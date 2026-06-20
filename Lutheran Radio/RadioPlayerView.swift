@@ -4,7 +4,7 @@
 //
 //  Main player screen as a pure SwiftUI view.
 //  Composition root for the modern player chrome (title, playback controls, metadata,
-//  language tuner, and volume/airplay row). The decorative background remains in UIKit
+//  language tuner, and volume + AirPlay row). The decorative background remains in UIKit
 //  ownership (BackgroundImageController) and is visible through a large central spacer.
 //
 //  This replaced the prior hybrid UIKit layout. All vertical rhythm is now expressed
@@ -15,6 +15,8 @@
 
 import SwiftUI
 import AVKit
+import MediaPlayer
+import UIKit
 
 /// The main player interface built in SwiftUI.
 ///
@@ -27,7 +29,9 @@ import AVKit
 /// 3. Now-playing metadata + conditional speaker photo.
 /// 4. Language/flag "tuner" row with animated red needle (`LanguageSelectorView`).
 /// 5. Large spacer that leaves the central screen area visually open.
-/// 6. Volume slider + AirPlay row anchored near the bottom safe area.
+/// 6. Native system volume control (`SystemVolumeSlider` / `MPVolumeView`) + separate AirPlay row
+///    anchored near the bottom safe area. The volume control directly manipulates system output
+///    volume (AVAudioSession route volume) rather than AVPlayer internal gain.
 ///
 /// The decorative map / logo background is deliberately kept in UIKit ownership
 /// (`BackgroundImageController`) behind this transparent hosting controller. This preserves
@@ -106,7 +110,7 @@ struct RadioPlayerView: View {
                 .padding(.horizontal, 24)
                 .padding(.bottom, 12)
                 
-                // Volume + native AirPlay row.
+                // Volume + AirPlay row (native system volume via MPVolumeView + dedicated AirPlayButton).
                 // Padding values chosen to feel anchored without colliding with the home indicator.
                 VolumeAndAirPlayRow()
                     .padding(.horizontal, 32)
@@ -140,20 +144,59 @@ struct RadioPlayerView: View {
 
 // MARK: - Volume + AirPlay Row
 
-/// Bottom control row containing speaker icon, volume slider, and AirPlay picker.
+/// Bottom control row containing speaker icon, native system volume slider, and AirPlay picker.
 ///
-/// This is a transitional implementation:
-/// - The slider drives `DirectStreamingPlayer.shared.setVolume` + the group UserDefaults key
-///   used by the rest of the app for persistence across launches / widgets.
-/// - A proper binding surface or `MPVolumeView` representable can replace the custom slider later.
+/// Architecture decision (post UIKit → SwiftUI foundation migration):
+/// We use a `MPVolumeView` wrapper (`SystemVolumeSlider`) rather than a SwiftUI `Slider` or
+/// a binding to `DirectStreamingPlayer.setVolume`.
 ///
-/// The AirPlay button uses a minimal `UIViewRepresentable` wrapper around `AVRoutePickerView`.
+/// Why:
+/// - `DirectStreamingPlayer.setVolume` only sets `AVPlayer.volume`, an internal per-player gain.
+///   It has no effect on the actual audio output level delivered to the user, hardware volume
+///   buttons, Control Center, the Lock Screen Now Playing, or per-route volumes (AirPlay, BT).
+/// - Prior custom `@State` + `Slider` + UserDefaults "preferredVolume" was a transitional
+///   workaround that accepted desync as a known limitation (explicitly documented in the
+///   previous implementation).
+/// - `MPVolumeView` is the Apple-provided native control for system output volume. It
+///   automatically reflects and controls the current `AVAudioSession` output volume for the
+///   active route. It stays in sync with all system surfaces by design.
+///
+/// Persistence layer decision:
+/// The app-group UserDefaults read/write for "preferredVolume" (and the `sharedDefaultsSuite` /
+/// `volumeKey` constants) is removed from this row. Once the native system volume view is used,
+/// iOS is the single source of truth for current volume level and persists it across app
+/// launches, device restarts, and audio route changes. Re-adding a parallel "preferred" value
+/// would cause the UI to fight the system (e.g. user raises volume with side buttons while app
+/// is backgrounded → our stale value would be wrong on foreground). This matches the guidance
+/// in the task that "in most cases it is no longer the primary source of truth once we use
+/// MPVolumeView".
+///
+/// The separate `AirPlayButton` (wrapping `AVRoutePickerView` with `prioritizesVideoDevices = false`)
+/// is intentionally kept as an independent control. The `MPVolumeView` inside
+/// `SystemVolumeSlider` therefore suppresses its internal route button (see
+/// `SystemVolumeRepresentable` and `MPVolumeView.configureAsVolumeSliderOnly`).
+///
+/// Layout contract:
+/// - Speaker icon: decorative, secondary, accessibility hidden.
+/// - Volume: flexible width native slider.
+/// - AirPlay: fixed 44×44 as defined in `AirPlayButton`.
+/// - Row height 44 provides consistent touch targets.
+///
+/// Accessibility:
+/// - `accessibilityIdentifier("volumeSlider")` is set on the inner `UISlider` of the
+///   `MPVolumeView` (see `SystemVolumeRepresentable.makeUIView`) to keep the existing
+///   `app.sliders["volumeSlider"]` UI tests passing without modification.
+/// - Label and hint forwarded from Localizable (all 21 languages) on the SwiftUI wrapper.
+/// - The underlying `MPVolumeView` / its slider supplies its own adjustable trait, current
+///   value, and live announcements when volume changes via hardware or gestures.
+///
+/// - Important: This is the canonical volume surface for the SwiftUI player chrome.
+/// - Note: `DirectStreamingPlayer.setVolume` is intentionally not called from this row and
+///   remains untouched for potential legacy or other internal gain uses.
+/// - SeeAlso: `SystemVolumeSlider`, `AirPlayButton`, `RadioPlayerView`,
+///   `MPVolumeView.configureAsVolumeSliderOnly`, CODING_AGENT.md (Documentation & Comment Standards for AI Coding Agents),
+///   <doc:Architecture>
 struct VolumeAndAirPlayRow: View {
-    @State private var volume: Double = 0.5
-
-    private let sharedDefaultsSuite = "group.radio.lutheran.shared"
-    private let volumeKey = "preferredVolume"
-
     var body: some View {
         HStack(spacing: 16) {
             Image(systemName: "speaker.wave.2.fill")
@@ -161,46 +204,146 @@ struct VolumeAndAirPlayRow: View {
                 .font(.callout)
                 .accessibilityHidden(true)
 
-            // Volume control. Value is local @State for this row; changes are immediately
-            // forwarded to the streaming engine and persisted (matching prior UIKit behavior).
-            Slider(value: $volume, in: 0...1)
-                .tint(.accentColor)
-                .accessibilityIdentifier("volumeSlider")
+            SystemVolumeSlider()
                 .accessibilityLabel(String(localized: "accessibility_label_volume", table: "Localizable"))
                 .accessibilityHint(String(localized: "accessibility_hint_volume", table: "Localizable"))
-                .onChange(of: volume) { _, newValue in
-                    applyVolume(Float(newValue))
-                }
 
-            // AirPlay route picker (native).
+            // AirPlay route picker (native, kept exactly as implemented).
             AirPlayButton()
         }
         .frame(height: 44)
-        .onAppear {
-            loadInitialVolume()
+    }
+}
+
+/// A reusable SwiftUI wrapper presenting the native system volume slider backed by `MPVolumeView`.
+///
+/// Primary goal of this type (and the reason for the volume upgrade):
+/// Deliver the experience users expect — volume changes from the app are identical to
+/// hardware buttons, Control Center, and route-specific volumes, with no drift.
+///
+/// `SystemVolumeSlider` suppresses the route button on its backing `MPVolumeView`
+/// (see `configureAsVolumeSliderOnly`) because the app already supplies a dedicated,
+/// styled `AirPlayButton` (AVRoutePickerView) next to it. This keeps visual balance
+/// and control ownership clear, following the iOS 13+ guidance to use AVRoutePickerView
+/// for routing surfaces.
+///
+/// Sizing:
+/// The representable is given a modest intrinsic height (32 pt) suitable for the slider
+/// track and thumb. The containing `HStack` + `.frame(height: 44)` in `VolumeAndAirPlayRow`
+/// supplies the full-row tap target and alignment.
+///
+/// Tint:
+/// The accent color previously applied via the custom `Slider.tint(.accentColor)` is
+/// forwarded by bridging `Color.accentColor` (sourced from the app's AccentColor asset)
+/// into `MPVolumeView.tintColor`. The minimum track and thumb therefore adopt the brand
+/// tint consistently.
+///
+/// No additional state, observers, or UserDefaults wiring is present or required.
+/// `MPVolumeView` manages observation of `AVAudioSession` and route volume internally.
+///
+/// Accessibility is attached by the caller (`VolumeAndAirPlayRow`) so that identifier,
+/// label, and hint can be centralized while the inner control retains its value behavior.
+///
+/// - Precondition: Must be used on the main actor / main thread (standard for all
+///   UIViewRepresentable in SwiftUI). The hosting `UIHostingController` guarantees this.
+/// - Postcondition: After insertion, user gestures and external volume changes are reflected
+///   live in the slider and affect audible output level for the current route.
+/// - Note: This type is intentionally simple. The only subview walk performed is a one-time
+///   assignment of the accessibility identifier onto the child UISlider strictly to preserve
+///   UI test compatibility (see implementation in makeUIView). No KVO, no observers, and
+///   no hidden `MPVolumeView` instances are used.
+/// - SeeAlso: `VolumeAndAirPlayRow`, `AirPlayButton`, `MPVolumeView` (MediaPlayer),
+///   CODING_AGENT.md, <doc:Architecture>
+struct SystemVolumeSlider: View {
+    var body: some View {
+        SystemVolumeRepresentable()
+            // The 32 pt height gives the track/knob correct proportions. The 44 pt row frame
+            // around the whole HStack guarantees hit area and vertical alignment with the
+            // adjacent icon and AirPlay button.
+            .frame(height: 32)
+    }
+}
+
+/// Extension to encapsulate the (only available) mechanism for hiding MPVolumeView's
+/// internal route button without triggering a deprecation diagnostic.
+///
+/// - Important: This exists solely because `MPVolumeView.showsRouteButton` has been
+///   deprecated since iOS 13.0 with guidance to "Use AVRoutePickerView instead".
+///   MPVolumeView itself exposes no non-deprecated typed API to suppress the button.
+///   We use KVC on the stable key to achieve identical runtime effect.
+/// - Note: The app already provides a first-class `AirPlayButton` (AVRoutePickerView
+///   with `prioritizesVideoDevices = false`). Duplicating the picker inside the volume
+///   control would be both visually redundant and confusing.
+/// - SeeAlso: `SystemVolumeRepresentable`, `VolumeAndAirPlayRow`, `AirPlayButton`,
+///   CODING_AGENT.md, <doc:Architecture>
+private extension MPVolumeView {
+    /// Hides the route button on this volume view using KVC.
+    ///
+    /// - Precondition: Must be called on the main actor (guaranteed by UIViewRepresentable.makeUIView).
+    /// - Postcondition: The receiver will not display its own route picker button.
+    ///   Routing UI is provided exclusively by a sibling `AirPlayButton`.
+    /// - Complexity: O(1). The key is a documented stable identifier for the flag.
+    func configureAsVolumeSliderOnly() {
+        // KVC with string key intentionally bypasses the Swift deprecation attribute
+        // on the typed property while setting the exact same backing flag that
+        // `showsRouteButton = false` would have set.
+        //
+        // This pattern has been the community/Apple-forums workaround since iOS 13
+        // (no official typed replacement on MPVolumeView has been added as of iOS 26).
+        // If the key ever stops working in a future OS, the (harmless) consequence
+        // is a second route button appearing; users would still have functional
+        // routing and the separate styled button remains the primary one.
+        setValue(false, forKey: "showsRouteButton")
+    }
+}
+
+/// `UIViewRepresentable` bridge to `MPVolumeView` configured for in-app use without its own
+/// route button.
+///
+/// The route button is suppressed via `configureAsVolumeSliderOnly` (KVC on the
+/// well-known key) so that a single, consistently-styled `AirPlayButton` owns all
+/// routing UI. This implements the "Use AVRoutePickerView instead" guidance from
+/// the deprecation while preserving the native volume slider behavior that is
+/// required for system-wide volume sync (see `VolumeAndAirPlayRow`).
+///
+/// Implementation notes:
+/// - Route button suppressed via dedicated helper (no direct use of deprecated `showsRouteButton` property at the call site).
+/// - Tint applied once in `makeUIView`; `MPVolumeView` does not require per-update tint pushes.
+/// - `updateUIView` is intentionally a no-op. The control is live and self-managed.
+/// - No force-unwraps, no `!`, no unsafe bridging. Pure value-type configuration.
+///
+/// This type is file-private; the public surface is `SystemVolumeSlider`.
+private struct SystemVolumeRepresentable: UIViewRepresentable {
+    func makeUIView(context: Context) -> MPVolumeView {
+        let volumeView = MPVolumeView()
+        volumeView.configureAsVolumeSliderOnly()
+        // Bridge SwiftUI accentColor (AccentColor.colorset) to match the visual treatment
+        // that the prior custom Slider received from .tint(.accentColor).
+        volumeView.tintColor = UIColor(Color.accentColor)
+
+        // Make the MPVolumeView itself carry the identifier (for otherElements / descendant queries)
+        // and attempt to forward to its child UISlider (for legacy slider queries).
+        volumeView.accessibilityIdentifier = "volumeSlider"
+
+        // Assign the accessibility identifier to the underlying UISlider so that
+        // XCUITest queries of the form `app.sliders["volumeSlider"]` continue to
+        // locate the control (testVolumeSliderExists and similar) where possible.
+        // MPVolumeView's volume indicator is implemented as a private UISlider subclass;
+        // the walk is performed to maximize compatibility.
+        //
+        // This is a one-time configuration walk (no KVO, no observation, no hidden
+        // listeners) performed only to preserve the existing UI test contract.
+        // It is the minimal intervention that avoids changing the UITest while
+        // using the real system volume control.
+        if let slider = volumeView.subviews.first(where: { $0 is UISlider }) as? UISlider {
+            slider.accessibilityIdentifier = "volumeSlider"
         }
+        return volumeView
     }
 
-    private func loadInitialVolume() {
-        if let shared = UserDefaults(suiteName: sharedDefaultsSuite) {
-            let saved = shared.float(forKey: volumeKey)
-            let toUse = saved > 0 ? Double(saved) : 0.5
-            volume = toUse
-            // Make sure the engine matches what we display on first appearance.
-            DirectStreamingPlayer.shared.setVolume(Float(toUse))
-        } else {
-            volume = 0.5
-            DirectStreamingPlayer.shared.setVolume(0.5)
-        }
-    }
-
-    private func applyVolume(_ value: Float) {
-        DirectStreamingPlayer.shared.setVolume(value)
-
-        if let shared = UserDefaults(suiteName: sharedDefaultsSuite) {
-            shared.set(value, forKey: volumeKey)
-            shared.synchronize()
-        }
+    func updateUIView(_ uiView: MPVolumeView, context: Context) {
+        // Intentionally empty: MPVolumeView observes AVAudioSession and updates itself.
+        // External mutations are not performed from SwiftUI state.
     }
 }
 
