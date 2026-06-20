@@ -29,6 +29,30 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         return true
     }
 
+    // MARK: - Menu Building (Storyboard Removal Guard)
+    //
+    // After fully removing Main.storyboard, UIKit's UIMenuSystem (used for
+    // the main menu bar on iPad / Mac, and for discovering keyboard shortcuts /
+    // key commands) can still attempt to load a storyboard named "Main" via
+    // the private _storyboardInitialMenu path inside buildMenuWithBuilder.
+    //
+    // This produces the exact crash:
+    //   'Could not find a storyboard named 'Main' in bundle ...'
+    //
+    // Implementing buildMenu(with:) here makes the app participate in menu
+    // construction explicitly (as a UIResponder), short-circuiting the
+    // storyboard fallback. We call super so that standard system menus
+    // (Edit, Format, View, Window, Help, etc.) and automatic key command
+    // discovery from the responder chain continue to work.
+    //
+    // - Important: This must live on AppDelegate (or another early responder)
+    //   because the menu rebuild can be triggered very early (during
+    //   _immediatelyUpdateSerializableKeyCommands / after CA commit).
+    // - SeeAlso: SceneDelegate (window setup), UIApplication.buildMenuWithBuilder
+    override func buildMenu(with builder: UIMenuBuilder) {
+        super.buildMenu(with: builder)
+    }
+
     // MARK: - UISceneSession Lifecycle
     /// Provides configuration for a connecting scene session.
     /// - Parameters:
