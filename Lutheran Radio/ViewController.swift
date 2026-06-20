@@ -107,6 +107,7 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         rootView: RadioPlayerView(
             viewModel: PlayerViewModel.makeMock(),
             onSleepTimerTapped: { [weak self] in
+                // Compatibility path only (see real wiring below).
                 self?.radioPlayerCoordinator?.configureSleepTimerButtonMenu()
             }
         )
@@ -250,6 +251,9 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         playerHostingController.rootView = RadioPlayerView(
             viewModel: playerViewModel,
             onSleepTimerTapped: { [weak self] in
+                // Compatibility path: still exercises configureSleepTimerButtonMenu (retained).
+                // Primary sleep timer UI is now the .confirmationDialog inside PlaybackControlsView;
+                // choices are delivered to coordinator via PlayerViewModel action closures.
                 self?.radioPlayerCoordinator?.configureSleepTimerButtonMenu()
             }
         )
@@ -300,7 +304,8 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         setupFastWidgetActionChecking()
         isInitialSetupComplete = true
 
-        // Sleep timer notification observer + initial sync is owned exclusively by RadioPlayerCoordinator (added in wireAndInitialSetup + viewDidAppearResurrectionCheck).
+        // Sleep timer notification observer + initial sync + preset/cancel handling is owned exclusively by RadioPlayerCoordinator.
+        // (added in wireAndInitialSetup). SwiftUI dialog calls back via PlayerViewModel; legacy onSleepTimerTapped still calls configure.
         // VC no longer observes or syncs the sleep UI glue.
         
         // Energy Efficiency Optimizations (iOS 26) — now owned by BackgroundImageController.
@@ -508,7 +513,7 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
                 #endif
             }
 
-            // Sleep timer display sync is performed inside viewDidAppearResurrectionCheck (coordinator).
+            // Sleep timer display sync (and now dialog-driven set/cancel) performed via coordinator + VM.
             await self.radioPlayerCoordinator?.viewDidAppearResurrectionCheck()
         }
     }
@@ -583,9 +588,11 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     
     private func setupControls() {
         // SwiftUI PlaybackControlsView owns its own Buttons and taps (wired to viewModel).
-        // Sleep menu logic remains in coordinator but attachment to UIKit button is removed for modernization.
+        // Sleep timer *presentation* is now native .confirmationDialog in PlaybackControlsView.
+        // The call to configureSleepTimerButtonMenu is retained for compatibility + internal glue
+        // (the method is never removed during the incremental migration). All timer logic lives in coordinator.
         // Accessibility and identifiers are now inside the SwiftUI views.
-        radioPlayerCoordinator?.configureSleepTimerButtonMenu()  // may no-op after modernization; kept for compatibility path
+        radioPlayerCoordinator?.configureSleepTimerButtonMenu()  // compatibility / re-sync path; presentation is SwiftUI-native
         
         volumeSlider.addTarget(self, action: #selector(volumeChanged(_:)), for: .valueChanged)
         volumeSlider.accessibilityIdentifier = "volumeSlider"
@@ -1168,9 +1175,11 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         // sleepTimerDisplayTask cancel owned by coordinator deinit + its stopLocal.
     }
 
-    // Entire sleep timer UI glue (configure menu + preset/cancel handlers + finish + stateDidChange + sync + begin/stopLocal display + the 3 *Settle consts + instance vars)
-    // removed from VC. Single implementation + observer lives in RadioPlayerCoordinator (wired in wireAndInitialSetup).
-    // configure call site in setupControls now forwards to coordinator. Observers and viewWillDisappear cancel for this concern removed.
+    // Entire sleep timer UI glue (preset/cancel handlers + finish + stateDidChange + sync + begin/stopLocal display + the 3 *Settle consts + instance vars + interaction flags)
+    // lives in RadioPlayerCoordinator (wired in wireAndInitialSetup + VM action closures).
+    // Presentation is SwiftUI .confirmationDialog (PlaybackControlsView). configureSleepTimerButtonMenu()
+    // is retained and still invoked from coordinator glue paths + setupControls for compatibility.
+    // All timer business logic untouched.
 
     // MARK: - Lifecycle (deinit)
     /// Cleans up resources, observers, and audio players to prevent leaks.

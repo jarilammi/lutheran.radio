@@ -34,29 +34,35 @@ import AVKit
 /// parallax, energy-efficiency paths, CI filtering, and deferral logic without risk during
 /// the incremental SwiftUI migration.
 ///
-/// The sleep timer tap is forwarded so that the existing UIMenu + countdown +
-/// SharedPlayerManager integration can remain in `RadioPlayerCoordinator` for this phase.
+/// Sleep timer: The tap closure is forwarded for compatibility (it still reaches
+/// `configureSleepTimerButtonMenu`). The actual presentation is a native
+/// `.confirmationDialog` (15/30/45/60 + conditional Cancel) implemented inside
+/// `PlaybackControlsView`. Choices are delivered via `PlayerViewModel.selectSleepTimer` /
+/// `cancelSleepTimer` closures that the coordinator wires to its authoritative handle methods.
+/// This preserves the complete existing timer logic, countdown Task, notifications,
+/// `syncSleepTimerToViewModel`, and interaction flags unchanged.
 ///
-/// String revival note: `sleep_timer_sheet_title` is materialized here to keep the localization
-/// entry live. It will be used directly when the sleep timer UI is later converted to a native
-/// SwiftUI sheet or confirmationDialog.
+/// String revival note: `sleep_timer_sheet_title` is materialized here (and also used directly
+/// in the dialog) to keep the localization entry live across all 21 languages.
 ///
 /// - SeeAlso: ``PlayerViewModel``, `PlaybackControlsView`, `LanguageSelectorView`,
 ///   `NowPlayingMetadataView`, `VolumeAndAirPlayRow`, `ViewController`,
 ///   `RadioPlayerCoordinator`, `BackgroundImageController`,
-///   CODING_AGENT.md (Single Source of Truth Principles + Cross-target shared files),
+///   `configureSleepTimerButtonMenu()`, CODING_AGENT.md (Single Source of Truth Principles + Cross-target shared files),
 ///   <doc:Architecture>.
 struct RadioPlayerView: View {
     @Bindable var viewModel: PlayerViewModel
 
-    /// Called when the user taps the sleep timer button.
-    /// The complex menu + countdown logic + SharedPlayerManager integration
-    /// remains in `RadioPlayerCoordinator.configureSleepTimerButtonMenu` and friends.
+    /// Called when the user taps the sleep timer button (compatibility / side-effect path).
+    /// Primary presentation and choice handling for sleep timer now lives in
+    /// `PlaybackControlsView` (`.confirmationDialog`) + `PlayerViewModel` action closures
+    /// (wired to coordinator business logic). The closure is still invoked on tap so that
+    /// `configureSleepTimerButtonMenu` call sites remain exercised.
     var onSleepTimerTapped: (() -> Void)?
 
     /// Keeps the previously stale "sleep_timer_sheet_title" string active in the localization
-    /// catalog. The value is evaluated once per instance (harmless cost) and is ready for use
-    /// when the sleep timer presentation migrates fully to SwiftUI.
+    /// catalog. The value is evaluated once per instance (harmless cost). It is used directly
+    /// as the title for the native `.confirmationDialog` sleep timer options (see PlaybackControlsView).
     private let sleepTimerSheetTitle = String(localized: "sleep_timer_sheet_title", table: "Localizable")
 
     var body: some View {

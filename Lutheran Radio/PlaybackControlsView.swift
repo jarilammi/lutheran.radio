@@ -2,8 +2,11 @@
 //  PlaybackControlsView.swift
 //  Lutheran Radio
 //
-//  Pure SwiftUI playback controls: play/pause (with symbol bounce), sleep timer button, and
-//  colored status pill driven directly by PlayerVisualState.
+//  Pure SwiftUI playback controls: play/pause (with symbol bounce), sleep timer button (now
+//  using native .confirmationDialog), and colored status pill driven directly by PlayerVisualState.
+//
+//  Sleep timer: SwiftUI presents the dialog (presets + conditional cancel) and forwards choices
+//  via PlayerViewModel. Coordinator retains full ownership of business logic and glue.
 //
 //  Created by Jari Lammi on 13.6.2026.
 //
@@ -17,25 +20,38 @@ import SwiftUI
 /// The sleep timer button uses the moon symbol and indigo tint when active (countdown value can be
 /// observed via `viewModel.sleepTimerRemaining` by a parent or the button itself).
 ///
-/// Accessibility:
-/// - Play/pause button carries explicit `toggle_playback` custom action name (revives the string
-///   that became stale when the old UIKit custom accessibility action was removed).
-/// - Sleep timer button carries dynamic `.accessibilityValue` using `sleep_timer_accessibility_remaining`
-///   (e.g. "12 minutes remaining") so VoiceOver users hear remaining time. This revives the
-///   previously stale string that lost its UIKit call site during the SwiftUI foundation migration.
+/// Sleep timer presentation (new):
+/// - The moon button tap now triggers a native `.confirmationDialog` offering the four time
+///   presets (15/30/45/60 min) plus a destructive "Cancel" only when a timer is active.
+/// - Button tap still forwards through the legacy `onSleepTimerTapped` closure (for compatibility).
+/// - Actual selection actions call `viewModel.selectSleepTimer(minutes:)` / `cancelSleepTimer()`
+///   which are wired (in RadioPlayerCoordinator.wireAndInitialSetup) to the coordinator's
+///   `handleSleepTimer*` methods. This keeps *all* business logic (setSleepTimer, cancel,
+///   isSleepTimerInteractionActive, settle delays, begin/stopLocalSleepTimerDisplay,
+///   syncSleepTimerToViewModel, SPM calls, notifications) exclusively in the coordinator.
+/// - The old `configureSleepTimerButtonMenu()` (UIMenu builder) is retained and still called
+///   from several internal sleep glue paths; it is a no-op for presentation now.
 ///
-/// Actions are forwarded through the viewModel's injected closures (`play()`, `pause()`), which
-/// the coordinator wires to the authoritative `handle*` paths.
+/// Accessibility notes unchanged (see below).
+///
+/// Actions for play/pause/language are forwarded through the viewModel's injected closures
+/// (`play()`, `pause()`, `selectLanguage(at:)`), which the coordinator wires to the authoritative
+/// `handle*` paths.
 ///
 /// - SeeAlso: ``PlayerViewModel``, `PlayerVisualState`, `RadioPlayerCoordinator`,
-///   CODING_AGENT.md (Documentation & Comment Standards + Single Source of Truth Principles).
+///   `configureSleepTimerButtonMenu()`, CODING_AGENT.md (Documentation & Comment Standards + Single Source of Truth Principles).
 struct PlaybackControlsView: View {
 
     @Bindable var viewModel: PlayerViewModel
 
-    // Sleep timer tap is forwarded via closure so that the complex menu / countdown Task
-    // logic can remain in the coordinator for now (low-risk incremental migration).
+    // Legacy tap forwarding (still called on button press for compatibility).
+    // The complex menu / countdown Task / preset handling logic remains exclusively
+    // in the coordinator; SwiftUI only owns the .confirmationDialog presentation.
     var onSleepTimerTapped: (() -> Void)?
+
+    // Local presentation state for the SwiftUI-native sleep timer options dialog.
+    // This is the primary user-facing path after the SwiftUI migration of the player UI.
+    @State private var isShowingSleepTimerDialog = false
 
     private var isActivelyPlaying: Bool {
         viewModel.visualState.isActivelyPlaying
@@ -94,9 +110,14 @@ struct PlaybackControlsView: View {
                 }
             }
 
-            // Sleep timer (visual only for now; full menu attached at higher level or via closure)
+            // Sleep timer button (native SwiftUI).
+            // Tapping shows a .confirmationDialog with the 4 duration presets + conditional Cancel.
+            // The legacy onSleepTimerTapped is still invoked (keeps configureSleepTimerButtonMenu
+            // call sites exercised for compatibility and any internal side-effects).
+            // Dialog actions forward via PlayerViewModel to coordinator-owned timer logic.
             Button {
                 onSleepTimerTapped?()
+                isShowingSleepTimerDialog = true
             } label: {
                 let remaining = viewModel.sleepTimerRemaining
                 let active = (remaining ?? 0) > 0
@@ -118,6 +139,37 @@ struct PlaybackControlsView: View {
             // Pass "" when inactive so the modifier receives a non-optional String (the API
             // requires it). An empty value is a no-op for VoiceOver on this control.
             .accessibilityValue(sleepTimerValue ?? "")
+            .confirmationDialog(
+                String(localized: "sleep_timer_sheet_title", table: "Localizable"),
+                isPresented: $isShowingSleepTimerDialog,
+                titleVisibility: .visible
+            ) {
+                // 15 / 30 / 45 / 60 minute presets (identical to prior UIMenu).
+                // Selection routes through VM -> coordinator handle* so that
+                // setSleepTimer, countdown, intent, notifications and VM sync are untouched.
+                Button(String(localized: "sleep_timer_preset_15_min", table: "Localizable")) {
+                    viewModel.selectSleepTimer(minutes: 15)
+                }
+                Button(String(localized: "sleep_timer_preset_30_min", table: "Localizable")) {
+                    viewModel.selectSleepTimer(minutes: 30)
+                }
+                Button(String(localized: "sleep_timer_preset_45_min", table: "Localizable")) {
+                    viewModel.selectSleepTimer(minutes: 45)
+                }
+                Button(String(localized: "sleep_timer_preset_60_min", table: "Localizable")) {
+                    viewModel.selectSleepTimer(minutes: 60)
+                }
+
+                // Cancel only when a timer is currently active (matches the old UIMenu conditional).
+                if let remaining = viewModel.sleepTimerRemaining, remaining > 0 {
+                    Button(
+                        String(localized: "sleep_timer_cancel_timer", table: "Localizable"),
+                        role: .destructive
+                    ) {
+                        viewModel.cancelSleepTimer()
+                    }
+                }
+            }
 
             // Status pill (exact states + colors from PlayerVisualState)
             Text(statusText)

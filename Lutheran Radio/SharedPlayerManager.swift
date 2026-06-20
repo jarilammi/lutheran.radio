@@ -300,6 +300,8 @@ actor SharedPlayerManager {
     
     #if LUTHERAN_MAIN_APP
     // MARK: - Sleep Timer (main app only; implementation in SharedPlayerManager+SleepTimer.swift)
+    // SwiftUI (PlaybackControlsView) presents the options dialog. All scheduling, cancellation,
+    // countdown, intent management and cross-sync remain here + the coordinator glue.
     /// Active sleep timer task. Cancellable.
     var sleepTimerTask: Task<Void, Never>?
     /// Remaining seconds on the active sleep timer (for UI countdown). Nil when inactive.
@@ -2435,7 +2437,8 @@ extension SharedPlayerManager {
 // write-suppression gate until widgets are re-detected.
 // 
 // - removeAllLocalPlaybackKeys is nonisolated static (safe for widget/extension call sites in future).
-// - clearAllLocalState is the @MainActor entry point used from UI (sleep timer menu etc.).
+// - clearAllLocalState is the @MainActor entry point used from UI (sleep timer menu / clear action etc.).
+//   The timer preset/cancel UI itself is a SwiftUI confirmationDialog; the cancel + set paths still flow through here.
 // - Intentionally reuses stop() + cancelSleepTimer() + the no-persist reset helper.
 // - Never touches Core security keys (see explicit list in removeAllLocalPlaybackKeys).
 extension SharedPlayerManager {

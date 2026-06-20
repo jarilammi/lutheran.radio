@@ -6,7 +6,12 @@
 //  Owns wiring of the extracted presentational components (LanguageSelectorView, BackgroundImageController,
 //  PlaybackControlsView, NowPlayingMetadataView), the full stream-selection flows, distribution of every
 //  visual/metadata/background update, sleep-timer UI state machine glue (notification observer + sync +
-//  countdown Task + menu reconfig), haptics triggering, and initial-setup sequencing.
+//  countdown Task + preset/cancel handling + sync to VM), haptics triggering, and initial-setup sequencing.
+//
+//  Sleep timer: presentation migrated to SwiftUI .confirmationDialog in PlaybackControlsView.
+//  All logic (handleSleepTimer*, begin/stop display, isSleepTimerInteractionActive, SPM integration)
+//  stays in the coordinator. The legacy configureSleepTimerButtonMenu UIMenu builder is intentionally
+//  preserved (still called from glue paths) per incremental migration constraints.
 //
 //  ViewController remains the thin lifecycle host + view hierarchy builder + public intent shims
 //  (for SceneDelegate, widgets, remote commands) + hard-to-move observers (network, interruptions, route,
@@ -32,6 +37,10 @@ import Core
 /// Lightweight coordinator (wiring + orchestration only). Does not own playback execution, security,
 /// streaming engine decisions, or widget snapshot authority — those remain exclusively in
 /// SharedPlayerManager + DirectStreamingPlayer + Core security paths (per guardrails).
+///
+/// Sleep timer note: coordinator is the single owner of timer logic (set/cancel + countdown glue +
+/// interaction windows + VM sync). SwiftUI (PlaybackControlsView) owns only the .confirmationDialog
+/// presentation and calls back via PlayerViewModel closures. configureSleepTimerButtonMenu is retained.
 @MainActor
 final class RadioPlayerCoordinator {
 
@@ -57,6 +66,11 @@ final class RadioPlayerCoordinator {
     /// `configureSleepTimerButtonMenu()`. This property exists for future cleaner wiring
     /// (e.g. if the coordinator itself wants to drive presentation of a SwiftUI sheet or
     /// confirmation dialog without the caller knowing the implementation).
+    ///
+    /// Current primary path: PlaybackControlsView presents its own `.confirmationDialog`
+    /// and the resulting choices are delivered via the `PlayerViewModel` action closures
+    /// (onSleepTimerPresetSelected / onSleepTimerCancelSelected) which are wired directly
+    /// to `handleSleepTimerPresetSelected` / `handleSleepTimerCancelSelected`.
     var onSleepTimerButtonTapped: (() -> Void)?
 
     // MARK: - SwiftUI observation bridge (optional, non-breaking)
@@ -125,6 +139,14 @@ final class RadioPlayerCoordinator {
             }
             vm.onLanguageSelected = { [weak self] index in
                 self?.handleLanguageSelection(at: index)
+            }
+            // Wire sleep timer actions. The SwiftUI .confirmationDialog in PlaybackControlsView
+            // calls these; the coordinator owns the full preset/cancel + settle + display + SPM logic.
+            vm.onSleepTimerPresetSelected = { [weak self] minutes in
+                self?.handleSleepTimerPresetSelected(minutes: minutes)
+            }
+            vm.onSleepTimerCancelSelected = { [weak self] in
+                self?.handleSleepTimerCancelSelected()
             }
         }
 
@@ -1236,6 +1258,21 @@ final class RadioPlayerCoordinator {
     }
 
     // MARK: - Sleep timer UI glue (moved verbatim)
+    //
+    // IMPORTANT (SwiftUI migration):
+    // The primary presentation of sleep timer options is now a native SwiftUI
+    // `.confirmationDialog` inside PlaybackControlsView. It offers the same presets
+    // (15/30/45/60) + conditional Cancel and routes choices through PlayerViewModel
+    // action closures directly into the handle* methods below.
+    //
+    // `configureSleepTimerButtonMenu()` is retained (never removed per requirements)
+    // and is still invoked from beginLocalSleepTimerDisplay, stopLocalSleepTimerDisplay,
+    // handleCancelSelected, localStateCleared, confirmAndClearLocalState, and
+    // view setup for any legacy/compatibility side-effects. Its UIMenu construction
+    // currently has no attached presenter so produces no visible UI.
+    //
+    // All timer *business logic*, timing (settle constants), interaction flags,
+    // countdown Task, sync to VM, and SharedPlayerManager calls remain here unchanged.
     func configureSleepTimerButtonMenu() {
         var children: [UIMenuElement] = []
 
@@ -1272,7 +1309,8 @@ final class RadioPlayerCoordinator {
             self?.confirmAndClearLocalState()
         })
 
-        // (Modern SwiftUI path: menu would be provided directly to the control view.)
+        // (Modern SwiftUI path: presentation lives in PlaybackControlsView.confirmationDialog.
+        // This builder is kept only for compatibility and internal re-sync calls.)
     }
 
     @MainActor

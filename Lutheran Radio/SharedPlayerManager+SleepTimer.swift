@@ -5,6 +5,10 @@
 //  Sleep timer: schedules automatic pause via SharedPlayerManager.stop().
 //  Main app target only (no widget / Live Activity countdown in v1).
 //
+//  UI: SwiftUI confirmationDialog in PlaybackControlsView drives presets/cancel via
+//  coordinator. The core setSleepTimer / cancelSleepTimer + actor task + notifications
+//  are unchanged.
+//
 //  Created by Jari Lammi on 5.6.2026.
 //
 

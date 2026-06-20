@@ -7,7 +7,7 @@
 //  Purpose:
 //  Provides a single observable surface for SwiftUI views (current or future) that need to
 //  react to playback visual state, language selection, ICY program metadata, sleep timer
-//  countdown, stream switching in-flight flag, and basic error/security surface.
+//  countdown (and dialog conditional), stream switching in-flight flag, and basic error/security surface.
 //
 //  This is a *presentation adapter*, not a source of truth.
 //  - Visual state + playback intent authority remains in SharedPlayerManager (actor).
@@ -18,7 +18,8 @@
 //  Bridging strategy (see RadioPlayerCoordinator):
 //  - Direct optional reference from coordinator (fast, keeps timing control in one place).
 //  - Sleep timer uses existing SleepTimerNotification + coordinator's local countdown glue
-//    (pushed here too).
+//    (pushed here too). Presentation (confirmationDialog) + choices live in SwiftUI;
+//    all set/cancel + sync logic remains in coordinator.
 //  - Metadata arrives via DirectStreamingPlayer.onMetadataChange (forwarded here).
 //  - selectedStreamIndex and isSwitchingStream are mirrored from coordinator / player.
 //
@@ -48,6 +49,12 @@ import Observation
 /// SwiftUI views observe them directly via the Observation framework (no @Published needed).
 ///
 /// Thread-safety: @MainActor isolation + coordinator is the only writer in production.
+///
+/// Sleep timer surface:
+/// - `sleepTimerRemaining` is pushed by coordinator (via `syncSleepTimerToViewModel`).
+/// - `selectSleepTimer(minutes:)` and `cancelSleepTimer()` forward to coordinator-owned logic
+///   (the SwiftUI dialog in PlaybackControlsView is the caller). This keeps set/cancel, countdown
+///   glue, and state sync in the single source of truth (coordinator + SharedPlayerManager).
 @Observable
 @MainActor
 final class PlayerViewModel {
@@ -65,7 +72,9 @@ final class PlayerViewModel {
     var currentMetadata: StreamProgramMetadata?
 
     /// Remaining sleep timer duration in seconds. Nil when no timer is active.
-    /// Updated by the coordinator's local countdown (which also drives the UIKit sleep button).
+    /// Updated by the coordinator's local countdown (beginLocalSleepTimerDisplay / Task)
+    /// which also drives sync + icon state in PlaybackControlsView.
+    /// The SwiftUI confirmationDialog reads this to decide whether to show the Cancel action.
     var sleepTimerRemaining: TimeInterval?
 
     /// True while a user- or widget-initiated stream change is in progress (engine prep + potential tuning).
@@ -96,6 +105,15 @@ final class PlayerViewModel {
     /// Coordinator wires this to its full `handleLanguageSelection` + debounce + completeStreamSwitch path.
     var onLanguageSelected: ((Int) -> Void)?
 
+    /// Injected to request a sleep timer preset (minutes). Routed by coordinator to
+    /// handleSleepTimerPresetSelected + full interaction glue (flags, settles, display task,
+    /// SharedPlayerManager.setSleepTimer, sync, notifications).
+    var onSleepTimerPresetSelected: ((Int) -> Void)?
+
+    /// Injected to request cancellation of an active sleep timer. Routed to coordinator's
+    /// handleSleepTimerCancelSelected (preserves all existing stop + restore + UI sync paths).
+    var onSleepTimerCancelSelected: (() -> Void)?
+
     // MARK: - Public convenience API (callable from SwiftUI)
 
     /// Request playback start/resume. Forwards to the injected closure.
@@ -112,6 +130,20 @@ final class PlayerViewModel {
     /// Forwards to the injected closure (coordinator performs optimistic UI + timing).
     func selectLanguage(at index: Int) {
         onLanguageSelected?(index)
+    }
+
+    /// Request a sleep timer preset (e.g. 15, 30, 45 or 60 minutes).
+    /// Forwards to the injected closure so coordinator retains ownership of setSleepTimer,
+    /// isSleepTimerInteractionActive, background deferral, beginLocalSleepTimerDisplay,
+    /// and syncSleepTimerToViewModel.
+    func selectSleepTimer(minutes: Int) {
+        onSleepTimerPresetSelected?(minutes)
+    }
+
+    /// Request cancellation of the current sleep timer (if any).
+    /// Forwards to the injected closure; coordinator owns cancel + display stop + notification paths.
+    func cancelSleepTimer() {
+        onSleepTimerCancelSelected?()
     }
 
     // MARK: - Derived convenience (no side effects)
@@ -180,6 +212,16 @@ extension PlayerViewModel {
             #endif
             vm.selectedStreamIndex = index
             // A more advanced preview could also flip to .prePlay briefly.
+        }
+        vm.onSleepTimerPresetSelected = { mins in
+            #if DEBUG
+            print("[PlayerViewModel Preview] selectSleepTimer(minutes: \(mins))")
+            #endif
+        }
+        vm.onSleepTimerCancelSelected = {
+            #if DEBUG
+            print("[PlayerViewModel Preview] cancelSleepTimer()")
+            #endif
         }
 
         return vm
