@@ -1011,25 +1011,24 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     private func setupUI() {
         view.backgroundColor = .systemBackground
 
-        // Background image layer (full-bleed with parallax insets). Remains UIKit-owned
-        // for the duration of the incremental SwiftUI migration (energy efficiency, CI pipeline,
-        // deferral, etc. live in BackgroundImageController).
-        let bgView = backgroundImageController.backgroundImageView
-        view.addSubview(bgView)
-        bgView.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            bgView.topAnchor.constraint(equalTo: view.topAnchor),
-            bgView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            bgView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            bgView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
-        ])
-        bgView.layer.zPosition = -1
-
         // Single SwiftUI player view (composes NowPlayingMetadataView + LanguageSelectorView
         // + PlaybackControlsView + VolumeAndAirPlayRow). This replaces the previous three
         // separate UIHostingControllers + manual interleaving of UIKit chrome.
+        //
+        // IMPORTANT LAYERING ORDER (background visibility fix):
+        // 1. Add the playerHostingController (and its view) FIRST. At this moment it becomes
+        //    the only (or top) subview and owns the safe-area content area.
+        // 2. Explicitly clear its background so the decorative layer can show through.
+        // 3. THEN insert the backgroundImageView at index 0. This places the full-bleed
+        //    background BEHIND the hosting view in the subview list. zPosition = -1 is
+        //    retained as a CALayer stacking belt-and-suspenders.
+        // Why insert *after* adding the host but *at 0*? Adding host first gives it a stable
+        // position in the hierarchy; insert(at:0) reliably pushes it above the background
+        // without relying on later addSubview order or zPosition alone. RadioPlayerView
+        // already uses Color.clear; the hosting view's opaque default was the obscurer.
         addChild(playerHostingController)
         view.addSubview(playerHostingController.view)
+        playerHostingController.view.backgroundColor = .clear
         playerHostingController.view.translatesAutoresizingMaskIntoConstraints = false
         playerHostingController.didMove(toParent: self)
 
@@ -1039,6 +1038,25 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
             playerHostingController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             playerHostingController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
+
+        // Background image layer (full-bleed with parallax insets). Remains UIKit-owned
+        // for the duration of the incremental SwiftUI migration (energy efficiency, CI pipeline,
+        // deferral, etc. live in BackgroundImageController).
+        //
+        // Inserted at 0 (bottom) after the hosting controller so the SwiftUI content
+        // renders in front. Constraints use view anchors (not safeArea) for true full-bleed.
+        // updateForEnergyEfficiency(), scheduleDeferredForStreamSwitch(), and memory warning
+        // handling are untouched; this is only the add/insert sequence.
+        let bgView = backgroundImageController.backgroundImageView
+        view.insertSubview(bgView, at: 0)
+        bgView.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            bgView.topAnchor.constraint(equalTo: view.topAnchor),
+            bgView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            bgView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            bgView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        ])
+        bgView.layer.zPosition = -1
     }
     
     @objc private func handleMemoryWarning() {
