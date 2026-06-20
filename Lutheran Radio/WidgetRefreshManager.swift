@@ -149,16 +149,17 @@ final class WidgetRefreshManager: @unchecked Sendable {
             cancelCoalescedPrePlayRefresh()
         } else if coalescedPrePlayState != nil,
                   newState.visualState != .prePlay,
+                  newState.visualState != .cleared,
                   newState.visualState != .playing {
             cancelCoalescedPrePlayRefresh()
         }
         
-        // Coalesce back-to-back .prePlay → .playing refreshes on the same language.
+        // Coalesce back-to-back .prePlay/.cleared → .playing refreshes on the same language.
         if !hasError,
            newState.visualState == .playing,
            let prePlaySource = coalescedPrePlayState ?? lastKnownState,
            prePlaySource.currentLanguage == newState.currentLanguage,
-           prePlaySource.visualState == .prePlay,
+           prePlaySource.visualState == .prePlay || prePlaySource.visualState == .cleared,
            prePlaySource.hasError == newState.hasError {
             let withinCoalesceWindow = coalescedPrePlayState != nil
                 || (lastRefreshTime.map { Date().timeIntervalSince($0) < Self.prePlayToPlayingCoalesceWindow } ?? false)
@@ -174,8 +175,10 @@ final class WidgetRefreshManager: @unchecked Sendable {
             }
         }
         
-        // Defer lone .prePlay refreshes briefly so a fast .playing follow-up can supersede them.
-        if !hasError, newState.visualState == .prePlay {
+        // Defer lone .prePlay / .cleared refreshes briefly so a fast .playing follow-up can supersede them.
+        // (.cleared is rare for widgets because clear wipes snapshot + forces hasActive false, but
+        // keep symmetric so in-process main-app driven paths behave consistently.)
+        if !hasError, newState.visualState == .prePlay || newState.visualState == .cleared {
             #if DEBUG
             print("[WidgetRefreshManager] Widget refresh deferred: awaiting possible .playing follow-up — lang: \(newState.currentLanguage)")
             #endif
@@ -241,10 +244,10 @@ final class WidgetRefreshManager: @unchecked Sendable {
         if prior == new { return false }
         switch new {
         case .playing:
-            return prior == .prePlay || prior == .userPaused
+            return prior == .prePlay || prior == .cleared || prior == .userPaused
         case .userPaused, .thermalPaused, .securityLocked:
             return true
-        case .prePlay:
+        case .prePlay, .cleared:
             return false
         }
     }
@@ -257,12 +260,12 @@ final class WidgetRefreshManager: @unchecked Sendable {
         if requested == persisted { return false }
         switch persisted {
         case .playing:
-            return requested == .prePlay || requested == .userPaused
+            return requested == .prePlay || requested == .cleared || requested == .userPaused
         case .userPaused, .thermalPaused:
-            return requested == .prePlay || requested == .playing
+            return requested == .prePlay || requested == .cleared || requested == .playing
         case .securityLocked:
             return requested != .securityLocked
-        case .prePlay:
+        case .prePlay, .cleared:
             return false
         }
     }
@@ -392,6 +395,7 @@ struct WidgetState {
     var debugVisualStateLabel: String {
         switch visualState {
         case .prePlay: return ".prePlay"
+        case .cleared: return ".cleared"
         case .playing: return ".playing"
         case .userPaused: return ".userPaused"
         case .thermalPaused: return ".thermalPaused"

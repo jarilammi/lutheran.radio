@@ -18,7 +18,7 @@ private func getStatusColor(_ visualState: PlayerVisualState) -> Color {
     case .thermalPaused: return .orange
     case .securityLocked: return .red
     case .playing:       return .green
-    default:             return .gray
+    case .prePlay, .cleared, .userPaused: return .gray
     }
 }
 

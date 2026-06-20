@@ -338,10 +338,11 @@ struct PlayerMainPreview: View {
 
     private var statusText: String {
         switch viewModel.visualState {
-        case .playing:      return "Playing"
-        case .prePlay:      return "Connecting"
-        case .userPaused:   return "Paused"
-        case .thermalPaused: return "Thermal Paused"
+        case .playing:        return "Playing"
+        case .prePlay:        return "Connecting"
+        case .cleared:        return "Cleared"
+        case .userPaused:     return "Paused"
+        case .thermalPaused:  return "Thermal Paused"
         case .securityLocked: return "Security Failed"
         }
     }

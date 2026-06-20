@@ -74,7 +74,7 @@ internal func widgetNowPlayingDisplayModel(
     case .playing:
         programTitle = metadata?.programTitle.flatMap { $0.isEmpty ? nil : $0 } ?? liveFallback
         emphasis = .active
-    case .prePlay:
+    case .prePlay, .cleared:
         programTitle = metadata?.programTitle.flatMap { $0.isEmpty ? nil : $0 } ?? liveFallback
         emphasis = .subdued
     case .userPaused:
@@ -95,7 +95,7 @@ internal func widgetNowPlayingDisplayModel(
         }
     }
 
-    let speakerVisible = speaker != nil && (state.isActivelyPlaying || state == .userPaused || state == .prePlay)
+    let speakerVisible = speaker != nil && (state.isActivelyPlaying || state == .userPaused || state == .prePlay || state == .cleared)
 
     return WidgetNowPlayingDisplayModel(
         programTitle: programTitle,

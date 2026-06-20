@@ -19,8 +19,11 @@
 // - `PlayerVisualState` + `PlaybackIntent` (via `SharedPlayerManager`) are
 //   the Single Source of Truth answering "what should the UI/widget show?"
 //   and "does the user want audio playing?";
-// - `.userPaused`, `.securityLocked`, and `.cleared` are sticky resurrection
-//   blockers; only explicit user play clears them.
+// - `.userPaused` and `.securityLocked` (via visual) plus `.cleared` (via PlaybackIntent)
+//   are sticky resurrection blockers; only explicit user play clears them.
+// - .cleared visual (blue + "clear_local_state_done") exists to give sighted confirmation
+//   of a successful privacy reset (intent is the actual blocker; post-clear launches use
+//   .prePlay because no snapshot is persisted).
 // - These types are persisted (Codable) in `PersistedWidgetState` for
 //   cross-process optimistic state. No PII.
 // - This file contains *no* security logic. Security decisions live only in
@@ -48,7 +51,7 @@ import UIKit
 // make their own "should I play?" decisions.
 //
 // Complements `PlayerVisualState` (what the UI shows) with explicit play/pause intent.
-// Sticky `.userPaused`, `.securityLocked`, and `.cleared` (privacy clear) block resurrection until cleared by explicit user play.
+// Sticky `.userPaused`, `.securityLocked` (via visual) and `.cleared` (via PlaybackIntent) block resurrection until cleared by explicit user play.
 //
 //
 
@@ -73,11 +76,13 @@ import UIKit
 ///                    This is a hard, permanent blocker until the next successful
 ///                    explicit play that passes full security validation.
 /// - cleared:         Explicit user-initiated privacy clear ("Clear local playback state").
-///                    Visual state is set to .userPaused (grey) so the reset does not show
-///                    yellow "connecting". Language selector is reseeded to a clean initial
-///                    locale independently. This is a hard resurrection blocker (like
-///                    .userPaused / .securityLocked). Only an explicit user play action clears it.
-///                    Used so that internal recovery paths cannot spontaneously restart after clear.
+///                    Visual is set to dedicated .cleared (blue "Cleared" using clear_local_state_done)
+///                    for explicit confirmation of the completed reset. The blocker lives ONLY in the
+///                    `.cleared` PlaybackIntent (checked in canProceedWithPlayback, play guards, etc.).
+///                    Language selector is reseeded to a clean initial locale. This is a hard
+///                    resurrection blocker (via intent). Only an explicit user play action clears it
+///                    (and transitions visual to .prePlay on the way to playing). On next launch
+///                    (no snapshot) the app starts fresh with .prePlay visual.
 enum PlaybackIntent: Codable, Equatable {
     case shouldBePlaying
     case shouldBePaused
@@ -105,7 +110,11 @@ extension PlaybackIntent {
 
 /// Single source of truth for playback UI **and** intent.
 ///
-/// - prePlay:        yellow, auto-plays on first launch only
+/// - prePlay:        yellow, auto-plays on first launch only (or post stream switch)
+/// - cleared:        blue "Cleared", shown immediately after successful privacy "Clear local state".
+///                   Distinct confirmation that reset completed. The actual blocker is the
+///                   companion `.cleared` PlaybackIntent (see above). Behaves like .prePlay for
+///                   readiness (shouldAutoPlayOrResume) but provides explicit post-reset visual.
 /// - playing:        green
 /// - userPaused:     grey, NEVER auto-resumes
 /// - thermalPaused:  amber, device is overheating (blocks auto-resume)
@@ -115,6 +124,7 @@ extension PlaybackIntent {
 enum PlayerVisualState: Codable, Equatable {
     
     case prePlay            // Initial load / connecting / never played yet → yellow
+    case cleared            // Post "Clear local state" (privacy reset) → blue "Cleared"; ready state + intent blocker
     case playing            // Actively playing → green
     case userPaused         // Explicit user pause/stop → grey (sticky)
     case thermalPaused      // Device overheating → amber/orange warning
@@ -125,6 +135,7 @@ enum PlayerVisualState: Codable, Equatable {
     var backgroundColor: UIColor {
         switch self {
         case .prePlay:        return .systemYellow
+        case .cleared:        return .systemBlue
         case .playing:        return .systemGreen
         case .userPaused:     return .systemGray
         case .thermalPaused:  return .systemOrange
@@ -136,7 +147,7 @@ enum PlayerVisualState: Codable, Equatable {
         switch self {
         case .prePlay, .userPaused, .playing, .thermalPaused:
             return .label
-        case .securityLocked:
+        case .cleared, .securityLocked:
             return .white
         }
     }
@@ -144,6 +155,7 @@ enum PlayerVisualState: Codable, Equatable {
     var buttonTintColor: UIColor {
         switch self {
         case .prePlay:        return .systemYellow
+        case .cleared:        return .systemBlue
         case .playing:        return .systemGreen
         case .userPaused:     return .secondaryLabel
         case .thermalPaused:  return .systemOrange
@@ -161,9 +173,10 @@ enum PlayerVisualState: Codable, Equatable {
     /// Single source of truth.
     /// Returns false for .userPaused and .error — this blocks ALL resurrection paths
     /// (viewDidAppear, completeStreamSwitch, widget callbacks, etc.)
+    /// .cleared returns true (ready) because the blocker is carried exclusively by PlaybackIntent.cleared.
     var shouldAutoPlayOrResume: Bool {
         switch self {
-        case .prePlay, .playing:
+        case .prePlay, .cleared, .playing:
             return true
         case .userPaused, .thermalPaused, .securityLocked:
             return false
@@ -205,6 +218,9 @@ extension PlayerVisualState {
     ///
     /// Once the user has manually paused (or ever played), we lock into .userPaused
     /// until they explicitly tap Play again. This prevents the yellow resurrection.
+    /// Note: .cleared is set explicitly by privacy reset (never returned from this mapper);
+    /// status callbacks after clear are forced to preserve the .cleared visual by caller logic
+    /// that also inspects PlaybackIntent.
     static func from(
         status: PlayerStatus,
         isManualPause: Bool,

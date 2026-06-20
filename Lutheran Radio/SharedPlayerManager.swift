@@ -100,7 +100,8 @@ import os
 ///   (called from `clearAllLocalState`). Cleared only by explicit play paths
 ///   (via `clearUserPausedLockIfNeeded()`).
 ///   (Why this guard exists: user-initiated privacy clear is a hard resurrection
-///   blocker that forces clean .prePlay; post-clear launches must not replay prior state.)
+///   blocker. Post-clear the *visual* is the dedicated .cleared (blue "Cleared" pill);
+///   post-clear launches use .prePlay because we remove the snapshot.)
 ///
 /// **Cold-Launch Grace Period** (defined in this actor):
 /// - `initializationSettlingPeriod = 5.0` seconds (see `Constants`)
@@ -383,8 +384,9 @@ actor SharedPlayerManager {
     ///
     /// Sticky rules are preserved exactly: `.userPaused`, `.securityLocked`, and `.cleared`
     /// (privacy clear) are permanent blockers (via isStickyPauseOrLock) until an explicit user play
-    /// action clears them. For `.cleared` the visual is .prePlay (non-sticky) so cold-launch paths
-    /// and status callbacks see a clean first-play opportunity; the intent alone does the blocking.
+    /// action clears them. For `.cleared` the visual is the dedicated .cleared (blue) so the
+    /// current session shows explicit reset confirmation; the intent alone blocks; cold-launch
+    /// (no snapshot) sees .prePlay.
     /// `.sleepTimer` permits execution only while visual state is still `.playing`
     /// (active countdown); after the timer fires, explicit play is required.
     func canProceedWithPlayback() async -> Bool {
@@ -1144,20 +1146,16 @@ actor SharedPlayerManager {
     }
 
     /// Internal helper **only** for the privacy "clear local state" path.
-    /// Performs a clean reset of visual/intent/metadata/guards to .prePlay visual (clean ready state) + .cleared intent.
-    /// **without** any persistence side-effects (no saveCurrentState, no persistWidgetSnapshot, no liveness bump).
+    /// Performs a clean reset of visual/intent/metadata/guards to .cleared visual ("Cleared" blue pill + clear_local_state_done)
+    /// + .cleared intent. **without** any persistence side-effects (no saveCurrentState, no persistWidgetSnapshot, no liveness bump).
     /// The .cleared intent (in the current process) is the hard blocker (canProceedWithPlayback, play() top guard,
-    /// recovery, startPlayback etc.). Visual is .prePlay so that a subsequent cold launch (no snapshot) and early
-    /// status callbacks see a clean first-play candidate exactly like a brand-new install; this prevents the
-    /// previous mixing of sticky .userPaused (grey) semantics into post-clear launches or transient yellow flashes.
-    /// On next launch the no-snapshot path in ensureVisualStateLoaded + strengthened guards will allow the normal
-    /// cold-launch initial playback flow (tuning + play after the guard).
-    /// The public `resetToPrePlayForNewStream()` and set* paths all trigger saves; after a deliberate user clear
-    /// we want the persisted snapshot absent until the user explicitly plays again (or a widget is present and writes)
-    /// *or* the post-clear cold-start play path legitimately begins.
+    /// recovery, startPlayback etc.). Visual .cleared gives explicit post-reset confirmation in the current session
+    /// (distinct from yellow connecting). A subsequent cold launch sees .prePlay because removeAllLocalPlaybackKeys
+    /// + hasActiveWidgets=false + no snapshot. This prevents grey .userPaused mixing or "connect" after clear.
+    /// On next launch the no-snapshot path in ensureVisualStateLoaded allows the normal cold-launch flow.
     /// SECURITY: This touches only in-memory actor state for the current process.
     func resetStateToClearedForPrivacy() {
-        currentVisualState = .prePlay
+        currentVisualState = .cleared
         holdPrePlayVisualUntilPlayback = false
         initialPlaybackHasRun = false
         updatePlaybackIntent(to: .cleared)
@@ -1166,7 +1164,7 @@ actor SharedPlayerManager {
         lastUserPauseTimestamp = 0
 
         #if DEBUG
-        print("[SharedPlayerManager] resetStateToClearedForPrivacy — in-memory SSOT reset to .prePlay + .cleared intent (no persist; .cleared blocks recovery until explicit play)")
+        print("[SharedPlayerManager] resetStateToClearedForPrivacy — in-memory SSOT reset to .cleared (blue) + .cleared intent (no persist; .cleared blocks recovery until explicit play)")
         #endif
     }
     
@@ -1184,7 +1182,7 @@ actor SharedPlayerManager {
         print("[SharedPlayerManager] setUserIntentToPlay() called – clearing .userPaused / .cleared lock")
         #endif
         
-        if currentVisualState == .userPaused || currentPlaybackIntent == .cleared {
+        if currentVisualState == .userPaused || currentPlaybackIntent == .cleared || currentVisualState == .cleared {
             currentVisualState = .prePlay
             
             #if DEBUG
@@ -1404,7 +1402,7 @@ actor SharedPlayerManager {
         print("[SharedPlayerManager] Cleared sticky lock for explicit play (visual=\(currentVisualState), intent=\(currentPlaybackIntent))")
         #endif
 
-        if currentVisualState == .userPaused || currentPlaybackIntent == .cleared {
+        if currentVisualState == .userPaused || currentPlaybackIntent == .cleared || currentVisualState == .cleared {
             currentVisualState = .prePlay
         }
 
@@ -2486,9 +2484,10 @@ extension SharedPlayerManager {
         #endif
     }
 
-    /// Full clear entry point (call this). Stops playback, resets actor SSOT state, removes persisted
-    /// keys (including the snapshot), ends Live Activity, cancels sleep, notifies observers,
-    /// and leaves the app + widgets in a clean `.prePlay` state.
+    /// Full clear entry point (call this). Stops playback (silent), resets actor SSOT state to
+    /// .cleared visual + .cleared intent, removes persisted keys (including the snapshot), ends Live
+    /// Activity, cancels sleep, notifies observers. Main UI gets blue "Cleared" pill immediately;
+    /// widgets (no snapshot + write suppression) fall back to .prePlay on next load.
     ///
     /// - Important: After this call `loadPersistedWidgetState()` returns nil until the next
     ///   explicit play or widget-driven write.

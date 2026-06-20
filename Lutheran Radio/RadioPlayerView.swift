@@ -36,11 +36,12 @@ import AVKit
 ///
 /// Sleep timer: The tap closure is forwarded for compatibility (it still reaches
 /// `configureSleepTimerButtonMenu`). The actual presentation is a native
-/// `.confirmationDialog` (15/30/45/60 + conditional Cancel) implemented inside
-/// `PlaybackControlsView`. Choices are delivered via `PlayerViewModel.selectSleepTimer` /
-/// `cancelSleepTimer` closures that the coordinator wires to its authoritative handle methods.
-/// This preserves the complete existing timer logic, countdown Task, notifications,
-/// `syncSleepTimerToViewModel`, and interaction flags unchanged.
+/// `.confirmationDialog` (15/30/45/60 + conditional Cancel + Clear local state) implemented inside
+/// `PlaybackControlsView`. Timer choices are delivered via `PlayerViewModel.selectSleepTimer` /
+/// `cancelSleepTimer` closures; the privacy clear action is delivered via the `onClearLocalStateTapped`
+/// closure (both wired by the coordinator/VC). This preserves the complete existing timer logic,
+/// countdown Task, notifications, `syncSleepTimerToViewModel`, interaction flags, and the
+/// `confirmAndClearLocalState` flow unchanged.
 ///
 /// String revival note: `sleep_timer_sheet_title` is materialized here (and also used directly
 /// in the dialog) to keep the localization entry live across all 21 languages.
@@ -48,7 +49,7 @@ import AVKit
 /// - SeeAlso: ``PlayerViewModel``, `PlaybackControlsView`, `LanguageSelectorView`,
 ///   `NowPlayingMetadataView`, `VolumeAndAirPlayRow`, `ViewController`,
 ///   `RadioPlayerCoordinator`, `BackgroundImageController`,
-///   `configureSleepTimerButtonMenu()`, CODING_AGENT.md (Single Source of Truth Principles + Cross-target shared files),
+///   `configureSleepTimerButtonMenu()`, `confirmAndClearLocalState()`, CODING_AGENT.md (Single Source of Truth Principles + Cross-target shared files),
 ///   <doc:Architecture>.
 struct RadioPlayerView: View {
     @Bindable var viewModel: PlayerViewModel
@@ -58,7 +59,18 @@ struct RadioPlayerView: View {
     /// `PlaybackControlsView` (`.confirmationDialog`) + `PlayerViewModel` action closures
     /// (wired to coordinator business logic). The closure is still invoked on tap so that
     /// `configureSleepTimerButtonMenu` call sites remain exercised.
-    var onSleepTimerTapped: (() -> Void)?
+    var onSleepTimerTapped: (() -> Void)? = nil
+
+    /// Called when the user selects the destructive "Clear local state" option inside the
+    /// sleep timer `.confirmationDialog` (PlaybackControlsView).
+    /// Wired from ViewController to `radioPlayerCoordinator?.confirmAndClearLocalState()`.
+    /// This restores the privacy feature lost in the UIMenu → confirmationDialog migration.
+    /// The coordinator method shows a secondary confirmation and then calls the SSOT
+    /// `SharedPlayerManager.clearAllLocalState()`.
+    ///
+    /// - SeeAlso: PlaybackControlsView.onClearLocalStateTapped, RadioPlayerCoordinator.confirmAndClearLocalState,
+    ///   CODING_AGENT.md.
+    var onClearLocalStateTapped: (() -> Void)? = nil
 
     /// Keeps the previously stale "sleep_timer_sheet_title" string active in the localization
     /// catalog. The value is evaluated once per instance (harmless cost). It is used directly
@@ -88,7 +100,8 @@ struct RadioPlayerView: View {
                 // thumb zone near the top of the content area.
                 PlaybackControlsView(
                     viewModel: viewModel,
-                    onSleepTimerTapped: onSleepTimerTapped
+                    onSleepTimerTapped: onSleepTimerTapped,
+                    onClearLocalStateTapped: onClearLocalStateTapped
                 )
                 .padding(.horizontal, 24)
                 .padding(.bottom, 12)

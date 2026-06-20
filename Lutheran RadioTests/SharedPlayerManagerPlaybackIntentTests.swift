@@ -55,7 +55,7 @@ final class SharedPlayerManagerPlaybackIntentTests: XCTestCase {
         let canProceed = await manager.canProceedWithPlayback()
 
         XCTAssertEqual(intent, .cleared, "Clear must set the dedicated hard blocker intent")
-        XCTAssertEqual(visual, .prePlay, "Clear resets visual to .prePlay (clean ready) + .cleared intent; .userPaused (grey) is reserved for explicit user pauses so post-clear cold launches and early status callbacks do not mix sticky paused state or produce transient yellow. The intent alone blocks recovery until explicit play or successful post-clear cold-start play.")
+        XCTAssertEqual(visual, .cleared, "Clear resets visual to .cleared (blue + clear_local_state_done) + .cleared intent. This fixes the post-reset pill showing 'Connect'/yellow. .userPaused (grey) is reserved for explicit pauses. The intent alone blocks recovery until explicit play.")
         XCTAssertFalse(canProceed, "canProceedWithPlayback must be false for .cleared (prevents recreate / recovery after privacy clear)")
 
         // Explicit user play (setUserIntentToPlay or widget play) must clear the blocker.

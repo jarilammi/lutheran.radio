@@ -109,6 +109,11 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
             onSleepTimerTapped: { [weak self] in
                 // Compatibility path only (see real wiring below).
                 self?.radioPlayerCoordinator?.configureSleepTimerButtonMenu()
+            },
+            onClearLocalStateTapped: { [weak self] in
+                // Privacy path: forwards to coordinator which performs double-confirmation
+                // (UIAlert) + SharedPlayerManager.clearAllLocalState(). Restores the lost UIMenu action.
+                self?.radioPlayerCoordinator?.confirmAndClearLocalState()
             }
         )
     )
@@ -255,6 +260,12 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
                 // Primary sleep timer UI is now the .confirmationDialog inside PlaybackControlsView;
                 // choices are delivered to coordinator via PlayerViewModel action closures.
                 self?.radioPlayerCoordinator?.configureSleepTimerButtonMenu()
+            },
+            onClearLocalStateTapped: { [weak self] in
+                // Compatibility + primary path for the restored privacy action.
+                // Taps in the SwiftUI dialog land here and trigger the coordinator flow
+                // (secondary UIAlert confirmation then clearAllLocalState + UI reset).
+                self?.radioPlayerCoordinator?.confirmAndClearLocalState()
             }
         )
 
@@ -304,8 +315,8 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         setupFastWidgetActionChecking()
         isInitialSetupComplete = true
 
-        // Sleep timer notification observer + initial sync + preset/cancel handling is owned exclusively by RadioPlayerCoordinator.
-        // (added in wireAndInitialSetup). SwiftUI dialog calls back via PlayerViewModel; legacy onSleepTimerTapped still calls configure.
+        // Sleep timer notification observer + initial sync + preset/cancel + clear-local-state handling owned exclusively by RadioPlayerCoordinator.
+        // (added in wireAndInitialSetup). SwiftUI dialog (presets/Cancel/clear) calls back via PlayerViewModel or onClearLocalStateTapped; legacy onSleepTimerTapped still calls configure.
         // VC no longer observes or syncs the sleep UI glue.
         
         // Energy Efficiency Optimizations (iOS 26) — now owned by BackgroundImageController.
@@ -321,7 +332,7 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
             // In-memory UI + model setup only (selector needle, player selectedStream).
             // These are required for the app to be usable on launch and do not re-create
             // "recently deleted" persisted data (snapshot, lastUpdateTime, language liveness signals).
-            self.updateUI(for: .prePlay)
+            self.updateUI(for: .prePlay)  // not the post-clear path (that now uses .cleared)
             
             // Stream model and UI only; secured AVPlayerItem is created once in setStreamAndPlay after tuning.
             await self.streamingPlayer.setSelectedStreamModelOnly(to: initialStream)
@@ -339,7 +350,7 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
             print("[ViewController] After tuning — visualState = \(visualState), intent = \(intent)")
             #endif
             
-            // Post-clear cold launch first play (visual .prePlay + .cleared intent, or normal prePlay):
+            // Post-clear cold launch first play (visual .prePlay or .cleared + .cleared intent, or normal prePlay):
             // the guard now allows the success path. We deliberately perform identifying writes
             // (persist seed, updateUserDefaultsLanguage which bumps lastUpdateTime + saveCombined +
             // refresh) ONLY after the guard passes. This ensures recently deleted data is not
@@ -347,7 +358,7 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
             // post-clear cold-start play. If the guard blocks, no such writes occur.
             // The initialStream language here now comes from the centralized bestInitialLanguageCode
             // (preferredLanguages match) rather than the old fragile Locale.current path.
-            guard visualState == .prePlay || visualState.shouldAutoPlayOrResume || intent == .cleared else {
+            guard visualState == .prePlay || visualState == .cleared || visualState.shouldAutoPlayOrResume || intent == .cleared else {
                 #if DEBUG
                 print("[ViewController] Blocked initial playback — state = \(visualState)")
                 #endif
@@ -502,6 +513,11 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
                 #endif
                 // Do nothing — playback already started from viewDidLoad Task
                 
+            case .cleared:
+                #if DEBUG
+                print("[ViewController] viewDidAppear → .cleared (post privacy clear in this session) → SKIPPING (explicit play required)")
+                #endif
+                
             case .playing:
                 #if DEBUG
                 print("[ViewController] viewDidAppear → already playing, no action needed")
@@ -588,9 +604,9 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     
     private func setupControls() {
         // SwiftUI PlaybackControlsView owns its own Buttons and taps (wired to viewModel).
-        // Sleep timer *presentation* is now native .confirmationDialog in PlaybackControlsView.
+        // Sleep timer *presentation* is now native .confirmationDialog in PlaybackControlsView (includes Clear local state privacy action).
         // The call to configureSleepTimerButtonMenu is retained for compatibility + internal glue
-        // (the method is never removed during the incremental migration). All timer logic lives in coordinator.
+        // (the method is never removed during the incremental migration). All timer + clear logic lives in coordinator.
         // Accessibility and identifiers are now inside the SwiftUI views.
         radioPlayerCoordinator?.configureSleepTimerButtonMenu()  // compatibility / re-sync path; presentation is SwiftUI-native
         
