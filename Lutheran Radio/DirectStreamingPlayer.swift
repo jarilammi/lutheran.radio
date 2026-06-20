@@ -753,7 +753,29 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     
     private var initialPlaybackRetryCount = 0
     private let maxInitialRetries = 2
-    
+
+    /// Whether the current attach is still within its initial per-stream recovery budget.
+    ///
+    /// True after `resetInitialPlaybackCountersForNewStream()` (called by `switchToStream`
+    /// for language changes and cold-launch paths) until either:
+    /// - `hasStartedPlaying` becomes true after stable playback, or
+    /// - the retry budget is exhausted.
+    ///
+    /// Used by `RadioPlayerCoordinator` (and internal recovery paths) as a cheap predicate
+    /// to suppress user-visible transient failure surfaces ("unavailable", grey pause, alert)
+    /// for normal ICY/Fig/AAC decoder noise on fresh items. This is the defensive complement
+    /// to the centralized `handleItemStatusFailure` logic.
+    ///
+    /// - Important: This is **not** a general "is playing" flag. It specifically protects the
+    ///   early window documented in `switchToStream` and `resetInitialPlaybackCountersForNewStream`.
+    ///
+    /// - SeeAlso: `switchToStream(_:)`, `resetInitialPlaybackCountersForNewStream()`,
+    ///   `handleItemStatusFailure(_:)`, `RadioPlayerCoordinator.handleStatusChange`,
+    ///   CODING_AGENT.md (Single Source of Truth + explicit transient modeling)
+    var isInInitialRecoveryWindow: Bool {
+        !hasStartedPlaying && initialPlaybackRetryCount < maxInitialRetries
+    }
+
     /// At most one `recreatePlayerItem()` body may run at a time (MainActor only).
     private var recreateInFlight = false
     /// Coalesces rapid early `timeControlStatus` drops on a fresh ICY item into one recovery action.
@@ -1076,6 +1098,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// trigger a false-positive status_stream_unavailable (red banner + popup).
     ///
     /// Resets cold-launch recovery counters so each stream switch gets a fresh attempt budget.
+    /// The budget is observable via `isInInitialRecoveryWindow`, which the coordinator
+    /// uses to suppress transient failure UI during the window.
     ///
     /// AGENT NOTE: Prefer calling `switchToStream(_:)` (or the higher-level coordinator paths)
     /// rather than manually calling the individual reset + stop steps.
@@ -1743,12 +1767,19 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                     // First-play kick and status_playing emission are handled by addObservers'
                     // readyToPlay branch (single canonical path after startPlayback deferral).
                     break
-                    
+
                 case .failed:
-                    self.safeOnStatusChange(isPlaying: false, reasonKey: "status_stream_unavailable")   // ← fixed
-                    if let error = item.error {
-                        self.handlePlaybackError(error)
-                    }
+                    // Route through the canonical decision point.
+                    //
+                    // This is the first concrete step in the modest architectural consolidation.
+                    // Previously this path unconditionally emitted "status_stream_unavailable"
+                    // (bypassing the retry budget established by resetInitialPlaybackCountersForNewStream).
+                    //
+                    // The new handler applies the same early-window transient logic used by
+                    // addObservers + the improved StreamErrorType classification.
+                    // Real permanent failures still surface; normal fresh-item ICY noise
+                    // triggers recreatePlayerItem() silently.
+                    self.handleItemStatusFailure(item)
                 default:
                     break
                 }
@@ -2282,34 +2313,10 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                         
                     case .failed:
                         self.lastError = item.error
-                        let errorType = StreamErrorType.from(error: item.error)
-                        self.hasPermanentError = errorType.isPermanent
-                        
-                        // : Early item status .failed on fresh ICY item (common after
-                        // paused/switch + first data pump noise) → canonical recreatePlayerItem
-                        // for transient cases. Permanent/security paths still stop + surface error.
-                        if !self.hasStartedPlaying && self.initialPlaybackRetryCount < self.maxInitialRetries
-                            && !errorType.isPermanent {
-                            Task { @MainActor [weak self] in
-                                guard let self else { return }
-                                guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
-                                    #if DEBUG
-                                    print("[DirectStreamingPlayer] [Item status .failed] early transient: suppressed by intent")
-                                    #endif
-                                    return
-                                }
-                                if self.initialPlaybackRetryCount == 0 { self.initialPlaybackRetryCount = 1 }
-                                #if DEBUG
-                                print("[DirectStreamingPlayer] Item status .failed on fresh ICY item (post-pause/switch) — canonical recreatePlayerItem")
-                                #endif
-                                self.recreatePlayerItem()
-                            }
-                            return
-                        }
-                        
-                        // Permanent error path
-                        self.safeOnStatusChange(isPlaying: false, reasonKey: errorType.statusString)   // ← fixed
-                        self.stop()
+                        // Delegate to the canonical decision point (modest architectural consolidation).
+                        // The handler now owns classification, early-window recreate logic,
+                        // permanent error recording, status emission, and stop.
+                        self.handleItemStatusFailure(item)
                         
                     case .unknown:
                         if self.hasStartedPlaying {
@@ -3186,14 +3193,84 @@ extension DirectStreamingPlayer {
         #if DEBUG
         print("[DirectStreamingPlayer] Playback error: code=\(avError.code.rawValue), desc=\(avError.localizedDescription)")
         #endif
-        self.hasPermanentError = true  // Flag for reset in stop
-        self.stop(completion: nil, silent: true)  // Silent stop to reset
+
+        // Historical behavior: any AVError set the permanent flag.
+        // Under the modest architectural consolidation we are moving toward a single
+        // decision point (`handleItemStatusFailure`) that respects the early-window
+        // transient budget. Direct callers of handlePlaybackError (currently only the
+        // unconditional statusObserver path) will be routed through the canonical
+        // handler in a follow-up slice.
+        self.hasPermanentError = true
+        self.stop(completion: nil, silent: true)
+
         if avError.localizedDescription.contains("unmatched audio object type") || avError.localizedDescription.contains("SBR decoder") {
             #if DEBUG
             print("[DirectStreamingPlayer] HE-AAC/SBR format issue detected—recommend server-side LC-AAC fallback")
             #endif
-            // Optional: Trigger fallback stream if available (e.g., switchToStream(fallbackStream))
         }
+    }
+
+    /// Central decision point for `.failed` status on an `AVPlayerItem`.
+    ///
+    /// This method is the emerging **single source of truth** for the question:
+    /// "Is this a self-healing transient (normal ICY/Fig/AAC framing noise on a fresh item)
+    /// that should be recovered with `recreatePlayerItem`, or a real permanent failure?"
+    ///
+    /// It combines:
+    /// - Improved `StreamErrorType` classification (non-URL decoder errors → transient)
+    /// - The fresh-item budget (`!hasStartedPlaying` + `initialPlaybackRetryCount`)
+    /// - Intent check via `SharedPlayerManager.canProceedWithPlayback()`
+    ///
+    /// - Important: After a user stream switch, `switchToStream` + `resetInitialPlaybackCountersForNewStream`
+    ///   must have been called so that the new item starts with a clean budget. This is what
+    ///   prevents prior-stream noise from poisoning the new stream's first attempt.
+    ///
+    /// - Precondition: Called on a `.failed` KVO delivery for the current `playerItem`.
+    /// - Postcondition: Either `recreatePlayerItem()` was scheduled (transient case) or a
+    ///   terminal status was emitted and the player was stopped (permanent case).
+    ///
+    /// - SeeAlso: `StreamErrorType.from(error:)`, `switchToStream(_:)`, `resetInitialPlaybackCountersForNewStream()`,
+    ///   `setupPlaybackObservers()`, `addObservers()`, `recreatePlayerItem()`,
+    ///   RadioPlayerCoordinator.handleStatusChange, CODING_AGENT.md
+    @MainActor
+    private func handleItemStatusFailure(_ item: AVPlayerItem) {
+        let error = item.error
+        let errorType = StreamErrorType.from(error: error)
+
+        // Always record the classification for observers and UI.
+        hasPermanentError = errorType.isPermanent
+
+        // Early window on a fresh (or post-switch) item with remaining retry budget
+        // and a non-permanent error → canonical silent recovery via recreate.
+        // This is the behavior the unconditional observer path was missing.
+        if !hasStartedPlaying
+            && initialPlaybackRetryCount < maxInitialRetries
+            && !errorType.isPermanent {
+
+            if initialPlaybackRetryCount == 0 {
+                initialPlaybackRetryCount = 1
+            }
+
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
+                    #if DEBUG
+                    print("[DirectStreamingPlayer] [Item status failure] early transient suppressed by intent")
+                    #endif
+                    return
+                }
+
+                #if DEBUG
+                print("[DirectStreamingPlayer] Item status .failed on fresh ICY item (post-pause/switch) — canonical recreatePlayerItem")
+                #endif
+                self.recreatePlayerItem()
+            }
+            return
+        }
+
+        // Real permanent (or late) failure path.
+        safeOnStatusChange(isPlaying: false, reasonKey: errorType.statusString)
+        stop()
     }
 }
 
@@ -3494,33 +3571,78 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
 }
 
 extension DirectStreamingPlayer {
+    /// Classification of errors reported by `AVPlayerItem` or the resource loader.
+    ///
+    /// This is the authoritative model for **permanent vs transient** errors in the streaming engine.
+    /// It directly supports the contract that normal live ICY framing / decoder noise on a fresh
+    /// item (after `switchToStream` + `resetInitialPlaybackCountersForNewStream`) must be recovered
+    /// silently via `recreatePlayerItem` rather than surfacing `status_stream_unavailable`.
+    ///
+    /// - Important: Many ICY pump, Fig, and AAC decoder errors (e.g. err=-12785, -16042,
+    ///   "Error deserializing SCE", AudioFormatDescription failures) arrive **outside**
+    ///   `NSURLErrorDomain`. These are expected transient noise on the first packets of a live
+    ///   HE-AAC stream and must be classified as `.transientFailure` (or handled as such) when
+    ///   `!hasStartedPlaying`.
+    ///
+    /// - SeeAlso: `handleItemStatusFailure(_:)`, `switchToStream(_:)`, `resetInitialPlaybackCountersForNewStream()`,
+    ///   `addObservers()`, `preparePlayerItem(for:)`, CODING_AGENT.md (explicit permanent/transient modeling)
     enum StreamErrorType {
+        /// Hard security failure (certificate, model validation). Never auto-retried.
         case securityFailure
+
+        /// Genuine permanent failure (host unreachable, resource gone, etc.).
         case permanentFailure
+
+        /// Recoverable condition: network blip, temporary server response, or the normal
+        /// decoder / framing noise that occurs on fresh ICY items after a switch or cold launch.
         case transientFailure
+
+        /// Unclassified. Treated conservatively as transient in early-window recovery paths.
         case unknown
-        
+
+        /// Classifies the given error.
+        ///
+        /// - Parameter error: The `item.error` or equivalent from AVFoundation / resource loading.
+        /// - Returns: The appropriate `StreamErrorType`.
+        ///
+        /// - Note: Any error that is not a clear security or hard host failure is treated as
+        ///   transient. This is the key change that lets the canonical recreate path handle
+        ///   the exact symptoms seen during language switches (see stream switch glitch analysis).
         static func from(error: Error?) -> StreamErrorType {
-            guard let nsError = error as NSError?, nsError.domain == NSURLErrorDomain else {
+            guard let nsError = error as NSError? else {
                 return .unknown
             }
-            
-            switch nsError.code {
-            case URLError.Code.secureConnectionFailed.rawValue,
-                URLError.Code.serverCertificateUntrusted.rawValue:
-                return .securityFailure
-            case URLError.Code.cannotFindHost.rawValue,
-                URLError.Code.resourceUnavailable.rawValue,
-                URLError.Code.fileDoesNotExist.rawValue,
-                URLError.Code.cannotConnectToHost.rawValue:
-                return .permanentFailure
-            case URLError.Code.badServerResponse.rawValue:    // Treat as transient to enable fallback for temporary HTTP 5xx errors (e.g., server reboots)
-                return .transientFailure
-            default:
-                return .transientFailure
+
+            if nsError.domain == NSURLErrorDomain {
+                switch nsError.code {
+                case URLError.Code.secureConnectionFailed.rawValue,
+                     URLError.Code.serverCertificateUntrusted.rawValue:
+                    return .securityFailure
+
+                case URLError.Code.cannotFindHost.rawValue,
+                     URLError.Code.resourceUnavailable.rawValue,
+                     URLError.Code.fileDoesNotExist.rawValue,
+                     URLError.Code.cannotConnectToHost.rawValue:
+                    return .permanentFailure
+
+                case URLError.Code.badServerResponse.rawValue:
+                    // Temporary 5xx or similar — allow recreate / fallback.
+                    return .transientFailure
+
+                default:
+                    return .transientFailure
+                }
             }
+
+            // AVFoundationErrorDomain, Fig* internals, OSStatus decoder issues, and other
+            // non-URL errors are the common manifestation of live ICY "first packets" noise.
+            // We deliberately classify them as transient so the early-window guard in
+            // `handleItemStatusFailure` (and the equivalent logic in addObservers) can
+            // trigger `recreatePlayerItem()` instead of a user-visible failure.
+            return .transientFailure
         }
-        
+
+        /// The localized status reason key to emit for this classification.
         var statusString: String {
             switch self {
             case .securityFailure:
@@ -3533,7 +3655,11 @@ extension DirectStreamingPlayer {
                 return String(localized: "status_connecting", table: "Localizable")
             }
         }
-        
+
+        /// True only for errors that should never be auto-recovered.
+        ///
+        /// Transient and unknown errors remain eligible for the per-stream retry budget
+        /// and `recreatePlayerItem` when the item is still fresh (`!hasStartedPlaying`).
         var isPermanent: Bool {
             switch self {
             case .securityFailure, .permanentFailure:

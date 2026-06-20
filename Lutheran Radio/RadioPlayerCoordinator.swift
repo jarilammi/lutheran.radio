@@ -1584,6 +1584,28 @@ final class RadioPlayerCoordinator {
     }
 
     // MARK: - Streaming status distribution entry (called from VC's StreamingPlayerDelegate hop)
+
+    /// Receives every status update from the streaming engine and decides UI, visual state,
+    /// alerts, and widget/Live Activity side effects.
+    ///
+    /// This is the central choke point for mapping low-level `PlayerStatus` + `reasonKey`
+    /// (from `DirectStreamingPlayer.safeOnStatusChange`) into high-level `PlayerVisualState`
+    /// and user-visible surfaces.
+    ///
+    /// Special handling exists for transient states (connecting/buffering preserve optimistic
+    /// prePlay/playing) and for explicit user pauses. The unavailable/failed reaction now
+    /// includes an `isInInitialRecoveryWindow` guard so that normal self-healing ICY decoder
+    /// noise immediately after a language switch (or cold launch) does not force `.userPaused`
+    /// + alert.
+    ///
+    /// - Parameters:
+    ///   - status: Coarse player status.
+    ///   - reasonKey: Exact Localizable key (e.g. "status_playing", "status_stream_unavailable").
+    ///     Used both for localization and for precise branching.
+    ///
+    /// - SeeAlso: `DirectStreamingPlayer.safeOnStatusChange`, `handleItemStatusFailure(_:)`,
+    ///   `streamingPlayer.isInInitialRecoveryWindow`, `SharedPlayerManager.markPlaybackStoppedByStreamFailure`,
+    ///   `updateUI(for:)`, CODING_AGENT.md (transient vs permanent modeling)
     func handleStatusChange(_ status: PlayerStatus, reasonKey: String?) async {
         let visualState = await SharedPlayerManager.shared.currentVisualState
         let playbackIntent = await SharedPlayerManager.shared.currentPlaybackIntent
@@ -1669,26 +1691,48 @@ final class RadioPlayerCoordinator {
                 self.updateUIForNoInternet()
 
             } else if reasonKey == "status_stream_unavailable" || reasonKey == "status_failed" {
-                let vsForCheck = await SharedPlayerManager.shared.currentVisualState
-                if vsForCheck.isActivelyPlaying || vsForCheck == .prePlay {
-                    await SharedPlayerManager.shared.markPlaybackStoppedByStreamFailure()
-                }
-                let correctedVisualState = await SharedPlayerManager.shared.currentVisualState
-                self.updateUI(for: correctedVisualState)
+                // Early-window guard (modest architectural consolidation).
+                //
+                // After `switchToStream` + `resetInitialPlaybackCountersForNewStream`, the player
+                // gives the new item a fresh retry budget. Normal live ICY HE-AAC framing/decoder
+                // noise on the very first packets is expected and is recovered silently by
+                // `recreatePlayerItem()` (see `handleItemStatusFailure` and the two observer sites).
+                //
+                // If the player reports we are still in that window, suppress the mark-to-.userPaused
+                // and the "Lähetys ei saatavilla" alert. The next successful readyToPlay / playing
+                // status will drive the UI forward without the grey pause flash.
+                //
+                // This guard is defensive: the centralized player logic already avoids emitting
+                // the bad keys for transients, but other safety-net or fallback paths could still
+                // emit them. The window check ensures the documented contract holds at the UI layer.
+                if streamingPlayer.isInInitialRecoveryWindow {
+                    #if DEBUG
+                    print("[RadioPlayerCoordinator] Suppressing unavailable/failed reaction — streamingPlayer.isInInitialRecoveryWindow (transient ICY noise on fresh post-switch/cold item)")
+                    #endif
+                    // Leave visual in whatever prePlay/playing/connecting state the effective logic chose.
+                    // Recovery will produce a subsequent status_playing.
+                } else {
+                    let vsForCheck = await SharedPlayerManager.shared.currentVisualState
+                    if vsForCheck.isActivelyPlaying || vsForCheck == .prePlay {
+                        await SharedPlayerManager.shared.markPlaybackStoppedByStreamFailure()
+                    }
+                    let correctedVisualState = await SharedPlayerManager.shared.currentVisualState
+                    self.updateUI(for: correctedVisualState)
 
-                if let vc = viewController, vc.presentedViewController == nil {
-                    let alert = UIAlertController(
-                        title: String(localized: "stream_unavailable_title", table: "Localizable"),
-                        message: String(localized: "stream_unavailable_message", table: "Localizable"),
-                        preferredStyle: .alert
-                    )
-                    alert.addAction(UIAlertAction(title: String(localized: "alert_retry", table: "Localizable"), style: .default) { _ in
-                        Task { @MainActor in
-                            await SharedPlayerManager.shared.userRequestedPlay()
-                        }
-                    })
-                    alert.addAction(UIAlertAction(title: String(localized: "ok", table: "Localizable"), style: .cancel, handler: nil))
-                    presentAlert?(alert)
+                    if let vc = viewController, vc.presentedViewController == nil {
+                        let alert = UIAlertController(
+                            title: String(localized: "stream_unavailable_title", table: "Localizable"),
+                            message: String(localized: "stream_unavailable_message", table: "Localizable"),
+                            preferredStyle: .alert
+                        )
+                        alert.addAction(UIAlertAction(title: String(localized: "alert_retry", table: "Localizable"), style: .default) { _ in
+                            Task { @MainActor in
+                                await SharedPlayerManager.shared.userRequestedPlay()
+                            }
+                        })
+                        alert.addAction(UIAlertAction(title: String(localized: "ok", table: "Localizable"), style: .cancel, handler: nil))
+                        presentAlert?(alert)
+                    }
                 }
             }
         }
