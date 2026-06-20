@@ -64,6 +64,11 @@
 	<array>
 		<string>audio</string>
 	</array>
+	<key>UILaunchScreen</key>
+	<dict>
+		<key>UIImageName</key>
+		<string>LaunchScreenImage</string>
+	</dict>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 </dict>
