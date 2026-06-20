@@ -7689,7 +7689,7 @@
       }
     },
     "select_language_accessibility" : {
-      "comment" : "Accessibility label for language cell. %@ is the localized language name.\nAccessibility label for language flag button. %@ is the language name.",
+      "comment" : "Accessibility label for language flag button. %@ is the language name.",
       "localizations" : {
         "da" : {
           "stringUnit" : {

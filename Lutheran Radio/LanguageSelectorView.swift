@@ -5,6 +5,10 @@
 //  Pure SwiftUI horizontal language/flag "tuning" selector with an animated red needle indicator.
 //  Replaces the prior UIKit UICollectionView + manual Auto Layout needle math.
 //
+//  The needle sweep is driven by matchedGeometryEffect + an explicit spring animation on the
+//  HStack keyed by selectedStreamIndex. This produces a clearly visible, radio-like tuning motion
+//  (see body documentation for parameter rationale).
+//
 //  Created by Jari Lammi on 12.6.2026.
 //
 
@@ -23,9 +27,20 @@ import SwiftUI
 /// a fixed, non-scrollable, perfectly centered set of five flags. The previous ScrollView +
 /// `.scrollDisabled(true)` form worked but carried unnecessary scrolling machinery.
 ///
-/// The animated red "tuning needle" uses `matchedGeometryEffect` + the implicit spring to
-/// reproduce the classic sweep behavior that previously required manual Auto Layout math and
-/// collection-view layoutAttributes.
+/// The animated red "tuning needle" uses `matchedGeometryEffect` on the indicator Rectangle
+/// together with an explicit `.animation(.spring(response:dampingFraction:), value:)` modifier
+/// applied to the `HStack` container. The animation value is `viewModel.selectedStreamIndex`.
+/// When the user taps a flag, `selectLanguage(at:)` eventually mutates the index (via the
+/// coordinator's optimistic UI path), causing the `if isSelected` branch in `flagView` to
+/// insert the Rectangle at a different position inside the HStack layout. The spring then
+/// produces a visible, damped sweep of the geometry from the old position to the new one.
+///
+/// Spring tuning rationale (response: 0.62, dampingFraction: 0.80):
+/// - Slow enough for the travel to be clearly perceptible and to feel like a physical radio
+///   tuning needle moving across the dial while the tuning sound plays.
+/// - Damped enough to settle elegantly without excessive oscillation or "boing".
+/// - Still responsive (no perceptible lag on tap).
+/// The previous implicit default spring was too brief; the movement was nearly invisible.
 ///
 /// - SeeAlso: ``PlayerViewModel``, `RadioPlayerCoordinator.handleLanguageSelection(at:)`,
 ///   `DirectStreamingPlayer.availableStreams`, <doc:Architecture>,
@@ -45,6 +60,12 @@ struct LanguageSelectorView: View {
                 flagView(for: stream, at: index)
             }
         }
+        // Explicit animation drives matchedGeometryEffect. Without it the geometry change
+        // uses an extremely fast implicit spring and the needle "teleports" rather than sweeps.
+        // Value-driven animation ensures the sweep only occurs when selection actually changes.
+        // The parameters were selected after evaluating the radio-tuner feel against the
+        // duration of playTuningSound; the sweep now visibly overlaps the sound playback.
+        .animation(.spring(response: 0.62, dampingFraction: 0.80), value: viewModel.selectedStreamIndex)
         .frame(maxWidth: .infinity, alignment: .center)
         .frame(height: 56)
     }
@@ -74,8 +95,11 @@ struct LanguageSelectorView: View {
         .overlay(alignment: .bottom) {
             if isSelected {
                 // The animated "tuning needle" — thin red vertical indicator.
-                // `matchedGeometryEffect` + the container's spring animation produces the smooth
-                // sweep that previously required manual centerX constraints + layoutAttributes.
+                // `matchedGeometryEffect(id: "needle", ...)` marks this view so that when the
+                // identical id moves to a different flag's overlay (as selectedStreamIndex changes),
+                // SwiftUI animates its frame/position. The actual timing and curve come from the
+                // .animation modifier on the parent HStack (see body above). This keeps the
+                // declarative matched-geometry contract while making the sweep pronounced.
                 Rectangle()
                     .fill(Color.red.opacity(0.7))
                     .frame(width: 4, height: 38)
