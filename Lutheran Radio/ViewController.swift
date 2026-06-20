@@ -270,7 +270,18 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         )
 
         radioPlayerCoordinator.viewController = self
-        radioPlayerCoordinator.presentAlert = { [weak self] alert in self?.present(alert, animated: true) }
+        // Always defer the actual present(...) for coordinator-driven UIAlertControllers.
+        // This protects against "Unable to simultaneously satisfy constraints" (320pt autoresizing
+        // mask vs. internal ~366pt alert content width from _UIAlertControllerPhoneTVMacView)
+        // when an alert is triggered synchronously from a SwiftUI .confirmationDialog action
+        // (e.g. "Clear local state") while widget refreshes, background image updates, or other
+        // layout work is in progress on the main thread. The extra runloop tick lets the
+        // outgoing presentation container finish tearing down its constraints.
+        radioPlayerCoordinator.presentAlert = { [weak self] alert in
+            DispatchQueue.main.async { [weak self] in
+                self?.present(alert, animated: true)
+            }
+        }
         radioPlayerCoordinator.wireAndInitialSetup()
         
         // No instance selectedStreamIndex mutation or onSelectionChanged wiring here (coordinator owns).

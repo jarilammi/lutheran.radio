@@ -91,9 +91,9 @@ struct RadioPlayerView: View {
                 // from hugging screen edges. Top padding sized for Dynamic Island / status bar clearance.
                 Text(String(localized: "lutheran_radio_title", defaultValue: "Lutheran Radio", table: "Localizable"))
                     .font(.largeTitle.weight(.semibold))
-                    .padding(.top, 16)
+                    .padding(.top, 20)
                     .padding(.horizontal, 20)
-                    .padding(.bottom, 8)
+                    .padding(.bottom, 20)
 
                 // Playback controls (play/pause + sleep timer moon + status pill).
                 // Positioned early in the stack so the most frequent actions sit in a comfortable
@@ -105,6 +105,20 @@ struct RadioPlayerView: View {
                 )
                 .padding(.horizontal, 24)
                 .padding(.bottom, 12)
+                
+                // Volume + native AirPlay row.
+                // Padding values chosen to feel anchored without colliding with the home indicator.
+                VolumeAndAirPlayRow()
+                    .padding(.horizontal, 32)
+                    .padding(.top, 6)
+                    .padding(.bottom, 34)
+                
+                // Flags row with red needle indicator.
+                // The needle's vertical registration is handled inside LanguageSelectorView
+                // via reserved clear space + .offset(y: -11).
+                LanguageSelectorView(viewModel: viewModel)
+                    .padding(.horizontal)
+                    .padding(.bottom, 6)
 
                 // Song / program metadata + optional speaker photo.
                 // Placed directly above the language selector so current-stream context sits
@@ -113,25 +127,11 @@ struct RadioPlayerView: View {
                     .padding(.horizontal, 20)
                     .padding(.bottom, 12)
 
-                // Flags row with red needle indicator.
-                // The needle's vertical registration is handled inside LanguageSelectorView
-                // via reserved clear space + .offset(y: -11).
-                LanguageSelectorView(viewModel: viewModel)
-                    .padding(.horizontal)
-                    .padding(.bottom, 6)
-
-                // Spacer reserves vertical real-estate in the middle of the screen.
+                // Spacer reserves vertical real-estate in the bottom of the screen.
                 // This keeps the full-bleed decorative background (map / logo images owned by
                 // BackgroundImageController) visible behind the transparent host. The minLength
                 // is chosen so the artwork remains prominent even as the top chrome grows.
                 Spacer(minLength: 80)
-
-                // Volume + native AirPlay row at the very bottom.
-                // Padding values chosen to feel anchored without colliding with the home indicator.
-                VolumeAndAirPlayRow()
-                    .padding(.horizontal, 32)
-                    .padding(.top, 6)
-                    .padding(.bottom, 34)
             }
         }
         .background(Color.clear)

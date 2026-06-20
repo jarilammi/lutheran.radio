@@ -59,6 +59,12 @@ final class RadioPlayerCoordinator {
     weak var viewController: ViewController?
 
     // Presenting hook (injected by VC so alerts can be shown without giving coordinator a full VC ref for layout).
+    //
+    // IMPORTANT: The closure provided by ViewController defers the actual `present(_:animated:)`
+    // via DispatchQueue.main.async. This is required to avoid Auto Layout unsatisfiable constraint
+    // warnings (320pt autoresizing vs. internal alert ~366pt width) when presenting right after
+    // a SwiftUI .confirmationDialog action while other main-thread layout (widgets, background
+    // images, etc.) is occurring. All uses of presentAlert? benefit from this protection.
     var presentAlert: ((UIAlertController) -> Void)?
 
     /// Optional hook for the SwiftUI sleep timer button tap.
@@ -1509,14 +1515,19 @@ final class RadioPlayerCoordinator {
                 unsafe UIAccessibility.post(notification: .announcement, argument: doneMessage)
             }
         })
-        // Small delay to let the SwiftUI .confirmationDialog fully dismiss its presentation
-        // container before we present the UIKit confirmation UIAlert. Presenting a second
-        // modal immediately after a confirmationDialog action can produce transient
-        // unsatisfiable constraint warnings (autoresizing 320 vs alert content width).
-        // The delay is harmless and eliminates the noisy layout recovery log.
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(80))
-            presentAlert?(alert)
+        // Schedule the secondary confirmation alert via DispatchQueue.main.async.
+        // The presentAlert hook itself also wraps the real UIViewController.present in
+        // another DispatchQueue.main.async. Together this ensures the UIKit alert is
+        // not presented until after the current runloop turn (and the SwiftUI dialog
+        // dismissal) has had a chance to clean up its layout containers.
+        //
+        // Without the deferral(s), we reliably see the 320pt vs ~366pt conflict:
+        //   NSAutoresizingMaskLayoutConstraint (width == 320)
+        //   _UIAlertControllerPhoneTVMacView width >=/== chains
+        //   explicit UIView width == 366
+        // when "Clear local state" is tapped during playback + widget refresh + bg updates.
+        DispatchQueue.main.async { [weak self] in
+            self?.presentAlert?(alert)
         }
     }
 
