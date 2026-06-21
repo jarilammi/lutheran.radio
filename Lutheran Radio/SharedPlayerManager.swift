@@ -2493,9 +2493,36 @@ extension SharedPlayerManager {
     #if LUTHERAN_MAIN_APP
     /// Pauses playback when the sleep timer elapses.
     ///
-    /// Uses `.sleepTimer` intent (not sticky `.userPaused`) and does not record
-    /// `lastUserPauseTimestamp`, so timer-driven pause is distinguishable from an
-    /// explicit user stop.
+    /// - Sets `currentVisualState = .userPaused` (so widgets/Live Activities render paused)
+    ///   while `playbackIntent` remains `.sleepTimer` (non-sticky; distinguishable from
+    ///   explicit `.userPaused` for resurrection and clear-lock logic).
+    /// - Stops the engine with `reason: .interruption` (deliberately silent: no status
+    ///   emission, teardown guard suppresses KVO).
+    /// - Writes the PersistedWidgetState snapshot immediately.
+    /// - Posts Darwin "pause" (primarily to wake widget providers) and the
+    ///   `SleepTimerNotification.stateDidChange` (isActive=false) for main-app glue.
+    ///
+    /// **Main-app UI sync contract**:
+    /// The live in-app visuals (RadioPlayerCoordinator + PlayerViewModel) are **not**
+    /// updated by a status callback or by processing the Darwin pause (both are
+    /// suppressed for this internal path). The `SleepTimerNotification` observer in the
+    /// coordinator is responsible for pulling `currentVisualState` and calling
+    /// `updateUI(for:)` after this method posts the inactive notification.
+    ///
+    /// - Precondition: Must only be called from the sleep timer task (after countdown
+    ///   reaches zero and not cancelled).
+    /// - Postcondition: `currentVisualState == .userPaused`, `currentPlaybackIntent == .sleepTimer`,
+    ///   player is stopped, snapshot persisted, notifications posted.
+    /// - Note: Does not set `lastUserPauseTimestamp` (contrast with `stop()` / `markAsUserPaused`).
+    ///
+    /// - SeeAlso: ``RadioPlayerCoordinator/sleepTimerStateDidChange(_:)``,
+    ///   ``PlaybackIntent/sleepTimer``, ``currentVisualState``, ``saveVisualState()``,
+    ///   `DirectStreamingPlayer.stop(reason:)`, CODING_AGENT.md (Single Source of Truth Principles),
+    ///   SharedPlayerManager.swift (resurrection protection table + "sleepTimer" intent rules).
+    ///
+    /// AGENT NOTE: Any future change to stop reason, Darwin posting, or suppression guards
+    /// here must also update the observer in RadioPlayerCoordinator so the main-app visual
+    /// (green → grey) continues to match the SSOT. Widgets are protected by the snapshot write.
     func applySleepTimerElapsedPause() async {
         ensureVisualStateLoaded()
 

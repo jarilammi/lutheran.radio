@@ -124,6 +124,10 @@ extension SharedPlayerManager {
     }
 
     private func sleepTimerDidFire() async {
+        // Delegates to applySleepTimerElapsedPause (defined in SharedPlayerManager.swift).
+        // That method writes the .userPaused visual + .sleepTimer intent, stops the player
+        // silently, persists the widget snapshot, and posts SleepTimerNotification so the
+        // main-app coordinator can sync its live UI (see sleepTimerStateDidChange).
         await applySleepTimerElapsedPause()
     }
 }

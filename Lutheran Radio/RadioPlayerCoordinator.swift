@@ -1382,12 +1382,52 @@ final class RadioPlayerCoordinator {
         // SwiftUI photo logic reacts to VM metadata change.
     }
 
+    /// Receives broadcasts from SleepTimerNotification when a sleep timer is scheduled,
+    /// ticks (first value only), or becomes inactive (elapsed or cancelled).
+    ///
+    /// - Important: This observer is the **main-app-only** channel that reconciles the
+    ///   authoritative `currentVisualState` (from SharedPlayerManager SSOT) into the live
+    ///   in-app UI after an internal sleep-timer pause. Widget/Live Activity consumers use
+    ///   the persisted snapshot written by `applySleepTimerElapsedPause`; the main app
+    ///   does not receive a status callback or actionable Darwin "pause" for this path.
+    ///
+    /// When the timer elapses:
+    /// - `applySleepTimerElapsedPause` forces `currentVisualState = .userPaused` (so
+    ///   widgets show paused) while leaving `playbackIntent = .sleepTimer` (non-sticky
+    ///   so resurrection logic and clearUserPausedLockIfNeeded can distinguish it).
+    /// - Direct stop uses `reason: .interruption` (effectiveSilent + teardown guard
+    ///   suppresses KVO/status callbacks).
+    /// - The self-posted Darwin pause is suppressed by `DarwinSelfEchoGuard`.
+    /// - Therefore this observer must explicitly pull `currentVisualState` and call
+    ///   `updateUI(for:)` so the main app chrome (VM → SwiftUI controls tint/glyph,
+    ///   colors, pill) leaves the stale `.playing` (green) state.
+    ///
+    /// The `lastAppliedVisualState` guard inside `updateUI` makes the call a cheap no-op
+    /// on cancel paths where visual state did not change.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/applySleepTimerElapsedPause()``,
+    ///   `PlaybackIntent.sleepTimer`, `SleepTimerNotification`,
+    ///   `handleStatusChange(_:reasonKey:)`, CODING_AGENT.md (Single Source of Truth Principles),
+    ///   SharedPlayerManager.swift (resurrection table + applySleepTimerElapsedPause).
+    ///
+    /// - Note: Only the first remaining-seconds value seeds the local countdown to avoid
+    ///   per-second actor hops; the coordinator owns decrementing locally.
     @objc private func sleepTimerStateDidChange(_ notification: Notification) {
         Task { @MainActor [weak self] in
             guard let self else { return }
             let isActive = notification.userInfo?[SleepTimerNotification.Key.isActive] as? Bool ?? false
             if !isActive {
                 self.stopLocalSleepTimerDisplay()
+
+                // AGENT NOTE (sleep timer visual SSOT sync):
+                // The main-app UI (green playing state) can diverge from the PersistedWidgetState
+                // snapshot after sleep fire because the stop is silent and the Darwin pause is
+                // intentionally suppressed as a self-echo. We must re-read the actor SSOT here
+                // and drive updateUI so the in-app controls, VM, and chrome match .userPaused.
+                // Widgets are already correct via the snapshot write + WidgetRefreshManager.
+                // This is the designated place for the main-app side effect of timer completion.
+                let visualState = await SharedPlayerManager.shared.currentVisualState
+                self.updateUI(for: visualState)
                 return
             }
             if let remaining = notification.userInfo?[SleepTimerNotification.Key.remainingSeconds] as? Int,
