@@ -772,6 +772,40 @@ final class RadioPlayerCoordinator {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: workItem)
     }
 
+    /// Updates the shared language for widget/Live Activity consumption and persists
+    /// a combined (currentVisualState + language) snapshot.
+    ///
+    /// - Parameter languageCode: The target stream language (e.g. "fi", "de").
+    ///
+    /// This is called on every user- or widget-driven language change (completeStreamSwitch,
+    /// switchToStreamFromWidget, handleSwitchToLanguage, and early cold-launch seeding).
+    ///
+    /// **Why the visual must be preserved (not forced to .prePlay):**
+    /// When the user changes language while paused (`.userPaused` visual + sticky intent),
+    /// the widget must continue to display the grey paused state for the *new* language.
+    /// The subsequent widget "play" tap then correctly routes through `userRequestedPlay()`
+    /// (clearing the lock and using snapshot alignment in `setUserIntentToPlay`).
+    /// Hard-coding `.prePlay` here used to inject the wrong visual into timelines and could
+    /// race the snapshot write, producing the exact "widget pause → language change → resume"
+    /// misbehavior on device/TestFlight (while simulator masked the timing).
+    ///
+    /// The authoritative write goes through `saveCombinedWidgetState` (which writes
+    /// `PersistedWidgetState` with the actor's `currentVisualState` + the supplied language).
+    /// We refresh *after* that persist (inside the Task) using the real visual captured
+    /// at decision time. `isLanguageChange` is treated as urgent by `performActualSave`
+    /// when full saves occur.
+    ///
+    /// - Important: Never hard-code visual state here. Always derive from
+    ///   `SharedPlayerManager.shared.currentVisualState` (or the caller's knowledge of
+    ///   whether we are in a resume vs. paused switch).
+    ///
+    /// - SeeAlso: ``completeStreamSwitch(stream:index:)``, ``switchToStreamFromWidget(to:index:actionId:)``,
+    ///   ``SharedPlayerManager/saveCombinedWidgetState(language:)``,
+    ///   ``SharedPlayerManager/setUserIntentToPlay()`` (the snapshot language alignment),
+    ///   ``SharedPlayerManager/loadPersistedVisualStateDirect()``,
+    ///   ``WidgetRefreshManager/refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)``,
+    ///   `PersistedWidgetState`, CODING_AGENT.md (Single Source of Truth Principles),
+    ///   SharedPlayerManager.swift (handleWidgetSwitch + "pause on widget → language switch" contract).
     func updateUserDefaultsLanguage(_ languageCode: String) {
         let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared")
         sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "lastUpdateTime")
@@ -779,14 +813,37 @@ final class RadioPlayerCoordinator {
 
         Task {
             await SharedPlayerManager.shared.saveCombinedWidgetState(language: languageCode)
-        }
 
-        WidgetRefreshManager.shared.refreshIfNeeded(
-            visualState: .prePlay,
-            currentLanguage: languageCode,
-            hasError: false,
-            immediate: true
-        )
+            // Use the *actual* current visual state (e.g. .userPaused) rather than hard-coding
+            // .prePlay. Language changes performed while the stream is paused must preserve the
+            // sticky paused visual in the PersistedWidgetState snapshot so that:
+            //  - widgets render the correct grey "Ready"/paused chrome for the *new* language
+            //  - subsequent widget "play" / resume uses loadPersistedVisualStateDirect() + userRequestedPlay()
+            //    to clear the lock and start the correct stream (see setUserIntentToPlay alignment).
+            //
+            // Previous hard-coded .prePlay could race with the snapshot write (saveCombined is
+            // async) and deliver a timeline entry with the wrong visual. This was invisible on
+            // simulator (fast scheduling) but produced the "pause → language change → resume"
+            // failures on physical devices and TestFlight builds.
+            //
+            // The saveCombined + isLanguageChange path in performActualSave already marks urgent
+            // and the snapshot itself is the SSOT read by providers. We still issue an immediate
+            // refresh here (after the persist) for prompt cross-process visibility of the lang.
+            //
+            // See: SharedPlayerManager.swift (handleWidgetSwitch, signalWidgetSwitchAction,
+            // loadPersistedVisualStateDirect, setUserIntentToPlay, ensureVisualStateLoaded
+            // anti-regression for hadStickyUserPause), switchToStreamFromWidget,
+            // completeStreamSwitch paused branch, WidgetToggleRadioIntent.perform,
+            // CODING_AGENT.md (Single Source of Truth Principles + cross-target shared files),
+            // WidgetRefreshManager (language change urgency + refreshWouldRegress).
+            let visual = await SharedPlayerManager.shared.currentVisualState
+            WidgetRefreshManager.shared.refreshIfNeeded(
+                visualState: visual,
+                currentLanguage: languageCode,
+                hasError: false,
+                immediate: true
+            )
+        }
 
         #if DEBUG
         print("[RadioPlayerCoordinator] MAIN APP: Updated UserDefaults language to: \(languageCode)")
