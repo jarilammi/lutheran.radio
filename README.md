@@ -482,9 +482,10 @@ This table is the source of truth for the historical record of security models (
 | `houston`           | March 3, 2026      | (ongoing)          | 26.3.0                 |
 | `starbase`          | May 18, 2026       | (ongoing)          | 26.5.0                 |
 | `fredericksburg`    | June 2, 2026       | (ongoing)          | 26.5.1                 |
-| `brenham`           | (pending)          | (pending)          | 26.6.0                 |
+| `brenham`           | (pending)          | (pending)          | 26.5.2*                |
 
 **Notes:**
+- `*` Version 26.5.2 ships the security implementation that requires `brenham`. The model is already present in DNS; this is the first App Store release that will enforce it.
 - **Valid From:** The date when the security model was first published to the App Store.
 - **Valid Until:** The date when the security model was deprecated (or "(ongoing)" if still active).
 - **App Version Introduced:** The app version where this security model was first implemented.
