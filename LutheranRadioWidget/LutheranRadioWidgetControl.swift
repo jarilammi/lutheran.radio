@@ -46,7 +46,9 @@ struct ToggleRadioIntent: SetValueIntent {
         #if DEBUG
         print("[LutheranRadioWidgetControl] ToggleRadioIntent.perform called with desired value: \(value)")
         #endif
-        
+
+        Task { @MainActor in WidgetRefreshManager.setHasActiveLutheranWidgets(true) }
+
         let manager = SharedPlayerManager.shared
         
         // Widget extension cannot own AVPlayer. We only signal intent via shared defaults + Darwin notification.
@@ -62,15 +64,20 @@ struct ToggleRadioIntent: SetValueIntent {
         // until re-detect, and providers fall back gracefully.)
         let targetVisualState: PlayerVisualState = value ? .playing : .userPaused
         let action = value ? "play" : "pause"
+
+        // Use persisted language for consistency (same as home widget fix).
+        let persisted = SharedPlayerManager.loadPersistedWidgetState()
+        let langForOptimistic = persisted?.currentLanguage ?? SharedPlayerManager.preferredWidgetLanguage()
+
         // Same optimistic path as WidgetToggleRadioIntent: snapshot + pendingAction + Darwin notify.
-        manager.signalWidgetPendingAction(visualState: targetVisualState, action: action)
+        manager.signalWidgetPendingAction(visualState: targetVisualState, action: action, language: langForOptimistic)
         
         // Immediate widget UI feedback — now using modern PlayerVisualState API
         let state = manager.loadSharedState()
         
         await WidgetRefreshManager.shared.refreshIfNeeded(
             visualState: targetVisualState,
-            currentLanguage: state.currentLanguage,
+            currentLanguage: langForOptimistic,
             hasError: state.hasError,
             immediate: true
         )

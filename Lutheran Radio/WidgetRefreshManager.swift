@@ -69,6 +69,12 @@ final class WidgetRefreshManager: @unchecked Sendable {
     // - The containing class is already @unchecked Sendable (existing pattern in this file for WidgetKit/refresh state).
     // - Reads are best-effort cache for a privacy optimization gate (occasional stale true -> one extra write is harmless; false when should be true just delays a write until next foreground detect).
     // - Matches the risk profile of other timestamp/liveness mutable state already managed here.
+    //
+    // AGENT NOTE (widget initial play fix): The gate is intentionally bypassed inside
+    // SharedPlayerManager for isWidgetProcess() during AppIntent execution. Widget code also
+    // calls setHasActiveLutheranWidgets(true) in Provider entry points. This ensures the
+    // first tap on a newly added widget can persist .playing + lang and bump lastUpdateTime
+    // (see initial-play-widget.log failures: configs:0, lang:en, suppressing writes).
     nonisolated(unsafe) static private var _hasActiveLutheranWidgets: Bool = false
     // Nonisolated getter so it can be read from nonisolated static write-guard paths in SharedPlayerManager
     // (and widget extension code) while updates remain serialized on @MainActor.

@@ -507,6 +507,17 @@ actor SharedPlayerManager {
         return true
         #endif
     }
+
+    /// Returns true when executing inside the widget extension target.
+    /// Used to bypass privacy write gates for optimistic updates originating from
+    /// App Intents (proof that a Lutheran widget is present and was just interacted with).
+    nonisolated static func isWidgetProcess() -> Bool {
+        #if LUTHERAN_MAIN_APP
+        return false
+        #else
+        return true
+        #endif
+    }
     
     /// Nonisolated convenience for widget/extension code paths that run outside actor isolation
     /// (e.g. handleWidgetPlay / handleWidgetStop). Fires a quick hop to ensure the persisted state is loaded
@@ -525,8 +536,22 @@ actor SharedPlayerManager {
     /// first see correct play/pause + language immediately.
     ///
     /// Also updates the in-memory currentVisualState in this process.
-    nonisolated public func forcePersistVisualState(_ state: PlayerVisualState) {
-        Self.persistWidgetSnapshot(visualState: state, language: Self.preferredWidgetLanguage())
+    /// Forces a PersistedWidgetState snapshot write for the given visual state.
+    ///
+    /// - Parameters:
+    ///   - state: Target visual state (typically .playing or .userPaused from widget intent).
+    ///   - language: Optional explicit language code. When nil, falls back to preferredWidgetLanguage().
+    ///     Passing the language the widget entry was rendered with ensures optimistic UI and
+    ///     persisted snapshot stay consistent (prevents "en" appearing for fi stream in refresh logs).
+    ///
+    /// Widget/AppIntent callers should prefer passing a language derived from
+    /// loadPersistedWidgetState() so the snapshot reflects the station the user saw/tapped.
+    ///
+    /// - SeeAlso: ``signalWidgetPendingAction(visualState:action:language:)``,
+    ///   ``WidgetToggleRadioIntent``, CODING_AGENT.md (SSOT).
+    nonisolated public func forcePersistVisualState(_ state: PlayerVisualState, language: String? = nil) {
+        let lang = language ?? Self.preferredWidgetLanguage()
+        Self.persistWidgetSnapshot(visualState: state, language: lang)
         // Update in-memory so the widget process sees the fresh state on the next snapshot
         // without waiting for a Darwin round-trip or a full re-load.
         Task { await Self.shared._forceSetCurrentVisualState(state) }
@@ -1517,8 +1542,14 @@ actor SharedPlayerManager {
     /// Writes the short-lived instant-feedback keys used by widget providers for optimistic UI.
     nonisolated static func writeInstantFeedback(language: String) {
         // Privacy gate (write suppression: no widgets configured).
-        guard Self.hasActiveWidgets else {
-            Self.refreshHasActiveWidgetsStatus()
+        //
+        // Bypass in widget process for the same reason as persistWidgetSnapshot: the executing
+        // intent is proof a widget exists; we must allow the instantFeedbackLanguage + liveness
+        // so loadSharedState + providers see fresh optimistic state without main-app roundtrip.
+        guard Self.hasActiveWidgets || Self.isWidgetProcess() else {
+            if !Self.isWidgetProcess() {
+                Self.refreshHasActiveWidgetsStatus()
+            }
             #if DEBUG
             print("[SharedPlayerManager] Suppressing instant feedback write (no active widgets configured — write suppression)")
             #endif
@@ -1540,7 +1571,12 @@ actor SharedPlayerManager {
         minInterval: TimeInterval = 30
     ) {
         // Privacy gate: suppress liveness timestamp (and thus "app was recently running" signal) when no widgets installed.
-        guard Self.hasActiveWidgets else {
+        //
+        // Bypass when in widget process: widget intent (play/pause) must bump lastUpdateTime so that
+        // isAppRunning() (used by all widget sizes to decide between controls vs "tap_to_open") returns
+        // true immediately. Without this, tapping play on a widget could leave the widget stuck showing
+        // the tap prompt even while audio plays.
+        guard Self.hasActiveWidgets || Self.isWidgetProcess() else {
             #if DEBUG
             print("[SharedPlayerManager] Suppressing liveness timestamp bump (no active widgets — write suppression)")
             #endif
@@ -1564,12 +1600,26 @@ actor SharedPlayerManager {
     }
 
     /// Optimistic play/pause widget path: persist visual state, schedule pending action, notify main app.
+    ///
+    /// - Parameters:
+    ///   - visualState: Target (.playing or .userPaused) for instant widget icon/state flip.
+    ///   - action: "play" or "pause".
+    ///   - language: Language code to pair with the snapshot (strongly recommended from widget).
+    ///     If omitted, falls back inside forcePersist. Always pass the language the widget
+    ///     timeline was using to avoid transient "en" in mixed-language initial-play scenarios.
+    ///
+    /// Always bypasses privacy gate (via force + isWidgetProcess) because intent execution
+    /// proves the widget is present.
     @discardableResult
     nonisolated func signalWidgetPendingAction(
         visualState: PlayerVisualState,
-        action: String
+        action: String,
+        language: String? = nil
     ) -> String? {
-        forcePersistVisualState(visualState)
+        forcePersistVisualState(visualState, language: language)
+        // Also bump liveness from the widget action itself so isAppRunning() flips true
+        // without requiring main-app processing (prevents "tap_to_open" after widget play).
+        Self.bumpWidgetLivenessTimestamp(force: true)
         let actionId = scheduleWidgetAction(action: action)
         notifyMainApp(action: action)
         return actionId
@@ -1583,6 +1633,7 @@ actor SharedPlayerManager {
     ) -> String? {
         Self.writeInstantFeedback(language: language)
         Self.persistWidgetSnapshot(visualState: visualState, language: language, clearStreamMetadata: true)
+        Self.bumpWidgetLivenessTimestamp(force: true)
         let actionId = scheduleWidgetAction(action: "switch", parameter: language)
         notifyMainApp(action: "switch", parameter: language)
         return actionId
@@ -1596,9 +1647,11 @@ actor SharedPlayerManager {
         // Transient one-shot command keys (pendingAction*, pendingLanguage) are *still written*
         // even when !hasActiveWidgets (post-clear or no widgets configured). This guarantees the
         // first widget play/pause/switch after a privacy clear always delivers its Darwin +
-        // pending so the main app can act. For "play" this lands in the post-clear guard which
-        // legitimately re-creates the snapshot only on the success path. Persistent writes remain
-        // suppressed until re-detect + explicit action success.
+        // pending so the main app can act.
+        //
+        // Note (post-fix): snapshot + liveness are now also written from widget process via
+        // the isWidgetProcess() bypass inside persist/bump (see forcePersist + signal*).
+        // Main processing still does explicit refreshHasActive + save for authoritative values.
         let isPrivacySuppressed = !Self.hasActiveWidgets
         if isPrivacySuppressed {
             Self.refreshHasActiveWidgetsStatus()
@@ -1862,7 +1915,8 @@ actor SharedPlayerManager {
         hasError: Bool = false
     ) {
         // Privacy gate (see persistWidgetSnapshot for rationale and hasActiveWidgets docs).
-        guard Self.hasActiveWidgets else {
+        // Allow widget process bypass (optimistic paths from intents may route here in future).
+        guard Self.hasActiveWidgets || Self.isWidgetProcess() else {
             #if DEBUG
             print("[SharedPlayerManager] Suppressing savePersistedWidgetState (no active widgets — write suppression)")
             #endif
@@ -1975,8 +2029,18 @@ actor SharedPlayerManager {
         // When no Lutheran widgets are configured (or after explicit clearAllLocalState), suppress
         // re-writing the snapshot so no "last language / last visual state / recent metadata" signal
         // remains in the App Group. Widget providers fall back gracefully via loadPersistedWidgetState() == nil.
-        guard Self.hasActiveWidgets else {
-            Self.refreshHasActiveWidgetsStatus() // fire-and-forget re-detect so a later play/foreground after adding widget can resume writes
+        //
+        // Bypass for widget process: App Intent execution (Toggle, Switch) in the extension proves a
+        // widget is configured and the user just interacted with it. We must write the optimistic
+        // PersistedWidgetState + lang immediately so that subsequent timeline/provider runs and
+        // isAppRunning() checks see the state without waiting for main-app re-detect + save roundtrip.
+        // (See initial-play-widget.log and WidgetToggleRadioIntent for the race this fixes.)
+        // Main-app writes continue to respect the gate (re-detect on foreground/widget-action processing
+        // will flip it true for subsequent saves).
+        guard Self.hasActiveWidgets || Self.isWidgetProcess() else {
+            if !Self.isWidgetProcess() {
+                Self.refreshHasActiveWidgetsStatus() // fire-and-forget re-detect so a later play/foreground after adding widget can resume writes
+            }
             #if DEBUG
             print("[SharedPlayerManager] Suppressing widget state write (no active widgets configured — write suppression)")
             #endif

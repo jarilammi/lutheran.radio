@@ -1320,6 +1320,16 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
                 // so the main UI reflects the language that is actually playing. This prevents the
                 // "en selected in widget/needle, but fi audible" desync observed in the 2026-06-12
                 // re-capture of initial-streamplay-start.txt.
+
+                // For widget-originated play (initial play via widget is the key case in the log),
+                // ensure the privacy gate is refreshed and we force an authoritative snapshot +
+                // liveness bump. The widget intent may have written an optimistic snapshot (now
+                // allowed via isWidgetProcess bypass), but the main app must also write so that
+                // hasError, metadata, and the actually played language are authoritative.
+                await WidgetRefreshManager.shared.refreshHasActiveWidgets()
+                await SharedPlayerManager.shared.recordWidgetLiveness()
+                await SharedPlayerManager.shared.saveCurrentState()
+
                 guard let self else { return }
                 let playingLang = DirectStreamingPlayer.shared.selectedStream.languageCode
                 if let targetIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.languageCode == playingLang }) {

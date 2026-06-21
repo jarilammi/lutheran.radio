@@ -146,10 +146,15 @@ struct Provider: AppIntentTimelineProvider {
     }
     
     func snapshot(for configuration: RadioWidgetConfiguration, in context: Context) async -> SimpleEntry {
-        await createEntry(with: configuration)
+        // Mark active immediately: executing in widget process proves a Lutheran widget
+        // is installed. This lets preferredWidgetLanguage() take the hasActive branch
+        // (bestInitial) on first-run / no-snapshot instead of hard "en".
+        Task { @MainActor in WidgetRefreshManager.setHasActiveLutheranWidgets(true) }
+        return await createEntry(with: configuration)
     }
     
     func timeline(for configuration: RadioWidgetConfiguration, in context: Context) async -> Timeline<SimpleEntry> {
+        Task { @MainActor in WidgetRefreshManager.setHasActiveLutheranWidgets(true) }
         let (currentLanguage, hasError, visualState, streamMetadata) = await getPendingOrCurrentState(manager: SharedPlayerManager.shared)
         
         let manager = SharedPlayerManager.shared
@@ -193,6 +198,7 @@ struct Provider: AppIntentTimelineProvider {
     // MARK: - Async helpers (required for actor isolation)
     
     private func createEntry(with configuration: RadioWidgetConfiguration) async -> SimpleEntry {
+        Task { @MainActor in WidgetRefreshManager.setHasActiveLutheranWidgets(true) }
         let manager = SharedPlayerManager.shared
         let (currentLanguage, hasError, visualState, streamMetadata) = await getPendingOrCurrentState(manager: manager)
 
@@ -584,20 +590,28 @@ struct WidgetToggleRadioIntent: AppIntent {
         #endif
         
         // === OPTIMISTIC UPDATE (needed for instant icon flip) ===
+        // Read language from the persisted snapshot first (the value the widget timeline/provider
+        // just used for this entry). This avoids re-computing preferredWidgetLanguage() which can
+        // fall back to "en" when hasActiveWidgets cache is still false on first interaction.
+        // The main app will later authoritatively save the actually-selected stream language.
+        let persisted = SharedPlayerManager.loadPersistedWidgetState()
+        let langForOptimistic = persisted?.currentLanguage ?? SharedPlayerManager.preferredWidgetLanguage()
+
         if let actionId = SharedPlayerManager.shared.signalWidgetPendingAction(
             visualState: targetVisualState,
-            action: action
+            action: action,
+            language: langForOptimistic
         ) {
             #if DEBUG
             print("[LutheranRadioWidget] Widget set pendingAction = \(action) (ID: \(actionId))")
             #endif
         }
         
-        // Immediate widget UI update
+        // Immediate widget UI update — use the same lang we just persisted for the snapshot.
         let state = SharedPlayerManager.shared.loadSharedState()
         await WidgetRefreshManager.shared.refreshIfNeeded(
             visualState: targetVisualState,
-            currentLanguage: state.currentLanguage,
+            currentLanguage: langForOptimistic,
             hasError: state.hasError,
             immediate: true
         )
@@ -628,6 +642,8 @@ public struct SwitchStreamIntent: AppIntent {
         #if DEBUG
         print("[LutheranRadioWidget] SwitchStreamIntent.perform called for language: \(streamLanguageCode)")
         #endif
+
+        Task { @MainActor in WidgetRefreshManager.setHasActiveLutheranWidgets(true) }
 
         let manager = SharedPlayerManager.shared
 
