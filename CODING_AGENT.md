@@ -89,9 +89,9 @@ These rules are especially strict for anything that could affect security invari
 
    **DNS TXT Validation Specifics**
    - The `securitymodels.lutheran.radio` zone uses DNSSEC with signed delegation (visible RRSIG records).
-   - The app currently calls `DNSServiceQueryRecord` **without** `kDNSServiceFlagsValidate` (or `kDNSServiceFlagsValidateOptional`), so it does **not** perform client-side DNSSEC validation.
+   - The app calls `DNSServiceQueryRecord` with `kDNSServiceFlagsValidate` (strict) and requires the echoed bit in the callback `flags` before trusting any TXT rdata. Unvalidated responses are transient failures.
    - Always consult the "Why DNS TXT Records?" section in `README.md` for the latest DNSSEC status, AD flag behavior, and verification commands.
-   - Any change touching DNS validation must preserve or strengthen the documented security properties.
+   - Any change touching DNS validation must preserve or strengthen the documented security properties. (This change strengthened validation without altering caching, state machine, or public API.)
 
 2. **Build & Test Gate**
    - Every single change must keep these commands green:

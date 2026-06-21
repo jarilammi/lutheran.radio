@@ -34,15 +34,22 @@ private final class QueryContext: @unchecked Sendable {
 /// on `securitymodels.lutheran.radio` (with backup domain) and requires that
 /// ``SecurityConfiguration/expectedSecurityModel`` appears in the response.
 ///
+/// ## Security Hardening
+/// Queries are performed with `kDNSServiceFlagsValidate`. The callback **requires**
+/// the echoed validation bit in `flags` before parsing or accepting any rdata.
+/// Unvalidated responses are failures (transient). This provides DNSSEC-backed
+/// integrity/authenticity for the allow-list without new dependencies.
+///
 /// ## Behavior
 /// - Permanent failure (model not present) → streaming is permanently disabled.
-/// - Transient failure → safe retry is allowed; the 1-hour success cache is bypassed.
-/// - Success → result is cached for 1 hour in `UserDefaults`.
+/// - Transient failure (including DNSSEC validation failure) → safe retry is allowed;
+///   the 1-hour success cache is bypassed; backup domain is tried.
+/// - Success (model present **and** DNSSEC-validated) → result is cached for 1 hour in `UserDefaults`.
 ///
 /// The actor uses strict Swift 6 isolation. All public API is `async` where mutation
 /// or cross-actor access is involved.
 ///
-/// - SeeAlso: ``<doc:Security-Invariants>``, ``<doc:Architecture>``, ``SecurityConfiguration``
+/// - SeeAlso: ``<doc:Security-Invariants>`` (Invariant 1), ``<doc:Architecture>``, ``SecurityConfiguration``
 public actor SecurityModelValidator {
     /// The shared singleton validator.
     ///
@@ -290,6 +297,12 @@ public actor SecurityModelValidator {
     
     // MARK: - Private implementation
 
+    /// Performs the low-level DNS-SD TXT query using `DNSServiceQueryRecord`.
+    ///
+    /// - Important: The call passes `kDNSServiceFlagsValidate` and the callback enforces
+    ///   the bit before trusting rdata. Failures (including lack of DNSSEC validation)
+    ///   are thrown and treated as transient by the caller.
+    /// - SeeAlso: ``<doc:Security-Invariants>``, dnsQueryCallback
     private func queryTXTRecord(for domain: String) async throws -> Set<String> {
         try await withCheckedThrowingContinuation { continuation in
             let complete: @Sendable (Result<Set<String>, Error>) -> Void = { result in
@@ -324,9 +337,15 @@ public actor SecurityModelValidator {
             }
 
             var serviceRef: DNSServiceRef?
+            // SECURITY: Enable strict DNSSEC validation via kDNSServiceFlagsValidate (not Optional).
+            // mDNSResponder will attempt validation for signed zones and set the bit in the callback
+            // `flags` parameter **only** on successful validation. We refuse unvalidated rdata for
+            // the security model allow-list (data integrity + authenticity). See
+            // <doc:Security-Invariants> Invariant 1 and README "Why DNS TXT Records?".
+            // This is a minimal hardening step; no new dependencies.
             let err = unsafe DNSServiceQueryRecord(
                 &serviceRef,
-                0,
+                UInt32(kDNSServiceFlagsValidate),
                 0,
                 domainCStr,
                 UInt16(kDNSServiceType_TXT),
@@ -361,6 +380,10 @@ public actor SecurityModelValidator {
     }
 
     // New static non-capturing callback — marked @convention(c) explicitly
+    //
+    // SECURITY: This is the enforcement point for DNSSEC validation. The `flags` bit check
+    // must succeed before any rdata is parsed via parseInlineTXTRecord. All test hooks
+    // bypass this path via `_test_txtFetcher`.
     private static let dnsQueryCallback: DNSServiceQueryRecordReply = {
         sdRef, flags, interfaceIdx, errorCode, fullName, rrtype, rrclass, rdlen, rdata, ttl, ctx in
         
@@ -379,6 +402,24 @@ public actor SecurityModelValidator {
         guard errorCode == kDNSServiceErr_NoError, let rdata = unsafe rdata else {
             queryCtx.completion(.failure(
                 NSError(domain: "dnssd", code: Int(errorCode), userInfo: nil)
+            ))
+            return
+        }
+
+        // SECURITY: Require that the response was DNSSEC-validated by the system.
+        // When kDNSServiceFlagsValidate was passed to DNSServiceQueryRecord, the returned
+        // `flags` will contain the bit only if validation succeeded. Unvalidated responses
+        // are treated as transient failures (performFreshValidation falls back to backup
+        // domain or marks .failedTransient). Never silently accept unvalidated data here.
+        let wasValidated = (flags & UInt32(kDNSServiceFlagsValidate)) != 0
+        #if DEBUG
+        print("[SecurityModelValidator] DNS response: validated=\(wasValidated) flags=0x\(String(flags, radix: 16)) errorCode=\(errorCode)")
+        #endif
+        guard wasValidated else {
+            queryCtx.completion(.failure(
+                NSError(domain: "dnssec", code: -1, userInfo: [
+                    NSLocalizedDescriptionKey: "DNSSEC validation failed or not available"
+                ])
             ))
             return
         }

@@ -42,10 +42,10 @@ All other properties are internal by design. The struct is deliberately not an a
 
 An `actor` that:
 
-- Performs DNS-SD TXT queries against the configured domains.
-- Parses length-prefixed TXT rdata with `Span<UInt8>` and `UTF8Span` in the DNS-SD callback, borrowing dns_sd `rdata` in place (zero-copy; no `Data` copy, no per-label `subdata`); the span must not escape the callback scope.
+- Performs DNS-SD TXT queries with `kDNSServiceFlagsValidate` against the configured domains.
+- In the C callback: requires the validation bit before accepting any rdata (DNSSEC hardening); parses length-prefixed TXT rdata with `Span<UInt8>` and `UTF8Span` (zero-copy borrow of dns_sd `rdata`).
 - Implements a one-hour success-only cache persisted in `UserDefaults`.
-- Distinguishes **permanent** failures (model not in TXT → streaming must stay disabled) from **transient** failures (network/DNS issues → safe to retry).
+- Distinguishes **permanent** failures (model not in *validated* TXT → streaming must stay disabled) from **transient** failures (network/DNS/DNSSEC-unvalidated → safe to retry).
 - Exposes a tiny set of test seams under `#if DEBUG` that have zero production impact.
 
 The actor uses a carefully constructed non-isolated static C callback + `Unmanaged` context to satisfy Swift 6 strict concurrency while still using the classic `dnssd` API.

@@ -15,10 +15,11 @@ This document defines the **required security invariants** of the Lutheran Radio
 ## Invariant 1: Security Model Validation (DNS TXT)
 
 - The app **must** successfully validate that its embedded `expectedSecurityModel` appears in the comma-separated TXT record returned by `securitymodels.lutheran.radio` (or the backup domain) before any streaming is allowed.
+- The query uses `kDNSServiceFlagsValidate`; the callback in ``SecurityModelValidator`` **requires** the validation bit in the returned flags before parsing or accepting rdata. Responses without successful DNSSEC validation are treated as transient failures (never trusted).
 - Validation is performed exclusively by ``SecurityModelValidator``.
-- On **permanent failure** (model not present in TXT), streaming is **permanently disabled** for the lifetime of the process. The only recovery is installing a new app build with an updated model.
-- On **transient failure**, the app may retry, but must eventually succeed or fall back to a safe error state.
-- Successful validations are cached for exactly 1 hour in `UserDefaults` (key: `lastSecurityValidation`). The cache applies **only** to successes.
+- On **permanent failure** (model not present in a *validated* TXT record), streaming is **permanently disabled** for the lifetime of the process. The only recovery is installing a new app build with an updated model.
+- On **transient failure** (network, timeout, *or DNSSEC validation not asserted*), the app may retry, but must eventually succeed or fall back to a safe error state.
+- Successful validations (validated response + model present) are cached for exactly 1 hour in `UserDefaults` (key: `lastSecurityValidation`). The cache applies **only** to successes.
 - The validator is an `actor` and all mutation of validation state is isolated.
 
 ## Invariant 2: Certificate Pinning (Runtime Full-Chain)

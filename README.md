@@ -327,7 +327,7 @@ The app performs security model validation to confirm that the version in use ma
 
 1. **Primary domain:** `securitymodels.lutheran.radio`
    **Backup domain:** `securitymodels.lutheranradio.sk` (smart fallback)
-2. **Mechanism:** Queries DNS TXT records from the ordered list of domains. On success (expected model present), caches result for 1 hour. Permanent failure aborts immediately; transient errors trigger fallback to the backup domain only.
+2. **Mechanism:** Queries DNS TXT records (via `DNSServiceQueryRecord` + `kDNSServiceFlagsValidate`) from the ordered list of domains. On success (**DNSSEC-validated response** *and* expected model present), caches result for 1 hour. Permanent failure (model absent from validated record) aborts immediately; transient errors (network, no validation bit, timeout) trigger fallback to the backup domain only.
 3. **Pinned Value:** Defined in `Core/Configuration/SecurityConfiguration.swift` as `expectedSecurityModel` (currently `"brenham"`, always read via `SecurityConfiguration.current`)
 4. **Location:** Enforced by the actor `Core/Actors/SecurityModelValidator.swift` (single source of truth for validation — see the Key Files table)
 5. **Behavior:** If the app’s security model isn’t in the TXT record, playback is permanently disabled with a user-facing error message
@@ -349,18 +349,18 @@ When queried with the DO (DNSSEC OK) bit set (e.g. `dig +dnssec`), the response 
 
 In the current observed responses, the **AD (Authenticated Data)** flag is **not** set (`;; flags: qr rd ra`), indicating that the recursive resolver did not perform (or did not assert) full DNSSEC validation when answering the query.
 
-**Current Validation Behavior**
+**Current Validation Behavior (DNSSEC-hardened)**
 
-The app performs the TXT query via `DNSServiceQueryRecord` **without** the `kDNSServiceFlagsValidate` (or `kDNSServiceFlagsValidateOptional`) flag. Therefore:
-- It does **not** perform client-side DNSSEC validation itself.
-- It relies on the device’s configured recursive resolver for any DNSSEC checking.
-- The mechanism still benefits from the signed zone, making off-path forgery and cache poisoning significantly harder.
+The app performs the TXT query via `DNSServiceQueryRecord` **with `kDNSServiceFlagsValidate`** (strict, not `ValidateOptional`). In the C reply callback:
+- The echoed `flags` value is checked for the `kDNSServiceFlagsValidate` bit.
+- Only responses where the bit is set (mDNSResponder/system resolver successfully performed DNSSEC validation) are accepted.
+- If `DNSServiceQueryRecord` succeeds but the validation bit is absent, the query is treated as a transient failure: the backup domain is tried; if both fail validation, the validator enters `.failedTransient` (subject to retry + 1h cache bypass).
 
-Because of these characteristics, the DNS TXT record serves as a useful but not absolute dynamic validation signal. It is supported by certificate pinning on the streaming infrastructure and the app’s failure model: if validation does not succeed, streaming does not proceed until the user installs a version with an updated security model.
+This provides data integrity and authenticity protection for the security model allow-list using the zone's existing DNSSEC signatures (RRSIG) and Apple's resolver, with zero new dependencies.
 
-This design provides a practical balance between security, simplicity, and resilience (aided by the 1-hour success-only cache).
+Unvalidated (or validation-failing) responses never result in a successful model list. Permanent failure only occurs when the expected model is provably absent from a validated response.
 
-See also: the full "Current Validation Behavior" and cache details below, ``<doc:Security-Invariants>``, and [`CODING_AGENT.md`](CODING_AGENT.md) (DNS TXT Validation Specifics — the app does **not** use `kDNSServiceFlagsValidate`; consult README "Why DNS TXT Records?" for the latest DNSSEC/AD status and verification commands).
+See also: ``<doc:Security-Invariants>`` (Invariant 1), [`CODING_AGENT.md`](CODING_AGENT.md) (DNS TXT Validation Specifics), and the implementation in `Core/Actors/SecurityModelValidator.swift`.
 
 **Verifying DNSSEC Status**
 To check the current TXT record and DNSSEC-related information:
@@ -373,7 +373,7 @@ dig +dnssec TXT securitymodels.lutheran.radio | grep -E "(^securitymodels|flags:
 dig +short +dnssec TXT securitymodels.lutheran.radio
 ```
 
-Look for the **AD** flag (Authenticated Data) in the `;; flags:` line. Its presence indicates that the resolver performed and accepted DNSSEC validation.
+Look for the **AD** flag (Authenticated Data) in the `;; flags:` line (useful diagnostic). For the app, success is determined by the `kDNSServiceFlagsValidate` bit returned to the `DNSServiceQueryRecord` callback (checked in `SecurityModelValidator.dnsQueryCallback`), not solely by the AD bit in `dig` output. The system resolver behavior controls whether the bit is set.
 
 ### Verifying the Security Model
 
@@ -429,7 +429,7 @@ This feature enhances availability while maintaining the app's privacy-first pri
 | File / Symbol                                              | Responsibility                                                                 | Important notes for agents |
 |------------------------------------------------------------|--------------------------------------------------------------------------------|----------------------------|
 | `Core/Configuration/SecurityConfiguration.swift`           | Single source of truth for all policy and constants (`expectedSecurityModel`, `pinnedLeafFingerprintDigest`, `pinnedFingerprintDigests`, `isInTransitionWindow`, `transitionWindow*`, `maxAllowedTimeSkew`, `modelCacheDuration`, `securityModelDomains`, `current`) | Never duplicate these values elsewhere. Colon-hex views (`pinnedLeafFingerprint`, `pinnedFingerprints`) are for README/openssl parity only. |
-| `Core/Actors/SecurityModelValidator.swift`                 | Actor-isolated DNS TXT security model validation against `securitymodels.lutheran.radio` (and backup) | Uses `Span<UInt8>` / `UTF8Span` for zero-copy `rdata` borrow in the `dns_sd` callback. 1-hour success-only cache. Distinguishes permanent vs. transient failures. Entry point: `validateSecurityModel()`. The **only** place DNS TXT logic is allowed. |
+| `Core/Actors/SecurityModelValidator.swift`                 | Actor-isolated DNS TXT security model validation against `securitymodels.lutheran.radio` (and backup) | Uses `kDNSServiceFlagsValidate` + explicit callback bit check for DNSSEC (strict). `Span<UInt8>` / `UTF8Span` zero-copy rdata borrow in `dns_sd` callback. 1-hour success-only cache. Permanent vs. transient failures. Entry point: `validateSecurityModel()`. The **only** place DNS TXT logic is allowed. |
 | `Core/Security/CertificateFingerprint.swift`               | 32-byte SHA-256 DER digest type + stack-local hashing via `Data.span` + constant-time `constantTimeMatches` | Runtime code must never compare hex strings. Materializes colon-hex only for docs/tooling. |
 | `Core/Security/CertificateValidator.swift`                 | Runtime full-certificate (DER) pinning + 10-minute cache + transition window + device/server time-skew protection | Complements (does not replace) ATS SPKI pinning from `Info.plist`. Uses `pinnedFingerprintDigests`. Time skew > 5 min permanently disables leniency for the process. |
 | `DirectStreamingPlayer.swift` (and streaming delegates)    | Main audio engine; embeds security model in stream URLs; consumes validators | Consumes the Core single sources of truth. No policy duplication. |
