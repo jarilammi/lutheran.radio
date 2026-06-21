@@ -278,15 +278,31 @@ struct LutheranRadioWidgetEntryView: View {
     @Environment(\.widgetFamily) var family
 
     var body: some View {
-        switch family {
-        case .systemSmall:
-            SmallWidgetView(entry: entry)
-        case .systemMedium:
-            MediumWidgetView(entry: entry)
-        case .systemLarge:
-            LargeWidgetView(entry: entry)
-        default:
-            SmallWidgetView(entry: entry)
+        // SECURITY / RENDERING NOTE: WidgetKit (iOS 17+) requires .containerBackground(for: .widget)
+        // on the timeline entry view (or an ancestor). Plain .background(...) on the widget content
+        // root causes the system to render the diagnostic text "Please adopt containerBackground API"
+        // on physical devices (and some simulator configurations).
+        //
+        // Single application point here ensures all three families (small/medium/large) and both
+        // the "tap to open" (!isAppRunning) and active playback states receive a proper container fill.
+        // We use Color(.systemBackground) to match the previous explicit intent while satisfying the API.
+        //
+        // See also: LutheranRadioWidget.swift (the three size views no longer apply root .background),
+        // WidgetKit documentation on container backgrounds, and CODING_AGENT.md "Single Source of Truth".
+        Group {
+            switch family {
+            case .systemSmall:
+                SmallWidgetView(entry: entry)
+            case .systemMedium:
+                MediumWidgetView(entry: entry)
+            case .systemLarge:
+                LargeWidgetView(entry: entry)
+            default:
+                SmallWidgetView(entry: entry)
+            }
+        }
+        .containerBackground(for: .widget) {
+            Color(.systemBackground)
         }
     }
 }
@@ -348,7 +364,6 @@ struct SmallWidgetView: View {
                 .buttonStyle(.plain)
             }
             .padding(8)
-            .background(Color(.systemBackground))
         }
     }
 
@@ -444,7 +459,6 @@ struct MediumWidgetView: View {
             }
             .frame(maxHeight: .infinity, alignment: .top)
             .padding(10)
-            .background(Color(.systemBackground))
         }
     }
 
@@ -559,7 +573,6 @@ struct LargeWidgetView: View {
             }
             .frame(maxHeight: .infinity, alignment: .top)
             .padding()
-            .background(Color(.systemBackground))
         }
     }
 }
