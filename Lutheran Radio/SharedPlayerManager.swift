@@ -1217,6 +1217,27 @@ actor SharedPlayerManager {
         
         updatePlaybackIntent(to: .shouldBePlaying)
         
+        // Widget language selection while paused relies on optimistic PersistedWidgetState.
+        // Explicitly align Direct's model here (before saveCurrentState) so that:
+        // - the snapshot written by this resume path carries the user-chosen language, and
+        // - setStreamAndPlay later in play() sees the correct stream even if the switch
+        //   reconciliation was debounced or a prior model value lingered.
+        // This upholds the "switch while paused + follow-on play uses preferred-lang alignment"
+        // contract documented in handleWidgetSwitch + signalWidgetSwitchAction.
+        if let snapshot = Self.loadPersistedWidgetState() {
+            let preferredLang = snapshot.currentLanguage
+            if !preferredLang.isEmpty,
+               DirectStreamingPlayer.shared.selectedStream.languageCode != preferredLang {
+                let synced = Self.streamForLanguageCode(preferredLang)
+                if synced.languageCode == preferredLang {
+                    #if DEBUG
+                    print("[SharedPlayerManager] setUserIntentToPlay alignment: using persisted lang \(preferredLang) (was \(DirectStreamingPlayer.shared.selectedStream.languageCode))")
+                    #endif
+                    await DirectStreamingPlayer.shared.setSelectedStreamModelOnly(to: synced)
+                }
+            }
+        }
+        
         saveVisualState()
         await saveCurrentState()
     }
@@ -2264,14 +2285,22 @@ extension SharedPlayerManager {
         // block or WidgetRefresh, producing the exact "tap et, model briefly et, then
         // Aligning sv (was et), plays sv" reversion.
         //
-        // When the model differs from the snapshot-derived value *and* we are inside the
-        // switch visual window (.prePlay with the hold, or still .prePlay), prefer the
-        // model. This ensures performActualSave (and the refresh it schedules) writes the
-        // correct language for the in-flight switch. The snapshot remains the long-term
-        // SSOT; this is only a timing preference during reconciliation.
+        // IMPORTANT (paused selection case): We must NOT clobber a widget-provided language
+        // in the snapshot simply because we set .prePlay for a resume from .userPaused.
+        // Widget SwitchStreamIntent (while paused) + immediate play writes the desired lang
+        // into PersistedWidgetState (the SSOT). The bare `|| currentVisualState == .prePlay`
+        // would force the (potentially stale) Direct model value, defeating "paused sv -> en
+        // then play yields en". Only override to model when we are inside an *active
+        // orchestrated switch* (holdPrePlayVisualUntilPlayback set by switchToStreamFromWidget
+        // / resetToPrePlayForNewStream). The alignment block later in play() + the defensive
+        // alignment now in setUserIntentToPlay ensure the snapshot / model converge on the
+        // widget choice for resume-after-lang-select.
+        //
+        // The snapshot (via preferredWidgetLanguage + loadPersistedWidgetState) remains the
+        // long-term SSOT for widget + play resurrection language.
         let modelLang = DirectStreamingPlayer.shared.selectedStream.languageCode
         if !modelLang.isEmpty && modelLang != currentLanguageCode {
-            if holdPrePlayVisualUntilPlayback || currentVisualState == .prePlay {
+            if holdPrePlayVisualUntilPlayback {
                 currentLanguageCode = modelLang
             }
         }

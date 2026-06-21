@@ -382,11 +382,16 @@ final class RadioPlayerCoordinator {
         guard !processedActionIds.contains(actionId) else { return }
         processedActionIds.insert(actionId)
 
-        let now = Date()
-        if let last = lastWidgetSwitchTime, now.timeIntervalSince(last) < 2.0 {
-            return
-        }
-        lastWidgetSwitchTime = now
+        // Always process the latest widget language selection (cancel any prior pending workItem).
+        // The 2 s debounce is removed because:
+        // - processedActionIds already dedups exact re-deliveries of the same actionId
+        // - workItem cancel + last dispatch wins for rapid different-lang selections (the
+        //   exact "paused sv -> en" flow).
+        // - For paused state a language choice must be applied so the subsequent play uses it
+        //   (see alignment in play() + setUserIntentToPlay).
+        // Rapid hammering protection is still provided by the engine (switchToStream silent path)
+        // and the blocked/no-auto-resume logic inside switchToStreamFromWidget.
+        lastWidgetSwitchTime = Date()
 
         pendingWidgetSwitchWorkItem?.cancel()
 
