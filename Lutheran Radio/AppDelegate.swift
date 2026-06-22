@@ -84,9 +84,25 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
                 immediate: true
             )
         }
+
+        // Also refresh Live Activity state (in case scene delegate path wasn't the active one).
+        RadioLiveActivityManager.shared.handleAppDidEnterForeground()
         
         #if DEBUG
-        print("[AppDelegate] Foreground widget refresh via WidgetRefreshManager")
+        print("[AppDelegate] Foreground widget refresh via WidgetRefreshManager + LA update")
+        #endif
+    }
+
+    func applicationWillTerminate(_ application: UIApplication) {
+        // Best-effort clean end for any active Live Activity when the process is being terminated.
+        // iOS does not guarantee this is called (especially on force-quit or OOM), but it is the
+        // documented place. The LA manager's handle ends the activity (with .userPaused final state)
+        // so the Dynamic Island / Lock Screen preview does not linger with stale play buttons.
+        // See also scene lifecycle and RadioLiveActivityManager.handleAppWillTerminate.
+        RadioLiveActivityManager.shared.handleAppWillTerminate()
+
+        #if DEBUG
+        print("[AppDelegate] applicationWillTerminate — LA end requested")
         #endif
     }
 }

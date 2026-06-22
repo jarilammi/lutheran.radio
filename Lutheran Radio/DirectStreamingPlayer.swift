@@ -2248,9 +2248,10 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         #endif
     }
     
-    func getCurrentMetadataForLiveActivity() -> String? {
-        return currentMetadata
-    }
+    // NOTE: getCurrentMetadataForLiveActivity was removed (2026-06).
+    // Live Activity now sources metadata exclusively via SharedPlayerManager
+    // (currentStreamMetadata + loadPersistedStreamMetadata) + PlayerVisualState SSOT.
+    // The old direct accessor was no longer called after the LA/SSOT consolidation.
     
     func setVolume(_ volume: Float) {
         executeAudioOperation({

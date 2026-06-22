@@ -30,7 +30,9 @@
 /// Key Interactions:
 /// - **Language Switching**: Uses `UICollectionView` with flags; updates stream in `DirectStreamingPlayer.swift` and saves to UserDefaults for widgets.
 /// - **Playback**: Toggles via `togglePlayback()`; monitors network (`NWPathMonitor`) and shows the 3-choice cellular data permission prompt on expensive networks (decision + persistence extracted to CellularPermissionManager).
-/// - **Background Handling**: Integrates with `RadioLiveActivityManager.swift` for Live Activities on backgrounding; saves state via `SharedPlayerManager.swift`.
+/// - **Background Handling**: Delegates background/foreground/terminate to `SceneDelegate` + `AppDelegate`,
+///   which now forward to `RadioLiveActivityManager` (LA) and `SharedPlayerManager` (widgets + liveness).
+///   The actual LA drive lives in SPM save paths + the coordinator.
 /// - **Widget/URL Handling**: Public methods like `handlePlayAction()` process schemes from `SceneDelegate.swift`.
 ///
 /// Accessibility: VoiceOver announcements for status/metadata; hyphenation for long text. For lifecycle events, see `SceneDelegate.swift` and `AppDelegate.swift`.

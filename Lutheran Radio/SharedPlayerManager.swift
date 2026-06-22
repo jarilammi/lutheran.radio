@@ -1067,6 +1067,13 @@ actor SharedPlayerManager {
         
         #if LUTHERAN_MAIN_APP
         await updateNowPlayingInfo()
+
+        // Update Live Activity so the pause button glyph and "Paused"/Ready status
+        // appear immediately in Dynamic Island / Lock Screen (do not end the activity
+        // here — a paused LA with a play button is the desired surface for quick resume).
+        Task { @MainActor in
+            await RadioLiveActivityManager.shared.updateCurrentActivity()
+        }
         #endif
         
         #if DEBUG
@@ -1282,6 +1289,12 @@ actor SharedPlayerManager {
         await saveCurrentState()
         #if LUTHERAN_MAIN_APP
         await updateNowPlayingInfo()
+
+        // Mirror the stop() path: push the .userPaused visual to any active Live Activity
+        // so buttons and status update promptly on the lock screen / Dynamic Island.
+        Task { @MainActor in
+            await RadioLiveActivityManager.shared.updateCurrentActivity()
+        }
         #endif
     }
     
@@ -1300,6 +1313,20 @@ actor SharedPlayerManager {
         await saveCurrentState()
         #if LUTHERAN_MAIN_APP
         await updateNowPlayingInfo()
+
+        // Drive Live Activity (parallel to WidgetRefreshManager path in performActualSave).
+        // Start the Activity on the first successful transition to .playing (so that
+        // Dynamic Island and Lock Screen show live controls immediately).
+        // Subsequent visual changes (including resume after pause) will hit the else
+        // and push the new PlayerVisualState right away. This is the key fix for
+        // "resume part" not reflecting in the LA buttons without a 10s heartbeat delay.
+        Task { @MainActor in
+            if RadioLiveActivityManager.shared.currentActivity == nil {
+                await RadioLiveActivityManager.shared.startActivity()
+            } else {
+                await RadioLiveActivityManager.shared.updateCurrentActivity()
+            }
+        }
         #endif
     }
     
@@ -2422,6 +2449,15 @@ extension SharedPlayerManager {
                 hasError: state.hasError,
                 immediate: isUrgentUpdate
             )
+
+            // Live Activity refresh (parallel to widget timeline reload).
+            // Uses the same authoritative visualState / snapshot that widgets consume.
+            // Guarded inside the manager (no-op if no activity). This plus the explicit
+            // start/update in setPlaying/stop paths ensures resume/pause are reflected
+            // immediately rather than only on the manager's internal 10 s heartbeat timer.
+            #if LUTHERAN_MAIN_APP
+            await RadioLiveActivityManager.shared.updateCurrentActivity()
+            #endif
         }
 
         #if DEBUG

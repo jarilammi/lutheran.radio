@@ -92,6 +92,11 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         if let viewController = window?.rootViewController as? ViewController {
             viewController.checkForPendingWidgetActions()
         }
+
+        // Live Activity lifecycle (parallel to widget state): push latest visual + metadata
+        // on return to foreground so Dynamic Island / Lock Screen buttons reflect current
+        // PlayerVisualState immediately. See RadioLiveActivityManager.
+        RadioLiveActivityManager.shared.handleAppDidEnterForeground()
     }
 
     /// Called when the scene enters the background.
@@ -106,9 +111,13 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             await SharedPlayerManager.shared.recordWidgetLiveness()
             await SharedPlayerManager.shared.saveCurrentState()
         }
+
+        // Live Activity: give manager chance to start (if audio playing) when entering background.
+        // This is the documented auto-start path. Manager owns the Activity request.
+        RadioLiveActivityManager.shared.handleAppWillEnterBackground()
         
         #if DEBUG
-        print("[SceneDelegate] Saved state for widget on background")
+        print("[SceneDelegate] Saved state for widget on background + forwarded LA background handling")
         #endif
     }
 

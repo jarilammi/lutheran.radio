@@ -9,18 +9,39 @@
 
 import ActivityKit
 import Foundation
+import UIKit   // For UIApplication.willTerminateNotification (termination observer) and related lifecycle.
 
 /// - Article: Privacy-First Live Activities Integration
 ///
-/// `RadioLiveActivityManager` manages iOS 26 Live Activities for playback status, using local-only updates (no push notifications or server calls) to maintain privacy.
+/// `RadioLiveActivityManager` manages iOS 26+ Live Activities (Dynamic Island + Lock Screen)
+/// for playback status using **local-only** `ActivityKit` updates. No push notifications,
+/// no server involvement — privacy is preserved exactly like the home widgets.
 ///
-/// Process:
-/// 1. **Start/Update**: `startActivity()` creates activities with attributes like stream language/flag; `updateCurrentActivity()` refreshes every 10s via timer.
-/// 2. **Lifecycle**: Auto-starts on background (`handleAppWillEnterBackground()`); ends on terminate; observes existing activities.
-/// 3. **Integration**: Hooks into `DirectStreamingPlayer.swift` callbacks for status/metadata changes; shares state via `SharedPlayerManager.swift`.
-/// 4. **Privacy Safeguards**: All data local; no external communication (see app-wide privacy in `DirectStreamingPlayer.swift`).
+/// ## Single Source of Truth Contract
+/// - All content comes from `SharedPlayerManager.currentVisualState` (the `PlayerVisualState` SSOT)
+///   + `currentStreamMetadata` / persisted snapshot.
+/// - `RadioLiveActivityManager` **owns** the `Activity` instance lifecycle and its 10 s local
+///   heartbeat timer.
+/// - The **main app** (via `SharedPlayerManager` save paths + `RadioPlayerCoordinator`) drives
+///   updates and starts. Widget/App Intent processes only mutate SPM; the main process pushes
+///   to the Activity.
 ///
-/// For app lifecycle ties, see extensions in `SceneDelegate.swift` and `AppDelegate.swift`. Widgets use separate sharing via `SharedPlayerManager.swift`.
+/// ## Heartbeat & Why It Was Previously Unreliable
+/// The internal `updateTimer` (10 s) + `updateCurrentActivity()` keep the LA in sync while
+/// the app is alive. Before the changes in this edit, it was only started from now-dead
+/// `handleAppWillEnterBackground` paths and only pushed on ICY metadata. Resume (`.playing`)
+/// could therefore lag or never appear in LA buttons. Now explicitly driven from SPM
+/// visual transitions (setPlaying/stop) + every `performActualSave` + lifecycle delegates.
+///
+/// See:
+/// - `SharedPlayerManager.setPlaying()`, `stop()`, `performActualSave()`
+/// - `SceneDelegate` + `AppDelegate` (the wired handlers)
+/// - `PlayerVisualState`
+/// - `WidgetRefreshManager` (the parallel mechanism for home/Control widgets)
+///
+/// - SeeAlso: `SharedPlayerManager`, `PlayerVisualState.swift`, `LutheranRadioLiveActivityAttributes.swift`,
+///   `CODING_AGENT.md` (Single Source of Truth Principles + Cross-target shared files),
+///   <doc:Architecture>, RadioPlayerCoordinator (orchestration after SPM).
 @MainActor
 class RadioLiveActivityManager: ObservableObject {
     static let shared = RadioLiveActivityManager()
@@ -30,10 +51,32 @@ class RadioLiveActivityManager: ObservableObject {
     
     private init() {
         observeExistingActivities()
+
+        // Defense-in-depth: also listen for willTerminate so we end the LA even if
+        // AppDelegate.applicationWillTerminate is not delivered (common on abrupt kills).
+        // The observer just forwards to the existing handle/end path.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleWillTerminateNotification),
+            name: UIApplication.willTerminateNotification,
+            object: nil
+        )
+    }
+
+    @objc private func handleWillTerminateNotification() {
+        handleAppWillTerminate()
     }
     
     // MARK: - Privacy-First Live Activity Management
 
+    /// Requests a new privacy-first Live Activity (or replaces an existing one).
+    ///
+    /// - Postcondition: If successful, `currentActivity` is non-nil and the 10 s local
+    ///   update timer is running. Initial content uses the current `PlayerVisualState` SSOT.
+    /// - Important: Only call from main-app code (never widget extension). The caller is
+    ///   responsible for ensuring we are allowed to show an activity (usually right after
+    ///   a `.playing` transition).
+    /// - SeeAlso: `updateCurrentActivity()`, `SharedPlayerManager.setPlaying`
     func startActivity() async {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else {
             #if DEBUG
@@ -69,6 +112,11 @@ class RadioLiveActivityManager: ObservableObject {
             
             currentActivity = activity
             startLocalUpdateTimer()
+
+            // Push an immediate update (the timer will keep it fresh every 10 s thereafter).
+            // This gives the caller (e.g. setPlaying) instantaneous visual + button state
+            // instead of waiting for the first timer tick.
+            await updateCurrentActivity()
             
             #if DEBUG
             print("🔴 Privacy-first Live Activity started: \(activity.id)")
@@ -81,14 +129,24 @@ class RadioLiveActivityManager: ObservableObject {
         }
     }
 
-    // LOCAL UPDATES ONLY - No server communication
+    /// Pushes the latest `PlayerVisualState` + metadata from the SSOT into the active
+    /// Live Activity.
+    ///
+    /// - Precondition: Must be called on the main actor (the method is `@MainActor`).
+    /// - Note: Silently no-ops if no activity is currently active. This is the method
+    ///   called by `SharedPlayerManager` on every visual state transition and save.
+    /// - Important: Uses `nonisolated(unsafe)` + `unsafe` because `Activity.update` is
+    ///   not Sendable in the current SDK; the capture of the Activity is done only after
+    ///   we hold a strong local reference on the main actor.
+    ///
+    /// - SeeAlso: `startActivity()`, `SharedPlayerManager.performActualSave`
     @MainActor
     func updateCurrentActivity() async {
         guard let activity = currentActivity else { return }
         
         let manager = SharedPlayerManager.shared
         
-        // NEW: Use visualState (SSOT) + await
+        // Use visualState (SSOT) + await
         let visualState = await manager.currentVisualState
         let streamMetadata = await manager.currentStreamMetadata
             ?? SharedPlayerManager.loadPersistedStreamMetadata()
@@ -106,6 +164,18 @@ class RadioLiveActivityManager: ObservableObject {
         #endif
     }
 
+    /// Ends the current Live Activity (if any) and stops the local heartbeat timer.
+    ///
+    /// The final pushed state is `.userPaused` (with no metadata) so that any transient
+    /// UI the system shows during dismissal does not claim the stream is still live.
+    /// Then `end(..., dismissalPolicy: .default)` is used so the LA is removed from the
+    /// Lock Screen / Dynamic Island after the normal system grace period.
+    ///
+    /// - Note: Called on privacy clear (`clearAllLocalState`), on `applicationWillTerminate`,
+    ///   and on `willTerminateNotification`. Does **not** automatically end on user pause
+    ///   (a paused LA with a working play button is intentional for quick resume).
+    ///
+    /// - SeeAlso: `SharedPlayerManager.clearAllLocalState`, AppDelegate.applicationWillTerminate
     func endActivity() {
         stopLocalUpdateTimer()
         
@@ -125,7 +195,7 @@ class RadioLiveActivityManager: ObservableObject {
             // All async Live Activity work in one async context – modern SSOT pattern
             let content = ActivityContent(state: finalContentState, staleDate: nil)
             unsafe await safeActivityToEnd.update(content)
-            unsafe await safeActivityToEnd.end(content, dismissalPolicy: .default)   // ← Fixed: now uses modern end(content:dismissalPolicy:)
+            unsafe await safeActivityToEnd.end(content, dismissalPolicy: .default)   // modern end API
             
             #if DEBUG
             print("🔴 Live Activity ended")
@@ -133,16 +203,27 @@ class RadioLiveActivityManager: ObservableObject {
         }
     }
     
-    // MARK: - Local-Only Update Timer
+    // MARK: - Local-Only Update Timer (the "heartbeat")
     
-    private func startLocalUpdateTimer() {
+    /// Starts (or restarts) the 10 s repeating timer that keeps the Live Activity
+    /// content fresh while the main app process is alive.
+    ///
+    /// The timer is the backup "heartbeat"; authoritative immediate updates are driven
+    /// by `SharedPlayerManager` on visual state changes. Timer uses `Task` to hop to
+    /// the @MainActor update method.
+    // internal so tests (via @testable) can exercise the timer heartbeat directly.
+    // See RadioLiveActivityManagerTests.
+    internal func startLocalUpdateTimer() {
         stopLocalUpdateTimer()
         
-        // Update every 10 seconds while app is running audio
+        // Update every 10 seconds while app is running audio.
+        // This interval keeps program metadata and visual state (play/pause) reasonably
+        // fresh without excessive battery impact. The 10 s value is intentionally coarser
+        // than widget debouncing because Activity updates are more expensive.
         updateTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             
-            Task {
+            Task { @MainActor in
                 await self.updateCurrentActivity()
             }
         }
@@ -152,7 +233,7 @@ class RadioLiveActivityManager: ObservableObject {
         #endif
     }
     
-    private func stopLocalUpdateTimer() {
+    internal func stopLocalUpdateTimer() {
         updateTimer?.invalidate()
         updateTimer = nil
         
@@ -178,6 +259,13 @@ class RadioLiveActivityManager: ObservableObject {
 // MARK: - App Lifecycle Integration (Privacy-Safe)
 
 extension RadioLiveActivityManager {
+    /// Called by SceneDelegate / AppDelegate when the scene enters background.
+    ///
+    /// Starts a Live Activity (if we are actively playing and none exists) so that
+    /// the user has lock-screen / Dynamic Island controls while audio continues in
+    /// the background.
+    ///
+    /// - SeeAlso: SceneDelegate.sceneDidEnterBackground
     func handleAppWillEnterBackground() {
         // Auto-start Live Activity when backgrounding with audio
         let manager = SharedPlayerManager.shared
@@ -190,13 +278,20 @@ extension RadioLiveActivityManager {
         }
     }
     
+    /// Called on foreground transitions.
+    ///
+    /// Immediately pushes the current SSOT visual state so that any stale LA content
+    /// (e.g. after a long background period) is corrected before the user sees it.
     func handleAppDidEnterForeground() {
-        // Update Live Activity with current state
-        Task {
+        Task { @MainActor in
             await updateCurrentActivity()
         }
     }
     
+    /// Called on process termination paths (AppDelegate + willTerminateNotification).
+    ///
+    /// Ends the activity so a stale "playing with buttons" preview does not remain
+    /// on the lock screen after the app has been killed. Uses .default dismissal.
     func handleAppWillTerminate() {
         // Clean shutdown - end Live Activity gracefully
         endActivity()

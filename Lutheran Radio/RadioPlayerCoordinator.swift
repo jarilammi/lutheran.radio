@@ -718,6 +718,13 @@ final class RadioPlayerCoordinator {
         let newState = await manager.currentVisualState
         self.updateUI(for: newState)
         self.updateNowPlayingInfo()
+
+        // Ensure Live Activity reflects the result of the toggle (play or pause) as
+        // quickly as possible. SPM already drives this, but an extra hop here after
+        // our local UI update gives the fastest visual feedback on resume.
+        #if LUTHERAN_MAIN_APP
+        await RadioLiveActivityManager.shared.updateCurrentActivity()
+        #endif
     }
 
     private func handleLanguageSelection(at newIndex: Int) {
@@ -1116,6 +1123,14 @@ final class RadioPlayerCoordinator {
             let newState = await SharedPlayerManager.shared.currentVisualState
             self.updateUI(for: newState)
             self.updateNowPlayingInfo()
+
+            // Explicit LA push in the coordinator pause path (in addition to the push
+            // inside SharedPlayerManager.stop) for the fastest possible button/state
+            // reflection on Dynamic Island / Lock Screen after a pause action that
+            // originated from remote / coordinator.
+            #if LUTHERAN_MAIN_APP
+            await RadioLiveActivityManager.shared.updateCurrentActivity()
+            #endif
         }
     }
 
@@ -1129,6 +1144,10 @@ final class RadioPlayerCoordinator {
             let newState = await SharedPlayerManager.shared.currentVisualState
             self.updateUI(for: newState)
             self.updateNowPlayingInfo()
+
+            #if LUTHERAN_MAIN_APP
+            await RadioLiveActivityManager.shared.updateCurrentActivity()
+            #endif
         }
     }
 

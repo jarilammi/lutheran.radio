@@ -27,23 +27,35 @@ class RadioLiveActivityManagerTests: XCTestCase {
     // MARK: - Initialization Tests
     
     func testInitializationObservesExistingActivities() {
+        // In the test environment (no real ActivityKit entitlement / running activities),
+        // currentActivity should be nil after shared init / observe.
         XCTAssertNil(manager.currentActivity)
     }
     
     // MARK: - Timer Management Tests
-    
+    // These now exercise the (intentionally internal) timer methods so the heartbeat
+    // logic can be verified. The 10 s LA refresh timer is the backup to the explicit
+    // SPM-driven updates added for the pause/resume and "app close" symptoms.
+
     func testStartLocalUpdateTimerSchedulesTimer() {
-        // Note: Since startLocalUpdateTimer is private, we can't directly call it without changing the source.
-        // Making it internal would make it possible to call manager.startLocalUpdateTimer()
-        let mirror = Mirror(reflecting: manager!)
+        manager.stopLocalUpdateTimer() // ensure clean
+        manager.startLocalUpdateTimer()
+        
+        let mirror = Mirror(reflecting: manager)
         let updateTimer = mirror.descendant("updateTimer") as? Timer
-        XCTAssertNil(updateTimer) // Assuming not started
+        XCTAssertNotNil(updateTimer, "startLocalUpdateTimer must schedule a non-nil repeating Timer")
+        XCTAssertTrue(updateTimer?.isValid ?? false)
+        
+        // cleanup
+        manager.stopLocalUpdateTimer()
     }
     
     func testStopLocalUpdateTimerInvalidatesTimer() {
-        // Similar note as above
-        let mirror = Mirror(reflecting: manager!)
+        manager.startLocalUpdateTimer()
+        manager.stopLocalUpdateTimer()
+        
+        let mirror = Mirror(reflecting: manager)
         let updateTimer = mirror.descendant("updateTimer") as? Timer
-        XCTAssertNil(updateTimer)
+        XCTAssertNil(updateTimer, "stopLocalUpdateTimer must clear the timer reference")
     }
 }
