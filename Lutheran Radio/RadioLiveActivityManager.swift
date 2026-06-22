@@ -47,9 +47,25 @@ class RadioLiveActivityManager: ObservableObject {
     static let shared = RadioLiveActivityManager()
     
     @Published var currentActivity: Activity<LutheranRadioLiveActivityAttributes>?
-    private var updateTimer: Timer?
+
+    /// The 10 s repeating local heartbeat timer for an active Live Activity.
+    ///
+    /// - Important: This is intentionally `internal private(set)` as the
+    ///   designated testing seam (see `startLocalUpdateTimer` / `stopLocalUpdateTimer`).
+    ///   Tests use `@testable` to observe timer creation, validity, and cleanup
+    ///   directly. Production code must never read or write this directly.
+    ///
+    /// - Note: The timer is a backup to explicit updates driven by
+    ///   `SharedPlayerManager`. It only runs while `currentActivity != nil`.
+    /// - SeeAlso: ``RadioLiveActivityManager/startLocalUpdateTimer()``,
+    ///   ``RadioLiveActivityManager/stopLocalUpdateTimer()``,
+    ///   RadioLiveActivityManagerTests
+    internal private(set) var updateTimer: Timer?
     
     private init() {
+        // Observe first so any "resume from existing LA" path is exercised (or short-circuited in tests).
+        // The early return in observeExistingActivities() is what keeps test init time near-zero.
+        // - SeeAlso: ``observeExistingActivities()``
         observeExistingActivities()
 
         // Defense-in-depth: also listen for willTerminate so we end the LA even if
@@ -211,8 +227,10 @@ class RadioLiveActivityManager: ObservableObject {
     /// The timer is the backup "heartbeat"; authoritative immediate updates are driven
     /// by `SharedPlayerManager` on visual state changes. Timer uses `Task` to hop to
     /// the @MainActor update method.
-    // internal so tests (via @testable) can exercise the timer heartbeat directly.
-    // See RadioLiveActivityManagerTests.
+    ///
+    /// - Important: Exposed as `internal` (together with `updateTimer` and
+    ///   `stopLocalUpdateTimer`) as the designated white-box testing seam.
+    ///   See ``RadioLiveActivityManager/updateTimer`` and RadioLiveActivityManagerTests.
     internal func startLocalUpdateTimer() {
         stopLocalUpdateTimer()
         
@@ -233,6 +251,11 @@ class RadioLiveActivityManager: ObservableObject {
         #endif
     }
     
+    /// Stops and clears the local update timer (if any).
+    ///
+    /// Called from `endActivity()`, lifecycle handlers, and tests.
+    /// Must be paired with every `startLocalUpdateTimer()` to avoid leaking
+    /// repeating timers into the test host or the app.
     internal func stopLocalUpdateTimer() {
         updateTimer?.invalidate()
         updateTimer = nil
@@ -244,9 +267,40 @@ class RadioLiveActivityManager: ObservableObject {
     
     // MARK: - Privacy-Safe Helper Methods
     
+    /// Queries for a pre-existing Live Activity at singleton creation time so that
+    /// local heartbeat timer can be resumed (e.g. after a background/foreground cycle).
+    ///
+    /// - Important: In DEBUG builds this performs a **robust test-environment short-circuit**.
+    ///   A real `Activity<...>.activities.first` lookup is a synchronous daemon IPC that
+    ///   becomes extremely slow under LLDB when any Live Activity is present in the
+    ///   simulator (e.g. the app was streaming). The guard prevents that cost during
+    ///   unit tests and guarantees `currentActivity` starts as `nil`.
+    ///
+    /// - Note: The three-way detection is required because `XCTestConfigurationFilePath`
+    ///   is reliable under `xcodebuild` but often absent from Xcode GUI test runs
+    ///   (Product → Test / test navigator). `NSClassFromString("XCTestCase")` matches the
+    ///   detection pattern used in `DirectStreamingPlayer`.
+    ///
+    /// - SeeAlso: ``RadioLiveActivityManager/init()``, RadioLiveActivityManagerTests.setUp,
+    ///   ``startLocalUpdateTimer()``, <doc:Architecture>
     private func observeExistingActivities() {
-        currentActivity = Activity< LutheranRadioLiveActivityAttributes>.activities.first
-        
+        #if DEBUG
+        // Robust test detection (works in Xcode GUI + xcodebuild + attached LLDB).
+        // We short-circuit *before* the synchronous ActivityKit daemon query.
+        // See the /// discussion above for why the single-env-var check was insufficient.
+        let isRunningTests = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+                          || NSClassFromString("XCTestCase") != nil
+                          || ProcessInfo.processInfo.processName == "xctest"
+                          || ProcessInfo.processInfo.processName.contains("xctest")
+
+        if isRunningTests {
+            currentActivity = nil
+            return
+        }
+        #endif
+
+        currentActivity = Activity<LutheranRadioLiveActivityAttributes>.activities.first
+
         if let activity = currentActivity {
             startLocalUpdateTimer() // Resume local updates if activity exists
             #if DEBUG
