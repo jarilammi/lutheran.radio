@@ -33,6 +33,12 @@ import UIKit   // For UIApplication.willTerminateNotification (termination obser
 /// could therefore lag or never appear in LA buttons. Now explicitly driven from SPM
 /// visual transitions (setPlaying/stop) + every `performActualSave` + lifecycle delegates.
 ///
+/// ## Test Isolation
+/// All creation, timer start, and update paths are short-circuited under DEBUG when
+/// `isRunningUnderTest` is true. This is required for acceptable `xcodebuild test`
+/// performance from the shell (and to avoid "hung before establishing connection").
+/// See the guards in `startActivity`, `updateCurrentActivity`, and `observeExistingActivities`.
+///
 /// See:
 /// - `SharedPlayerManager.setPlaying()`, `stop()`, `performActualSave()`
 /// - `SceneDelegate` + `AppDelegate` (the wired handlers)
@@ -41,7 +47,8 @@ import UIKit   // For UIApplication.willTerminateNotification (termination obser
 ///
 /// - SeeAlso: `SharedPlayerManager`, `PlayerVisualState.swift`, `LutheranRadioLiveActivityAttributes.swift`,
 ///   `CODING_AGENT.md` (Single Source of Truth Principles + Cross-target shared files),
-///   <doc:Architecture>, RadioPlayerCoordinator (orchestration after SPM).
+///   <doc:Architecture>, RadioPlayerCoordinator (orchestration after SPM),
+///   ``isRunningUnderTest`` (test short-circuit).
 @MainActor
 class RadioLiveActivityManager: ObservableObject {
     static let shared = RadioLiveActivityManager()
@@ -61,11 +68,36 @@ class RadioLiveActivityManager: ObservableObject {
     ///   ``RadioLiveActivityManager/stopLocalUpdateTimer()``,
     ///   RadioLiveActivityManagerTests
     internal private(set) var updateTimer: Timer?
+
+    #if DEBUG
+    /// Robust detection of unit / UI test execution under DEBUG.
+    ///
+    /// Matches the detection used inside `observeExistingActivities()`.
+    /// Used to short-circuit Live Activity creation and update paths that would
+    /// otherwise perform synchronous ActivityKit daemon IPCs or start the 10 s
+    /// repeating timer — both of which keep the test runner / LLDB "alive" and
+    /// cause extremely slow / hung tests when run via `xcodebuild` from shell.
+    ///
+    /// The four-way check is required for coverage across:
+    /// - `xcodebuild test` (XCTestConfigurationFilePath present)
+    /// - Xcode GUI "Product › Test" / test navigator (env var often absent)
+    /// - Attached LLDB / process name variants ("xctest", "com.apple...xctest...")
+    ///
+    /// - SeeAlso: ``observeExistingActivities()``, RadioLiveActivityManagerTests
+    private var isRunningUnderTest: Bool {
+        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+            || NSClassFromString("XCTestCase") != nil
+            || ProcessInfo.processInfo.processName == "xctest"
+            || ProcessInfo.processInfo.processName.contains("xctest")
+    }
+    #endif
     
     private init() {
         // Observe first so any "resume from existing LA" path is exercised (or short-circuited in tests).
-        // The early return in observeExistingActivities() is what keeps test init time near-zero.
-        // - SeeAlso: ``observeExistingActivities()``
+        // The early return via ``isRunningUnderTest`` inside observeExistingActivities() (and the
+        // guards in startActivity / updateCurrentActivity) is what keeps test init + playback
+        // transition time near-zero and prevents the repeating timer from keeping the runner alive.
+        // - SeeAlso: ``observeExistingActivities()``, ``isRunningUnderTest``, ``startActivity()``
         observeExistingActivities()
 
         // Defense-in-depth: also listen for willTerminate so we end the LA even if
@@ -87,13 +119,34 @@ class RadioLiveActivityManager: ObservableObject {
 
     /// Requests a new privacy-first Live Activity (or replaces an existing one).
     ///
-    /// - Postcondition: If successful, `currentActivity` is non-nil and the 10 s local
+    /// In DEBUG builds this performs an early return (with timer cleanup) when
+    /// `isRunningUnderTest` is true. This prevents creation of a real `Activity`
+    /// plus the 10 s local `updateTimer` during tests. Without the guard, calls
+    /// originating from `SharedPlayerManager.setPlaying()` (via `#if LUTHERAN_MAIN_APP`
+    /// paths) during UI tests would start a repeating timer that keeps the test
+    /// runner alive, manifesting as "very slow tests" or "hung before establishing
+    /// connection" when running `xcodebuild ... test` from the shell.
+    ///
+    /// - Postcondition: If successful (non-test), `currentActivity` is non-nil and the 10 s local
     ///   update timer is running. Initial content uses the current `PlayerVisualState` SSOT.
     /// - Important: Only call from main-app code (never widget extension). The caller is
     ///   responsible for ensuring we are allowed to show an activity (usually right after
     ///   a `.playing` transition).
-    /// - SeeAlso: `updateCurrentActivity()`, `SharedPlayerManager.setPlaying`
+    /// - Note: The test short-circuit here is the companion to the identical guard
+    ///   in `observeExistingActivities()`. It is what made the prior partial fix
+    ///   (commit 2af37cf) insufficient.
+    /// - SeeAlso: `updateCurrentActivity()`, `SharedPlayerManager.setPlaying`,
+    ///   ``isRunningUnderTest``, ``observeExistingActivities()``, <doc:Architecture>
     func startActivity() async {
+        #if DEBUG
+        if isRunningUnderTest {
+            // Prevent creating real Live Activities + the repeating local timer
+            // during unit/UI tests. This is what was keeping the test runner alive.
+            stopLocalUpdateTimer()
+            return
+        }
+        #endif
+
         guard ActivityAuthorizationInfo().areActivitiesEnabled else {
             #if DEBUG
             print("🔴 Live Activities are not enabled by user")
@@ -148,6 +201,11 @@ class RadioLiveActivityManager: ObservableObject {
     /// Pushes the latest `PlayerVisualState` + metadata from the SSOT into the active
     /// Live Activity.
     ///
+    /// In DEBUG builds this performs an early return when `isRunningUnderTest` is true.
+    /// This is defense-in-depth: even if a `currentActivity` reference somehow survived
+    /// into a test run (or was set by other test code), we never perform the
+    /// `Activity.update` IPC or any debug prints.
+    ///
     /// - Precondition: Must be called on the main actor (the method is `@MainActor`).
     /// - Note: Silently no-ops if no activity is currently active. This is the method
     ///   called by `SharedPlayerManager` on every visual state transition and save.
@@ -155,9 +213,16 @@ class RadioLiveActivityManager: ObservableObject {
     ///   not Sendable in the current SDK; the capture of the Activity is done only after
     ///   we hold a strong local reference on the main actor.
     ///
-    /// - SeeAlso: `startActivity()`, `SharedPlayerManager.performActualSave`
+    /// - SeeAlso: `startActivity()`, `SharedPlayerManager.performActualSave`,
+    ///   ``isRunningUnderTest``, RadioLiveActivityManagerTests
     @MainActor
     func updateCurrentActivity() async {
+        #if DEBUG
+        if isRunningUnderTest {
+            return
+        }
+        #endif
+
         guard let activity = currentActivity else { return }
         
         let manager = SharedPlayerManager.shared
@@ -270,30 +335,28 @@ class RadioLiveActivityManager: ObservableObject {
     /// Queries for a pre-existing Live Activity at singleton creation time so that
     /// local heartbeat timer can be resumed (e.g. after a background/foreground cycle).
     ///
-    /// - Important: In DEBUG builds this performs a **robust test-environment short-circuit**.
-    ///   A real `Activity<...>.activities.first` lookup is a synchronous daemon IPC that
-    ///   becomes extremely slow under LLDB when any Live Activity is present in the
-    ///   simulator (e.g. the app was streaming). The guard prevents that cost during
-    ///   unit tests and guarantees `currentActivity` starts as `nil`.
+    /// - Important: In DEBUG builds this performs a **robust test-environment short-circuit**
+    ///   using the shared ``isRunningUnderTest`` helper. A real `Activity<...>.activities.first`
+    ///   lookup is a synchronous daemon IPC that becomes extremely slow under LLDB when any
+    ///   Live Activity is present in the simulator (e.g. the app was streaming). The guard
+    ///   prevents that cost during unit tests and guarantees `currentActivity` starts as `nil`.
     ///
-    /// - Note: The three-way detection is required because `XCTestConfigurationFilePath`
-    ///   is reliable under `xcodebuild` but often absent from Xcode GUI test runs
-    ///   (Product → Test / test navigator). `NSClassFromString("XCTestCase")` matches the
-    ///   detection pattern used in `DirectStreamingPlayer`.
+    /// - Note: The four-condition detection (env var + class + two processName checks)
+    ///   is required because `XCTestConfigurationFilePath` is reliable under `xcodebuild`
+    ///   but often absent from Xcode GUI test runs (Product → Test / test navigator).
+    ///   `NSClassFromString("XCTestCase")` matches the detection pattern used in
+    ///   `DirectStreamingPlayer`. The same helper is used by `startActivity()` and
+    ///   `updateCurrentActivity()` for defense-in-depth.
     ///
-    /// - SeeAlso: ``RadioLiveActivityManager/init()``, RadioLiveActivityManagerTests.setUp,
-    ///   ``startLocalUpdateTimer()``, <doc:Architecture>
+    /// - SeeAlso: ``RadioLiveActivityManager/init()``, ``isRunningUnderTest``,
+    ///   RadioLiveActivityManagerTests.setUp, ``startLocalUpdateTimer()``,
+    ///   ``startActivity()``, <doc:Architecture>
     private func observeExistingActivities() {
         #if DEBUG
         // Robust test detection (works in Xcode GUI + xcodebuild + attached LLDB).
-        // We short-circuit *before* the synchronous ActivityKit daemon query.
-        // See the /// discussion above for why the single-env-var check was insufficient.
-        let isRunningTests = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
-                          || NSClassFromString("XCTestCase") != nil
-                          || ProcessInfo.processInfo.processName == "xctest"
-                          || ProcessInfo.processInfo.processName.contains("xctest")
-
-        if isRunningTests {
+        // We short-circuit *before* the synchronous ActivityKit daemon query
+        // using the shared `isRunningUnderTest` computed property (DRY).
+        if isRunningUnderTest {
             currentActivity = nil
             return
         }
@@ -319,8 +382,15 @@ extension RadioLiveActivityManager {
     /// the user has lock-screen / Dynamic Island controls while audio continues in
     /// the background.
     ///
-    /// - SeeAlso: SceneDelegate.sceneDidEnterBackground
+    /// Under DEBUG test runs we early-return before inspecting state or scheduling
+    /// the async start, for defense-in-depth alongside the guards in startActivity.
+    ///
+    /// - SeeAlso: SceneDelegate.sceneDidEnterBackground, ``isRunningUnderTest``
     func handleAppWillEnterBackground() {
+        #if DEBUG
+        if isRunningUnderTest { return }
+        #endif
+
         // Auto-start Live Activity when backgrounding with audio
         let manager = SharedPlayerManager.shared
         let state = manager.loadSharedState()
@@ -336,7 +406,16 @@ extension RadioLiveActivityManager {
     ///
     /// Immediately pushes the current SSOT visual state so that any stale LA content
     /// (e.g. after a long background period) is corrected before the user sees it.
+    ///
+    /// Under DEBUG test runs we early-return to avoid even scheduling the no-op
+    /// `updateCurrentActivity` Task.
+    ///
+    /// - SeeAlso: ``isRunningUnderTest``, handleAppWillEnterBackground
     func handleAppDidEnterForeground() {
+        #if DEBUG
+        if isRunningUnderTest { return }
+        #endif
+
         Task { @MainActor in
             await updateCurrentActivity()
         }

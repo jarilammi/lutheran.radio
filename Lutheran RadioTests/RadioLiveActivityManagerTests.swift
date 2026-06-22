@@ -32,7 +32,9 @@ class RadioLiveActivityManagerTests: XCTestCase {
         // This is sufficient for the white-box timer tests and for the
         // initialization assertion. Real LAs (if present) are left alone.
         //
-        // See the guard in observeExistingActivities() for the creation-time fast path.
+        // See ``RadioLiveActivityManager/isRunningUnderTest`` (and the early returns
+        // in observeExistingActivities, startActivity, and updateCurrentActivity)
+        // for the creation-time and call-time fast paths during tests.
         manager.stopLocalUpdateTimer()
         manager.currentActivity = nil
     }
@@ -51,8 +53,9 @@ class RadioLiveActivityManagerTests: XCTestCase {
     
     func testInitializationObservesExistingActivities() {
         // After accessing .shared (and our setUp sanitization), currentActivity
-        // must be nil. The real work of forcing nil on first creation lives in the
-        // #if DEBUG guard inside observeExistingActivities().
+        // must be nil. The real work of forcing nil on first creation (and preventing
+        // startActivity / updateCurrentActivity from doing real work) lives in the
+        // #if DEBUG `isRunningUnderTest` checks.
         //
         // We also force nil in setUp (cheap direct assignment) so the assertion is
         // reliable even when other tests in the suite have started real Live Activities.
@@ -75,7 +78,8 @@ class RadioLiveActivityManagerTests: XCTestCase {
     // and interaction with any real Activity in the simulator).
     //
     // - SeeAlso: RadioLiveActivityManager.updateTimer (the testing seam),
-    //   startLocalUpdateTimer, stopLocalUpdateTimer, observeExistingActivities.
+    //   startLocalUpdateTimer, stopLocalUpdateTimer, observeExistingActivities,
+    //   startActivity, updateCurrentActivity, isRunningUnderTest.
 
     func testStartLocalUpdateTimerSchedulesTimer() {
         // setUp already stopped; this is extra belt-and-suspenders for the specific scenario.
