@@ -483,7 +483,7 @@ This table is the source of truth for the historical record of security models (
 | `starbase`          | May 18, 2026       | (ongoing)          | 26.5.0                 |
 | `fredericksburg`    | June 2, 2026       | (ongoing)          | 26.5.1                 |
 | `brenham`           | June 23, 2026      | (ongoing)          | 26.5.2                 |
-| `dallas`            | June 24, 2026      | (ongoing)          | 26.6.0                 |
+| `dallas`            | (pending)          | (pending)          | 26.6.0                 |
 
 **Notes:**
 - **Valid From:** The date when the security model was first published to the App Store.
