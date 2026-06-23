@@ -80,7 +80,7 @@ These rules are especially strict for anything that could affect security invari
 ## Required Rules
 
 1. **Security Model**
-   - Current `expectedSecurityModel = "brenham"` (Core/Configuration/SecurityConfiguration.swift)
+   - Current `expectedSecurityModel = "dallas"` (Core/Configuration/SecurityConfiguration.swift)
    - Do not change, remove, or comment out DNS TXT validation against `securitymodels.lutheran.radio`
    - Never bypass full-certificate fingerprint pinning (`CC:F7:8E:09:EF:F3:3D:9A:5D:8B:B0:5C:74:28:0D:F6:BE:14:1C:C4:47:F9:69:C2:90:2C:43:97:66:8B:3D:CC`)
    - Never weaken SPKI pinning in Info.plist
@@ -275,7 +275,7 @@ The `Core` framework is the **single source of truth** for all security decision
 
 The complete security model history is maintained in the Security Model History table in README.md, which serves as the source of truth. Refer to it for the full table of past and current models, including validity periods and app versions.
 
-Current model = **brenham**
+Current model = **dallas**
 
 ## Response Style
 
