@@ -42,6 +42,7 @@
 
 import Foundation
 import Observation
+import SwiftUI
 
 /// Observable presentation model for the player screen.
 ///
@@ -62,7 +63,26 @@ final class PlayerViewModel {
     // MARK: - Core observable state (as specified)
 
     /// Current visual appearance / status of playback (drives colors, labels, play/pause glyph).
-    var visualState: PlayerVisualState = .prePlay
+    ///
+    /// Setting this automatically recomputes the cached `statusPresentation` via didSet.
+    /// The coordinator is the only writer in production.
+    var visualState: PlayerVisualState = .prePlay {
+        didSet {
+            recomputePresentation()
+        }
+    }
+
+    // MARK: - Cached narrow presentation (derived)
+
+    /// Narrow, presentation-only snapshot for status UI.
+    ///
+    /// Populated from `visualState.makeStatusPresentation()` whenever `visualState` mutates.
+    /// Leaf views (e.g. a `StatusPill`) should read this (or receive it directly as a `let`)
+    /// rather than the full model or the policy enum when they only need colors + text.
+    ///
+    /// - Note: Stored + Equatable → Observation short-circuits when identical after a set.
+    /// - SeeAlso: ``PlayerVisualState/makeStatusPresentation()``, dataflow guidance on caching derived.
+    private(set) var statusPresentation: PlayerStatusPresentation = PlayerVisualState.prePlay.makeStatusPresentation()
 
     /// Index into `DirectStreamingPlayer.availableStreams` that the UI believes is selected.
     /// Kept in sync by the coordinator (owner of selection math + needle).
@@ -157,6 +177,12 @@ final class PlayerViewModel {
     var shouldAutoResume: Bool {
         visualState.shouldAutoPlayOrResume
     }
+
+    // MARK: - Presentation recompute (kept out of view bodies)
+
+    private func recomputePresentation() {
+        statusPresentation = visualState.makeStatusPresentation()
+    }
 }
 
 // MARK: - Preview / Test Support
@@ -248,13 +274,16 @@ struct PlayerMainPreview: View {
             Text("Lutheran Radio")
                 .font(.largeTitle.weight(.semibold))
 
-            // Status pill (mimics PlaybackControlsView status)
-            Text(statusText)
+            // Status pill driven from narrow cached presentation (demo of the pattern).
+            // Leaf views in production should receive `viewModel.statusPresentation` (or a let binding to it)
+            // instead of the whole view model when only colors + text are required.
+            let pres = viewModel.statusPresentation
+            Text(pres.text)
                 .font(.headline)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
-                .background(Color(uiColor: viewModel.visualState.backgroundColor))
-                .foregroundStyle(Color(uiColor: viewModel.visualState.textColor))
+                .background(pres.background)
+                .foregroundStyle(pres.foreground)
                 .clipShape(RoundedRectangle(cornerRadius: 10))
 
             // Simulated language "flags" row (selectedIndex drives highlight)
@@ -333,17 +362,6 @@ struct PlayerMainPreview: View {
             if new == .securityLocked && !viewModel.isShowingSecurityError {
                 viewModel.isShowingSecurityError = true
             }
-        }
-    }
-
-    private var statusText: String {
-        switch viewModel.visualState {
-        case .playing:        return "Playing"
-        case .prePlay:        return "Connecting"
-        case .cleared:        return "Cleared"
-        case .userPaused:     return "Paused"
-        case .thermalPaused:  return "Thermal Paused"
-        case .securityLocked: return "Security Failed"
         }
     }
 

@@ -25,7 +25,9 @@ import SwiftUI
 
 /// Pure SwiftUI row for the main player controls.
 ///
-/// Binds to `PlayerViewModel.visualState` for status text/color and play/pause glyph.
+/// Binds to `PlayerViewModel` for actions + active state, but the status indicator
+/// is rendered via the narrow `viewModel.statusPresentation` (see `StatusPill`).
+/// This follows the pattern of giving leaf display views the smallest possible value-type input.
 /// Uses native SwiftUI Button + `.symbolEffect(.bounce)` for delightful play/pause transitions.
 /// The sleep timer button uses the moon symbol and indigo tint when active (countdown value can be
 /// observed via `viewModel.sleepTimerRemaining` by a parent or the button itself).
@@ -216,31 +218,46 @@ struct PlaybackControlsView: View {
                 }
             }
 
-            // Status pill (exact states + colors from PlayerVisualState)
-            Text(statusText)
-                .font(.body)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .frame(minWidth: 120, maxWidth: 0.4 * 360) // approximate previous relative max
-                .background(Color(uiColor: viewModel.visualState.backgroundColor))
-                .foregroundStyle(Color(uiColor: viewModel.visualState.textColor))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
-                .accessibilityLabel(statusText)
+            // Status pill consumes the *narrow* cached presentation from the view model.
+            // This is the recommended pattern for display-only leaves: they receive (or read)
+            // only PlayerStatusPresentation instead of the full @Bindable viewModel or the
+            // policy-rich PlayerVisualState. Invalidation scope is minimal.
+            StatusPill(presentation: viewModel.statusPresentation)
         }
         .frame(height: 50)
     }
+}
 
-    private var statusText: String {
-        switch viewModel.visualState {
-        case .playing:        return String(localized: "status_playing", table: "Localizable")
-        case .userPaused:     return String(localized: "status_paused", table: "Localizable")
-        case .thermalPaused:  return String(localized: "status_thermal_paused", table: "Localizable")
-        case .prePlay:        return String(localized: "status_connecting", table: "Localizable")
-        case .cleared:        return String(localized: "clear_local_state_done", table: "Localizable")
-        case .securityLocked: return String(localized: "status_security_failed", table: "Localizable")
-        }
+// MARK: - StatusPill (narrow-input leaf)
+
+/// Dedicated pill view that renders player status using the minimal `PlayerStatusPresentation`.
+///
+/// Takes only the presentation value type (Equatable). This creates an explicit
+/// invalidation boundary: the pill only re-renders when the presented colors/text change,
+/// independent of other view model properties (metadata, timer, stream index, etc.).
+///
+/// Example consumption (in a parent that still needs broader state for controls):
+/// ```swift
+/// StatusPill(presentation: viewModel.statusPresentation)
+/// ```
+///
+/// - SeeAlso: ``PlayerStatusPresentation``, ``PlayerViewModel/statusPresentation``,
+///   ``PlayerVisualState/makeStatusPresentation()``, CODING_AGENT.md (value types + narrow inputs).
+struct StatusPill: View {
+    let presentation: PlayerStatusPresentation
+
+    var body: some View {
+        Text(presentation.text)
+            .font(.body)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .frame(minWidth: 120, maxWidth: 0.4 * 360)
+            .background(presentation.background)
+            .foregroundStyle(presentation.foreground)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
+            .accessibilityLabel(presentation.text)
     }
 }
 
