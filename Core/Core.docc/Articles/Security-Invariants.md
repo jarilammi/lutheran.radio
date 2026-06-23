@@ -43,7 +43,7 @@ This document defines the **required security invariants** of the Lutheran Radio
 
 All of the following values exist **only** inside ``SecurityConfiguration`` and are never hard-coded elsewhere:
 
-- `expectedSecurityModel` ("brenham")
+- `expectedSecurityModel` ("dallas")
 - `pinnedLeafFingerprintDigest` (authoritative 32-byte pin; ``CertificateFingerprint``)
 - `pinnedFingerprintDigests` (acceptable digests for ``CertificateValidator``)
 - `pinnedLeafFingerprint` / `pinnedFingerprints` (derived colon-hex; operator and README parity only)

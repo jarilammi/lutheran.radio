@@ -162,13 +162,13 @@ Cross-reference: "Current Security Snapshot" and "Single Sources of Truth — Ke
 
 All targets (main app, widget extension, `Core` framework, and test bundles) use the same Swift hardening flags:
 
-| Setting | Value | Purpose |
-|---------|-------|---------|
-| `SWIFT_VERSION` | `6` | Swift 6 language mode |
-| `SWIFT_STRICT_CONCURRENCY` | `complete` | Full data-race checking |
-| `SWIFT_APPROACHABLE_CONCURRENCY` | `NO` | No relaxed concurrency downgrade |
-| `SWIFT_STRICT_MEMORY_SAFETY` | `YES` | SE-0458 strict memory-safety checking (compile-time) |
-| `SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY` | `YES` | Explicit import visibility |
+| Setting                                           | Value      | Purpose                                              |
+|---------------------------------------------------|------------|------------------------------------------------------|
+| `SWIFT_VERSION`                                   | `6`        | Swift 6 language mode                                |
+| `SWIFT_STRICT_CONCURRENCY`                        | `complete` | Full data-race checking                              |
+| `SWIFT_APPROACHABLE_CONCURRENCY`                  | `NO`       | No relaxed concurrency downgrade                     |
+| `SWIFT_STRICT_MEMORY_SAFETY`                      | `YES`      | SE-0458 strict memory-safety checking (compile-time) |
+| `SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY` | `YES`      | Explicit import visibility                           |
 
 Legacy Apple framework imports that still rely on `@preconcurrency` must be written as `@unsafe @preconcurrency import …` (currently `Security` in `Core` and streaming code, `AVFoundation` in the main app). This documents an existing concurrency boundary; it does not weaken runtime security.
 
@@ -214,19 +214,19 @@ After cleaning, retry the build and test steps above.
 
 ### Current Security Snapshot (Authoritative Values for Agents & Reviewers)
 
-| Item                          | Value / Note                                                                                                                                                                                                 | Source (always use via `Core/`) |
-|-------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------|
-| `expectedSecurityModel`       | `"brenham"` (must be present in the live TXT for streaming to be allowed)                                                                                                                                    | `SecurityConfiguration.swift` (via `SecurityConfiguration.current`) |
-| Live active models (DNS TXT)  | `houston,starbase,fredericksburg,brenham`                                                                                                                                                                    | `dig +short +dnssec TXT securitymodels.lutheran.radio` (primary + backup fallback) |
-| Runtime leaf pin (authoritative) | `CertificateFingerprint` (raw 32-byte SHA-256 DER digest). Never compare hex strings at runtime.                                                                                                             | `pinnedLeafFingerprintDigest` |
-| Operator/docs view of pin     | Colon-hex (uppercase): `CC:F7:8E:09:EF:F3:3D:9A:5D:8B:B0:5C:74:28:0D:F6:BE:14:1C:C4:47:F9:69:C2:90:2C:43:97:66:8B:3D:CC`                                                                                       | `pinnedLeafFingerprint` (derived) |
-| Acceptable digests for validator | `pinnedFingerprintDigests` (list form; currently contains only the leaf)                                                                                                                                     | `SecurityConfiguration.current` |
-| Transition window             | 2026-07-27 00:00:00 GMT through 2026-08-26 23:59:59 GMT (`isInTransitionWindow`)                                                                                                                             | `transitionWindowStart` / `transitionWindowEnd` |
-| Time-skew protection          | `maxAllowedTimeSkew = 300` seconds. Any device vs. server `Date` header skew > 5 min disables leniency even inside the window.                                                                                | `SecurityConfiguration` |
-| Model validation cache        | 1 hour (3600 s), success-only, in `UserDefaults` (`modelCacheDuration`). Failures always re-query.                                                                                                           | `SecurityConfiguration` + `SecurityModelValidator` |
-| Certificate validation cache  | 10 minutes (in `CertificateValidator`)                                                                                                                                                                       | `Core/Security/CertificateValidator.swift` |
+| Item                          | Value / Note                                                                                                                                                                                                 | Source (always use via `Core/`)                                                    |
+|-------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------|
+| `expectedSecurityModel`       | `"dallas"` (must be present in the live TXT for streaming to be allowed)                                                                                                                                    | `SecurityConfiguration.swift` (via `SecurityConfiguration.current`)                |
+| Live active models (DNS TXT)  | `houston,starbase,fredericksburg,brenham,dallas`                                                                                                                                                             | `dig +short +dnssec TXT securitymodels.lutheran.radio` (primary + backup fallback) |
+| Runtime leaf pin (authoritative) | `CertificateFingerprint` (raw 32-byte SHA-256 DER digest). Never compare hex strings at runtime.                                                                                                          | `pinnedLeafFingerprintDigest`                                                      |
+| Operator/docs view of pin     | Colon-hex (uppercase): `CC:F7:8E:09:EF:F3:3D:9A:5D:8B:B0:5C:74:28:0D:F6:BE:14:1C:C4:47:F9:69:C2:90:2C:43:97:66:8B:3D:CC`                                                                                     | `pinnedLeafFingerprint` (derived)                                                  |
+| Acceptable digests for validator | `pinnedFingerprintDigests` (list form; currently contains only the leaf)                                                                                                                                  | `SecurityConfiguration.current`                                                    |
+| Transition window             | 2026-07-27 00:00:00 GMT through 2026-08-26 23:59:59 GMT (`isInTransitionWindow`)                                                                                                                             | `transitionWindowStart` / `transitionWindowEnd`                                    |
+| Time-skew protection          | `maxAllowedTimeSkew = 300` seconds. Any device vs. server `Date` header skew > 5 min disables leniency even inside the window.                                                                               | `SecurityConfiguration`                                                            |
+| Model validation cache        | 1 hour (3600 s), success-only, in `UserDefaults` (`modelCacheDuration`). Failures always re-query.                                                                                                           | `SecurityConfiguration` + `SecurityModelValidator`                                 |
+| Certificate validation cache  | 10 minutes (in `CertificateValidator`)                                                                                                                                                                       | `Core/Security/CertificateValidator.swift`                                         |
 
-**AGENT NOTE:** Obtain everything via `SecurityConfiguration.current`. Before editing any file listed in the "Single Sources of Truth" table below (or touching DNS TXT / certificate logic), re-run the `find` command from the AI checklist above and confirm results are inside `./Core/`. The brenham row in the history table below is intentionally left as published for this change.
+**AGENT NOTE:** Obtain everything via `SecurityConfiguration.current`. Before editing any file listed in the "Single Sources of Truth" table below (or touching DNS TXT / certificate logic), re-run the `find` command from the AI checklist above and confirm results are inside `./Core/`. The dallas row in the history table is the current model (previous models are retained for the historical record and to prevent name reuse).
 
 See also: ``<doc:Security-Invariants>``, ``<doc:Architecture>``, [`CODING_AGENT.md`](CODING_AGENT.md#documentation--comment-standards-for-ai-coding-agents) (Documentation Standards).
 
@@ -328,7 +328,7 @@ The app performs security model validation to confirm that the version in use ma
 1. **Primary domain:** `securitymodels.lutheran.radio`
    **Backup domain:** `securitymodels.lutheranradio.sk` (smart fallback)
 2. **Mechanism:** Queries DNS TXT records (via `DNSServiceQueryRecord` + `kDNSServiceFlagsValidate`) from the ordered list of domains. On success (**DNSSEC-validated response** *and* expected model present), caches result for 1 hour. Permanent failure (model absent from validated record) aborts immediately; transient errors (network, no validation bit, timeout) trigger fallback to the backup domain only.
-3. **Pinned Value:** Defined in `Core/Configuration/SecurityConfiguration.swift` as `expectedSecurityModel` (currently `"brenham"`, always read via `SecurityConfiguration.current`)
+3. **Pinned Value:** Defined in `Core/Configuration/SecurityConfiguration.swift` as `expectedSecurityModel` (currently `"dallas"`, always read via `SecurityConfiguration.current`)
 4. **Location:** Enforced by the actor `Core/Actors/SecurityModelValidator.swift` (single source of truth for validation — see the Key Files table)
 5. **Behavior:** If the app’s security model isn’t in the TXT record, playback is permanently disabled with a user-facing error message
 
@@ -344,7 +344,7 @@ The `lutheran.radio` zone, including the `securitymodels` subdomain, is protecte
 
 When queried with the DO (DNSSEC OK) bit set (e.g. `dig +dnssec`), the response includes:
 - The TXT record containing the comma-separated list of valid models:
-  `"houston,starbase,fredericksburg,brenham"`
+  `"houston,starbase,fredericksburg,brenham,dallas"`
 - An accompanying **RRSIG** signature.
 
 In the current observed responses, the **AD (Authenticated Data)** flag is **not** set (`;; flags: qr rd ra`), indicating that the recursive resolver did not perform (or did not assert) full DNSSEC validation when answering the query.
@@ -386,11 +386,11 @@ dig +short +dnssec TXT securitymodels.lutheran.radio
 Example output (captured live; always re-verify with `dig` before relying on it):
 
 ```
-"houston,starbase,fredericksburg,brenham"
-TXT 13 3 600 20260617214613 20260615194613 34505 lutheran.radio. QxvICfbGgR53kNoI+Nrxp3AMjxxUgro+y08IQu16KhlAhOaLRXw952za h9JnMwkPa7IG5wHgZquv7dk3P9sZOg==
+"houston,starbase,fredericksburg,brenham,dallas"
+TXT 13 3 600 20260624194857 20260622174857 34505 lutheran.radio. C9XoaKK97ftWW9H86LM8+a3fEyBbNnQCh60q8BrvIeyCSVG8dTerIS1w ei0hZS/M5qB9YEBfqLWFMMR6TTT4Ng==
 ```
 
-Compare this output to ```expectedSecurityModel``` in ```Core/Configuration/SecurityConfiguration.swift``` (currently ```brenham```, obtained via `SecurityConfiguration.current`). If the app’s model isn’t listed, validation fails permanently. To update the list, modify the TXT record for ```securitymodels.lutheran.radio``` through the DNS management interface for the ```lutheran.radio``` domain.
+Compare this output to ```expectedSecurityModel``` in ```Core/Configuration/SecurityConfiguration.swift``` (currently ```dallas```, obtained via `SecurityConfiguration.current`). If the app’s model isn’t listed, validation fails permanently. To update the list, modify the TXT record for ```securitymodels.lutheran.radio``` through the DNS management interface for the ```lutheran.radio``` domain.
 
 See also: ``<doc:Security-Invariants>`` (Invariant 1), [`CODING_AGENT.md`](CODING_AGENT.md) (Security Model rules).
 
@@ -483,6 +483,7 @@ This table is the source of truth for the historical record of security models (
 | `starbase`          | May 18, 2026       | (ongoing)          | 26.5.0                 |
 | `fredericksburg`    | June 2, 2026       | (ongoing)          | 26.5.1                 |
 | `brenham`           | June 23, 2026      | (ongoing)          | 26.5.2                 |
+| `dallas`            | (pending)          | (pending)          | 26.6.0                 |
 
 **Notes:**
 - **Valid From:** The date when the security model was first published to the App Store.
@@ -501,11 +502,11 @@ When introducing a new security model (requires security review + documentation 
 6. Improve surrounding documentation per the Documentation & Comment Standards in [`CODING_AGENT.md`](CODING_AGENT.md) (add "Why", Security Invariant callouts, cross-links to ``<doc:Security-Invariants>`` and the Architecture article, update agent checklist context if needed).
 7. Run the mandatory find command + build/test gates. Include security impact assessment in the PR.
 
-See also: ``<doc:Security-Invariants>`` (Invariant 1 and "Enforcement"), "Verifying the Security Model" section above, [`CODING_AGENT.md`](CODING_AGENT.md) (Security Model rules + "Current model = brenham" + response style requirements).
+See also: ``<doc:Security-Invariants>`` (Invariant 1 and "Enforcement"), "Verifying the Security Model" section above, [`CODING_AGENT.md`](CODING_AGENT.md) (Security Model rules + "Current model = dallas" + response style requirements).
 
 ### Why Track Security Model Names?
 
-Security model names (e.g., ```brenham```) are embedded in the app and validated against the DNS TXT record before any streaming is permitted. Once a name is used, it becomes part of the app's permanent history and may still exist in older App Store versions. Reusing a name could allow an older version to pass validation in some cases.
+Security model names (e.g., ```dallas```) are embedded in the app and validated against the DNS TXT record before any streaming is permitted. Once a name is used, it becomes part of the app's permanent history and may still exist in older App Store versions. Reusing a name could allow an older version to pass validation in some cases.
 
 **Why this matters (explicit invariant):** The DNS TXT mechanism plus the history table together provide a forward-only, collision-resistant way to rotate the approved security implementation without breaking the "no bypass" rule or requiring clients to trust arbitrary future names.
 

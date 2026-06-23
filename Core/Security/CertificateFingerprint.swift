@@ -68,7 +68,7 @@ public struct CertificateFingerprint: Sendable, Equatable {
 
     /// OpenSSL-style uppercase colon-separated representation (operator / README parity).
     public var colonHexUppercase: String {
-        unsafe Swift.withUnsafeBytes(of: storage) { raw in
+        Swift.withUnsafeBytes(of: storage) { raw in
             unsafe raw.map { unsafe String(format: "%02X", $0) }.joined(separator: ":")
         }
     }
@@ -92,7 +92,7 @@ public struct CertificateFingerprint: Sendable, Equatable {
 
     /// Borrows digest bytes for the duration of `body`. The span must not escape this closure.
     private func withDigestSpan<R>(_ body: (Span<UInt8>) throws -> R) rethrows -> R {
-        try unsafe Swift.withUnsafeBytes(of: storage) { raw in
+        try Swift.withUnsafeBytes(of: storage) { raw in
             // SAFETY: `storage` is exactly `byteCount` bytes; `raw.count == byteCount`; span dies with closure.
             let span = unsafe Span<UInt8>(_unsafeBytes: raw)
             return try body(span)
@@ -105,10 +105,10 @@ extension CertificateFingerprint {
     static func sha256DERDigest(of certData: Data) -> CertificateFingerprint? {
         guard !certData.isEmpty else { return nil }
 
-        return unsafe withUnsafeTemporaryAllocation(of: UInt8.self, capacity: byteCount) { digestBuffer -> CertificateFingerprint? in
+        return withUnsafeTemporaryAllocation(of: UInt8.self, capacity: byteCount) { digestBuffer -> CertificateFingerprint? in
             // SAFETY: `digestBuffer` is stack-local; CC_SHA256 writes exactly `byteCount` bytes.
             var didHash = false
-            unsafe certData.span.withUnsafeBytes { input in
+            certData.span.withUnsafeBytes { input in
                 guard let inputBase = input.baseAddress else { return }
                 _ = unsafe CC_SHA256(inputBase, CC_LONG(certData.count), digestBuffer.baseAddress)
                 didHash = true
