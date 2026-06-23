@@ -133,12 +133,14 @@ struct LutheranRadioWidget: Widget {
 struct Provider: AppIntentTimelineProvider {
     
     func placeholder(in context: Context) -> SimpleEntry {
-        SimpleEntry(
+        let pres = PlayerVisualState.prePlay.makeStatusPresentation()
+        return SimpleEntry(
             date: Date(),
             visualState: .prePlay,
             currentStation: "🇺🇸 " + String(localized: "language_english", table: "Localizable"),
             currentLanguageCode: "en",
-            statusMessage: String(localized: "Ready to play", defaultValue: "Ready to play", table: "Localizable"),
+            statusMessage: pres.text,
+            statusPresentation: pres,
             streamMetadata: nil,
             availableStreams: SharedPlayerManager.shared.availableStreams,
             configuration: RadioWidgetConfiguration()
@@ -165,24 +167,22 @@ struct Provider: AppIntentTimelineProvider {
         
         let currentStation = currentStream.flag + " " + currentStream.language
 
-        let statusMessage: String = {
-            if visualState == .thermalPaused {
-                return String(localized: "status_thermal_paused", defaultValue: "Thermal pause", table: "Localizable")
-            } else if hasError {
-                return String(localized: "Connection error", defaultValue: "Connection error", table: "Localizable")
-            } else if visualState == .playing {
-                return String(localized: "status_playing", defaultValue: "Playing", table: "Localizable")
-            } else {
-                return String(localized: "Ready", defaultValue: "Ready", table: "Localizable")
-            }
-        }()
-        
+        // Derive from the single source of truth (makeStatusPresentation) instead of
+        // duplicating case-by-case text mapping. hasError path kept for compatibility
+        // (though getPendingOrCurrentState currently forces false; visual.securityLocked
+        // will produce the canonical security text via the mapper).
+        let pres = visualState.makeStatusPresentation()
+        let statusMessage: String = hasError
+            ? String(localized: "Connection error", defaultValue: "Connection error", table: "Localizable")
+            : pres.text
+
         let entry = SimpleEntry(
             date: Date(),
             visualState: visualState,
             currentStation: currentStation,
             currentLanguageCode: currentLanguage,
             statusMessage: statusMessage,
+            statusPresentation: pres,
             streamMetadata: streamMetadata,
             availableStreams: manager.availableStreams,
             configuration: configuration
@@ -206,17 +206,12 @@ struct Provider: AppIntentTimelineProvider {
         let currentStream = SharedPlayerManager.streamForLanguageCode(currentLanguage)
         let currentStation = currentStream.flag + " " + currentStream.language
 
-        let statusMessage: String = {
-            if visualState == .thermalPaused {
-                return String(localized: "status_thermal_paused", defaultValue: "Thermal pause", table: "Localizable")
-            } else if hasError {
-                return String(localized: "Connection error", defaultValue: "Connection error", table: "Localizable")
-            } else if visualState == .playing {
-                return String(localized: "status_playing", defaultValue: "Playing", table: "Localizable")
-            } else {
-                return String(localized: "Ready", defaultValue: "Ready", table: "Localizable")
-            }
-        }()
+        // Derive from the single source of truth (makeStatusPresentation) instead of
+        // duplicating case-by-case text mapping. Mirrors the timeline path.
+        let pres = visualState.makeStatusPresentation()
+        let statusMessage: String = hasError
+            ? String(localized: "Connection error", defaultValue: "Connection error", table: "Localizable")
+            : pres.text
 
         #if DEBUG
         print("[LutheranRadioWidget] Widget creating entry: visualState=\(visualState), station=\(currentStation)")
@@ -228,6 +223,7 @@ struct Provider: AppIntentTimelineProvider {
             currentStation: currentStation,
             currentLanguageCode: currentLanguage,
             statusMessage: statusMessage,
+            statusPresentation: pres,
             streamMetadata: streamMetadata,
             availableStreams: manager.availableStreams,
             configuration: configuration
@@ -268,6 +264,10 @@ struct SimpleEntry: TimelineEntry, Sendable {
     let currentStation: String
     let currentLanguageCode: String
     let statusMessage: String
+    /// Narrow presentation for the status indicator (text + associated colors).
+    /// Populated from `visualState.makeStatusPresentation()` (SSOT) in the provider.
+    /// Widget views consume this (or its `.text`) instead of duplicating mapping logic.
+    let statusPresentation: PlayerStatusPresentation
     let streamMetadata: StreamProgramMetadata?
     let availableStreams: [DirectStreamingPlayer.Stream]
     let configuration: RadioWidgetConfiguration
@@ -331,9 +331,9 @@ struct SmallWidgetView: View {
             .widgetURL(URL(string: "lutheranradio://open"))
         } else {
             VStack(spacing: 4) {
-                Text(entry.statusMessage)
+                Text(entry.statusPresentation.text)
                     .font(.caption2)
-                    .foregroundColor(entry.visualState.textColor.swiftUIColor)
+                    .foregroundStyle(entry.statusPresentation.foreground)
                     .lineLimit(1)
 
                 if entry.availableStreams.count > 1 {
@@ -438,9 +438,9 @@ struct MediumWidgetView: View {
                         .lineLimit(1)
                         .truncationMode(.tail)
                     Spacer(minLength: 0)
-                    Text(entry.statusMessage)
+                    Text(entry.statusPresentation.text)
                         .font(.caption2)
-                        .foregroundColor(entry.visualState.textColor.swiftUIColor)
+                        .foregroundStyle(entry.statusPresentation.foreground)
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
@@ -528,9 +528,9 @@ struct LargeWidgetView: View {
                         .fontWeight(.semibold)
                         .foregroundColor(.primary)
 
-                    Text(entry.statusMessage)
+                    Text(entry.statusPresentation.text)
                         .font(.subheadline)
-                        .foregroundColor(entry.visualState.textColor.swiftUIColor)
+                        .foregroundStyle(entry.statusPresentation.foreground)
                 }
 
                 WidgetMetadataRegion(model: metadata, layout: .large)
@@ -712,7 +712,6 @@ private func makePreviewEntry(
     visualState: PlayerVisualState,
     currentStation: String? = nil,
     currentLanguageCode: String = "en",
-    statusMessage: String = "Playing",
     programTitle: String? = nil,
     speaker: String? = nil
 ) -> SimpleEntry {
@@ -756,12 +755,18 @@ private func makePreviewEntry(
           ]
         : SharedPlayerManager.shared.availableStreams
 
+    // Always derive status presentation from the visualState (single source of truth).
+    // This removes any need for a statusMessage override in preview construction and
+    // ensures previews exercise the same mapper used at runtime.
+    let pres = visualState.makeStatusPresentation()
+
     return SimpleEntry(
         date: Date(),
         visualState: visualState,
         currentStation: station,
         currentLanguageCode: currentLanguageCode,
-        statusMessage: statusMessage,
+        statusMessage: pres.text,
+        statusPresentation: pres,
         streamMetadata: metadata,
         availableStreams: streams,
         configuration: RadioWidgetConfiguration()
@@ -772,7 +777,6 @@ private func makePreviewEntry(
 #Preview("1. userPaused + nil metadata", traits: .sizeThatFitsLayout) {
     MediumWidgetView(entry: makePreviewEntry(
         visualState: .userPaused,
-        statusMessage: String(localized: "Ready", defaultValue: "Ready", table: "Localizable"),
         programTitle: nil,
         speaker: nil
     ))
@@ -782,7 +786,6 @@ private func makePreviewEntry(
 #Preview("2. userPaused + title only", traits: .sizeThatFitsLayout) {
     LargeWidgetView(entry: makePreviewEntry(
         visualState: .userPaused,
-        statusMessage: String(localized: "Ready", defaultValue: "Ready", table: "Localizable"),
         programTitle: "Evening Prayer",
         speaker: nil
     ))
@@ -792,7 +795,6 @@ private func makePreviewEntry(
 #Preview("3. userPaused + title + speaker", traits: .sizeThatFitsLayout) {
     MediumWidgetView(entry: makePreviewEntry(
         visualState: .userPaused,
-        statusMessage: String(localized: "Ready", defaultValue: "Ready", table: "Localizable"),
         programTitle: "Sermon Title Here",
         speaker: "Rev. Martin Luther"
     ))
@@ -802,7 +804,6 @@ private func makePreviewEntry(
 #Preview("4. prePlay + nil (stream switch)", traits: .sizeThatFitsLayout) {
     LargeWidgetView(entry: makePreviewEntry(
         visualState: .prePlay,
-        statusMessage: String(localized: "Ready", defaultValue: "Ready", table: "Localizable"),
         programTitle: nil,
         speaker: nil
     ))
@@ -812,7 +813,6 @@ private func makePreviewEntry(
 #Preview("5. playing + nil (ICY pending)", traits: .sizeThatFitsLayout) {
     MediumWidgetView(entry: makePreviewEntry(
         visualState: .playing,
-        statusMessage: String(localized: "status_playing", defaultValue: "Playing", table: "Localizable"),
         programTitle: nil,
         speaker: nil
     ))
@@ -822,7 +822,6 @@ private func makePreviewEntry(
 #Preview("6. playing + title", traits: .sizeThatFitsLayout) {
     LargeWidgetView(entry: makePreviewEntry(
         visualState: .playing,
-        statusMessage: String(localized: "status_playing", defaultValue: "Playing", table: "Localizable"),
         programTitle: "The Means of Grace",
         speaker: nil
     ))
@@ -832,7 +831,6 @@ private func makePreviewEntry(
 #Preview("7. playing + title + speaker", traits: .sizeThatFitsLayout) {
     MediumWidgetView(entry: makePreviewEntry(
         visualState: .playing,
-        statusMessage: String(localized: "status_playing", defaultValue: "Playing", table: "Localizable"),
         programTitle: "Daily Chapel",
         speaker: "Dr. John T. Pless"
     ))
@@ -842,7 +840,6 @@ private func makePreviewEntry(
 #Preview("8. thermalPaused + metadata", traits: .sizeThatFitsLayout) {
     LargeWidgetView(entry: makePreviewEntry(
         visualState: .thermalPaused,
-        statusMessage: String(localized: "status_thermal_paused", defaultValue: "Thermal pause", table: "Localizable"),
         programTitle: "Last Known Program",
         speaker: "Speaker Name"
     ))
@@ -854,7 +851,6 @@ private func makePreviewEntry(
         visualState: .securityLocked,
         currentStation: "🇩🇪 Deutsch",
         currentLanguageCode: "de",
-        statusMessage: String(localized: "Connection error", defaultValue: "Connection error", table: "Localizable"),
         programTitle: "Protected Content",
         speaker: nil
     ))
@@ -864,7 +860,6 @@ private func makePreviewEntry(
 #Preview("10. securityLocked + nil (placeholder)", traits: .sizeThatFitsLayout) {
     LargeWidgetView(entry: makePreviewEntry(
         visualState: .securityLocked,
-        statusMessage: String(localized: "Connection error", defaultValue: "Connection error", table: "Localizable"),
         programTitle: nil,
         speaker: nil
     ))
