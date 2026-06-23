@@ -106,12 +106,11 @@ struct LutheranRadioWidgetControl: ControlWidget {
             ) { isPlaying in
                 Label {
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(value.visualState == .thermalPaused
-                             ? String(localized: "status_thermal_paused", defaultValue: "Thermal pause", table: "Localizable")
-                             : (value.visualState == .playing
-                                ? String(localized: "status_playing", defaultValue: "Playing", table: "Localizable")
-                                : String(localized: "status_stopped", defaultValue: "Stopped", table: "Localizable")))
-                        .font(.caption2)
+                        // Consume PlayerStatusPresentation (via makeStatusPresentation) so the
+                        // control widget uses the same text mapping as the home widget / main app.
+                        // This eliminates the local thermal/playing/stopped ternary duplication.
+                        Text(value.visualState.makeStatusPresentation().text)
+                            .font(.caption2)
                         Text(value.currentStation)
                             .font(.caption2)
                             .foregroundColor(.secondary)

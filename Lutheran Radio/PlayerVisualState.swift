@@ -38,6 +38,38 @@
 
 import Foundation
 import UIKit
+import SwiftUI
+
+// MARK: - PlayerStatusPresentation
+
+/// Narrow value type containing only the data required to render the player status indicator.
+///
+/// This type is intentionally minimal and value-semantic so that SwiftUI leaf views,
+/// widget entries, and Live Activity content can depend on a tiny Equatable input instead of
+/// the full policy-rich `PlayerVisualState`.
+///
+/// It carries SwiftUI-native `Color` (no repeated `Color(uiColor:)` bridging in bodies) plus
+/// localized text and an optional system image name for glyphs.
+///
+/// - Important: `PlayerVisualState` remains the Single Source of Truth for both presentation
+///   *and* resurrection/policy semantics. This type is a derived snapshot for display only.
+/// - Note: Changes to status colors or copy should be made in `makeStatusPresentation()`.
+/// - SeeAlso: ``PlayerVisualState/makeStatusPresentation()``, ``PlayerViewModel/statusPresentation``,
+///   CODING_AGENT.md (narrow inputs, value types, cached derived on @Observable).
+struct PlayerStatusPresentation: Equatable {
+    /// Background fill color for the status pill / indicator.
+    let background: Color
+
+    /// Foreground color for text (and optional image) drawn on the background.
+    let foreground: Color
+
+    /// Localized status text (e.g. "Playing", "Paused", "Connecting", ...).
+    let text: String
+
+    /// Optional SF Symbol name to accompany the text (e.g. "play.fill", "pause.fill", "lock.fill").
+    /// Consumers may ignore this if they render the glyph elsewhere (main player controls do).
+    let systemImage: String?
+}
 
 // MARK: - Playback Intent
 //
@@ -256,5 +288,69 @@ extension PlayerVisualState {
             return .prePlay   // only for brand-new launch
         }
     }
-    
+
+    // MARK: - Presentation mapping (pure, for SwiftUI + widgets)
+
+    /// Returns a narrow `PlayerStatusPresentation` derived from this visual state.
+    ///
+    /// This is the single canonical place that maps `PlayerVisualState` cases to
+    /// SwiftUI colors, localized status text, and an optional system image.
+    ///
+    /// - Important: Keep `PlayerVisualState` focused on policy and semantics
+    ///   (resurrection, auto-play, sticky pauses). Presentation details live here.
+    /// - Returns: A value-type struct suitable for direct use as a SwiftUI view input.
+    /// - Note: Uses the same localized keys as `PlaybackControlsView` so all 21 languages stay in sync.
+    /// - SeeAlso: ``PlayerStatusPresentation``, ``PlayerViewModel/statusPresentation``,
+    ///   CODING_AGENT.md (cache derived values on @Observable, narrow inputs for leaves).
+    func makeStatusPresentation() -> PlayerStatusPresentation {
+        switch self {
+        case .playing:
+            return PlayerStatusPresentation(
+                background: .green,
+                foreground: .white,
+                text: String(localized: "status_playing", table: "Localizable"),
+                systemImage: "play.fill"
+            )
+
+        case .prePlay:
+            return PlayerStatusPresentation(
+                background: .yellow,
+                foreground: .black,
+                text: String(localized: "status_connecting", table: "Localizable"),
+                systemImage: "play.circle"
+            )
+
+        case .cleared:
+            return PlayerStatusPresentation(
+                background: .blue,
+                foreground: .white,
+                text: String(localized: "clear_local_state_done", table: "Localizable"),
+                systemImage: nil
+            )
+
+        case .userPaused:
+            return PlayerStatusPresentation(
+                background: .gray,
+                foreground: .white,
+                text: String(localized: "status_paused", table: "Localizable"),
+                systemImage: "pause.fill"
+            )
+
+        case .thermalPaused:
+            return PlayerStatusPresentation(
+                background: .orange,
+                foreground: .white,
+                text: String(localized: "status_thermal_paused", table: "Localizable"),
+                systemImage: "pause.fill"
+            )
+
+        case .securityLocked:
+            return PlayerStatusPresentation(
+                background: .red,
+                foreground: .white,
+                text: String(localized: "status_security_failed", table: "Localizable"),
+                systemImage: "lock.fill"
+            )
+        }
+    }
 }

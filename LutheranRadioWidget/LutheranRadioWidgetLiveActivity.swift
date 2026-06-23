@@ -50,50 +50,14 @@ import AppIntents
 
 // MARK: - Live Activity Helpers
 //
-// These thin wrappers + status resolvers provide the Live Activity (both DI and
-// Lock Screen) with consistent presentation derived from the shared display models
-// and the authoritative snapshot. All helpers are private to this file.
-
-/// Maps `PlayerVisualState` to the indicator dot color used in Live Activity chrome.
-///
-/// Used in both the bottom status row (Dynamic Island) and the minimal/leading
-/// regions. Colors are deliberately high-level (green/orange/red/gray) rather
-/// than the exact `backgroundColor` values from the enum so the LA can remain
-/// legible inside the system-provided card / Dynamic Island surfaces.
-private func getStatusColor(_ visualState: PlayerVisualState) -> Color {
-    switch visualState {
-    case .thermalPaused: return .orange
-    case .securityLocked: return .red
-    case .playing:       return .green
-    case .prePlay, .cleared, .userPaused: return .gray
-    }
-}
-
-/// Derives the localized primary status string shown in Live Activity.
-///
-/// Replaces any legacy `streamStatus`. Sources `hasError` from `loadSharedState()`
-/// (which itself prefers the `PersistedWidgetState` snapshot) to stay in parity
-/// with the home widget timeline providers. The string is one of:
-/// - "Connection error"
-/// - localized "status_thermal_paused"
-/// - "LIVE"
-/// - "Ready"
-///
-/// - Note: All strings use the "Localizable" table via `String(localized:...)`.
-/// - SeeAlso: ``loadSharedState()`` in SharedPlayerManager, `getCurrentStreamStatus`
-///   usage sites below, WidgetDisplayModels.
-private func getCurrentStreamStatus(visualState: PlayerVisualState) -> String {
-    let hasError = SharedPlayerManager.shared.loadSharedState().hasError
-    if hasError {
-        return String(localized: "Connection error", defaultValue: "Connection error", table: "Localizable")
-    } else if visualState == .thermalPaused {
-        return String(localized: "status_thermal_paused", defaultValue: "Thermal pause", table: "Localizable")
-    } else if visualState.isActivelyPlaying {
-        return String(localized: "LIVE", defaultValue: "Live", table: "Localizable")
-    } else {
-        return String(localized: "Ready", defaultValue: "Ready", table: "Localizable")
-    }
-}
+// Status presentation is now obtained directly from `PlayerVisualState.makeStatusPresentation()`
+// (the single source of truth introduced for narrow inputs). Legacy `getStatusColor` /
+// `getCurrentStreamStatus` duplication over `PlayerVisualState` has been removed; call sites
+// below derive a `PlayerStatusPresentation` and use `.background`/`.text`/`.foreground` as
+// appropriate. Special "LIVE" indicator (red dot) in leading region is preserved as a
+// distinct live affordance (not general status text).
+//
+// Other helpers (language/flag/alts + widgetNowPlayingDisplayModel) remain.
 
 /// Returns the localized display name for a language code (e.g. "English").
 ///
@@ -375,12 +339,13 @@ struct LutheranRadioLiveActivityWidget: Widget {
                         streamMetadata: context.state.streamMetadata,
                         languageName: languageName
                     )
+                    let statusPres = context.state.visualState.makeStatusPresentation()
                     VStack(spacing: 6) {
                         VStack(spacing: 2) {
-                            Text(getCurrentStreamStatus(visualState: context.state.visualState))
+                            Text(statusPres.text)
                                 .font(.caption)
                                 .fontWeight(.medium)
-                                .foregroundColor(context.state.visualState.textColor.swiftUIColor)
+                                .foregroundStyle(statusPres.foreground)
                             
                             // Fixed metadata region (no conditional insertion) using shared model + emphasis.
                             Text(metadataModel.programTitle)
@@ -428,11 +393,12 @@ struct LutheranRadioLiveActivityWidget: Widget {
                 
                 DynamicIslandExpandedRegion(.bottom) {
                     HStack {
+                        let statusPres = context.state.visualState.makeStatusPresentation()
                         HStack(spacing: 4) {
                             Circle()
-                                .fill(getStatusColor(context.state.visualState))
+                                .fill(statusPres.background)
                                 .frame(width: 6, height: 6)
-                            Text(getCurrentStreamStatus(visualState: context.state.visualState))
+                            Text(statusPres.text)
                                 .font(.system(size: 10, weight: .medium))
                                 .foregroundColor(.secondary)
                         }
@@ -520,8 +486,9 @@ struct LutheranRadioLiveActivityWidget: Widget {
                 .buttonStyle(.plain)
             } minimal: {
                 ZStack {
+                    let statusPres = context.state.visualState.makeStatusPresentation()
                     Circle()
-                        .fill(getStatusColor(context.state.visualState).opacity(0.3))
+                        .fill(statusPres.background.opacity(0.3))
                         .frame(width: 18, height: 18)
                     
                     if context.state.visualState.isActivelyPlaying {
@@ -586,6 +553,7 @@ struct LockScreenLiveActivityView: View {
             streamMetadata: context.state.streamMetadata,
             languageName: languageName
         )
+        let statusPres = context.state.visualState.makeStatusPresentation()
         
         VStack(spacing: 6) {
             // Header
@@ -607,11 +575,11 @@ struct LockScreenLiveActivityView: View {
                     .lineLimit(1)
             }
             
-            // Status
-            Text(getCurrentStreamStatus(visualState: context.state.visualState))
+            // Status driven from PlayerStatusPresentation (via makeStatusPresentation()).
+            Text(statusPres.text)
                 .font(.caption)
                 .fontWeight(.medium)
-                .foregroundStyle(context.state.visualState.textColor.swiftUIColor)
+                .foregroundStyle(statusPres.foreground)
                 .lineLimit(1)
             
             // Metadata
