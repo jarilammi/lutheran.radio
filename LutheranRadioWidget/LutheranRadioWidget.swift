@@ -15,6 +15,14 @@ import Foundation
 // WidgetMetadataEmphasis, WidgetNowPlayingDisplayModel, and the core resolver
 // now live in WidgetDisplayModels.swift (shared with Live Activity code).
 // The thin adapter below preserves the existing call sites for medium/large widgets.
+//
+// Presentation surfaces in this file:
+// - statusPresentation (via makeStatusPresentation) is already carried on SimpleEntry
+//   and consumed for the status caption.
+// - controlPresentation (via makeControlPresentation) is the new parallel narrow type
+//   for the play/pause buttons. All three family views now use only the narrow value
+//   for glyph + tint decisions (see P0 recommendation in the 2026-06-24 presentation
+//   dataflow analysis).
 
 // Adapter: computes language name from the entry's streams (full 21-lang list)
 // then delegates to the shared resolver.
@@ -133,14 +141,17 @@ struct LutheranRadioWidget: Widget {
 struct Provider: AppIntentTimelineProvider {
     
     func placeholder(in context: Context) -> SimpleEntry {
-        let pres = PlayerVisualState.prePlay.makeStatusPresentation()
+        let vs = PlayerVisualState.prePlay
+        let pres = vs.makeStatusPresentation()
+        let controlPres = vs.makeControlPresentation()
         return SimpleEntry(
             date: Date(),
-            visualState: .prePlay,
+            visualState: vs,
             currentStation: "🇺🇸 " + String(localized: "language_english", table: "Localizable"),
             currentLanguageCode: "en",
             statusMessage: pres.text,
             statusPresentation: pres,
+            controlPresentation: controlPres,
             streamMetadata: nil,
             availableStreams: SharedPlayerManager.shared.availableStreams,
             configuration: RadioWidgetConfiguration()
@@ -172,6 +183,7 @@ struct Provider: AppIntentTimelineProvider {
         // (though getPendingOrCurrentState currently forces false; visual.securityLocked
         // will produce the canonical security text via the mapper).
         let pres = visualState.makeStatusPresentation()
+        let controlPres = visualState.makeControlPresentation()
         let statusMessage: String = hasError
             ? String(localized: "Connection error", defaultValue: "Connection error", table: "Localizable")
             : pres.text
@@ -183,6 +195,7 @@ struct Provider: AppIntentTimelineProvider {
             currentLanguageCode: currentLanguage,
             statusMessage: statusMessage,
             statusPresentation: pres,
+            controlPresentation: controlPres,
             streamMetadata: streamMetadata,
             availableStreams: manager.availableStreams,
             configuration: configuration
@@ -206,9 +219,12 @@ struct Provider: AppIntentTimelineProvider {
         let currentStream = SharedPlayerManager.streamForLanguageCode(currentLanguage)
         let currentStation = currentStream.flag + " " + currentStream.language
 
-        // Derive from the single source of truth (makeStatusPresentation) instead of
-        // duplicating case-by-case text mapping. Mirrors the timeline path.
+        // Derive from the single sources of truth (makeStatusPresentation + makeControlPresentation)
+        // instead of duplicating case-by-case text/glyph mapping. Both narrow values are
+        // stored on the TimelineEntry snapshot so that family views receive only the slices
+        // they render. Mirrors the timeline path and Live Activity "derive once at top" rule.
         let pres = visualState.makeStatusPresentation()
+        let controlPres = visualState.makeControlPresentation()
         let statusMessage: String = hasError
             ? String(localized: "Connection error", defaultValue: "Connection error", table: "Localizable")
             : pres.text
@@ -224,6 +240,7 @@ struct Provider: AppIntentTimelineProvider {
             currentLanguageCode: currentLanguage,
             statusMessage: statusMessage,
             statusPresentation: pres,
+            controlPresentation: controlPres,
             streamMetadata: streamMetadata,
             availableStreams: manager.availableStreams,
             configuration: configuration
@@ -264,10 +281,35 @@ struct SimpleEntry: TimelineEntry, Sendable {
     let currentStation: String
     let currentLanguageCode: String
     let statusMessage: String
+
     /// Narrow presentation for the status indicator (text + associated colors).
-    /// Populated from `visualState.makeStatusPresentation()` (SSOT) in the provider.
-    /// Widget views consume this (or its `.text`) instead of duplicating mapping logic.
+    /// Populated from `visualState.makeStatusPresentation()` (the single canonical mapper)
+    /// inside the provider paths. Widget family views consume this directly rather than
+    /// re-reading `visualState` for status concerns. Reduces invalidation surface.
+    ///
+    /// - SeeAlso: `PlayerStatusPresentation`, ``PlayerVisualState/makeStatusPresentation()``,
+    ///   `controlPresentation` (the parallel narrow type for play/pause controls).
     let statusPresentation: PlayerStatusPresentation
+
+    /// Narrow presentation for the primary play/pause control affordance.
+    ///
+    /// Populated from `visualState.makeControlPresentation()` (SSOT) in the provider.
+    /// Contains only the `systemImage` ("play.fill" / "pause.fill") and `tint` Color
+    /// needed by the control button. This is the control-axis counterpart to
+    /// `statusPresentation`.
+    ///
+    /// All three family views (Small/Medium/Large) now read the play/pause
+    /// `Image(systemName:)` and foreground tint exclusively from this value.
+    ///
+    /// Why: WidgetKit snapshots are value types compared field-by-field. Handing
+    /// only the slices a leaf needs (instead of the whole visualState) shrinks
+    /// the set of changes that cause body re-evaluation for the button.
+    ///
+    /// - SeeAlso: `PlayerControlPresentation`, ``PlayerVisualState/makeControlPresentation()``,
+    ///   `statusPresentation`, LutheranRadioWidgetLiveActivity (same derivation pattern
+    ///   performed once at the top of LockScreen / outer DynamicIsland closure).
+    let controlPresentation: PlayerControlPresentation
+
     let streamMetadata: StreamProgramMetadata?
     let availableStreams: [DirectStreamingPlayer.Stream]
     let configuration: RadioWidgetConfiguration
@@ -356,10 +398,13 @@ struct SmallWidgetView: View {
 
                 Spacer(minLength: 0)
 
+                // Control affordance sourced exclusively from the narrow pre-derived
+                // PlayerControlPresentation (populated via makeControlPresentation in the Provider).
+                // This removes the last direct read of visualState for glyph/tint inside SmallWidgetView.
                 Button(intent: WidgetToggleRadioIntent()) {
-                    Image(systemName: entry.visualState.isActivelyPlaying ? "pause.fill" : "play.fill")
+                    Image(systemName: entry.controlPresentation.systemImage)
                         .font(.title2)
-                        .foregroundColor(entry.visualState.buttonTintColor.swiftUIColor)
+                        .foregroundColor(entry.controlPresentation.tint)
                 }
                 .buttonStyle(.plain)
             }
@@ -422,10 +467,11 @@ struct MediumWidgetView: View {
                         .foregroundColor(.secondary)
                         .lineLimit(1)
                     Spacer()
+                    // Control affordance from narrow PlayerControlPresentation (SSOT derivation).
                     Button(intent: WidgetToggleRadioIntent()) {
-                        Image(systemName: entry.visualState.isActivelyPlaying ? "pause.fill" : "play.fill")
+                        Image(systemName: entry.controlPresentation.systemImage)
                             .font(.title3)
-                            .foregroundColor(entry.visualState.buttonTintColor.swiftUIColor)
+                            .foregroundColor(entry.controlPresentation.tint)
                     }
                     .buttonStyle(.plain)
                 }
@@ -514,10 +560,11 @@ struct LargeWidgetView: View {
                         .font(.headline)
                         .fontWeight(.bold)
                     Spacer()
+                    // Control affordance from narrow PlayerControlPresentation (SSOT derivation).
                     Button(intent: WidgetToggleRadioIntent()) {
-                        Image(systemName: entry.visualState.isActivelyPlaying ? "pause.fill" : "play.fill")
+                        Image(systemName: entry.controlPresentation.systemImage)
                             .font(.title2)
-                            .foregroundColor(entry.visualState.buttonTintColor.swiftUIColor)
+                            .foregroundColor(entry.controlPresentation.tint)
                     }
                     .buttonStyle(.plain)
                 }
@@ -703,6 +750,10 @@ public struct RadioWidgetConfiguration: WidgetConfigurationIntent {
 // across PlayerVisualState values and metadata presence (nil / title only / title + speaker).
 // The same model is used by Live Activity.
 //
+// Every preview entry is built with both `statusPresentation` (makeStatusPresentation)
+// and `controlPresentation` (makeControlPresentation) so the matrix exercises the
+// full narrow presentation contract used by providers and Live Activity views.
+//
 // Use the Xcode canvas to inspect emphasis levels (active / subdued / placeholder)
 // and confirm the title + speaker slots remain stable (no conditional insertion).
 
@@ -755,10 +806,12 @@ private func makePreviewEntry(
           ]
         : SharedPlayerManager.shared.availableStreams
 
-    // Always derive status presentation from the visualState (single source of truth).
-    // This removes any need for a statusMessage override in preview construction and
-    // ensures previews exercise the same mapper used at runtime.
+    // Always derive status + control presentation from the visualState (single sources of truth).
+    // This removes any need for overrides in preview construction and ensures the
+    // exhaustive preview matrix exercises both mappers (status + control) used at runtime
+    // by providers and Live Activity views.
     let pres = visualState.makeStatusPresentation()
+    let controlPres = visualState.makeControlPresentation()
 
     return SimpleEntry(
         date: Date(),
@@ -767,6 +820,7 @@ private func makePreviewEntry(
         currentLanguageCode: currentLanguageCode,
         statusMessage: pres.text,
         statusPresentation: pres,
+        controlPresentation: controlPres,
         streamMetadata: metadata,
         availableStreams: streams,
         configuration: RadioWidgetConfiguration()

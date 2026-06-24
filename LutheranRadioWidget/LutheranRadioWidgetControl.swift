@@ -116,7 +116,12 @@ struct LutheranRadioWidgetControl: ControlWidget {
                             .foregroundColor(.secondary)
                     }
                 } icon: {
-                    Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                    // Source the control glyph from the canonical mapper (parallel to how the
+                    // label text above uses makeStatusPresentation). This eliminates the
+                    // inline ternary on the semantic isPlaying flag for presentation purposes.
+                    // isPlaying (derived from visualState.isActivelyPlaying) is still used
+                    // for the ControlWidgetToggle isOn contract (semantic toggle state).
+                    Image(systemName: value.visualState.makeControlPresentation().systemImage)
                 }
             }
         }
@@ -126,6 +131,14 @@ struct LutheranRadioWidgetControl: ControlWidget {
 }
 
 extension LutheranRadioWidgetControl {
+    /// Snapshot value for the Control Widget.
+    ///
+    /// Carries the authoritative visualState (from persisted snapshot) so that
+    /// status text can be derived via `makeStatusPresentation()` and the control
+    /// glyph via `makeControlPresentation()`.
+    ///
+    /// `isPlaying` is intentionally kept as a semantic Bool for the `SetValueIntent`
+    /// / toggle contract. Presentation glyph choice no longer re-tests it directly.
     struct Value: Sendable {
         let visualState: PlayerVisualState
         let currentStation: String

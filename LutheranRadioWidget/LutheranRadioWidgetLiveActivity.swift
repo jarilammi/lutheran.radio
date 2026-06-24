@@ -32,11 +32,23 @@
 // - This file contains *no* security, certificate, or DNS logic. Security lives
 //   exclusively in `Core/` (see CODING_AGENT.md "Core Framework Surface Area").
 //
+// Presentation derivation (snapshot-driven):
+// - Status: `makeStatusPresentation()` (already adopted in several sites).
+// - Controls: `makeControlPresentation()` → `PlayerControlPresentation`.
+//   Computed once near the top of `LockScreenLiveActivityView.body` and once
+//   inside the outer `dynamicIsland` closure, then closed over by region builders
+//   that render the play/pause button. This follows the same "narrow input" and
+//   "move derivation out of bodies" principles used for status and metadata.
+// - `isActivelyPlaying` is retained for semantic concerns inside regions:
+//   LIVE dot, animation bars, "Local Only" vs bars, etc.
+//
 // - SeeAlso: `LutheranRadioLiveActivityAttributes`, `SharedPlayerManager`
 //   (PersistedWidgetState, load*/persist*, userRequestedPlay, preferredWidgetLanguage),
-//   `PlayerVisualState`, `WidgetDisplayModels`, `RadioLiveActivityManager`,
+//   `PlayerVisualState` (makeStatusPresentation + makeControlPresentation),
+//   `PlayerControlPresentation`, `WidgetDisplayModels`, `RadioLiveActivityManager`,
 //   CODING_AGENT.md (Single Source of Truth Principles + "Cross-target shared
-//   source files (non-Core)"), <doc:Architecture>, README.md.
+//   source files (non-Core)", narrow inputs for WidgetKit/ActivityKit),
+//   <doc:Architecture>, README.md.
 //
 // AGENT NOTE: This is presentation + intent surface only. State mutations belong
 // in SharedPlayerManager. When editing views or intents, keep the explicit-play
@@ -56,6 +68,15 @@ import AppIntents
 // below derive a `PlayerStatusPresentation` and use `.background`/`.text`/`.foreground` as
 // appropriate. Special "LIVE" indicator (red dot) in leading region is preserved as a
 // distinct live affordance (not general status text).
+//
+// Control presentation (play/pause glyph + tint) follows the identical pattern:
+// `makeControlPresentation()` produces a `PlayerControlPresentation` that is computed
+// once at the top of LockScreenLiveActivityView and the outer DynamicIsland closure
+// (not re-derived inside each region). The play/pause buttons in trailing/compactTrailing
+// and the Lock Screen row now consume only the narrow result.
+//
+// `isActivelyPlaying` remains for semantic decisions (LIVE dot, equalizer animations,
+// "Local Only" label). Non-control uses of `buttonTintColor` (e.g. the radio glyph) also remain.
 //
 // Other helpers (language/flag/alts + widgetNowPlayingDisplayModel) remain.
 
@@ -256,7 +277,17 @@ struct LutheranRadioLiveActivityWidget: Widget {
             LockScreenLiveActivityView(context: context)
                 .widgetURL(URL(string: "lutheranradio://open"))
         } dynamicIsland: { context in
-            DynamicIsland {
+            // Derive narrow presentations once at the outer closure level for the DynamicIsland.
+            // This bounds derivation work to once per Live Activity update (per the dataflow
+            // analysis recommendations) rather than re-deriving inside independent region builders.
+            // Status is already partially derived inside some regions; we add control here and
+            // use it for the two play/pause button sites (trailing + compactTrailing).
+            let controlPres = context.state.visualState.makeControlPresentation()
+
+            // Explicit return required once the closure body contains statements (let bindings)
+            // before the DynamicIsland builder expression. The multi-trailing-closure call
+            // no longer qualifies as an implicit-return single-expression closure.
+            return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
                     HStack(spacing: 8) {
                         ZStack {
@@ -304,14 +335,17 @@ struct LutheranRadioLiveActivityWidget: Widget {
                     VStack(spacing: 8) {
                         Button(intent: LiveActivityTogglePlaybackIntent()) {
                             ZStack {
+                                // Background circle tinting still references the semantic tint surface for
+                                // the established visual treatment. The glyph itself now comes from the
+                                // outer-derived narrow control presentation.
                                 Circle()
-                                    .fill(context.state.visualState.buttonTintColor.swiftUIColor.opacity(0.2))
+                                    .fill(controlPres.tint.opacity(0.2))
                                     .frame(width: 44, height: 44)
                                 
-                                Image(systemName: context.state.visualState.isActivelyPlaying ? "pause.fill" : "play.fill")
+                                Image(systemName: controlPres.systemImage)
                                     .font(.title3)
                                     .fontWeight(.semibold)
-                                    .foregroundColor(context.state.visualState.buttonTintColor.swiftUIColor)
+                                    .foregroundColor(controlPres.tint)
                             }
                         }
                         .buttonStyle(.plain)
@@ -474,13 +508,16 @@ struct LutheranRadioLiveActivityWidget: Widget {
             } compactTrailing: {
                 Button(intent: LiveActivityTogglePlaybackIntent()) {
                     ZStack {
+                        // Use the once-computed narrow control presentation for both the circle
+                        // background tint and the play/pause glyph. This is the compact trailing
+                        // equivalent of the expanded trailing button.
                         Circle()
-                            .fill(context.state.visualState.buttonTintColor.swiftUIColor.opacity(0.3))
+                            .fill(controlPres.tint.opacity(0.3))
                             .frame(width: 20, height: 20)
                         
-                        Image(systemName: context.state.visualState.isActivelyPlaying ? "pause.fill" : "play.fill")
+                        Image(systemName: controlPres.systemImage)
                             .font(.system(size: 10, weight: .semibold))
-                            .foregroundColor(context.state.visualState.buttonTintColor.swiftUIColor)
+                            .foregroundColor(controlPres.tint)
                     }
                 }
                 .buttonStyle(.plain)
@@ -517,6 +554,13 @@ struct LutheranRadioLiveActivityWidget: Widget {
 /// row insertion. Language switching and playback toggle are provided by the
 /// two Live Activity intents.
 ///
+/// Derivation at the top of body:
+/// - `statusPres = makeStatusPresentation()`
+/// - `metadataModel = widgetNowPlayingDisplayModel(...)`
+/// - `controlPres = makeControlPresentation()` (plus local variant for circle chrome)
+/// These three narrow values (plus a few primitives) are the only things the sub-layout
+/// reads. This is the Live Activity analogue of the widget Provider → SimpleEntry pattern.
+
 /// - Important: This view is rendered by iOS inside a system-provided rounded card
 ///   on the lock screen. The system allocates a constrained vertical content area
 ///   (above the "Avaa pyyhkäisemällä ylös" / swipe affordance). Fixed min-heights,
@@ -554,6 +598,15 @@ struct LockScreenLiveActivityView: View {
             languageName: languageName
         )
         let statusPres = context.state.visualState.makeStatusPresentation()
+        // Compute the narrow control presentation once at the top (mirrors status + metadata
+        // pattern). The play/pause button and its tint below read exclusively from this value.
+        // Semantic uses of isActivelyPlaying (for label copy) are left in place; only the
+        // glyph + tint decision for the control moves to the narrow type.
+        let controlPres = context.state.visualState.makeControlPresentation()
+        // Lock Screen uses circle variants of the control glyphs for visual weight.
+        // Derive the exact variant name purely from the narrow control presentation value
+        // (no re-inspection of visualState or isActivelyPlaying for glyph choice).
+        let lockScreenControlImage = controlPres.systemImage == "pause.fill" ? "pause.circle.fill" : "play.circle.fill"
         
         VStack(spacing: 6) {
             // Header
@@ -623,11 +676,17 @@ struct LockScreenLiveActivityView: View {
                 
                 Button(intent: LiveActivityTogglePlaybackIntent()) {
                     VStack(spacing: 2) {
-                        Image(systemName: context.state.visualState.isActivelyPlaying
-                              ? "pause.circle.fill" : "play.circle.fill")
+                        // Glyph chosen from the once-computed narrow control presentation (circle variant
+                        // selected locally for Lock Screen visual weight). Tint comes directly from the
+                        // narrow presentation. No direct visualState.isActivelyPlaying or buttonTintColor
+                        // read remains for this control button.
+                        Image(systemName: lockScreenControlImage)
                             .font(.title2)
-                            .foregroundStyle(context.state.visualState.buttonTintColor.swiftUIColor)
+                            .foregroundStyle(controlPres.tint)
                         
+                        // Label copy decision kept on the semantic isActivelyPlaying flag (not presentation).
+                        // This distinguishes "what the button shows" (controlPres) from "what label text
+                        // accompanies it" (state-driven copy). Matches prior behavior exactly.
                         Text(context.state.visualState.isActivelyPlaying
                              ? String(localized: "status_paused", defaultValue: "Paused", table: "Localizable")
                              : String(localized: "Play", defaultValue: "Play", table: "Localizable"))

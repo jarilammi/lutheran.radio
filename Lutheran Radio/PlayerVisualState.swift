@@ -15,6 +15,15 @@
 // (`PlayerVisualState`, `PlaybackIntent`, `StopReason`, `PlaybackAttachContext`)
 // that are used for UI, widgets, Live Activities, and App Intents.
 //
+// Presentation surfaces (narrow derived value types):
+// - `PlayerStatusPresentation` + `makeStatusPresentation()`: status pill/indicator
+//   (background, foreground, text, optional systemImage). Used by main player,
+//   home widgets (SimpleEntry), Live Activities, and Control widget.
+// - `PlayerControlPresentation` + `makeControlPresentation()`: primary play/pause
+//   control affordance (systemImage + tint Color). Captures glyph choice and
+//   tinting so widget/Live Activity leaf regions and buttons receive only the
+//   data they render.
+//
 // Key invariants:
 // - `PlayerVisualState` + `PlaybackIntent` (via `SharedPlayerManager`) are
 //   the Single Source of Truth answering "what should the UI/widget show?"
@@ -24,15 +33,21 @@
 // - .cleared visual (blue + "clear_local_state_done") exists to give sighted confirmation
 //   of a successful privacy reset (intent is the actual blocker; post-clear launches use
 //   .prePlay because no snapshot is persisted).
+// - `isActivelyPlaying` and `buttonTintColor` remain on `PlayerVisualState` for
+//   semantic/policy decisions (LIVE indicator visibility, animation triggers,
+//   resurrection, intent calculations). Only pure glyph+tint *presentation* reads
+//   for play/pause controls are expected to migrate to the narrow control type.
 // - These types are persisted (Codable) in `PersistedWidgetState` for
 //   cross-process optimistic state. No PII.
 // - This file contains *no* security logic. Security decisions live only in
 //   `Core/` (see CODING_AGENT.md "Core Framework Surface Area").
 //
 // - SeeAlso: `SharedPlayerManager` (the actor owning mutation + persistence),
-//   `PersistedWidgetState`, CODING_AGENT.md (Single Source of Truth Principles,
-//   "Cross-target shared source files (non-Core)"), README.md (Single Sources
-//   of Truth table).
+//   `PersistedWidgetState`, `PlayerStatusPresentation`, `PlayerControlPresentation`,
+//   CODING_AGENT.md (Single Source of Truth Principles, "Cross-target shared
+//   source files (non-Core)", Documentation & Comment Standards),
+//   WidgetDisplayModels.swift (the parallel metadata/emphasis axis),
+//   README.md (Single Sources of Truth table).
 // - AGENT NOTE: Any change to these enums or their semantics must also update
 //   the resurrection tables and guards inside SharedPlayerManager.swift.
 
@@ -51,11 +66,16 @@ import SwiftUI
 /// It carries SwiftUI-native `Color` (no repeated `Color(uiColor:)` bridging in bodies) plus
 /// localized text and an optional system image name for glyphs.
 ///
+/// Parallel narrow type: `PlayerControlPresentation` + `makeControlPresentation()` handles
+/// the play/pause button glyph and tint decisions for widgets and Live Activities.
+///
 /// - Important: `PlayerVisualState` remains the Single Source of Truth for both presentation
 ///   *and* resurrection/policy semantics. This type is a derived snapshot for display only.
 /// - Note: Changes to status colors or copy should be made in `makeStatusPresentation()`.
-/// - SeeAlso: ``PlayerVisualState/makeStatusPresentation()``, ``PlayerViewModel/statusPresentation``,
-///   CODING_AGENT.md (narrow inputs, value types, cached derived on @Observable).
+/// - SeeAlso: ``PlayerVisualState/makeStatusPresentation()``, ``PlayerControlPresentation``,
+///   ``PlayerVisualState/makeControlPresentation()``, ``PlayerViewModel/statusPresentation``,
+///   `SimpleEntry.statusPresentation`, CODING_AGENT.md (narrow inputs, value types,
+///   cached derived on @Observable, Widget & Live Activity presentation dataflow).
 struct PlayerStatusPresentation: Equatable {
     /// Background fill color for the status pill / indicator.
     let background: Color
@@ -69,6 +89,54 @@ struct PlayerStatusPresentation: Equatable {
     /// Optional SF Symbol name to accompany the text (e.g. "play.fill", "pause.fill", "lock.fill").
     /// Consumers may ignore this if they render the glyph elsewhere (main player controls do).
     let systemImage: String?
+}
+
+// MARK: - PlayerControlPresentation
+
+/// Narrow value type containing only the data required to render the primary playback control (play/pause button).
+///
+/// This is the direct parallel to `PlayerStatusPresentation` for the control affordance axis.
+/// It exists so that WidgetKit TimelineEntry consumers (`SimpleEntry`) and ActivityKit
+/// `ContentState` / `ActivityViewContext` consumers can depend on a tiny `Equatable` input
+/// for glyph choice and tint instead of the full policy `PlayerVisualState`.
+///
+/// - `systemImage`: The SF Symbol name to use for the toggle ("play.fill" when not actively playing,
+///   "pause.fill" when `isActivelyPlaying`). Consumers may append ".circle" or other variants
+///   for specific chrome (Lock Screen uses circle variants) while still sourcing the base decision here.
+/// - `tint`: SwiftUI `Color` (derived once via `makeControlPresentation`) so repeated
+///   `Color(uiColor:)` or `.swiftUIColor` bridging does not occur inside view bodies or region closures.
+///
+/// Why this narrow type (even without @Observable):
+/// WidgetKit and ActivityKit deliver frozen value-type snapshots. Re-evaluation of bodies
+/// and Dynamic Island regions happens on field-wise comparison of the supplied input.
+/// A `SimpleEntry` or `ContentState` carrying the full `visualState` means any change
+/// (even an unrelated field) can cause re-execution of control button rendering. By pre-deriving
+/// (widgets: in Provider) or computing once at the top of the view/outer closure (Live Activities)
+/// and handing only `PlayerControlPresentation`, we shrink the invalidation surface for the
+/// control button and keep derivation logic out of the view layer (see swiftui-specialist
+/// dataflow.md principles applied to snapshot model).
+///
+/// - Important: `PlayerVisualState` remains the Single Source of Truth for policy and
+///   resurrection semantics. This type is a pure derived snapshot for display only.
+/// - Note: Glyph decision is intentionally driven by `isActivelyPlaying` (playing → pause
+///   affordance). `buttonTintColor` supplies the tint. Changes to mapping belong here.
+/// - SeeAlso: ``PlayerStatusPresentation``, ``PlayerVisualState/makeStatusPresentation()``,
+///   ``PlayerVisualState/makeControlPresentation()``, `SimpleEntry.controlPresentation`,
+///   `LutheranRadioLiveActivityAttributes.ContentState`,
+///   CODING_AGENT.md (narrow inputs for value types + WidgetKit/ActivityKit snapshot constraints),
+///   WidgetDisplayModels.swift (sibling presentation axis for metadata/emphasis).
+struct PlayerControlPresentation: Equatable {
+    /// SF Symbol name for the playback toggle control.
+    ///
+    /// Typically "play.fill" or "pause.fill". Consumers are free to use variant forms
+    /// (e.g. "play.circle.fill") when the design calls for it, but the choice of which
+    /// base glyph (play vs pause) must be driven by this value.
+    let systemImage: String
+
+    /// Tint color to apply to the control glyph (and commonly to its enclosing circle or background).
+    ///
+    /// Already a SwiftUI `Color` so leaf buttons and regions do not perform UIColor bridging.
+    let tint: Color
 }
 
 // MARK: - Playback Intent
@@ -194,10 +262,30 @@ enum PlayerVisualState: Codable, Equatable {
         case .securityLocked: return .systemRed
         }
     }
+
+    // NOTE (presentation vs policy):
+    // `buttonTintColor` (and `backgroundColor`/`textColor`) are the legacy UIColor
+    // surface. Widget + Live Activity control presentation now derives once via
+    // `makeControlPresentation()` which returns SwiftUI Color + glyph. Direct reads
+    // of buttonTintColor for play/pause tinting are being replaced by the narrow type.
+    // Non-control uses (e.g. radio glyph in leading region) may continue to read it.
     
     // MARK: - Semantic properties
     
-    /// True only when audio is actively playing
+    /// True only when audio is actively playing.
+    ///
+    /// This is a *semantic* / policy property, not a presentation helper.
+    /// It is intentionally retained on `PlayerVisualState` for:
+    /// - Resurrection and auto-play guards
+    /// - LIVE indicator visibility and animation presence in widgets / Live Activities
+    /// - Intent decisions inside AppIntent handlers (WidgetToggleRadioIntent, etc.)
+    ///
+    /// Pure glyph choice ("play.fill" vs "pause.fill") and tint application for the
+    /// control *button itself* should use `makeControlPresentation()` instead.
+    /// See the widget and Live Activity migration for the narrow pattern.
+    ///
+    /// - SeeAlso: ``makeControlPresentation()``, ``shouldAutoPlayOrResume``,
+    ///   CODING_AGENT.md (isActivelyPlaying may remain for semantic decisions).
     var isActivelyPlaying: Bool {
         self == .playing
     }
@@ -296,12 +384,18 @@ extension PlayerVisualState {
     /// This is the single canonical place that maps `PlayerVisualState` cases to
     /// SwiftUI colors, localized status text, and an optional system image.
     ///
+    /// Status presentation is the "indicator" axis (pill / caption text + background).
+    /// See the sibling `makeControlPresentation()` for the orthogonal "primary action
+    /// affordance" axis (play/pause glyph + tint).
+    ///
     /// - Important: Keep `PlayerVisualState` focused on policy and semantics
     ///   (resurrection, auto-play, sticky pauses). Presentation details live here.
     /// - Returns: A value-type struct suitable for direct use as a SwiftUI view input.
     /// - Note: Uses the same localized keys as `PlaybackControlsView` so all 21 languages stay in sync.
-    /// - SeeAlso: ``PlayerStatusPresentation``, ``PlayerViewModel/statusPresentation``,
-    ///   CODING_AGENT.md (cache derived values on @Observable, narrow inputs for leaves).
+    /// - SeeAlso: ``PlayerStatusPresentation``, ``makeControlPresentation()``,
+    ///   ``PlayerControlPresentation``, ``PlayerViewModel/statusPresentation``,
+    ///   `SimpleEntry.statusPresentation`, CODING_AGENT.md (cache derived values on @Observable,
+    ///   narrow inputs for leaves, WidgetKit/ActivityKit snapshot constraints).
     func makeStatusPresentation() -> PlayerStatusPresentation {
         switch self {
         case .playing:
@@ -352,5 +446,35 @@ extension PlayerVisualState {
                 systemImage: "lock.fill"
             )
         }
+    }
+
+    // MARK: - Control presentation mapping (pure, for widgets + Live Activities)
+
+    /// Returns a narrow `PlayerControlPresentation` derived from this visual state.
+    ///
+    /// This is the single canonical mapper for the play/pause control glyph and its tint.
+    /// It is the control-axis counterpart to `makeStatusPresentation()`.
+    ///
+    /// - Returns: A minimal Equatable value type carrying only `systemImage` ("play.fill"/"pause.fill")
+    ///   and `tint` (as SwiftUI Color). Suitable for direct consumption by widget buttons,
+    ///   Dynamic Island region closures, Lock Screen Live Activity controls, and the Control widget.
+    /// - Precondition: Called on any `PlayerVisualState`; always produces a defined presentation.
+    /// - Note: The glyph choice is deliberately based on `isActivelyPlaying` (the semantic
+    ///   "audio is flowing" flag) so that the affordance matches user expectation:
+    ///   actively playing → pause control visible; otherwise → play control.
+    ///   Tint comes from the existing `buttonTintColor` policy (yellow/green/gray/blue/red...).
+    /// - Complexity: O(1) switch + Color(uiColor:) conversion.
+    /// - SeeAlso: ``PlayerControlPresentation``, ``PlayerStatusPresentation``,
+    ///   ``makeStatusPresentation()``, `SimpleEntry` (receives the pre-derived value in providers),
+    ///   `LutheranRadioWidgetLiveActivityWidget` (derives once per DynamicIsland / LockScreen),
+    ///   CODING_AGENT.md (narrow inputs, value-type snapshot comparison cost,
+    ///   "Pass views only the data they read"), WidgetDisplayModels.swift.
+    func makeControlPresentation() -> PlayerControlPresentation {
+        let imageName = isActivelyPlaying ? "pause.fill" : "play.fill"
+        // Use explicit UIColor initializer so the conversion is visible and consistent
+        // with the UIColor-based policy properties on PlayerVisualState. The resulting
+        // Color is stored in the narrow type so repeated bridging is avoided in bodies.
+        let tint = Color(uiColor: buttonTintColor)
+        return PlayerControlPresentation(systemImage: imageName, tint: tint)
     }
 }

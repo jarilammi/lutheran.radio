@@ -7296,7 +7296,8 @@
             "value" : "Klar"
           }
         }
-      }
+      },
+      "extractionState" : "stale"
     },
     "Ready to play" : {
       "localizations" : {
@@ -7426,7 +7427,8 @@
             "value" : "Klar för uppspelning"
           }
         }
-      }
+      },
+      "extractionState" : "stale"
     },
     "security_model_error_message" : {
       "localizations" : {

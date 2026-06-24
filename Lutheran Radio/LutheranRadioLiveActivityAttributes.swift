@@ -23,8 +23,18 @@
 // - This file contains *no* security logic. Security decisions live only in
 //   `Core/` (see CODING_AGENT.md "Core Framework Surface Area").
 //
-// - SeeAlso: `SharedPlayerManager` (source of the snapshot), `PlayerVisualState`,
-//   `StreamProgramMetadata`, `LutheranRadioWidgetLiveActivity.swift`,
+// Presentation contract:
+// The broad `visualState` inside ContentState is the policy snapshot. Live Activity
+// views derive narrow presentations at consumption time:
+// - `visualState.makeStatusPresentation()` → status text/colors
+// - `visualState.makeControlPresentation()` → play/pause glyph + tint
+// (computed once per view or outer DynamicIsland closure, then passed inward).
+// See LutheranRadioWidgetLiveActivity.swift and PlayerVisualState.swift.
+//
+// - SeeAlso: `SharedPlayerManager` (source of the snapshot), `PlayerVisualState`
+//   (makeStatusPresentation, makeControlPresentation, PlayerStatusPresentation,
+//   PlayerControlPresentation), `StreamProgramMetadata`,
+//   `LutheranRadioWidgetLiveActivity.swift`, WidgetDisplayModels.swift,
 //   CODING_AGENT.md (Single Source of Truth Principles + "Cross-target shared
 //   source files (non-Core)"), README.md.
 

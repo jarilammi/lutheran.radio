@@ -17,6 +17,12 @@ import Foundation
 // and Dynamic Island expanded region). Widget- and LA-specific layout details
 // (fonts, spacing, alignment) stay in the respective view files.
 //
+// Parallel narrow presentation surfaces (orthogonal to metadata):
+// - PlayerStatusPresentation / makeStatusPresentation (status indicator axis)
+// - PlayerControlPresentation / makeControlPresentation (play/pause control axis)
+// Both live on PlayerVisualState and are the canonical mappers for their concerns.
+// WidgetDisplayModels is the SSOT specifically for the title/speaker/emphasis axis.
+//
 // All user-visible strings use String(localized: "key", table: "Localizable", ...) with explicit table.
 
 internal enum WidgetMetadataEmphasis {
