@@ -75,7 +75,7 @@ import SwiftUI
 /// - SeeAlso: ``PlayerVisualState/makeStatusPresentation()``, ``PlayerControlPresentation``,
 ///   ``PlayerVisualState/makeControlPresentation()``, ``PlayerViewModel/statusPresentation``,
 ///   `SimpleEntry.statusPresentation`, CODING_AGENT.md (narrow inputs, value types,
-///   cached derived on @Observable, Widget & Live Activity presentation dataflow).
+///   cached derived on @Observable, docs/Widget-Presentation-Dataflow.md).
 struct PlayerStatusPresentation: Equatable {
     /// Background fill color for the status pill / indicator.
     let background: Color

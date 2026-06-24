@@ -5,62 +5,86 @@
 //  Created by Jari Lammi on 12.6.2026.
 //
 
+// SHARED: Cross-target source (main app + LutheranRadioWidgetExtension)
+//
+// Single physical file compiled into both targets.
+//
+// Purpose:
+// Owns the metadata/emphasis presentation axis for widgets and Live Activities
+// (`WidgetMetadataEmphasis`, `WidgetNowPlayingDisplayModel`, resolver) and
+// language/flag helpers. Complements the status and control presentation mappers
+// that live on `PlayerVisualState`.
+//
+// This file is presentation-only. No security logic, no streaming, no intent handling.
+//
+// - SeeAlso: docs/Widget-Presentation-Dataflow.md (primary reference for the
+//   three-surface snapshot-driven contract), `LutheranRadioWidget.swift`,
+//   `LutheranRadioWidgetLiveActivity.swift`, `PlayerVisualState.swift`,
+//   CODING_AGENT.md.
+
 import Foundation
 
-// MARK: - Shared Widget / Live Activity Display Models (Metadata / Emphasis Axis)
+// MARK: - Shared Widget / Live Activity Display Models
 //
-// WidgetMetadataEmphasis + WidgetNowPlayingDisplayModel + `widgetNowPlayingDisplayModel(visualState:streamMetadata:languageName:)`
-// are the Single Source of Truth for the program-title / speaker-line / emphasis axis.
+// Three narrow presentation surfaces are consistently derived once at the snapshot /
+// provider level and consumed as value types by WidgetKit and ActivityKit surfaces:
 //
-// This is the metadata/emphasis counterpart to the two narrow presentation surfaces on PlayerVisualState:
-// - `PlayerStatusPresentation` + `makeStatusPresentation()` (status indicator axis)
-// - `PlayerControlPresentation` + `makeControlPresentation()` (play/pause control axis)
+// - `statusPresentation: PlayerStatusPresentation` (via `makeStatusPresentation()`)
+// - `controlPresentation: PlayerControlPresentation` (via `makeControlPresentation()`)
+// - `widgetNowPlayingDisplayModel: WidgetNowPlayingDisplayModel` (via `widgetNowPlayingDisplayModel(...)`)
+//
+// `WidgetMetadataEmphasis` + `WidgetNowPlayingDisplayModel` + the resolver function
+// are the Single Source of Truth for the program-title / speaker-line / emphasis axis
+// (the metadata/emphasis counterpart to the two presentation types on PlayerVisualState).
 //
 // ## Snapshot-Driven Derivation Pattern
 //
-// As of this change, `WidgetNowPlayingDisplayModel` (or its equivalent fields) is **pre-derived** into the widget snapshot:
+// All three are **pre-derived** at the Provider / top-of-view level:
 //
-// - `SimpleEntry.widgetNowPlayingDisplayModel` is populated once inside the `Provider`
+// - In home widgets: `SimpleEntry` is populated inside the `Provider`
 //   (`placeholder(in:)`, `snapshot(for:in:)`, `timeline(for:in:)` via `createEntry`).
-// - `MediumWidgetView` and `LargeWidgetView` (and `WidgetMetadataRegion`) consume the
-//   pre-derived value directly; they no longer call the resolver inside their `body`.
-// - For Live Activities, `LockScreenLiveActivityView.body` and the outer `dynamicIsland`
-//   closure compute `widgetNowPlayingDisplayModel(...)` once near the top, then close
-//   over the narrow model for `.center`, `.compactLeading`, etc.
+//   `SmallWidgetView`, `MediumWidgetView`, `LargeWidgetView`, and `WidgetMetadataRegion`
+//   consume the pre-derived values directly; no derivation inside `body`.
+// - In Live Activities: `LockScreenLiveActivityView.body` and the outer `dynamicIsland`
+//   closure each compute the three narrow models once near the top, then close over them
+//   for the various regions and sub-layouts.
 //
-// Why pre-derive into the snapshot / top-of-view:
-// - WidgetKit compares `TimelineEntry` (and its fields) to decide invalidation and
-//   body re-evaluation. Carrying a narrow derived value means only mutations that
-//   actually affect title/speaker/emphasis cause downstream view bodies to run.
-// - ActivityKit region builders run independently; hoisting the call to the outer
-//   closure bounds CPU / allocation work to once per push instead of N regions.
-// - Leaf views and regions receive the smallest possible input set (title, speakerLine,
-//   speakerVisible, emphasis) — exactly what `WidgetMetadataRegion` and the LA
-//   metadata blocks need. This is the same principle already applied for
-//   `statusPresentation` and `controlPresentation` on `SimpleEntry`.
+// Why pre-derivation matters for WidgetKit / ActivityKit:
+// - WidgetKit performs field-wise comparison on `TimelineEntry` values to decide
+//   whether a view needs re-evaluation / invalidation. A narrow derived value means
+//   only changes that affect the concrete status text, play glyph/tint, or title/speaker
+//   cause body work for the consumers of that slice.
+// - ActivityKit Dynamic Island region builders run independently. Hoisting derivation
+//   to the outer closure bounds CPU and allocation work to once per push.
+// - Leaf views and region closures receive the smallest possible input (e.g. four fields
+//   for metadata), making them simpler, cheaper to diff, and easier to reason about.
 //
-// The resolver remains the single place that knows the `switch` on `PlayerVisualState` +
-// metadata fallback rules (live stream title, "No track information", speaker visibility).
+// The resolvers (`makeStatusPresentation`, `makeControlPresentation`, and
+// `widgetNowPlayingDisplayModel`) remain the single places that encode the mapping rules
+// over `PlayerVisualState` + metadata fallbacks.
 //
 // ## Terminology (exact project names)
-// - `widgetNowPlayingDisplayModel(visualState:streamMetadata:languageName:)` — the core resolver.
-// - `WidgetNowPlayingDisplayModel` — the narrow value type handed to views.
-// - `SimpleEntry` — the `TimelineEntry` snapshot for home-screen widgets.
-// - `WidgetMetadataRegion` — the fixed-height title + speaker slots used by medium/large.
+// - `PlayerStatusPresentation` + `makeStatusPresentation()` — status indicator axis.
+// - `PlayerControlPresentation` + `makeControlPresentation()` — primary control axis.
+// - `widgetNowPlayingDisplayModel(...)` — the core metadata/emphasis resolver.
+// - `WidgetNowPlayingDisplayModel` — narrow value type for title/speaker/emphasis.
+// - `SimpleEntry` — the `TimelineEntry` snapshot carrying all three for home widgets.
+// - `WidgetMetadataRegion` — fixed-height title + speaker slots (medium/large).
 // - `Provider` — the `AppIntentTimelineProvider`.
-// - `DynamicIsland` regions (leading/trailing/center/bottom + compact*) in Live Activity.
+// - `LutheranRadioLiveActivityWidget` / Dynamic Island regions / `LockScreenLiveActivityView`.
 //
-// - SeeAlso: `PlayerVisualState` (source of `visualState`; hosts the status/control mappers),
+// - SeeAlso: `PlayerVisualState` (the source; hosts the status/control mappers),
 //   ``PlayerVisualState/makeStatusPresentation()``, ``PlayerVisualState/makeControlPresentation()``,
-//   `LutheranRadioWidget.swift` (SimpleEntry + Provider + Medium/Large views + WidgetMetadataRegion),
-//   `LutheranRadioWidgetLiveActivity.swift` (LockScreenLiveActivityView + DynamicIsland usage),
-//   `LutheranRadioLiveActivityAttributes.ContentState` (the LA snapshot carrying visualState + metadata),
+//   `LutheranRadioWidget.swift` (SimpleEntry + Provider + family views),
+//   `LutheranRadioWidgetLiveActivity.swift` (top-level derivation + regions),
+//   `LutheranRadioLiveActivityAttributes.ContentState`,
+//   `WidgetDisplayModels.swift` (this file),
 //   CODING_AGENT.md (Documentation & Comment Standards, Single Source of Truth Principles,
-//   narrow inputs for WidgetKit/ActivityKit, "Cross-target shared source files (non-Core)"),
-//   <doc:Architecture>, README.md (Single Sources of Truth table),
-//   docs/widget-liveactivity-presentation-dataflow-analysis.md.
+//   narrow inputs for WidgetKit/ActivityKit, Cross-target shared source files (non-Core)),
+//   docs/Widget-Presentation-Dataflow.md (concise permanent guidance),
+//   <doc:Architecture>, README.md (Single Sources of Truth).
 //
-// All user-visible strings use `String(localized: "key", table: "Localizable", ...)` with explicit table.
+// All user-visible strings use `String(localized: "key", table: "Localizable")` with explicit table.
 
 internal enum WidgetMetadataEmphasis {
     case active

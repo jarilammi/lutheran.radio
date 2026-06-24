@@ -454,6 +454,18 @@ A small number of files under `Lutheran Radio/` are compiled into both the main 
 
 Each carries an explicit "SHARED" header block listing the invariants and pointing back here and to `CODING_AGENT.md`. New non-security shared logic should be added to one of these (or documented here) rather than duplicated. Security items stay in `Core/`.
 
+**Widget & Live Activity presentation surfaces**
+
+Home widgets (via `SimpleEntry`) and Live Activities (via `ContentState`) consume three narrow, pre-derived presentation value types:
+
+- `PlayerStatusPresentation` (status indicator)
+- `PlayerControlPresentation` (play/pause control)
+- `WidgetNowPlayingDisplayModel` (program title + speaker + emphasis)
+
+Derivation happens once in the WidgetKit `Provider` (for `SimpleEntry`) or once at the top of Live Activity view bodies / outer Dynamic Island closures. Leaf views and region builders read only the narrow slices.
+
+See [docs/Widget-Presentation-Dataflow.md](docs/Widget-Presentation-Dataflow.md) for the snapshot-driven pattern, rationale, terminology, and contributor guidance. The same surfaces are used by the Control widget and the main player UI.
+
 `DirectStreamingPlayer.swift` and `Core/Security/CertificateValidator.swift` now consume these shared components instead of duplicating logic. The prior refactor improved maintainability/testability while enforcing Swift 6 strict concurrency + `SWIFT_STRICT_MEMORY_SAFETY = YES` on all targets and preserving identical runtime behavior and security guarantees.
 
 ### Security Model TXT Record Usage

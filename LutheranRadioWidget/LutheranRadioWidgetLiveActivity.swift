@@ -32,32 +32,32 @@
 // - This file contains *no* security, certificate, or DNS logic. Security lives
 //   exclusively in `Core/` (see CODING_AGENT.md "Core Framework Surface Area").
 //
-// Presentation derivation (snapshot-driven):
-// - Status: `makeStatusPresentation()` — derived via `visualState` at consumption sites.
-// - Controls: `makeControlPresentation()` → `PlayerControlPresentation`.
-//   Computed once near the top of `LockScreenLiveActivityView.body` and once
-//   inside the outer `dynamicIsland` closure, then closed over by region builders.
-// - Metadata/emphasis: `widgetNowPlayingDisplayModel(visualState:streamMetadata:languageName:)`
-//   (from WidgetDisplayModels). For snapshot driven derivation this is now computed **once**
-//   neat the top of `LockScreenLiveActivityView.body` (already) and once inside the outer
-//   `dynamicIsland` closure. The resulting narrow `WidgetNowPlayingDisplayModel` is
-//   passed into `.center` and `.compactLeading` (instead of repeated calls inside
-//   each region builder). This is the Live Activity analogue of pre-deriving onto
-//   `SimpleEntry.widgetNowPlayingDisplayModel` for WidgetKit.
+// Presentation surfaces (snapshot-driven, all three derived once at the top level):
+// - Status indicator: `makeStatusPresentation()` → `PlayerStatusPresentation`.
+//   Computed at top of `LockScreenLiveActivityView.body` and inside the outer
+//   `dynamicIsland` closure; consumed by regions and status text.
+// - Primary control: `makeControlPresentation()` → `PlayerControlPresentation`.
+//   Computed once per view/closure and closed over by play/pause buttons.
+// - Metadata/emphasis: `widgetNowPlayingDisplayModel(...)` → `WidgetNowPlayingDisplayModel`.
+//   Computed once at the top of Lock Screen body and outer Dynamic Island; the narrow
+//   model (programTitle, speakerLine, speakerVisible, emphasis) is passed into
+//   `.center`, `compactLeading`, and the Lock Screen metadata blocks.
 //
-// - `isActivelyPlaying` is retained for semantic concerns inside regions:
-//   LIVE dot, animation bars, "Local Only" vs bars, etc.
+// `isActivelyPlaying` (and `buttonTintColor` for non-control radio glyphs) are retained
+// only for semantic decisions inside regions (LIVE indicator presence, animation triggers,
+// "Local Only" label, decorative tint). Pure play/pause glyph + tint use the narrow control
+// presentation (see PlayerVisualState.swift header for the policy).
 //
 // - SeeAlso: `LutheranRadioLiveActivityAttributes`, `SharedPlayerManager`
 //   (PersistedWidgetState, load*/persist*, userRequestedPlay, preferredWidgetLanguage),
-//   `PlayerVisualState` (makeStatusPresentation + makeControlPresentation),
+//   `PlayerVisualState` (the three mappers), `PlayerStatusPresentation`,
 //   `PlayerControlPresentation`, `WidgetNowPlayingDisplayModel`,
-//   `widgetNowPlayingDisplayModel(visualState:streamMetadata:languageName:)`,
-//   `WidgetDisplayModels.swift`, `LutheranRadioWidget.swift` (SimpleEntry + Provider
-//   snapshot pattern), `RadioLiveActivityManager`,
-//   CODING_AGENT.md (Single Source of Truth Principles + "Cross-target shared
-//   source files (non-Core)", narrow inputs for WidgetKit/ActivityKit,
-//   Documentation & Comment Standards),
+//   `widgetNowPlayingDisplayModel(...)`, `WidgetDisplayModels.swift`,
+//   `LutheranRadioWidget.swift` (SimpleEntry + Provider snapshot pattern),
+//   `RadioLiveActivityManager`,
+//   CODING_AGENT.md (Single Source of Truth Principles, Cross-target shared source files,
+//   narrow inputs, Documentation & Comment Standards),
+//   docs/Widget-Presentation-Dataflow.md,
 //   <doc:Architecture>, README.md.
 //
 // AGENT NOTE: This is presentation + intent surface only. State mutations belong
@@ -72,23 +72,17 @@ import AppIntents
 
 // MARK: - Live Activity Helpers
 //
-// Status presentation is now obtained directly from `PlayerVisualState.makeStatusPresentation()`
-// (the single source of truth introduced for narrow inputs). Legacy `getStatusColor` /
-// `getCurrentStreamStatus` duplication over `PlayerVisualState` has been removed; call sites
-// below derive a `PlayerStatusPresentation` and use `.background`/`.text`/`.foreground` as
-// appropriate. Special "LIVE" indicator (red dot) in leading region is preserved as a
-// distinct live affordance (not general status text).
+// Status, control, and metadata/emphasis are all obtained from the narrow presentation
+// surfaces (`makeStatusPresentation`, `makeControlPresentation`, and
+// `widgetNowPlayingDisplayModel`). Call sites derive once at the top of the relevant
+// view or outer Dynamic Island closure and close over the narrow values.
 //
-// Control presentation (play/pause glyph + tint) follows the identical pattern:
-// `makeControlPresentation()` produces a `PlayerControlPresentation` that is computed
-// once at the top of LockScreenLiveActivityView and the outer DynamicIsland closure
-// (not re-derived inside each region). The play/pause buttons in trailing/compactTrailing
-// and the Lock Screen row now consume only the narrow result.
+// `isActivelyPlaying` is used only for semantic / presence decisions (LIVE dot visibility,
+// animation bars, "Local Only" vs. bars). Non-control decorative uses of `buttonTintColor`
+// (radio glyphs) also remain on the visual state per the documented division of concerns
+// in PlayerVisualState.swift.
 //
-// `isActivelyPlaying` remains for semantic decisions (LIVE dot, equalizer animations,
-// "Local Only" label). Non-control uses of `buttonTintColor` (e.g. the radio glyph) also remain.
-//
-// Other helpers (language/flag/alts + widgetNowPlayingDisplayModel) remain.
+// Language, flag, and alternative-stream helpers delegate to WidgetDisplayModels.
 
 /// Returns the localized display name for a language code (e.g. "English").
 ///
@@ -274,20 +268,15 @@ struct LiveActivitySwitchStreamIntent: AppIntent {
 
 /// The WidgetKit definition for the Lutheran Radio Live Activity.
 ///
-/// Registers an `ActivityConfiguration` that supplies:
-/// - Lock Screen presentation via `LockScreenLiveActivityView`
-/// - Dynamic Island presentations (expanded, compactLeading, compactTrailing, minimal)
-///
-/// The `ContentState` (`visualState` + `streamMetadata`) is pushed by
-/// `RadioLiveActivityManager` using snapshots from `SharedPlayerManager`.
-/// All language resolution, metadata display models, and status strings are
-/// derived via the documented SSOT helpers so that the Live Activity stays
-/// consistent with home widgets.
+/// Registers an `ActivityConfiguration` supplying Lock Screen + Dynamic Island
+/// presentations. ContentState snapshots are pushed by `RadioLiveActivityManager`.
+/// All three narrow presentation surfaces (status + control + metadata) are derived
+/// once at the top of the rendered views / outer closures using the canonical mappers.
 ///
 /// - Important: The widget kind `"LutheranRadioLiveActivity"` must match the
 ///   kind used when starting/ending activities in `RadioLiveActivityManager`.
-/// - SeeAlso: `LutheranRadioLiveActivityAttributes`,
-///   `LockScreenLiveActivityView`, `RadioLiveActivityManager`,
+/// - SeeAlso: `LutheranRadioLiveActivityAttributes`, `LockScreenLiveActivityView`,
+///   `RadioLiveActivityManager`, docs/Widget-Presentation-Dataflow.md,
 ///   CODING_AGENT.md (Cross-target shared source files).
 struct LutheranRadioLiveActivityWidget: Widget {
     let kind: String = "LutheranRadioLiveActivity"
@@ -297,13 +286,9 @@ struct LutheranRadioLiveActivityWidget: Widget {
             LockScreenLiveActivityView(context: context)
                 .widgetURL(URL(string: "lutheranradio://open"))
         } dynamicIsland: { context in
-            // Derive narrow presentations once at the outer closure level for the DynamicIsland.
-            // Control is already done once here for the two play/pause sites.
-            // Metadata/emphasis (WidgetNowPlayingDisplayModel) is now also derived once here
-            // (using the preferred language for the live fallback) and closed over by
-            // .center and compactLeading instead of being recomputed inside those builders.
-            // This mirrors pre-deriving `widgetNowPlayingDisplayModel` onto SimpleEntry
-            // for WidgetKit timelines. See WidgetDisplayModels.swift for rationale.
+            // Derive the three narrow presentations once at the outer Dynamic Island
+            // closure level (mirrors Provider pre-derivation for SimpleEntry).
+            // Regions close over the already-computed values.
             let controlPres = context.state.visualState.makeControlPresentation()
 
             let currentLanguageForMetadata = SharedPlayerManager.preferredWidgetLanguage()
@@ -395,8 +380,6 @@ struct LutheranRadioLiveActivityWidget: Widget {
                 
                 DynamicIslandExpandedRegion(.center) {
                     // metadataModel and language for it are computed once at the outer dynamicIsland level.
-                    // Only status is derived locally here (status derivation sites are not fully hoisted
-                    // in this change; only the metadata axis targeted by the task).
                     let statusPres = context.state.visualState.makeStatusPresentation()
                     VStack(spacing: 6) {
                         VStack(spacing: 2) {
@@ -568,88 +551,52 @@ struct LutheranRadioLiveActivityWidget: Widget {
 
 /// Lock screen presentation of the privacy-first Live Activity.
 ///
-/// Rendered by iOS inside the system lock-screen card (constrained height).
-/// Uses the shared `widgetNowPlayingDisplayModel(...)` + `WidgetMetadataEmphasis`
-/// (from WidgetDisplayModels) for stable title/speaker layout without conditional
-/// row insertion. Language switching and playback toggle are provided by the
-/// two Live Activity intents.
+/// Rendered by iOS inside the system-provided lock-screen card (constrained height).
+/// Consumes three narrow presentation values derived once at the top of `body`:
+/// `statusPres`, `metadataModel` (WidgetNowPlayingDisplayModel), and `controlPres`.
+/// Uses `widgetNowPlayingDisplayModel(...)` + `WidgetMetadataEmphasis` for stable
+/// fixed-height title/speaker layout (no conditional row insertion).
 ///
-/// Snapshot-driven derivation (performed once at the top of `body`, exactly as for `SimpleEntry`):
+/// Language switching and playback toggle use the two Live Activity AppIntents.
+///
+/// - Important: Rendered inside a system card with limited vertical space above
+///   the swipe affordance. Use flexible frames, line limits, and modest min-heights
+///   to avoid clipping. (Contrast with Dynamic Island regions, which have their own
+///   sizing and already use ScrollView for the language alternatives.)
+///
+/// - Note: Dimensions are intentionally smaller than the corresponding values in
+///   `WidgetMetadataLayout` used by the large home widget.
+///
+/// Snapshot-driven derivation (performed once at the top of `body` — the Live Activity
+/// counterpart to pre-deriving onto `SimpleEntry` in the WidgetKit Provider):
 /// - `statusPres = makeStatusPresentation()`
-/// - `metadataModel = widgetNowPlayingDisplayModel(visualState:streamMetadata:languageName:)`
-/// - `controlPres = makeControlPresentation()` (plus local variant for circle chrome)
+/// - `metadataModel = widgetNowPlayingDisplayModel(...)`
+/// - `controlPres = makeControlPresentation()` (circle variants chosen locally for weight)
 ///
-/// These three narrow values (plus a few primitives such as currentLanguage) are the
-/// only things the sub-layout reads. This is the Live Activity analogue of the
-/// widget Provider → SimpleEntry pre-derivation pattern (see `SimpleEntry.widgetNowPlayingDisplayModel`).
+/// These three narrow values (plus primitives such as `currentLanguage`) are the only
+/// data the layout below reads.
 ///
-/// - Important: This view is rendered by iOS inside a system-provided rounded card
-///   on the lock screen. The system allocates a constrained vertical content area
-///   (above the "Avaa pyyhkäisemällä ylös" / swipe affordance). Fixed min-heights,
-///   generous spacing, and a tall monolithic VStack will cause bottom clipping and
-///   visual crowding against the card edges.
-///
-    ///   Dynamic Island uses separate region builders with their own sizing and already
-///   uses tighter frames + ScrollView for alternatives; this is why DI is less
-///   affected or unaffected by the same content.
-///
-/// - Note: All vertical dimensions here are deliberately smaller than the
-///   corresponding large home widget values in `WidgetMetadataLayout`. The lock
-///   screen card has less usable height than a systemLarge widget.
-///
-/// Lock screen presentation of the privacy-first Live Activity.
-///
-/// Rendered by iOS inside the system lock-screen card (constrained height).
-/// Uses the shared `widgetNowPlayingDisplayModel(...)` + `WidgetMetadataEmphasis`
-/// (from WidgetDisplayModels) for stable title/speaker layout without conditional
-/// row insertion. Language switching and playback toggle are provided by the
-/// two Live Activity intents.
-///
-/// Snapshot-driven derivation (performed once at the top of `body`, the Live Activity
-/// counterpart to pre-deriving onto `SimpleEntry`):
-/// - `statusPres = makeStatusPresentation()`
-/// - `metadataModel = widgetNowPlayingDisplayModel(visualState:streamMetadata:languageName:)`
-/// - `controlPres = makeControlPresentation()` (plus local variant for circle chrome)
-///
-/// These three narrow values (plus a few primitives such as currentLanguage) are the
-/// only things the sub-layout reads.
-///
-/// - Important: This view is rendered by iOS inside a system-provided rounded card
-///   on the lock screen. The system allocates a constrained vertical content area
-///   (above the "Avaa pyyhkäisemällä ylös" / swipe affordance). Fixed min-heights,
-///   generous spacing, and a tall monolithic VStack will cause bottom clipping and
-///   visual crowding against the card edges.
-///
-///   Dynamic Island uses separate region builders with their own sizing and already
-///   uses tighter frames + ScrollView for alternatives; this is why DI is less
-///   affected or unaffected by the same content.
-///
-/// - Note: All vertical dimensions here are deliberately smaller than the
-///   corresponding large home widget values in `WidgetMetadataLayout`. The lock
-///   screen card has less usable height than a systemLarge widget.
-///
-/// - SeeAlso: ``LutheranRadioLiveActivityWidget``, the DynamicIsland regions in
-///   this file, `WidgetMetadataRegion` (contrast), ``widgetNowPlayingDisplayModel``,
-///   `SimpleEntry.widgetNowPlayingDisplayModel` (WidgetKit parallel for the same model),
+/// - SeeAlso: ``LutheranRadioLiveActivityWidget``, Dynamic Island regions in this file,
+///   `WidgetMetadataRegion`, ``widgetNowPlayingDisplayModel``,
+///   `SimpleEntry.widgetNowPlayingDisplayModel` (WidgetKit parallel),
 ///   `LutheranRadioLiveActivityAttributes.ContentState`,
 ///   `WidgetDisplayModels.swift`, `LutheranRadioWidget.swift`,
-///   CODING_AGENT.md (Single Source of Truth Principles + Cross-target shared
-///   source files + Documentation & Comment Standards), <doc:Architecture>,
-///   `RadioLiveActivityManager`.
+///   `PlayerVisualState` (the three mappers),
+///   CODING_AGENT.md (Single Source of Truth Principles, Cross-target shared source files,
+///   Documentation & Comment Standards, narrow inputs for WidgetKit/ActivityKit),
+///   docs/Widget-Presentation-Dataflow.md, <doc:Architecture>, `RadioLiveActivityManager`.
 ///
-/// AGENT NOTE: When editing, prefer flexible frames + lineLimit/minimumScaleFactor
-/// over tall minHeight. Always test on lock screen presentation (not just DI or
-/// previews). The language row uses plain buttons (no ScrollView here) and
-/// receives explicit `.padding(.horizontal, 8)`. The shared display model must
-/// remain in use for title/speaker stability and emphasis.
+/// AGENT NOTE: The shared display model must remain in use for title/speaker stability.
+/// Prefer flexible frames + `lineLimit`/`minimumScaleFactor` over tall fixed minHeight.
+/// Test lock-screen presentation (not only DI or canvas previews). The language row
+/// uses plain buttons and explicit horizontal padding.
 struct LockScreenLiveActivityView: View {
     let context: ActivityViewContext<LutheranRadioLiveActivityAttributes>
     
     var body: some View {
-        // All three narrow presentations (status + metadata + control) are derived
-        // once at the very top of the body, before any subviews or layout. The metadataModel
-        // (WidgetNowPlayingDisplayModel) is the pre-derived value passed to the fixed
-        // title/speaker blocks below (parallel to entry.widgetNowPlayingDisplayModel for widgets).
+        // All three narrow presentations are derived once at the top of `body`
+        // (the Live Activity equivalent of Provider-level pre-derivation for SimpleEntry).
+        // Only the narrow values (plus language primitives) are used below.
         let currentLanguage = SharedPlayerManager.preferredWidgetLanguage()
         let languageName = SharedPlayerManager.streamForLanguageCode(currentLanguage).language
         let metadataModel = widgetNowPlayingDisplayModel(

@@ -12,28 +12,21 @@ import Foundation
 
 // MARK: - Shared Display Logic
 //
-// WidgetMetadataEmphasis, WidgetNowPlayingDisplayModel, and `widgetNowPlayingDisplayModel(visualState:streamMetadata:languageName:)`
-// live in WidgetDisplayModels.swift (the SSOT for the metadata/emphasis axis; also used by Live Activity).
+// WidgetDisplayModels.swift owns the metadata/emphasis axis
+// (`WidgetMetadataEmphasis`, `WidgetNowPlayingDisplayModel`, `widgetNowPlayingDisplayModel(...)`).
 //
-// Presentation surfaces carried on `SimpleEntry` (the TimelineEntry snapshot):
-// - `statusPresentation` (via `makeStatusPresentation`) — status indicator axis.
-// - `controlPresentation` (via `makeControlPresentation`) — play/pause control axis.
-// - `widgetNowPlayingDisplayModel` (via `widgetNowPlayingDisplayModel(...)`) — metadata/emphasis axis.
+// `SimpleEntry` (the WidgetKit TimelineEntry snapshot) carries the three narrow
+// presentation surfaces, each derived exactly once in the Provider:
+// - `statusPresentation: PlayerStatusPresentation` (from `makeStatusPresentation`)
+// - `controlPresentation: PlayerControlPresentation` (from `makeControlPresentation`)
+// - `widgetNowPlayingDisplayModel: WidgetNowPlayingDisplayModel` (from the resolver)
 //
-// All three are pre-derived once in the `Provider` (placeholder / snapshot / timeline paths).
-// Widget family views and `WidgetMetadataRegion` consume only the narrow values rather than
-// re-reading `visualState` or calling adapters inside `body`. This follows the snapshot-driven
-// narrow-input pattern for WidgetKit (see WidgetDisplayModels.swift module header).
+// Family views (`Small`/`Medium`/`Large`) and `WidgetMetadataRegion` receive only the
+// narrow slices required for rendering.
 //
-// The former thin adapter `widgetNowPlayingDisplayModel(from: entry)` has been removed;
-// derivation now happens exclusively at snapshot construction time.
-
-// NOTE: The thin adapter `widgetNowPlayingDisplayModel(from: entry)`
-// has been removed. All derivation of `WidgetNowPlayingDisplayModel` for home widgets
-// now occurs once inside the Provider when constructing `SimpleEntry`
-// (placeholder, snapshot via createEntry, timeline). Medium/Large + WidgetMetadataRegion
-// read `entry.widgetNowPlayingDisplayModel` directly. The identical top-level derivation
-// rule is applied inside Live Activity views (see LutheranRadioWidgetLiveActivity.swift).
+// The identical top-level derivation pattern is used by Live Activity views.
+//
+// See docs/Widget-Presentation-Dataflow.md for rationale and contributor guidance.
 
 private enum WidgetMetadataLayout {
     case medium
@@ -64,13 +57,12 @@ private enum WidgetMetadataLayout {
 /// Fixed-height program title and speaker slots for medium and large widgets.
 ///
 /// Receives a pre-derived `WidgetNowPlayingDisplayModel` (populated on `SimpleEntry`
-/// by the Provider, or supplied from top-level LA computation). This view is deliberately
-/// narrow: it only renders the four fields and applies emphasis opacity. No direct
-/// dependency on `PlayerVisualState` or raw metadata.
+/// by the Provider). Deliberately narrow: renders only the four fields with the
+/// appropriate emphasis opacity. No `PlayerVisualState` or raw metadata handling.
 ///
 /// - SeeAlso: `WidgetNowPlayingDisplayModel`, `widgetNowPlayingDisplayModel(...)`,
 ///   `SimpleEntry.widgetNowPlayingDisplayModel`, `MediumWidgetView`, `LargeWidgetView`,
-///   `LutheranRadioWidgetLiveActivity.swift` (equivalent blocks), `WidgetDisplayModels.swift`.
+///   `WidgetDisplayModels.swift`, docs/Widget-Presentation-Dataflow.md.
 private struct WidgetMetadataRegion: View {
     let model: WidgetNowPlayingDisplayModel
     let layout: WidgetMetadataLayout
@@ -524,9 +516,8 @@ struct MediumWidgetView: View {
             .padding()
             .widgetURL(URL(string: "lutheranradio://open"))
         } else {
-            // Consume the pre-derived model from the snapshot (SimpleEntry). Derivation
-            // happened once in the Provider using widgetNowPlayingDisplayModel(...).
-            // No resolver call remains inside this view body.
+            // Consume pre-derived narrow surfaces from the snapshot (SimpleEntry).
+            // Derivation happened once in the Provider. No resolver calls inside body.
             VStack(spacing: 6) {
                 HStack {
                     Text(String(localized: "lutheran_radio_title", table: "Localizable"))
@@ -620,10 +611,9 @@ struct LargeWidgetView: View {
             .padding()
             .widgetURL(URL(string: "lutheranradio://open"))
         } else {
-            // Consume the pre-derived model from the snapshot (SimpleEntry). Derivation
-            // happened once in the Provider using widgetNowPlayingDisplayModel(...).
-            // No resolver call remains inside this view body. This is the metadata/emphasis
-            // equivalent of how statusPresentation and controlPresentation are consumed.
+            // Consume pre-derived narrow surfaces from the snapshot (SimpleEntry).
+            // Derivation happened once in the Provider. Equivalent to how
+            // statusPresentation and controlPresentation are consumed.
             VStack(spacing: 12) {
                 HStack {
                     Text(String(localized: "lutheran_radio_title", table: "Localizable"))
@@ -816,23 +806,18 @@ public struct RadioWidgetConfiguration: WidgetConfigurationIntent {
 
 // MARK: - SwiftUI Preview Matrix
 //
-// Exhaustive previews for the shared WidgetNowPlayingDisplayModel + emphasis
-// across PlayerVisualState values and metadata presence (nil / title only / title + speaker).
-// The same model is used by Live Activity (LockScreen + DynamicIsland).
+// Exhaustive previews exercising the full snapshot-driven contract:
+// all three narrow presentations are derived for every entry
+// (`statusPresentation`, `controlPresentation`, `widgetNowPlayingDisplayModel`).
 //
-// Every preview entry is built with all three narrow presentations:
-// - `statusPresentation` (via makeStatusPresentation)
-// - `controlPresentation` (via makeControlPresentation)
-// - `widgetNowPlayingDisplayModel` (via widgetNowPlayingDisplayModel(...))
+// Covers `PlayerVisualState` cases + metadata presence/absence combinations.
+// WidgetMetadataRegion receives the pre-derived model exactly as runtime views do.
+// The same models are used by Live Activity surfaces.
 //
-// This exercises the full snapshot-driven contract used by Provider → SimpleEntry
-// and by Live Activity views. WidgetMetadataRegion receives the pre-derived model
-// exactly as the runtime Medium/Large views do.
+// Use the canvas to verify emphasis levels and stable title/speaker layout
+// (no conditional insertion).
 //
-// Use the Xcode canvas to inspect emphasis levels (active / subdued / placeholder)
-// and confirm the title + speaker slots remain stable (no conditional insertion).
-//
-// - SeeAlso: `SimpleEntry.widgetNowPlayingDisplayModel`, `WidgetDisplayModels.swift`,
+// - SeeAlso: `WidgetDisplayModels.swift`, docs/Widget-Presentation-Dataflow.md,
 //   `LutheranRadioWidgetLiveActivity.swift`.
 
 #if DEBUG
