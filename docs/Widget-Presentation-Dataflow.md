@@ -77,7 +77,6 @@ Never derive presentation inside leaf view `body` for the three canonical surfac
 - `LutheranRadioWidgetLiveActivity.swift` — `LutheranRadioLiveActivityWidget`, `LockScreenLiveActivityView`, Dynamic Island regions, intents.
 - `LutheranRadioWidgetControl.swift` — Control widget usage of the same mappers.
 - `CODING_AGENT.md` — Documentation & Comment Standards, Single Source of Truth Principles, cross-target shared files.
-- `docs/widget-liveactivity-presentation-dataflow-analysis.md` — detailed pre-refactor analysis (historical context).
 
 All user-visible strings use `String(localized: "...", table: "Localizable")`.
 

@@ -43,21 +43,30 @@
 //   model (programTitle, speakerLine, speakerVisible, emphasis) is passed into
 //   `.center`, `compactLeading`, and the Lock Screen metadata blocks.
 //
-// `isActivelyPlaying` (and `buttonTintColor` for non-control radio glyphs) are retained
-// only for semantic decisions inside regions (LIVE indicator presence, animation triggers,
-// "Local Only" label, decorative tint). Pure play/pause glyph + tint use the narrow control
-// presentation (see PlayerVisualState.swift header for the policy).
+// For Live Activities, two small derived values are also computed once near the top
+// of the outer `dynamicIsland` closure and once at the top of `LockScreenLiveActivityView.body`:
+// - `isPlaying` (from `isActivelyPlaying`): drives LIVE indicator, animation bars,
+//   radio glyph background, and the compact title visibility. Regions close over it.
+// - `radioIconTint` (from `buttonTintColor.swiftUIColor`): non-control decorative tint
+//   for the radio glyph in .leading and compactLeading.
+//
+// `isActivelyPlaying` (and `buttonTintColor` for non-control radio glyphs) remain on
+// `PlayerVisualState` exclusively for semantic / presence decisions (LIVE dot, bars,
+// "Local Only", resurrection, intent branching). Pure control glyph+tint decisions
+// must use the narrow `PlayerControlPresentation`. See PlayerVisualState.swift header.
 //
 // - SeeAlso: `LutheranRadioLiveActivityAttributes`, `SharedPlayerManager`
 //   (PersistedWidgetState, load*/persist*, userRequestedPlay, preferredWidgetLanguage),
-//   `PlayerVisualState` (the three mappers), `PlayerStatusPresentation`,
-//   `PlayerControlPresentation`, `WidgetNowPlayingDisplayModel`,
+//   `PlayerVisualState` (the three mappers + `isActivelyPlaying` semantics),
+//   `PlayerStatusPresentation`, `PlayerControlPresentation`, `WidgetNowPlayingDisplayModel`,
 //   `widgetNowPlayingDisplayModel(...)`, `WidgetDisplayModels.swift`,
-//   `LutheranRadioWidget.swift` (SimpleEntry + Provider snapshot pattern),
+//   `LutheranRadioWidget.swift` (SimpleEntry + Provider snapshot pattern; the widget
+//   counterpart that stores the three narrow surfaces on the TimelineEntry),
 //   `RadioLiveActivityManager`,
 //   CODING_AGENT.md (Single Source of Truth Principles, Cross-target shared source files,
-//   narrow inputs, Documentation & Comment Standards),
-//   docs/Widget-Presentation-Dataflow.md,
+//   narrow inputs for WidgetKit/ActivityKit, Documentation & Comment Standards),
+//   docs/Widget-Presentation-Dataflow.md (primary reference for derivation sites,
+//   why hoisting matters for region invalidation, semantic vs presentation division),
 //   <doc:Architecture>, README.md.
 //
 // AGENT NOTE: This is presentation + intent surface only. State mutations belong
@@ -77,10 +86,16 @@ import AppIntents
 // `widgetNowPlayingDisplayModel`). Call sites derive once at the top of the relevant
 // view or outer Dynamic Island closure and close over the narrow values.
 //
-// `isActivelyPlaying` is used only for semantic / presence decisions (LIVE dot visibility,
-// animation bars, "Local Only" vs. bars). Non-control decorative uses of `buttonTintColor`
-// (radio glyphs) also remain on the visual state per the documented division of concerns
-// in PlayerVisualState.swift.
+// In Live Activities, small derived values (`isPlaying`, `radioIconTint`) are also
+// computed once near the top of `LockScreenLiveActivityView.body` and once inside
+// the outer `dynamicIsland` closure, then closed over by all region builders.
+// This eliminates repeated direct reads of `visualState.isActivelyPlaying` and
+// `visualState.buttonTintColor` for pure visual decisions (LIVE indicator, bars,
+// decorative radio glyph tint/background) while keeping semantic/policy reads
+// (intents, resurrection) on the source.
+//
+// See the file header for the exact division and
+// docs/Widget-Presentation-Dataflow.md for the full snapshot-driven contract.
 //
 // Language, flag, and alternative-stream helpers delegate to WidgetDisplayModels.
 
@@ -286,9 +301,26 @@ struct LutheranRadioLiveActivityWidget: Widget {
             LockScreenLiveActivityView(context: context)
                 .widgetURL(URL(string: "lutheranradio://open"))
         } dynamicIsland: { context in
-            // Derive the three narrow presentations once at the outer Dynamic Island
-            // closure level (mirrors Provider pre-derivation for SimpleEntry).
-            // Regions close over the already-computed values.
+            // Derive narrow presentation surfaces once at the outer Dynamic Island closure
+            // (the ActivityKit counterpart to Provider pre-derivation into SimpleEntry).
+            // All Dynamic Island regions and compact variants close over these values.
+            //
+            // - controlPres: narrow PlayerControlPresentation for play/pause glyph + tint
+            //   (via makeControlPresentation). Used by trailing and compactTrailing buttons.
+            // - metadataModel: narrow WidgetNowPlayingDisplayModel for program title + speaker.
+            //   Used by center and compactLeading.
+            // - isPlaying + radioIconTint: small derived values for pure visual decisions
+            //   (LIVE indicator presence, animation bars, radio glyph background/tint in
+            //   non-control decorative positions). These reduce repeated direct reads of
+            //   context.state.visualState inside independent region builders.
+            //
+            // Semantic uses of isActivelyPlaying remain on the source (intents, resurrection
+            // policy). Non-control decorative buttonTintColor reads are intentionally kept
+            // (see PlayerVisualState.swift header and docs/Widget-Presentation-Dataflow.md).
+            //
+            // - SeeAlso: docs/Widget-Presentation-Dataflow.md (Live Activity derivation
+            //   pattern), `PlayerControlPresentation`, `WidgetNowPlayingDisplayModel`,
+            //   `LutheranRadioWidget.swift` (SimpleEntry parallel), CODING_AGENT.md.
             let controlPres = context.state.visualState.makeControlPresentation()
 
             let currentLanguageForMetadata = SharedPlayerManager.preferredWidgetLanguage()
@@ -299,6 +331,11 @@ struct LutheranRadioLiveActivityWidget: Widget {
                 languageName: languageNameForMetadata
             )
 
+            // Small derived presentation flags (hoisted once, closed over by all regions).
+            // Keeps region closures trivial and bounds visualState reads to this site.
+            let isPlaying = context.state.visualState.isActivelyPlaying
+            let radioIconTint = context.state.visualState.buttonTintColor.swiftUIColor
+
             // Explicit return required once the closure body contains statements (let bindings)
             // before the DynamicIsland builder expression. The multi-trailing-closure call
             // no longer qualifies as an implicit-return single-expression closure.
@@ -306,12 +343,16 @@ struct LutheranRadioLiveActivityWidget: Widget {
                 DynamicIslandExpandedRegion(.leading) {
                     HStack(spacing: 8) {
                         ZStack {
+                            // Background tint for radio glyph: green when actively playing, gray otherwise.
+                            // Uses hoisted `isPlaying` (derived once above) instead of re-reading visualState.
                             Circle()
-                                .fill(context.state.visualState == .playing ? Color.green.opacity(0.2) : Color.gray.opacity(0.2))
+                                .fill(isPlaying ? Color.green.opacity(0.2) : Color.gray.opacity(0.2))
                                 .frame(width: 32, height: 32)
                             
+                            // Non-control decorative radio icon tint (per PlayerVisualState policy for
+                            // buttonTintColor outside primary controls). Uses hoisted `radioIconTint`.
                             Image(systemName: "radio")
-                                .foregroundColor(context.state.visualState.buttonTintColor.swiftUIColor)
+                                .foregroundColor(radioIconTint)
                                 .font(.system(size: 16, weight: .medium))
                         }
                         
@@ -330,7 +371,9 @@ struct LutheranRadioLiveActivityWidget: Widget {
                                     .foregroundColor(.secondary)
                             }
                             
-                            if context.state.visualState.isActivelyPlaying {
+                            // LIVE indicator presence driven by hoisted isPlaying (pure visual decision).
+                            // The actual semantic "actively streaming" flag lives on PlayerVisualState.
+                            if isPlaying {
                                 HStack(spacing: 2) {
                                     Circle()
                                         .fill(Color.red)
@@ -350,9 +393,8 @@ struct LutheranRadioLiveActivityWidget: Widget {
                     VStack(spacing: 8) {
                         Button(intent: LiveActivityTogglePlaybackIntent()) {
                             ZStack {
-                                // Background circle tinting still references the semantic tint surface for
-                                // the established visual treatment. The glyph itself now comes from the
-                                // outer-derived narrow control presentation.
+                                // Control button exclusively uses the once-computed narrow controlPres
+                                // (glyph + tint). This is the canonical pattern for play/pause affordances.
                                 Circle()
                                     .fill(controlPres.tint.opacity(0.2))
                                     .frame(width: 44, height: 44)
@@ -365,13 +407,16 @@ struct LutheranRadioLiveActivityWidget: Widget {
                         }
                         .buttonStyle(.plain)
                         
-                        if context.state.visualState.isActivelyPlaying {
+                        // Equalizer-style animation bars: presence is a visual decision driven by the
+                        // hoisted `isPlaying` value (computed once at outer closure). Animation value
+                        // uses the stable isPlaying Boolean to avoid capturing the whole visualState.
+                        if isPlaying {
                             HStack(spacing: 2) {
                                 ForEach(0..<3, id: \.self) { index in
                                     RoundedRectangle(cornerRadius: 1)
                                         .fill(Color.green)
                                         .frame(width: 2, height: CGFloat.random(in: 4...12))
-                                        .animation(.easeInOut(duration: Double.random(in: 0.3...0.7)).repeatForever(autoreverses: true), value: context.state.visualState)
+                                        .animation(.easeInOut(duration: Double.random(in: 0.3...0.7)).repeatForever(autoreverses: true), value: isPlaying)
                                 }
                             }
                         }
@@ -434,6 +479,8 @@ struct LutheranRadioLiveActivityWidget: Widget {
                 
                 DynamicIslandExpandedRegion(.bottom) {
                     HStack {
+                        // Status is re-derived here for the bottom region (cheap, O(1) switch).
+                        // It is independent of the control/metadata surfaces hoisted above.
                         let statusPres = context.state.visualState.makeStatusPresentation()
                         HStack(spacing: 4) {
                             Circle()
@@ -446,7 +493,10 @@ struct LutheranRadioLiveActivityWidget: Widget {
                         
                         Spacer()
                         
-                        if context.state.visualState.isActivelyPlaying {
+                        // Animation bars (or "Local Only" privacy label) use the hoisted `isPlaying`.
+                        // This is a pure presentation decision; the bars are decorative equalizer UI.
+                        // "Local Only" appears only when not actively playing (semantic presence).
+                        if isPlaying {
                             HStack(spacing: 1) {
                                 ForEach(0..<5, id: \.self) { index in
                                     RoundedRectangle(cornerRadius: 0.5)
@@ -460,7 +510,7 @@ struct LutheranRadioLiveActivityWidget: Widget {
                                             .easeInOut(duration: Double.random(in: 0.3...0.8))
                                             .repeatForever(autoreverses: true)
                                             .delay(Double(index) * 0.1),
-                                            value: context.state.visualState
+                                            value: isPlaying
                                         )
                                 }
                             }
@@ -478,25 +528,30 @@ struct LutheranRadioLiveActivityWidget: Widget {
                 }
             } compactLeading: {
                 // Language name resolution for metadataModel is performed once in the outer
-                // dynamicIsland closure. compactLeading only consumes the already-derived model.
+                // dynamicIsland closure. compactLeading only consumes the already-derived model
+                // plus the hoisted `isPlaying` / `radioIconTint` for its visual decisions.
                 HStack(spacing: 2) {
                     ZStack {
+                        // Circle background and radio glyph use hoisted values (single read site
+                        // at top of closure). Matches the pattern used in .leading.
                         Circle()
-                            .fill(context.state.visualState.isActivelyPlaying ? Color.green.opacity(0.2) : Color.gray.opacity(0.2))
+                            .fill(isPlaying ? Color.green.opacity(0.2) : Color.gray.opacity(0.2))
                             .frame(width: 20, height: 20)
                         
                         Image(systemName: "radio")
                             .font(.system(size: 10, weight: .medium))
-                            .foregroundColor(context.state.visualState.buttonTintColor.swiftUIColor)
+                            .foregroundColor(radioIconTint)
                     }
                     
-                    if context.state.visualState.isActivelyPlaying {
+                    // Compact animation bars + program title appear only while playing.
+                    // Decision uses hoisted isPlaying (visual presence), not repeated visualState read.
+                    if isPlaying {
                         HStack(spacing: 1) {
                             ForEach(0..<2, id: \.self) { index in
                                 RoundedRectangle(cornerRadius: 0.5)
                                     .fill(Color.green)
                                     .frame(width: 1, height: CGFloat.random(in: 2...6))
-                                    .animation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true), value: context.state.visualState)
+                                    .animation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true), value: isPlaying)
                             }
                         }
                         
@@ -526,12 +581,15 @@ struct LutheranRadioLiveActivityWidget: Widget {
                 .buttonStyle(.plain)
             } minimal: {
                 ZStack {
+                    // Status background uses makeStatusPresentation (consistent with other sites).
+                    // The icon choice (play vs radio) is a pure visual decision driven by the
+                    // hoisted `isPlaying` to avoid a direct context.state.visualState read here.
                     let statusPres = context.state.visualState.makeStatusPresentation()
                     Circle()
                         .fill(statusPres.background.opacity(0.3))
                         .frame(width: 18, height: 18)
                     
-                    if context.state.visualState.isActivelyPlaying {
+                    if isPlaying {
                         Image(systemName: "play.fill")
                             .font(.system(size: 8, weight: .bold))
                             .foregroundColor(.green)
@@ -552,8 +610,8 @@ struct LutheranRadioLiveActivityWidget: Widget {
 /// Lock screen presentation of the privacy-first Live Activity.
 ///
 /// Rendered by iOS inside the system-provided lock-screen card (constrained height).
-/// Consumes three narrow presentation values derived once at the top of `body`:
-/// `statusPres`, `metadataModel` (WidgetNowPlayingDisplayModel), and `controlPres`.
+/// Consumes narrow presentation values (status, control, metadata) plus one small
+/// derived `isPlaying` Boolean, all computed once at the top of `body`.
 /// Uses `widgetNowPlayingDisplayModel(...)` + `WidgetMetadataEmphasis` for stable
 /// fixed-height title/speaker layout (no conditional row insertion).
 ///
@@ -572,9 +630,13 @@ struct LutheranRadioLiveActivityWidget: Widget {
 /// - `statusPres = makeStatusPresentation()`
 /// - `metadataModel = widgetNowPlayingDisplayModel(...)`
 /// - `controlPres = makeControlPresentation()` (circle variants chosen locally for weight)
+/// - `isPlaying` (small derived Boolean): used only for the label copy decision next to
+///   the control button ("Paused" vs "Play"). This label decision is intentionally kept
+///   on the semantic flag per the documented division of concerns.
 ///
-/// These three narrow values (plus primitives such as `currentLanguage`) are the only
-/// data the layout below reads.
+/// These narrow values (plus primitives such as `currentLanguage`) are the only data
+/// the layout below reads. Direct visualState reads inside the view body are eliminated
+/// for presentation concerns.
 ///
 /// - SeeAlso: ``LutheranRadioLiveActivityWidget``, Dynamic Island regions in this file,
 ///   `WidgetMetadataRegion`, ``widgetNowPlayingDisplayModel``,
@@ -594,9 +656,10 @@ struct LockScreenLiveActivityView: View {
     let context: ActivityViewContext<LutheranRadioLiveActivityAttributes>
     
     var body: some View {
-        // All three narrow presentations are derived once at the top of `body`
-        // (the Live Activity equivalent of Provider-level pre-derivation for SimpleEntry).
-        // Only the narrow values (plus language primitives) are used below.
+        // Narrow presentations (status + control + metadata) + small derived `isPlaying`
+        // are computed once at the top of `body` (Live Activity equivalent of Provider-level
+        // pre-derivation for SimpleEntry). Only narrow values + the hoisted flag are used below.
+        // This mirrors the hoisting performed inside the outer `dynamicIsland` closure.
         let currentLanguage = SharedPlayerManager.preferredWidgetLanguage()
         let languageName = SharedPlayerManager.streamForLanguageCode(currentLanguage).language
         let metadataModel = widgetNowPlayingDisplayModel(
@@ -607,13 +670,18 @@ struct LockScreenLiveActivityView: View {
         let statusPres = context.state.visualState.makeStatusPresentation()
         // Compute the narrow control presentation once at the top (mirrors status + metadata
         // pattern). The play/pause button and its tint below read exclusively from this value.
-        // Semantic uses of isActivelyPlaying (for label copy) are left in place; only the
-        // glyph + tint decision for the control moves to the narrow type.
+        // Semantic label copy decision also uses a once-computed local for a single read site.
         let controlPres = context.state.visualState.makeControlPresentation()
         // Lock Screen uses circle variants of the control glyphs for visual weight.
         // Derive the exact variant name purely from the narrow control presentation value
         // (no re-inspection of visualState or isActivelyPlaying for glyph choice).
         let lockScreenControlImage = controlPres.systemImage == "pause.fill" ? "pause.circle.fill" : "play.circle.fill"
+
+        // Hoisted once for the semantic label copy ("Paused" vs "Play") that accompanies
+        // the control button. This is the documented exception where isActivelyPlaying
+        // drives copy rather than glyph choice (see file header and PlayerVisualState).
+        // Using a local eliminates a direct context.state.visualState read deep in the tree.
+        let isPlaying = context.state.visualState.isActivelyPlaying
         
         VStack(spacing: 6) {
             // Header
@@ -691,10 +759,12 @@ struct LockScreenLiveActivityView: View {
                             .font(.title2)
                             .foregroundStyle(controlPres.tint)
                         
-                        // Label copy decision kept on the semantic isActivelyPlaying flag (not presentation).
+                        // Label copy decision kept on the semantic `isPlaying` flag (hoisted above).
                         // This distinguishes "what the button shows" (controlPres) from "what label text
                         // accompanies it" (state-driven copy). Matches prior behavior exactly.
-                        Text(context.state.visualState.isActivelyPlaying
+                        // The value is semantically isActivelyPlaying; the hoisting is only for
+                        // single-evaluation hygiene (consistent with DI regions).
+                        Text(isPlaying
                              ? String(localized: "status_paused", defaultValue: "Paused", table: "Localizable")
                              : String(localized: "Play", defaultValue: "Play", table: "Localizable"))
                             .font(.system(size: 9, weight: .medium))
