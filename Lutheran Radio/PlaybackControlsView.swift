@@ -2,27 +2,24 @@
 //  PlaybackControlsView.swift
 //  Lutheran Radio
 //
-//  Pure SwiftUI playback controls: play/pause (with symbol bounce), sleep timer button (now
-//  using native .confirmationDialog), and colored status pill driven directly by PlayerVisualState.
+//  Pure SwiftUI playback controls row with play/pause button and sleep timer.
 //
-//  Sleep timer: SwiftUI presents the dialog (presets + conditional cancel + clear-local-state)
-//  and forwards choices via PlayerViewModel (for timer actions) or direct closure (for privacy clear).
-//  Coordinator retains full ownership of business logic, glue, and the privacy confirm flow.
+//  Play / Pause button:
+//  - Visual appearance (system image + tint) is driven by the narrow `viewModel.controlPresentation`.
+//  - Semantic state (whether audio is actively playing) is read from `viewModel.isActivelyPlaying`
+//    for action routing, `.symbolEffect`, and accessibility.
 //
-//  "Clear local state" (privacy): The destructive action was present in the pre-migration UIMenu
-//  (always shown, using "clear_local_state_title"). It was lost in the initial .confirmationDialog
-//  migration. This file now restores it as a role:.destructive Button inside the same dialog.
-//  Tapping forwards to onClearLocalStateTapped → coordinator.confirmAndClearLocalState() which
-//  does secondary UIAlert confirmation + SharedPlayerManager.clearAllLocalState().
+//  Sleep timer:
+//  - Uses a native `.confirmationDialog` with duration presets, conditional "Cancel timer",
+//    and the destructive "Clear local state" privacy action.
+//  - Accessibility value (when active) comes from `viewModel.sleepTimerAccessibilityValue`
+//    (derived on the model, not inside the view body).
 //
-//  Accessibility derivation ownership:
-//  - The sleep timer accessibilityValue previously used an inline closure in body.
-//  - It has been moved to `PlayerViewModel.sleepTimerAccessibilityValue` (computed) so the
-//    view body evaluates only layout and applies the pre-derived string. This follows the
-//    cached-derived + narrow-input guidance (see statusPresentation + StatusPill).
+//  The view receives `@Bindable PlayerViewModel` and forwards actions through it.
+//  All complex timing, orchestration, and privacy confirmation logic remains in `RadioPlayerCoordinator`.
 //
-//  IMPORTANT: configureSleepTimerButtonMenu() remains untouched (per requirements) and is still
-//  called from glue paths for compatibility side-effects only.
+//  Note: `configureSleepTimerButtonMenu()` is still called from several glue paths for
+//  compatibility, even though the primary UI now uses `.confirmationDialog`.
 //
 //  Created by Jari Lammi on 13.6.2026.
 //
@@ -89,7 +86,9 @@ struct PlaybackControlsView: View {
         HStack(spacing: 20) {
             let cp = viewModel.controlPresentation
 
-            // Play / Pause
+            // Play / Pause button
+            // Glyph and tint come from controlPresentation.
+            // Action routing, symbolEffect, and accessibility use the semantic isActivelyPlaying flag.
             Button {
                 if viewModel.isActivelyPlaying {
                     viewModel.pause()
