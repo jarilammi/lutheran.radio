@@ -27,6 +27,11 @@
 //  closures. This lets SwiftUI call them without a direct dependency on the UIKit coordinator
 //  or having to know about SharedPlayerManager actor hops.
 //
+//  Presentation concerns:
+//  - Derived values that are purely for display (statusPresentation, sleepTimerAccessibilityValue)
+//    live here as cached/computed properties. This keeps SwiftUI view bodies minimal (layout +
+//    modifiers only) per established patterns in the project.
+//
 //  Previews:
 //  Use `PlayerViewModel.makeMock(...)` to obtain an isolated instance for #Preview and tests.
 //  No side effects or actor access from the mock path.
@@ -34,7 +39,7 @@
 //  - Important: Do not duplicate resurrection rules, intent logic, or security decisions here.
 //  - SeeAlso: RadioPlayerCoordinator (the driver), SharedPlayerManager (SSOT via push),
 //    PlayerVisualState.swift, StreamProgramMetadata.swift,
-//    CODING_AGENT.md (Single Source of Truth Principles + Cross-target shared files),
+//    CODING_AGENT.md (Single Source of Truth Principles + Cross-target shared files + Documentation & Comment Standards),
 //    <doc:Architecture>.
 //
 //  Created by Jari Lammi on 19.6.2026.
@@ -56,6 +61,12 @@ import SwiftUI
 /// - `selectSleepTimer(minutes:)` and `cancelSleepTimer()` forward to coordinator-owned logic
 ///   (the SwiftUI dialog in PlaybackControlsView is the caller). This keeps set/cancel, countdown
 ///   glue, and state sync in the single source of truth (coordinator + SharedPlayerManager).
+///
+/// Presentation derivation (cached / computed out of bodies):
+/// - `statusPresentation` (stored, recomputed on visualState) follows the narrow value-type
+///   input pattern for leaf views.
+/// - `sleepTimerAccessibilityValue` (computed) owns the a11y string derivation for the timer
+///   button so that `PlaybackControlsView.body` contains only layout + modifiers.
 @Observable
 @MainActor
 final class PlayerViewModel {
@@ -92,9 +103,13 @@ final class PlayerViewModel {
     var currentMetadata: StreamProgramMetadata?
 
     /// Remaining sleep timer duration in seconds. Nil when no timer is active.
+    ///
     /// Updated by the coordinator's local countdown (beginLocalSleepTimerDisplay / Task)
     /// which also drives sync + icon state in PlaybackControlsView.
     /// The SwiftUI confirmationDialog reads this to decide whether to show the Cancel action.
+    ///
+    /// Derived presentation: `sleepTimerAccessibilityValue` consumes this to produce the
+    /// VoiceOver string when active, keeping derivation logic out of SwiftUI bodies.
     var sleepTimerRemaining: TimeInterval?
 
     /// True while a user- or widget-initiated stream change is in progress (engine prep + potential tuning).
@@ -178,6 +193,34 @@ final class PlayerViewModel {
         visualState.shouldAutoPlayOrResume
     }
 
+    /// Localized accessibility value for the sleep timer control when a timer is active.
+    ///
+    /// Returns a formatted string such as "12 minutes remaining" (via the catalog key
+    /// "sleep_timer_accessibility_remaining") when `sleepTimerRemaining > 0`; otherwise nil.
+    ///
+    /// - Note: This computed property owns the derivation so view bodies stay focused on
+    ///   layout and modifiers only. The rounding (remaining + 59)/60 to whole minutes and
+    ///   the unsafe String(format:) pattern match the prior inline implementation and the
+    ///   established VoiceOver revival approach used elsewhere for catalog strings.
+    /// - SeeAlso: `sleepTimerRemaining`, PlaybackControlsView (the .accessibilityValue site),
+    ///   `String(localized: "sleep_timer_accessibility_remaining"...)`, CODING_AGENT.md
+    ///   (Documentation & Comment Standards, cached derived values on @Observable models).
+    var sleepTimerAccessibilityValue: String? {
+        guard let remaining = sleepTimerRemaining, remaining > 0 else { return nil }
+        let minutes = max(1, Int((remaining + 59) / 60))
+        // SAFETY: String(format:) with a catalog-provided format string containing %d
+        // is the established pattern in this codebase for placeholder-bearing VoiceOver
+        // strings (see announceSwitchedToLanguage in RadioPlayerCoordinator.swift and the
+        // previous inline site in PlaybackControlsView). The format is trusted
+        // (Localizable.xcstrings) and the argument is a simple Int. Required under
+        // SWIFT_STRICT_MEMORY_SAFETY=YES; the `unsafe` marker satisfies the compiler while
+        // preserving localized pluralization/positioning across all 21 languages.
+        return unsafe String(
+            format: String(localized: "sleep_timer_accessibility_remaining", table: "Localizable"),
+            minutes
+        )
+    }
+
     // MARK: - Presentation recompute (kept out of view bodies)
 
     private func recomputePresentation() {
@@ -256,15 +299,27 @@ extension PlayerViewModel {
 
 // MARK: - Minimal self-contained SwiftUI preview host (for the new main view)
 //
-// This struct exists so that we can immediately provide a working #Preview for the VM
-// without depending on the legacy UIKit components being converted yet.
-// It demonstrates how a future pure-SwiftUI RadioPlayerView would consume the model.
+// This struct (and its supporting modifier) exists so that we can immediately provide
+// working #Preview surfaces for the VM without depending on the legacy UIKit components
+// being converted yet. It demonstrates how a future pure-SwiftUI RadioPlayerView would
+// consume the model.
+//
+// Design note on side effects:
+// The `.onChange` that auto-sets `isShowingSecurityError` on .securityLocked transition
+// was extracted into `SecurityErrorFlagOnLockModifier` so the preview body contains only
+// layout declarations. The modifier is intentionally small, DEBUG-scoped, and
+// self-documenting.
 
 #if DEBUG
 import SwiftUI
 
 /// Lightweight SwiftUI preview surface that exercises the observable PlayerViewModel.
+///
 /// Used both for standalone preview of the VM and as a template for a future main view.
+///
+/// The view applies `.securityErrorFlagOnLock(viewModel:)` (a minimal extracted modifier)
+/// rather than inlining an .onChange in the body, following the goal of keeping derivation
+/// and side-effect logic outside view bodies even in preview scaffolding.
 struct PlayerMainPreview: View {
     @State var viewModel: PlayerViewModel
 
@@ -358,11 +413,7 @@ struct PlayerMainPreview: View {
             Spacer()
         }
         .padding()
-        .onChange(of: viewModel.visualState) { _, new in
-            if new == .securityLocked && !viewModel.isShowingSecurityError {
-                viewModel.isShowingSecurityError = true
-            }
-        }
+        .securityErrorFlagOnLock(viewModel: viewModel)
     }
 
     private func flagEmoji(for index: Int) -> String {
@@ -371,6 +422,41 @@ struct PlayerMainPreview: View {
         return codes[safe: index] ?? "🏳️"
     }
 }
+
+// MARK: - Preview-only side-effect extraction (DEBUG)
+
+/// DEBUG-only ViewModifier that encapsulates the side-effect previously embedded in
+/// `PlayerMainPreview.body`.
+///
+/// When `visualState` becomes `.securityLocked` it sets `isShowingSecurityError` so the
+/// error surface in the preview is exercised. This keeps the preview body declarative
+/// (focused on layout) while isolating the one-time "set flag on transition" logic.
+///
+/// The entire block lives under the outer `#if DEBUG` that gates `PlayerMainPreview` and
+/// all preview support. The modifier is intentionally minimal and has zero production surface.
+///
+/// - SeeAlso: PlayerMainPreview, the "Security Locked" #Preview,
+///   CODING_AGENT.md (Documentation & Comment Standards, preview scaffolding).
+struct SecurityErrorFlagOnLockModifier: ViewModifier {
+    @Bindable var viewModel: PlayerViewModel
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: viewModel.visualState) { _, newState in
+                if newState == .securityLocked && !viewModel.isShowingSecurityError {
+                    viewModel.isShowingSecurityError = true
+                }
+            }
+    }
+}
+
+extension View {
+    /// Applies the debug security-locked flag side-effect for preview surfaces only.
+    fileprivate func securityErrorFlagOnLock(viewModel: PlayerViewModel) -> some View {
+        modifier(SecurityErrorFlagOnLockModifier(viewModel: viewModel))
+    }
+}
+
 
 private extension Array {
     subscript(safe index: Int) -> Element? {

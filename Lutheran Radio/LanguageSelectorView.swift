@@ -9,6 +9,12 @@
 //  HStack keyed by selectedStreamIndex. This produces a clearly visible, radio-like tuning motion
 //  (see body documentation for parameter rationale).
 //
+//  ForEach uses `streams.indices` (with stable index as identity) rather than
+//  `enumerated()` + offset. The index is captured only where required for the
+//  `at:` parameter passed to flagView (selection and needle highlighting). This
+//  form is idiomatic for a fixed-order static collection and keeps the matched-
+//  geometry needle animation contract identical.
+//
 //  Created by Jari Lammi on 12.6.2026.
 //
 
@@ -27,6 +33,13 @@ import SwiftUI
 /// a fixed, non-scrollable, perfectly centered set of five flags. The previous ScrollView +
 /// `.scrollDisabled(true)` form worked but carried unnecessary scrolling machinery.
 ///
+/// Identity in ForEach:
+/// - Uses `streams.indices` (with `id: \.self`) to provide stable identity directly from the
+///   collection. This makes the identity source explicit and idiomatic while still
+///   obtaining the index required for `flagView(for:at:)` (selection + needle position).
+/// - Because `availableStreams` is a static constant, the integer indices are permanently
+///   stable and match the selection contract expected by the rest of the system.
+///
 /// The animated red "tuning needle" uses `matchedGeometryEffect` on the indicator Rectangle
 /// together with an explicit `.animation(.spring(response:dampingFraction:), value:)` modifier
 /// applied to the `HStack` container. The animation value is `viewModel.selectedStreamIndex`.
@@ -44,20 +57,31 @@ import SwiftUI
 ///
 /// - SeeAlso: ``PlayerViewModel``, `RadioPlayerCoordinator.handleLanguageSelection(at:)`,
 ///   `DirectStreamingPlayer.availableStreams`, <doc:Architecture>,
-///   CODING_AGENT.md (Single Source of Truth Principles + Cross-target shared files).
+///   CODING_AGENT.md (Single Source of Truth Principles + Cross-target shared files + Documentation & Comment Standards).
 struct LanguageSelectorView: View {
     @Bindable var viewModel: PlayerViewModel
 
     @Namespace private var needleNamespace
 
+    /// Local view of the canonical stream list (static; order defines selection indices).
+    ///
+    /// Direct access to `DirectStreamingPlayer.availableStreams` (SSOT) is intentional so the
+    /// view always reflects the authoritative 5-item set without indirection or caching.
     private var streams: [DirectStreamingPlayer.Stream] {
         DirectStreamingPlayer.availableStreams
     }
 
     var body: some View {
         HStack(spacing: 10) {
-            ForEach(Array(streams.enumerated()), id: \.offset) { index, stream in
-                flagView(for: stream, at: index)
+            // Use the array's own indices for stable identity.
+            // - `streams` is the static `DirectStreamingPlayer.availableStreams` (never mutated at runtime).
+            // - Index values (0..<5) serve as stable, position-based identifiers.
+            // - We still pass the index to `flagView` because `selectLanguage(at:)` and the
+            //   selectedStreamIndex comparison use the canonical position in the array.
+            // This form avoids `enumerated()`/offset identity while preserving exact
+            // behavior and the matchedGeometry needle animation keyed by index.
+            ForEach(streams.indices, id: \.self) { index in
+                flagView(for: streams[index], at: index)
             }
         }
         // Explicit animation drives matchedGeometryEffect. Without it the geometry change
