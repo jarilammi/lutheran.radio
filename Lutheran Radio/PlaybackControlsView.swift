@@ -85,30 +85,29 @@ struct PlaybackControlsView: View {
     // This is the primary user-facing path after the SwiftUI migration of the player UI.
     @State private var isShowingSleepTimerDialog = false
 
-    private var isActivelyPlaying: Bool {
-        viewModel.visualState.isActivelyPlaying
-    }
-
     var body: some View {
         HStack(spacing: 20) {
+            let cp = viewModel.controlPresentation
+
             // Play / Pause
             Button {
-                if isActivelyPlaying {
+                if viewModel.isActivelyPlaying {
                     viewModel.pause()
                 } else {
                     viewModel.play()
                 }
             } label: {
-                Image(systemName: isActivelyPlaying ? "pause.fill" : "play.fill")
+                Image(systemName: cp.systemImage)
                     .font(.system(size: 24, weight: .bold))
                     .frame(width: 50, height: 50)
-                    .symbolEffect(.bounce, value: isActivelyPlaying)
+                    .foregroundStyle(cp.tint)
+                    .symbolEffect(.bounce, value: viewModel.isActivelyPlaying)
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("playPauseButton")
             .accessibilityHint(String(localized: "accessibility_hint_play_pause", table: "Localizable"))
             .accessibilityLabel(
-                isActivelyPlaying
+                viewModel.isActivelyPlaying
                     ? String(localized: "accessibility_label_play_pause", table: "Localizable")
                     : String(localized: "accessibility_label_play", table: "Localizable")
             )
@@ -117,7 +116,7 @@ struct PlaybackControlsView: View {
             // discoverable action for VoiceOver / Switch Control users. Matches the old UIKit
             // custom action intent without changing observable behavior.
             .accessibilityAction(named: String(localized: "toggle_playback", table: "Localizable")) {
-                if isActivelyPlaying {
+                if viewModel.isActivelyPlaying {
                     viewModel.pause()
                 } else {
                     viewModel.play()

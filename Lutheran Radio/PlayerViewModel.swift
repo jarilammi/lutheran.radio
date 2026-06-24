@@ -95,6 +95,8 @@ final class PlayerViewModel {
     /// - SeeAlso: ``PlayerVisualState/makeStatusPresentation()``, dataflow guidance on caching derived.
     private(set) var statusPresentation: PlayerStatusPresentation = PlayerVisualState.prePlay.makeStatusPresentation()
 
+    private(set) var controlPresentation: PlayerControlPresentation = PlayerVisualState.prePlay.makeControlPresentation()
+
     /// Index into `DirectStreamingPlayer.availableStreams` that the UI believes is selected.
     /// Kept in sync by the coordinator (owner of selection math + needle).
     var selectedStreamIndex: Int = 0
@@ -225,6 +227,7 @@ final class PlayerViewModel {
 
     private func recomputePresentation() {
         statusPresentation = visualState.makeStatusPresentation()
+        controlPresentation = visualState.makeControlPresentation()
     }
 }
 
