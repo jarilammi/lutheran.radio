@@ -12,30 +12,28 @@ import Foundation
 
 // MARK: - Shared Display Logic
 //
-// WidgetMetadataEmphasis, WidgetNowPlayingDisplayModel, and the core resolver
-// now live in WidgetDisplayModels.swift (shared with Live Activity code).
-// The thin adapter below preserves the existing call sites for medium/large widgets.
+// WidgetMetadataEmphasis, WidgetNowPlayingDisplayModel, and `widgetNowPlayingDisplayModel(visualState:streamMetadata:languageName:)`
+// live in WidgetDisplayModels.swift (the SSOT for the metadata/emphasis axis; also used by Live Activity).
 //
-// Presentation surfaces in this file:
-// - statusPresentation (via makeStatusPresentation) is already carried on SimpleEntry
-//   and consumed for the status caption.
-// - controlPresentation (via makeControlPresentation) is the new parallel narrow type
-//   for the play/pause buttons. All three family views now use only the narrow value
-//   for glyph + tint decisions (see P0 recommendation in the 2026-06-24 presentation
-//   dataflow analysis).
+// Presentation surfaces carried on `SimpleEntry` (the TimelineEntry snapshot):
+// - `statusPresentation` (via `makeStatusPresentation`) — status indicator axis.
+// - `controlPresentation` (via `makeControlPresentation`) — play/pause control axis.
+// - `widgetNowPlayingDisplayModel` (via `widgetNowPlayingDisplayModel(...)`) — metadata/emphasis axis.
+//
+// All three are pre-derived once in the `Provider` (placeholder / snapshot / timeline paths).
+// Widget family views and `WidgetMetadataRegion` consume only the narrow values rather than
+// re-reading `visualState` or calling adapters inside `body`. This follows the snapshot-driven
+// narrow-input pattern for WidgetKit (see WidgetDisplayModels.swift module header).
+//
+// The former thin adapter `widgetNowPlayingDisplayModel(from: entry)` has been removed;
+// derivation now happens exclusively at snapshot construction time.
 
-// Adapter: computes language name from the entry's streams (full 21-lang list)
-// then delegates to the shared resolver.
-private func widgetNowPlayingDisplayModel(from entry: SimpleEntry) -> WidgetNowPlayingDisplayModel {
-    let languageName = entry.availableStreams
-        .first { $0.languageCode == entry.currentLanguageCode }?
-        .language ?? entry.currentStation
-    return widgetNowPlayingDisplayModel(
-        visualState: entry.visualState,
-        streamMetadata: entry.streamMetadata,
-        languageName: languageName
-    )
-}
+// NOTE: The thin adapter `widgetNowPlayingDisplayModel(from: entry)`
+// has been removed. All derivation of `WidgetNowPlayingDisplayModel` for home widgets
+// now occurs once inside the Provider when constructing `SimpleEntry`
+// (placeholder, snapshot via createEntry, timeline). Medium/Large + WidgetMetadataRegion
+// read `entry.widgetNowPlayingDisplayModel` directly. The identical top-level derivation
+// rule is applied inside Live Activity views (see LutheranRadioWidgetLiveActivity.swift).
 
 private enum WidgetMetadataLayout {
     case medium
@@ -64,6 +62,15 @@ private enum WidgetMetadataLayout {
 }
 
 /// Fixed-height program title and speaker slots for medium and large widgets.
+///
+/// Receives a pre-derived `WidgetNowPlayingDisplayModel` (populated on `SimpleEntry`
+/// by the Provider, or supplied from top-level LA computation). This view is deliberately
+/// narrow: it only renders the four fields and applies emphasis opacity. No direct
+/// dependency on `PlayerVisualState` or raw metadata.
+///
+/// - SeeAlso: `WidgetNowPlayingDisplayModel`, `widgetNowPlayingDisplayModel(...)`,
+///   `SimpleEntry.widgetNowPlayingDisplayModel`, `MediumWidgetView`, `LargeWidgetView`,
+///   `LutheranRadioWidgetLiveActivity.swift` (equivalent blocks), `WidgetDisplayModels.swift`.
 private struct WidgetMetadataRegion: View {
     let model: WidgetNowPlayingDisplayModel
     let layout: WidgetMetadataLayout
@@ -144,6 +151,17 @@ struct Provider: AppIntentTimelineProvider {
         let vs = PlayerVisualState.prePlay
         let pres = vs.makeStatusPresentation()
         let controlPres = vs.makeControlPresentation()
+
+        // Derive the metadata/emphasis model once for the placeholder snapshot.
+        // Use the canonical English name for the live-stream fallback (mirrors currentStation).
+        // See WidgetDisplayModels.swift for the resolver contract and snapshot-driven rationale.
+        let placeholderLanguageName = String(localized: "language_english", table: "Localizable")
+        let metaModel = widgetNowPlayingDisplayModel(
+            visualState: vs,
+            streamMetadata: nil,
+            languageName: placeholderLanguageName
+        )
+
         return SimpleEntry(
             date: Date(),
             visualState: vs,
@@ -152,6 +170,7 @@ struct Provider: AppIntentTimelineProvider {
             statusMessage: pres.text,
             statusPresentation: pres,
             controlPresentation: controlPres,
+            widgetNowPlayingDisplayModel: metaModel,
             streamMetadata: nil,
             availableStreams: SharedPlayerManager.shared.availableStreams,
             configuration: RadioWidgetConfiguration()
@@ -178,15 +197,26 @@ struct Provider: AppIntentTimelineProvider {
         
         let currentStation = currentStream.flag + " " + currentStream.language
 
-        // Derive from the single source of truth (makeStatusPresentation) instead of
-        // duplicating case-by-case text mapping. hasError path kept for compatibility
-        // (though getPendingOrCurrentState currently forces false; visual.securityLocked
-        // will produce the canonical security text via the mapper).
+        // Derive from the single sources of truth:
+        // - makeStatusPresentation + makeControlPresentation (status / control axes)
+        // - widgetNowPlayingDisplayModel(...) (metadata/emphasis axis)
+        //
+        // All three narrow values are stored on the TimelineEntry snapshot (SimpleEntry)
+        // so family views receive only the slices they render. Mirrors the Live Activity
+        // "derive once at top" rule.
         let pres = visualState.makeStatusPresentation()
         let controlPres = visualState.makeControlPresentation()
         let statusMessage: String = hasError
             ? String(localized: "Connection error", defaultValue: "Connection error", table: "Localizable")
             : pres.text
+
+        // Pre-derive the WidgetNowPlayingDisplayModel using the already-resolved language display name.
+        // languageName comes from the authoritative stream (via streamForLanguageCode).
+        let metadataModel = widgetNowPlayingDisplayModel(
+            visualState: visualState,
+            streamMetadata: streamMetadata,
+            languageName: currentStream.language
+        )
 
         let entry = SimpleEntry(
             date: Date(),
@@ -196,6 +226,7 @@ struct Provider: AppIntentTimelineProvider {
             statusMessage: statusMessage,
             statusPresentation: pres,
             controlPresentation: controlPres,
+            widgetNowPlayingDisplayModel: metadataModel,
             streamMetadata: streamMetadata,
             availableStreams: manager.availableStreams,
             configuration: configuration
@@ -219,15 +250,24 @@ struct Provider: AppIntentTimelineProvider {
         let currentStream = SharedPlayerManager.streamForLanguageCode(currentLanguage)
         let currentStation = currentStream.flag + " " + currentStream.language
 
-        // Derive from the single sources of truth (makeStatusPresentation + makeControlPresentation)
-        // instead of duplicating case-by-case text/glyph mapping. Both narrow values are
-        // stored on the TimelineEntry snapshot so that family views receive only the slices
-        // they render. Mirrors the timeline path and Live Activity "derive once at top" rule.
+        // Derive from the single sources of truth (makeStatusPresentation + makeControlPresentation
+        // + widgetNowPlayingDisplayModel) instead of duplicating case-by-case text/glyph/mapping.
+        // All narrow values are stored on the TimelineEntry snapshot so that family views
+        // receive only the slices they render. Mirrors the timeline path and the Live Activity
+        // "derive once at top" rule for both WidgetKit and ActivityKit.
         let pres = visualState.makeStatusPresentation()
         let controlPres = visualState.makeControlPresentation()
         let statusMessage: String = hasError
             ? String(localized: "Connection error", defaultValue: "Connection error", table: "Localizable")
             : pres.text
+
+        // Pre-derive the metadata/emphasis model here. The languageName is the display
+        // name from the stream resolved via the centralized streamForLanguageCode facade.
+        let metadataModel = widgetNowPlayingDisplayModel(
+            visualState: visualState,
+            streamMetadata: streamMetadata,
+            languageName: currentStream.language
+        )
 
         #if DEBUG
         print("[LutheranRadioWidget] Widget creating entry: visualState=\(visualState), station=\(currentStation)")
@@ -241,6 +281,7 @@ struct Provider: AppIntentTimelineProvider {
             statusMessage: statusMessage,
             statusPresentation: pres,
             controlPresentation: controlPres,
+            widgetNowPlayingDisplayModel: metadataModel,
             streamMetadata: streamMetadata,
             availableStreams: manager.availableStreams,
             configuration: configuration
@@ -309,6 +350,32 @@ struct SimpleEntry: TimelineEntry, Sendable {
     ///   `statusPresentation`, LutheranRadioWidgetLiveActivity (same derivation pattern
     ///   performed once at the top of LockScreen / outer DynamicIsland closure).
     let controlPresentation: PlayerControlPresentation
+
+    /// Pre-derived display model for program title, speaker line, visibility and emphasis (metadata axis).
+    ///
+    /// Populated once per snapshot from `widgetNowPlayingDisplayModel(visualState:streamMetadata:languageName:)`
+    /// inside the Provider (`placeholder`, `snapshot`, `timeline` / `createEntry`). This is the
+    /// metadata/emphasis counterpart to `statusPresentation` and `controlPresentation`.
+    ///
+    /// `MediumWidgetView`, `LargeWidgetView`, and `WidgetMetadataRegion` read this value directly
+    /// instead of invoking the resolver inside their `body`. The four fields are the only data
+    /// the metadata region needs; everything else (station, status text, controls, language grid)
+    /// comes from sibling properties on the entry.
+    ///
+    /// Why pre-derive here (see WidgetDisplayModels.swift header for full rationale):
+    /// - Reduces repeated derivation work on every view body evaluation.
+    /// - Narrows the invalidation surface for WidgetKit: only a change to the concrete title/speaker/emphasis
+    ///   affects the metadata region without a full visualState-driven re-comparison in the view.
+    /// - Makes the data dependency of `WidgetMetadataRegion` explicit and minimal.
+    ///
+    /// - SeeAlso: `widgetNowPlayingDisplayModel(visualState:streamMetadata:languageName:)`,
+    ///   `WidgetNowPlayingDisplayModel`, `WidgetMetadataRegion`,
+    ///   ``PlayerVisualState`` (the source), `SimpleEntry.statusPresentation`,
+    ///   `SimpleEntry.controlPresentation`,
+    ///   `LutheranRadioWidgetLiveActivity.swift` (parallel top-level derivation for ActivityKit),
+    ///   `WidgetDisplayModels.swift` (SSOT + snapshot-driven usage pattern),
+    ///   CODING_AGENT.md (narrow inputs, Single Source of Truth Principles).
+    let widgetNowPlayingDisplayModel: WidgetNowPlayingDisplayModel
 
     let streamMetadata: StreamProgramMetadata?
     let availableStreams: [DirectStreamingPlayer.Stream]
@@ -457,8 +524,9 @@ struct MediumWidgetView: View {
             .padding()
             .widgetURL(URL(string: "lutheranradio://open"))
         } else {
-            let metadata = widgetNowPlayingDisplayModel(from: entry)
-
+            // Consume the pre-derived model from the snapshot (SimpleEntry). Derivation
+            // happened once in the Provider using widgetNowPlayingDisplayModel(...).
+            // No resolver call remains inside this view body.
             VStack(spacing: 6) {
                 HStack {
                     Text(String(localized: "lutheran_radio_title", table: "Localizable"))
@@ -491,7 +559,7 @@ struct MediumWidgetView: View {
                         .truncationMode(.tail)
                 }
 
-                WidgetMetadataRegion(model: metadata, layout: .medium)
+                WidgetMetadataRegion(model: entry.widgetNowPlayingDisplayModel, layout: .medium)
 
                 Spacer(minLength: 4)
 
@@ -552,8 +620,10 @@ struct LargeWidgetView: View {
             .padding()
             .widgetURL(URL(string: "lutheranradio://open"))
         } else {
-            let metadata = widgetNowPlayingDisplayModel(from: entry)
-
+            // Consume the pre-derived model from the snapshot (SimpleEntry). Derivation
+            // happened once in the Provider using widgetNowPlayingDisplayModel(...).
+            // No resolver call remains inside this view body. This is the metadata/emphasis
+            // equivalent of how statusPresentation and controlPresentation are consumed.
             VStack(spacing: 12) {
                 HStack {
                     Text(String(localized: "lutheran_radio_title", table: "Localizable"))
@@ -580,7 +650,7 @@ struct LargeWidgetView: View {
                         .foregroundStyle(entry.statusPresentation.foreground)
                 }
 
-                WidgetMetadataRegion(model: metadata, layout: .large)
+                WidgetMetadataRegion(model: entry.widgetNowPlayingDisplayModel, layout: .large)
 
                 Spacer(minLength: 4)
 
@@ -748,14 +818,22 @@ public struct RadioWidgetConfiguration: WidgetConfigurationIntent {
 //
 // Exhaustive previews for the shared WidgetNowPlayingDisplayModel + emphasis
 // across PlayerVisualState values and metadata presence (nil / title only / title + speaker).
-// The same model is used by Live Activity.
+// The same model is used by Live Activity (LockScreen + DynamicIsland).
 //
-// Every preview entry is built with both `statusPresentation` (makeStatusPresentation)
-// and `controlPresentation` (makeControlPresentation) so the matrix exercises the
-// full narrow presentation contract used by providers and Live Activity views.
+// Every preview entry is built with all three narrow presentations:
+// - `statusPresentation` (via makeStatusPresentation)
+// - `controlPresentation` (via makeControlPresentation)
+// - `widgetNowPlayingDisplayModel` (via widgetNowPlayingDisplayModel(...))
+//
+// This exercises the full snapshot-driven contract used by Provider → SimpleEntry
+// and by Live Activity views. WidgetMetadataRegion receives the pre-derived model
+// exactly as the runtime Medium/Large views do.
 //
 // Use the Xcode canvas to inspect emphasis levels (active / subdued / placeholder)
 // and confirm the title + speaker slots remain stable (no conditional insertion).
+//
+// - SeeAlso: `SimpleEntry.widgetNowPlayingDisplayModel`, `WidgetDisplayModels.swift`,
+//   `LutheranRadioWidgetLiveActivity.swift`.
 
 #if DEBUG
 
@@ -806,12 +884,20 @@ private func makePreviewEntry(
           ]
         : SharedPlayerManager.shared.availableStreams
 
-    // Always derive status + control presentation from the visualState (single sources of truth).
+    // Always derive status + control + metadata presentations from the visualState (single sources of truth).
     // This removes any need for overrides in preview construction and ensures the
-    // exhaustive preview matrix exercises both mappers (status + control) used at runtime
-    // by providers and Live Activity views.
+    // exhaustive preview matrix exercises all three mappers (status + control + metadata)
+    // used at runtime by the Provider (SimpleEntry) and by Live Activity views.
+    //
+    // widgetNowPlayingDisplayModel(...) is now the canonical derivation for the
+    // title/speaker/emphasis carried on SimpleEntry (no adapter inside view bodies).
     let pres = visualState.makeStatusPresentation()
     let controlPres = visualState.makeControlPresentation()
+    let metaModel = widgetNowPlayingDisplayModel(
+        visualState: visualState,
+        streamMetadata: metadata,
+        languageName: languageName
+    )
 
     return SimpleEntry(
         date: Date(),
@@ -821,6 +907,7 @@ private func makePreviewEntry(
         statusMessage: pres.text,
         statusPresentation: pres,
         controlPresentation: controlPres,
+        widgetNowPlayingDisplayModel: metaModel,
         streamMetadata: metadata,
         availableStreams: streams,
         configuration: RadioWidgetConfiguration()
