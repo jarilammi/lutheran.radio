@@ -38,9 +38,14 @@ import SwiftUI
 /// The animated red "tuning needle" uses `matchedGeometryEffect` + explicit spring animation
 /// on the container, keyed by the selected index value.
 ///
+/// This view receives only the minimal slice (`selectedStreamIndex` + closure) consistent
+/// with the narrow-input contract now used for all main-player leaf views and the widget
+/// / Live Activity surfaces.
+///
 /// - SeeAlso: ``PlayerViewModel``, `RadioPlayerCoordinator.handleLanguageSelection(at:)`,
 ///   `DirectStreamingPlayer.availableStreams`, `RadioPlayerView`,
-///   CODING_AGENT.md (narrow inputs for separate View types).
+///   CODING_AGENT.md (narrow inputs for separate View types),
+///   PlayerViewModel.swift (Main Player Presentation Dataflow).
 struct LanguageSelectorView: View {
     let selectedStreamIndex: Int
     let selectLanguage: (Int) -> Void

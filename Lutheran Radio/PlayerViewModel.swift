@@ -28,9 +28,12 @@
 //  or having to know about SharedPlayerManager actor hops.
 //
 //  Presentation concerns:
-//  - Derived values that are purely for display (statusPresentation, sleepTimerAccessibilityValue)
-//    live here as cached/computed properties. This keeps SwiftUI view bodies minimal (layout +
-//    modifiers only) per established patterns in the project.
+//  - The three narrow cached presentation surfaces (`statusPresentation`,
+//    `controlPresentation`, `nowPlayingDisplay`) are derived here and supplied to
+//    leaf views. Derivation and ownership stay on the model; views receive only what
+//    they render. See the "Main Player Presentation Dataflow" section below.
+//  - Other derived values (e.g. `sleepTimerAccessibilityValue`) also live here as
+//    cached/computed properties so that SwiftUI view bodies contain layout + modifiers only.
 //
 //  Previews:
 //  Use `PlayerViewModel.makeMock(...)` to obtain an isolated instance for #Preview and tests.
@@ -39,7 +42,9 @@
 //  - Important: Do not duplicate resurrection rules, intent logic, or security decisions here.
 //  - SeeAlso: RadioPlayerCoordinator (the driver), SharedPlayerManager (SSOT via push),
 //    PlayerVisualState.swift, StreamProgramMetadata.swift,
-//    CODING_AGENT.md (Single Source of Truth Principles + Cross-target shared files + Documentation & Comment Standards),
+//    (see "Main Player Presentation Dataflow" section in this file for the three cached surfaces),
+//    `WidgetNowPlayingDisplayModel` + docs/Widget-Presentation-Dataflow.md (widget/LA alignment),
+//    CODING_AGENT.md (Single Source of Truth Principles + Cross-target shared files + Documentation & Comment Standards + narrow inputs),
 //    <doc:Architecture>.
 //
 //  Created by Jari Lammi on 19.6.2026.
@@ -49,36 +54,60 @@ import Foundation
 import Observation
 import SwiftUI
 
-// MARK: - NowPlayingDisplayModel (narrow presentation type for main player)
+// MARK: - Main Player Presentation Dataflow
+//
+// The main player UI is built around three narrow, cached presentation surfaces
+// owned by `PlayerViewModel` (live @Observable @MainActor model). This is the
+// in-process counterpart to the snapshot-driven contract used for widgets and
+// Live Activities.
+//
+// The three narrow presentation surfaces cached on this model are:
+//
+//   • `statusPresentation: PlayerStatusPresentation`
+//     — background/foreground/text (and optional glyph) for the status indicator.
+//     Derived via `visualState.makeStatusPresentation()`. Consumed by `StatusPill`.
+//
+//   • `controlPresentation: PlayerControlPresentation`
+//     — `systemImage` + `tint` for the primary play/pause control.
+//     Derived via `visualState.makeControlPresentation()`.
+//
+//   • `nowPlayingDisplay: NowPlayingDisplayModel`
+//     — pre-formatted `displayText`, resolved `photoName` (Jari Lammi special case),
+//       `speakerVisible`, and accessibility strings. Derived via
+//       `makeNowPlayingDisplayModel(metadata:)`.
+//
+// Derivation is performed exclusively in didSet observers on `visualState` and
+// `currentMetadata` (via the private `recompute*` methods) so that no view body
+// or initializer ever performs formatting, regex, or photo resolution.
+//
+// Leaf views receive only the narrow `let` values they render + action closures:
+// `PlaybackControlsView`, `NowPlayingMetadataView`, `LanguageSelectorView`, and
+// `StatusPill` never see the full model. `RadioPlayerView` is a thin composition
+// root that holds the `@Bindable` and projects the slices at call sites.
+//
+// This architecture aligns the main player with the patterns established for
+// widgets / Live Activities (see `WidgetNowPlayingDisplayModel`,
+// `widgetNowPlayingDisplayModel(...)`, and docs/Widget-Presentation-Dataflow.md).
+//
+// - SeeAlso: `PlayerViewModel` (the cache owner), `NowPlayingDisplayModel`,
+//   `PlayerStatusPresentation`, `PlayerControlPresentation`,
+//   CODING_AGENT.md (narrow inputs for separate View types + cached derived values
+//   on @Observable models + Documentation & Comment Standards).
+//
 
-// The narrow display model for the Now Playing metadata region.
-//
-// Purpose:
-// Provides a single Equatable value type containing exactly the data the
-// NowPlayingMetadataView (and any future consumers) need to render text,
-// decide on the special Jari Lammi photo asset, and supply accessibility labels.
-//
-// All string formatting, name detection, and photo-resolution logic lives in
-// the pure `makeNowPlayingDisplayModel(metadata:)` helper and its supporting
-// functions — outside every SwiftUI body and initializer.
-//
-// This is the main-player counterpart to the widget/Live Activity metadata
-// derivation (`WidgetNowPlayingDisplayModel` + `widgetNowPlayingDisplayModel`).
-// The shapes differ because the main player renders a combined display line
-// plus an optional high-quality speaker photo, while widgets optimize for
-// fixed-height regions and emphasis opacity.
-//
-// - Important: `PlayerViewModel` is the cache owner. Views must receive the
-//   model as `let displayModel` (or equivalent) rather than re-deriving.
-// - SeeAlso: `PlayerViewModel.nowPlayingDisplay`, `NowPlayingMetadataView`,
-//   `makeNowPlayingDisplayModel(metadata:)`, WidgetDisplayModels.swift (pattern reference),
-//   CODING_AGENT.md (narrow inputs + derivation kept out of bodies).
+// MARK: - NowPlayingDisplayModel (narrow presentation type for main player)
 
 /// Narrow value type carrying the derived content for the main player's now-playing block.
 ///
 /// Consumers (primarily `NowPlayingMetadataView`) should depend only on these fields.
 /// The model is `Equatable` so that Observation and view diffs are cheap when content
 /// is unchanged.
+///
+/// - Important: `PlayerViewModel` is the cache owner. Views must receive the
+///   model as `let displayModel` (or equivalent) rather than re-deriving.
+/// - SeeAlso: ``PlayerViewModel/nowPlayingDisplay``, `makeNowPlayingDisplayModel(metadata:)`,
+///   `NowPlayingMetadataView`, `WidgetNowPlayingDisplayModel` (widget/LA parity),
+///   docs/Widget-Presentation-Dataflow.md, CODING_AGENT.md (narrow inputs + cached derived values).
 struct NowPlayingDisplayModel: Equatable {
     /// The formatted line to display (e.g. "Jari Lammi — Sunday Sermon", a title only,
     /// a speaker only, or the localized "No track information" placeholder).
@@ -112,9 +141,14 @@ struct NowPlayingDisplayModel: Equatable {
 /// pure helper (`potentialNames`) so that no View body or init ever performs
 /// regex or name matching.
 ///
+/// This mirrors the widget/Live Activity resolver `widgetNowPlayingDisplayModel(...)`
+/// that produces `WidgetNowPlayingDisplayModel`.
+///
 /// - Parameter metadata: Optional program metadata from the stream.
 /// - Returns: A complete narrow model. All strings are localized via the
 ///   "Localizable" table.
+/// - SeeAlso: `WidgetNowPlayingDisplayModel`, `widgetNowPlayingDisplayModel(visualState:streamMetadata:languageName:)`,
+///   docs/Widget-Presentation-Dataflow.md.
 func makeNowPlayingDisplayModel(metadata: StreamProgramMetadata?) -> NowPlayingDisplayModel {
     let displayText = makeDisplayText(from: metadata)
     let photoName = resolvedSpeakerPhotoName(from: displayText, metadata: metadata)
@@ -223,8 +257,12 @@ private func potentialNames(from text: String) -> [String] {
 ///   button so that `PlaybackControlsView.body` contains only layout + modifiers.
 ///
 /// - SeeAlso: `NowPlayingDisplayModel`, `makeNowPlayingDisplayModel(metadata:)`, `NowPlayingMetadataView`,
-///   `PlayerStatusPresentation`, `PlayerControlPresentation`, CODING_AGENT.md (cached derived values on @Observable models,
-///   narrow inputs for separate View types, Documentation & Comment Standards).
+///   `PlayerStatusPresentation`, `PlayerControlPresentation`,
+///   (see the "Main Player Presentation Dataflow" section at the top of this file),
+///   `WidgetNowPlayingDisplayModel` (for widget/LA parity),
+///   CODING_AGENT.md (cached derived values on @Observable models,
+///   narrow inputs for separate View types, Documentation & Comment Standards),
+///   docs/Widget-Presentation-Dataflow.md.
 @Observable
 @MainActor
 final class PlayerViewModel {
@@ -243,6 +281,16 @@ final class PlayerViewModel {
     }
 
     // MARK: - Cached narrow presentation (derived)
+
+    // The three narrow presentation surfaces cached on this model.
+    // These are the authoritative derived values for the main player's UI:
+    // - statusPresentation (for StatusPill and status text)
+    // - controlPresentation (for play/pause glyph + tint)
+    // - nowPlayingDisplay (for metadata text, photo decision, a11y)
+    //
+    // All three are recomputed in didSet observers and handed as narrow `let` values
+    // to leaf views. This is the live-@Observable realization of the same three-axis
+    // contract used by widgets / Live Activities (status + control + WidgetNowPlayingDisplayModel).
 
     /// Narrow, presentation-only snapshot for status UI.
     ///

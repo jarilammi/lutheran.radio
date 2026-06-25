@@ -5,15 +5,16 @@
 //  Pure SwiftUI playback controls row with play/pause button and sleep timer.
 //
 //  Play / Pause button:
-//  - Visual appearance (system image + tint) is driven by the narrow `viewModel.controlPresentation`.
-//  - Semantic state (whether audio is actively playing) is read from `viewModel.isActivelyPlaying`
-//    for action routing, `.symbolEffect`, and accessibility.
+//  - Visual appearance (system image + tint) is driven by the narrow `controlPresentation`
+//    value received from the caller.
+//  - Semantic state (whether audio is actively playing) is supplied explicitly as
+//    `isActivelyPlaying` for action routing, `.symbolEffect`, and accessibility.
 //
 //  Sleep timer:
 //  - Uses a native `.confirmationDialog` with duration presets, conditional "Cancel timer",
 //    and the destructive "Clear local state" privacy action.
-//  - Accessibility value (when active) comes from `viewModel.sleepTimerAccessibilityValue`
-//    (derived on the model, not inside the view body).
+//  - Accessibility value (when active) comes from the pre-derived
+//    `sleepTimerAccessibilityValue` (derived on the model, not inside the view body).
 //
 //  The view receives only narrow value types (`controlPresentation`, timer values,
 //  `statusPresentation`) + action closures. No `PlayerViewModel`.
@@ -41,6 +42,10 @@ import SwiftUI
 /// This completes the narrow-input contract for the control axis (parallel to
 /// how `StatusPill` receives only `PlayerStatusPresentation` and `NowPlayingMetadataView`
 /// receives only `NowPlayingDisplayModel`).
+///
+/// The pattern (leaf views receive narrow value types + closures, never the full
+/// model) is now consistent across the main player and the widget / Live Activity
+/// leaf views (`WidgetMetadataRegion`, button builders in Dynamic Island, etc.).
 ///
 /// Sleep timer presentation:
 /// - Timer countdown and accessibility value come in pre-computed.

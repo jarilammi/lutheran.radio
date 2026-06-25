@@ -11,6 +11,9 @@
 //  (Equatable) and a boolean flag. Derivation responsibility lives exclusively on
 //  PlayerViewModel (via cached `nowPlayingDisplay` + `makeNowPlayingDisplayModel`).
 //
+//  This follows the same narrow contract as `StatusPill` and widget/Live Activity
+//  metadata regions (no full model, no derivation inside the view).
+//
 //  Created by Jari Lammi on 13.6.2026.
 //
 
@@ -30,8 +33,14 @@ import SwiftUI
 /// are performed in `makeNowPlayingDisplayModel` (cached on the view model).
 ///
 /// - SeeAlso: ``NowPlayingDisplayModel``, ``makeNowPlayingDisplayModel(metadata:)``,
-///   ``PlayerViewModel/nowPlayingDisplay``, `RadioPlayerView`, CODING_AGENT.md
-///   (narrow inputs for separate View types, cached derived values on @Observable models).
+///   ``PlayerViewModel/nowPlayingDisplay``, `RadioPlayerView`, `StatusPill`,
+///   `WidgetNowPlayingDisplayModel` (widget/LA parity),
+///   CODING_AGENT.md (narrow inputs for separate View types, cached derived values on @Observable models),
+///   docs/Widget-Presentation-Dataflow.md.
+///
+/// The narrow-input pattern here (receive only `displayModel: NowPlayingDisplayModel` +
+/// a simple `showPhoto` flag) is now consistent with `StatusPill` (receives only
+/// `PlayerStatusPresentation`) and the widget/Live Activity leaf surfaces.
 struct NowPlayingMetadataView: View {
     /// The complete narrow model for this region.
     /// All text, photo decision, and a11y strings are supplied ready to use.

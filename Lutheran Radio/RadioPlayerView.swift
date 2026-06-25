@@ -30,6 +30,10 @@ import UIKit
 ///   demonstrated by `StatusPill`).
 /// - Does not perform derivation itself.
 ///
+/// See the "Main Player Presentation Dataflow" section in `PlayerViewModel.swift`
+/// for the authoritative description of the three cached surfaces and narrow contract
+/// (aligned with widget/Live Activity patterns).
+///
 /// Current visual order (top to bottom):
 /// 1. Localized app title (establishes identity immediately under the status bar).
 /// 2. Primary playback controls (play/pause, sleep timer, status pill) — placed high for reachability.
@@ -151,7 +155,7 @@ struct RadioPlayerView: View {
                 // adjacent to the tuner controls.
                 //
                 // Narrow input: the cached NowPlayingDisplayModel + the showPhoto layout flag.
-                NowPlayingMetadataView(displayModel: viewModel.nowPlayingDisplay)
+                NowPlayingMetadataView(displayModel: viewModel.nowPlayingDisplay, showPhoto: true)
                     .padding(.horizontal, 20)
                     .padding(.bottom, 12)
 
