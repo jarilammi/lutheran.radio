@@ -346,17 +346,18 @@ final class Lutheran_RadioTests: XCTestCase {
 }
 
 // MARK: - Tests for modernized pure SwiftUI composed views
-// The three views (LanguageSelectorView, PlaybackControlsView, NowPlayingMetadataView) are now
-// pure SwiftUI and driven by PlayerViewModel. These tests exercise creation + VM binding +
-// action forwarding (no UIKit internals, needle math, or vended UILabels remain).
+// The three views receive narrow value + closure inputs projected from PlayerViewModel
+// (the composition root holds the @Bindable). These tests exercise creation and basic usage.
 final class SwiftUIComposedViewsTests: XCTestCase {
 
     @MainActor
     func testLanguageSelectorView_CreatesAndBindsToVM() {
         let vm = PlayerViewModel.makeMock(selectedStreamIndex: 1)
-        let view = LanguageSelectorView(viewModel: vm)
+        let view = LanguageSelectorView(
+            selectedStreamIndex: vm.selectedStreamIndex,
+            selectLanguage: vm.selectLanguage
+        )
         XCTAssertNotNil(view)
-        // Selection binding is exercised by the view body observing vm.selectedStreamIndex.
         vm.selectedStreamIndex = 3
         XCTAssertEqual(vm.selectedStreamIndex, 3)
     }
@@ -367,7 +368,15 @@ final class SwiftUIComposedViewsTests: XCTestCase {
         var playCalled = false
         vm.onPlayRequested = { playCalled = true }
 
-        let view = PlaybackControlsView(viewModel: vm)
+        let view = PlaybackControlsView(
+            controlPresentation: vm.controlPresentation,
+            isActivelyPlaying: vm.isActivelyPlaying,
+            sleepTimerRemaining: vm.sleepTimerRemaining,
+            sleepTimerAccessibilityValue: vm.sleepTimerAccessibilityValue,
+            statusPresentation: vm.statusPresentation,
+            onPlay: vm.play,
+            onPause: vm.pause
+        )
         XCTAssertNotNil(view)
 
         // Simulate action
@@ -378,16 +387,13 @@ final class SwiftUIComposedViewsTests: XCTestCase {
     @MainActor
     func testNowPlayingMetadataView_RendersMetadataAndPhotoHeuristic() {
         let vm = PlayerViewModel.makeMock(currentMetadata: StreamProgramMetadata(programTitle: "Test", speaker: "Jari Lammi"))
-        let view = NowPlayingMetadataView(viewModel: vm)
+        let view = NowPlayingMetadataView(displayModel: vm.nowPlayingDisplay)
         XCTAssertNotNil(view)
-        // The view body uses displayText + speakerPhotoName logic (Jari path exercises photo name mapping).
     }
 
     @MainActor
-    func testPotentialNamesHelper_PublicViaMetadataView() {
-        // The pure helper is now private inside the SwiftUI view; we test the observable effect
-        // via a VM with a name that would trigger photo.
+    func testNowPlayingMetadataView_PhotoHeuristicViaModel() {
         let vm = PlayerViewModel.makeMock(currentMetadata: StreamProgramMetadata(programTitle: "Sermon by Jari Lammi", speaker: nil))
-        XCTAssertNotNil(NowPlayingMetadataView(viewModel: vm))
+        XCTAssertNotNil(NowPlayingMetadataView(displayModel: vm.nowPlayingDisplay))
     }
 }

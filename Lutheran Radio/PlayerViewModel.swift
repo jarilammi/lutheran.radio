@@ -49,6 +49,156 @@ import Foundation
 import Observation
 import SwiftUI
 
+// MARK: - NowPlayingDisplayModel (narrow presentation type for main player)
+
+// The narrow display model for the Now Playing metadata region.
+//
+// Purpose:
+// Provides a single Equatable value type containing exactly the data the
+// NowPlayingMetadataView (and any future consumers) need to render text,
+// decide on the special Jari Lammi photo asset, and supply accessibility labels.
+//
+// All string formatting, name detection, and photo-resolution logic lives in
+// the pure `makeNowPlayingDisplayModel(metadata:)` helper and its supporting
+// functions — outside every SwiftUI body and initializer.
+//
+// This is the main-player counterpart to the widget/Live Activity metadata
+// derivation (`WidgetNowPlayingDisplayModel` + `widgetNowPlayingDisplayModel`).
+// The shapes differ because the main player renders a combined display line
+// plus an optional high-quality speaker photo, while widgets optimize for
+// fixed-height regions and emphasis opacity.
+//
+// - Important: `PlayerViewModel` is the cache owner. Views must receive the
+//   model as `let displayModel` (or equivalent) rather than re-deriving.
+// - SeeAlso: `PlayerViewModel.nowPlayingDisplay`, `NowPlayingMetadataView`,
+//   `makeNowPlayingDisplayModel(metadata:)`, WidgetDisplayModels.swift (pattern reference),
+//   CODING_AGENT.md (narrow inputs + derivation kept out of bodies).
+
+/// Narrow value type carrying the derived content for the main player's now-playing block.
+///
+/// Consumers (primarily `NowPlayingMetadataView`) should depend only on these fields.
+/// The model is `Equatable` so that Observation and view diffs are cheap when content
+/// is unchanged.
+struct NowPlayingDisplayModel: Equatable {
+    /// The formatted line to display (e.g. "Jari Lammi — Sunday Sermon", a title only,
+    /// a speaker only, or the localized "No track information" placeholder).
+    let displayText: String
+
+    /// Resolved asset name for a special speaker photo, or nil when the standard
+    /// radio placeholder should be used.
+    ///
+    /// Currently the only named special case is `"jari_lammi_photo"`.
+    let photoName: String?
+
+    /// Whether a speaker line is considered present for emphasis/visibility purposes.
+    /// Retained for parity with the widget metadata model and future use.
+    let speakerVisible: Bool
+
+    /// Full accessibility label for the text content (includes "Now Playing:" prefix
+    /// when real content is present).
+    let accessibilityText: String
+
+    /// Accessibility label for the photo (or placeholder logo) area.
+    let photoAccessibilityLabel: String
+}
+
+/// Produces a `NowPlayingDisplayModel` by applying the canonical formatting,
+/// Jari Lammi photo special-case, and accessibility rules to the supplied metadata.
+///
+/// This is the single source of truth for the main-player metadata/now-playing
+/// presentation axis. It is called from `PlayerViewModel`'s didSet observers.
+///
+/// The special-case photo logic ("Jari Lammi") is implemented here via a small
+/// pure helper (`potentialNames`) so that no View body or init ever performs
+/// regex or name matching.
+///
+/// - Parameter metadata: Optional program metadata from the stream.
+/// - Returns: A complete narrow model. All strings are localized via the
+///   "Localizable" table.
+func makeNowPlayingDisplayModel(metadata: StreamProgramMetadata?) -> NowPlayingDisplayModel {
+    let displayText = makeDisplayText(from: metadata)
+    let photoName = resolvedSpeakerPhotoName(from: displayText, metadata: metadata)
+    let speakerVisible = (metadata?.speaker?.isEmpty == false)
+    let accessibilityText = makeAccessibilityText(displayText: displayText)
+    let photoAccessibilityLabel = makePhotoAccessibilityLabel(speaker: metadata?.speaker)
+
+    return NowPlayingDisplayModel(
+        displayText: displayText,
+        photoName: photoName,
+        speakerVisible: speakerVisible,
+        accessibilityText: accessibilityText,
+        photoAccessibilityLabel: photoAccessibilityLabel
+    )
+}
+
+// MARK: - Pure derivation helpers (outside all view bodies)
+
+private func makeDisplayText(from metadata: StreamProgramMetadata?) -> String {
+    guard let m = metadata else {
+        return String(localized: "no_track_info", table: "Localizable")
+    }
+    if let title = m.programTitle, let speaker = m.speaker {
+        return "\(speaker) — \(title)"
+    } else if let title = m.programTitle {
+        return title
+    } else if let speaker = m.speaker {
+        return speaker
+    } else {
+        return String(localized: "no_track_info", table: "Localizable")
+    }
+}
+
+/// Resolves the special "jari_lammi_photo" asset when the constructed display text
+/// contains the recognized speaker name. All other cases (including other speakers
+/// or no metadata) return nil so the caller shows the standard placeholder.
+private func resolvedSpeakerPhotoName(from displayText: String, metadata: StreamProgramMetadata?) -> String? {
+    guard let meta = metadata, meta.hasDisplayableContent else { return nil }
+    let names = potentialNames(from: displayText)
+    if names.contains("Jari Lammi") {
+        return "jari_lammi_photo"
+    }
+    return nil
+}
+
+private func makeAccessibilityText(displayText: String) -> String {
+    let noTrack = String(localized: "no_track_info", table: "Localizable")
+    if displayText != noTrack {
+        let prefix = String(localized: "Now Playing", defaultValue: "Now Playing", table: "Localizable")
+        return "\(prefix): \(displayText)"
+    }
+    return displayText
+}
+
+private func makePhotoAccessibilityLabel(speaker: String?) -> String {
+    if let s = speaker, !s.isEmpty {
+        // SAFETY: String(format:) with a catalog-provided format string containing %@.
+        // The format is trusted (Localizable.xcstrings) and the argument is the speaker name
+        // taken directly from ICY metadata. Required under SWIFT_STRICT_MEMORY_SAFETY=YES.
+        // This is the established pattern for speaker-specific VoiceOver labels.
+        return unsafe String(
+            format: String(localized: "accessibility_label_photo_of_format", defaultValue: "Photo of %@", table: "Localizable", comment: "Accessibility label for speaker photo. %@ is the speaker or program name."),
+            s
+        )
+    }
+    return String(localized: "accessibility_label_lutheran_radio_logo", defaultValue: "Lutheran Radio Logo", table: "Localizable")
+}
+
+/// Best-effort extraction of capitalized name-like tokens from the display text.
+/// Used exclusively to implement the Jari Lammi special photo case.
+/// Pure function with no side effects.
+private func potentialNames(from text: String) -> [String] {
+    guard !text.isEmpty else { return [] }
+    do {
+        let regex = try NSRegularExpression(pattern: "\\b[A-Z][a-z]+(?:\\s[A-Z][a-z]+)*\\b")
+        let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
+        return matches.compactMap { match in
+            Range(match.range, in: text).map { String(text[$0]) }
+        }
+    } catch {
+        return []
+    }
+}
+
 /// Observable presentation model for the player screen.
 ///
 /// All properties are mutated on the @MainActor by the RadioPlayerCoordinator (or test/preview code).
@@ -65,8 +215,16 @@ import SwiftUI
 /// Presentation derivation (cached / computed out of bodies):
 /// - `statusPresentation` (stored, recomputed on visualState) follows the narrow value-type
 ///   input pattern for leaf views.
+/// - `controlPresentation` (stored) provides glyph + tint for the primary play/pause control.
+/// - `nowPlayingDisplay` (stored) owns the fully derived title/speaker text, Jari Lammi photo decision,
+///   speaker visibility, and accessibility strings. Recomputed on `currentMetadata` changes and
+///   relevant `visualState` changes so that `NowPlayingMetadataView` receives a narrow `let`.
 /// - `sleepTimerAccessibilityValue` (computed) owns the a11y string derivation for the timer
 ///   button so that `PlaybackControlsView.body` contains only layout + modifiers.
+///
+/// - SeeAlso: `NowPlayingDisplayModel`, `makeNowPlayingDisplayModel(metadata:)`, `NowPlayingMetadataView`,
+///   `PlayerStatusPresentation`, `PlayerControlPresentation`, CODING_AGENT.md (cached derived values on @Observable models,
+///   narrow inputs for separate View types, Documentation & Comment Standards).
 @Observable
 @MainActor
 final class PlayerViewModel {
@@ -80,6 +238,7 @@ final class PlayerViewModel {
     var visualState: PlayerVisualState = .prePlay {
         didSet {
             recomputePresentation()
+            recomputeNowPlayingDisplay()
         }
     }
 
@@ -97,12 +256,28 @@ final class PlayerViewModel {
 
     private(set) var controlPresentation: PlayerControlPresentation = PlayerVisualState.prePlay.makeControlPresentation()
 
+    /// Narrow, pre-derived display model for the now-playing metadata region (title/speaker text,
+    /// resolved photo asset decision for the Jari Lammi special case, accessibility strings).
+    ///
+    /// Updated via `recomputeNowPlayingDisplay()` on assignment to `currentMetadata` and on
+    /// `visualState` changes (to cover any fallback text that may depend on state).
+    /// Consuming views receive this as a `let` rather than performing derivation.
+    ///
+    /// - SeeAlso: `makeNowPlayingDisplayModel(metadata:)`, `NowPlayingMetadataView`.
+    private(set) var nowPlayingDisplay: NowPlayingDisplayModel = makeNowPlayingDisplayModel(metadata: nil)
+
     /// Index into `DirectStreamingPlayer.availableStreams` that the UI believes is selected.
     /// Kept in sync by the coordinator (owner of selection math + needle).
     var selectedStreamIndex: Int = 0
 
     /// Parsed program / speaker metadata from the active ICY stream (if any).
-    var currentMetadata: StreamProgramMetadata?
+    ///
+    /// Assignment triggers recomputation of `nowPlayingDisplay`.
+    var currentMetadata: StreamProgramMetadata? {
+        didSet {
+            recomputeNowPlayingDisplay()
+        }
+    }
 
     /// Remaining sleep timer duration in seconds. Nil when no timer is active.
     ///
@@ -228,6 +403,13 @@ final class PlayerViewModel {
     private func recomputePresentation() {
         statusPresentation = visualState.makeStatusPresentation()
         controlPresentation = visualState.makeControlPresentation()
+    }
+
+    /// Recomputes the narrow `nowPlayingDisplay` from current metadata (and visual state
+    /// when fallbacks are relevant). Called from the didSet observers so that derivation
+    /// never occurs inside a SwiftUI view body or initializer.
+    private func recomputeNowPlayingDisplay() {
+        nowPlayingDisplay = makeNowPlayingDisplayModel(metadata: currentMetadata)
     }
 }
 

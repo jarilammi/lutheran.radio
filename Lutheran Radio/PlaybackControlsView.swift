@@ -15,8 +15,10 @@
 //  - Accessibility value (when active) comes from `viewModel.sleepTimerAccessibilityValue`
 //    (derived on the model, not inside the view body).
 //
-//  The view receives `@Bindable PlayerViewModel` and forwards actions through it.
-//  All complex timing, orchestration, and privacy confirmation logic remains in `RadioPlayerCoordinator`.
+//  The view receives only narrow value types (`controlPresentation`, timer values,
+//  `statusPresentation`) + action closures. No `PlayerViewModel`.
+//  All complex timing, orchestration, and privacy confirmation logic remains in
+//  `RadioPlayerCoordinator`.
 //
 //  Note: `configureSleepTimerButtonMenu()` is still called from several glue paths for
 //  compatibility, even though the primary UI now uses `.confirmationDialog`.
@@ -28,38 +30,44 @@ import SwiftUI
 
 /// Pure SwiftUI row for the main player controls.
 ///
-/// Binds to `PlayerViewModel` for actions + active state, but the status indicator
-/// is rendered via the narrow `viewModel.statusPresentation` (see `StatusPill`).
-/// This follows the pattern of giving leaf display views the smallest possible value-type input.
-/// Uses native SwiftUI Button + `.symbolEffect(.bounce)` for delightful play/pause transitions.
-/// The sleep timer button uses the moon symbol and indigo tint when active.
+/// Receives narrow value inputs for everything it renders:
+/// - `controlPresentation`: glyph and tint for the play/pause button (from `PlayerControlPresentation`).
+/// - `isActivelyPlaying`: semantic flag used for action routing, `.symbolEffect` key, and accessibility.
+/// - `sleepTimerRemaining` + `sleepTimerAccessibilityValue`: timer state and pre-derived a11y string.
+///
+/// Actions are supplied as closures so the view has no knowledge of `PlayerViewModel`.
+/// Status is rendered via the already-narrow `StatusPill`.
+///
+/// This completes the narrow-input contract for the control axis (parallel to
+/// how `StatusPill` receives only `PlayerStatusPresentation` and `NowPlayingMetadataView`
+/// receives only `NowPlayingDisplayModel`).
 ///
 /// Sleep timer presentation:
-/// - Timer countdown observable via `viewModel.sleepTimerRemaining`.
-/// - Accessibility value (when active) is read from `viewModel.sleepTimerAccessibilityValue`
-///   (a computed derived string owned by the model, not computed inline in the body).
-/// - The moon button tap triggers a native `.confirmationDialog` offering:
-///   - Four time presets (15/30/45/60 min)
-///   - Conditional destructive "Cancel timer" (only when `sleepTimerRemaining > 0`)
-///   - Destructive "Clear local state" privacy action (always present, matching legacy UIMenu)
-/// - Button tap still forwards through the legacy `onSleepTimerTapped` closure (for compatibility).
-/// - Timer selections call `viewModel.selectSleepTimer(minutes:)` / `cancelSleepTimer()` which
-///   are wired (in `RadioPlayerCoordinator.wireAndInitialSetup`) to the coordinator's
-///   `handleSleepTimer*` methods. All business logic stays in the coordinator.
-/// - The "Clear local state" button calls the injected `onClearLocalStateTapped` (if any).
-/// - The old `configureSleepTimerButtonMenu()` (UIMenu builder) is retained and still called
-///   from several internal sleep glue paths; it is a no-op for presentation now.
+/// - Timer countdown and accessibility value come in pre-computed.
+/// - The moon button tap triggers a native `.confirmationDialog` offering the presets,
+///   conditional Cancel, and the "Clear local state" privacy action.
+/// - All complex orchestration, countdown, and privacy logic remains in `RadioPlayerCoordinator`.
 ///
-/// - Precondition: The viewModel must be driven by the coordinator (or mock for previews/tests).
+/// - Precondition: The values must be driven by the coordinator (or mock for previews/tests).
 /// - Note: The privacy clear path does a secondary confirmation via UIAlert before acting.
-/// - SeeAlso: ``PlayerViewModel`` (incl. `sleepTimerAccessibilityValue` and `statusPresentation`),
-///   `PlayerVisualState`, `RadioPlayerCoordinator`, `configureSleepTimerButtonMenu()`,
-///   `confirmAndClearLocalState()`, `SharedPlayerManager.clearAllLocalState`,
-///   CODING_AGENT.md (Documentation & Comment Standards + Single Source of Truth Principles + cached derived),
+/// - SeeAlso: ``PlayerViewModel``, ``PlayerControlPresentation``, ``PlayerStatusPresentation``,
+///   `StatusPill`, `NowPlayingDisplayModel`, `RadioPlayerCoordinator`,
+///   CODING_AGENT.md (narrow inputs for separate View types + cached derived values),
 ///   <doc:Architecture>.
 struct PlaybackControlsView: View {
 
-    @Bindable var viewModel: PlayerViewModel
+    let controlPresentation: PlayerControlPresentation
+    let isActivelyPlaying: Bool
+    let sleepTimerRemaining: TimeInterval?
+    let sleepTimerAccessibilityValue: String?
+    let statusPresentation: PlayerStatusPresentation
+
+    // Action closures supplied by the composition root (RadioPlayerView).
+    // The view never reaches back into a model for behavior.
+    var onPlay: () -> Void = {}
+    var onPause: () -> Void = {}
+    var onSelectSleepTimer: ((Int) -> Void)? = nil
+    var onCancelSleepTimer: (() -> Void)? = nil
 
     // Legacy tap forwarding (still called on button press for compatibility).
     // The complex menu / countdown Task / preset handling logic remains exclusively
@@ -84,29 +92,28 @@ struct PlaybackControlsView: View {
 
     var body: some View {
         HStack(spacing: 20) {
-            let cp = viewModel.controlPresentation
-
             // Play / Pause button
-            // Glyph and tint come from controlPresentation.
-            // Action routing, symbolEffect, and accessibility use the semantic isActivelyPlaying flag.
+            // Glyph and tint come from the narrow controlPresentation input.
+            // Action routing, symbolEffect value, and accessibility labels use the
+            // explicit semantic `isActivelyPlaying` flag.
             Button {
-                if viewModel.isActivelyPlaying {
-                    viewModel.pause()
+                if isActivelyPlaying {
+                    onPause()
                 } else {
-                    viewModel.play()
+                    onPlay()
                 }
             } label: {
-                Image(systemName: cp.systemImage)
+                Image(systemName: controlPresentation.systemImage)
                     .font(.system(size: 24, weight: .bold))
                     .frame(width: 50, height: 50)
-                    .foregroundStyle(cp.tint)
-                    .symbolEffect(.bounce, value: viewModel.isActivelyPlaying)
+                    .foregroundStyle(controlPresentation.tint)
+                    .symbolEffect(.bounce, value: isActivelyPlaying)
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("playPauseButton")
             .accessibilityHint(String(localized: "accessibility_hint_play_pause", table: "Localizable"))
             .accessibilityLabel(
-                viewModel.isActivelyPlaying
+                isActivelyPlaying
                     ? String(localized: "accessibility_label_play_pause", table: "Localizable")
                     : String(localized: "accessibility_label_play", table: "Localizable")
             )
@@ -115,10 +122,10 @@ struct PlaybackControlsView: View {
             // discoverable action for VoiceOver / Switch Control users. Matches the old UIKit
             // custom action intent without changing observable behavior.
             .accessibilityAction(named: String(localized: "toggle_playback", table: "Localizable")) {
-                if viewModel.isActivelyPlaying {
-                    viewModel.pause()
+                if isActivelyPlaying {
+                    onPause()
                 } else {
-                    viewModel.play()
+                    onPlay()
                 }
             }
 
@@ -127,13 +134,12 @@ struct PlaybackControlsView: View {
             // + (always) the destructive "Clear local state" privacy action.
             // The legacy onSleepTimerTapped is still invoked (keeps configureSleepTimerButtonMenu
             // call sites exercised for compatibility and any internal side-effects).
-            // Dialog actions for presets/cancel forward via PlayerViewModel; clear uses direct closure.
+            // Dialog actions for presets/cancel use the injected closures; clear uses its direct closure.
             Button {
                 onSleepTimerTapped?()
                 isShowingSleepTimerDialog = true
             } label: {
-                let remaining = viewModel.sleepTimerRemaining
-                let active = (remaining ?? 0) > 0
+                let active = (sleepTimerRemaining ?? 0) > 0
                 Image(systemName: active ? "moon.zzz.fill" : "moon.zzz")
                     .font(.system(size: 22, weight: .medium))
                     .frame(width: 44, height: 44)
@@ -142,41 +148,37 @@ struct PlaybackControlsView: View {
             .buttonStyle(.plain)
             .accessibilityLabel(String(localized: "accessibility_label_sleep_timer", table: "Localizable"))
             .accessibilityHint(String(localized: "accessibility_hint_sleep_timer", table: "Localizable"))
-            // Sleep timer a11y value is now derived in PlayerViewModel (sleepTimerAccessibilityValue)
-            // so the view body only reads a pre-computed narrow presentation string.
+            // Sleep timer a11y value is supplied pre-derived from the caller.
             // When a timer is active the value surfaces remaining minutes to VoiceOver
-            // (e.g. "12 minutes remaining"); otherwise empty string (no-op for the API).
-            // The derivation (rounding, format) lives in the @Observable model alongside
-            // statusPresentation, keeping work out of SwiftUI body evaluation.
-            .accessibilityValue(viewModel.sleepTimerAccessibilityValue ?? "")
+            // (e.g. "12 minutes remaining"); otherwise empty string.
+            .accessibilityValue(sleepTimerAccessibilityValue ?? "")
             .confirmationDialog(
                 String(localized: "sleep_timer_sheet_title", table: "Localizable"),
                 isPresented: $isShowingSleepTimerDialog,
                 titleVisibility: .visible
             ) {
                 // 15 / 30 / 45 / 60 minute presets (identical to prior UIMenu).
-                // Selection routes through VM -> coordinator handle* so that
-                // setSleepTimer, countdown, intent, notifications and VM sync are untouched.
+                // These call the narrow closure supplied by the composition root.
                 Button(String(localized: "sleep_timer_preset_15_min", table: "Localizable")) {
-                    viewModel.selectSleepTimer(minutes: 15)
+                    onSelectSleepTimer?(15)
                 }
                 Button(String(localized: "sleep_timer_preset_30_min", table: "Localizable")) {
-                    viewModel.selectSleepTimer(minutes: 30)
+                    onSelectSleepTimer?(30)
                 }
                 Button(String(localized: "sleep_timer_preset_45_min", table: "Localizable")) {
-                    viewModel.selectSleepTimer(minutes: 45)
+                    onSelectSleepTimer?(45)
                 }
                 Button(String(localized: "sleep_timer_preset_60_min", table: "Localizable")) {
-                    viewModel.selectSleepTimer(minutes: 60)
+                    onSelectSleepTimer?(60)
                 }
 
                 // Cancel only when a timer is currently active (matches the old UIMenu conditional).
-                if let remaining = viewModel.sleepTimerRemaining, remaining > 0 {
+                if let remaining = sleepTimerRemaining, remaining > 0 {
                     Button(
                         String(localized: "sleep_timer_cancel_timer", table: "Localizable"),
                         role: .destructive
                     ) {
-                        viewModel.cancelSleepTimer()
+                        onCancelSleepTimer?()
                     }
                 }
 
@@ -191,9 +193,6 @@ struct PlaybackControlsView: View {
                 // recent playback/widget/Live Activity state from the App Group (does not affect
                 // security/Core data).
                 //
-                // AGENT NOTE: Do not change visibility condition without also updating the legacy
-                // configureSleepTimerButtonMenu() and its call sites/comments. This dialog is the
-                // SwiftUI presentation surface; business logic and double-confirmation stay in coordinator.
                 // - SeeAlso: RadioPlayerCoordinator.configureSleepTimerButtonMenu, confirmAndClearLocalState,
                 //   <doc:Architecture>, CODING_AGENT.md.
                 Button(
@@ -204,11 +203,9 @@ struct PlaybackControlsView: View {
                 }
             }
 
-            // Status pill consumes the *narrow* cached presentation from the view model.
-            // This is the recommended pattern for display-only leaves: they receive (or read)
-            // only PlayerStatusPresentation instead of the full @Bindable viewModel or the
-            // policy-rich PlayerVisualState. Invalidation scope is minimal.
-            StatusPill(presentation: viewModel.statusPresentation)
+            // Status pill consumes the narrow cached presentation passed in.
+            // Invalidation boundary is limited to statusPresentation changes only.
+            StatusPill(presentation: statusPresentation)
         }
         .frame(height: 50)
     }
@@ -251,12 +248,34 @@ struct StatusPill: View {
 
 #if DEBUG
 #Preview("Controls - Playing") {
-    PlaybackControlsView(viewModel: .makeMock(visualState: .playing))
-        .padding()
+    let vm = PlayerViewModel.makeMock(visualState: .playing)
+    PlaybackControlsView(
+        controlPresentation: vm.controlPresentation,
+        isActivelyPlaying: vm.isActivelyPlaying,
+        sleepTimerRemaining: vm.sleepTimerRemaining,
+        sleepTimerAccessibilityValue: vm.sleepTimerAccessibilityValue,
+        statusPresentation: vm.statusPresentation,
+        onPlay: vm.play,
+        onPause: vm.pause,
+        onSelectSleepTimer: { _ in },
+        onCancelSleepTimer: {}
+    )
+    .padding()
 }
 
 #Preview("Controls - Connecting") {
-    PlaybackControlsView(viewModel: .makeMock(visualState: .prePlay))
-        .padding()
+    let vm = PlayerViewModel.makeMock(visualState: .prePlay)
+    PlaybackControlsView(
+        controlPresentation: vm.controlPresentation,
+        isActivelyPlaying: vm.isActivelyPlaying,
+        sleepTimerRemaining: vm.sleepTimerRemaining,
+        sleepTimerAccessibilityValue: vm.sleepTimerAccessibilityValue,
+        statusPresentation: vm.statusPresentation,
+        onPlay: vm.play,
+        onPause: vm.pause,
+        onSelectSleepTimer: { _ in },
+        onCancelSleepTimer: {}
+    )
+    .padding()
 }
 #endif

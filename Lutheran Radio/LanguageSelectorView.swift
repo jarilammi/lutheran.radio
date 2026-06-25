@@ -25,48 +25,32 @@ import SwiftUI
 /// Renders the available streams as emoji flags using `DirectStreamingPlayer.availableStreams`
 /// (the single source of truth for the 21-language set and their visual order).
 ///
-/// Selection drives `PlayerViewModel.selectedStreamIndex`; taps are forwarded via
-/// `viewModel.selectLanguage(at:)` and ultimately reach the full stream-switch path in
-/// `RadioPlayerCoordinator` (debounce + tuning sound + security + DirectStreamingPlayer swap).
+/// Receives only the current selected index (as a plain `let`) and a selection closure.
+/// The stream list is read directly from the static `DirectStreamingPlayer.availableStreams`
+/// (canonical constant data, no VM state).
+///
+/// Taps are forwarded via the supplied closure and ultimately reach the full stream-switch
+/// path in `RadioPlayerCoordinator`.
 ///
 /// The row is implemented as a plain `HStack` (no `ScrollView`) because the selector must remain
-/// a fixed, non-scrollable, perfectly centered set of five flags. The previous ScrollView +
-/// `.scrollDisabled(true)` form worked but carried unnecessary scrolling machinery.
+/// a fixed, non-scrollable, perfectly centered set of five flags.
 ///
-/// Identity in ForEach:
-/// - Uses `streams.indices` (with `id: \.self`) to provide stable identity directly from the
-///   collection. This makes the identity source explicit and idiomatic while still
-///   obtaining the index required for `flagView(for:at:)` (selection + needle position).
-/// - Because `availableStreams` is a static constant, the integer indices are permanently
-///   stable and match the selection contract expected by the rest of the system.
-///
-/// The animated red "tuning needle" uses `matchedGeometryEffect` on the indicator Rectangle
-/// together with an explicit `.animation(.spring(response:dampingFraction:), value:)` modifier
-/// applied to the `HStack` container. The animation value is `viewModel.selectedStreamIndex`.
-/// When the user taps a flag, `selectLanguage(at:)` eventually mutates the index (via the
-/// coordinator's optimistic UI path), causing the `if isSelected` branch in `flagView` to
-/// insert the Rectangle at a different position inside the HStack layout. The spring then
-/// produces a visible, damped sweep of the geometry from the old position to the new one.
-///
-/// Spring tuning rationale (response: 0.62, dampingFraction: 0.80):
-/// - Slow enough for the travel to be clearly perceptible and to feel like a physical radio
-///   tuning needle moving across the dial while the tuning sound plays.
-/// - Damped enough to settle elegantly without excessive oscillation or "boing".
-/// - Still responsive (no perceptible lag on tap).
-/// The previous implicit default spring was too brief; the movement was nearly invisible.
+/// The animated red "tuning needle" uses `matchedGeometryEffect` + explicit spring animation
+/// on the container, keyed by the selected index value.
 ///
 /// - SeeAlso: ``PlayerViewModel``, `RadioPlayerCoordinator.handleLanguageSelection(at:)`,
-///   `DirectStreamingPlayer.availableStreams`, <doc:Architecture>,
-///   CODING_AGENT.md (Single Source of Truth Principles + Cross-target shared files + Documentation & Comment Standards).
+///   `DirectStreamingPlayer.availableStreams`, `RadioPlayerView`,
+///   CODING_AGENT.md (narrow inputs for separate View types).
 struct LanguageSelectorView: View {
-    @Bindable var viewModel: PlayerViewModel
+    let selectedStreamIndex: Int
+    let selectLanguage: (Int) -> Void
 
     @Namespace private var needleNamespace
 
     /// Local view of the canonical stream list (static; order defines selection indices).
     ///
-    /// Direct access to `DirectStreamingPlayer.availableStreams` (SSOT) is intentional so the
-    /// view always reflects the authoritative 5-item set without indirection or caching.
+    /// Direct access to `DirectStreamingPlayer.availableStreams` (SSOT) is intentional and
+    /// acceptable here: the list is a small constant with no VM-derived state.
     private var streams: [DirectStreamingPlayer.Stream] {
         DirectStreamingPlayer.availableStreams
     }
@@ -89,17 +73,17 @@ struct LanguageSelectorView: View {
         // Value-driven animation ensures the sweep only occurs when selection actually changes.
         // The parameters were selected after evaluating the radio-tuner feel against the
         // duration of playTuningSound; the sweep now visibly overlaps the sound playback.
-        .animation(.spring(response: 0.62, dampingFraction: 0.80), value: viewModel.selectedStreamIndex)
+        .animation(.spring(response: 0.62, dampingFraction: 0.80), value: selectedStreamIndex)
         .frame(maxWidth: .infinity, alignment: .center)
         .frame(height: 56)
     }
     
     private func flagView(for stream: DirectStreamingPlayer.Stream, at index: Int) -> some View {
-        let isSelected = index == viewModel.selectedStreamIndex
+        let isSelected = index == selectedStreamIndex
 
         return VStack(spacing: 0) {
             Button {
-                viewModel.selectLanguage(at: index)
+                selectLanguage(index)
             } label: {
                 Text(stream.flag)
                     .font(.system(size: 30))
@@ -154,7 +138,11 @@ struct LanguageSelectorView: View {
 
 #if DEBUG
 #Preview("Language Selector") {
-    LanguageSelectorView(viewModel: .makeMock(selectedStreamIndex: 2))
-        .padding()
+    let vm = PlayerViewModel.makeMock(selectedStreamIndex: 2)
+    LanguageSelectorView(
+        selectedStreamIndex: vm.selectedStreamIndex,
+        selectLanguage: vm.selectLanguage
+    )
+    .padding()
 }
 #endif

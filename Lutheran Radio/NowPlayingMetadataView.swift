@@ -7,6 +7,10 @@
 //
 //  Replaces the prior vended-UILabel + UIImageView holder.
 //
+//  The view is intentionally a leaf: it receives a narrow `NowPlayingDisplayModel` value
+//  (Equatable) and a boolean flag. Derivation responsibility lives exclusively on
+//  PlayerViewModel (via cached `nowPlayingDisplay` + `makeNowPlayingDisplayModel`).
+//
 //  Created by Jari Lammi on 13.6.2026.
 //
 
@@ -14,61 +18,53 @@ import SwiftUI
 
 /// Pure SwiftUI representation of the now-playing text block + speaker/program photo.
 ///
-/// Consumes `StreamProgramMetadata` from the view model.
-/// Replicates the previous name-detection logic for the special photo case.
+/// Receives only the narrow pre-computed `displayModel`. No `PlayerViewModel`,
+/// no `StreamProgramMetadata`, and no derivation inside the view body or init.
 ///
-/// Uses `.contentTransition(.numericText())` on the main text for smooth updates (as specified).
+/// - `showPhoto`: retained as a simple layout flag from the composition root
+///   so the same view can be used with/without the photo block.
 ///
-/// - SeeAlso: ``StreamProgramMetadata``, ``PlayerViewModel``, CODING_AGENT.md.
+/// Uses `.contentTransition(.numericText())` on the main text for smooth updates.
+///
+/// All formatting, "Jari Lammi" photo resolution, and accessibility derivation
+/// are performed in `makeNowPlayingDisplayModel` (cached on the view model).
+///
+/// - SeeAlso: ``NowPlayingDisplayModel``, ``makeNowPlayingDisplayModel(metadata:)``,
+///   ``PlayerViewModel/nowPlayingDisplay``, `RadioPlayerView`, CODING_AGENT.md
+///   (narrow inputs for separate View types, cached derived values on @Observable models).
 struct NowPlayingMetadataView: View {
-    let viewModel: PlayerViewModel
+    /// The complete narrow model for this region.
+    /// All text, photo decision, and a11y strings are supplied ready to use.
+    let displayModel: NowPlayingDisplayModel
+
+    /// Whether the photo (or placeholder) block is shown.
+    /// Controlled by the composition root; keeps the leaf view focused on rendering.
     var showPhoto: Bool = true
-
-    private var metadata: StreamProgramMetadata? { viewModel.currentMetadata }
-
-    private var speakerPhotoName: String? {
-        guard let meta = metadata, meta.hasDisplayableContent else { return nil }
-        let names = potentialNames(from: displayText)
-        if names.contains("Jari Lammi") { return "jari_lammi_photo" }
-        return nil
-    }
-
-    private var displayText: String {
-        guard let m = metadata else {
-            return String(localized: "no_track_info", table: "Localizable")
-        }
-        if let title = m.programTitle, let speaker = m.speaker {
-            return "\(speaker) — \(title)"
-        } else if let title = m.programTitle {
-            return title
-        } else if let speaker = m.speaker {
-            return speaker
-        } else {
-            return String(localized: "no_track_info", table: "Localizable")
-        }
-    }
 
     var body: some View {
         VStack(spacing: 8) {
-            // Clean metadata text
-            Text(displayText)
+            // The display text is already fully formatted by the model.
+            Text(displayModel.displayText)
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .lineLimit(3)
                 .contentTransition(.numericText())
-                .accessibilityLabel(accessibilityText)
+                .accessibilityLabel(displayModel.accessibilityText)
                 .accessibilityHint(String(localized: "accessibility_hint_metadata", table: "Localizable"))
 
-            // Photo block (shown below language selector in classic layout)
+            // Photo block (shown below language selector in classic layout).
+            // When `photoName` is non-nil we use the special asset (Jari Lammi case).
+            // Otherwise the standard radio placeholder is shown.
             if showPhoto {
-                if let imageName = speakerPhotoName, let uiImage = UIImage(named: imageName) {
+                if let imageName = displayModel.photoName,
+                   let uiImage = UIImage(named: imageName) {
                     Image(uiImage: uiImage)
                         .resizable()
                         .scaledToFit()
                         .frame(width: 100, height: 100)
                         .clipShape(RoundedRectangle(cornerRadius: 10))
-                        .accessibilityLabel(photoAccessibilityLabel)
+                        .accessibilityLabel(displayModel.photoAccessibilityLabel)
                         .transition(.opacity.combined(with: .scale))
                 } else if let placeholder = UIImage(named: "radio-placeholder") {
                     Image(uiImage: placeholder)
@@ -86,53 +82,20 @@ struct NowPlayingMetadataView: View {
             }
         }
     }
-
-    private var accessibilityText: String {
-        let noTrack = String(localized: "no_track_info", table: "Localizable")
-        if displayText != noTrack {
-            let prefix = String(localized: "Now Playing", defaultValue: "Now Playing", table: "Localizable")
-            return "\(prefix): \(displayText)"
-        }
-        return displayText
-    }
-
-    private var photoAccessibilityLabel: String {
-        if let s = metadata?.speaker {
-            return unsafe String(
-                format: String(localized: "accessibility_label_photo_of_format", defaultValue: "Photo of %@", table: "Localizable", comment: "Accessibility label for speaker photo. %@ is the speaker or program name."),
-                s
-            )
-        }
-        return String(localized: "accessibility_label_lutheran_radio_logo", defaultValue: "Lutheran Radio Logo", table: "Localizable")
-    }
-
-    // Port of the small pure regex helper for speaker name detection (used only for photo logic).
-    private func potentialNames(from text: String) -> [String] {
-        guard !text.isEmpty else { return [] }
-        do {
-            let regex = try NSRegularExpression(pattern: "\\b[A-Z][a-z]+(?:\\s[A-Z][a-z]+)*\\b")
-            let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
-            return matches.compactMap { match in
-                Range(match.range, in: text).map { String(text[$0]) }
-            }
-        } catch {
-            return []
-        }
-    }
 }
 
 // MARK: - Preview
 
 #if DEBUG
 #Preview("Metadata + Photo") {
-    NowPlayingMetadataView(
-        viewModel: .makeMock(currentMetadata: StreamProgramMetadata(programTitle: "Sunday Sermon", speaker: "Jari Lammi"))
-    )
-    .padding()
+    let vm = PlayerViewModel.makeMock(currentMetadata: StreamProgramMetadata(programTitle: "Sunday Sermon", speaker: "Jari Lammi"))
+    NowPlayingMetadataView(displayModel: vm.nowPlayingDisplay)
+        .padding()
 }
 
 #Preview("No track info") {
-    NowPlayingMetadataView(viewModel: .makeMock(currentMetadata: nil))
-    .padding()
+    let vm = PlayerViewModel.makeMock(currentMetadata: nil)
+    NowPlayingMetadataView(displayModel: vm.nowPlayingDisplay)
+        .padding()
 }
 #endif

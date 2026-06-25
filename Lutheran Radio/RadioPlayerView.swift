@@ -23,6 +23,13 @@ import UIKit
 /// Composes `NowPlayingMetadataView`, `LanguageSelectorView`, `PlaybackControlsView` and
 /// `VolumeAndAirPlayRow` under a single composition root (`UIHostingController` in ViewController).
 ///
+/// Role of this type:
+/// - Holds the `@Bindable PlayerViewModel`.
+/// - Projects **narrow** value types and closures to the three primary subviews so that
+///   leaf views depend on the smallest possible inputs (following the pattern first
+///   demonstrated by `StatusPill`).
+/// - Does not perform derivation itself.
+///
 /// Current visual order (top to bottom):
 /// 1. Localized app title (establishes identity immediately under the status bar).
 /// 2. Primary playback controls (play/pause, sleep timer, status pill) — placed high for reachability.
@@ -102,8 +109,18 @@ struct RadioPlayerView: View {
                 // Playback controls (play/pause + sleep timer moon + status pill).
                 // Positioned early in the stack so the most frequent actions sit in a comfortable
                 // thumb zone near the top of the content area.
+                //
+                // Narrow inputs only: the @Bindable is held here; children receive value types + closures.
                 PlaybackControlsView(
-                    viewModel: viewModel,
+                    controlPresentation: viewModel.controlPresentation,
+                    isActivelyPlaying: viewModel.isActivelyPlaying,
+                    sleepTimerRemaining: viewModel.sleepTimerRemaining,
+                    sleepTimerAccessibilityValue: viewModel.sleepTimerAccessibilityValue,
+                    statusPresentation: viewModel.statusPresentation,
+                    onPlay: viewModel.play,
+                    onPause: viewModel.pause,
+                    onSelectSleepTimer: { minutes in viewModel.selectSleepTimer(minutes: minutes) },
+                    onCancelSleepTimer: { viewModel.cancelSleepTimer() },
                     onSleepTimerTapped: onSleepTimerTapped,
                     onClearLocalStateTapped: onClearLocalStateTapped
                 )
@@ -120,14 +137,21 @@ struct RadioPlayerView: View {
                 // Flags row with red needle indicator.
                 // The needle's vertical registration is handled inside LanguageSelectorView
                 // via reserved clear space + .offset(y: -11).
-                LanguageSelectorView(viewModel: viewModel)
+                //
+                // Narrow input: only the selected index value and the selection closure.
+                LanguageSelectorView(
+                    selectedStreamIndex: viewModel.selectedStreamIndex,
+                    selectLanguage: { index in viewModel.selectLanguage(at: index) }
+                )
                     .padding(.horizontal)
                     .padding(.bottom, 6)
 
                 // Song / program metadata + optional speaker photo.
                 // Placed directly above the language selector so current-stream context sits
                 // adjacent to the tuner controls.
-                NowPlayingMetadataView(viewModel: viewModel)
+                //
+                // Narrow input: the cached NowPlayingDisplayModel + the showPhoto layout flag.
+                NowPlayingMetadataView(displayModel: viewModel.nowPlayingDisplay)
                     .padding(.horizontal, 20)
                     .padding(.bottom, 12)
 
