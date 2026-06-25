@@ -116,33 +116,64 @@ extension SharedPlayerManager {
         )
     }
     
-    /// Refreshes MPNowPlayingInfoCenter from current visual state and metadata.
+    /// Refreshes the system Now Playing info (MPNowPlayingInfoCenter) for Lock Screen,
+    /// Control Center, Siri, and hardware remote controls.
+    ///
+    /// Uses the parsed `currentStreamMetadata` (programTitle + speaker) as the primary source
+    /// to ensure content parity with Live Activities and widgets. Falls back through raw ICY
+    /// metadata then a language-augmented station name.
+    ///
+    /// - Precondition: Called only on the main-app `SharedPlayerManager` actor instance.
+    /// - Postcondition: `MPNowPlayingInfoCenter.default().nowPlayingInfo` reflects the latest
+    ///   title/artist + live rate derived from actor state.
+    /// - Note: `MPNowPlayingInfoCenter` coalesces frequent updates.
+    /// - SeeAlso: ``didUpdateStreamMetadata(_:)``, ``clearSoftPauseMetadataStashForLanguageChange()``,
+    ///   `StreamProgramMetadata.from(rawICYMetadata:)`, `RadioLiveActivityManager`,
+    ///   CODING_AGENT.md (Single Source of Truth Principles).
     func updateNowPlayingInfo() async {
         guard !isRunningInWidget() else { return }
-        
+
         let stationName = String(localized: "lutheran_radio_title", table: "Localizable")
-        let cachedMetadata = nowPlayingStreamMetadata
         let isActivelyPlaying = currentVisualState.isActivelyPlaying
         let playbackRate = isActivelyPlaying ? 1.0 : 0.0
-        
-        let playerMetadata = await MainActor.run {
-            DirectStreamingPlayer.shared.currentMetadata
+
+        let languageCode = Self.preferredWidgetLanguage()
+        let languageName = Self.streamForLanguageCode(languageCode).language
+
+        // Prefer the parsed metadata (identical source to LA/widgets) so Now Playing shows
+        // the same program title (e.g. "Psaltaren 34") when it becomes available via ICY.
+        let meta = currentStreamMetadata
+        let displayTitle: String
+        let displayArtist: String
+
+        if let program = meta?.programTitle, !program.isEmpty {
+            displayTitle = program
+            if let speaker = meta?.speaker, !speaker.isEmpty {
+                displayArtist = "\(speaker) • \(stationName)"
+            } else {
+                displayArtist = "\(languageName) • \(stationName)"
+            }
+        } else if let raw = nowPlayingStreamMetadata, !raw.isEmpty {
+            displayTitle = raw
+            displayArtist = "\(languageName) • \(stationName)"
+        } else {
+            displayTitle = stationName
+            displayArtist = "\(languageName) • \(stationName)"
         }
-        let displayTitle = cachedMetadata ?? playerMetadata ?? stationName
-        
+
         await MainActor.run {
             var info: [String: Any] = [
                 MPMediaItemPropertyTitle: displayTitle,
-                MPMediaItemPropertyArtist: stationName,
+                MPMediaItemPropertyArtist: displayArtist,
                 MPNowPlayingInfoPropertyIsLiveStream: true,
                 MPNowPlayingInfoPropertyPlaybackRate: playbackRate,
                 MPMediaItemPropertyMediaType: MPMediaType.anyAudio.rawValue
             ]
-            
+
             if let artwork = NowPlayingArtwork.placeholder {
                 info[MPMediaItemPropertyArtwork] = artwork
             }
-            
+
             MPNowPlayingInfoCenter.default().nowPlayingInfo = info
         }
     }

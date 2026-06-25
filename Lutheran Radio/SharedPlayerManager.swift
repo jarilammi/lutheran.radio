@@ -317,10 +317,25 @@ actor SharedPlayerManager {
     var currentStreamMetadata: StreamProgramMetadata?
     var remoteCommandsConfigured = false
 
-    /// Clears soft-pause ICY stash when the user changes language without resuming first.
-    func clearSoftPauseMetadataStashForLanguageChange() {
+    /// Clears the soft-pause ICY stash (both raw `nowPlayingStreamMetadata` and parsed
+    /// `currentStreamMetadata`) when the user changes language without resuming playback.
+    ///
+    /// This path is taken for paused language switches (e.g. `.userPaused` state) to avoid
+    /// carrying a stale program title across languages. Immediately refreshes Now Playing
+    /// (main app) so the system surface shows the new language's station name.
+    ///
+    /// - Postcondition: Both metadata properties are `nil`. Now Playing info has been updated
+    ///   (main-app only).
+    /// - SeeAlso: ``updateNowPlayingInfo()``, `completeStreamSwitch(stream:index:)`,
+    ///   `switchToStreamFromWidget(to:index:actionId:)`,
+    ///   CODING_AGENT.md (Single Source of Truth Principles).
+    func clearSoftPauseMetadataStashForLanguageChange() async {
         currentStreamMetadata = nil
         nowPlayingStreamMetadata = nil
+
+        #if LUTHERAN_MAIN_APP
+        await updateNowPlayingInfo()
+        #endif
     }
     
     // MARK: - Visual State (Single Source of Truth)
