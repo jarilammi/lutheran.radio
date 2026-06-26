@@ -317,6 +317,17 @@ actor SharedPlayerManager {
     var currentStreamMetadata: StreamProgramMetadata?
     var remoteCommandsConfigured = false
 
+    /// Internal implementation detail: the actual assignment that clears both ICY stash fields.
+    /// Used by language-change paths so there is one place that performs this specific nil-ing.
+    ///
+    /// Different clear sites (privacy reset, sleep-timer elapsed, full stop-to-cleared) keep
+    /// their direct assignments + surrounding comments because they have distinct semantics
+    /// and postconditions.
+    private func _clearIcyMetadataStash() {
+        currentStreamMetadata = nil
+        nowPlayingStreamMetadata = nil
+    }
+
     /// Clears the soft-pause ICY stash (both raw `nowPlayingStreamMetadata` and parsed
     /// `currentStreamMetadata`) when the user changes language without resuming playback.
     ///
@@ -324,14 +335,17 @@ actor SharedPlayerManager {
     /// carrying a stale program title across languages. Immediately refreshes Now Playing
     /// (main app) so the system surface shows the new language's station name.
     ///
+    /// This is the dedicated, single source of truth entry point for the "language change
+    /// while paused" metadata-clear + Now Playing refresh action.
+    ///
     /// - Postcondition: Both metadata properties are `nil`. Now Playing info has been updated
     ///   (main-app only).
-    /// - SeeAlso: ``updateNowPlayingInfo()``, `completeStreamSwitch(stream:index:)`,
-    ///   `switchToStreamFromWidget(to:index:actionId:)`,
+    /// - SeeAlso: ``updateNowPlayingInfo()``, `_clearIcyMetadataStash()`,
+    ///   `completeStreamSwitch(stream:index:)`, `switchToStreamFromWidget(to:index:actionId:)`,
+    ///   `saveCombinedWidgetState(language:)`,
     ///   CODING_AGENT.md (Single Source of Truth Principles).
     func clearSoftPauseMetadataStashForLanguageChange() async {
-        currentStreamMetadata = nil
-        nowPlayingStreamMetadata = nil
+        _clearIcyMetadataStash()
 
         #if LUTHERAN_MAIN_APP
         await updateNowPlayingInfo()
@@ -1206,6 +1220,8 @@ actor SharedPlayerManager {
         holdPrePlayVisualUntilPlayback = false
         initialPlaybackHasRun = false
         updatePlaybackIntent(to: .cleared)
+        // Direct assignment — privacy reset path. Distinct semantic from language-change stash clear.
+        // Must not call updateNowPlayingInfo or persist widget snapshot here.
         currentStreamMetadata = nil
         nowPlayingStreamMetadata = nil
         lastUserPauseTimestamp = 0
@@ -2241,8 +2257,9 @@ actor SharedPlayerManager {
             #endif
             return
         }
-        currentStreamMetadata = nil
-        nowPlayingStreamMetadata = nil
+        // Language change path: clear stale program metadata for the snapshot.
+        // Uses the same helper as the Now-Playing-oriented clear to keep the nil-ing in one place.
+        _clearIcyMetadataStash()
         savePersistedWidgetState(visualState: currentVisualState, language: language, streamMetadata: nil)
 
         // 2026-05-29: Legacy separate "currentLanguage" key retired. lastUpdateTime
@@ -2583,6 +2600,7 @@ extension SharedPlayerManager {
 
         DirectStreamingPlayer.shared.stop(reason: .interruption)
 
+        // Direct assignment — sleep timer elapsed path (distinct intent: .sleepTimer, not language change).
         currentStreamMetadata = nil
         nowPlayingStreamMetadata = nil
 

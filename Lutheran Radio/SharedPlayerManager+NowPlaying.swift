@@ -119,17 +119,24 @@ extension SharedPlayerManager {
     /// Refreshes the system Now Playing info (MPNowPlayingInfoCenter) for Lock Screen,
     /// Control Center, Siri, and hardware remote controls.
     ///
-    /// Uses the parsed `currentStreamMetadata` (programTitle + speaker) as the primary source
-    /// to ensure content parity with Live Activities and widgets. Falls back through raw ICY
-    /// metadata then a language-augmented station name.
+    /// Delegates title/artist construction to `StreamProgramMetadata.nowPlayingDisplayStrings`
+    /// (the single source of truth for this formatting) to guarantee parity of program
+    /// titles and speaker attribution with Live Activities and widgets.
     ///
     /// - Precondition: Called only on the main-app `SharedPlayerManager` actor instance.
     /// - Postcondition: `MPNowPlayingInfoCenter.default().nowPlayingInfo` reflects the latest
     ///   title/artist + live rate derived from actor state.
     /// - Note: `MPNowPlayingInfoCenter` coalesces frequent updates.
     /// - SeeAlso: ``didUpdateStreamMetadata(_:)``, ``clearSoftPauseMetadataStashForLanguageChange()``,
+    ///   `StreamProgramMetadata.nowPlayingDisplayStrings(fromParsed:rawFallback:stationName:languageName:)`,
     ///   `StreamProgramMetadata.from(rawICYMetadata:)`, `RadioLiveActivityManager`,
+    ///   `WidgetDisplayModels.widgetNowPlayingDisplayModel`,
     ///   CODING_AGENT.md (Single Source of Truth Principles).
+    ///
+    /// AGENT NOTE: The construction of displayTitle / displayArtist was extracted in previous commit
+    /// (see StreamProgramMetadata.swift). This method now only supplies context (station, language,
+    /// visual playback rate) and writes to the Center. Do not re-introduce inline if/else ladders
+    /// for program vs. raw vs. station here. Update the SSOT in StreamProgramMetadata when rules change.
     func updateNowPlayingInfo() async {
         guard !isRunningInWidget() else { return }
 
@@ -140,31 +147,19 @@ extension SharedPlayerManager {
         let languageCode = Self.preferredWidgetLanguage()
         let languageName = Self.streamForLanguageCode(languageCode).language
 
-        // Prefer the parsed metadata (identical source to LA/widgets) so Now Playing shows
-        // the same program title (e.g. "Psaltaren 34") when it becomes available via ICY.
-        let meta = currentStreamMetadata
-        let displayTitle: String
-        let displayArtist: String
-
-        if let program = meta?.programTitle, !program.isEmpty {
-            displayTitle = program
-            if let speaker = meta?.speaker, !speaker.isEmpty {
-                displayArtist = "\(speaker) • \(stationName)"
-            } else {
-                displayArtist = "\(languageName) • \(stationName)"
-            }
-        } else if let raw = nowPlayingStreamMetadata, !raw.isEmpty {
-            displayTitle = raw
-            displayArtist = "\(languageName) • \(stationName)"
-        } else {
-            displayTitle = stationName
-            displayArtist = "\(languageName) • \(stationName)"
-        }
+        // Use the extracted SSOT so Now Playing, widgets, and Live Activities stay in sync
+        // on program titles (e.g. "Psaltaren 34") and speaker attribution.
+        let display = StreamProgramMetadata.nowPlayingDisplayStrings(
+            fromParsed: currentStreamMetadata,
+            rawFallback: nowPlayingStreamMetadata,
+            stationName: stationName,
+            languageName: languageName
+        )
 
         await MainActor.run {
             var info: [String: Any] = [
-                MPMediaItemPropertyTitle: displayTitle,
-                MPMediaItemPropertyArtist: displayArtist,
+                MPMediaItemPropertyTitle: display.title,
+                MPMediaItemPropertyArtist: display.artist,
                 MPNowPlayingInfoPropertyIsLiveStream: true,
                 MPNowPlayingInfoPropertyPlaybackRate: playbackRate,
                 MPMediaItemPropertyMediaType: MPMediaType.anyAudio.rawValue
