@@ -130,17 +130,17 @@ openssl s_client -connect livestream.lutheran.radio:443 -servername livestream.l
 
 ```bash
 # Clean build (iPhone 17 simulator, iOS 26.5)
-xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.0 \
+xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.5 \
   -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17' clean build-for-testing
 # Look for: ** TEST BUILD SUCCEEDED **
 
 # Full test suite
-xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.0 \
+xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.5 \
   -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17' test-without-building
 # Look for: ** TEST SUCCEEDED **
 
 # Fast path when working on Core / security / networking
-xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.0 \
+xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.5 \
   -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17' clean test -only-testing:CoreTests
 # Look for: ** TEST EXECUTE SUCCEEDED **
 ```
@@ -176,13 +176,13 @@ Clean builds should produce **zero Swift compiler warnings**. If enabling a new 
 
 To ensure a smooth development experience, follow these steps before contributing:
 
-1. **Verify Project Build:** Confirm the project builds successfully with: ```xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.0 -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17' clean build```
+1. **Verify Project Build:** Confirm the project builds successfully with: ```xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.5 -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17' clean build```
    Ensure the output includes: **```** BUILD SUCCEEDED **```**
 
-2. **Run Test Suite:** Validate the test suite passes with: ```xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.0 -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17' clean test```
+2. **Run Test Suite:** Validate the test suite passes with: ```xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.5 -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17' clean test```
    Check that the output includes: **```** TEST SUCCEEDED **```**
 
-3. **Run Core Module Tests Only (Fast Path):** When working on security, networking, or the Core framework, use this much faster command: ```xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.0 -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17' clean test -testPlan Core```
+3. **Run Core Module Tests Only (Fast Path):** When working on security, networking, or the Core framework, use this much faster command: ```xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.5 -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17' clean test -testPlan Core```
    Check that the output includes: **```** TEST SUCCEEDED **```**
 
 By verifying these steps on your local machine, you'll help maintain a consistent development environment for the project.
