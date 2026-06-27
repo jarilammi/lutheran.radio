@@ -100,6 +100,11 @@ struct PlayerStatusPresentation: Equatable {
 /// `ContentState` / `ActivityViewContext` consumers can depend on a tiny `Equatable` input
 /// for glyph choice and tint instead of the full policy `PlayerVisualState`.
 ///
+/// **Single Source of Truth**: `PlayerControlPresentation` + `makeControlPresentation()`
+/// is the only place that decides "play.fill" vs "pause.fill" + tint for control affordances.
+/// All widget family views, Dynamic Island regions, Lock Screen Live Activity, and the
+/// Control widget consume this type (or its fields) for the primary button.
+///
 /// - `systemImage`: The SF Symbol name to use for the toggle ("play.fill" when not actively playing,
 ///   "pause.fill" when `isActivelyPlaying`). Consumers may append ".circle" or other variants
 ///   for specific chrome (Lock Screen uses circle variants) while still sourcing the base decision here.
@@ -125,7 +130,7 @@ struct PlayerStatusPresentation: Equatable {
 ///   `LutheranRadioLiveActivityAttributes.ContentState`,
 ///   CODING_AGENT.md (narrow inputs for value types + WidgetKit/ActivityKit snapshot constraints),
 ///   WidgetDisplayModels.swift (sibling presentation axis for metadata/emphasis).
-struct PlayerControlPresentation: Equatable {
+struct PlayerControlPresentation: Sendable, Equatable {
     /// SF Symbol name for the playback toggle control.
     ///
     /// Typically "play.fill" or "pause.fill". Consumers are free to use variant forms
@@ -469,6 +474,11 @@ extension PlayerVisualState {
     ///   `LutheranRadioWidgetLiveActivityWidget` (derives once per DynamicIsland / LockScreen),
     ///   CODING_AGENT.md (narrow inputs, value-type snapshot comparison cost,
     ///   "Pass views only the data they read"), WidgetDisplayModels.swift.
+    ///
+    /// AGENT NOTE: This is the Single Source of Truth for control glyph + tint decisions.
+    /// Do not duplicate the mapping logic in view bodies, region builders, or WidgetDisplayModels.
+    /// All play/pause `Image(systemName:)` + tint decisions for widgets, Live Activities,
+    /// and the Control widget must flow through `makeControlPresentation()`.
     func makeControlPresentation() -> PlayerControlPresentation {
         let imageName = isActivelyPlaying ? "pause.fill" : "play.fill"
         // Use explicit UIColor initializer so the conversion is visible and consistent
