@@ -138,6 +138,15 @@ class RadioLiveActivityManager: ObservableObject {
     /// - SeeAlso: `updateCurrentActivity()`, `SharedPlayerManager.setPlaying`,
     ///   ``isRunningUnderTest``, ``observeExistingActivities()``, <doc:Architecture>
     func startActivity() async {
+        // Defense-in-depth UI test isolation using the SSOT.
+        // Prevents waking the Chrono widget renderer process (WidgetRenderer_Activities)
+        // and avoids any ActivityKit daemon IPC or timer scheduling during UITestMode
+        // (explicit "-UITestMode" or XCTest environment under DEBUG).
+        if SharedPlayerManager.isRunningInUITestMode {
+            stopLocalUpdateTimer()
+            return
+        }
+
         #if DEBUG
         if isRunningUnderTest {
             // Prevent creating real Live Activities + the repeating local timer
@@ -217,6 +226,12 @@ class RadioLiveActivityManager: ObservableObject {
     ///   ``isRunningUnderTest``, RadioLiveActivityManagerTests
     @MainActor
     func updateCurrentActivity() async {
+        // Defense-in-depth UI test isolation (SSOT). Even if a stale currentActivity reference
+        // existed, we must not call Activity.update during test runs.
+        if SharedPlayerManager.isRunningInUITestMode {
+            return
+        }
+
         #if DEBUG
         if isRunningUnderTest {
             return
@@ -352,6 +367,14 @@ class RadioLiveActivityManager: ObservableObject {
     ///   RadioLiveActivityManagerTests.setUp, ``startLocalUpdateTimer()``,
     ///   ``startActivity()``, <doc:Architecture>
     private func observeExistingActivities() {
+        // Defense-in-depth using the SSOT: short-circuit before any ActivityKit query
+        // or timer scheduling when launched under -UITestMode. This is critical because
+        // the manager is instantiated early (statics, coordinators) and its init calls this.
+        if SharedPlayerManager.isRunningInUITestMode {
+            currentActivity = nil
+            return
+        }
+
         #if DEBUG
         // Robust test detection (works in Xcode GUI + xcodebuild + attached LLDB).
         // We short-circuit *before* the synchronous ActivityKit daemon query
@@ -387,6 +410,9 @@ extension RadioLiveActivityManager {
     ///
     /// - SeeAlso: SceneDelegate.sceneDidEnterBackground, ``isRunningUnderTest``
     func handleAppWillEnterBackground() {
+        // Defense-in-depth: never start Live Activities from background transitions under test.
+        if SharedPlayerManager.isRunningInUITestMode { return }
+
         #if DEBUG
         if isRunningUnderTest { return }
         #endif
@@ -412,6 +438,9 @@ extension RadioLiveActivityManager {
     ///
     /// - SeeAlso: ``isRunningUnderTest``, handleAppWillEnterBackground
     func handleAppDidEnterForeground() {
+        // Defense-in-depth: suppress foreground LA pushes under UITestMode.
+        if SharedPlayerManager.isRunningInUITestMode { return }
+
         #if DEBUG
         if isRunningUnderTest { return }
         #endif

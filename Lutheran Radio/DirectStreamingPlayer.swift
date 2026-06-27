@@ -539,21 +539,23 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// launches completely silent (no background audio, no DNS TXT, no certificate work,
     /// no network I/O).
     ///
-    /// This flag is populated at init time from the single source of truth:
-    /// `SharedPlayerManager.isRunningInUITestMode`. That property prefers the explicit
-    /// "-UITestMode" launch argument (set by Lutheran_RadioUITests) and only falls back
-    /// to XCTest environment indicators under DEBUG builds.
+    /// Delegates live to the single source of truth `SharedPlayerManager.isRunningInUITestMode`.
+    /// That property prefers the explicit "-UITestMode" launch argument (set by
+    /// Lutheran_RadioUITests) and only falls back to XCTest environment indicators under
+    /// DEBUG builds.
     ///
     /// Defense-in-depth: even if a recovery or network path inside DirectStreamingPlayer
     /// were to call `play()` under test, the early returns here ensure no real work occurs.
     ///
-    /// - Important: Do not set this flag from duplicated detection logic. If a new
-    ///   playback entry point is added, guard it with `if isTesting { return … }`.
+    /// - Important: Do not duplicate detection logic. `isTesting` always reflects the SSOT.
+    ///   If a new playback entry point is added, guard it with `if isTesting { return … }`.
     ///
     /// - SeeAlso: ``SharedPlayerManager/isRunningInUITestMode``, ViewController.viewDidLoad,
     ///   setupAudioSession, `play()`, `setStreamAndPlay(to:context:)`, `startPlayback(context:)`,
     ///   CODING_AGENT.md (test isolation requirements).
-    internal var isTesting: Bool = false
+    internal var isTesting: Bool {
+        SharedPlayerManager.isRunningInUITestMode
+    }
 
     // AGENT NOTE (UI Test Isolation):
     // All new playback-related entry points added to DirectStreamingPlayer (including
@@ -1033,6 +1035,23 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     }
 
     func safeOnStatusChange(isPlaying: Bool, reasonKey: String?) {
+        // SAFETY: Never feed status into the delegate → UI → widget / Live Activity / Now Playing pipeline
+        // when running under UI test mode. This is the root cause of:
+        //   • audible radio stream before tests execute
+        //   • WidgetRenderer_Activities 0x8BADF00D watchdog crash (Chrono renderer woken at launch)
+        //
+        // Why both checks:
+        //   • `isTesting` delegates to SharedPlayerManager.isRunningInUITestMode (the SSOT)
+        //   • Direct check on the SSOT is defense-in-depth in case isTesting is read before
+        //     the first access or during early static/coordinator construction.
+        // The SSOT itself prefers the explicit "-UITestMode" launch argument.
+        //
+        // See: SharedPlayerManager.isRunningInUITestMode, ViewController cold-launch guard,
+        // CODING_AGENT.md (test isolation requirements).
+        if isTesting || SharedPlayerManager.isRunningInUITestMode {
+            return
+        }
+
         DispatchQueue.main.async {
             if self.isInitializing {
                 self.pendingStatusChanges.append((isPlaying, reasonKey))
@@ -1157,10 +1176,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         // Previously duplicated fragile Locale.current + ?? [0] logic here and in the other init.
         selectedStream = Self.streamForLanguageCode(Self.bestInitialLanguageCode())
         
-        // Delegate to the single source of truth. This eliminates duplicated detection logic
-        // between SharedPlayerManager and DirectStreamingPlayer.
-        // The SSOT prefers the explicit "-UITestMode" launch argument.
-        isTesting = SharedPlayerManager.isRunningInUITestMode
+        // isTesting is now a computed property that delegates live to
+        // SharedPlayerManager.isRunningInUITestMode (the SSOT). No assignment needed.
         
         super.init()
         
@@ -1195,14 +1212,12 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                     #endif
                 }
             }
-        } else if hasInternetConnection && isTesting {
-            // Under test we still want a benign connecting-like status for UI assertions if needed,
-            // but without any network.
-            safeOnStatusChange(isPlaying: false, reasonKey: "status_connecting")
-        } else {
-            // No internet at init → transient failure state
-            safeOnStatusChange(isPlaying: false, reasonKey: "status_no_internet")
         }
+        // IMPORTANT: Emit *zero* status at init time under test (for the main shared instance
+        // created via static let / designated init, used by coordinator/VC/VM).
+        // Previous else-if/else here called safeOnStatusChange synchronously, feeding the
+        // delegate → widget / Live Activity pipeline and contributing to renderer wake + audio side effects.
+        // The hard guard in safeOnStatusChange + this structure ensures no init-time emissions.
         
         setupThermalProtection()
         
@@ -1232,6 +1247,16 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// Uses `internal` visibility so `@testable` test targets can reach it when needed,
     /// while keeping the production surface minimal. All `#if DEBUG` is confined to logging.
     internal func setupNetworkMonitoring() {
+        // UI Test isolation: do not start network monitoring under test.
+        // This prevents reconnect handlers from calling play() or triggering any
+        // network/security work or status callbacks during UITest launches.
+        guard !isTesting else {
+            #if DEBUG
+            print("[DirectStreamingPlayer] setupNetworkMonitoring — isTesting, skipping NWPathMonitor (no auto-replay side effects)")
+            #endif
+            return
+        }
+
         networkMonitor = pathMonitor
         networkMonitor?.pathUpdateHandler = { [weak self] status in
             guard let self else {
@@ -1376,8 +1401,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         // Previously duplicated fragile Locale.current + ?? [0] logic here and in the designated init.
         selectedStream = Self.streamForLanguageCode(Self.bestInitialLanguageCode())
         
-        // Delegate to the single source of truth (see designated init for rationale).
-        isTesting = SharedPlayerManager.isRunningInUITestMode
+        // isTesting is now a computed property that delegates live to
+        // SharedPlayerManager.isRunningInUITestMode (the SSOT). No assignment needed.
         
         super.init()
         
@@ -1396,7 +1421,10 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         print("[DirectStreamingPlayer] Player initialized, starting validation")
         #endif
         
-        if hasInternetConnection {
+        if hasInternetConnection && !isTesting {
+            // Eager initial validation is skipped entirely under test (isTesting via SharedPlayerManager.isRunningInUITestMode).
+            // Matches the designated init() and prevents real DNS/security I/O + status callbacks
+            // during unit tests (MockDirectStreamingPlayer path) and UI tests.
             Task { @MainActor in
                 let isValid = await SecurityModelValidator.shared.validateSecurityModel()
                 
@@ -1417,6 +1445,11 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 }
             }
         }
+        // IMPORTANT: No status emission at init time under test mode.
+        // Previously an `else if isTesting` / `else` branch called safeOnStatusChange here,
+        // which fed the delegate → UI → widget / Live Activity pipeline before any test code ran.
+        // We must emit *zero* status from init when isTesting (sourced from the SSOT).
+        // The hard guard inside safeOnStatusChange provides defense-in-depth for any other call sites.
     }
     
     /// Handles changes to Low Power Mode state.
@@ -2087,6 +2120,9 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// Resumes a same-stream pause without recreating the secured `AVPlayerItem`.
     @MainActor
     func resumeFromSoftPauseIfAvailable() async -> Bool {
+        // UI Test isolation: never resume real audio from soft-pause under test.
+        guard !isTesting else { return false }
+
         guard isSoftPaused, playerItem != nil, player?.currentItem != nil else { return false }
         guard !softPauseResumeRequiresStreamReattach() else {
             isSoftPaused = false

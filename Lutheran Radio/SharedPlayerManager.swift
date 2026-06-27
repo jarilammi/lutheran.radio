@@ -873,19 +873,14 @@ actor SharedPlayerManager {
         //   CODING_AGENT.md (test isolation + launch arguments preference).
         if Self.isRunningInUITestMode {
             #if DEBUG
-            print("[SharedPlayerManager] play() UITestMode — skipping SecurityModelValidator + setStreamAndPlay (no DNS, no real audio)")
+            print("[SharedPlayerManager] play() UITestMode — skipping SecurityModelValidator, setStreamAndPlay, and all widget/Live Activity work")
             #endif
-            // Explicit -UITestMode (or XCTest fallback in DEBUG) short-circuits here.
-            // We still allow *explicit* userRequestedPlay() paths (which set
-            // currentPlaybackIntent to an active value) to drive the visual to .playing
-            // so UI tests can assert on the resulting state. Cold-launch auto-play is
-            // prevented upstream in ViewController.
-            //
-            // Stream-switch hold is irrelevant under test (no real tuning occurs), so we
-            // simply clear it and apply setPlaying() only when intent is active.
             holdPrePlayVisualUntilPlayback = false
+
+            // Only set minimal visual state for test assertions. Do NOT call setPlaying()
+            // because it triggers Live Activities and Now Playing.
             if currentPlaybackIntent.isActivePlaybackIntent {
-                await setPlaying()
+                currentVisualState = .playing
             }
             return
         }
@@ -1055,6 +1050,11 @@ actor SharedPlayerManager {
     /// as part of collapsing parallel checks — intent is authoritative because
     /// All sticky transitions flow through `updatePlaybackIntent(to:)`.
     func attemptResurrectionIfAllowed() async {
+        // UI Test isolation (SSOT): never poke the real AVPlayer or start audio from recovery paths.
+        if Self.isRunningInUITestMode {
+            return
+        }
+
         ensureVisualStateLoaded()
         
         #if DEBUG
@@ -1454,6 +1454,14 @@ actor SharedPlayerManager {
     /// Sets the visual state to .playing and persists it.
     /// Call after successful playback start/resume.
     func setPlaying() async {
+        // UI Test isolation (SSOT): never trigger Live Activities, Now Playing, or widget saves.
+        // Visual is still set to .playing for explicit test assertions that observe
+        // currentVisualState after a userRequestedPlay tap.
+        if Self.isRunningInUITestMode {
+            currentVisualState = .playing
+            return
+        }
+
         ensureVisualStateLoaded()
         holdPrePlayVisualUntilPlayback = false
         currentVisualState = .playing

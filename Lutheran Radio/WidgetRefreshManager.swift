@@ -129,6 +129,13 @@ final class WidgetRefreshManager: @unchecked Sendable {
         hasError: Bool,
         immediate: Bool = false
     ) {
+        // Defense-in-depth UI test isolation (SSOT).
+        // Prevents WidgetKit timeline reloads that can wake widget renderers
+        // (including Chrono for Live Activities) during -UITestMode launches.
+        if SharedPlayerManager.isRunningInUITestMode {
+            return
+        }
+
         let newState = WidgetState(
             from: visualState,
             currentLanguage: currentLanguage,
