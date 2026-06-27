@@ -20,6 +20,10 @@ final class Lutheran_RadioUITestsLaunchTests: XCTestCase {
     @MainActor
     func testLaunch() throws {
         let app = XCUIApplication()
+        // Explicit "-UITestMode" launch argument ensures no auto streaming or security DNS
+        // on launch. See Lutheran_RadioUITests.swift and SharedPlayerManager.isRunningInUITestMode
+        // (single source of truth; DirectStreamingPlayer delegates to it).
+        app.launchArguments = ["-UITestMode"]
         let launchExpectation = expectation(description: "App launches successfully")
         
         app.launch()

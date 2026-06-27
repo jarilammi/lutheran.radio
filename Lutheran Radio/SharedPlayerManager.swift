@@ -289,6 +289,86 @@ actor SharedPlayerManager {
         static let recentUserPauseBarrier: TimeInterval = 8.0
     }
 
+    // MARK: - UI Test Isolation (launch argument driven)
+    //
+    // When the app is launched by XCUITest (Lutheran RadioUITests), the test harness
+    // passes "-UITestMode" via XCUIApplication.launchArguments. This is the explicit,
+    // preferred signal (per CODING_AGENT.md) to keep the player in a clean non-playing
+    // state, avoid all automatic streaming, and short-circuit security-critical network
+    // paths (DNS TXT via SecurityModelValidator, real URL construction, AVPlayer attach).
+    //
+    // This ensures:
+    // - No real audio starts before tests run.
+    // - No long-running DNS / cert / stream operations during `xcodebuild ... test-without-building`.
+    // - Tests remain fast + deterministic.
+    // - Explicit test interactions (taps) may advance visual/intent for UI assertions
+    //   but never perform real network or audio.
+    //
+    // Security invariants are not weakened: the full validation path is taken for all
+    // non-UITest launches (normal app runs, widget intents, etc.).
+    //
+    // - SeeAlso: Lutheran_RadioUITests.swift, ViewController.viewDidLoad (the cold-launch Task),
+    //   ``play()`` (the early return before validate), DirectStreamingPlayer (isTesting + init guard),
+    //   RadioLiveActivityManager (similar isRunningUnderTest pattern), CODING_AGENT.md.
+
+    /// Returns true if this process was launched under XCUITest control.
+    ///
+    /// **Primary signal**: the explicit "-UITestMode" launch argument passed by
+    /// XCUIApplication.launchArguments in the UI test harness (see Lutheran_RadioUITests.swift).
+    ///
+    /// **Fallback (DEBUG only)**: standard XCTest environment indicators. This fallback
+    /// exists only to support unit tests and legacy direct "Product › Test" launches
+    /// that may omit the explicit argument. In Release builds the fallback is disabled.
+    ///
+    /// This is the **single source of truth** for UI test isolation. All auto-play paths,
+    /// eager security validation, audio session configuration, and real streaming must
+    /// consult this (directly or via `DirectStreamingPlayer.isTesting`) before performing
+    /// work that would start network I/O or background audio.
+    ///
+    /// - Important: Never duplicate the detection logic elsewhere. Add new call sites
+    ///   only by calling this property or a documented thin wrapper.
+    ///
+    /// - Returns: `true` when the process should remain silent (no DNS, no AVPlayer,
+    ///   no audio session activation, no automatic `play()`).
+    ///
+    /// - Note: Nonisolated and safe for early call sites during app launch (ProcessInfo
+    ///   is accessible before main actor bootstrap).
+    ///
+    /// - SeeAlso: ``play()``, ViewController.viewDidLoad, DirectStreamingPlayer.isTesting,
+    ///   CODING_AGENT.md (UI test isolation requirements + "prefer the explicit -UITestMode"),
+    ///   Lutheran_RadioUITests.swift (where the argument is injected).
+    nonisolated static var isRunningInUITestMode: Bool {
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("-UITestMode") {
+            return true
+        }
+        #if DEBUG
+        // Fallback for unit tests and direct Xcode test runs that may not pass the launch argument.
+        // This block is intentionally inside #if DEBUG so Release builds have only the explicit signal.
+        let env = ProcessInfo.processInfo.environment
+        if env["XCTestConfigurationFilePath"] != nil
+            || NSClassFromString("XCTestCase") != nil
+            || ProcessInfo.processInfo.processName == "xctest"
+            || ProcessInfo.processInfo.processName.contains("xctest") {
+            return true
+        }
+        #endif
+        return false
+    }
+
+    // AGENT NOTE (UI Test Isolation):
+    // If you add any new automatic playback path (cold-launch Task, recovery timer,
+    // network-restore handler, widget-driven auto-resume, Live Activity start, etc.),
+    // you MUST consult `SharedPlayerManager.isRunningInUITestMode` (or ensure the
+    // caller has already short-circuited) before:
+    //   • calling `play()` / `userRequestedPlay()`
+    //   • constructing or replacing AVPlayer / AVPlayerItem
+    //   • calling `setupAudioSession` or activating AVAudioSession
+    //   • starting SecurityModelValidator / CertificateValidator work
+    // Failure to do so re-introduces the 5-minute launch hang for `test-without-building`.
+    // The ViewController cold-launch guard + the early return in `play()` are the
+    // two primary choke points; engine methods in DirectStreamingPlayer provide defense-in-depth.
+
     private let initializationSettlingPeriod: TimeInterval = Constants.initializationSettlingPeriod
     private var initialPlaybackHasRun = false
     /// True after the first true cold-launch `play()` proceeds (not stream-switch or resume).
@@ -638,13 +718,21 @@ actor SharedPlayerManager {
     /// - setPlaying() (optimistic visual)
     /// - Widget branch (optimistic) or main: soft-pause resume, alignment, setStreamAndPlay
     ///
+    /// UITestMode special case: when `isRunningInUITestMode` is true (via "-UITestMode" launch arg),
+    /// we short-circuit *before* the SecurityModelValidator call and never reach setStreamAndPlay.
+    /// This is the primary mechanism for UI test isolation (no real audio, no DNS, deterministic launch).
+    /// Visual transition to .playing is still performed for explicit userRequestedPlay taps
+    /// (so tests can assert on the resulting PlayerVisualState). Auto cold-launch play is
+    /// prevented earlier in ViewController.viewDidLoad.
+    ///
     /// Direct calls are permitted only for the cases documented on `userRequestedPlay()`.
     ///
     /// - SeeAlso: ``userRequestedPlay()``, ``setUserIntentToPlay()``,
     ///   ``clearUserPausedLockIfNeeded()``, ``canProceedWithPlayback()``,
     ///   ``attemptResurrectionIfAllowed()``,
     ///   RadioPlayerCoordinator (canonical switch methods + shims),
-    ///   CODING_AGENT.md, <doc:Architecture>, <doc:Security-Invariants>.
+    ///   ``isRunningInUITestMode``, ViewController.viewDidLoad,
+    ///   CODING_AGENT.md (test isolation requirements), <doc:Architecture>, <doc:Security-Invariants>.
     ///
     /// AGENT NOTE (SSOT): After any edit to guards, classification, or early returns here,
     /// re-verify:
@@ -766,6 +854,40 @@ actor SharedPlayerManager {
                     hasCompletedTrueColdLaunchPlay = true
                 }
             }
+        }
+
+        // UI Test isolation (launch arg driven):
+        // Skip security validation (DNS TXT against securitymodels.lutheran.radio + time skew + model check)
+        // and the entire real streaming attach path. This is safe because:
+        // - No production audio/network is allowed during UITest runs.
+        // - Visual + intent state transitions are still applied for explicit interactions
+        //   (so a test tap of play can observe .playing UI state without side effects).
+        // - Security invariants remain fully enforced for every non-test launch.
+        // The check is after sticky/one-shot guards so resurrection semantics are preserved
+        // in the actor state even under test.
+        //
+        // AGENT NOTE: If you add new early exits here, re-verify resurrection table and
+        // that explicit userRequestedPlay paths still reach setPlaying() for UITest visual assertions.
+        // - SeeAlso: SharedPlayerManager.isRunningInUITestMode, ViewController (cold launch Task guard),
+        //   DirectStreamingPlayer.play / setStreamAndPlay (engine no-op opportunities),
+        //   CODING_AGENT.md (test isolation + launch arguments preference).
+        if Self.isRunningInUITestMode {
+            #if DEBUG
+            print("[SharedPlayerManager] play() UITestMode — skipping SecurityModelValidator + setStreamAndPlay (no DNS, no real audio)")
+            #endif
+            // Explicit -UITestMode (or XCTest fallback in DEBUG) short-circuits here.
+            // We still allow *explicit* userRequestedPlay() paths (which set
+            // currentPlaybackIntent to an active value) to drive the visual to .playing
+            // so UI tests can assert on the resulting state. Cold-launch auto-play is
+            // prevented upstream in ViewController.
+            //
+            // Stream-switch hold is irrelevant under test (no real tuning occurs), so we
+            // simply clear it and apply setPlaying() only when intent is active.
+            holdPrePlayVisualUntilPlayback = false
+            if currentPlaybackIntent.isActivePlaybackIntent {
+                await setPlaying()
+            }
+            return
         }
         
         let isValid = await SecurityModelValidator.shared.validateSecurityModel()

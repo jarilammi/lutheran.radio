@@ -222,6 +222,16 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
 
     // MARK: - Lifecycle Methods
     /// Initializes the view hierarchy and initial stream selection.
+    ///
+    /// Cold-launch playback decision lives in the trailing async Task. When the process
+    /// was launched with "-UITestMode" (see XCUITest targets), the Task short-circuits
+    /// immediately after a clean .prePlay UI update: no tuning sound, no identifying
+    /// PersistedWidgetState writes, and no call to `SharedPlayerManager.play()`.
+    /// This guarantees the streaming system (and security validation) stay idle until
+    /// an explicit test interaction.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/isRunningInUITestMode``, ``SharedPlayerManager/play()``,
+    ///   CODING_AGENT.md (UI test isolation requirements + launch arguments).
     /// - Note: Performs heavy setup; defers non-critical tasks with asyncAfter for better launch performance.
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -348,6 +358,29 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         // === Asynchronous initialization (required for Swift 6 concurrency) ===
         Task { @MainActor [weak self] in
             guard let self else { return }
+
+            // === UI Test Isolation (explicit -UITestMode launch argument) ===
+            // When launched by XCUITest, never auto-trigger real audio streaming, tuning sound,
+            // identifying persistence writes, or production security/network paths.
+            // The player must remain in clean non-playing (.prePlay) state until a test
+            // explicitly interacts (e.g. taps play). This prevents the 5-minute hang and
+            // makes `test-without-building` fast + deterministic.
+            //
+            // Detection uses the single source of truth `SharedPlayerManager.isRunningInUITestMode`
+            // (prefers explicit "-UITestMode" launch argument; XCTest indicators only as DEBUG fallback).
+            //
+            // - Security: DNS TXT / cert pinning paths are not exercised on launch (and are
+            //   short-circuited before validate even on explicit taps in UITestMode).
+            // - SeeAlso: ``SharedPlayerManager/isRunningInUITestMode``, ``SharedPlayerManager/play()``,
+            //   DirectStreamingPlayer.isTesting, Lutheran_RadioUITests.swift (argument injection),
+            //   CODING_AGENT.md (UI test isolation).
+            if SharedPlayerManager.isRunningInUITestMode {
+                #if DEBUG
+                print("[ViewController] UITestMode (-UITestMode) — skipping cold-launch auto-play, tuning, snapshot seed, and all production streaming paths. Visual remains clean .prePlay.")
+                #endif
+                self.updateUI(for: .prePlay)
+                return
+            }
             
             let initialStream = SharedPlayerManager.streamForLanguageCode(languageCode)
             

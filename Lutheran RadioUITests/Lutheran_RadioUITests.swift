@@ -17,8 +17,20 @@ final class Lutheran_RadioUITests: XCTestCase {
         // Stop immediately when a failure occurs
         continueAfterFailure = false
 
-        // Initialize and launch the app
+        // Initialize and launch the app **with explicit "-UITestMode" launch argument**.
+        // This is the canonical (preferred) signal — see CODING_AGENT.md and
+        // `SharedPlayerManager.isRunningInUITestMode` (the single source of truth).
+        //
+        // Effects:
+        // - Cold-launch auto-play is suppressed in ViewController (clean .prePlay).
+        // - `SharedPlayerManager.play()` short-circuits before SecurityModelValidator or setStreamAndPlay.
+        // - DirectStreamingPlayer skips audio session, eager validation, and all playback engine work.
+        // - No DNS, no real AVPlayer, no background audio.
+        //
+        // Explicit test taps (via userRequestedPlay) may still drive visual state to .playing
+        // for UI assertions, but never trigger network or audio.
         app = XCUIApplication()
+        app.launchArguments = ["-UITestMode"]
         app.launch()
     }
 
@@ -62,6 +74,9 @@ final class Lutheran_RadioUITests: XCTestCase {
     @MainActor
     func testLaunchPerformance() throws {
         if #available(macOS 10.15, iOS 13.0, tvOS 13.0, watchOS 7.0, *) {
+            // Re-ensure the isolation arg on the re-launch performed by the metric.
+            // launchArguments are read at each launch() time.
+            app.launchArguments = ["-UITestMode"]
             // Measures the time taken to launch the app
             measure(metrics: [XCTApplicationLaunchMetric()]) {
                 app.launch()
