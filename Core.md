@@ -11,7 +11,8 @@ The `Core` module is the central, isolated foundation of **lutheran.radio**. It 
 ## Key Components
 
 ### SecurityConfiguration
-- Centralized constants and rules (expected security model, pinned certificate fingerprints, cache durations, time skew tolerance, etc.).
+- Centralized constants and rules (expected security model, pinned certificate fingerprints, cache durations, time skew tolerance, `requiresDNSSECValidationForStreaming`, etc.).
+- The **only** place that produces secure `URLSessionConfiguration` values via `makeSecureEphemeralConfiguration()` / `applySecureNetworkingRequirements(to:)`. All streaming, validation, and ping sessions must obtain their config here so that DNSSEC + cache hardening are applied uniformly.
 - Required security parameters — any deviation from these values is treated as a validation failure.
 
 ### SecurityModelValidator

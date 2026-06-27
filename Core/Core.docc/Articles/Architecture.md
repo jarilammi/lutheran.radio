@@ -34,9 +34,12 @@ A plain `struct` (value type) that exposes only the minimal public surface requi
 - `pinnedLeafFingerprintDigest` / `pinnedFingerprintDigests` (authoritative runtime pins)
 - `pinnedLeafFingerprint` / `pinnedFingerprints` (derived colon-hex)
 - `isInTransitionWindow`
+- `requiresDNSSECValidationForStreaming` + `makeSecureEphemeralConfiguration()` / `applySecureNetworkingRequirements(to:)` (the single place that turns on `URLSessionConfiguration.requiresDNSSECValidation` and related hardening for streaming hosts)
 - `current` (the canonical instance)
 
 All other properties are internal by design. The struct is deliberately not an actor because it contains only immutable policy after initialization.
+
+Callers outside Core (DirectStreamingPlayer, CertificateValidator) obtain secure `URLSessionConfiguration` values exclusively through these APIs. This is the "one place to configure secure networking".
 
 ### SecurityModelValidator
 
@@ -90,7 +93,9 @@ High-level operational details (DNSSEC status, certificate rotation procedures, 
 
 ## Future Evolution
 
-Any new security mechanism (additional pinning layers, OCSP, certificate transparency, etc.) must be added inside the appropriate subdirectory of `Core/` and exposed through the existing public types. Duplication outside `Core` is not permitted.
+Any new security mechanism (additional pinning layers, OCSP, certificate transparency, stricter DNS requirements, etc.) must be added inside the appropriate subdirectory of `Core/` and exposed through the existing public types. Duplication outside `Core` is not permitted.
+
+The DNSSEC requirement for streaming (`requiresDNSSECValidationForStreaming`) is deliberately centralised here so that future changes (e.g. combining with swift-async-dns-resolver, adding AVAssetResourceLoaderDelegate custom-scheme protection for segmented media, or exposing a diagnostic flag) have exactly one place to update.
 
 ## See Also
 

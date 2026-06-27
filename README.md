@@ -130,17 +130,17 @@ openssl s_client -connect livestream.lutheran.radio:443 -servername livestream.l
 
 ```bash
 # Clean build (iPhone 17 simulator, iOS 26.5)
-xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.5 \
+xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.0 \
   -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17' clean build-for-testing
 # Look for: ** TEST BUILD SUCCEEDED **
 
 # Full test suite
-xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.5 \
+xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.0 \
   -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17' test-without-building
 # Look for: ** TEST SUCCEEDED **
 
 # Fast path when working on Core / security / networking
-xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.5 \
+xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.0 \
   -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17' clean test -only-testing:CoreTests
 # Look for: ** TEST EXECUTE SUCCEEDED **
 ```
@@ -176,13 +176,13 @@ Clean builds should produce **zero Swift compiler warnings**. If enabling a new 
 
 To ensure a smooth development experience, follow these steps before contributing:
 
-1. **Verify Project Build:** Confirm the project builds successfully with: ```xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.5 -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17' clean build```
+1. **Verify Project Build:** Confirm the project builds successfully with: ```xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.0 -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17' clean build```
    Ensure the output includes: **```** BUILD SUCCEEDED **```**
 
-2. **Run Test Suite:** Validate the test suite passes with: ```xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.5 -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17' clean test```
+2. **Run Test Suite:** Validate the test suite passes with: ```xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.0 -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17' clean test```
    Check that the output includes: **```** TEST SUCCEEDED **```**
 
-3. **Run Core Module Tests Only (Fast Path):** When working on security, networking, or the Core framework, use this much faster command: ```xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.5 -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17' clean test -testPlan Core```
+3. **Run Core Module Tests Only (Fast Path):** When working on security, networking, or the Core framework, use this much faster command: ```xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.0 -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17' clean test -testPlan Core```
    Check that the output includes: **```** TEST SUCCEEDED **```**
 
 By verifying these steps on your local machine, you'll help maintain a consistent development environment for the project.
@@ -362,6 +362,22 @@ Unvalidated (or validation-failing) responses never result in a successful model
 
 See also: ``<doc:Security-Invariants>`` (Invariant 1), [`CODING_AGENT.md`](CODING_AGENT.md) (DNS TXT Validation Specifics), and the implementation in `Core/Actors/SecurityModelValidator.swift`.
 
+**DNSSEC for streaming host resolution (in addition to TXT)**
+
+In addition to the hardened TXT lookup for the security model allow-list, the app requires DNSSEC-validated DNS answers for all actual streaming, certificate-probing, and server-selection traffic:
+
+- Every `URLSession` that talks to `*.lutheran.radio` hosts (livestream, european, language-specific subdomains, etc.) is created from `SecurityConfiguration.makeSecureEphemeralConfiguration()`.
+- This sets `URLSessionConfiguration.requiresDNSSECValidation = true` (session level).
+- The actual media bytes, HEAD probes used by `CertificateValidator`, and latency pings therefore obtain authenticated name-to-IP mappings before TLS + full-certificate pinning.
+- If the client's resolver cannot supply a validated answer, the request fails at the URLSession layer. These failures are classified as **transient** by `DirectStreamingPlayer.StreamErrorType` (allowing recreate + cluster fallback) so that the feature remains safe on networks where full DNSSEC validation is not yet available from the recursive resolver.
+
+This gives three orthogonal DNS/TLS layers:
+1. TXT allow-list (low-level dnssd + `kDNSServiceFlagsValidate`)
+2. Streaming host resolution (URLSession + `requiresDNSSECValidation`)
+3. Certificate (ATS SPKI + runtime DER pinning)
+
+See ``<doc:Security-Invariants>`` (new Invariant 2) and `Core/Configuration/SecurityConfiguration.swift`.
+
 **Verifying DNSSEC Status**
 To check the current TXT record and DNSSEC-related information:
 
@@ -428,11 +444,11 @@ This feature enhances availability while maintaining the app's privacy-first pri
 
 | File / Symbol                                              | Responsibility                                                                 | Important notes for agents |
 |------------------------------------------------------------|--------------------------------------------------------------------------------|----------------------------|
-| `Core/Configuration/SecurityConfiguration.swift`           | Single source of truth for all policy and constants (`expectedSecurityModel`, `pinnedLeafFingerprintDigest`, `pinnedFingerprintDigests`, `isInTransitionWindow`, `transitionWindow*`, `maxAllowedTimeSkew`, `modelCacheDuration`, `securityModelDomains`, `current`) | Never duplicate these values elsewhere. Colon-hex views (`pinnedLeafFingerprint`, `pinnedFingerprints`) are for README/openssl parity only. |
+| `Core/Configuration/SecurityConfiguration.swift`           | Single source of truth for all policy and constants (`expectedSecurityModel`, `pinnedLeafFingerprintDigest`, `pinnedFingerprintDigests`, `isInTransitionWindow`, `transitionWindow*`, `maxAllowedTimeSkew`, `modelCacheDuration`, `securityModelDomains`, `requiresDNSSECValidationForStreaming`, `makeSecureEphemeralConfiguration`, `current`) | Never duplicate these values elsewhere. Colon-hex views (`pinnedLeafFingerprint`, `pinnedFingerprints`) are for README/openssl parity only. The secure session factory is the central point for `requiresDNSSECValidation` + cache hardening on streaming sessions. |
 | `Core/Actors/SecurityModelValidator.swift`                 | Actor-isolated DNS TXT security model validation against `securitymodels.lutheran.radio` (and backup) | Uses `kDNSServiceFlagsValidate` + explicit callback bit check for DNSSEC (strict). `Span<UInt8>` / `UTF8Span` zero-copy rdata borrow in `dns_sd` callback. 1-hour success-only cache. Permanent vs. transient failures. Entry point: `validateSecurityModel()`. The **only** place DNS TXT logic is allowed. |
 | `Core/Security/CertificateFingerprint.swift`               | 32-byte SHA-256 DER digest type + stack-local hashing via `Data.span` + constant-time `constantTimeMatches` | Runtime code must never compare hex strings. Materializes colon-hex only for docs/tooling. |
 | `Core/Security/CertificateValidator.swift`                 | Runtime full-certificate (DER) pinning + 10-minute cache + transition window + device/server time-skew protection | Complements (does not replace) ATS SPKI pinning from `Info.plist`. Uses `pinnedFingerprintDigests`. Time skew > 5 min permanently disables leniency for the process. |
-| `DirectStreamingPlayer.swift` (and streaming delegates)    | Main audio engine; embeds security model in stream URLs; consumes validators | Consumes the Core single sources of truth. No policy duplication. |
+| `DirectStreamingPlayer.swift` (and streaming delegates)    | Main audio engine; embeds security model in stream URLs; consumes validators; creates resource-loader sessions via the Core secure factory | Consumes the Core single sources of truth (including DNSSEC-enabled sessions). No policy duplication. Error classification treats DNSSEC-unavailable cases as transient. |
 
 **Core Framework Surface Area (mandatory rule):** Any new security logic, certificate handling, or validation must be added inside `Core/` under the appropriate subdirectory (`Configuration/`, `Actors/`, or `Security/`) and exposed through the existing public types. Duplication in the main app, `LutheranRadioWidget/`, or elsewhere is not permitted.
 

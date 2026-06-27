@@ -174,14 +174,19 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
     /// This method is used by `DirectStreamingPlayer` for initial validation before playback
     /// and for periodic re-validation (approximately every 1 hour).
     ///
-    /// It creates an ephemeral `URLSession` with this actor as the delegate, issues a
+    /// It obtains a secure `URLSessionConfiguration` (via ``SecurityConfiguration/makeSecureEphemeralConfiguration()``)
+    /// that enforces ``SecurityConfiguration/requiresDNSSECValidationForStreaming`` for the resolution step,
+    /// then creates an ephemeral `URLSession` with this actor as the delegate, issues a
     /// `HEAD` request, and returns the result of the subsequent challenge evaluation.
     /// The call is fully asynchronous and non-blocking.
+    ///
+    /// DNS resolution for the target host is authenticated via DNSSEC (when the policy is enabled)
+    /// before the TLS challenge is even delivered to this validator.
     ///
     /// - Parameter url: The HTTPS URL of the audio stream (must use HTTPS).
     /// - Returns: `true` if the server certificate is acceptable under current policy.
     ///
-    /// - SeeAlso: ``validateServerTrust(_:)``, ``<doc:Security-Invariants>``
+    /// - SeeAlso: ``validateServerTrust(_:)``, ``<doc:Security-Invariants>``, ``SecurityConfiguration/applySecureNetworkingRequirements(to:)``
     public func validateServerCertificate(for url: URL) async -> Bool {
         // Apple 2026 non-main delegate queue (utility QoS + serial for strict concurrency)
         // This is the exact pattern used in Music/Podcasts 2026 betas for async delegates.
@@ -189,7 +194,12 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
         delegateQueue.qualityOfService = .utility
         delegateQueue.name = "radio.lutheran.certificate-validator"
         delegateQueue.maxConcurrentOperationCount = 1
-        let session = URLSession(configuration: .ephemeral, delegate: self, delegateQueue: delegateQueue)
+        
+        // Obtain configuration through Core single source of truth so that DNSSEC requirement
+        // (and future secure networking policy) is applied uniformly for the HEAD validation
+        // of the streaming endpoint.
+        let config = SecurityConfiguration.makeSecureEphemeralConfiguration()
+        let session = URLSession(configuration: config, delegate: self, delegateQueue: delegateQueue)
         var request = URLRequest(url: url)
         request.httpMethod = "HEAD"
         

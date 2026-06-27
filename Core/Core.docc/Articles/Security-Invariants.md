@@ -22,7 +22,15 @@ This document defines the **required security invariants** of the Lutheran Radio
 - Successful validations (validated response + model present) are cached for exactly 1 hour in `UserDefaults` (key: `lastSecurityValidation`). The cache applies **only** to successes.
 - The validator is an `actor` and all mutation of validation state is isolated.
 
-## Invariant 2: Certificate Pinning (Runtime Full-Chain)
+## Invariant 2: DNSSEC-protected name resolution for streaming hosts
+
+- All `URLSession` instances created for contacting `*.lutheran.radio` hosts (media streaming via resource loader, proactive certificate HEAD checks, and cluster latency pings) are configured through ``SecurityConfiguration/makeSecureEphemeralConfiguration()`` (or the equivalent `applySecureNetworkingRequirements(to:)`).
+- When ``SecurityConfiguration/requiresDNSSECValidationForStreaming`` is true (the default), `URLSessionConfiguration.requiresDNSSECValidation` is set. This causes the system resolver to be asked for DNSSEC-validated answers; unvalidated answers cause the session task to fail.
+- DNSSEC validation failures at this layer are **transient** (see `StreamErrorType` classification and player recovery paths). This keeps the requirement "opt-in safe".
+- This layer authenticates the mapping from hostname to IP address **before** TLS is attempted and before ``CertificateValidator`` sees any server trust object.
+- The low-level `kDNSServiceFlagsValidate` + bit check in ``SecurityModelValidator`` remains the only place used for TXT record policy fetches; the two mechanisms are complementary.
+
+## Invariant 3: Certificate Pinning (Runtime Full-Chain)
 
 - Runtime certificate validation is performed exclusively by ``CertificateValidator``.
 - The validator performs **full-certificate SHA-256 DER digest pinning** against ``SecurityConfiguration/pinnedFingerprintDigests`` (``CertificateFingerprint`` values).
@@ -30,7 +38,7 @@ This document defines the **required security invariants** of the Lutheran Radio
 - App Transport Security (ATS) SPKI pinning in `Info.plist` provides the baseline. The runtime validator adds a second, independent layer.
 - ``SecurityConfiguration/pinnedLeafFingerprintDigest`` is the authoritative pin; ``pinnedLeafFingerprint`` and ``pinnedFingerprints`` are derived colon-hex views for operators and docs only. Never duplicate or override digest values elsewhere.
 
-## Invariant 3: Transition Window & Time-Skew Protection
+## Invariant 4: Transition Window & Time-Skew Protection
 
 - A one-month transition window exists (currently 2026-07-27 00:00:00 GMT through 2026-08-26 23:59:59 GMT).
 - During the window, a fingerprint mismatch is tolerated (falls back to ATS trust) **only if**:
@@ -39,7 +47,7 @@ This document defines the **required security invariants** of the Lutheran Radio
 - Any detected time manipulation or window mismatch **permanently disables** leniency for the remainder of the process.
 - Outside the window (before start or after end), fingerprint mismatches cause **hard failure** regardless of ATS result.
 
-## Invariant 4: Configuration Centralization
+## Invariant 5: Configuration Centralization
 
 All of the following values exist **only** inside ``SecurityConfiguration`` and are never hard-coded elsewhere:
 
@@ -52,7 +60,7 @@ All of the following values exist **only** inside ``SecurityConfiguration`` and 
 - `modelCacheDuration`
 - Domain list (`securityModelDomains`)
 
-## Invariant 5: No Bypass Paths
+## Invariant 6: No Bypass Paths
 
 - There is no build-time or runtime flag that disables DNS TXT validation, certificate fingerprint checking, or time-skew detection.
 - Debug/test seams (`_test_*` methods and `currentDate` injection) are compiled out of Release builds and have zero effect on production behavior.
@@ -62,10 +70,11 @@ All of the following values exist **only** inside ``SecurityConfiguration`` and 
 
 These invariants are primarily enforced by:
 
-- ``SecurityConfiguration`` — constants and policy
-- ``SecurityModelValidator`` — DNS TXT actor
+- ``SecurityConfiguration`` — constants and policy (including ``requiresDNSSECValidationForStreaming`` and the secure session factory)
+- ``SecurityModelValidator`` — DNS TXT actor (its own `kDNSServiceFlagsValidate` path)
 - ``CertificateFingerprint`` — digest type, hashing, constant-time equality
 - ``CertificateValidator`` — runtime pinning actor
+- `DirectStreamingPlayer` + `StreamingSessionDelegate` — consumption of secure configurations for the data plane (must not bypass the Core factory)
 
 Any proposed change that touches these files, the DNS TXT record contents, the pinned digest(s), or the transition dates requires explicit security review.
 

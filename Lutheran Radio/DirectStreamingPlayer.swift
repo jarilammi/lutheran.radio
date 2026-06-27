@@ -91,7 +91,13 @@ enum PlayerStatus {
 /// - **Dynamic Access Control**:
 ///   - Queries `securitymodels.lutheran.radio` TXT record to validate app authorization.
 ///   - Supports remote access control without requiring app updates.
-///   - Requires the app security model (`brenham`) to be in the authorized list.
+///   - Requires the app security model (`dallas`) to be in the authorized list.
+/// - **DNSSEC-authenticated name resolution** (iOS 16+ / always on this deployment target):
+///   - Streaming, validation HEAD, and server-ping sessions are created with
+///     `URLSessionConfiguration.requiresDNSSECValidation = true` (via
+///     ``SecurityConfiguration/makeSecureEphemeralConfiguration()``).
+///   - Provides authenticated DNS before TLS + runtime certificate pinning.
+///   - Lookup failures (including "DNSSEC unavailable from resolver") are transient.
 /// - **Privacy-Safe Data Management**:
 ///   - Streaming state stored only in memory during use.
 ///   - No persistent traces of listening activity.
@@ -751,7 +757,9 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     private func ping(server: Server) async -> PingResult {
         let startTime = Date()
         
-        let config = URLSessionConfiguration.ephemeral
+        // Use the centralized secure configuration from Core so that DNSSEC validation
+        // is uniformly required for server-selection pings (same policy as streaming data).
+        let config = SecurityConfiguration.makeSecureEphemeralConfiguration()
         config.timeoutIntervalForRequest = 2.0
         let session = URLSession(configuration: config)
         
@@ -3171,13 +3179,21 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 #endif
                 safeOnStatusChange(isPlaying: false, reasonKey: "status_security_failed")   // ← fixed
                 
-            case .cannotFindHost, .fileDoesNotExist, .badServerResponse:
+            case .fileDoesNotExist, .badServerResponse:
                 #if DEBUG
-                print("[DirectStreamingPlayer] [Loading Error] Permanent network/server error detected")
+                print("[DirectStreamingPlayer] [Loading Error] Hard server error (resource / response)")
                 #endif
                 // Permanent non-security failure → emit status_failed (now the canonical
                 // key for hard connection errors that trigger red banner + popup).
                 safeOnStatusChange(isPlaying: false, reasonKey: "status_failed")
+                
+            case .cannotFindHost, .dnsLookupFailed:
+                #if DEBUG
+                print("[DirectStreamingPlayer] [Loading Error] DNS lookup error (may be DNSSEC-unvalidated when policy active) — treating as transient")
+                #endif
+                // DNS lookup (including potential DNSSEC validation failure when
+                // requiresDNSSECValidationForStreaming is active) → recoverable path.
+                fallthrough
                 
             default:
                 #if DEBUG
@@ -3551,13 +3567,25 @@ extension DirectStreamingPlayer {
 
 // MARK: - Extensions for Delegates and Helpers
 /// Handles custom resource loading for secure streaming.
+///
+/// All actual data transport for lutheran.radio hosts goes through URLSessions
+/// configured via ``SecurityConfiguration/makeSecureEphemeralConfiguration()`` (DNSSEC
+/// + cache hardening). The resource loader exists to let us supply our own
+/// `URLSession` + `StreamingSessionDelegate` (which in turn uses `CertificateValidator`
+/// for the TLS challenge). This gives us full control over both DNSSEC resolution
+/// and certificate pinning for the media bytes.
+///
+/// - Note: We do **not** use a custom URL scheme for the AVURLAsset itself
+///   (previous attempts were removed for simplicity). The DNS resolution that
+///   matters (the one that actually carries audio) is the one performed by the
+///   controlled `URLSession` inside `shouldWaitForLoadingOfRequestedResource`.
 extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
     /// Determines if the loader should handle the request.
     /// - Parameters:
     ///   - resourceLoader: The requesting loader.
     ///   - loadingRequest: The resource request.
     /// - Returns: `true` if handling (for lutheran.radio HTTPS URLs).
-    /// - Note: Enforces HTTPS and domain checks; sets up pinned sessions.
+    /// - Note: Enforces HTTPS and domain checks; sets up pinned + DNSSEC-protected sessions.
     func resourceLoader(_ resourceLoader: AVAssetResourceLoader, shouldWaitForLoadingOfRequestedResource loadingRequest: AVAssetResourceLoadingRequest) -> Bool {
         guard let url = loadingRequest.request.url else {
             #if DEBUG
@@ -3610,15 +3638,13 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
         print("[DirectStreamingPlayer] [Resource Loader] StreamingSessionDelegate created for hostname: \(originalHostname)")
         #endif
         
-        // Enhanced configuration for SSL pinning
-        let config = URLSessionConfiguration.ephemeral
+        // Enhanced configuration for SSL pinning + DNSSEC-protected name resolution.
+        // All policy for secure networking flows through SecurityConfiguration (Core/ single source of truth).
+        let config = SecurityConfiguration.makeSecureEphemeralConfiguration()
         config.timeoutIntervalForRequest = 60.0
         config.timeoutIntervalForResource = 120.0
         
-        // Force fresh SSL connections for proper pinning validation
-        config.urlCache = nil
-        config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-        config.urlCredentialStorage = nil
+        // Additional streaming-specific tunables (DNSSEC + cache hardening already applied by factory).
         config.waitsForConnectivity = false
         config.httpMaximumConnectionsPerHost = 1
         
@@ -3725,7 +3751,9 @@ extension DirectStreamingPlayer {
         /// Hard security failure (certificate, model validation). Never auto-retried.
         case securityFailure
 
-        /// Genuine permanent failure (host unreachable, resource gone, etc.).
+        /// Genuine permanent failure (resource gone, TCP connect after DNS success, etc.).
+        ///
+        /// DNS lookup failures are intentionally **not** included here; see ``from(error:)``.
         case permanentFailure
 
         /// Recoverable condition: network blip, temporary server response, or the normal
@@ -3740,9 +3768,13 @@ extension DirectStreamingPlayer {
         /// - Parameter error: The `item.error` or equivalent from AVFoundation / resource loading.
         /// - Returns: The appropriate `StreamErrorType`.
         ///
-        /// - Note: Any error that is not a clear security or hard host failure is treated as
-        ///   transient. This is the key change that lets the canonical recreate path handle
-        ///   the exact symptoms seen during language switches (see stream switch glitch analysis).
+        /// - Note: DNS lookup failures (cannotFindHost / dnsLookupFailed) are deliberately
+        ///   classified transient. This keeps streaming available on networks where
+        ///   ``SecurityConfiguration/requiresDNSSECValidationForStreaming`` cannot be satisfied
+        ///   by the local resolver (the requirement is therefore "opt-in safe").
+        ///   Any error that is not a clear security or hard post-DNS host/resource failure
+        ///   is treated as transient. This is the key change that lets the canonical recreate
+        ///   path handle the exact symptoms seen during language switches (see stream switch glitch analysis).
         static func from(error: Error?) -> StreamErrorType {
             guard let nsError = error as NSError? else {
                 return .unknown
@@ -3754,11 +3786,28 @@ extension DirectStreamingPlayer {
                      URLError.Code.serverCertificateUntrusted.rawValue:
                     return .securityFailure
 
-                case URLError.Code.cannotFindHost.rawValue,
-                     URLError.Code.resourceUnavailable.rawValue,
-                     URLError.Code.fileDoesNotExist.rawValue,
-                     URLError.Code.cannotConnectToHost.rawValue:
+                case URLError.Code.fileDoesNotExist.rawValue,
+                     URLError.Code.cannotConnectToHost.rawValue,
+                     URLError.Code.resourceUnavailable.rawValue:
+                    // Hard resource or TCP-level failures after successful name resolution.
                     return .permanentFailure
+
+                case URLError.Code.cannotFindHost.rawValue,
+                     URLError.Code.dnsLookupFailed.rawValue:
+                    // DNS-level lookup failures are treated as transient.
+                    //
+                    // Reasons this is intentional and safe:
+                    // - Mobile networks frequently produce transient DNS flakes.
+                    // - When ``SecurityConfiguration/requiresDNSSECValidationForStreaming`` is true,
+                    //   a resolver that cannot return a validated answer for a signed zone will
+                    //   cause the URLSession task to surface as a lookup failure. Treating it
+                    //   transient ensures we do not permanently brick streaming on networks where
+                    //   DNSSEC validation is "unavailable" from the client's perspective (the
+                    //   requirement is opt-in safe).
+                    // - Server selection / recreatePlayerItem paths provide fallback recovery.
+                    //
+                    // (cannotConnectToHost stays permanent: it means DNS succeeded but TCP failed.)
+                    return .transientFailure
 
                 case URLError.Code.badServerResponse.rawValue:
                     // Temporary 5xx or similar — allow recreate / fallback.

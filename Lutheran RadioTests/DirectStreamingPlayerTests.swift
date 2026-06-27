@@ -9,6 +9,7 @@ import XCTest
 import AVFoundation
 import Network
 @testable import Lutheran_Radio
+import Core   // For SecurityConfiguration factory and DNSSEC policy (tested via the player surface)
 
 @MainActor
 class DirectStreamingPlayerTests: XCTestCase {
@@ -798,6 +799,39 @@ class DirectStreamingPlayerTests: XCTestCase {
         let cannotConnectType = DirectStreamingPlayer.StreamErrorType.from(error: cannotConnectError)
         XCTAssertEqual(cannotConnectType, .permanentFailure)
         XCTAssertTrue(cannotConnectType.isPermanent)
+
+        // DNS lookup errors (the codes that `requiresDNSSECValidation` failures surface as)
+        // must be transient so that DNSSEC requirement is "opt-in safe".
+        let cannotFindError = URLError(.cannotFindHost)
+        let cannotFindType = DirectStreamingPlayer.StreamErrorType.from(error: cannotFindError)
+        XCTAssertEqual(cannotFindType, .transientFailure)
+        XCTAssertFalse(cannotFindType.isPermanent)
+
+        let dnsLookupError = URLError(.dnsLookupFailed)
+        let dnsLookupType = DirectStreamingPlayer.StreamErrorType.from(error: dnsLookupError)
+        XCTAssertEqual(dnsLookupType, .transientFailure)
+        XCTAssertFalse(dnsLookupType.isPermanent)
+    }
+
+    func testSecureNetworkingConfigurationFactory() {
+        // The factory is the single source of truth for DNSSEC-enabled sessions.
+        let config = SecurityConfiguration.makeSecureEphemeralConfiguration()
+
+        // Policy bits that the secure factory is responsible for
+        XCTAssertTrue(config.urlCache == nil)
+        XCTAssertEqual(config.requestCachePolicy, .reloadIgnoringLocalAndRemoteCacheData)
+        XCTAssertTrue(config.urlCredentialStorage == nil)
+
+        // DNSSEC requirement must be on (the point of this change)
+        XCTAssertTrue(config.requiresDNSSECValidation,
+                      "Streaming and validation sessions must request DNSSEC-validated resolutions")
+
+        // Protected host helper
+        XCTAssertTrue(SecurityConfiguration.hostRequiresDNSSECValidation("livestream.lutheran.radio"))
+        XCTAssertTrue(SecurityConfiguration.hostRequiresDNSSECValidation("en-eu.lutheran.radio"))
+        XCTAssertTrue(SecurityConfiguration.hostRequiresDNSSECValidation("lutheran.radio"))
+        XCTAssertFalse(SecurityConfiguration.hostRequiresDNSSECValidation("apple.com"))
+        XCTAssertFalse(SecurityConfiguration.hostRequiresDNSSECValidation(nil))
     }
     
     func testServerConfiguration() {
