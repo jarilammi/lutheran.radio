@@ -131,18 +131,18 @@ openssl s_client -connect livestream.lutheran.radio:443 -servername livestream.l
 ```bash
 # Clean build (iPhone 17 simulator, iOS 26.5)
 xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.5 \
-  -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17' clean build
-# Look for: ** BUILD SUCCEEDED **
+  -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17' clean build-for-testing
+# Look for: ** TEST BUILD SUCCEEDED **
 
 # Full test suite
 xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.5 \
-  -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17' clean test
+  -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17' test-without-building
 # Look for: ** TEST SUCCEEDED **
 
 # Fast path when working on Core / security / networking
 xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.5 \
-  -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17' clean test -testPlan Core
-# Look for: ** TEST SUCCEEDED **
+  -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17' clean test -only-testing:CoreTests
+# Look for: ** TEST EXECUTE SUCCEEDED **
 ```
 
 **5. (Optional but recommended for security work) Build DocC for the best invariants/architecture reading experience:**

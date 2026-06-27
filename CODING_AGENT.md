@@ -96,11 +96,15 @@ These rules are especially strict for anything that could affect security invari
 2. **Build & Test Gate**
    - Every single change must keep these commands green:
      ```bash
+     # Clean build (iPhone 17 simulator, iOS 26.5)
      xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.5 \
-       -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17' clean build
+       -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17' clean build-for-testing
+     # Look for: ** TEST BUILD SUCCEEDED **
 
+     # Full test suite
      xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.5 \
-       -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17' clean test
+       -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17' test-without-building
+     # Look for: ** TEST SUCCEEDED **
      ```
    - If either fails → fix it before suggesting the change.
 
@@ -113,11 +117,11 @@ These rules are especially strict for anything that could affect security invari
 
    The following count as acceptable proof that "the build is green":
    1. A clean build using `CODE_SIGNING_ALLOWED=NO` that produces zero Swift compiler errors or warnings (including strict memory-safety and `@preconcurrency` import warnings).
-   2. The full clean test command (mandatory with no exceptions).
+   2. The full test command (`test-without-building`) (mandatory with no exceptions).
    3. A clean build that fails *only* at `ValidateEmbeddedBinary`, codesign, or ad-hoc signing steps (with no `error:` lines from the compiler or linker). Log evidence must be provided.
    4. Transient Xcode build-system errors such as "build database locked" or "two concurrent builds running" (when the two gates are executed in parallel in the same environment) do not count as failures, provided a subsequent sequential run of the commands succeeds with no compiler or linker errors.
 
-   The full signed clean build commands remain mandatory for any PR that touches runtime behavior, security, or user-visible functionality.
+   The full signed build-for-testing + test-without-building commands remain mandatory for any PR that touches runtime behavior, security, or user-visible functionality.
 
 3. **Localization**
    - Every user-visible string must use `String(localized:)` / `NSLocalizedString` with table `"Localizable"`.
