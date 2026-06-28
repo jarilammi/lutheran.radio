@@ -719,9 +719,9 @@ final class RadioPlayerCoordinator {
         self.updateUI(for: newState)
         self.updateNowPlayingInfo()
 
-        // Ensure Live Activity reflects the result of the toggle (play or pause) as
-        // quickly as possible. SPM already drives this, but an extra hop here after
-        // our local UI update gives the fastest visual feedback on resume.
+        // Event-driven Live Activity push (the manager will suppress if content is
+        // identical to last pushed). This is intentionally after the SPM work so that
+        // currentVisualState is stable.
         #if LUTHERAN_MAIN_APP
         await RadioLiveActivityManager.shared.updateCurrentActivity()
         #endif

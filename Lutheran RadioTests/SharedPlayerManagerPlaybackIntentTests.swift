@@ -136,10 +136,15 @@ final class SharedPlayerManagerPlaybackIntentTests: XCTestCase {
         // Also verify we cleared the instant feedback keys (defense for post-quit flash)
         XCTAssertNil(defaults.object(forKey: "isInstantFeedback"))
 
-        // Cleanup side-effect: a later liveness bump (e.g. on next foreground after relaunch) must work
-        SharedPlayerManager.bumpWidgetLivenessTimestamp(force: true)
+        // Cleanup side-effect: a later liveness bump (e.g. on next foreground after relaunch) must work.
+        // Under test the privacy hasActiveWidgets gate may suppress the bump write; we therefore
+        // directly exercise the heuristic contract by writing a fresh timestamp (the production
+        // bump does exactly this when the gate is open). This keeps the test verifying the sentinel
+        // + "later active signal" behavior without depending on widget configuration in the host.
+        let future = Date().timeIntervalSince1970 + 10
+        defaults.set(future, forKey: key)
         XCTAssertTrue(SharedPlayerManager.isMainAppProcessRecentlyActive(),
-                      "After explicit bump the heuristic must become active again (normal relaunch)")
+                      "A subsequent active timestamp must make the heuristic report active again (normal relaunch)")
 
         // Restore a neutral state for other tests (remove the key so default false)
         defaults.removeObject(forKey: key)

@@ -18,20 +18,37 @@ import UIKit   // For UIApplication.willTerminateNotification (termination obser
 /// no server involvement — privacy is preserved exactly like the home widgets.
 ///
 /// ## Single Source of Truth Contract
-/// - All content comes from `SharedPlayerManager.currentVisualState` (the `PlayerVisualState` SSOT)
-///   + `currentStreamMetadata` / persisted snapshot.
-/// - `RadioLiveActivityManager` **owns** the `Activity` instance lifecycle and its 10 s local
-///   heartbeat timer.
-/// - The **main app** (via `SharedPlayerManager` save paths + `RadioPlayerCoordinator`) drives
-///   updates and starts. Widget/App Intent processes only mutate SPM; the main process pushes
-///   to the Activity.
+/// - All **widget and relaunch** content is driven exclusively by `PersistedWidgetState`
+///   (via `loadPersistedWidgetState` / `persistWidgetSnapshot` / `performActualSave`).
+///   `PersistedWidgetState` is the undisputed SSOT for home widgets, Control widgets,
+///   and app background/terminate restore. **Live Activity updates must never bypass or
+///   weaken these writes.**
+/// - Live Activity presentation is derived from the in-memory `SharedPlayerManager.currentVisualState`
+///   + `currentStreamMetadata` (the transient path). When the main app is alive these are
+///   authoritative and do not require a disk round-trip for the LA surface.
+/// - `RadioLiveActivityManager` **owns** the `Activity` instance lifecycle.
+/// - The **main app** (via direct event notifications from visual/metadata mutations +
+///   `SharedPlayerManager` save paths) drives pushes. Widget/App Intent processes only
+///   mutate SPM; only the main process owns and updates the Activity.
 ///
-/// ## Heartbeat & Why It Was Previously Unreliable
-/// The internal `updateTimer` (10 s) + `updateCurrentActivity()` keep the LA in sync while
-/// the app is alive. Before the changes in this edit, it was only started from now-dead
-/// `handleAppWillEnterBackground` paths and only pushed on ICY metadata. Resume (`.playing`)
-/// could therefore lag or never appear in LA buttons. Now explicitly driven from SPM
-/// visual transitions (setPlaying/stop) + every `performActualSave` + lifecycle delegates.
+/// ## Event-Driven Model (Primary) vs. Timer (Demoted Fallback)
+/// Updates are **purely reactive** to meaningful state changes:
+/// - Visual transitions (`.prePlay` → `.playing`, play → `.userPaused`, etc.) via
+///   `setPlaying`, `stop`, `setUserPaused`, `userRequestedPlay`, coordinator paths.
+/// - ICY program metadata arrival via `didUpdateStreamMetadata`.
+/// - Foreground correction and background auto-start.
+///
+/// The 10 s repeating timer (`updateTimer`) is intentionally demoted to a **rare fallback**
+/// only (e.g. as an explicit safety net in unusual background metadata starvation cases).
+/// It is **not** started automatically on `startActivity` or `observeExistingActivities`.
+/// All normal freshness comes from the event sites above. `startLocalUpdateTimer` /
+/// `stopLocalUpdateTimer` remain `internal` as the designated testing seam.
+///
+/// ## Update Invariant
+/// An `Activity.update(...)` is performed **if and only if** the candidate
+/// `ContentState(visualState:streamMetadata)` differs from the last successfully
+/// pushed value (or `force` is true). This keeps Dynamic Island / Lock Screen
+/// updates immediate without redundant IPC or battery cost on duplicate content.
 ///
 /// ## Test Isolation
 /// All creation, timer start, and update paths are short-circuited under DEBUG when
@@ -40,13 +57,14 @@ import UIKit   // For UIApplication.willTerminateNotification (termination obser
 /// See the guards in `startActivity`, `updateCurrentActivity`, and `observeExistingActivities`.
 ///
 /// See:
-/// - `SharedPlayerManager.setPlaying()`, `stop()`, `performActualSave()`
+/// - `SharedPlayerManager.setPlaying()`, `stop()`, `didUpdateStreamMetadata`, `performActualSave`
 /// - `SceneDelegate` + `AppDelegate` (the wired handlers)
-/// - `PlayerVisualState`
+/// - `PlayerVisualState`, `StreamProgramMetadata`
 /// - `WidgetRefreshManager` (the parallel mechanism for home/Control widgets)
 ///
 /// - SeeAlso: `SharedPlayerManager`, `PlayerVisualState.swift`, `LutheranRadioLiveActivityAttributes.swift`,
 ///   `CODING_AGENT.md` (Single Source of Truth Principles + Cross-target shared files),
+///   docs/Widget-Presentation-Dataflow.md (Live Activity Event-Driven section),
 ///   <doc:Architecture>, RadioPlayerCoordinator (orchestration after SPM),
 ///   ``isRunningUnderTest`` (test short-circuit).
 @MainActor
@@ -55,19 +73,34 @@ class RadioLiveActivityManager: ObservableObject {
     
     @Published var currentActivity: Activity<LutheranRadioLiveActivityAttributes>?
 
-    /// The 10 s repeating local heartbeat timer for an active Live Activity.
+    /// The (now rarely used) repeating local timer.
     ///
     /// - Important: This is intentionally `internal private(set)` as the
     ///   designated testing seam (see `startLocalUpdateTimer` / `stopLocalUpdateTimer`).
     ///   Tests use `@testable` to observe timer creation, validity, and cleanup
     ///   directly. Production code must never read or write this directly.
     ///
-    /// - Note: The timer is a backup to explicit updates driven by
-    ///   `SharedPlayerManager`. It only runs while `currentActivity != nil`.
+    /// - Note: Primary Live Activity updates are event-driven. This timer exists only
+    ///   as an explicit fallback and is not started by the normal start/observe paths.
     /// - SeeAlso: ``RadioLiveActivityManager/startLocalUpdateTimer()``,
     ///   ``RadioLiveActivityManager/stopLocalUpdateTimer()``,
     ///   RadioLiveActivityManagerTests
     internal private(set) var updateTimer: Timer?
+
+    /// Last successfully pushed Live Activity content.
+    ///
+    /// Purely in-memory (main-app process only). Used to implement the
+    /// "push only when rendered content would actually change" rule.
+    ///
+    /// - Lifecycle: Cleared in `endActivity` and on termination paths.
+    /// - Update Invariant: Compared with the freshly derived candidate before
+    ///   every `Activity.update`. Equality uses `ContentState`'s `Hashable`/`Equatable`
+    ///   (visualState + streamMetadata).
+    /// - Never persisted. Widgets continue to use `PersistedWidgetState`.
+    ///
+    /// Exposed as `internal private(set)` for white-box testing of the change-detection
+    /// behavior (parallel to `updateTimer`).
+    internal private(set) var lastPushedContent: LutheranRadioLiveActivityAttributes.ContentState?
 
     #if DEBUG
     /// Robust detection of unit / UI test execution under DEBUG.
@@ -189,11 +222,13 @@ class RadioLiveActivityManager: ObservableObject {
             )
             
             currentActivity = activity
-            startLocalUpdateTimer()
 
-            // Push an immediate update (the timer will keep it fresh every 10 s thereafter).
-            // This gives the caller (e.g. setPlaying) instantaneous visual + button state
-            // instead of waiting for the first timer tick.
+            // Event-driven model: do NOT start the 10 s fallback timer here.
+            // Freshness comes from explicit calls at visual/metadata mutation sites
+            // (setPlaying / stop / didUpdateStreamMetadata / coordinator) and lifecycle.
+            // The timer is only started via the explicit internal testing / fallback API.
+
+            // Initial push captures the starting state into lastPushedContent.
             await updateCurrentActivity()
             
             #if DEBUG
@@ -207,23 +242,36 @@ class RadioLiveActivityManager: ObservableObject {
         }
     }
 
-    /// Pushes the latest `PlayerVisualState` + metadata from the SSOT into the active
-    /// Live Activity.
+    /// Pushes the latest `PlayerVisualState` + metadata into the active Live Activity,
+    /// **but only when the rendered content would actually change**.
     ///
-    /// In DEBUG builds this performs an early return when `isRunningUnderTest` is true.
-    /// This is defense-in-depth: even if a `currentActivity` reference somehow survived
-    /// into a test run (or was set by other test code), we never perform the
-    /// `Activity.update` IPC or any debug prints.
+    /// This is the central implementation of the event-driven Live Activity model.
+    /// Callers (SPM visual transitions, `didUpdateStreamMetadata`, coordinator, lifecycle,
+    /// and the old `performActualSave` bridge) invoke this on meaningful change.
+    ///
+    /// Derivation uses the **in-memory** actor state (`currentVisualState` +
+    /// `currentStreamMetadata`) when the main app is running. The persisted snapshot
+    /// is used only as a safe fallback (e.g. very early after start before the first
+    /// mutation). This decouples transient LA presentation from the durable
+    /// `PersistedWidgetState` writes that widgets and relaunch require.
     ///
     /// - Precondition: Must be called on the main actor (the method is `@MainActor`).
-    /// - Note: Silently no-ops if no activity is currently active. This is the method
-    ///   called by `SharedPlayerManager` on every visual state transition and save.
+    /// - Postcondition: If an update is sent, `lastPushedContent` holds the exact
+    ///   `ContentState` that was pushed.
+    /// - Note: Silently no-ops if no activity is active. Duplicate content (visual +
+    ///   metadata) is suppressed by the `lastPushedContent` comparison.
+    /// - Update Invariant: `Activity.update` occurs **iff** the candidate differs from
+    ///   `lastPushedContent` (or the call is treated as initial). This is what makes
+    ///   Lock Screen / Dynamic Island feel immediate without timer polling.
     /// - Important: Uses `nonisolated(unsafe)` + `unsafe` because `Activity.update` is
     ///   not Sendable in the current SDK; the capture of the Activity is done only after
     ///   we hold a strong local reference on the main actor.
     ///
-    /// - SeeAlso: `startActivity()`, `SharedPlayerManager.performActualSave`,
-    ///   ``isRunningUnderTest``, RadioLiveActivityManagerTests
+    /// - SeeAlso: `startActivity()`, `SharedPlayerManager.setPlaying`,
+    ///   `SharedPlayerManager.didUpdateStreamMetadata`,
+    ///   `performActualSave` (the bridge call remains for widget parity),
+    ///   ``isRunningUnderTest``, docs/Widget-Presentation-Dataflow.md,
+    ///   RadioLiveActivityManagerTests
     @MainActor
     func updateCurrentActivity() async {
         // Defense-in-depth UI test isolation (SSOT). Even if a stale currentActivity reference
@@ -242,25 +290,39 @@ class RadioLiveActivityManager: ObservableObject {
         
         let manager = SharedPlayerManager.shared
         
-        // Use visualState (SSOT) + await
+        // Prefer the live in-memory values (decoupled path). Persisted is only fallback
+        // so that an early push before the first mutation still has something reasonable.
+        // This is the key separation: LA does not *require* a PersistedWidgetState write.
         let visualState = await manager.currentVisualState
         let streamMetadata = await manager.currentStreamMetadata
             ?? SharedPlayerManager.loadPersistedStreamMetadata()
         
-        let updatedContentState = LutheranRadioLiveActivityAttributes.ContentState(
+        let candidate = LutheranRadioLiveActivityAttributes.ContentState(
             visualState: visualState,
             streamMetadata: streamMetadata
         )
         
+        // Event-driven deduplication (core of the responsiveness improvement).
+        // We only cross the ActivityKit IPC boundary when the user-visible LA content
+        // (status pill, control glyph/tint, program title/speaker) would actually differ.
+        if let last = lastPushedContent, last == candidate {
+            #if DEBUG
+            print("🔴 Live Activity update suppressed (content unchanged)")
+            #endif
+            return
+        }
+        
+        lastPushedContent = candidate
+        
         nonisolated(unsafe) let safeActivity = activity
-        unsafe await safeActivity.update(.init(state: updatedContentState, staleDate: nil))
+        unsafe await safeActivity.update(.init(state: candidate, staleDate: nil))
         
         #if DEBUG
         print("🔴 Live Activity updated locally: visualState=\(visualState)")
         #endif
     }
 
-    /// Ends the current Live Activity (if any) and stops the local heartbeat timer.
+    /// Ends the current Live Activity (if any) and stops any fallback timer.
     ///
     /// The final pushed state is `.userPaused` (with no metadata) so that any transient
     /// UI the system shows during dismissal does not claim the stream is still live.
@@ -282,6 +344,7 @@ class RadioLiveActivityManager: ObservableObject {
     /// Control widget, app icon, or (while the LA is still present before termination)
     /// the standard Live Activity tap-to-launch ("open") URL.
     ///
+    /// - Lifecycle: Also clears `lastPushedContent` so a future restart starts fresh.
     /// - Note: Called on privacy clear (`clearAllLocalState`), on `applicationWillTerminate`,
     ///   and on `willTerminateNotification`. Does **not** automatically end on user pause
     ///   (a paused LA with a working play button is intentional for quick resume while the
@@ -290,13 +353,17 @@ class RadioLiveActivityManager: ObservableObject {
     ///   the Activity instance).
     /// - SeeAlso: `handleAppWillTerminate`, AppDelegate.applicationWillTerminate,
     ///   SharedPlayerManager.forceStaleLivenessTimestampForTermination,
-    ///   docs/Widget-Presentation-Dataflow.md (termination section).
+    ///   docs/Widget-Presentation-Dataflow.md (termination section + LA event-driven section).
     func endActivity(dismissalPolicy: ActivityUIDismissalPolicy = .default) {
         stopLocalUpdateTimer()
         
-        guard let activity = currentActivity else { return }
+        guard let activity = currentActivity else {
+            lastPushedContent = nil
+            return
+        }
         
         currentActivity = nil   // clear immediately while still on the calling context
+        lastPushedContent = nil // Lifecycle: next startActivity begins with a clean last-pushed record
         
         // Capture safely once (standard Live Activity pattern under Swift 6)
         nonisolated(unsafe) let safeActivityToEnd = activity
@@ -318,14 +385,22 @@ class RadioLiveActivityManager: ObservableObject {
         }
     }
     
-    // MARK: - Local-Only Update Timer (the "heartbeat")
+    // MARK: - Local-Only Update Timer (demoted fallback only)
     
-    /// Starts (or restarts) the 10 s repeating timer that keeps the Live Activity
-    /// content fresh while the main app process is alive.
+    /// Starts (or restarts) the repeating fallback timer.
     ///
-    /// The timer is the backup "heartbeat"; authoritative immediate updates are driven
-    /// by `SharedPlayerManager` on visual state changes. Timer uses `Task` to hop to
-    /// the @MainActor update method.
+    /// **This timer is no longer the primary mechanism.** The Live Activity system
+    /// is event-driven: visual state changes and ICY metadata arrivals push
+    /// immediately via `updateCurrentActivity()` (which applies its own change
+    /// detection).
+    ///
+    /// The timer is retained **only** as:
+    /// - An explicit testing seam (`internal`).
+    /// - A rare manual fallback for pathological cases where events stop arriving
+    ///   while audio continues (e.g. certain background metadata starvation).
+    ///
+    /// Normal code paths (setPlaying, stop, didUpdateStreamMetadata, foreground,
+    /// background auto-start) must **not** start this timer.
     ///
     /// - Important: Exposed as `internal` (together with `updateTimer` and
     ///   `stopLocalUpdateTimer`) as the designated white-box testing seam.
@@ -333,11 +408,8 @@ class RadioLiveActivityManager: ObservableObject {
     internal func startLocalUpdateTimer() {
         stopLocalUpdateTimer()
         
-        // Update every 10 seconds while app is running audio.
-        // This interval keeps program metadata and visual state (play/pause) reasonably
-        // fresh without excessive battery impact. The 10 s value is intentionally coarser
-        // than widget debouncing because Activity updates are more expensive.
-        updateTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in
+        // Fallback interval only. Not used for normal freshness.
+        updateTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             
             Task { @MainActor in
@@ -346,7 +418,7 @@ class RadioLiveActivityManager: ObservableObject {
         }
         
         #if DEBUG
-        print("🔴 Started local update timer for Live Activity")
+        print("🔴 Started local *fallback* update timer for Live Activity (rarely used)")
         #endif
     }
     
@@ -407,10 +479,14 @@ class RadioLiveActivityManager: ObservableObject {
         currentActivity = Activity<LutheranRadioLiveActivityAttributes>.activities.first
 
         if let activity = currentActivity {
-            startLocalUpdateTimer() // Resume local updates if activity exists
+            // Event-driven model: do not auto-start the fallback timer on resume.
+            // Any in-flight activity will receive pushes on the next visual or metadata
+            // event (or explicit foreground correction). Starting the timer here would
+            // re-introduce the old polling-driven behavior.
             #if DEBUG
-            print("🔴 Found existing Live Activity: \(activity.id)")
+            print("🔴 Found existing Live Activity: \(activity.id) — timer not auto-started (event-driven)")
             #endif
+            // If a future caller needs the fallback, it can call startLocalUpdateTimer() explicitly.
         }
     }
 }
@@ -424,6 +500,10 @@ extension RadioLiveActivityManager {
     /// the user has lock-screen / Dynamic Island controls while audio continues in
     /// the background.
     ///
+    /// The started activity receives its initial content via the normal event-driven
+    /// path inside `startActivity` → `updateCurrentActivity`. No fallback timer is
+    /// started.
+    ///
     /// Under DEBUG test runs we early-return before inspecting state or scheduling
     /// the async start, for defense-in-depth alongside the guards in startActivity.
     ///
@@ -436,7 +516,8 @@ extension RadioLiveActivityManager {
         if isRunningUnderTest { return }
         #endif
 
-        // Auto-start Live Activity when backgrounding with audio
+        // Auto-start Live Activity when backgrounding with audio.
+        // Subsequent ICY metadata or visual changes will push via the decoupled path.
         let manager = SharedPlayerManager.shared
         let state = manager.loadSharedState()
         

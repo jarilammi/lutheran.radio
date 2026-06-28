@@ -98,15 +98,29 @@ extension SharedPlayerManager {
     }
 
     /// Called when ICY metadata changes (DirectStreamingPlayer → SharedPlayerManager).
+    ///
+    /// This is a primary **event-driven** source for Live Activity updates.
+    /// The Live Activity push reads the just-mutated in-memory `currentStreamMetadata`
+    /// and does not require (or wait for) the widget snapshot write.
+    ///
+    /// Widget snapshot + liveness writes are preserved (program title is useful in
+    /// home widgets) but are a separate concern from the transient LA surface.
     func didUpdateStreamMetadata(_ metadata: String?) async {
         guard !isRunningInWidget() else { return }
         nowPlayingStreamMetadata = metadata
         currentStreamMetadata = StreamProgramMetadata.from(rawICYMetadata: metadata)
 
-        persistStreamMetadataForWidgets()
+        // Event-driven LA update (decoupled in-memory path).
+        // The comparison inside RadioLiveActivityManager ensures we only cross the
+        // ActivityKit boundary when title/speaker actually changed.
+        await RadioLiveActivityManager.shared.updateCurrentActivity()
 
         await updateNowPlayingInfo()
-        await RadioLiveActivityManager.shared.updateCurrentActivity()
+
+        // Persist for widgets (program title in snapshot) — intentionally after the
+        // LA push so that LA responsiveness is not gated on disk I/O.
+        // This keeps widget observable behavior unchanged while giving LA the fast path.
+        persistStreamMetadataForWidgets()
 
         let state = loadSharedState()
         await WidgetRefreshManager.shared.refreshIfNeeded(

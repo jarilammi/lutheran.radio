@@ -96,6 +96,63 @@ Never derive presentation inside leaf view `body` for the three canonical surfac
 - The widget extension process may still be invoked by the system (15 min timelines, user adding the widget, etc.); when invoked it safely falls back and renders the passive branch.
 - Background audio (`UIBackgroundModes = audio`) intentionally keeps liveness + LA alive while the *process* is still resident for audio. Termination (user force-quit or system kill) is the trigger for passive transition.
 
+## Live Activity Event-Driven Update Model (Decoupled In-Memory Path)
+
+**Goal**: Make Lock Screen and Dynamic Island updates feel immediate while preserving `PersistedWidgetState` as the sole SSOT for widgets and relaunch.
+
+### Separation of Concerns
+
+| Concern                        | Single Source of Truth                  | Write Path                                      | Read for Live Activity                  | Disk I/O on hot path? |
+|--------------------------------|-----------------------------------------|-------------------------------------------------|-----------------------------------------|-----------------------|
+| Widgets + Control widgets      | `PersistedWidgetState` (snapshot)       | `persistWidgetSnapshot`, `performActualSave`, `saveCombinedWidgetState`, widget intents via `forcePersistVisualState` | `loadPersistedWidgetState()` (providers) | Yes (required) |
+| App relaunch / resurrection    | `PersistedWidgetState` + liveness (`lastUpdateTime` + sentinel 0) | Same as above + `bumpWidgetLivenessTimestamp`   | Same + `isMainAppProcessRecentlyActive` | Yes (required) |
+| Live Activity (transient UI)   | In-memory `currentVisualState` + `currentStreamMetadata` on `SharedPlayerManager` | None for LA itself. Visual/metadata mutations + direct notify | `await manager.currentVisualState` / `currentStreamMetadata` (fallback to persisted only for safety) | **No** (in-memory compare + conditional `Activity.update`) |
+
+### How Event-Driven Updates Work
+
+1. **Primary drivers** (no timer required):
+   - `SharedPlayerManager.setPlaying()`, `stop()`, `setUserPaused()`, `markAsUserPaused()` — after the widget-persisting save they post a `Task { await RadioLiveActivityManager.shared.updateCurrentActivity() }`.
+   - `didUpdateStreamMetadata(_:)` — after mutating the in-memory metadata, calls the LA manager directly, **then** persists for widgets. This ordering ensures LA sees the fresh title without waiting for disk.
+   - `RadioPlayerCoordinator` toggle / remote / sleep paths — direct calls after state is stable.
+   - Lifecycle: `handleAppDidEnterForeground` (correction), `handleAppWillEnterBackground` (auto-start when playing).
+
+2. **Inside `RadioLiveActivityManager`**:
+   - `updateCurrentActivity()` computes a candidate `ContentState(visualState:streamMetadata)`.
+   - It compares against private `lastPushedContent` (purely in-memory, cleared on `endActivity`).
+   - Only when different (or first push) does it call `Activity.update` and record the candidate.
+   - This is the "Update Invariant": pushes happen **iff** the rendered content would change.
+
+3. **Timer demotion**:
+   - `startLocalUpdateTimer()` / the `updateTimer` are kept as an `internal` testing seam.
+   - They are **not** started from `startActivity()`, `observeExistingActivities()`, or normal lifecycle.
+   - The timer (now 30 s interval when explicitly started) is only a rare fallback. All user-visible freshness is event-driven.
+
+### Invariants (Must Hold After Any Edit)
+
+- **PersistedWidgetState is never bypassed** for widget display, liveness, or relaunch decisions. All providers, `loadSharedState`, and `isMainAppProcessRecentlyActive` continue to read it.
+- Live Activity visual state can be (and is) derived from in-memory SPM values without requiring a `UserDefaults` write in the common path.
+- An `Activity.update` is sent only when `(visualState, streamMetadata)` differs from the last pushed value.
+- Termination cleanup (`handleAppWillTerminate`, `forceStaleLivenessTimestampForTermination`, `endActivity(.immediate)`) is unchanged.
+- Widget observable behavior (timeline entries, "tap_to_open" after quit, program title in snapshots) is unchanged.
+
+### Background Playing Considerations
+
+When the app is backgrounded while playing:
+- An activity is started (if needed) so the user has controls.
+- ICY metadata events and any later visual transitions continue to drive immediate LA pushes (the streaming engine keeps running).
+- No periodic 10 s polling occurs. Battery impact is limited to actual content changes (title updates, pause/resume).
+
+The fallback timer is retained for the rare situation where normal event delivery is interrupted while audio continues to play. It is not started by default. Any code that explicitly starts it should do so intentionally, after considering the additional battery and performance cost.
+
+### Call Sites That Must Route Through the Event Path (or the manager's dedup)
+
+- All visual intent changes that reach `.playing` / `.userPaused` / security etc.
+- All successful ICY `StreamTitle` deliveries.
+- Foreground "catch-up" correction.
+- The bridge inside `performActualSave` (intentionally retained so that any visual save also gives LA a chance to converge; the manager suppresses duplicates).
+
+See `RadioLiveActivityManager.swift` (class docs, `updateCurrentActivity`, `lastPushedContent`, `startLocalUpdateTimer`) and the call sites in `SharedPlayerManager` (set* methods + `didUpdateStreamMetadata`) and `RadioPlayerCoordinator`.
+
 ## Cross-References
 
 - `PlayerVisualState.swift` — authoritative source of `makeStatusPresentation()` / `makeControlPresentation()` + semantics of `isActivelyPlaying`.
