@@ -264,15 +264,34 @@ class RadioLiveActivityManager: ObservableObject {
     ///
     /// The final pushed state is `.userPaused` (with no metadata) so that any transient
     /// UI the system shows during dismissal does not claim the stream is still live.
-    /// Then `end(..., dismissalPolicy: .default)` is used so the LA is removed from the
-    /// Lock Screen / Dynamic Island after the normal system grace period.
+    ///
+    /// `dismissalPolicy`:
+    /// - `.default` (normal / clear paths): lets the system keep the ended activity visible
+    ///   for a grace period so the user sees the final paused state before it is removed.
+    /// - `.immediate` (termination path only): removes the activity surface right away.
+    ///
+    /// **Why `.immediate` on termination (Cleanup Invariant)**:
+    /// Once the main app process has exited there is no longer an in-process actor that can
+    /// service `AppIntent` taps from the Live Activity or push fresh `ContentState` updates.
+    /// Leaving the LA visible would allow the ActivityKit / Chrono subsystem to continue
+    /// treating the surface as "active", potentially causing pings to the widget renderer
+    /// or presenting play controls that have no live backing process. Immediate dismissal
+    /// after the final `.userPaused` update stops that.
+    ///
+    /// The user can still launch the app cleanly via home-screen widget "tap to open",
+    /// Control widget, app icon, or (while the LA is still present before termination)
+    /// the standard Live Activity tap-to-launch ("open") URL.
     ///
     /// - Note: Called on privacy clear (`clearAllLocalState`), on `applicationWillTerminate`,
     ///   and on `willTerminateNotification`. Does **not** automatically end on user pause
-    ///   (a paused LA with a working play button is intentional for quick resume).
-    ///
-    /// - SeeAlso: `SharedPlayerManager.clearAllLocalState`, AppDelegate.applicationWillTerminate
-    func endActivity() {
+    ///   (a paused LA with a working play button is intentional for quick resume while the
+    ///   main process is alive).
+    /// - Precondition: Only the main app process calls this (widget processes never own
+    ///   the Activity instance).
+    /// - SeeAlso: `handleAppWillTerminate`, AppDelegate.applicationWillTerminate,
+    ///   SharedPlayerManager.forceStaleLivenessTimestampForTermination,
+    ///   docs/Widget-Presentation-Dataflow.md (termination section).
+    func endActivity(dismissalPolicy: ActivityUIDismissalPolicy = .default) {
         stopLocalUpdateTimer()
         
         guard let activity = currentActivity else { return }
@@ -291,10 +310,10 @@ class RadioLiveActivityManager: ObservableObject {
             // All async Live Activity work in one async context – modern SSOT pattern
             let content = ActivityContent(state: finalContentState, staleDate: nil)
             unsafe await safeActivityToEnd.update(content)
-            unsafe await safeActivityToEnd.end(content, dismissalPolicy: .default)   // modern end API
+            unsafe await safeActivityToEnd.end(content, dismissalPolicy: dismissalPolicy)
             
             #if DEBUG
-            print("🔴 Live Activity ended")
+            print("🔴 Live Activity ended (policy: \(dismissalPolicy))")
             #endif
         }
     }
@@ -452,10 +471,20 @@ extension RadioLiveActivityManager {
     
     /// Called on process termination paths (AppDelegate + willTerminateNotification).
     ///
-    /// Ends the activity so a stale "playing with buttons" preview does not remain
-    /// on the lock screen after the app has been killed. Uses .default dismissal.
+    /// Ends the activity (with `.immediate` dismissal) so a stale "playing with buttons"
+    /// preview does not remain on the lock screen / Dynamic Island after the main app
+    /// process has been killed (normal termination or best-effort on some abrupt paths).
+    ///
+    /// Also called indirectly via the `UIApplication.willTerminateNotification` observer
+    /// registered in init for defense-in-depth when AppDelegate is not delivered.
+    ///
+    /// - Cleanup Invariant: After this, no Live Activity owned by this process remains
+    ///   that the ActivityKit subsystem could continue to ping or render with active
+    ///   controls. The widget surfaces fall back to their passive "last-known + tap to open"
+    ///   presentation via the staled liveness sentinel.
     func handleAppWillTerminate() {
-        // Clean shutdown - end Live Activity gracefully
-        endActivity()
+        // Clean shutdown - end Live Activity immediately (see endActivity doc for rationale).
+        // The final state pushed inside endActivity is always .userPaused.
+        endActivity(dismissalPolicy: .immediate)
     }
 }

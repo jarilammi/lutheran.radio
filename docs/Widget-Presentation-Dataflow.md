@@ -69,6 +69,33 @@ See the header of `PlayerVisualState.swift` for the exact division and AGENT NOT
 
 Never derive presentation inside leaf view `body` for the three canonical surfaces. Never duplicate the mapping rules.
 
+## App Termination & Passive Widget / Live Activity Lifecycle
+
+**Core rule (Cleanup Invariant)**: Widget and Live Activity surfaces are **active / updating only while the main app process is running** (foreground or background audio). Once the main process has quit (normal termination or force-quit), they must transition to a stable passive or last-known state and must not receive further pings, timeline reloads driven from the dead process, or Activity updates.
+
+### How Termination Achieves Passive State
+- **Liveness heuristic (SSOT)**: `SharedPlayerManager.isMainAppProcessRecentlyActive()` (backed by the `lastUpdateTime` key + explicit `0` sentinel). Widget family views branch on `!isAppRunning()` (delegates to the SSOT) to render either full interactive controls + status + metadata or the "tap_to_open" prompt.
+- **On observed termination** (AppDelegate `applicationWillTerminate`, SceneDelegate `sceneDidDisconnect`, `UIApplication.willTerminateNotification`):
+  - `SharedPlayerManager.forceStaleLivenessTimestampForTermination()` writes the sentinel `0` (and clears instant-feedback transients). Any subsequent Provider run immediately sees the passive path.
+  - `RadioLiveActivityManager.handleAppWillTerminate()` ends the activity with `.immediate` dismissal after a final `.userPaused` push.
+  - `WidgetRefreshManager.cancelPendingRefresh()` drops in-flight debounced work.
+- **After force-quit** (notification not delivered): no further main-process saves or `reloadTimelines` occur. The 60 s window is the worst-case staleness for the heuristic; after that widgets naturally render passive. The snapshot (`PersistedWidgetState`) is deliberately left behind (last-known visual + language + metadata).
+- **Passive presentation**:
+  - Widgets show icon + localized "tap_to_open" + `widgetURL(URL(string: "lutheranradio://open"))`. Tapping performs a clean, Apple-approved launch with no side-effect playback.
+  - Live Activity is removed from the Dynamic Island / Lock Screen (no lingering interactive surface).
+- **Launch paths that remain allowed** (and are the *only* allowed paths):
+  - Widget "tap to open" area (`widgetURL`).
+  - Standard Live Activity tap-to-launch (while the LA is still present, before termination cleanup).
+  - App Intents explicitly marked with `.openAppWhenRun` (if introduced in future).
+  - Home screen / app icon / Siri / URL scheme "open".
+- **Forbidden after quit**: any code path in widget views, providers, or LA that would implicitly call `reloadTimelines`, start network, schedule timers, or post Darwin notifications whose only purpose is to keep a dead process resident.
+
+### Why This Design Is Conservative
+- Prefer explicit shutdown + passive UI over optimistic "keep the surfaces alive".
+- No new parallel state; extends the existing `PersistedWidgetState` + `lastUpdateTime` + LA ownership SSOTs.
+- The widget extension process may still be invoked by the system (15 min timelines, user adding the widget, etc.); when invoked it safely falls back and renders the passive branch.
+- Background audio (`UIBackgroundModes = audio`) intentionally keeps liveness + LA alive while the *process* is still resident for audio. Termination (user force-quit or system kill) is the trigger for passive transition.
+
 ## Cross-References
 
 - `PlayerVisualState.swift` — authoritative source of `makeStatusPresentation()` / `makeControlPresentation()` + semantics of `isActivelyPlaying`.
@@ -76,6 +103,8 @@ Never derive presentation inside leaf view `body` for the three canonical surfac
 - `LutheranRadioWidget.swift` — `SimpleEntry`, `Provider`, family views, `WidgetMetadataRegion`.
 - `LutheranRadioWidgetLiveActivity.swift` — `LutheranRadioLiveActivityWidget`, `LockScreenLiveActivityView`, Dynamic Island regions, intents.
 - `LutheranRadioWidgetControl.swift` — Control widget usage of the same mappers.
+- `SharedPlayerManager.swift` — `PersistedWidgetState`, `isMainAppProcessRecentlyActive`, `forceStaleLivenessTimestampForTermination`, `bumpWidgetLivenessTimestamp`.
+- `RadioLiveActivityManager.swift`, `WidgetRefreshManager.swift`, `AppDelegate.swift`, `SceneDelegate.swift`.
 - `CODING_AGENT.md` — Documentation & Comment Standards, Single Source of Truth Principles, cross-target shared files.
 
 All user-visible strings use `String(localized: "...", table: "Localizable")`.

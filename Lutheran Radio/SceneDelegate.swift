@@ -49,8 +49,24 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     /// Called when the scene disconnects.
-    /// - Parameter scene: The scene that disconnected.
+    ///
+    /// This is one of the observable termination surfaces. We treat disconnect as a signal
+    /// that this scene (and potentially the process) is going away, so we perform the same
+    /// conservative widget/LA cleanup as applicationWillTerminate.
+    ///
+    /// - Cleanup Invariant: stale liveness + cancel pending + (LA end is also driven via the
+    ///   shared notification observer, but we call the marker here for belt-and-suspenders).
+    /// - Note: Not every disconnect is a full quit (multi-window, temporary), but forcing stale
+    ///   liveness is harmless: the next foreground will bump it again via recordWidgetLiveness.
     func sceneDidDisconnect(_ scene: UIScene) {
+        // Conservative quit cleanup for widget + LA surfaces (see AppDelegate.applicationWillTerminate
+        // for the full rationale and invariant).
+        SharedPlayerManager.forceStaleLivenessTimestampForTermination()
+        // Scene lifecycle callbacks run on main; use assumeIsolated under strict concurrency.
+        MainActor.assumeIsolated {
+            WidgetRefreshManager.shared.cancelPendingRefresh()
+        }
+
         window?.rootViewController = nil
         window = nil
     }

@@ -33,6 +33,10 @@
 //   CODING_AGENT.md (Single Source of Truth Principles + the full "Cross-target
 //   shared source files (non-Core)" guidance), README.md (Key Files table).
 //
+// New termination surfaces (see forceStaleLivenessTimestampForTermination +
+// isMainAppProcessRecentlyActive): centralize the "main process alive" signal used
+// by widgets to decide active UI vs. passive "tap to open" launch surface.
+//
 // AGENT NOTE: This is one of the documented single sources of truth.
 // Bypassing it for widget or playback intent logic creates drift and is
 // forbidden.
@@ -1808,6 +1812,91 @@ actor SharedPlayerManager {
         Self.bumpWidgetLivenessTimestamp(force: true)
     }
 
+    // MARK: - Widget / Live Activity Liveness Heuristic & Termination Cleanup (SSOT)
+
+    /// Returns true if the main app process has signaled it is recently active via the
+    /// `lastUpdateTime` heartbeat (within the 60 s window).
+    ///
+    /// This is the **single source of truth** for the widget "active UI vs. passive launch prompt"
+    /// decision. Widget family views (Small/Medium/Large) use it to choose between rendering
+    /// full status + PlayerControlPresentation buttons + flag grid (when true) vs. the
+    /// "tap_to_open" icon + `widgetURL(URL(string: "lutheranradio://open"))` (when false).
+    ///
+    /// **Lifecycle contract (Cleanup Invariant)**:
+    /// - While the main app process is alive (foreground or background audio), saves, fg/bg
+    ///   transitions, and explicit liveness calls keep the timestamp recent → widgets render
+    ///   interactive controls.
+    /// - On observed main-app termination (applicationWillTerminate, sceneDidDisconnect,
+    ///   willTerminateNotification), the main process **must** call
+    ///   `forceStaleLivenessTimestampForTermination()` which sets the sentinel value 0.
+    ///   Subsequent widget renders (system timelines or explicit) immediately see false and
+    ///   render the stable passive "tap to open" surface.
+    /// - Force-quit (no notification delivered) relies on natural aging + absence of further
+    ///   main-process bumps/reloads. Worst case 60 s of "active" presentation.
+    /// - Widget/App Intent processes may bump via the `isWidgetProcess()` bypass inside
+    ///   `bumpWidgetLivenessTimestamp` only for their own optimistic feedback; they do not
+    ///   keep the main app alive.
+    /// - The passive path only launches the app via Apple-approved mechanisms (widgetURL,
+    ///   Live Activity tap "open", or AppIntent surfaces marked `.openAppWhenRun`). No
+    ///   implicit play, no reload side-effects, no resurrection.
+    ///
+    /// - Important: This is a *presentation heuristic only*. Never use for playback intent,
+    ///   resurrection guards, or security decisions. Those use `PersistedWidgetState`,
+    ///   `currentPlaybackIntent`, and `PlayerVisualState` directly.
+    /// - Returns: `false` for missing key, explicit termination sentinel (0), or stale (>60 s).
+    /// - Note: 60 s matches the original widget `isAppRunning` window; keep in sync.
+    /// - SeeAlso: ``bumpWidgetLivenessTimestamp(force:minInterval:)``,
+    ///   ``forceStaleLivenessTimestampForTermination()``, `LutheranRadioWidget.swift`
+    ///   (the `if !isAppRunning()` branches and `widgetURL`), `WidgetRefreshManager`,
+    ///   CODING_AGENT.md (Single Source of Truth Principles + cross-target shared files),
+    ///   docs/Widget-Presentation-Dataflow.md (App Termination section).
+    ///
+    /// AGENT NOTE: Any change to the 60 s constant, sentinel value, or the decision here
+    /// must also update the widget view branches, the termination call sites, and this doc.
+    nonisolated static func isMainAppProcessRecentlyActive() -> Bool {
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return false }
+        guard let lastUpdate = defaults.object(forKey: "lastUpdateTime") as? Double else { return false }
+        if lastUpdate == 0 { return false } // explicit termination sentinel written on quit paths
+        return Date().timeIntervalSince1970 - lastUpdate < 60
+    }
+
+    /// Forces the widget liveness timestamp to the explicit termination sentinel (0).
+    ///
+    /// Call this from main-app termination paths only. It makes `isMainAppProcessRecentlyActive()`
+    /// return false on the next widget provider execution so all surfaces render the passive,
+    /// launch-only UI ("tap to open") immediately rather than showing stale active controls.
+    ///
+    /// Also clears short-lived instant-feedback keys so no "just acted" optimistic state
+    /// survives the quit visually.
+    ///
+    /// **Cleanup Invariant**: After this call (on any observed termination), widget timelines
+    /// and Live Activity (which we also end) must not present interactive controls or cause
+    /// the widget extension to believe the main process can service updates. Only Apple-approved
+    /// launch surfaces remain functional.
+    ///
+    /// Safe to call from willTerminate (synchronous context) — only touches UserDefaults.
+    ///
+    /// - Note: Does **not** remove `persistedWidgetState` (last-known visual + language +
+    ///   metadata remain for providers that fall back and for clean relaunch). Contrast with
+    ///   `removeAllLocalPlaybackKeys` (privacy clear).
+    /// - SeeAlso: ``isMainAppProcessRecentlyActive()``, AppDelegate.applicationWillTerminate,
+    ///   SceneDelegate.sceneDidDisconnect, RadioLiveActivityManager.handleAppWillTerminate,
+    ///   ``removeAllLocalPlaybackKeys()``.
+    nonisolated static func forceStaleLivenessTimestampForTermination() {
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return }
+        defaults.set(0.0, forKey: "lastUpdateTime")
+        // Clear optimistic transients so the widget does not flash a stale "just played" state
+        // on its next render after the main process has died.
+        defaults.removeObject(forKey: "isInstantFeedback")
+        defaults.removeObject(forKey: "instantFeedbackTime")
+        defaults.removeObject(forKey: "instantFeedbackLanguage")
+        // Do not touch persistedWidgetState or language — last-known snapshot is useful
+        // for providers and for a clean relaunch.
+        #if DEBUG
+        print("[SharedPlayerManager] Forced stale lastUpdateTime (0) + cleared instant feedback for post-termination passive widget state")
+        #endif
+    }
+
     /// Optimistic play/pause widget path: persist visual state, schedule pending action, notify main app.
     ///
     /// - Parameters:
@@ -2848,9 +2937,11 @@ extension SharedPlayerManager {
         print("[SharedPlayerManager] hasActiveWidgets forced false after privacy clear (suppressing re-writes until re-detect)")
         #endif
 
-        // 6. End any Live Activity (privacy: no visible "I was listening" on lock screen / Dynamic Island)
+        // 6. End any Live Activity (privacy: no visible "I was listening" on lock screen / Dynamic Island).
+        // Uses .default policy (grace period) because the user explicitly requested clear while
+        // the app is still running; they may still see the final state briefly.
         #if LUTHERAN_MAIN_APP
-        RadioLiveActivityManager.shared.endActivity()
+        RadioLiveActivityManager.shared.endActivity()   // .default
         #endif
 
         // 7. Notify (widgets, Live Activities, UI coordinator, SceneDelegate etc. can react and fall back to defaults)

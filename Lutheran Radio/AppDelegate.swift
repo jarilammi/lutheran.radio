@@ -94,15 +94,52 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     func applicationWillTerminate(_ application: UIApplication) {
-        // Best-effort clean end for any active Live Activity when the process is being terminated.
-        // iOS does not guarantee this is called (especially on force-quit or OOM), but it is the
-        // documented place. The LA manager's handle ends the activity (with .userPaused final state)
-        // so the Dynamic Island / Lock Screen preview does not linger with stale play buttons.
-        // See also scene lifecycle and RadioLiveActivityManager.handleAppWillTerminate.
+        // === App Termination Cleanup (Conservative Widget + Live Activity Lifecycle) ===
+        //
+        // Primary objective: once the main app process is no longer running, widget and Live
+        // Activity surfaces must stop receiving active updates/pings and must render stable
+        // passive / last-known states. They may only launch the app via Apple-approved paths.
+        //
+        // This method is the canonical documented termination entry (UIApplicationDelegate).
+        // iOS does not guarantee delivery (force-quit, OOM, crash all bypass it), which is why
+        // we also observe willTerminateNotification inside RadioLiveActivityManager and call
+        // the liveness-stale marker from every observable termination surface.
+        //
+        // Cleanup performed here (order matters):
+        // 1. Force-stale the liveness timestamp (SSOT) → widgets immediately see
+        //    `isMainAppProcessRecentlyActive() == false` and render the "tap_to_open" prompt
+        //    (widgetURL launch only). This is the key signal that kills the "still pinging"
+        //    appearance after quit.
+        // 2. End any Live Activity (final .userPaused pushed + immediate dismissal).
+        // 3. Cancel pending widget refreshes so no in-flight debounced reload can execute
+        //    after the process is dead.
+        //
+        // Cleanup Invariant: After this returns (when delivered), no path originating from the
+        // (now-exiting) main process may cause WidgetCenter.reloadTimelines, Activity.update,
+        // or liveness bumps. The persisted snapshot (if present) is left as last-known for
+        // providers; the liveness sentinel makes presentation passive.
+        //
+        // See also: SharedPlayerManager.forceStaleLivenessTimestampForTermination,
+        // RadioLiveActivityManager.handleAppWillTerminate, SceneDelegate.sceneDidDisconnect,
+        // WidgetRefreshManager.cancelPendingRefresh, docs/Widget-Presentation-Dataflow.md.
+        //
+        // SAFETY: All calls here are best-effort and non-throwing; they only touch in-process
+        // state and UserDefaults. No force-unwraps.
+
+        // 1. Stale liveness first (widgets read this cross-process).
+        SharedPlayerManager.forceStaleLivenessTimestampForTermination()
+
+        // 2. End Live Activity with conservative immediate dismissal.
         RadioLiveActivityManager.shared.handleAppWillTerminate()
 
+        // 3. Cancel any pending debounced widget work originating from this process.
+        // We are on the main thread during willTerminate; use assumeIsolated for strict Swift 6.
+        MainActor.assumeIsolated {
+            WidgetRefreshManager.shared.cancelPendingRefresh()
+        }
+
         #if DEBUG
-        print("[AppDelegate] applicationWillTerminate — LA end requested")
+        print("[AppDelegate] applicationWillTerminate — liveness staled, LA end requested, pending refreshes cancelled")
         #endif
     }
 }

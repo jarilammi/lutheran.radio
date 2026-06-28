@@ -114,6 +114,10 @@ final class WidgetRefreshManager: @unchecked Sendable {
     // MARK: - Modern API (only public entry point)
     
     /// Drops any scheduled debounced refresh (e.g. before a visual SSOT transition).
+    ///
+    /// Called from termination cleanup paths (AppDelegate, SceneDelegate) to ensure no
+    /// in-flight work from the dying main process can still execute a `reloadTimelines`
+    /// after the process has exited. Safe to call during willTerminate.
     func cancelPendingRefresh() {
         pendingRefresh?.cancel()
         pendingRefresh = nil

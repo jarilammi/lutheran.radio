@@ -94,14 +94,31 @@ private struct WidgetMetadataRegion: View {
     }
 }
 
-/// Returns whether the main app has recently updated shared state.
-/// Used by all three widget sizes to decide whether to show controls or the "tap to open" prompt.
+/// Returns whether the main app process is considered recently active.
+///
+/// Delegates to the Single Source of Truth `SharedPlayerManager.isMainAppProcessRecentlyActive()`.
+/// The 60 s heuristic (plus explicit 0 sentinel on termination) decides whether widget family
+/// views render full interactive chrome (status, controls via `controlPresentation`,
+/// metadata, flags) or the stable passive "tap to open" surface.
+///
+/// **Post-quit contract (Cleanup Invariant)**:
+/// - Main app termination paths call `forceStaleLivenessTimestampForTermination()` which writes
+///   the sentinel 0 → this immediately returns false.
+/// - Subsequent Provider executions (system 15 min timelines or any lingering reloads) render
+///   the "tap_to_open" + `widgetURL("lutheranradio://open")` path only.
+/// - That path performs a clean app launch via the widget's URL handler (Apple-approved,
+///   no playback side-effect, no implicit reload, no resurrection).
+/// - No code in these views or the passive branch may trigger `WidgetCenter.reloadTimelines`,
+///   network, timers, or Darwin that would wake the (now-dead) main process.
+/// - Force-quit may leave a <60 s window of "active" presentation until the timestamp ages;
+///   this is documented and accepted (no write possible after abrupt kill).
+///
+/// - SeeAlso: ``SharedPlayerManager/isMainAppProcessRecentlyActive()``,
+///   ``SharedPlayerManager/forceStaleLivenessTimestampForTermination()``,
+///   `LutheranRadioWidgetEntryView`, the three *WidgetView bodies (the `if !isAppRunning()`
+///   branches), CODING_AGENT.md (SSOT + cross-target), docs/Widget-Presentation-Dataflow.md.
 private func isAppRunning() -> Bool {
-    if let lastUpdate = UserDefaults(suiteName: "group.radio.lutheran.shared")?
-        .object(forKey: "lastUpdateTime") as? Double {
-        return Date().timeIntervalSince1970 - lastUpdate < 60
-    }
-    return false
+    SharedPlayerManager.isMainAppProcessRecentlyActive()
 }
 
 // MARK: - UIKit → SwiftUI Bridge

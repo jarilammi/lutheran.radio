@@ -107,4 +107,41 @@ final class SharedPlayerManagerPlaybackIntentTests: XCTestCase {
         let current = SharedPlayerManager.streamForLanguageCode(other.languageCode)
         XCTAssertEqual(current.languageCode, other.languageCode)
     }
+
+    // MARK: - Termination Cleanup Invariant Tests
+
+    /// Protects the new conservative quit cleanup contract:
+    /// forceStale... must make isMainAppProcessRecentlyActive() return false immediately
+    /// (the sentinel 0), and a subsequent bump must restore "active" for the widget UI decision.
+    /// This is the key mechanism that makes widgets render the passive "tap to open" state
+    /// after the main app has quit.
+    func testForceStaleLivenessMakesIsRecentlyActiveFalse_AndBumpRestores() {
+        let suite = "group.radio.lutheran.shared"
+        let key = "lastUpdateTime"
+        let defaults = UserDefaults(suiteName: suite)!
+
+        // Arrange: make it look recently active
+        let now = Date().timeIntervalSince1970
+        defaults.set(now, forKey: key)
+        XCTAssertTrue(SharedPlayerManager.isMainAppProcessRecentlyActive(),
+                      "Fresh timestamp must be considered recently active")
+
+        // Act: termination cleanup
+        SharedPlayerManager.forceStaleLivenessTimestampForTermination()
+
+        // Assert: sentinel forces inactive (the widget passive path)
+        XCTAssertFalse(SharedPlayerManager.isMainAppProcessRecentlyActive(),
+                       "After forceStale the heuristic must report inactive so widgets render passive launch-only UI")
+
+        // Also verify we cleared the instant feedback keys (defense for post-quit flash)
+        XCTAssertNil(defaults.object(forKey: "isInstantFeedback"))
+
+        // Cleanup side-effect: a later liveness bump (e.g. on next foreground after relaunch) must work
+        SharedPlayerManager.bumpWidgetLivenessTimestamp(force: true)
+        XCTAssertTrue(SharedPlayerManager.isMainAppProcessRecentlyActive(),
+                      "After explicit bump the heuristic must become active again (normal relaunch)")
+
+        // Restore a neutral state for other tests (remove the key so default false)
+        defaults.removeObject(forKey: key)
+    }
 }
