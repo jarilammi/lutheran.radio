@@ -132,9 +132,17 @@ import os
 /// **Playback intent**: `currentPlaybackIntent` (owned exclusively by this actor via
 /// `updatePlaybackIntent(to:)`) is the primary decision signal in the main resurrection paths:
 ///
-/// - `play()` (top rule, central non-cold protection, one-shot simplification)
+/// - `play()` (top rule, central non-cold protection, one-shot simplification; now also
+///   guards on `hasExplicitTerminationSentinel()` + explicit-play flag)
 /// - `attemptResurrectionIfAllowed()`
 /// - `restoreVisualStateRespectingUserIntent()`
+///
+/// The combination of `isStickyPauseOrLock` **plus** the post-termination liveness sentinel
+/// (`lastUpdateTime == 0`) is the hard, reliable blocker on *every* auto-resume /
+/// state-restore / wake path (including device power-up with a visible Live Activity).
+/// Widgets and Live Activities may only perform optimistic UI, persist snapshots,
+/// schedule pending actions, and post Darwin notifications — zero player side effects.
+///
 /// The old overlapping visualState guards have been collapsed in the decision logic while
 /// preserving (and making explicit) sticky `.userPaused` / `.securityLocked` resurrection
 /// protection. Visual state remains the source of truth for UI/widget display.
@@ -153,7 +161,8 @@ import os
 /// | any             | Security validation failure (DNS/403/cert)        | Inside `play()` guard or StreamingSessionDelegate 403 handler   | .securityLocked | Permanent until explicit successful play |
 /// | .userPaused     | User explicitly taps play (any surface)           | `userRequestedPlay()` (all explicit surfaces: button, widget-pending+check, LA, Siri, remote, URL) | .prePlay        | Resume via `.shouldBePlaying` in `play()` (widget signals reach here via Darwin → checkForPendingWidgetActions → userRequestedPlay) |
 /// | .thermalPaused  | Device cools sufficiently                         | DirectStreamingPlayer thermal recovery logic                    | .playing        | Only via `shouldAutoResumeOnThermalRecovery` |
-/// | any             | App foreground, interruption.ended(.shouldResume) | `restoreVisualStateRespectingUserIntent()`                      | (unchanged or forced .userPaused) | Applies inline resurrection suppression (if mustSuppressResurrection → .userPaused) |
+/// | any             | App foreground, interruption.ended(.shouldResume) | `restoreVisualStateRespectingUserIntent()`                      | (unchanged or forced .userPaused) | Applies inline resurrection suppression (if mustSuppressResurrection → .userPaused). Sentinel also blocks. |
+/// | any (post-term) | Device wake / power-up with Lock Screen LA visible | All auto paths (play/restore/attemptResurrection) | (no playback) | `hasExplicitTerminationSentinel()` + !explicit-this-launch is hard blocker (even for prior .playing snapshot) |
 ///
 /// ### Persistence Keys & Ownership (App Group "group.radio.lutheran.shared")
 ///
@@ -377,6 +386,12 @@ actor SharedPlayerManager {
     private var initialPlaybackHasRun = false
     /// True after the first true cold-launch `play()` proceeds (not stream-switch or resume).
     private var hasCompletedTrueColdLaunchPlay = false
+
+    /// Set only by explicit user play surfaces (`userRequestedPlay`, `setUserIntentToPlay`).
+    /// Combined with `hasExplicitTerminationSentinel()` this makes post-termination
+    /// launches require a fresh user gesture before any `DirectStreamingPlayer` work.
+    /// See play() and the cold-launch guard in ViewController.
+    private var hasProcessedExplicitUserPlayRequest = false
     
     // MARK: - Recent user pause (in-actor barrier for recovery paths)
     /// Authoritative timestamp for `wasRecentlyUserPaused(within:)`.
@@ -764,6 +779,32 @@ actor SharedPlayerManager {
         // This covers widget play, Control Center, lock screen, and Siri — everything.
         await clearUserPausedLockIfNeeded()
 
+        // ─────────────────────────────────────────────────────────────────────────────
+        // Post-termination sentinel + sticky intent hard blocker (SSOT resurrection policy)
+        //
+        // `currentPlaybackIntent.isStickyPauseOrLock` already covers .userPaused / .securityLocked / .cleared.
+        // The `hasExplicitTerminationSentinel()` (lastUpdateTime == 0) covers the case where the prior
+        // session ended via termination (power off, force-quit, willTerminate) even if the snapshot
+        // visual was .playing and intent defaulted to .shouldBePlaying.
+        //
+        // The `hasProcessedExplicitUserPlayRequest` flag (set only by `userRequestedPlay` / `setUserIntentToPlay`)
+        // allows a *fresh* explicit user gesture on this launch (widget tap, button, LA "play", Siri, etc.)
+        // to proceed even after a terminated prior session.
+        //
+        // Why: Device wake with a visible Lock Screen Live Activity must never synthesize playback
+        // intent or cause DirectStreamingPlayer to emit the tuning sound / attach a stream.
+        // Widgets + LAs are permitted only UI updates, forcePersist, pending actions, and Darwin
+        // notifications — zero side-effects into the player.
+        //
+        // See also the matching guard before `playSpecialTuningSound` in ViewController.viewDidLoad.
+        // ─────────────────────────────────────────────────────────────────────────────
+        if Self.hasExplicitTerminationSentinel() && !hasProcessedExplicitUserPlayRequest {
+            #if DEBUG
+            print("[SharedPlayerManager] play() BLOCKED — hasExplicitTerminationSentinel() && !hasProcessedExplicitUserPlayRequest (device wake / LA visible / power-up protection)")
+            #endif
+            return
+        }
+
         // AGENT NOTE: Explicit user play requests must have already run setUserIntentToPlay()
         // (via `userRequestedPlay()` or by establishing an active playback intent before an
         // internal `play()` call). See the Precondition on `userRequestedPlay()`. If you are
@@ -1049,10 +1090,12 @@ actor SharedPlayerManager {
     /// Safe resurrection entry point used by DirectStreamingPlayer recovery logic.
     /// Allows technical recovery (hiccups) even when visualState = .playing.
     ///
-    /// playbackIntent is now the *primary* (and sole)
-    /// decision signal for this path. The old visualState guard has been removed
-    /// as part of collapsing parallel checks — intent is authoritative because
+    /// `playbackIntent` is now the *primary* (and sole) decision signal for this path.
+    /// The old visualState guard has been removed as part of collapsing parallel checks.
     /// All sticky transitions flow through `updatePlaybackIntent(to:)`.
+    ///
+    /// Also blocks on `hasExplicitTerminationSentinel()` so that post-termination
+    /// wakes never auto-resume even via recovery nudges.
     func attemptResurrectionIfAllowed() async {
         // UI Test isolation (SSOT): never poke the real AVPlayer or start audio from recovery paths.
         if Self.isRunningInUITestMode {
@@ -1065,11 +1108,14 @@ actor SharedPlayerManager {
         print("[SharedPlayerManager] SharedPlayerManager.attemptResurrectionIfAllowed() – currentPlaybackIntent = \(currentPlaybackIntent), currentVisualState = \(currentVisualState)")
         #endif
 
-        // Block explicit user pause, elapsed sleep timer, or permanent security lock.
+        // Block explicit user pause, elapsed sleep timer, permanent security lock,
+        // or post-termination launch (sentinel). The sentinel + sticky combination is the
+        // required hard blocker on all auto-resume paths (see CODING_AGENT.md).
         if currentPlaybackIntent.isStickyPauseOrLock
-            || (currentPlaybackIntent == .sleepTimer && currentVisualState != .playing) {
+            || (currentPlaybackIntent == .sleepTimer && currentVisualState != .playing)
+            || Self.hasExplicitTerminationSentinel() {
             #if DEBUG
-            print("[SharedPlayerManager] resurrection BLOCKED by playbackIntent = \(currentPlaybackIntent)")
+            print("[SharedPlayerManager] resurrection BLOCKED by playbackIntent or termination sentinel")
             #endif
             return
         }
@@ -1133,6 +1179,7 @@ actor SharedPlayerManager {
         print("SharedPlayerManager.userRequestedPlay() — setUserIntentToPlay + play() for explicit user intent")
         #endif
         
+        hasProcessedExplicitUserPlayRequest = true
         #if LUTHERAN_MAIN_APP
         await configureNowPlayingControlsIfNeeded()
         #endif
@@ -1363,6 +1410,8 @@ actor SharedPlayerManager {
     func setUserIntentToPlay() async {
         ensureVisualStateLoaded()
 
+        hasProcessedExplicitUserPlayRequest = true
+
         #if LUTHERAN_MAIN_APP
         await cancelSleepTimer(restorePlaybackIntent: false)
         #endif
@@ -1508,10 +1557,16 @@ actor SharedPlayerManager {
     func restoreVisualStateRespectingUserIntent() async {
         ensureVisualStateLoaded()
         
+        // Combined blocker: sticky intent OR post-termination sentinel.
+        // Prevents foreground / interruption.ended / wake paths from resurrecting playback
+        // when the prior session ended via termination or the user had paused.
+        // Widgets/Live Activities may still render from PersistedWidgetState; only the
+        // player is blocked.
         if currentPlaybackIntent.isStickyPauseOrLock
-            || (currentPlaybackIntent == .sleepTimer && currentVisualState != .playing) {
+            || (currentPlaybackIntent == .sleepTimer && currentVisualState != .playing)
+            || Self.hasExplicitTerminationSentinel() {
             #if DEBUG
-            print("[SharedPlayerManager] restoreVisualStateRespectingUserIntent BLOCKED by playbackIntent = \(currentPlaybackIntent)")
+            print("[SharedPlayerManager] restoreVisualStateRespectingUserIntent BLOCKED by playbackIntent or termination sentinel")
             #endif
             return
         }
@@ -1858,6 +1913,40 @@ actor SharedPlayerManager {
         guard let lastUpdate = defaults.object(forKey: "lastUpdateTime") as? Double else { return false }
         if lastUpdate == 0 { return false } // explicit termination sentinel written on quit paths
         return Date().timeIntervalSince1970 - lastUpdate < 60
+    }
+
+    /// Returns true when `lastUpdateTime` is the explicit termination sentinel value (0).
+    ///
+    /// - Returns: `true` only when the key exists *and* equals exactly 0.0 (written by
+    ///   `forceStaleLivenessTimestampForTermination` on willTerminate / disconnect paths).
+    /// - Note: Brand-new installs (missing key) and normal idle (positive timestamp, even if >60 s)
+    ///   return `false`. Only the deliberate termination marker returns `true`.
+    ///
+    /// This is the **post-termination liveness heuristic** used in combination with
+    /// `currentPlaybackIntent.isStickyPauseOrLock` to provide a hard blocker against
+    /// unwanted auto-play / tuning sound on device power-up or wake while a Live Activity
+    /// (or widget surface) remains visible on the Lock Screen.
+    ///
+    /// **Why this exists**: Termination of the main process (even if a paused or playing LA
+    /// was present) must be treated as the end of any prior playback intent. Subsequent
+    /// wakes must not cause `DirectStreamingPlayer` side effects. Widgets/LAs may still
+    /// render last-known visuals or passive "tap to open", and may schedule pending actions
+    /// or post Darwin notifications, but they (and launch paths) must never start audio.
+    ///
+    /// - Precondition: Callers combine this with intent checks or the explicit-play flag
+    ///   (see `hasProcessedExplicitUserPlayRequest`).
+    /// - SeeAlso: ``isMainAppProcessRecentlyActive()``, ``forceStaleLivenessTimestampForTermination()``,
+    ///   ``play()``, ``restoreVisualStateRespectingUserIntent()``, ``attemptResurrectionIfAllowed()``,
+    ///   ViewController (cold-launch guard before tuning), CODING_AGENT.md (SSOT + resurrection),
+    ///   <doc:Architecture>.
+    ///
+    /// AGENT NOTE: This + sticky intent is the required combined blocker on *every*
+    /// auto-resume / state-restore / wake path. Update all such sites + the resurrection
+    /// table when changing. Never bypass for LA-visible cases.
+    nonisolated static func hasExplicitTerminationSentinel() -> Bool {
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return false }
+        guard let lastUpdate = defaults.object(forKey: "lastUpdateTime") as? Double else { return false }
+        return lastUpdate == 0
     }
 
     /// Forces the widget liveness timestamp to the explicit termination sentinel (0).

@@ -397,22 +397,72 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
             // for prep is acceptable (not an "I listened" signal).
             backgroundImageController.scheduleDeferredForStreamSwitch(initialStream)
             
-            await self.playSpecialTuningSound()
-            
+            // ─────────────────────────────────────────────────────────────────────────
+            // Resurrection / wake guard — MUST run before any tuning sound or play().
+            //
+            // Loads authoritative snapshot + intent (so .userPaused / .securityLocked /
+            // .cleared are reflected, and sticky intent is synced from PersistedWidgetState).
+            //
+            // The combination `intent.isStickyPauseOrLock || hasExplicitTerminationSentinel()`
+            // is the hard blocker required by policy:
+            // - Prior .userPaused / .cleared / .securityLocked must never auto-start.
+            // - Explicit termination (lastUpdateTime == 0) means the prior session is over;
+            //   device power-up / wake (even with visible Lock Screen Live Activity) must
+            //   produce zero side-effects into DirectStreamingPlayer.
+            //
+            // Only explicit user actions (button, widget pending "play", LA controls,
+            // Siri, etc.) go through `userRequestedPlay` → flag + `setUserIntentToPlay`
+            // and are allowed to proceed.
+            //
+            // Tuning sound is deliberately *after* this gate so that a sticky or
+            // post-termination launch never emits the "radio tuning / connection sound".
+            //
+            // - Precondition: UITest short-circuit already returned above.
+            // - Postcondition (blocked path): UI reflects loaded snapshot visual; no
+            //   tuning, no persist seed, no player.play(), no network.
+            // - SeeAlso: SharedPlayerManager.hasExplicitTerminationSentinel,
+            //   SharedPlayerManager.play (the parallel early return), restore*,
+            //   CODING_AGENT.md (SSOT resurrection, currentPlaybackIntent + liveness),
+            //   RadioPlayerCoordinator.performColdLaunchPlaybackIfAllowed.
+            // ─────────────────────────────────────────────────────────────────────────
+            await SharedPlayerManager.shared.refreshVisualStateFromPersistence()
             let visualState = await SharedPlayerManager.shared.currentVisualState
             let intent = await SharedPlayerManager.shared.currentPlaybackIntent
+            let postTerm = SharedPlayerManager.hasExplicitTerminationSentinel()
+            
+            if intent.isStickyPauseOrLock || postTerm {
+                #if DEBUG
+                print("[ViewController] Blocked cold-launch tuning + playback — \(postTerm ? "post-termination sentinel (0)" : "sticky playbackIntent") (respects user pause / term + visible LA on wake)")
+                #endif
+                // Show the correct persisted visual (e.g. grey paused, or last-known)
+                // rather than forcing .prePlay. LA/widget already use the snapshot.
+                self.updateUI(for: visualState)
+                return
+            }
+            
             #if DEBUG
-            print("[ViewController] After tuning — visualState = \(visualState), intent = \(intent)")
+            print("[ViewController] Cold launch proceeding to tuning (no sticky, no termination sentinel)")
             #endif
             
-            // Post-clear cold launch first play (visual .prePlay or .cleared + .cleared intent, or normal prePlay):
-            // the guard now allows the success path. We deliberately perform identifying writes
-            // (persist seed, updateUserDefaultsLanguage which bumps lastUpdateTime + saveCombined +
-            // refresh) ONLY after the guard passes. This ensures recently deleted data is not
-            // re-created by launch setup until either (a) explicit manual play or (b) the successful
-            // post-clear cold-start play. If the guard blocks, no such writes occur.
-            // The initialStream language here now comes from the centralized bestInitialLanguageCode
-            // (preferredLanguages match) rather than the old fragile Locale.current path.
+            // Early UI to .prePlay for needle/selector positioning (matches prior behavior for allowed cold launches).
+            self.updateUI(for: .prePlay)
+            
+            await self.playSpecialTuningSound()
+            
+            #if DEBUG
+            let afterTuneVisual = await SharedPlayerManager.shared.currentVisualState
+            let afterTuneIntent = await SharedPlayerManager.shared.currentPlaybackIntent
+            print("[ViewController] After tuning — visualState = \(afterTuneVisual), intent = \(afterTuneIntent)")
+            #endif
+            
+            // Post-clear (or normal first) cold launch first play.
+            // The early sentinel+sticky guard above already returned for .userPaused/.cleared-intent/
+            // security/terminated cases (see resurrection policy). Reaching here means we are
+            // in the permitted .prePlay / .cleared visual path for a clean launch.
+            //
+            // Identifying writes (snapshot seed + lastUpdateTime bump) happen only on this
+            // success path so that clearAllLocalState + post-clear launches do not re-create
+            // deleted data until the first explicit or allowed cold play.
             guard visualState == .prePlay || visualState == .cleared || visualState.shouldAutoPlayOrResume || intent == .cleared else {
                 #if DEBUG
                 print("[ViewController] Blocked initial playback — state = \(visualState)")

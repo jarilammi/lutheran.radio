@@ -213,13 +213,26 @@ final class RadioPlayerCoordinator {
     /// Called from the async portion of VC viewDidLoad Task after tuning sound + model-only set.
     /// Owns the resurrection guard + SharedPlayerManager.play() launch for cold start (prePlay path).
     func performColdLaunchPlaybackIfAllowed(initialStream: DirectStreamingPlayer.Stream) async {
+        // Ensure snapshot + intent are authoritative before deciding cold auto-play.
+        await SharedPlayerManager.shared.refreshVisualStateFromPersistence()
         let visualState = await SharedPlayerManager.shared.currentVisualState
         let intent = await SharedPlayerManager.shared.currentPlaybackIntent
+        let postTerm = SharedPlayerManager.hasExplicitTerminationSentinel()
         #if DEBUG
-        print("[RadioPlayerCoordinator] After tuning — visualState = \(visualState), intent = \(intent)")
+        print("[RadioPlayerCoordinator] performColdLaunch... visual=\(visualState), intent=\(intent), postTerm=\(postTerm)")
         #endif
 
-        // Allow .prePlay (normal cold or post-clear launch) or .cleared (in-process post-clear) even if visual guard would be strict.
+        // Hard blocker: sticky intent OR explicit termination sentinel (lastUpdateTime==0).
+        // This is the combined policy that must hold on every wake / LA-visible / power-up path.
+        // Widgets/Live Activities may show last-known or passive UI; no DirectStreamingPlayer side effects.
+        if intent.isStickyPauseOrLock || postTerm {
+            #if DEBUG
+            print("[RadioPlayerCoordinator] Blocked cold-launch playback — \(postTerm ? "termination sentinel" : "sticky intent")")
+            #endif
+            return
+        }
+
+        // Allow .prePlay (normal cold or post-clear launch) or .cleared (in-process post-clear).
         // .cleared intent alone does not block the post-clear cold-start success path (it only
         // prevents auto-recovery before explicit play or the successful initial play()).
         let canStartPostClearPlay = visualState == .prePlay || visualState == .cleared || visualState.shouldAutoPlayOrResume || intent == .cleared
