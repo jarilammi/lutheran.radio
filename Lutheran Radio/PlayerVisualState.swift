@@ -15,6 +15,13 @@
 // (`PlayerVisualState`, `PlaybackIntent`, `StopReason`, `PlaybackAttachContext`)
 // that are used for UI, widgets, Live Activities, and App Intents.
 //
+// This file also hosts the canonical `PlayerEvent` vocabulary (introduced in the
+// first introduction of the gradual migration to a purely event-driven architecture).
+// All significant domain transitions will eventually be expressed as `PlayerEvent`
+// emissions. The addition is 100 % additive; no existing imperative paths were
+// altered or wrapped. See the `PlayerEvent` declaration for the migration strategy
+// and non-forcing invariants.
+//
 // Presentation surfaces (narrow derived value types):
 // - `PlayerStatusPresentation` + `makeStatusPresentation()`: status pill/indicator
 //   (background, foreground, text, optional systemImage). Used by main player,
@@ -44,12 +51,16 @@
 //
 // - SeeAlso: `SharedPlayerManager` (the actor owning mutation + persistence),
 //   `PersistedWidgetState`, `PlayerStatusPresentation`, `PlayerControlPresentation`,
+//   `PlayerEvent` (the canonical event vocabulary added alongside these types),
 //   CODING_AGENT.md (Single Source of Truth Principles, "Cross-target shared
-//   source files (non-Core)", Documentation & Comment Standards),
+//   source files (non-Core)", Documentation & Comment Standards, gradual event-driven
+//   refactor guidance),
 //   WidgetDisplayModels.swift (the parallel metadata/emphasis axis),
 //   README.md (Single Sources of Truth table).
 // - AGENT NOTE: Any change to these enums or their semantics must also update
 //   the resurrection tables and guards inside SharedPlayerManager.swift.
+//   Changes that touch `PlayerEvent` must also consider impact on future emission
+//   sites and widget snapshot consumers.
 
 import Foundation
 import UIKit
@@ -188,7 +199,7 @@ struct PlayerControlPresentation: Sendable, Equatable {
 ///                    resurrection blocker (via intent). Only an explicit user play action clears it
 ///                    (and transitions visual to .prePlay on the way to playing). On next launch
 ///                    (no snapshot) the app starts fresh with .prePlay visual.
-enum PlaybackIntent: Codable, Equatable {
+enum PlaybackIntent: Codable, Equatable, Hashable, Sendable {
     case shouldBePlaying
     case shouldBePaused
     case userPaused
@@ -211,6 +222,130 @@ extension PlaybackIntent {
     }
 }
 
+// MARK: - PlayerEvent (canonical vocabulary for gradual event-driven migration)
+//
+// This is the **first step** of the long-term refactor toward a purely event-driven
+// architecture in which nothing is forced and all significant state transitions and
+// side effects are expressed by emitting `PlayerEvent` values.
+//
+// Strategy for non-forcing migration:
+// - Implementation note: Introduce the shared vocabulary only. No emission sites,
+//   no observers, no call-site changes. Existing imperative paths (direct calls to
+//   play/pause/stop inside SharedPlayerManager, DirectStreamingPlayer, ViewController,
+//   widget intents, etc.) continue to operate exactly as before.
+// - Future changes: Instrument a single emission point at a time (e.g. inside
+//   updatePlaybackIntent, inside persistWidgetSnapshot, inside metadata handlers),
+//   then add narrow observers, then (much later) retire direct mutation sites behind
+//   the event bus. Each step is independently reviewable, testable, and rollback-safe.
+// - Benefit: decouples producers from consumers (widgets, Live Activities, Now Playing,
+//   coordinators, analytics), improves testability (replay sequences of events), and
+//   guarantees consistent snapshot derivation for all surfaces from a single event log.
+//
+// Why these cases: they mirror the high-signal transitions that today are performed
+// through direct property sets, method calls, and multiple save paths. By naming them
+// explicitly we create the extension point without changing any behavior.
+//
+// Invariants:
+// - `PlayerEvent` is a pure vocabulary type. It carries no side effects.
+// - All associated values use existing SSOT types only.
+// - `PlayerEvent` lives in the cross-target shared file alongside `PlaybackIntent`
+//   and `PlayerVisualState` so both main app and widget/LA surfaces see the same cases.
+// - This file still contains *no* security logic.
+//
+// - SeeAlso: PlaybackIntent, PlayerVisualState, SharedPlayerManager, PersistedWidgetState,
+//   StreamProgramMetadata, CODING_AGENT.md (event-driven direction, Single Source of Truth,
+//   cross-target shared files), docs/ (Living-Media-Surfaces-and-Now-Playing-Prompt.md and
+//   widget dataflow docs for context on why decoupling matters).
+//
+// AGENT NOTE: `PlayerEvent` is the Single Source of Truth for player-domain events.
+// Future extensions must preserve Sendable + Hashable + Equatable. When adding cases,
+// document the "why this event" rationale and ensure any payload type is itself
+// Sendable/Hashable/Equatable and already visible to both app and widget targets.
+// Do not emit or observe events in this first step.
+
+/// Canonical vocabulary of significant domain events for the player and widget subsystem.
+///
+/// This enum was introduced as the **first step** of the gradual migration to a purely
+/// event-driven architecture. All future state changes and side-effects will eventually
+/// be expressed by emitting instances of `PlayerEvent` rather than through direct
+/// imperative calls. Existing code paths remain completely unchanged.
+///
+/// - SeeAlso: <doc:Architecture>, SharedPlayerManager.swift, PlaybackIntent, PlayerVisualState
+/// - Important: This type is purely additive for now. No code emits or observes
+///   `PlayerEvent` yet. Emission will be added in subsequent changes.
+/// - Note: `PlayerEvent` conforms to Sendable so it can be safely sent across actor
+///   boundaries and between the main app and widget/Live Activity extension processes.
+///   Hashable + Equatable support snapshot comparison and testing.
+/// - Warning: Do not add security-sensitive or certificate-related cases here.
+///   Security events stay inside Core/.
+///
+/// AGENT NOTE: Single source of truth for player-domain events. Any future extension
+/// must preserve Sendable + Hashable and must be reviewed for impact on widget/Live
+/// Activity snapshot derivation. All cases must carry a documentation comment
+/// explaining the long-term decoupling or testability benefit.
+enum PlayerEvent: Sendable, Hashable, Equatable {
+    /// The authoritative playback intent changed.
+    ///
+    /// Why this event exists: centralizes the signal ("does the user want audio playing?")
+    /// so that UI, DirectStreamingPlayer recovery, widget intents, Live Activities, and
+    /// resurrection logic can all react from one source instead of reading multiple flags.
+    case playbackIntentChanged(PlaybackIntent)
+
+    /// The stream successfully began delivering and rendering audio.
+    ///
+    /// Why this event exists: provides a single hook for side effects (liveness bump,
+    /// Now Playing info, Live Activity start, optimistic widget clear) that today are
+    /// scattered across KVO paths and play() call sites.
+    case streamDidStart
+
+    /// Playback entered a paused state (explicit or transient).
+    ///
+    /// Why this event exists: allows consistent pause bookkeeping and UI/widget
+    /// synchronization without every pause path having to call the same three methods.
+    case streamDidPause
+
+    /// Playback was fully stopped (user action, switch, or termination).
+    ///
+    /// Why this event exists: distinguishes terminal stops from pauses for resurrection
+    /// policy, widget state, and analytics in a uniform way.
+    case streamDidStop
+
+    /// The active stream reported a classified failure.
+    ///
+    /// Why this event exists: routes permanent vs transient errors through the same
+    /// vocabulary used for success paths, enabling a single error surface for widgets,
+    /// user-visible status, and recovery decisions.
+    case streamDidFail(DirectStreamingPlayer.StreamErrorType)
+
+    /// Program metadata (title/speaker parsed from ICY StreamTitle) changed.
+    ///
+    /// Why this event exists: ensures all surfaces (Lock Screen Now Playing,
+    /// widgets, Live Activities) receive identical metadata at the same moment
+    /// instead of polling or duplicating the parse + dispatch logic.
+    case metadataDidUpdate(StreamProgramMetadata?)
+
+    /// The persisted widget snapshot (visual + language + metadata + hasError) was written.
+    ///
+    /// Why this event exists: `PersistedWidgetState` is the SSOT for home-screen widgets,
+    /// Control widgets, and Live Activity content. Emitting on every authoritative or
+    /// optimistic write will let consumers invalidate or update without tight coupling
+    /// to `savePersistedWidgetState` / `persistWidgetSnapshot`.
+    ///
+    /// Implementation note: carried as a signal-only case. The payload form
+    /// `persistedWidgetStateDidUpdate(SharedPlayerManager.PersistedWidgetState)` will be
+    /// adopted in a follow-up implementation change after `PersistedWidgetState` is upgraded with
+    /// explicit Hashable/Equatable/Sendable conformances in its owning file.
+    case persistedWidgetStateDidUpdate
+
+    /// The in-memory visual state used for UI decisions and resurrection changed.
+    ///
+    /// Why this event exists: `PlayerVisualState` drives color, glyph, auto-play guards,
+    /// and sticky pause logic. A dedicated change event will let observers (future
+    /// event bus, test harnesses, debug overlays) stay in sync without observing the
+    /// actor property directly.
+    case visualStateDidChange(PlayerVisualState)
+}
+
 // MARK: - PlayerVisualState (existing visual + legacy intent surface)
 
 /// Single source of truth for playback UI **and** intent.
@@ -226,7 +361,7 @@ extension PlaybackIntent {
 /// - securityLocked: red
 ///
 /// This version makes .userPaused "sticky" after any manual interaction.
-enum PlayerVisualState: Codable, Equatable {
+enum PlayerVisualState: Codable, Equatable, Hashable, Sendable {
     
     case prePlay            // Initial load / connecting / never played yet → yellow
     case cleared            // Post "Clear local state" (privacy reset) → blue "Cleared"; ready state + intent blocker
