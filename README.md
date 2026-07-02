@@ -458,6 +458,8 @@ Source articles (also on GitHub):
 - [Security Invariants](https://github.com/jarilammi/lutheran.radio/blob/HEAD/Core/Core.docc/Articles/Security-Invariants.md)
 - [Architecture](https://github.com/jarilammi/lutheran.radio/blob/HEAD/Core/Core.docc/Articles/Architecture.md)
 
+The gradual migration toward a fully event-driven architecture is tracked in `docs/Event-Driven-Refactor-Roadmap.md`.
+
 See also: the "Current Security Snapshot" table above, [`CODING_AGENT.md`](CODING_AGENT.md) (Key Files table + Core Framework Surface Area rule + "before writing any code..." checklist), ``<doc:Security-Invariants>``, ``<doc:Architecture>``.
 
 **Non-security cross-target shared sources (app + widget)**
@@ -486,7 +488,7 @@ See [docs/Widget-Presentation-Dataflow.md](docs/Widget-Presentation-Dataflow.md)
 
 ### Security Model TXT Record Usage
 
-Lutheran Radio's security system uses a DNS TXT record to ensure only trusted app versions can stream content. The longest practical TXT record length for this purpose is about 450 bytes, which fits within standard DNS limits and supports up to 40-50 security model names (like "landvetter" or "nuuk"). This is more than enough for the current 40-byte record. If you need to use more names in the future, check that your DNS supports larger messages (EDNS0) and test the app to confirm it can handle them. Keep an eye on how your DNS behaves to ensure everything works smoothly, keeping the app secure and reliable for all users.
+Lutheran Radio's security system uses a DNS TXT record to ensure only trusted app versions can stream content. The longest practical TXT record length for this purpose is about 450 bytes, which fits within standard DNS limits and supports up to 40-50 security model names (like "landvetter" or "nuuk"). This is more than enough for the current 47-byte record. If you need to use more names in the future, check that your DNS supports larger messages (EDNS0) and test the app to confirm it can handle them. Keep an eye on how your DNS behaves to ensure everything works smoothly, keeping the app secure and reliable for all users.
 
 ### Security Model History
 
