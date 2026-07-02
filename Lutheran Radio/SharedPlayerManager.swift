@@ -21,6 +21,10 @@
 // - `currentPlaybackIntent` / `PlaybackIntent` + `PlayerVisualState` drive all
 //   resurrection, auto-play, and UI decisions. Widget paths must go through
 //   the actor's static facade or signals; never duplicate intent logic.
+// - `SharedPlayerManager` is the authoritative emitter of `PlayerEvent` for the
+//   player domain. The `events` stream delivers decoupled notifications of
+//   significant transitions (playback intent changes and other domain events)
+//   to widgets, Live Activities, UI components, and recovery logic.
 // - Sticky states (`.userPaused`, `.securityLocked`, `.cleared`) block
 //   resurrection until the next explicit user play.
 // - Privacy: `hasActiveLutheranWidgets` gate suppresses writes when no widgets
@@ -28,10 +32,11 @@
 // - This file contains *no* security policy or validation. Security lives
 //   exclusively in `Core/` (see CODING_AGENT.md "Core Framework Surface Area").
 //
-// - SeeAlso: `PlayerVisualState.swift`, `WidgetRefreshManager.swift`,
-//   `PersistedWidgetState`, `DirectStreamingPlayer.swift` (owns AVPlayer),
-//   CODING_AGENT.md (Single Source of Truth Principles + the full "Cross-target
-//   shared source files (non-Core)" guidance), README.md (Key Files table).
+// - SeeAlso: `PlayerVisualState.swift` (hosts `PlayerEvent` and `PlaybackIntent`),
+//   `WidgetRefreshManager.swift`, `PersistedWidgetState`, `DirectStreamingPlayer.swift`
+//   (owns AVPlayer), CODING_AGENT.md (Single Source of Truth Principles + the full
+//   "Cross-target shared source files (non-Core)" guidance + event-driven direction),
+//   README.md (Key Files table).
 //
 // New termination surfaces (see forceStaleLivenessTimestampForTermination +
 // isMainAppProcessRecentlyActive): centralize the "main process alive" signal used
@@ -245,11 +250,17 @@ enum DarwinSelfEchoGuard {
 /// `SharedPlayerManager` owns **visual + intent state** only. Actual AVPlayer
 /// ownership and streaming remain exclusively in `DirectStreamingPlayer`.
 ///
+/// The manager is the authoritative emitter of `PlayerEvent`. The `events`
+/// `AsyncStream` provides the decoupled, primary signal path for domain
+/// transitions alongside the imperative state surface.
+///
 /// ### Key Invariants
 /// - `PersistedWidgetState` snapshot (via `loadPersistedWidgetState` / `persistWidgetSnapshot`)
 ///   is the sole authoritative source for widget/Live Activity visual state + language + hasError.
 /// - `currentPlaybackIntent` (via `updatePlaybackIntent(to:)`) is the SSOT for
 ///   "does the user want audio playing right now?" and drives all resurrection decisions.
+/// - `SharedPlayerManager` emits `PlayerEvent` (starting with `playbackIntentChanged`)
+///   on all intent mutations so observers can react without polling state.
 /// - Sticky states (`.userPaused`, `.securityLocked`, `.cleared`) are permanent
 ///   resurrection blockers until the next *explicit* user play.
 /// - Privacy gate via `hasActiveWidgets` suppresses all writes when no Lutheran widgets
@@ -259,9 +270,9 @@ enum DarwinSelfEchoGuard {
 /// All widget providers, intents, and Live Activities **must** obtain state via the
 /// documented static facades or the actor. Bypassing creates drift.
 ///
-/// - SeeAlso: ``PlayerVisualState``, ``PlaybackIntent``, `WidgetRefreshManager`,
-///   `DirectStreamingPlayer`, CODING_AGENT.md (Single Source of Truth Principles +
-///   "Cross-target shared source files (non-Core)"), README.md.
+/// - SeeAlso: ``PlayerVisualState``, ``PlaybackIntent``, ``PlayerEvent``, ``events``,
+///   `WidgetRefreshManager`, `DirectStreamingPlayer`, CODING_AGENT.md (Single Source
+///   of Truth Principles + "Cross-target shared source files (non-Core)"), README.md.
 ///
 /// Actor isolation: all mutable state is protected by the actor. Nonisolated static
 /// methods are safe for widget/extension call sites and hop internally when needed.
@@ -490,12 +501,49 @@ actor SharedPlayerManager {
     ///   DirectStreamingPlayer recovery) must consult this rather than deriving from
     ///   `currentVisualState`.
     ///
+    /// Changes to intent also produce a `playbackIntentChanged` event on the
+    /// manager's `events` stream.
+    ///
     /// - SeeAlso: ``updatePlaybackIntent(to:)``, ``canProceedWithPlayback()``,
-    ///   ``userRequestedPlay()``, `PlayerVisualState.swift`, CODING_AGENT.md.
+    ///   ``userRequestedPlay()``, ``events``, `PlayerVisualState.swift`, CODING_AGENT.md.
     ///
     /// Actor-isolated getter.
     var currentPlaybackIntent: PlaybackIntent {
         playbackIntent
+    }
+
+    // MARK: - Player Events
+
+    private var eventContinuation: AsyncStream<PlayerEvent>.Continuation?
+    private var _events: AsyncStream<PlayerEvent>?
+
+    /// The stream of `PlayerEvent` instances emitted by this manager.
+    ///
+    /// `SharedPlayerManager` is the single source of truth and authoritative
+    /// emitter of `PlayerEvent` for the player domain. The stream is created
+    /// once and remains valid for the lifetime of the manager. All subscribers
+    /// receive events yielded after they begin consuming the stream.
+    ///
+    /// Access from outside the actor requires `await`.
+    ///
+    /// - SeeAlso: ``emit(_:)``, ``updatePlaybackIntent(to:)``, `PlayerEvent`
+    public var events: AsyncStream<PlayerEvent> {
+        get async {
+            if let existing = _events {
+                return existing
+            }
+            let (stream, continuation) = AsyncStream.makeStream(of: PlayerEvent.self)
+            _events = stream
+            eventContinuation = continuation
+            return stream
+        }
+    }
+
+    /// Yields a `PlayerEvent` to all current subscribers.
+    ///
+    /// All event production in the manager routes through this method.
+    private func emit(_ event: PlayerEvent) {
+        eventContinuation?.yield(event)
     }
 
     // MARK: - Intent-Driven Playback Execution
@@ -562,13 +610,17 @@ actor SharedPlayerManager {
     /// This is the **only** place that mutates the private `playbackIntent` backing
     /// store. All explicit user actions and sticky state changes must flow through here.
     ///
+    /// After the intent is updated, `emit(.playbackIntentChanged(intent))` is called
+    /// so that the authoritative `PlayerEvent` is delivered to all observers.
+    ///
     /// - Parameter intent: The new authoritative intent.
     ///
     /// - Postcondition: `currentPlaybackIntent` reflects the value (sticky rules
     ///   for userPaused/securityLocked/cleared are enforced by callers before calling).
+    ///   A `playbackIntentChanged` event has been emitted when the value actually changed.
     ///
-    /// - SeeAlso: ``currentPlaybackIntent``, ``canProceedWithPlayback()``,
-    ///   CODING_AGENT.md.
+    /// - SeeAlso: ``currentPlaybackIntent``, ``canProceedWithPlayback()``, ``emit(_:)``,
+    ///   ``events``, CODING_AGENT.md.
     ///
     /// Internal to the actor.
     internal func updatePlaybackIntent(to intent: PlaybackIntent) {
@@ -577,6 +629,9 @@ actor SharedPlayerManager {
             print("[SharedPlayerManager] playbackIntent: \(playbackIntent) → \(intent)")
             #endif
             playbackIntent = intent
+            // Emit because a change to the current playback intent is a significant
+            // domain transition observed by widgets, Live Activities, and UI.
+            emit(.playbackIntentChanged(intent))
         }
     }
     
