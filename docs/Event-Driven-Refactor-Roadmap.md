@@ -20,13 +20,15 @@ It serves as both the project backlog for remaining work and a self-contained re
 - `PlayerEvent` enum introduced in `PlayerVisualState.swift` as the canonical vocabulary for player-domain events (additive only).
 - `SharedPlayerManager` established as the **authoritative emitter** of `PlayerEvent`.
 - Clean `AsyncStream<PlayerEvent>` implementation added (`events` property created exactly once, continuation lives for actor lifetime).
-- Private `emit(_:)` central emission point added.
+- `internal emit(_:)` central emission point (with widget-process guard).
 - Emission of `.playbackIntentChanged` wired inside `updatePlaybackIntent(to:)`.
+- Tier 1 Emission Coverage complete (Option A): stream transitions (start/pause/stop/fail via existing surfaces + enhanced `markPlaybackStoppedByStreamFailure`), `metadataDidUpdate` (in `didUpdateStreamMetadata` + clears), `visualStateDidChange` (via `applyVisualState` / `setVisualState`), `persistedWidgetStateDidUpdate` (after authoritative snapshot writes in `savePersistedWidgetState`).
 
 **Architecture Status**
 - `SharedPlayerManager` is the single source of truth for emitting player events.
-- `PlayerEvent` cases currently cover intent changes (more cases exist in the enum but are not yet emitted).
-- No external consumers of the `events` stream exist yet.
+- All Tier 1 `PlayerEvent` cases are now emitted after their state mutations inside the actor.
+- Emissions are strictly additive; direct state access, imperative paths, and widget snapshot writes remain the primary mechanism.
+- No external consumers of the `events` stream exist yet (Tier 2 work).
 - Widget, Live Activity, and UI paths still rely on direct state access and snapshot derivation.
 
 ---
@@ -38,11 +40,13 @@ The backlog is ordered by increasing risk and decreasing isolation. Earlier item
 ### Tier 1 – Emission Coverage (Low Risk, High Value)
 Goal: Ensure every significant domain transition inside `SharedPlayerManager` and related player logic produces the corresponding `PlayerEvent`.
 
-- [ ] Emit `streamDidStart`, `streamDidPause`, `streamDidStop`, and `streamDidFail` when the underlying streaming state changes (coordinate with `DirectStreamingPlayer` where appropriate, without moving logic out of the player).
-- [ ] Emit `metadataDidUpdate` when `StreamProgramMetadata` changes.
-- [ ] Emit `visualStateDidChange` when `PlayerVisualState` is updated.
-- [ ] Emit `persistedWidgetStateDidUpdate` (or equivalent) when widget snapshot state is written.
-- [ ] Add any missing high-signal cases to `PlayerEvent` if gaps are discovered during emission work (keep the enum minimal and justified).
+- [x] Emit `streamDidStart`, `streamDidPause`, `streamDidStop`, and `streamDidFail` (via `setPlaying`, `setUserPaused`/`markAsUserPaused`, `stop`, `markPlaybackStoppedByStreamFailure` following Option A: enhance existing, no new record* API, classification stays in Direct).
+- [x] Emit `metadataDidUpdate` when `StreamProgramMetadata` changes (and on clears).
+- [x] Emit `visualStateDidChange` when `PlayerVisualState` is updated (centralized via `applyVisualState`).
+- [x] Emit `persistedWidgetStateDidUpdate` when widget snapshot state is written (after `savePersistedWidgetState` writes).
+- [x] (No additional cases required; `visualStateDidChange` case was present and wired.)
+
+**Tier 1 complete.** All core player domain events (`streamDidStart`, `streamDidPause`, `streamDidStop`, `streamDidFail`, `metadataDidUpdate`, `visualStateDidChange`, and `persistedWidgetStateDidUpdate`) are now emitted from `SharedPlayerManager` after their corresponding state mutations. Emissions are strictly additive and use existing canonical surfaces; direct state access and imperative paths remain the primary mechanism.
 
 **Rule for these items**: Emission must be added *after* the state mutation, inside the same actor or controlled boundary. Never remove or bypass existing direct paths.
 
@@ -97,6 +101,7 @@ This document must be maintained after every significant micro-step so that the 
 Keep a short chronological log of major milestones:
 
 - `PlayerEvent` vocabulary introduced + `SharedPlayerManager` became authoritative emitter with clean `AsyncStream` (commit 085311d...).
+- Tier 1 Emission Coverage cleaned up and completed following Option A (minimal, inside-Shared-after-mutation, enhance existing surfaces only, no emission logic or new record APIs in DirectStreamingPlayer). Stream*, metadata, visualStateDidChange, and persistedWidgetStateDidUpdate now emitted. Stale comments/docs cleaned. (2026-07-03)
 
 ---
 

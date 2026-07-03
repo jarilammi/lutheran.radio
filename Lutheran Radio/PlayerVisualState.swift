@@ -17,10 +17,11 @@
 //
 // This file also hosts the canonical `PlayerEvent` vocabulary (introduced in the
 // first introduction of the gradual migration to a purely event-driven architecture).
-// All significant domain transitions will eventually be expressed as `PlayerEvent`
-// emissions. The addition is 100 % additive; no existing imperative paths were
-// altered or wrapped. See the `PlayerEvent` declaration for the migration strategy
-// and non-forcing invariants.
+// All significant domain transitions are expressed as `PlayerEvent` emissions from
+// `SharedPlayerManager` (Tier 1 coverage complete for the core cases). The addition
+// is 100 % additive; no existing imperative paths were altered or wrapped. See the
+// `PlayerEvent` declaration and SharedPlayerManager for current emission sites and
+// non-forcing invariants.
 //
 // Presentation surfaces (narrow derived value types):
 // - `PlayerStatusPresentation` + `makeStatusPresentation()`: status pill/indicator
@@ -261,18 +262,20 @@ extension PlaybackIntent {
 // Future extensions must preserve Sendable + Hashable + Equatable. When adding cases,
 // document the "why this event" rationale and ensure any payload type is itself
 // Sendable/Hashable/Equatable and already visible to both app and widget targets.
-// Do not emit or observe events in this first step.
 
 /// Canonical vocabulary of significant domain events for the player and widget subsystem.
 ///
-/// This enum was introduced as the **first step** of the gradual migration to a purely
-/// event-driven architecture. All future state changes and side-effects will eventually
-/// be expressed by emitting instances of `PlayerEvent` rather than through direct
-/// imperative calls. Existing code paths remain completely unchanged.
+/// `SharedPlayerManager` is the authoritative emitter. Tier 1 emission coverage
+/// (stream start/pause/stop/fail, metadata update, visual state change, persisted
+/// widget state update, and intent change) is implemented inside the actor after
+/// the corresponding mutations. Emissions are strictly additive; all direct
+/// imperative paths and snapshot writes continue to operate unchanged.
 ///
-/// - SeeAlso: <doc:Architecture>, SharedPlayerManager.swift, PlaybackIntent, PlayerVisualState
-/// - Important: This type is purely additive for now. No code emits or observes
-///   `PlayerEvent` yet. Emission will be added in subsequent changes.
+/// - SeeAlso: <doc:Architecture>, SharedPlayerManager.swift, PlaybackIntent, PlayerVisualState,
+///   CODING_AGENT.md, docs/Event-Driven-Refactor-Roadmap.md.
+/// - Important: This type remains additive. Direct state access and existing call
+///   sites are the primary mechanism; event observation is available for new
+///   decoupled consumers (Tier 2+).
 /// - Note: `PlayerEvent` conforms to Sendable so it can be safely sent across actor
 ///   boundaries and between the main app and widget/Live Activity extension processes.
 ///   Hashable + Equatable support snapshot comparison and testing.

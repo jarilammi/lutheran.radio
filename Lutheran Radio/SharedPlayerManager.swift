@@ -436,6 +436,9 @@ actor SharedPlayerManager {
     private func _clearIcyMetadataStash() {
         currentStreamMetadata = nil
         nowPlayingStreamMetadata = nil
+        // Emission after metadata mutation (clear). Language-change and other stash
+        // clears use this helper so a single place owns the nil + event.
+        emit(.metadataDidUpdate(nil))
     }
 
     /// Clears the soft-pause ICY stash (both raw `nowPlayingStreamMetadata` and parsed
@@ -526,7 +529,16 @@ actor SharedPlayerManager {
     ///
     /// Access from outside the actor requires `await`.
     ///
-    /// - SeeAlso: ``emit(_:)``, ``updatePlaybackIntent(to:)``, `PlayerEvent`
+    /// - SeeAlso: ``emit(_:)``, ``updatePlaybackIntent(to:)``, ``setPlaying()``, ``stop()``,
+    ///   ``markPlaybackStoppedByStreamFailure(_:)``, ``didUpdateStreamMetadata(_:)``,
+    ///   `PlayerEvent`, `PlayerVisualState.swift`, CODING_AGENT.md (Single Source of Truth
+    ///   Principles, event-driven direction, cross-target shared files),
+    ///   docs/Event-Driven-Refactor-Roadmap.md.
+    /// - Important: Emission is always additive. Existing imperative paths
+    ///   (`setPlaying`, `stop`, `setUserPaused`, `markAsUserPaused`, `saveCurrentState`,
+    ///   widget/Live Activity updates, notifications) are never bypassed or altered.
+    /// - Note: The continuation is retained for the actor's lifetime; late subscribers
+    ///   receive only events emitted after they start consuming (replay is future work).
     public var events: AsyncStream<PlayerEvent> {
         get async {
             if let existing = _events {
@@ -541,8 +553,31 @@ actor SharedPlayerManager {
 
     /// Yields a `PlayerEvent` to all current subscribers.
     ///
-    /// All event production in the manager routes through this method.
-    private func emit(_ event: PlayerEvent) {
+    /// All event production in the manager routes through this single method.
+    /// This guarantees `SharedPlayerManager` remains the authoritative emitter of
+    /// `PlayerEvent` (Tier 1 coverage: stream transitions, metadata, visual, persisted
+    /// widget state, and intent).
+    ///
+    /// - Parameter event: The domain event to deliver to observers of `events`.
+    ///
+    /// - Postcondition: If a continuation exists, the event has been yielded to
+    ///   active subscribers. No other side effects.
+    ///
+    /// - SeeAlso: ``events``, ``updatePlaybackIntent(to:)``, ``setPlaying()``,
+    ///   ``stop()``, ``setUserPaused()``, ``markAsUserPaused()``,
+    ///   ``markPlaybackStoppedByStreamFailure(_:)``, ``didUpdateStreamMetadata(_:)``,
+    ///   `PlayerEvent`, CODING_AGENT.md, docs/Event-Driven-Refactor-Roadmap.md.
+    ///
+    /// - Important: Never call `emit` from outside this actor or from widget-only paths
+    ///   that would duplicate the main-app classification. Emissions for all Tier 1
+    ///   events occur after the corresponding state mutation inside this actor.
+    ///   The method is internal to allow coordinated emission sites inside the
+    ///   type's implementation files (e.g. SharedPlayerManager+NowPlaying.swift).
+    internal func emit(_ event: PlayerEvent) {
+        // Widget processes perform optimistic visual/intent writes for instant feedback
+        // but must never emit; authoritative emissions (and the single stream instance
+        // intended for observers) come from the main app process only.
+        guard !isRunningInWidget() else { return }
         eventContinuation?.yield(event)
     }
 
@@ -769,13 +804,33 @@ actor SharedPlayerManager {
 
     /// Safe, single entry point to change the visual state from anywhere.
     /// (Notification handlers, MainActor, background tasks, etc.)
+    ///
+    /// - Postcondition: `currentVisualState` updated (with special thermal handling);
+    ///   `.visualStateDidChange` emitted.
+    ///
+    /// - SeeAlso: ``applyVisualState(_:)``, ``currentVisualState``, `PlayerEvent.visualStateDidChange`,
+    ///   CODING_AGENT.md, docs/Event-Driven-Refactor-Roadmap.md.
+    ///
+    /// AGENT NOTE: All significant visual transitions should prefer this entry or the
+    /// internal apply helper so that emission is centralized and never duplicated.
     func setVisualState(_ state: PlayerVisualState) async {
         #if LUTHERAN_MAIN_APP
         if state == .thermalPaused {
             await cancelSleepTimer()
         }
         #endif
-        self.currentVisualState = state
+        applyVisualState(state)
+    }
+
+    /// Internal helper that performs the visual state assignment and emits the change event.
+    ///
+    /// Centralizes Tier 1 emission for `visualStateDidChange`. Used by `setVisualState`
+    /// and by direct transition sites inside the actor after their semantic mutation.
+    ///
+    /// - Postcondition: `currentVisualState` set; event yielded if continuation active.
+    private func applyVisualState(_ state: PlayerVisualState) {
+        currentVisualState = state
+        emit(.visualStateDidChange(state))
     }
     
     /// Public async entry point for playing / resuming (the execution engine).
@@ -1005,8 +1060,8 @@ actor SharedPlayerManager {
             await cancelSleepTimer(restorePlaybackIntent: false)
             #endif
             
-            // Direct mutation inside the actor (this is allowed and correct)
-            self.currentVisualState = .securityLocked
+            // Use apply so visualStateDidChange is emitted (Tier 1).
+            applyVisualState(.securityLocked)
             
             updatePlaybackIntent(to: .securityLocked)
             
@@ -1134,7 +1189,7 @@ actor SharedPlayerManager {
         #if LUTHERAN_MAIN_APP
         await cancelSleepTimer(restorePlaybackIntent: false)
         #endif
-        self.currentVisualState = .securityLocked
+        applyVisualState(.securityLocked)
         await self.saveCurrentState()
         
         #if DEBUG
@@ -1243,7 +1298,20 @@ actor SharedPlayerManager {
     }
     
     /// Explicitly records that the user performed a manual pause or stop.
-    /// This locks .userPaused so resurrection paths are blocked.
+    /// This locks `.userPaused` (sticky resurrection blocker) so that resurrection
+    /// paths are blocked until the next explicit user play.
+    ///
+    /// Called from DirectStreamingPlayer user-action stop paths and certain
+    /// coordinator surfaces. The visual + intent mutations here are the SSOT.
+    ///
+    /// - Postcondition: visual = .userPaused, intent = .userPaused, timestamp set,
+    ///   persisted, and `streamDidPause` emitted.
+    ///
+    /// - SeeAlso: ``setUserPaused()``, ``stop()``, ``emit(_:)``, `PlayerEvent.streamDidPause`,
+    ///   `DirectStreamingPlayer.stop(reason:)`, CODING_AGENT.md (resurrection tables).
+    ///
+    /// AGENT NOTE: Emission site for pause is after mutation. This method is called
+    /// by the player; do not move pause decision logic here.
     func markAsUserPaused() async {
         ensureVisualStateLoaded()
 
@@ -1256,13 +1324,17 @@ actor SharedPlayerManager {
         #endif
         
         // We are inside the actor, so mutation is allowed
-        currentVisualState = .userPaused
+        applyVisualState(.userPaused)
         
         updatePlaybackIntent(to: .userPaused)
         
         // Record authoritative pause timestamp for recovery paths.
         // This lets wasRecentlyUserPaused() return correct answers without raw UD reads.
         lastUserPauseTimestamp = Date().timeIntervalSince1970
+        
+        // Emission after the state mutation (visual + intent). Authoritative for
+        // streamDidPause. All save / notify paths remain exactly as before.
+        emit(.streamDidPause)
         
         // Persist the locked state
         await saveCurrentState()
@@ -1280,6 +1352,18 @@ actor SharedPlayerManager {
     ///
     /// Immediately locks visual state to `.userPaused` (sticky resurrection protection) and persists it,
     /// then stops the real player (main app path) or schedules the widget stop action.
+    ///
+    /// - Postcondition: visual + intent forced to `.userPaused`, timestamp recorded,
+    ///   early visual save for widgets/LA, `DirectStreamingPlayer.stop()` invoked (main),
+    ///   authoritative save performed, surfaces notified, and `streamDidStop` emitted.
+    ///
+    /// - SeeAlso: ``setUserPaused()``, ``markAsUserPaused()``, ``emit(_:)``,
+    ///   `PlayerEvent.streamDidStop`, `DirectStreamingPlayer.stop(reason:completion:silent:)`,
+    ///   CODING_AGENT.md (resurrection protection, SSOT stop path).
+    ///
+    /// AGENT NOTE: `.streamDidStop` is emitted here after the immediate mutation
+    /// because `stop()` is the public authoritative stop entry. Widget vs main paths
+    /// preserved exactly; no removal of Direct.stop() or notify/save calls.
     public func stop() async {
         ensureVisualStateLoaded()
 
@@ -1293,13 +1377,18 @@ actor SharedPlayerManager {
 
         // Note: Lock .userPaused IMMEDIATELY at the very top
         // This closes the race window that causes resurrection after pause
-        currentVisualState = .userPaused
+        applyVisualState(.userPaused)
         saveVisualState()   // persist early so widgets, Live Activity, and Darwin notifications see the new state
 
         updatePlaybackIntent(to: .userPaused)
 
         // Record authoritative pause timestamp (used by recovery query).
         lastUserPauseTimestamp = Date().timeIntervalSince1970
+
+        // Emission of streamDidStop after the core mutation (visual + intent).
+        // Distinguishes terminal stop from transient pause for future observers.
+        // Additive only.
+        emit(.streamDidStop)
 
         #if DEBUG
         print("[SharedPlayerManager] userPaused locked immediately in stop() (resurrection protection active)")
@@ -1412,7 +1501,7 @@ actor SharedPlayerManager {
         // This makes widget play/pause 100% reliable (was missing in pure-play path)
         await clearUserPausedLockIfNeeded()
 
-        currentVisualState = .prePlay
+        applyVisualState(.prePlay)
         holdPrePlayVisualUntilPlayback = true
         initialPlaybackHasRun = false
         saveVisualState()
@@ -1444,14 +1533,13 @@ actor SharedPlayerManager {
     /// On next launch the no-snapshot path in ensureVisualStateLoaded allows the normal cold-launch flow.
     /// SECURITY: This touches only in-memory actor state for the current process.
     func resetStateToClearedForPrivacy() {
-        currentVisualState = .cleared
+        applyVisualState(.cleared)
         holdPrePlayVisualUntilPlayback = false
         initialPlaybackHasRun = false
         updatePlaybackIntent(to: .cleared)
-        // Direct assignment — privacy reset path. Distinct semantic from language-change stash clear.
-        // Must not call updateNowPlayingInfo or persist widget snapshot here.
-        currentStreamMetadata = nil
-        nowPlayingStreamMetadata = nil
+        // Use the canonical clear helper (which now also emits .metadataDidUpdate(nil)).
+        // Distinct from language-change: no NowPlayingInfo or widget persist here.
+        _clearIcyMetadataStash()
         lastUserPauseTimestamp = 0
 
         #if DEBUG
@@ -1476,7 +1564,7 @@ actor SharedPlayerManager {
         #endif
         
         if currentVisualState == .userPaused || currentPlaybackIntent == .cleared || currentVisualState == .cleared {
-            currentVisualState = .prePlay
+            applyVisualState(.prePlay)
             
             #if DEBUG
             print("[SharedPlayerManager] setUserIntentToPlay() → .prePlay with .shouldBePlaying (resume/clear path)")
@@ -1515,14 +1603,40 @@ actor SharedPlayerManager {
     /// Grey `.userPaused` visual supports error UI; `playbackIntent` stays unchanged (typically
     /// `.shouldBePlaying`) so language switches can auto-resume without an extra play tap.
     /// Does not bump `lastUserPauseTimestamp` — stream failure is not a sticky user pause.
-    func markPlaybackStoppedByStreamFailure() async {
+    ///
+    /// Emission of the classified `streamDidFail` occurs here after the mutation. This is the
+    /// existing surface that DirectStreamingPlayer calls (passing the value it classified via
+    /// `StreamErrorType.from(error:)`) for terminal failures.
+    ///
+    /// - Parameter errorType: The classified failure owned and computed by the player.
+    ///   Default preserves behavior for coordinator/test call sites.
+    ///
+    /// - Postcondition: `currentVisualState == .userPaused`; `playbackIntent` unchanged;
+    ///   snapshot saved; `.streamDidFail(errorType)` emitted via the authoritative emitter.
+    ///   All classification, early-window retry, recreate, and stop decisions remain in
+    ///   `DirectStreamingPlayer`.
+    ///
+    /// - SeeAlso: ``emit(_:)``, ``events``, `PlayerEvent.streamDidFail`,
+    ///   ``setPlaying()``, ``stop()``, ``setUserPaused()``, ``markAsUserPaused()``,
+    ///   `DirectStreamingPlayer.StreamErrorType`, `DirectStreamingPlayer.handleItemStatusFailure(_:)`,
+    ///   `DirectStreamingPlayer.handleLoadingError(_:)`,
+    ///   CODING_AGENT.md (Tier 1: "enhance the signature of the existing markPlaybackStoppedByStreamFailure" and "update its existing call sites in DirectStreamingPlayer"),
+    ///   docs/Event-Driven-Refactor-Roadmap.md.
+    ///
+    /// AGENT NOTE: Single source of truth. Emission after mutation inside this existing method.
+    /// No new Direct-called emission API. Classification logic never leaves DirectStreamingPlayer.
+    func markPlaybackStoppedByStreamFailure(_ errorType: DirectStreamingPlayer.StreamErrorType = .permanentFailure) async {
         ensureVisualStateLoaded()
 
         #if DEBUG
         print("[SharedPlayerManager] markPlaybackStoppedByStreamFailure() — visual .userPaused, intent unchanged (\(playbackIntent))")
         #endif
 
-        currentVisualState = .userPaused
+        applyVisualState(.userPaused)
+
+        // Emission *after* the state mutation (visual). This is the required location.
+        // The payload carries the exact classified value from the player.
+        emit(.streamDidFail(errorType))
 
         saveVisualState()
         await saveCurrentState()
@@ -1531,20 +1645,38 @@ actor SharedPlayerManager {
         #endif
     }
 
-    /// Sets the visual state to .userPaused and persists it.
-    /// This is the canonical way to record user-initiated pause intent.
+    /// Sets the visual state to `.userPaused` (sticky) and the playback intent
+    /// to `.userPaused`, records the pause timestamp, persists the snapshot, and
+    /// notifies surfaces.
+    ///
+    /// This is the canonical surface for recording an explicit user-initiated pause
+    /// (from DirectStreamingPlayer mark paths, remote commands, etc.).
+    ///
+    /// - Postcondition: visual = .userPaused, intent = .userPaused, timestamp recorded,
+    ///   snapshot written, and `streamDidPause` emitted.
+    ///
+    /// - SeeAlso: ``markAsUserPaused()``, ``stop()``, ``emit(_:)``,
+    ///   `PlayerEvent.streamDidPause`, `DirectStreamingPlayer.markAsUserPaused()`,
+    ///   CODING_AGENT.md.
+    ///
+    /// AGENT NOTE: `.streamDidPause` is emitted after the mutation here. Callers
+    /// (including Direct) continue to invoke `setUserPaused()` unchanged.
     func setUserPaused() async {
         ensureVisualStateLoaded()
 
         #if LUTHERAN_MAIN_APP
         await cancelSleepTimer(restorePlaybackIntent: false)
         #endif
-        currentVisualState = .userPaused
+        applyVisualState(.userPaused)
         
         updatePlaybackIntent(to: .userPaused)
         
         // Record authoritative pause timestamp.
         lastUserPauseTimestamp = Date().timeIntervalSince1970
+        
+        // Emission after state mutation. Authoritative emitter site for pause.
+        // Additive: saveCurrentState + NowPlaying + LA paths are unaltered.
+        emit(.streamDidPause)
         
         saveVisualState()
         await saveCurrentState()
@@ -1560,8 +1692,24 @@ actor SharedPlayerManager {
         #endif
     }
     
-    /// Sets the visual state to .playing and persists it.
-    /// Call after successful playback start/resume.
+    /// Sets the visual state to `.playing` (and the intent to `.shouldBePlaying`
+    /// unless a sleep timer is active) and persists the authoritative snapshot.
+    ///
+    /// Call after successful playback start or resume from the engine
+    /// (`DirectStreamingPlayer.startPlayback` / `resumeFromSoftPauseIfAvailable`).
+    ///
+    /// - Postcondition: `currentVisualState == .playing` (except in UITestMode),
+    ///   intent updated if appropriate, snapshot saved, Now Playing / Live Activity
+    ///   surfaces notified (main app), and `streamDidStart` emitted.
+    ///
+    /// - SeeAlso: ``emit(_:)``, `DirectStreamingPlayer.startPlayback(context:)`,
+    ///   ``play()``, ``markPlaybackStoppedByStreamFailure(_:)``, `PlayerEvent.streamDidStart`,
+    ///   CODING_AGENT.md (SSOT for visual/intent, additive event emission).
+    ///
+    /// AGENT NOTE: Emission of `.streamDidStart` occurs here (after visual + intent
+    /// mutation) because `setPlaying` is the canonical surface called by the player
+    /// on successful streaming state transition to active. Do not duplicate in callers.
+    /// Existing LA/NowPlaying/save paths are untouched.
     func setPlaying() async {
         // UI Test isolation (SSOT): never trigger Live Activities, Now Playing, or widget saves.
         // Visual is still set to .playing for explicit test assertions that observe
@@ -1573,11 +1721,16 @@ actor SharedPlayerManager {
 
         ensureVisualStateLoaded()
         holdPrePlayVisualUntilPlayback = false
-        currentVisualState = .playing
+        applyVisualState(.playing)
         
         if playbackIntent != .sleepTimer {
             updatePlaybackIntent(to: .shouldBePlaying)
         }
+        
+        // Emission after the core state mutation (visual + intent). This is the
+        // authoritative site for "underlying streaming state became active".
+        // Additive only: all prior save/NowPlaying/LA logic continues exactly.
+        emit(.streamDidStart)
         
         saveVisualState()
         await saveCurrentState()
@@ -1751,7 +1904,7 @@ actor SharedPlayerManager {
         #endif
 
         if currentVisualState == .userPaused || currentPlaybackIntent == .cleared || currentVisualState == .cleared {
-            currentVisualState = .prePlay
+            applyVisualState(.prePlay)
         }
 
         updatePlaybackIntent(to: .shouldBePlaying)
@@ -1772,7 +1925,7 @@ actor SharedPlayerManager {
         Self.writeInstantFeedback(language: Self.preferredWidgetLanguage())
         
         // Important: Optimistic SSOT update (same pattern we already use in stop)
-        currentVisualState = .playing
+        applyVisualState(.playing)
         
         updatePlaybackIntent(to: .shouldBePlaying)
         
@@ -1805,7 +1958,7 @@ actor SharedPlayerManager {
         Self.writeInstantFeedback(language: Self.preferredWidgetLanguage())
         
         // Important: Set the paused state synchronously for widget path
-        currentVisualState = .userPaused
+        applyVisualState(.userPaused)
         
         updatePlaybackIntent(to: .userPaused)
         
@@ -2378,6 +2531,11 @@ actor SharedPlayerManager {
             sharedDefaults?.set(data, forKey: "persistedWidgetState")
             // Explicit synchronize removed; App Group + Darwin notification coordination
             // does not require it on modern platforms.
+
+            // Emission after the authoritative persisted snapshot write.
+            // Only emitted on main-app actor paths that reach a real write (privacy
+            // gate already passed). Widget-process optimistic writes do not emit.
+            emit(.persistedWidgetStateDidUpdate)
         }
     }
 
@@ -2958,15 +3116,14 @@ extension SharedPlayerManager {
     func applySleepTimerElapsedPause() async {
         ensureVisualStateLoaded()
 
-        currentVisualState = .userPaused
+        applyVisualState(.userPaused)
         saveVisualState()
         updatePlaybackIntent(to: .sleepTimer)
 
         DirectStreamingPlayer.shared.stop(reason: .interruption)
 
-        // Direct assignment — sleep timer elapsed path (distinct intent: .sleepTimer, not language change).
-        currentStreamMetadata = nil
-        nowPlayingStreamMetadata = nil
+        // Use canonical clear (emits metadataDidUpdate(nil)). Distinct from language stash.
+        _clearIcyMetadataStash()
 
         await saveCurrentState()
         notifyMainApp(action: "pause")

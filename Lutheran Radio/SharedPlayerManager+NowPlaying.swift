@@ -105,10 +105,33 @@ extension SharedPlayerManager {
     ///
     /// Widget snapshot + liveness writes are preserved (program title is useful in
     /// home widgets) but are a separate concern from the transient LA surface.
+    /// Called when ICY metadata (StreamTitle) changes or is rehydrated.
+    ///
+    /// This is the canonical mutation site for `currentStreamMetadata`.
+    /// After the assignment, emits `.metadataDidUpdate` so that any future
+    /// observers receive the authoritative parsed program metadata.
+    ///
+    /// - Parameter metadata: Raw ICY StreamTitle (or nil to clear).
+    ///
+    /// - Postcondition: `nowPlayingStreamMetadata` and `currentStreamMetadata` reflect
+    ///   the (parsed) value. Live Activity, Now Playing, widget snapshot, and refresh
+    ///   notified. `.metadataDidUpdate` emitted via the authoritative emitter.
+    ///
+    /// - SeeAlso: ``emit(_:)``, `PlayerEvent.metadataDidUpdate`,
+    ///   `StreamProgramMetadata.from(rawICYMetadata:)`, ``persistStreamMetadataForWidgets()``,
+    ///   CODING_AGENT.md, docs/Event-Driven-Refactor-Roadmap.md (Tier 1 metadata emission).
+    ///
+    /// AGENT NOTE: Emission after mutation. This is the SSOT update path for program
+    /// metadata. Clears that bypass this (e.g. language switch stash) should consider
+    /// emitting nil explicitly if observers require it.
     func didUpdateStreamMetadata(_ metadata: String?) async {
         guard !isRunningInWidget() else { return }
         nowPlayingStreamMetadata = metadata
         currentStreamMetadata = StreamProgramMetadata.from(rawICYMetadata: metadata)
+
+        // Emission *after* the state mutation. Authoritative site for metadata updates.
+        // Additive: all existing LA/NowPlaying/widget paths continue unchanged.
+        emit(.metadataDidUpdate(currentStreamMetadata))
 
         // Event-driven LA update (decoupled in-memory path).
         // The comparison inside RadioLiveActivityManager ensures we only cross the

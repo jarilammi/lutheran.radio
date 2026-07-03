@@ -1885,7 +1885,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                     // addObservers + the improved StreamErrorType classification.
                     // Real permanent failures still surface; normal fresh-item ICY noise
                     // triggers recreatePlayerItem() silently.
-                    self.handleItemStatusFailure(item)
+                    await self.handleItemStatusFailure(item)
                 default:
                     break
                 }
@@ -2459,7 +2459,10 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                         // Delegate to the canonical decision point (modest architectural consolidation).
                         // The handler now owns classification, early-window recreate logic,
                         // permanent error recording, status emission, and stop.
-                        self.handleItemStatusFailure(item)
+                        Task { @MainActor [weak self] in
+                            guard let self else { return }
+                            await self.handleItemStatusFailure(item)
+                        }
                         
                     case .unknown:
                         if self.hasStartedPlaying {
@@ -2496,7 +2499,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             
             let likelyToKeepUpObs = playerItem.observe(\.isPlaybackLikelyToKeepUp, options: [.new]) { [weak self] item, change in
                 guard let self = self, let newValue = change.newValue else { return }
-                DispatchQueue.main.async {
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
                     if newValue && item.status == .readyToPlay {
                         guard !self.isDeferringFirstPlayKick else { return }
                         Task { @MainActor [weak self] in
@@ -2530,7 +2534,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             
             let bufferFullObs = playerItem.observe(\.isPlaybackBufferFull, options: [.new]) { [weak self] item, change in
                 guard let self = self, let newValue = change.newValue, newValue else { return }
-                DispatchQueue.main.async {
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
                     Task { @MainActor [weak self] in
                         guard let self else { return }
                         guard await SharedPlayerManager.shared.canProceedWithPlayback() else { return }
@@ -3162,7 +3167,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         #endif
     }
     
-    private func handleLoadingError(_ error: Error) {
+    private func handleLoadingError(_ error: Error) async {
         let errorType = StreamErrorType.from(error: error)
         hasPermanentError = errorType.isPermanent
         
@@ -3229,6 +3234,10 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             safeOnStatusChange(isPlaying: false, reasonKey: "status_buffering")   // ← fixed
         }
         
+        // Pass classified errorType (owned here) to the *existing* Shared method.
+        // `streamDidFail` emission happens inside markPlaybackStoppedByStreamFailure
+        // after its state mutation. No emission code or Task-await-Shared lives in Direct.
+        await SharedPlayerManager.shared.markPlaybackStoppedByStreamFailure(errorType)
         stop()
     }
 }
@@ -3384,7 +3393,7 @@ extension DirectStreamingPlayer {
     ///   `setupPlaybackObservers()`, `addObservers()`, `recreatePlayerItem()`,
     ///   RadioPlayerCoordinator.handleStatusChange, CODING_AGENT.md
     @MainActor
-    private func handleItemStatusFailure(_ item: AVPlayerItem) {
+    private func handleItemStatusFailure(_ item: AVPlayerItem) async {
         let error = item.error
         let errorType = StreamErrorType.from(error: error)
 
@@ -3420,7 +3429,11 @@ extension DirectStreamingPlayer {
         }
 
         // Real permanent (or late) failure path.
+        // Pass the player-owned classified errorType to the existing Shared surface.
+        // .streamDidFail emission (and visual) happens inside mark... after mutation.
+        // No emission logic, no new APIs, no Task { await record... } in Direct.
         safeOnStatusChange(isPlaying: false, reasonKey: errorType.statusString)
+        await SharedPlayerManager.shared.markPlaybackStoppedByStreamFailure(errorType)
         stop()
     }
 }
@@ -3669,7 +3682,8 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
             print("[DirectStreamingPlayer] [Resource Loader] Streaming error occurred: \(error.localizedDescription)")
             #endif
             
-            DispatchQueue.main.async {
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
                 self.activeResourceLoaders.removeValue(forKey: delegate.loadingRequest)
                 self.loadingTimeoutWorkItem?.cancel()
                 if self.currentLoadingDelegate === delegate {
@@ -3695,7 +3709,10 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
                     return
                 }
                 
-                self.handleLoadingError(error)
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    await self.handleLoadingError(error)
+                }
             }
         }
         
