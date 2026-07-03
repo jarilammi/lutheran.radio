@@ -2425,7 +2425,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             // Status observer — now actively handles .readyToPlay (critical for initial playback)
             let statusObs = playerItem.observe(\.status, options: [.new, .initial]) { [weak self] item, _ in
                 guard let self = self else { return }
-                DispatchQueue.main.async {
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
                     #if DEBUG
                     print("[DirectStreamingPlayer] Player item status changed: \(item.status.rawValue) (readyToPlay=1, failed=2)")
                     #endif
@@ -2455,14 +2456,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                         self.hasStartedPlaying = true
                         
                     case .failed:
-                        self.lastError = item.error
-                        // Delegate to the canonical decision point (modest architectural consolidation).
-                        // The handler now owns classification, early-window recreate logic,
-                        // permanent error recording, status emission, and stop.
-                        Task { @MainActor [weak self] in
-                            guard let self else { return }
-                            await self.handleItemStatusFailure(item)
-                        }
+                        break
                         
                     case .unknown:
                         if self.hasStartedPlaying {
@@ -2470,6 +2464,16 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                         }
                     @unknown default:
                         break
+                    }
+                }
+                
+                // Failed status uses direct MainActor Task hop from KVO (no double Dispatch+Task).
+                // This path routes to the canonical handleItemStatusFailure for classification + early retry budget.
+                if item.status == .failed {
+                    Task { @MainActor [weak self] in
+                        guard let self else { return }
+                        self.lastError = item.error
+                        await self.handleItemStatusFailure(item)
                     }
                 }
             }
@@ -2499,34 +2503,31 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             
             let likelyToKeepUpObs = playerItem.observe(\.isPlaybackLikelyToKeepUp, options: [.new]) { [weak self] item, change in
                 guard let self = self, let newValue = change.newValue else { return }
-                DispatchQueue.main.async { [weak self] in
-                    guard let self else { return }
-                    if newValue && item.status == .readyToPlay {
-                        guard !self.isDeferringFirstPlayKick else { return }
-                        Task { @MainActor [weak self] in
-                            guard let self else { return }
-                            guard await SharedPlayerManager.shared.canProceedWithPlayback() else { return }
-                            if (self.player?.rate ?? 0) < 0.1 {
-                                self.player?.play()
-                            }
-                            if self.hasStartedPlaying {
-                                self.safeOnStatusChange(isPlaying: true, reasonKey: "status_playing")   // ← fixed
-                                self.stopBufferingTimer()
-                            }
+                if newValue && item.status == .readyToPlay {
+                    guard !self.isDeferringFirstPlayKick else { return }
+                    Task { @MainActor [weak self] in
+                        guard let self else { return }
+                        guard await SharedPlayerManager.shared.canProceedWithPlayback() else { return }
+                        if (self.player?.rate ?? 0) < 0.1 {
+                            self.player?.play()
                         }
-                    } else if !newValue && (self.player?.rate ?? 0) == 0 {
-                        let stalledDelay: TimeInterval = self.isLowEfficiencyMode ? 20.0 : 10.0
-                        DispatchQueue.main.asyncAfter(deadline: .now() + stalledDelay) { [weak self] in
-                            guard let self = self,
-                                  let currentItem = self.playerItem,
-                                  currentItem == item,
-                                  !currentItem.isPlaybackLikelyToKeepUp,
-                                  (self.player?.rate ?? 0) == 0 else { return }
-                            #if DEBUG
-                            print("[DirectStreamingPlayer] Stalled — attempting recovery")
-                            #endif
-                            self.recreatePlayerItem()
+                        if self.hasStartedPlaying {
+                            self.safeOnStatusChange(isPlaying: true, reasonKey: "status_playing")   // ← fixed
+                            self.stopBufferingTimer()
                         }
+                    }
+                } else if !newValue && (self.player?.rate ?? 0) == 0 {
+                    let stalledDelay: TimeInterval = self.isLowEfficiencyMode ? 20.0 : 10.0
+                    DispatchQueue.main.asyncAfter(deadline: .now() + stalledDelay) { [weak self] in
+                        guard let self = self,
+                              let currentItem = self.playerItem,
+                              currentItem == item,
+                              !currentItem.isPlaybackLikelyToKeepUp,
+                              (self.player?.rate ?? 0) == 0 else { return }
+                        #if DEBUG
+                        print("[DirectStreamingPlayer] Stalled — attempting recovery")
+                        #endif
+                        self.recreatePlayerItem()
                     }
                 }
             }
@@ -2534,15 +2535,12 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             
             let bufferFullObs = playerItem.observe(\.isPlaybackBufferFull, options: [.new]) { [weak self] item, change in
                 guard let self = self, let newValue = change.newValue, newValue else { return }
-                DispatchQueue.main.async { [weak self] in
+                Task { @MainActor [weak self] in
                     guard let self else { return }
-                    Task { @MainActor [weak self] in
-                        guard let self else { return }
-                        guard await SharedPlayerManager.shared.canProceedWithPlayback() else { return }
-                        self.player?.play()
-                        self.safeOnStatusChange(isPlaying: true, reasonKey: "status_playing")   // ← fixed
-                        self.stopBufferingTimer()
-                    }
+                    guard await SharedPlayerManager.shared.canProceedWithPlayback() else { return }
+                    self.player?.play()
+                    self.safeOnStatusChange(isPlaying: true, reasonKey: "status_playing")   // ← fixed
+                    self.stopBufferingTimer()
                 }
             }
             self.playerItemObservations.append(bufferFullObs)
@@ -3210,20 +3208,17 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 // after startup noise" for transient cases in the early window (before stable play).
                 // This is the primary path from resource loader onError for ICY pump/Fig transients.
                 if !hasStartedPlaying && initialPlaybackRetryCount < maxInitialRetries {
-                    Task { @MainActor [weak self] in
-                        guard let self else { return }
-                        guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
-                            #if DEBUG
-                            print("[DirectStreamingPlayer] [Loading Error] transient early: suppressed by playbackIntent")
-                            #endif
-                            return
-                        }
-                        if initialPlaybackRetryCount == 0 { initialPlaybackRetryCount = 1 }
+                    guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
                         #if DEBUG
-                        print("[DirectStreamingPlayer] Transient loading error on fresh ICY item — canonical recreatePlayerItem")
+                        print("[DirectStreamingPlayer] [Loading Error] transient early: suppressed by playbackIntent")
                         #endif
-                        recreatePlayerItem()
+                        return
                     }
+                    if initialPlaybackRetryCount == 0 { initialPlaybackRetryCount = 1 }
+                    #if DEBUG
+                    print("[DirectStreamingPlayer] Transient loading error on fresh ICY item — canonical recreatePlayerItem")
+                    #endif
+                    recreatePlayerItem()
                     return   // do not fall through to stop()
                 }
             }
@@ -3407,24 +3402,21 @@ extension DirectStreamingPlayer {
             && initialPlaybackRetryCount < maxInitialRetries
             && !errorType.isPermanent {
 
+            guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
+                #if DEBUG
+                print("[DirectStreamingPlayer] [Item status failure] early transient suppressed by intent")
+                #endif
+                return
+            }
+
             if initialPlaybackRetryCount == 0 {
                 initialPlaybackRetryCount = 1
             }
 
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
-                    #if DEBUG
-                    print("[DirectStreamingPlayer] [Item status failure] early transient suppressed by intent")
-                    #endif
-                    return
-                }
-
-                #if DEBUG
-                print("[DirectStreamingPlayer] Item status .failed on fresh ICY item (post-pause/switch) — canonical recreatePlayerItem")
-                #endif
-                self.recreatePlayerItem()
-            }
+            #if DEBUG
+            print("[DirectStreamingPlayer] Item status .failed on fresh ICY item (post-pause/switch) — canonical recreatePlayerItem")
+            #endif
+            recreatePlayerItem()
             return
         }
 
