@@ -15,6 +15,14 @@
 // playback state between the main app, home screen widgets, Control Center
 // widgets, Live Activities, and App Intents.
 //
+// `SharedPlayerManager` is the **authoritative emitter** of `PlayerEvent` via its
+// `events` AsyncStream. This is the canonical non-forcing surface for the
+// ongoing event-driven architecture: observers (widgets, Live Activities, UI
+// bridges, recovery) react to typed domain transitions rather than polling or
+// direct forcing. All emissions are strictly additive; legacy direct/imperative
+// paths and snapshot writes for instant feedback remain the primary mechanism
+// and are never bypassed.
+//
 // Key invariants (see detailed tables in this file):
 // - `PersistedWidgetState` (nested struct) + `loadPersistedWidgetState()` /
 //   `savePersistedWidgetState(...)` is the authoritative snapshot for widgets/LAs.
@@ -32,19 +40,23 @@
 // - This file contains *no* security policy or validation. Security lives
 //   exclusively in `Core/` (see CODING_AGENT.md "Core Framework Surface Area").
 //
-// - SeeAlso: `PlayerVisualState.swift` (hosts `PlayerEvent` and `PlaybackIntent`),
-//   `WidgetRefreshManager.swift`, `PersistedWidgetState`, `DirectStreamingPlayer.swift`
-//   (owns AVPlayer), CODING_AGENT.md (Single Source of Truth Principles + the full
-//   "Cross-target shared source files (non-Core)" guidance + event-driven direction),
-//   README.md (Key Files table).
+// - SeeAlso: `PlayerVisualState.swift` (hosts `PlayerEvent`, `PlaybackIntent`, and
+//   the full canonical vocabulary), `WidgetRefreshManager.swift`, `PersistedWidgetState`,
+//   `DirectStreamingPlayer.swift` (owns AVPlayer and actual streaming),
+//   CODING_AGENT.md (Single Source of Truth Principles + the full
+//   "Cross-target shared source files (non-Core)" guidance + event-driven direction +
+//   Documentation & Comment Standards),
+//   README.md (Key Files table),
+//   docs/Event-Driven-Refactor-Roadmap.md (current Tier status and non-forcing rules).
 //
-// New termination surfaces (see forceStaleLivenessTimestampForTermination +
-// isMainAppProcessRecentlyActive): centralize the "main process alive" signal used
+// New termination surfaces (see ``forceStaleLivenessTimestampForTermination()`` +
+// ``isMainAppProcessRecentlyActive()``): centralize the "main process alive" signal used
 // by widgets to decide active UI vs. passive "tap to open" launch surface.
 //
 // AGENT NOTE: This is one of the documented single sources of truth.
 // Bypassing it for widget or playback intent logic creates drift and is
-// forbidden.
+// forbidden. New observers should prefer the `events` stream over direct state reads
+// or forcing shims where possible (additive only).
 //
 // SSOT consolidation (eb52d3b6): PersistedWidgetState became the complete
 // authoritative snapshot (visualState + currentLanguage + hasError + streamMetadata).
@@ -52,39 +64,52 @@
 // are now read-only fallbacks for pre-snapshot installs only.
 
 import Foundation
-import AVFoundation
 import Core
 #if LUTHERAN_MAIN_APP
 import os
 #endif
 
-/// - Article: Shared State Management for Widgets and Extensions
+/// `SharedPlayerManager` is the central actor **and authoritative emitter** of
+/// `PlayerEvent` for the player domain.
 ///
-/// `SharedPlayerManager` is a **pure dispatcher** that enables safe state sharing
-/// between the main app, widgets, and Live Activities via App Groups + `UserDefaults`.
+/// It enables safe state sharing between the main app, widgets, and Live Activities
+/// via App Groups + `UserDefaults`, while the `events` AsyncStream provides the
+/// primary non-forcing, decoupled notification path for significant transitions.
+/// Event emission (via ``emit(_:)`` after mutations) is the canonical direction
+/// for the event-driven architecture; direct state access and widget snapshot
+/// writes remain fully supported for compatibility and instant feedback.
 ///
 /// **Division of responsibilities (Single Source of Truth)**:
 /// - `DirectStreamingPlayer` owns actual playback state, stream selection, error state,
 ///   and all mutations to the AVPlayer.
 /// - `SharedPlayerManager` owns the **visual/intent state** (`currentVisualState` of type
-///   `PlayerVisualState`) and is the only place that should be consulted for "what should
-///   the UI/widget/Live Activity show right now?".
+///   `PlayerVisualState`) **and** is the sole emitter of `PlayerEvent`.
 ///
 /// Core responsibilities:
-/// - **Visual State SSOT**: `PlayerVisualState` (`.prePlay`, `.playing`, `.userPaused`,
-///   `.thermalPaused`, `.securityLocked`) with strict "sticky .userPaused" resurrection protection.
+/// - **Visual State + Intent SSOT**: `PlayerVisualState` + `currentPlaybackIntent`
+///   (via `updatePlaybackIntent(to:)`) with strict sticky resurrection protection.
+/// - **Event emission (non-forcing canonical)**: All Tier 1 `PlayerEvent` cases
+///   (playbackIntentChanged, streamDid*, metadataDidUpdate, visualStateDidChange,
+///   persistedWidgetStateDidUpdate) are emitted from inside this actor after the
+///   corresponding mutation. See ``events`` and ``emit(_:)``.
 /// - **Widget / Intent actions**: Optimistic instant feedback via App Group + Darwin notifications;
 ///   the main app performs the real work and persists authoritative state.
-/// - **State persistence**: `saveCurrentState()` + `saveVisualState()` for cross-process sync.
+/// - **State persistence**: `saveCurrentState()` + `saveVisualState()` /
+///   ``persistWidgetSnapshot(visualState:language:clearStreamMetadata:)`` for cross-process sync.
 /// - **Privacy**: only anonymous data; no timestamps, no history, no PII.
 ///
 /// Usage:
 /// - Main app / recovery logic: `await SharedPlayerManager.shared.play()`, `.stop()`, etc.
 /// - Widgets / Live Activities / intents: `SharedPlayerManager.shared.loadSharedState()`,
-///   `loadPersistedVisualStateDirect()` (snapshot-first), `forcePersistVisualState(...)` (never instantiate a player).
+///   ``loadPersistedVisualStateDirect()`` (snapshot-first). Legacy forcing surfaces
+///   (``forcePersistVisualState(_:language:)``) exist only for widget optimistic paths
+///   and are not the preferred mechanism for new observers.
 ///
-/// See also: `DirectStreamingPlayer` (actual playback), `PlayerVisualState.swift` (the visual SSOT),
-/// `WidgetRefreshManager.swift`, and `RadioLiveActivityManager.swift`.
+/// - SeeAlso: `DirectStreamingPlayer` (actual playback),
+///   ``PlayerVisualState``, ``PlayerEvent``, ``events``, ``emit(_:)``,
+///   `WidgetRefreshManager.swift`, `RadioLiveActivityManager.swift`,
+///   CODING_AGENT.md (event-driven direction),
+///   docs/Event-Driven-Refactor-Roadmap.md.
 ///
 /// ## Formal Documentation: State Machine & App Group Persistence Model
 ///
@@ -522,23 +547,31 @@ actor SharedPlayerManager {
 
     /// The stream of `PlayerEvent` instances emitted by this manager.
     ///
-    /// `SharedPlayerManager` is the single source of truth and authoritative
-    /// emitter of `PlayerEvent` for the player domain. The stream is created
-    /// once and remains valid for the lifetime of the manager. All subscribers
-    /// receive events yielded after they begin consuming the stream.
+    /// `SharedPlayerManager` is the **single source of truth and authoritative emitter**
+    /// of `PlayerEvent` for the player domain. This `AsyncStream` is the canonical
+    /// non-forcing surface for the event-driven architecture: all significant domain
+    /// transitions are expressed here after their state mutations.
+    ///
+    /// The stream is created once and remains valid for the lifetime of the manager.
+    /// All subscribers receive events yielded after they begin consuming the stream.
     ///
     /// Access from outside the actor requires `await`.
     ///
+    /// - Parameters: none (async getter).
+    /// - Returns: The `AsyncStream<PlayerEvent>` for this manager instance.
     /// - SeeAlso: ``emit(_:)``, ``updatePlaybackIntent(to:)``, ``setPlaying()``, ``stop()``,
     ///   ``markPlaybackStoppedByStreamFailure(_:)``, ``didUpdateStreamMetadata(_:)``,
     ///   `PlayerEvent`, `PlayerVisualState.swift`, CODING_AGENT.md (Single Source of Truth
-    ///   Principles, event-driven direction, cross-target shared files),
+    ///   Principles, event-driven direction, cross-target shared files, Documentation & Comment Standards),
     ///   docs/Event-Driven-Refactor-Roadmap.md.
     /// - Important: Emission is always additive. Existing imperative paths
     ///   (`setPlaying`, `stop`, `setUserPaused`, `markAsUserPaused`, `saveCurrentState`,
     ///   widget/Live Activity updates, notifications) are never bypassed or altered.
+    ///   Direct state surfaces and forcing shims (e.g. `forcePersistVisualState`) continue
+    ///   to operate for compatibility.
     /// - Note: The continuation is retained for the actor's lifetime; late subscribers
     ///   receive only events emitted after they start consuming (replay is future work).
+    /// - Precondition: Must be accessed via `await SharedPlayerManager.shared.events`.
     public var events: AsyncStream<PlayerEvent> {
         get async {
             if let existing = _events {
@@ -559,20 +592,20 @@ actor SharedPlayerManager {
     /// widget state, and intent).
     ///
     /// - Parameter event: The domain event to deliver to observers of `events`.
-    ///
     /// - Postcondition: If a continuation exists, the event has been yielded to
     ///   active subscribers. No other side effects.
-    ///
     /// - SeeAlso: ``events``, ``updatePlaybackIntent(to:)``, ``setPlaying()``,
     ///   ``stop()``, ``setUserPaused()``, ``markAsUserPaused()``,
     ///   ``markPlaybackStoppedByStreamFailure(_:)``, ``didUpdateStreamMetadata(_:)``,
-    ///   `PlayerEvent`, CODING_AGENT.md, docs/Event-Driven-Refactor-Roadmap.md.
-    ///
+    ///   `PlayerEvent`, CODING_AGENT.md (Documentation & Comment Standards),
+    ///   docs/Event-Driven-Refactor-Roadmap.md.
     /// - Important: Never call `emit` from outside this actor or from widget-only paths
     ///   that would duplicate the main-app classification. Emissions for all Tier 1
     ///   events occur after the corresponding state mutation inside this actor.
     ///   The method is internal to allow coordinated emission sites inside the
     ///   type's implementation files (e.g. SharedPlayerManager+NowPlaying.swift).
+    /// - Note: Widget processes are explicitly guarded; they perform optimistic
+    ///   snapshot writes but authoritative events originate from the main app.
     internal func emit(_ event: PlayerEvent) {
         // Widget processes perform optimistic visual/intent writes for instant feedback
         // but must never emit; authoritative emissions (and the single stream instance
@@ -754,7 +787,12 @@ actor SharedPlayerManager {
     /// first see correct play/pause + language immediately.
     ///
     /// Also updates the in-memory currentVisualState in this process.
-    /// Forces a PersistedWidgetState snapshot write for the given visual state.
+    ///
+    /// **Legacy forcing surface**: `forcePersistVisualState` exists solely for widget
+    /// optimistic instant-feedback paths (App Intents, Control Center). It is not part of
+    /// the canonical non-forcing event-driven architecture. New consumers should observe
+    /// ``events`` (or use snapshot reads) instead of introducing new forcing call sites.
+    /// The implementation remains unchanged and additive.
     ///
     /// - Parameters:
     ///   - state: Target visual state (typically .playing or .userPaused from widget intent).
@@ -763,10 +801,12 @@ actor SharedPlayerManager {
     ///     persisted snapshot stay consistent (prevents "en" appearing for fi stream in refresh logs).
     ///
     /// Widget/AppIntent callers should prefer passing a language derived from
-    /// loadPersistedWidgetState() so the snapshot reflects the station the user saw/tapped.
+    /// ``loadPersistedWidgetState()`` so the snapshot reflects the station the user saw/tapped.
     ///
     /// - SeeAlso: ``signalWidgetPendingAction(visualState:action:language:)``,
-    ///   ``WidgetToggleRadioIntent``, CODING_AGENT.md (SSOT).
+    ///   ``WidgetToggleRadioIntent``, ``events``, ``emit(_:)``,
+    ///   docs/Event-Driven-Refactor-Roadmap.md,
+    ///   CODING_AGENT.md (SSOT + event-driven direction).
     nonisolated public func forcePersistVisualState(_ state: PlayerVisualState, language: String? = nil) {
         let lang = language ?? Self.preferredWidgetLanguage()
         Self.persistWidgetSnapshot(visualState: state, language: lang)
@@ -775,9 +815,19 @@ actor SharedPlayerManager {
         Task { await Self.shared._forceSetCurrentVisualState(state) }
     }
 
+    /// Internal helper supporting the legacy widget `forcePersistVisualState` path only.
+    ///
+    /// Applies the visual state directly inside the actor after a nonisolated hop.
+    /// Sets the persistence-loaded guard so subsequent `ensureVisualStateLoaded` calls
+    /// see the value. Never emits (widget processes are guarded in ``emit(_:)``).
+    ///
+    /// - Parameter state: The visual state written optimistically by a widget intent.
+    /// - SeeAlso: ``forcePersistVisualState(_:language:)``, ``events``.
     private func _forceSetCurrentVisualState(_ state: PlayerVisualState) {
-        // Purpose: apply forced visual update from widget forcePersistVisualState path.
+        // Purpose: apply forced visual update from widget forcePersistVisualState path only.
         // Key constraint: only invoked via Task hop from nonisolated public surface; sets the loaded guard.
+        // This is a compatibility shim for cross-process widget instant feedback.
+        // Event-driven observers receive authoritative transitions via the main-app emit path.
         currentVisualState = state
         hasLoadedVisualStateFromPersistence = true
     }
@@ -792,6 +842,13 @@ actor SharedPlayerManager {
     /// Widget Providers (home screen + Control) should call this before reading currentVisualState
     /// for UI decisions. It resets the one-shot guard so that updates written by forcePersistVisualState
     /// (or by the main app via saveVisualState) are seen even in long-lived extension processes.
+    ///
+    /// This is a read-side refresh helper for long-lived widget processes. It is unrelated to
+    /// the event emission path; observers of ``events`` receive fresh values on the next yield
+    /// without needing explicit refresh calls.
+    ///
+    /// - SeeAlso: ``syncVisualStateFromPersistence()``, ``loadPersistedWidgetState()``,
+    ///   ``events``, docs/Event-Driven-Refactor-Roadmap.md.
     public func refreshVisualStateFromPersistence() async {
         hasLoadedVisualStateFromPersistence = false
         ensureVisualStateLoaded()
@@ -2042,6 +2099,13 @@ actor SharedPlayerManager {
 
     /// Refreshes the App Group `lastUpdateTime` heartbeat used by widget `isAppRunning()` (60 s window).
     /// Throttled by default so unchanged-snapshot save skips do not spam UserDefaults on every KVO tick.
+    ///
+    /// The `force` parameter bypasses the minInterval for termination and widget-action
+    /// instant feedback. This liveness surface is orthogonal to the `PlayerEvent` stream;
+    /// it exists to let passive widget renders decide "main app recently alive vs. tap-to-open".
+    ///
+    /// - SeeAlso: ``forceStaleLivenessTimestampForTermination()``, ``isMainAppProcessRecentlyActive()``,
+    ///   ``events``, docs/Event-Driven-Refactor-Roadmap.md.
     nonisolated static func bumpWidgetLivenessTimestamp(
         force: Bool = false,
         minInterval: TimeInterval = 30
@@ -2159,12 +2223,17 @@ actor SharedPlayerManager {
 
     /// Forces the widget liveness timestamp to the explicit termination sentinel (0).
     ///
-    /// Call this from main-app termination paths only. It makes `isMainAppProcessRecentlyActive()`
-    /// return false on the next widget provider execution so all surfaces render the passive,
+    /// **Legacy termination surface** (liveness heuristic only). Call this from main-app
+    /// termination paths only. It makes ``isMainAppProcessRecentlyActive()`` return false
+    /// on the next widget provider execution so all surfaces render the passive,
     /// launch-only UI ("tap to open") immediately rather than showing stale active controls.
     ///
     /// Also clears short-lived instant-feedback keys so no "just acted" optimistic state
     /// survives the quit visually.
+    ///
+    /// This heuristic is separate from the `PlayerEvent` emission model. Event subscribers
+    /// learn about termination via process lifetime; widgets use the sentinel for their
+    /// render decision.
     ///
     /// **Cleanup Invariant**: After this call (on any observed termination), widget timelines
     /// and Live Activity (which we also end) must not present interactive controls or cause
@@ -2178,7 +2247,8 @@ actor SharedPlayerManager {
     ///   `removeAllLocalPlaybackKeys` (privacy clear).
     /// - SeeAlso: ``isMainAppProcessRecentlyActive()``, AppDelegate.applicationWillTerminate,
     ///   SceneDelegate.sceneDidDisconnect, RadioLiveActivityManager.handleAppWillTerminate,
-    ///   ``removeAllLocalPlaybackKeys()``.
+    ///   ``removeAllLocalPlaybackKeys()``,
+    ///   docs/Event-Driven-Refactor-Roadmap.md.
     nonisolated static func forceStaleLivenessTimestampForTermination() {
         guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return }
         defaults.set(0.0, forKey: "lastUpdateTime")

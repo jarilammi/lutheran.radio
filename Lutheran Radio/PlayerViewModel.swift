@@ -11,6 +11,9 @@
 //
 //  This is a *presentation adapter*, not a source of truth.
 //  - Visual state + playback intent authority remains in SharedPlayerManager (actor).
+//  - `SharedPlayerManager` is the authoritative emitter of `PlayerEvent`; the coordinator
+//    currently pushes state derived from those transitions (and direct surfaces) into this VM.
+//    Future surfaces may subscribe to the event stream directly (additive, non-forcing).
 //  - Complex orchestration (debounce, tuning sound sequencing, optimistic prePlay timing,
 //    intent guards, widget reconciliation) remains exclusively in RadioPlayerCoordinator.
 //  - The coordinator (orchestrator) pushes updates into this VM so SwiftUI can observe.
@@ -25,7 +28,8 @@
 //
 //  Action methods (`play()`, `pause()`, `selectLanguage(at:)`) forward via injected
 //  closures. This lets SwiftUI call them without a direct dependency on the UIKit coordinator
-//  or having to know about SharedPlayerManager actor hops.
+//  or having to know about SharedPlayerManager actor hops. All explicit play requests
+//  ultimately reach `SharedPlayerManager.userRequestedPlay()` (the designated path).
 //
 //  Presentation concerns:
 //  - The three narrow cached presentation surfaces (`statusPresentation`,
@@ -40,12 +44,13 @@
 //  No side effects or actor access from the mock path.
 //
 //  - Important: Do not duplicate resurrection rules, intent logic, or security decisions here.
-//  - SeeAlso: RadioPlayerCoordinator (the driver), SharedPlayerManager (SSOT via push),
-//    PlayerVisualState.swift, StreamProgramMetadata.swift,
+//  - SeeAlso: RadioPlayerCoordinator (the driver), SharedPlayerManager (SSOT + ``events``),
+//    ``PlayerVisualState``, ``PlayerEvent``, StreamProgramMetadata.swift,
 //    (see "Main Player Presentation Dataflow" section in this file for the three cached surfaces),
 //    `WidgetNowPlayingDisplayModel` + docs/Widget-Presentation-Dataflow.md (widget/LA alignment),
-//    CODING_AGENT.md (Single Source of Truth Principles + Cross-target shared files + Documentation & Comment Standards + narrow inputs),
-//    <doc:Architecture>.
+//    CODING_AGENT.md (Single Source of Truth Principles + Cross-target shared files +
+//    Documentation & Comment Standards + narrow inputs + event-driven direction),
+//    <doc:Architecture>, docs/Event-Driven-Refactor-Roadmap.md.
 //
 //  Created by Jari Lammi on 19.6.2026.
 //
@@ -240,6 +245,12 @@ private func potentialNames(from text: String) -> [String] {
 ///
 /// Thread-safety: @MainActor isolation + coordinator is the only writer in production.
 ///
+/// This VM is a narrow presentation adapter. State flows from the SSOTs in
+/// `SharedPlayerManager` (visual + intent + `PlayerEvent` emissions). The coordinator
+/// is responsible for observing authoritative changes (directly or via future event
+/// subscription) and pushing the relevant slices here. Direct mutation of
+/// `visualState`, `currentMetadata`, etc. is the current bridge mechanism only.
+///
 /// Sleep timer surface:
 /// - `sleepTimerRemaining` is pushed by coordinator (via `syncSleepTimerToViewModel`).
 /// - `selectSleepTimer(minutes:)` and `cancelSleepTimer()` forward to coordinator-owned logic
@@ -260,9 +271,13 @@ private func potentialNames(from text: String) -> [String] {
 ///   `PlayerStatusPresentation`, `PlayerControlPresentation`,
 ///   (see the "Main Player Presentation Dataflow" section at the top of this file),
 ///   `WidgetNowPlayingDisplayModel` (for widget/LA parity),
+///   SharedPlayerManager (``events``, visual/intent SSOT),
+///   ``PlayerEvent``, ``PlayerVisualState``,
 ///   CODING_AGENT.md (cached derived values on @Observable models,
-///   narrow inputs for separate View types, Documentation & Comment Standards),
-///   docs/Widget-Presentation-Dataflow.md.
+///   narrow inputs for separate View types, Documentation & Comment Standards,
+///   event-driven direction),
+///   docs/Widget-Presentation-Dataflow.md,
+///   docs/Event-Driven-Refactor-Roadmap.md.
 @Observable
 @MainActor
 final class PlayerViewModel {
@@ -377,17 +392,27 @@ final class PlayerViewModel {
     // MARK: - Public convenience API (callable from SwiftUI)
 
     /// Request playback start/resume. Forwards to the injected closure.
+    ///
+    /// The injected closure is wired by the coordinator to `SharedPlayerManager.userRequestedPlay()`
+    /// (the designated explicit-play entry that sets intent then drives `play()`).
+    ///
+    /// - SeeAlso: ``onPlayRequested``, SharedPlayerManager.userRequestedPlay, CODING_AGENT.md.
     func play() {
         onPlayRequested?()
     }
 
     /// Request pause/stop. Forwards to the injected closure.
+    ///
+    /// - SeeAlso: ``onPauseRequested``, SharedPlayerManager.stop, SharedPlayerManager.markAsUserPaused.
     func pause() {
         onPauseRequested?()
     }
 
     /// Select a stream/language by index in the canonical availableStreams array.
     /// Forwards to the injected closure (coordinator performs optimistic UI + timing).
+    ///
+    /// - Parameter index: Index into `DirectStreamingPlayer.availableStreams`.
+    /// - SeeAlso: ``onLanguageSelected``, RadioPlayerCoordinator.completeStreamSwitch.
     func selectLanguage(at index: Int) {
         onLanguageSelected?(index)
     }
@@ -396,12 +421,17 @@ final class PlayerViewModel {
     /// Forwards to the injected closure so coordinator retains ownership of setSleepTimer,
     /// isSleepTimerInteractionActive, background deferral, beginLocalSleepTimerDisplay,
     /// and syncSleepTimerToViewModel.
+    ///
+    /// - Parameter minutes: Duration in minutes for the timer.
+    /// - SeeAlso: ``onSleepTimerPresetSelected``.
     func selectSleepTimer(minutes: Int) {
         onSleepTimerPresetSelected?(minutes)
     }
 
     /// Request cancellation of the current sleep timer (if any).
     /// Forwards to the injected closure; coordinator owns cancel + display stop + notification paths.
+    ///
+    /// - SeeAlso: ``onSleepTimerCancelSelected``.
     func cancelSleepTimer() {
         onSleepTimerCancelSelected?()
     }
@@ -471,6 +501,16 @@ extension PlayerViewModel {
     /// - Action closures are wired to simple prints so you can exercise buttons in the canvas.
     /// - All 21 languages and all visual states are valid; the mock does not enforce stream count.
     ///
+    /// - Parameters:
+    ///   - visualState: Initial `PlayerVisualState` for the mock.
+    ///   - selectedStreamIndex: Initial selected language/stream index.
+    ///   - currentMetadata: Optional program metadata.
+    ///   - sleepTimerRemaining: Optional remaining timer interval.
+    ///   - isSwitchingStream: Whether to simulate an in-flight switch.
+    ///   - lastErrorMessage: Optional error string for security/error previews.
+    ///   - isShowingSecurityError: Initial flag for the error surface.
+    /// - Returns: A configured `PlayerViewModel` ready for observation and interaction in previews/tests.
+    ///
     /// Example:
     /// ```swift
     /// #Preview {
@@ -478,6 +518,8 @@ extension PlayerViewModel {
     ///     PlayerMainPreview(viewModel: vm)
     /// }
     /// ```
+    ///
+    /// - SeeAlso: ``PlayerViewModel``, PlayerMainPreview, CODING_AGENT.md (preview support).
     static func makeMock(
         visualState: PlayerVisualState = .playing,
         selectedStreamIndex: Int = 2,
