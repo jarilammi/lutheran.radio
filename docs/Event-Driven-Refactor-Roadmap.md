@@ -22,14 +22,15 @@ It serves as both the project backlog for remaining work and a self-contained re
 - Clean `AsyncStream<PlayerEvent>` implementation added (`events` property created exactly once, continuation lives for actor lifetime).
 - `internal emit(_:)` central emission point (with widget-process guard).
 - Emission of `.playbackIntentChanged` wired inside `updatePlaybackIntent(to:)`.
-- Tier 1 Emission Coverage complete (Option A): stream transitions (start/pause/stop/fail via existing surfaces + enhanced `markPlaybackStoppedByStreamFailure`), `metadataDidUpdate` (in `didUpdateStreamMetadata` + clears), `visualStateDidChange` (via `applyVisualState` / `setVisualState`), `persistedWidgetStateDidUpdate` (after authoritative snapshot writes in `savePersistedWidgetState`).
+- Tier 1 Emission Coverage complete: stream transitions (start/pause/stop/fail via existing surfaces + enhanced `markPlaybackStoppedByStreamFailure`), `metadataDidUpdate` (in `didUpdateStreamMetadata` + clears), `visualStateDidChange` (via `applyVisualState` / `setVisualState`), `persistedWidgetStateDidUpdate` (after authoritative snapshot writes in `savePersistedWidgetState`). Emissions added after state mutations inside `SharedPlayerManager` using existing surfaces only; no new record APIs or emission logic in `DirectStreamingPlayer`.
+- Surface cleanup in `SharedPlayerManager.swift` + `PlayerViewModel.swift` (commit d219f8e): event-driven non-forcing architecture promoted in headers and public API docs; legacy forcing shims (e.g. `forcePersistVisualState` and related) explicitly scoped to widget optimistic paths only; stronger SeeAlso/cross-links to ``PlayerEvent``, ``events``, and this roadmap.
 
 **Architecture Status**
 - `SharedPlayerManager` is the single source of truth for emitting player events.
 - All Tier 1 `PlayerEvent` cases are now emitted after their state mutations inside the actor.
-- Emissions are strictly additive; direct state access, imperative paths, and widget snapshot writes remain the primary mechanism.
+- Emissions are strictly additive; direct state access, imperative paths, and widget snapshot writes remain the primary mechanism. Legacy forcing surfaces exist only for compatibility and are documented as such.
 - No external consumers of the `events` stream exist yet (Tier 2 work).
-- Widget, Live Activity, and UI paths still rely on direct state access and snapshot derivation.
+- Widget, Live Activity, and UI paths still rely on direct state access and snapshot derivation. See player SSOT file docs for non-forcing direction and cross-references.
 
 ---
 
@@ -40,7 +41,7 @@ The backlog is ordered by increasing risk and decreasing isolation. Earlier item
 ### Tier 1 – Emission Coverage (Low Risk, High Value)
 Goal: Ensure every significant domain transition inside `SharedPlayerManager` and related player logic produces the corresponding `PlayerEvent`.
 
-- [x] Emit `streamDidStart`, `streamDidPause`, `streamDidStop`, and `streamDidFail` (via `setPlaying`, `setUserPaused`/`markAsUserPaused`, `stop`, `markPlaybackStoppedByStreamFailure` following Option A: enhance existing, no new record* API, classification stays in Direct).
+- [x] Emit `streamDidStart`, `streamDidPause`, `streamDidStop`, and `streamDidFail` (via `setPlaying`, `setUserPaused`/`markAsUserPaused`, `stop`, `markPlaybackStoppedByStreamFailure` using existing surfaces: emissions added after state mutations inside the actor; no new record APIs or emission logic in `DirectStreamingPlayer`).
 - [x] Emit `metadataDidUpdate` when `StreamProgramMetadata` changes (and on clears).
 - [x] Emit `visualStateDidChange` when `PlayerVisualState` is updated (centralized via `applyVisualState`).
 - [x] Emit `persistedWidgetStateDidUpdate` when widget snapshot state is written (after `savePersistedWidgetState` writes).
@@ -101,7 +102,8 @@ This document must be maintained after every significant micro-step so that the 
 Keep a short chronological log of major milestones:
 
 - `PlayerEvent` vocabulary introduced + `SharedPlayerManager` became authoritative emitter with clean `AsyncStream` (commit 085311d...).
-- Tier 1 Emission Coverage cleaned up and completed following Option A (minimal, inside-Shared-after-mutation, enhance existing surfaces only, no emission logic or new record APIs in DirectStreamingPlayer). Stream*, metadata, visualStateDidChange, and persistedWidgetStateDidUpdate now emitted. Stale comments/docs cleaned. (2026-07-03)
+- Tier 1 Emission Coverage cleaned up and completed (emissions added after state mutations inside `SharedPlayerManager` using existing surfaces only; no new record APIs or emission logic in `DirectStreamingPlayer`). Stream*, metadata, visualStateDidChange, and persistedWidgetStateDidUpdate now emitted. Stale comments/docs cleaned. (2026-07-03)
+- Surface cleanup + docs uplift (commit d219f8e): improved docs in `SharedPlayerManager.swift` + `PlayerViewModel.swift` promoting event-driven non-forcing architecture, scoping legacy forcing shims to widget optimistic paths, and strengthening SeeAlso/cross-links to `PlayerEvent` / ``events`` / roadmap. (2026-07-03)
 
 ---
 
