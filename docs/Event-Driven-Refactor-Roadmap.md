@@ -24,13 +24,14 @@ It serves as both the project backlog for remaining work and a self-contained re
 - Emission of `.playbackIntentChanged` wired inside `updatePlaybackIntent(to:)`.
 - Tier 1 Emission Coverage complete: stream transitions (start/pause/stop/fail via existing surfaces + enhanced `markPlaybackStoppedByStreamFailure`), `metadataDidUpdate` (in `didUpdateStreamMetadata` + clears), `visualStateDidChange` (via `applyVisualState` / `setVisualState`), `persistedWidgetStateDidUpdate` (after authoritative snapshot writes in `savePersistedWidgetState`). Emissions added after state mutations inside `SharedPlayerManager` using existing surfaces only; no new record APIs or emission logic in `DirectStreamingPlayer`.
 - Surface cleanup in `SharedPlayerManager.swift` + `PlayerViewModel.swift` (commit d219f8e): event-driven non-forcing architecture promoted in headers and public API docs; legacy forcing shims (e.g. `forcePersistVisualState` and related) explicitly scoped to widget optimistic paths only; stronger SeeAlso/cross-links to ``PlayerEvent``, ``events``, and this roadmap.
+- Tier 2 first consumer: lightweight internal observer added inside `WidgetRefreshManager` (main-app only). It reacts to key `PlayerEvent` cases and drives timeline reloads exclusively by calling the pre-existing `refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)` surface with state derived from the same SSOT readers (`loadPersistedWidgetState`, `loadSharedState`). All imperative snapshot paths, debouncing, coalescing, and guards remain 100% unchanged and primary. Full structured documentation and present-tense final-architecture comments added per CODING_AGENT.md. (2026-07-04)
 
 **Architecture Status**
 - `SharedPlayerManager` is the single source of truth for emitting player events.
 - All Tier 1 `PlayerEvent` cases are now emitted after their state mutations inside the actor.
 - Emissions are strictly additive; direct state access, imperative paths, and widget snapshot writes remain the primary mechanism. Legacy forcing surfaces exist only for compatibility and are documented as such.
-- No external consumers of the `events` stream exist yet (Tier 2 work).
-- Widget, Live Activity, and UI paths still rely on direct state access and snapshot derivation. See player SSOT file docs for non-forcing direction and cross-references.
+- First consumer exists: `WidgetRefreshManager` maintains a lightweight internal observer of `events` (started only in the main app process). It reacts to key cases by invoking the established `refreshIfNeeded` surface; all snapshot + refresh logic is unchanged. Event-driven and imperative paths operate in parallel.
+- Widget, Live Activity, and UI paths continue to rely on direct state access and snapshot derivation as the primary mechanism. The event path is available for decoupled observation. See player SSOT file docs for non-forcing direction and cross-references.
 
 ---
 
@@ -54,7 +55,7 @@ Goal: Ensure every significant domain transition inside `SharedPlayerManager` an
 ### Tier 2 – First Consumers (Medium Risk)
 Goal: Introduce the first real observers of the `events` stream without forcing any existing code to change.
 
-- [ ] Add an internal observer inside `WidgetRefreshManager` (or a new small coordinator) that reacts to relevant `PlayerEvent`s to trigger widget timeline reloads. Keep the existing snapshot + refresh logic intact.
+- [x] Add an internal observer inside `WidgetRefreshManager` that reacts to key `PlayerEvent` cases (`.visualStateDidChange`, `.persistedWidgetStateDidUpdate`, stream transitions, metadata, intent) to trigger timeline reloads by routing through the existing `refreshIfNeeded` surface. All snapshot derivation, debouncing, coalescing, regress guards, privacy gating, and direct call sites remain 100% intact and primary. The observer is strictly additive and non-forcing.
 - [ ] Explore using the `events` stream from Live Activity attribute updates or `LutheranRadioLiveActivityAttributes` where it can reduce polling or forced updates.
 - [ ] Add a lightweight subscriber in the main app UI layer (e.g., a `@State` or observation helper) that reacts to `playbackIntentChanged` and other key events. Existing direct state bindings must remain.
 
@@ -104,6 +105,7 @@ Keep a short chronological log of major milestones:
 - `PlayerEvent` vocabulary introduced + `SharedPlayerManager` became authoritative emitter with clean `AsyncStream` (commit 085311d...).
 - Tier 1 Emission Coverage cleaned up and completed (emissions added after state mutations inside `SharedPlayerManager` using existing surfaces only; no new record APIs or emission logic in `DirectStreamingPlayer`). Stream*, metadata, visualStateDidChange, and persistedWidgetStateDidUpdate now emitted. Stale comments/docs cleaned. (2026-07-03)
 - Surface cleanup + docs uplift (commit d219f8e): improved docs in `SharedPlayerManager.swift` + `PlayerViewModel.swift` promoting event-driven non-forcing architecture, scoping legacy forcing shims to widget optimistic paths, and strengthening SeeAlso/cross-links to `PlayerEvent` / ``events`` / roadmap. (2026-07-03)
+- Tier 2 first consumer complete: `WidgetRefreshManager` now contains a lightweight internal `PlayerEvent` observer (additive only). All changes follow production documentation standards (structured `///`, file headers, AGENT NOTE, present-tense final architecture language, cross-links to `events`, `PlayerEvent`, roadmap, Architecture.md, CODING_AGENT.md). Existing snapshot + refresh paths untouched. Build + test gates passed. (2026-07-04)
 
 ---
 

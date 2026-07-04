@@ -5,7 +5,20 @@
 //  Created by Jari Lammi on 14.6.2025.
 //
 //  Prevents excessive widget refreshes through debouncing and change detection.
-//  Now fully aligned with PlayerVisualState as the Single Source of Truth (SSOT).
+//  Fully aligned with PlayerVisualState as the Single Source of Truth (SSOT).
+//
+//  In the final architecture, WidgetRefreshManager is both the debouncing
+//  coordinator for imperative `refreshIfNeeded` calls (the primary path from
+//  SharedPlayerManager saves, AppDelegate, coordinators, widget intents, etc.)
+//  *and* a lightweight internal consumer of the `SharedPlayerManager.events`
+//  `AsyncStream`. Relevant `PlayerEvent` cases (visual changes, persisted state
+//  updates, stream transitions) trigger timeline reloads by routing through the
+//  identical public `refreshIfNeeded` surface. All snapshot derivation, debouncing,
+//  coalescing, regress guards, and privacy gating remain 100% intact and primary.
+//
+//  Event-driven triggering is strictly additive and non-forcing: direct calls
+//  continue exactly as before; the observer provides a parallel, decoupled
+//  notification path. No behavior is altered for existing callers.
 //
 
 // SHARED: Cross-target source (main app + LutheranRadioWidgetExtension)
@@ -24,18 +37,39 @@
 //   `WidgetRefreshManager` + `SharedPlayerManager`) to suppress writes when no
 //   Lutheran widgets are installed.
 // - Coalesces `.prePlay` → `.playing` and dedupes sticky states.
+// - The internal `PlayerEvent` observer (started only in the main app process)
+//   is additive only. Imperative snapshot + refresh paths are never removed,
+//   bypassed, or made secondary.
 // - This file contains *no* security logic. Security decisions live only in
 //   `Core/` (see CODING_AGENT.md "Core Framework Surface Area").
 //
-// - SeeAlso: `SharedPlayerManager` (calls `refreshIfNeeded`), `PlayerVisualState`,
-//   `PersistedWidgetState`, CODING_AGENT.md (Single Source of Truth Principles
-//   + "Cross-target shared source files (non-Core)"), README.md.
+// - SeeAlso: `SharedPlayerManager` (authoritative emitter of `PlayerEvent` via
+//   ``events`` and direct calls to `refreshIfNeeded`), `PlayerVisualState`,
+//   `PlayerEvent`, `PersistedWidgetState`,
+//   CODING_AGENT.md (Single Source of Truth Principles + "Cross-target shared
+//   source files (non-Core)" + event-driven non-forcing direction + Documentation
+//   & Comment Standards),
+//   docs/Event-Driven-Refactor-Roadmap.md (Tier 2 – First Consumers),
+//   <doc:Architecture>, README.md.
 
 import Foundation
 import WidgetKit
 
 /// WidgetRefreshManager prevents excessive WidgetKit reloads through debouncing,
-/// change detection, and adaptive intervals. It is now 100% driven by PlayerVisualState.
+/// change detection, and adaptive intervals.
+///
+/// It is 100% driven by `PlayerVisualState` (the SSOT). In addition to being
+/// invoked directly by imperative callers (the primary mechanism), it maintains
+/// a lightweight internal observer over `SharedPlayerManager.events`. Selected
+/// `PlayerEvent` cases cause `refreshIfNeeded` to be called using the same
+/// derivation surfaces (`loadPersistedWidgetState`, `loadSharedState`) that the
+/// snapshot paths use. The two mechanisms run in parallel; existing snapshot +
+/// direct-refresh logic is untouched and remains authoritative for behavior.
+///
+/// - SeeAlso: `refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)`,
+///   `SharedPlayerManager.events`, `PlayerEvent`, ``beginObservingPlayerEvents()``,
+///   docs/Event-Driven-Refactor-Roadmap.md (Tier 2 first consumer),
+///   CODING_AGENT.md, <doc:Architecture>.
 @MainActor
 final class WidgetRefreshManager: @unchecked Sendable {
     static let shared = WidgetRefreshManager()
@@ -49,6 +83,25 @@ final class WidgetRefreshManager: @unchecked Sendable {
     private var coalescedPrePlayWorkItem: DispatchWorkItem?
     private var coalescedPrePlayState: WidgetState?
     
+    /// The long-lived observation task for the non-forcing `PlayerEvent` stream.
+    ///
+    /// Created exactly once in `init` (main-app only) and retained for the
+    /// lifetime of the shared `WidgetRefreshManager`. It delivers events to
+    /// `handlePlayerEvent(_:)` which routes through the canonical
+    /// `refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)` entry
+    /// point.
+    ///
+    /// - Important: This task is strictly part of the additive event path.
+    ///   All existing imperative calls from `SharedPlayerManager.performActualSave`,
+    ///   `saveCurrentState`, AppDelegate, RadioPlayerCoordinator, widget intents,
+    ///   NowPlaying surfaces, etc. continue to invoke `refreshIfNeeded` directly.
+    ///   The observer never forces a reload or mutates any debounce/coalesce state
+    ///   outside the public surface.
+    /// - Note: Guarded against widget extension process (no emissions occur there).
+    /// - SeeAlso: ``beginObservingPlayerEvents()``, ``handlePlayerEvent(_:)``,
+    ///   `SharedPlayerManager.events`, `PlayerEvent`, docs/Event-Driven-Refactor-Roadmap.md.
+    private var eventObservationTask: Task<Void, Never>?
+
     private var refreshCount = 0
     private var adaptiveInterval: TimeInterval = 0.5
     private static let prePlayToPlayingCoalesceWindow: TimeInterval = 0.3
@@ -104,7 +157,12 @@ final class WidgetRefreshManager: @unchecked Sendable {
         }
     }
     
-    private init() {}
+    private init() {
+        // Start the additive internal observer of `SharedPlayerManager.events`.
+        // Only the main app process emits; the guard inside prevents starting
+        // a no-op consumer in the widget extension.
+        beginObservingPlayerEvents()
+    }
 
     // Single source for the widget kind identifiers we own (home widget + Control Center widget).
     // Used by the privacy hasActiveLutheranWidgets gate in refresh paths. Centralizing here means
@@ -118,6 +176,11 @@ final class WidgetRefreshManager: @unchecked Sendable {
     /// Called from termination cleanup paths (AppDelegate, SceneDelegate) to ensure no
     /// in-flight work from the dying main process can still execute a `reloadTimelines`
     /// after the process has exited. Safe to call during willTerminate.
+    ///
+    /// The long-lived event observation task (``eventObservationTask``) is deliberately
+    /// left running; termination of the main app process ends the task naturally.
+    /// Observation is additive and does not participate in the "pending work" that
+    /// must be cancelled to prevent post-exit reloads.
     func cancelPendingRefresh() {
         pendingRefresh?.cancel()
         pendingRefresh = nil
@@ -127,6 +190,14 @@ final class WidgetRefreshManager: @unchecked Sendable {
     
     /// Recommended call site: pass the real visual state directly.
     /// All widget intents, SharedPlayerManager, and Live Activities now use this.
+    ///
+    /// This entry point remains the single public surface for all widget timeline
+    /// reload decisions. It is invoked both by the long-standing imperative/snapshot
+    /// paths (primary) *and* by the internal `PlayerEvent` observer (additive,
+    /// non-forcing parallel path introduced in Tier 2).
+    ///
+    /// - SeeAlso: ``handlePlayerEvent(_:)``, `SharedPlayerManager.events`,
+    ///   docs/Event-Driven-Refactor-Roadmap.md.
     func refreshIfNeeded(
         visualState: PlayerVisualState,
         currentLanguage: String,
@@ -139,6 +210,13 @@ final class WidgetRefreshManager: @unchecked Sendable {
         if SharedPlayerManager.isRunningInUITestMode {
             return
         }
+
+        // AGENT NOTE: Both the imperative callers (SharedPlayerManager.save*,
+        // AppDelegate, RadioPlayerCoordinator, widget intent handlers, etc.) and
+        // the internal event observer (`handlePlayerEvent`) converge here. All
+        // logic below (coalescing, debouncing, regress detection, privacy gate)
+        // applies uniformly regardless of trigger source. The observer path is
+        // intentionally non-special and never bypasses any check.
 
         let newState = WidgetState(
             from: visualState,
@@ -380,6 +458,111 @@ final class WidgetRefreshManager: @unchecked Sendable {
             print("[WidgetRefreshManager] Widget refresh failed: \(error.localizedDescription)")
             #endif
         }
+    }
+
+    // MARK: - Event-driven consumer (Tier 2, strictly additive / non-forcing)
+
+    /// Starts the internal `AsyncStream` observer over `SharedPlayerManager.events`.
+    ///
+    /// The observer is started from `init` and runs for the lifetime of the
+    /// singleton in the main app process. On each yielded `PlayerEvent` it calls
+    /// `handlePlayerEvent(_:)` which in turn invokes the public `refreshIfNeeded`
+    /// surface using data derived from the same SSOT facades used by all
+    /// imperative paths.
+    ///
+    /// - Important: This is the first consumer of the event stream (see
+    ///   docs/Event-Driven-Refactor-Roadmap.md Tier 2). It does **not** replace,
+    ///   short-circuit, or condition any existing call to `refreshIfNeeded`,
+    ///   `performRefresh`, `savePersistedWidgetState`, or snapshot writes. Those
+    ///   paths remain the primary and only source of truth for timing and
+    ///   suppression decisions.
+    /// - Precondition: Must be called on the main actor. Called exactly once.
+    /// - Note: The `isWidgetProcess()` guard ensures the task is not created in
+    ///   the widget extension (where `emit` is a no-op).
+    /// - SeeAlso: ``handlePlayerEvent(_:)``, `SharedPlayerManager.events`,
+    ///   ``emit(_:)`` (in SharedPlayerManager), `PlayerEvent`,
+    ///   `refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)`,
+    ///   CODING_AGENT.md (event-driven direction, "additive only", Documentation
+    ///   & Comment Standards), docs/Event-Driven-Refactor-Roadmap.md,
+    ///   <doc:Architecture>.
+    @MainActor
+    private func beginObservingPlayerEvents() {
+        guard !SharedPlayerManager.isWidgetProcess(),
+              eventObservationTask == nil else { return }
+
+        eventObservationTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            let stream = await SharedPlayerManager.shared.events
+            for await event in stream {
+                await self.handlePlayerEvent(event)
+            }
+        }
+    }
+
+    /// Reacts to a `PlayerEvent` by deriving current state via SSOT readers and
+    /// calling the unchanged `refreshIfNeeded` entry point.
+    ///
+    /// Derivation prefers `loadPersistedWidgetState()` (for visual + language)
+    /// and `loadSharedState()` (for `hasError`) — exactly the surfaces used by
+    /// direct callers in `SharedPlayerManager`, coordinators, and intents. For
+    /// events that carry a `PlayerVisualState` the carried value is preferred
+    /// when fresher.
+    ///
+    /// The call always goes through the full existing implementation of
+    /// `refreshIfNeeded` (language-change urgency, prePlay coalescing, adaptive
+    /// debounce, regress checks against persisted snapshot, UITestMode short,
+    /// privacy gate, etc.).
+    ///
+    /// - Parameter event: The domain event emitted by `SharedPlayerManager`
+    ///   after a corresponding state mutation.
+    /// - Postcondition: If the derived state warrants a timeline reload,
+    ///   `WidgetCenter.reloadTimelines` may be scheduled (subject to all
+    ///   existing guards and coalescing). No other side effects.
+    /// - Important: Strictly additive and non-forcing. Direct snapshot-driven
+    ///   calls from `performActualSave` and other sites remain the primary path.
+    ///   Duplicate triggers are expected and are deduplicated by the existing
+    ///   debouncing logic inside `refreshIfNeeded`.
+    /// - Note: Reacts to the high-signal cases that historically drove widget
+    ///   refreshes. Future events (e.g. richer error or recovery) can be added
+    ///   here without touching callers.
+    /// - SeeAlso: ``beginObservingPlayerEvents()``, `refreshIfNeeded`,
+    ///   `SharedPlayerManager.loadPersistedWidgetState`,
+    ///   `SharedPlayerManager.loadSharedState`, `PlayerEvent`,
+    ///   docs/Event-Driven-Refactor-Roadmap.md,
+    ///   CODING_AGENT.md (non-forcing architecture, SSOT principles).
+    private func handlePlayerEvent(_ event: PlayerEvent) async {
+        // UITestMode defense (mirrors the guard at the top of refreshIfNeeded).
+        if SharedPlayerManager.isRunningInUITestMode {
+            return
+        }
+
+        // Derive parameters using the exact SSOT facades that imperative paths use.
+        // This guarantees the event path produces identical inputs to the primary path.
+        let persisted = SharedPlayerManager.loadPersistedWidgetState()
+        let sharedState = SharedPlayerManager.shared.loadSharedState()
+
+        let language = persisted?.currentLanguage ?? sharedState.currentLanguage
+        let hasError = sharedState.hasError
+
+        // Prefer a carried visual when the event provides one; otherwise fall back
+        // to the authoritative persisted snapshot (or safe default).
+        let visualState: PlayerVisualState
+        switch event {
+        case .visualStateDidChange(let vs):
+            visualState = vs
+        default:
+            visualState = persisted?.visualState ?? .prePlay
+        }
+
+        // Route through the public surface exactly as every other caller does.
+        // All debouncing, coalescing, privacy, regress, and immediate logic applies.
+        // This is the canonical non-forcing trigger site for Tier 2.
+        refreshIfNeeded(
+            visualState: visualState,
+            currentLanguage: language,
+            hasError: hasError,
+            immediate: false   // let the manager's internal heuristics decide urgency
+        )
     }
 }
 
