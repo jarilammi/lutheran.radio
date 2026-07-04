@@ -37,7 +37,9 @@ class RadioLiveActivityManagerTests: XCTestCase {
         // for the creation-time and call-time fast paths during tests.
         manager.stopLocalUpdateTimer()
         manager.activityObservationTask?.cancel()
-        // currentActivity nilled below; observation task cleared above.
+        // Also cancel through the consolidated observer (its task is published
+        // into the seam). The direct seam cancel remains the documented test
+        // surface.
         // (internal visibility via @testable for the property itself.)
         manager.currentActivity = nil
     }
@@ -47,6 +49,7 @@ class RadioLiveActivityManagerTests: XCTestCase {
         // releasing. Prevents live Tasks / Timers keeping the runner alive.
         manager?.stopLocalUpdateTimer()
         manager?.activityObservationTask?.cancel()
+        // The seam cancel stops the work; the observer is reset on next use.
         manager = nil
         try await super.tearDown()
     }

@@ -108,6 +108,7 @@ import os
 /// - SeeAlso: `DirectStreamingPlayer` (actual playback),
 ///   ``PlayerVisualState``, ``PlayerEvent``, ``events``, ``emit(_:)``,
 ///   `WidgetRefreshManager.swift`, `RadioLiveActivityManager.swift`,
+///   `WidgetEventObserver`,
 ///   CODING_AGENT.md (event-driven direction),
 ///   docs/Event-Driven-Refactor-Roadmap.md.
 ///

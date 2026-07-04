@@ -130,22 +130,27 @@ Never derive presentation inside leaf view `body` for the three canonical surfac
 ### Live Activity Attribute Events Observation (contentUpdates / events surface)
 
 `RadioLiveActivityManager` consumes the Live Activity attribute events surface
-(`contentUpdates` yielding `ActivityContent<ContentState>`):
+(`contentUpdates` yielding `ActivityContent<ContentState>`). The observation
+loop and task lifetime are implemented by the shared `WidgetEventObserver`
+helper (the consolidated extraction of the common pattern also used by
+`WidgetRefreshManager` for `PlayerEvent`).
 
 ```swift
-for await content in activity.contentUpdates {
+// Inside the manager (delegated to WidgetEventObserver):
+for await content in contentUpdates {
     lastPushedContent = content.state
 }
 ```
 
-(The stream is started in ``beginObservingActivityEvents(_:)``.)
+(The stream is started in ``beginObservingActivityEvents(_:)`` which delegates
+to `WidgetEventObserver.beginObserving(unsafeSequence:onElement:onTermination:)`.)
 
 - The stream (the `events` surface for `LutheranRadioLiveActivityAttributes.ContentState`) is started via ``beginObservingActivityEvents(_:)`` immediately after `Activity.request` and after resuming an existing activity in `observeExistingActivities`.
 - On every yield the manager aligns its `lastPushedContent` with the exact `ContentState` the system accepted. Subsequent diff checks in `updateCurrentActivity` therefore suppress pushes that would be no-ops against the rendered surface.
 - Terminal states reported by ActivityKit cause immediate local cleanup of `currentActivity` and cancellation of the observer. This provides self-healing lifecycle independent of our explicit termination handlers.
 - Observation is strictly additive and non-forcing. All existing push call sites, the `lastPushedContent` dedup logic, privacy gates, and test short-circuits remain unchanged and primary. The net effect is stronger reactivity and fewer wasted `update(using:)` crossings of the ActivityKit boundary.
 
-See `RadioLiveActivityManager.swift` (``beginObservingActivityEvents(_:)``, ``activityObservationTask``, class header) and the cross-references below. This completes the Tier 2 Live Activity events item from the roadmap.
+See `RadioLiveActivityManager.swift` (``beginObservingActivityEvents(_:)``, ``activityObservationTask``, class header), `WidgetEventObserver.swift`, and the cross-references below. The Tier 2 Live Activity events item (plus the parallel PlayerEvent consumer in `WidgetRefreshManager`) is complete; the common observation pattern is now in one internal helper for future consumers.
 
 ### Invariants (Must Hold After Any Edit)
 
@@ -181,7 +186,7 @@ See `RadioLiveActivityManager.swift` (class docs, ``updateCurrentActivity()``, `
 - `LutheranRadioWidgetLiveActivity.swift` — `LutheranRadioLiveActivityWidget`, `LockScreenLiveActivityView`, Dynamic Island regions, intents.
 - `LutheranRadioWidgetControl.swift` — Control widget usage of the same mappers.
 - `SharedPlayerManager.swift` — `PersistedWidgetState`, `isMainAppProcessRecentlyActive`, `forceStaleLivenessTimestampForTermination`, `bumpWidgetLivenessTimestamp`.
-- `RadioLiveActivityManager.swift`, `WidgetRefreshManager.swift`, `AppDelegate.swift`, `SceneDelegate.swift`.
+- `RadioLiveActivityManager.swift`, `WidgetRefreshManager.swift`, `WidgetEventObserver.swift`, `AppDelegate.swift`, `SceneDelegate.swift`.
 - `CODING_AGENT.md` — Documentation & Comment Standards, Single Source of Truth Principles, cross-target shared files.
 
 All user-visible strings use `String(localized: "...", table: "Localizable")`.

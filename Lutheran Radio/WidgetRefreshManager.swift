@@ -45,7 +45,7 @@
 //
 // - SeeAlso: `SharedPlayerManager` (authoritative emitter of `PlayerEvent` via
 //   ``events`` and direct calls to `refreshIfNeeded`), `PlayerVisualState`,
-//   `PlayerEvent`, `PersistedWidgetState`,
+//   `PlayerEvent`, `PersistedWidgetState`, `WidgetEventObserver`,
 //   CODING_AGENT.md (Single Source of Truth Principles + "Cross-target shared
 //   source files (non-Core)" + event-driven non-forcing direction + Documentation
 //   & Comment Standards),
@@ -68,6 +68,7 @@ import WidgetKit
 ///
 /// - SeeAlso: `refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)`,
 ///   `SharedPlayerManager.events`, `PlayerEvent`, ``beginObservingPlayerEvents()``,
+///   `WidgetEventObserver`,
 ///   docs/Event-Driven-Refactor-Roadmap.md (Tier 2 first consumer),
 ///   CODING_AGENT.md, <doc:Architecture>.
 @MainActor
@@ -99,12 +100,20 @@ final class WidgetRefreshManager: @unchecked Sendable {
     ///   outside the public surface.
     /// - Note: Guarded against widget extension process (no emissions occur there).
     /// - SeeAlso: ``beginObservingPlayerEvents()``, ``handlePlayerEvent(_:)``,
-    ///   `SharedPlayerManager.events`, `PlayerEvent`, docs/Event-Driven-Refactor-Roadmap.md.
+    ///   `SharedPlayerManager.events`, `PlayerEvent`, docs/Event-Driven-Refactor-Roadmap.md,
+    ///   `WidgetEventObserver`.
     private var eventObservationTask: Task<Void, Never>?
 
     private var refreshCount = 0
     private var adaptiveInterval: TimeInterval = 0.5
     private static let prePlayToPlayingCoalesceWindow: TimeInterval = 0.3
+
+    /// Consolidated observer for the `PlayerEvent` stream.
+    ///
+    /// The observer is the extracted common implementation (see `WidgetEventObserver`).
+    /// Its task is published into the legacy `eventObservationTask` seam for
+    /// compatibility with any external inspection (none currently for this path).
+    private let playerEventObserver = WidgetEventObserver<PlayerEvent>()
 
     // MARK: - Privacy support (widget presence gating for write suppression)
     // Single source of truth for active Lutheran Radio widgets (home widget + Control Center kind).
@@ -490,12 +499,17 @@ final class WidgetRefreshManager: @unchecked Sendable {
         guard !SharedPlayerManager.isWidgetProcess(),
               eventObservationTask == nil else { return }
 
-        eventObservationTask = Task { @MainActor [weak self] in
+        // Materialize the (lazily created) events stream, then delegate to the
+        // consolidated `WidgetEventObserver`. The resulting task is assigned to
+        // the stored property to preserve the exact test seam contract and
+        // documentation.
+        Task { @MainActor [weak self] in
             guard let self else { return }
             let stream = await SharedPlayerManager.shared.events
-            for await event in stream {
-                await self.handlePlayerEvent(event)
+            self.playerEventObserver.beginObserving(stream) { [weak self] event in
+                await self?.handlePlayerEvent(event)
             }
+            self.eventObservationTask = self.playerEventObserver.task
         }
     }
 
@@ -528,6 +542,7 @@ final class WidgetRefreshManager: @unchecked Sendable {
     /// - SeeAlso: ``beginObservingPlayerEvents()``, `refreshIfNeeded`,
     ///   `SharedPlayerManager.loadPersistedWidgetState`,
     ///   `SharedPlayerManager.loadSharedState`, `PlayerEvent`,
+    ///   `WidgetEventObserver`,
     ///   docs/Event-Driven-Refactor-Roadmap.md,
     ///   CODING_AGENT.md (non-forcing architecture, SSOT principles).
     private func handlePlayerEvent(_ event: PlayerEvent) async {

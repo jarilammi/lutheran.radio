@@ -7,7 +7,7 @@
 //  Privacy-first Live Activities - NO push notifications needed
 //
 
-import ActivityKit
+@unsafe @preconcurrency import ActivityKit
 import Foundation
 import UIKit   // For UIApplication.willTerminateNotification (termination observer) and related lifecycle.
 
@@ -40,7 +40,8 @@ import UIKit   // For UIApplication.willTerminateNotification (termination obser
 ///
 /// See the implementation of ``beginObservingActivityEvents(_:)`` and the
 /// "Live Activity Attribute Events Observation" section in
-/// docs/Widget-Presentation-Dataflow.md.
+/// docs/Widget-Presentation-Dataflow.md. The concrete loop is now the
+/// reference implementation inside the shared `WidgetEventObserver`.
 ///
 /// ## Update Invariant
 /// `Activity.update(...)` occurs **iff** candidate differs from `lastPushedContent`
@@ -57,6 +58,7 @@ import UIKit   // For UIApplication.willTerminateNotification (termination obser
 ///   `PlayerEvent`), `LutheranRadioLiveActivityAttributes.ContentState`,
 ///   `PlayerVisualState`, `StreamProgramMetadata`,
 ///   `LutheranRadioWidgetLiveActivity.swift`,
+///   `WidgetEventObserver`,
 ///   docs/Widget-Presentation-Dataflow.md (Live Activity Event-Driven + new
 ///   events observation section),
 ///   docs/Event-Driven-Refactor-Roadmap.md (Tier 2 LA events item),
@@ -126,12 +128,18 @@ class RadioLiveActivityManager: ObservableObject {
     ///   clean under strict Swift 6.
     /// - SeeAlso: ``beginObservingActivityEvents(_:)``, ``updateCurrentActivity()``,
     ///   ``endActivity(dismissalPolicy:)``, docs/Widget-Presentation-Dataflow.md,
-    ///   docs/Event-Driven-Refactor-Roadmap.md.
+    ///   docs/Event-Driven-Refactor-Roadmap.md, `WidgetEventObserver`.
     ///
     /// Exposed as `internal private(set)` (parallel to `updateTimer` / `lastPushedContent`)
     /// as the designated white-box testing seam. Production code must never read or
     /// assign this directly.
     internal private(set) var activityObservationTask: Task<Void, Never>?
+
+    /// Consolidated observer for the Live Activity attribute events stream
+    /// (`contentUpdates`). Delegates to `WidgetEventObserver` (the extracted
+    /// common implementation) while continuing to publish the resulting task
+    /// into the `activityObservationTask` seam for test isolation.
+    private let activityEventObserver = WidgetEventObserver<ActivityContent<LutheranRadioLiveActivityAttributes.ContentState>>()
 
     #if DEBUG
     /// Robust detection of unit / UI test execution under DEBUG.
@@ -208,7 +216,7 @@ class RadioLiveActivityManager: ObservableObject {
         // (explicit "-UITestMode" or XCTest environment under DEBUG).
         if SharedPlayerManager.isRunningInUITestMode {
             stopLocalUpdateTimer()
-            activityObservationTask?.cancel()
+            activityEventObserver.cancel()
             activityObservationTask = nil
             return
         }
@@ -218,7 +226,7 @@ class RadioLiveActivityManager: ObservableObject {
             // Prevent creating real Live Activities + the repeating local timer
             // during unit/UI tests. This is what was keeping the test runner alive.
             stopLocalUpdateTimer()
-            activityObservationTask?.cancel()
+            activityEventObserver.cancel()
             activityObservationTask = nil
             return
         }
@@ -397,7 +405,7 @@ class RadioLiveActivityManager: ObservableObject {
 
         // Cancel the attribute events observer (self-healing via the stream will
         // also do this on terminal states, but explicit end must be immediate).
-        activityObservationTask?.cancel()
+        activityEventObserver.cancel()
         activityObservationTask = nil
         
         guard let activity = currentActivity else {
@@ -506,7 +514,7 @@ class RadioLiveActivityManager: ObservableObject {
         // the manager is instantiated early (statics, coordinators) and its init calls this.
         if SharedPlayerManager.isRunningInUITestMode {
             currentActivity = nil
-            activityObservationTask?.cancel()
+            activityEventObserver.cancel()
             activityObservationTask = nil
             return
         }
@@ -517,7 +525,7 @@ class RadioLiveActivityManager: ObservableObject {
         // using the shared `isRunningUnderTest` computed property (DRY).
         if isRunningUnderTest {
             currentActivity = nil
-            activityObservationTask?.cancel()
+            activityEventObserver.cancel()
             activityObservationTask = nil
             return
         }
@@ -566,43 +574,39 @@ class RadioLiveActivityManager: ObservableObject {
     ///   ``lastPushedContent``, `endActivity(dismissalPolicy:)`,
     ///   docs/Widget-Presentation-Dataflow.md (Live Activity Attribute Events
     ///   Observation), docs/Event-Driven-Refactor-Roadmap.md,
-    ///   ``observeExistingActivities()``, ``startActivity()``.
+    ///   ``observeExistingActivities()``, ``startActivity()``,
+    ///   `WidgetEventObserver`.
     private func beginObservingActivityEvents(_ activity: Activity<LutheranRadioLiveActivityAttributes>) {
-        activityObservationTask?.cancel()
-
         // SAFETY: ActivityKit's contentUpdates is the attribute events surface
         // yielding ActivityContent<ContentState>. The sequence is not Sendable;
         // we extract under nonisolated(unsafe) on the main-actor call site
         // (see established patterns for framework interop in this project:
-        // DNS C callbacks, AVFoundation delegates). The Task only iterates the
-        // sequence and forwards state writes via MainActor.run. Lifecycle
-        // terminal states continue to be handled by our explicit end paths
-        // (additive observation; no behavior change).
+        // DNS C callbacks, AVFoundation delegates). The helper performs the
+        // iteration; terminal handling is supplied via onTermination so that
+        // opportunistic cleanup occurs exactly as before.
         nonisolated(unsafe) let contentUpdates = activity.contentUpdates
 
-        activityObservationTask = Task { [weak self] in
-            // Primary Live Activity attribute events consumption:
-            // contentUpdates delivers fresh ContentState on every push (from us
-            // or from widget intent side-effects). We use it to keep the
-            // diff record authoritative so that update(using:) calls are
-            // suppressed when unnecessary.
-            for await content in unsafe contentUpdates {
-                await MainActor.run { [weak self] in
-                    guard let self else { return }
-                    self.lastPushedContent = content.state
-                }
-            }
-            // Stream termination (activity ended by system) is observed here;
-            // we opportunistically clear for hygiene. Primary cleanup remains
-            // via endActivity paths.
-            await MainActor.run { [weak self] in
+        // Delegate to the consolidated `WidgetEventObserver`. The per-element
+        // work and terminal hygiene are identical to the prior direct Task.
+        // The resulting task is published back into the seam property.
+        // The concrete Activity contentUpdates sequence is not Sendable; the
+        // unsafe overload + unsafe expression + nonisolated(unsafe) let at
+        // materialization satisfy the bridge (consistent with prior direct code).
+        activityEventObserver.beginObserving(
+            unsafeSequence: unsafe contentUpdates,
+            onElement: { [weak self] content in
+                guard let self else { return }
+                self.lastPushedContent = content.state
+            },
+            onTermination: { [weak self] in
                 guard let self else { return }
                 if self.currentActivity != nil {
                     self.currentActivity = nil
                     self.lastPushedContent = nil
                 }
             }
-        }
+        )
+        activityObservationTask = activityEventObserver.task
     }
 }
 
