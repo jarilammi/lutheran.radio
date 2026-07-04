@@ -145,8 +145,9 @@
 				LutheranRadioLiveActivityAttributes.swift,
 				PlayerVisualState.swift,
 				SharedPlayerManager.swift,
-				StreamProgramMetadata.swift,
 				StreamingSessionDelegate.swift,
+				StreamProgramMetadata.swift,
+				WidgetEventObserver.swift,
 				WidgetRefreshManager.swift,
 			);
 			target = B757A77B2DEF7B5C00FF90FC /* LutheranRadioWidgetExtension */;
@@ -1084,8 +1085,8 @@
 				MTL_FAST_MATH = YES;
 				SDKROOT = iphoneos;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_APPROACHABLE_CONCURRENCY = NO;
+				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_STRICT_MEMORY_SAFETY = YES;
