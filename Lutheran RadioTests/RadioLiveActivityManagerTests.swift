@@ -36,15 +36,17 @@ class RadioLiveActivityManagerTests: XCTestCase {
         // in observeExistingActivities, startActivity, and updateCurrentActivity)
         // for the creation-time and call-time fast paths during tests.
         manager.stopLocalUpdateTimer()
+        manager.activityObservationTask?.cancel()
+        // currentActivity nilled below; observation task cleared above.
+        // (internal visibility via @testable for the property itself.)
         manager.currentActivity = nil
     }
     
     override func tearDown() async throws {
-        // Must stop the timer (if any) before releasing the reference.
-        // This prevents a live repeating Timer + @MainActor Task from keeping
-        // the test runner (and LLDB) busy after the test case completes.
-        // The singleton nature makes this cleanup mandatory.
+        // Must stop the timer (if any) and cancel attribute event observation before
+        // releasing. Prevents live Tasks / Timers keeping the runner alive.
         manager?.stopLocalUpdateTimer()
+        manager?.activityObservationTask?.cancel()
         manager = nil
         try await super.tearDown()
     }

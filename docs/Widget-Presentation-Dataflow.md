@@ -127,6 +127,26 @@ Never derive presentation inside leaf view `body` for the three canonical surfac
    - They are **not** started from `startActivity()`, `observeExistingActivities()`, or normal lifecycle.
    - The timer (now 30 s interval when explicitly started) is only a rare fallback. All user-visible freshness is event-driven.
 
+### Live Activity Attribute Events Observation (contentUpdates / events surface)
+
+`RadioLiveActivityManager` consumes the Live Activity attribute events surface
+(`contentUpdates` yielding `ActivityContent<ContentState>`):
+
+```swift
+for await content in activity.contentUpdates {
+    lastPushedContent = content.state
+}
+```
+
+(The stream is started in ``beginObservingActivityEvents(_:)``.)
+
+- The stream (the `events` surface for `LutheranRadioLiveActivityAttributes.ContentState`) is started via ``beginObservingActivityEvents(_:)`` immediately after `Activity.request` and after resuming an existing activity in `observeExistingActivities`.
+- On every yield the manager aligns its `lastPushedContent` with the exact `ContentState` the system accepted. Subsequent diff checks in `updateCurrentActivity` therefore suppress pushes that would be no-ops against the rendered surface.
+- Terminal states reported by ActivityKit cause immediate local cleanup of `currentActivity` and cancellation of the observer. This provides self-healing lifecycle independent of our explicit termination handlers.
+- Observation is strictly additive and non-forcing. All existing push call sites, the `lastPushedContent` dedup logic, privacy gates, and test short-circuits remain unchanged and primary. The net effect is stronger reactivity and fewer wasted `update(using:)` crossings of the ActivityKit boundary.
+
+See `RadioLiveActivityManager.swift` (``beginObservingActivityEvents(_:)``, ``activityObservationTask``, class header) and the cross-references below. This completes the Tier 2 Live Activity events item from the roadmap.
+
 ### Invariants (Must Hold After Any Edit)
 
 - **PersistedWidgetState is never bypassed** for widget display, liveness, or relaunch decisions. All providers, `loadSharedState`, and `isMainAppProcessRecentlyActive` continue to read it.
@@ -151,7 +171,7 @@ The fallback timer is retained for the rare situation where normal event deliver
 - Foreground "catch-up" correction.
 - The bridge inside `performActualSave` (intentionally retained so that any visual save also gives LA a chance to converge; the manager suppresses duplicates).
 
-See `RadioLiveActivityManager.swift` (class docs, `updateCurrentActivity`, `lastPushedContent`, `startLocalUpdateTimer`) and the call sites in `SharedPlayerManager` (set* methods + `didUpdateStreamMetadata`) and `RadioPlayerCoordinator`.
+See `RadioLiveActivityManager.swift` (class docs, ``updateCurrentActivity()``, ``lastPushedContent``, ``beginObservingActivityEvents(_:)``, ``activityObservationTask``, `startLocalUpdateTimer`) and the call sites in `SharedPlayerManager` (set* methods + `didUpdateStreamMetadata`) and `RadioPlayerCoordinator`.
 
 ## Cross-References
 

@@ -11,62 +11,58 @@ import ActivityKit
 import Foundation
 import UIKit   // For UIApplication.willTerminateNotification (termination observer) and related lifecycle.
 
-/// - Article: Privacy-First Live Activities Integration
+/// `RadioLiveActivityManager` owns the lifecycle and push surface for privacy-first
+/// local-only Live Activities (Dynamic Island + Lock Screen) using ActivityKit.
 ///
-/// `RadioLiveActivityManager` manages iOS 26+ Live Activities (Dynamic Island + Lock Screen)
-/// for playback status using **local-only** `ActivityKit` updates. No push notifications,
-/// no server involvement — privacy is preserved exactly like the home widgets.
+/// ## Purpose and Ownership
+/// Manages creation, `ContentState` pushes (via `update(using:)`), and termination
+/// of `Activity<LutheranRadioLiveActivityAttributes>`. All pushes are driven from
+/// the main-app process only. Widget/App Intent processes mutate state via
+/// `SharedPlayerManager` facades; only the main process owns the Activity reference.
 ///
 /// ## Single Source of Truth Contract
-/// - All **widget and relaunch** content is driven exclusively by `PersistedWidgetState`
-///   (via `loadPersistedWidgetState` / `persistWidgetSnapshot` / `performActualSave`).
-///   `PersistedWidgetState` is the undisputed SSOT for home widgets, Control widgets,
-///   and app background/terminate restore. **Live Activity updates must never bypass or
-///   weaken these writes.**
-/// - Live Activity presentation is derived from the in-memory `SharedPlayerManager.currentVisualState`
-///   + `currentStreamMetadata` (the transient path). When the main app is alive these are
-///   authoritative and do not require a disk round-trip for the LA surface.
-/// - `RadioLiveActivityManager` **owns** the `Activity` instance lifecycle.
-/// - The **main app** (via direct event notifications from visual/metadata mutations +
-///   `SharedPlayerManager` save paths) drives pushes. Widget/App Intent processes only
-///   mutate SPM; only the main process owns and updates the Activity.
+/// - Widget and relaunch presentation use `PersistedWidgetState` exclusively
+///   (see `loadPersistedWidgetState`, `savePersistedWidgetState`).
+/// - Live Activity transient UI is derived from in-memory `SharedPlayerManager`
+///   (`currentVisualState` + `currentStreamMetadata`) for zero-disk hot path.
+/// - `PersistedWidgetState` is never bypassed for widgets.
 ///
-/// ## Event-Driven Model (Primary) vs. Timer (Demoted Fallback)
-/// Updates are **purely reactive** to meaningful state changes:
-/// - Visual transitions (`.prePlay` → `.playing`, play → `.userPaused`, etc.) via
-///   `setPlaying`, `stop`, `setUserPaused`, `userRequestedPlay`, coordinator paths.
-/// - ICY program metadata arrival via `didUpdateStreamMetadata`.
-/// - Foreground correction and background auto-start.
+/// ## Event-Driven Model (Primary) + Live Activity Attribute Events
+/// Updates are reactive to player-domain mutations (visual transitions, ICY
+/// `metadataDidUpdate`, lifecycle). The 30 s fallback timer is demoted and not
+/// started on normal paths.
 ///
-/// The 10 s repeating timer (`updateTimer`) is intentionally demoted to a **rare fallback**
-/// only (e.g. as an explicit safety net in unusual background metadata starvation cases).
-/// It is **not** started automatically on `startActivity` or `observeExistingActivities`.
-/// All normal freshness comes from the event sites above. `startLocalUpdateTimer` /
-/// `stopLocalUpdateTimer` remain `internal` as the designated testing seam.
+/// In addition, the manager consumes the Live Activity attribute events
+/// streams (`contentUpdates` yielding `ActivityContent<ContentState>` and
+/// `activityStateUpdates`). On yield we align `lastPushedContent` (for
+/// stronger diff-driven suppression) and react to terminal states for
+/// self-healing lifecycle.
+///
+/// See the implementation of ``beginObservingActivityEvents(_:)`` and the
+/// "Live Activity Attribute Events Observation" section in
+/// docs/Widget-Presentation-Dataflow.md.
 ///
 /// ## Update Invariant
-/// An `Activity.update(...)` is performed **if and only if** the candidate
-/// `ContentState(visualState:streamMetadata)` differs from the last successfully
-/// pushed value (or `force` is true). This keeps Dynamic Island / Lock Screen
-/// updates immediate without redundant IPC or battery cost on duplicate content.
+/// `Activity.update(...)` occurs **iff** candidate differs from `lastPushedContent`
+/// (or force/initial). This is the mechanism that keeps DI / Lock Screen fresh
+/// without polling in the common case.
 ///
 /// ## Test Isolation
-/// All creation, timer start, and update paths are short-circuited under DEBUG when
-/// `isRunningUnderTest` is true. This is required for acceptable `xcodebuild test`
-/// performance from the shell (and to avoid "hung before establishing connection").
-/// See the guards in `startActivity`, `updateCurrentActivity`, and `observeExistingActivities`.
+/// All real Activity creation/update/timer paths are short-circuited under
+/// `isRunningUnderTest` (and the UITestMode SSOT) so that `xcodebuild test`
+/// remains fast. See guards in `startActivity`, `updateCurrentActivity`,
+/// `observeExistingActivities`.
 ///
-/// See:
-/// - `SharedPlayerManager.setPlaying()`, `stop()`, `didUpdateStreamMetadata`, `performActualSave`
-/// - `SceneDelegate` + `AppDelegate` (the wired handlers)
-/// - `PlayerVisualState`, `StreamProgramMetadata`
-/// - `WidgetRefreshManager` (the parallel mechanism for home/Control widgets)
-///
-/// - SeeAlso: `SharedPlayerManager`, `PlayerVisualState.swift`, `LutheranRadioLiveActivityAttributes.swift`,
-///   `CODING_AGENT.md` (Single Source of Truth Principles + Cross-target shared files),
-///   docs/Widget-Presentation-Dataflow.md (Live Activity Event-Driven section),
-///   <doc:Architecture>, RadioPlayerCoordinator (orchestration after SPM),
-///   ``isRunningUnderTest`` (test short-circuit).
+/// - SeeAlso: `SharedPlayerManager` (source of visual/metadata + emitter of
+///   `PlayerEvent`), `LutheranRadioLiveActivityAttributes.ContentState`,
+///   `PlayerVisualState`, `StreamProgramMetadata`,
+///   `LutheranRadioWidgetLiveActivity.swift`,
+///   docs/Widget-Presentation-Dataflow.md (Live Activity Event-Driven + new
+///   events observation section),
+///   docs/Event-Driven-Refactor-Roadmap.md (Tier 2 LA events item),
+///   CODING_AGENT.md (Single Source of Truth Principles, cross-target shared
+///   files, Documentation & Comment Standards),
+///   <doc:Architecture>, RadioLiveActivityManagerTests.
 @MainActor
 class RadioLiveActivityManager: ObservableObject {
     static let shared = RadioLiveActivityManager()
@@ -101,6 +97,41 @@ class RadioLiveActivityManager: ObservableObject {
     /// Exposed as `internal private(set)` for white-box testing of the change-detection
     /// behavior (parallel to `updateTimer`).
     internal private(set) var lastPushedContent: LutheranRadioLiveActivityAttributes.ContentState?
+
+    /// Long-lived task observing the Live Activity attribute events stream.
+    ///
+    /// Consumes `contentUpdates` (the events surface yielding
+    /// `ActivityContent<ContentState>` on every attribute update). Started on
+    /// acquisition (start or resume); cancelled on end paths. Used to keep
+    /// `lastPushedContent` in sync with the system-accepted state for diff-driven
+    /// suppression of `update(using:)` calls.
+    ///
+    /// Responsibilities on yield:
+    /// - Synchronize `lastPushedContent` with the yielded activity's `contentState`.
+    ///   This aligns the diff check in `updateCurrentActivity` with the exact
+    ///   state the system last rendered, strengthening duplicate suppression.
+    /// - On `.dismissed` or `.ended`, clear local tracking so that stale
+    ///   references do not cause spurious update attempts.
+    ///
+    /// Why this matters: gives the manager a reactive, system-driven signal
+    /// for both content convergence and lifecycle. Combined with the existing
+    /// `lastPushedContent` diff and PlayerEvent-driven call sites, it reduces
+    /// reliance on the timer fallback and makes forced pushes more robust
+    /// without changing any public contract or adding polling.
+    ///
+    /// - Important: Observation is additive only. All existing push sites
+    ///   (`SharedPlayerManager`, `RadioPlayerCoordinator`, lifecycle handlers)
+    ///   and the privacy / test guards remain the primary mechanism.
+    /// - Note: Runs on main actor via Task + MainActor.run to keep isolation
+    ///   clean under strict Swift 6.
+    /// - SeeAlso: ``beginObservingActivityEvents(_:)``, ``updateCurrentActivity()``,
+    ///   ``endActivity(dismissalPolicy:)``, docs/Widget-Presentation-Dataflow.md,
+    ///   docs/Event-Driven-Refactor-Roadmap.md.
+    ///
+    /// Exposed as `internal private(set)` (parallel to `updateTimer` / `lastPushedContent`)
+    /// as the designated white-box testing seam. Production code must never read or
+    /// assign this directly.
+    internal private(set) var activityObservationTask: Task<Void, Never>?
 
     #if DEBUG
     /// Robust detection of unit / UI test execution under DEBUG.
@@ -177,6 +208,8 @@ class RadioLiveActivityManager: ObservableObject {
         // (explicit "-UITestMode" or XCTest environment under DEBUG).
         if SharedPlayerManager.isRunningInUITestMode {
             stopLocalUpdateTimer()
+            activityObservationTask?.cancel()
+            activityObservationTask = nil
             return
         }
 
@@ -185,6 +218,8 @@ class RadioLiveActivityManager: ObservableObject {
             // Prevent creating real Live Activities + the repeating local timer
             // during unit/UI tests. This is what was keeping the test runner alive.
             stopLocalUpdateTimer()
+            activityObservationTask?.cancel()
+            activityObservationTask = nil
             return
         }
         #endif
@@ -222,6 +257,7 @@ class RadioLiveActivityManager: ObservableObject {
             )
             
             currentActivity = activity
+            beginObservingActivityEvents(activity)
 
             // Event-driven model: do NOT start the 10 s fallback timer here.
             // Freshness comes from explicit calls at visual/metadata mutation sites
@@ -270,7 +306,9 @@ class RadioLiveActivityManager: ObservableObject {
     /// - SeeAlso: `startActivity()`, `SharedPlayerManager.setPlaying`,
     ///   `SharedPlayerManager.didUpdateStreamMetadata`,
     ///   `performActualSave` (the bridge call remains for widget parity),
-    ///   ``isRunningUnderTest``, docs/Widget-Presentation-Dataflow.md,
+    ///   ``beginObservingActivityEvents(_:)`` (the Live Activity events surface that
+    ///   keeps `lastPushedContent` aligned), ``isRunningUnderTest``,
+    ///   docs/Widget-Presentation-Dataflow.md,
     ///   RadioLiveActivityManagerTests
     @MainActor
     func updateCurrentActivity() async {
@@ -356,6 +394,11 @@ class RadioLiveActivityManager: ObservableObject {
     ///   docs/Widget-Presentation-Dataflow.md (termination section + LA event-driven section).
     func endActivity(dismissalPolicy: ActivityUIDismissalPolicy = .default) {
         stopLocalUpdateTimer()
+
+        // Cancel the attribute events observer (self-healing via the stream will
+        // also do this on terminal states, but explicit end must be immediate).
+        activityObservationTask?.cancel()
+        activityObservationTask = nil
         
         guard let activity = currentActivity else {
             lastPushedContent = nil
@@ -463,6 +506,8 @@ class RadioLiveActivityManager: ObservableObject {
         // the manager is instantiated early (statics, coordinators) and its init calls this.
         if SharedPlayerManager.isRunningInUITestMode {
             currentActivity = nil
+            activityObservationTask?.cancel()
+            activityObservationTask = nil
             return
         }
 
@@ -472,6 +517,8 @@ class RadioLiveActivityManager: ObservableObject {
         // using the shared `isRunningUnderTest` computed property (DRY).
         if isRunningUnderTest {
             currentActivity = nil
+            activityObservationTask?.cancel()
+            activityObservationTask = nil
             return
         }
         #endif
@@ -483,10 +530,78 @@ class RadioLiveActivityManager: ObservableObject {
             // Any in-flight activity will receive pushes on the next visual or metadata
             // event (or explicit foreground correction). Starting the timer here would
             // re-introduce the old polling-driven behavior.
+            beginObservingActivityEvents(activity)
             #if DEBUG
             print("🔴 Found existing Live Activity: \(activity.id) — timer not auto-started (event-driven)")
             #endif
             // If a future caller needs the fallback, it can call startLocalUpdateTimer() explicitly.
+        }
+    }
+
+    // MARK: - Live Activity Attribute Events Observation
+
+    /// Begins observation of the supplied activity's attribute events stream
+    /// (`contentUpdates`).
+    ///
+    /// This is ActivityKit's events surface for `LutheranRadioLiveActivityAttributes.ContentState`.
+    /// On each yielded `ActivityContent` we record `.state` into `lastPushedContent`
+    /// so the manager's diff check in `updateCurrentActivity` uses the exact
+    /// value the Live Activity surface last rendered.
+    ///
+    /// - Parameters:
+    ///   - activity: The live `Activity<LutheranRadioLiveActivityAttributes>`
+    ///     instance whose attribute updates we will consume.
+    /// - Precondition: Must be invoked on the main actor.
+    /// - Postcondition: `activityObservationTask` holds a live task that will
+    ///   run until cancelled. Any prior observation task is cancelled first.
+    /// - Important: The yielded `contentState` is used to keep
+    ///   `lastPushedContent` authoritative. Terminal states trigger local
+    ///   cleanup so that `currentActivity` never points at a surface the system
+    ///   has already dismissed.
+    /// - Note: This is the concrete implementation of the "events stream
+    ///   optimization" for Live Activities. It is additive; the existing
+    ///   diff-driven `updateCurrentActivity` contract and all call sites from
+    ///   `SharedPlayerManager` and coordinators are unchanged.
+    /// - SeeAlso: ``activityObservationTask``, ``updateCurrentActivity()``,
+    ///   ``lastPushedContent``, `endActivity(dismissalPolicy:)`,
+    ///   docs/Widget-Presentation-Dataflow.md (Live Activity Attribute Events
+    ///   Observation), docs/Event-Driven-Refactor-Roadmap.md,
+    ///   ``observeExistingActivities()``, ``startActivity()``.
+    private func beginObservingActivityEvents(_ activity: Activity<LutheranRadioLiveActivityAttributes>) {
+        activityObservationTask?.cancel()
+
+        // SAFETY: ActivityKit's contentUpdates is the attribute events surface
+        // yielding ActivityContent<ContentState>. The sequence is not Sendable;
+        // we extract under nonisolated(unsafe) on the main-actor call site
+        // (see established patterns for framework interop in this project:
+        // DNS C callbacks, AVFoundation delegates). The Task only iterates the
+        // sequence and forwards state writes via MainActor.run. Lifecycle
+        // terminal states continue to be handled by our explicit end paths
+        // (additive observation; no behavior change).
+        nonisolated(unsafe) let contentUpdates = activity.contentUpdates
+
+        activityObservationTask = Task { [weak self] in
+            // Primary Live Activity attribute events consumption:
+            // contentUpdates delivers fresh ContentState on every push (from us
+            // or from widget intent side-effects). We use it to keep the
+            // diff record authoritative so that update(using:) calls are
+            // suppressed when unnecessary.
+            for await content in unsafe contentUpdates {
+                await MainActor.run { [weak self] in
+                    guard let self else { return }
+                    self.lastPushedContent = content.state
+                }
+            }
+            // Stream termination (activity ended by system) is observed here;
+            // we opportunistically clear for hygiene. Primary cleanup remains
+            // via endActivity paths.
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                if self.currentActivity != nil {
+                    self.currentActivity = nil
+                    self.lastPushedContent = nil
+                }
+            }
         }
     }
 }

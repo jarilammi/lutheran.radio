@@ -56,7 +56,7 @@ Goal: Ensure every significant domain transition inside `SharedPlayerManager` an
 Goal: Introduce the first real observers of the `events` stream without forcing any existing code to change.
 
 - [x] Add an internal observer inside `WidgetRefreshManager` that reacts to key `PlayerEvent` cases (`.visualStateDidChange`, `.persistedWidgetStateDidUpdate`, stream transitions, metadata, intent) to trigger timeline reloads by routing through the existing `refreshIfNeeded` surface. All snapshot derivation, debouncing, coalescing, regress guards, privacy gating, and direct call sites remain 100% intact and primary. The observer is strictly additive and non-forcing.
-- [ ] Explore using the `events` stream from Live Activity attribute updates or `LutheranRadioLiveActivityAttributes` where it can reduce polling or forced updates.
+- [x] `RadioLiveActivityManager` consumes the Live Activity attribute updates AsyncStream (`activity.updates`, the events surface for `LutheranRadioLiveActivityAttributes.ContentState`). On yield the manager aligns `lastPushedContent` (stronger diff suppression of `update(using:)`) and reacts to `.dismissed`/`.ended` for self-healing lifecycle. Observation starts on acquisition and is cancelled on end; all prior push sites, dedup, gates, and tests are unchanged (additive only). Production docs added. (2026-07-04)
 - [ ] Add a lightweight subscriber in the main app UI layer (e.g., a `@State` or observation helper) that reacts to `playbackIntentChanged` and other key events. Existing direct state bindings must remain.
 
 **Rule**: Consumers must be additive. The imperative/snapshot paths stay as the primary mechanism. Event-driven paths run in parallel initially.
@@ -106,6 +106,7 @@ Keep a short chronological log of major milestones:
 - Tier 1 Emission Coverage cleaned up and completed (emissions added after state mutations inside `SharedPlayerManager` using existing surfaces only; no new record APIs or emission logic in `DirectStreamingPlayer`). Stream*, metadata, visualStateDidChange, and persistedWidgetStateDidUpdate now emitted. Stale comments/docs cleaned. (2026-07-03)
 - Surface cleanup + docs uplift (commit d219f8e): improved docs in `SharedPlayerManager.swift` + `PlayerViewModel.swift` promoting event-driven non-forcing architecture, scoping legacy forcing shims to widget optimistic paths, and strengthening SeeAlso/cross-links to `PlayerEvent` / ``events`` / roadmap. (2026-07-03)
 - Tier 2 first consumer complete: `WidgetRefreshManager` now contains a lightweight internal `PlayerEvent` observer (additive only). All changes follow production documentation standards (structured `///`, file headers, AGENT NOTE, present-tense final architecture language, cross-links to `events`, `PlayerEvent`, roadmap, Architecture.md, CODING_AGENT.md). Existing snapshot + refresh paths untouched. Build + test gates passed. (2026-07-04)
+- Live Activity attribute events complete: `RadioLiveActivityManager` now observes the `activity.updates` AsyncStream (events for ContentState + state). Aligns dedup record + self-heals on dismissal. Additive, production docs, cross-links. (2026-07-04)
 
 ---
 
