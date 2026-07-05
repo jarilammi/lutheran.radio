@@ -1535,30 +1535,11 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             
             let activated: Bool
             if #available(iOS 27.0, *) {
-                // iOS 27+: use the async completion-based activate (avoids blocking the thread
-                // during activation). This is the preferred path when available.
-                activated = await withCheckedContinuation { continuation in
-                    session.activate(options: []) { success, error in
-                        if let error {
-                            #if DEBUG
-                            print("[DirectStreamingPlayer] Async activate failed: \(error.localizedDescription)")
-                            #endif
-                            continuation.resume(returning: false)
-                        } else {
-                            #if DEBUG
-                            if !wasAlreadyPlayback {
-                                print("[DirectStreamingPlayer] Audio session configured + activated asynchronously")
-                            }
-                            #endif
-                            continuation.resume(returning: success)
-                        }
-                    }
-                }
+                // iOS 27+: prefer the async activate (avoids main-thread blocking during route selection).
+                // Uses dynamic perform + Selector so Xcode 26 compiler never sees the symbol.
+                activated = await Self.activateAsyncDynamic(session: session, wasAlreadyPlayback: wasAlreadyPlayback)
             } else {
                 // Clean synchronous fallback required for iOS 26.2 deployment target.
-                // All callers already suspend via await on @MainActor, so this does not
-                // re-introduce the original top-level synchronous main-thread setActive
-                // patterns that produced launch performance warnings.
                 do {
                     try session.setActive(true, options: [])
                     #if DEBUG
@@ -1580,6 +1561,34 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             print("[DirectStreamingPlayer] Failed to configure audio session: \(error.localizedDescription)")
             #endif
             return false
+        }
+    }
+
+    /// Dynamic dispatch for `activate(options:completionHandler:)` to support building with Xcode 26.
+    @available(iOS 27.0, *)
+    private static func activateAsyncDynamic(session: AVAudioSession, wasAlreadyPlayback: Bool) async -> Bool {
+        await withCheckedContinuation { continuation in
+            let selector = NSSelectorFromString("activateWithOptions:completionHandler:")
+            if session.responds(to: selector) {
+                // Safe dynamic call – avoids direct symbol reference that fails in Xcode 26 SDK
+                unsafe session.perform(selector, with: [] as AVAudioSessionActivationOptions, with: { (success: Bool, error: Error?) in
+                    if let error {
+                        #if DEBUG
+                        print("[DirectStreamingPlayer] Async activate failed: \(error.localizedDescription)")
+                        #endif
+                        continuation.resume(returning: false)
+                    } else {
+                        #if DEBUG
+                        if !wasAlreadyPlayback {
+                            print("[DirectStreamingPlayer] Audio session configured + activated asynchronously")
+                        }
+                        #endif
+                        continuation.resume(returning: success)
+                    }
+                } as Any)
+            } else {
+                continuation.resume(returning: false)
+            }
         }
     }
 
