@@ -861,8 +861,10 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
             guard let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt else { return }
             let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
             
-            // Always try to reactivate the session
-            try? AVAudioSession.sharedInstance().setActive(true, options: .notifyOthersOnDeactivation)
+            // Consolidated via `reconfigureAudioSession()` → player's async helper.
+            Task { @MainActor in
+                await self.reconfigureAudioSession()
+            }
             
             // === Important guard: Respect PlayerVisualState user intent ===
             // This prevents the most common "play-on-pause resurrection" after phone calls, Siri, etc.
@@ -897,7 +899,25 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     private func setupRouteChangeHandling() {
         NotificationCenter.default.addObserver(self, selector: #selector(handleRouteChange), name: AVAudioSession.routeChangeNotification, object: nil)
     }
-    
+
+    /// Consolidated entry point for audio session (re)activation from ViewController surfaces.
+    ///
+    /// All activation calls originating in ViewController (interruption recovery, route change,
+    /// category change, and tuning sound setup) route through this method so that
+    /// activation logic stays in one place and always uses the async helper
+    /// (`configureAudioSessionAsync` is the player SSOT).
+    ///
+    /// Playback entry points inside the player call `configureAudioSessionAsync()` (or the
+    /// thin `setupAudioSession()` wrapper) directly.
+    ///
+    /// - SeeAlso: ``DirectStreamingPlayer/configureAudioSessionAsync()``,
+    ///   ``DirectStreamingPlayer/setupAudioSession()``, `handleInterruption(_:)`,
+    ///   `handleRouteChange(_:)`, `playSpecialTuningSound(completion:)`.
+    @MainActor
+    private func reconfigureAudioSession() async {
+        _ = await streamingPlayer.configureAudioSessionAsync()
+    }
+
     @objc private func handleRouteChange(_ notification: Notification) {
         guard !isDeallocating else {
             #if DEBUG
@@ -912,8 +932,10 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         case .oldDeviceUnavailable:
             if isPlaying { stopPlayback() }
         case .newDeviceAvailable:
-            try? AVAudioSession.sharedInstance().setActive(true)
+            // Consolidated via `reconfigureAudioSession()` → player's async helper.
+            // Await config before recovery play (preferred over fire-and-forget).
             Task { @MainActor in
+                await self.reconfigureAudioSession()
                 // Route-change recovery: only proceed if intent permits (defensive; SPM.play
                 // would also block). This is a technical recovery path, not explicit user play.
                 // (See userRequestedPlay Precondition for permitted direct play() cases.)
@@ -922,7 +944,10 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
                 }
             }
         case .categoryChange:
-            try? AVAudioSession.sharedInstance().setActive(true)
+            // Consolidated via `reconfigureAudioSession()`.
+            Task { @MainActor in
+                await self.reconfigureAudioSession()
+            }
         default:
             break
         }
@@ -1219,7 +1244,9 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         }
         
         do {
-            streamingPlayer.setupAudioSession()
+            // Consolidated through reconfigureAudioSession() (uses the SSOT
+            // `configureAudioSessionAsync` under the hood).
+            await self.reconfigureAudioSession()
             
             // Strong reference - critical to prevent sound cut-off
             tuningPlayer = try AVAudioPlayer(contentsOf: tuningURL)

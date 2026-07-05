@@ -557,7 +557,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     ///   If a new playback entry point is added, guard it with `if isTesting { return … }`.
     ///
     /// - SeeAlso: ``SharedPlayerManager/isRunningInUITestMode``, ViewController.viewDidLoad,
-    ///   setupAudioSession, `play()`, `setStreamAndPlay(to:context:)`, `startPlayback(context:)`,
+    ///   ``setupAudioSession()``, `play()`, `setStreamAndPlay(to:context:)`, `startPlayback(context:)`,
     ///   CODING_AGENT.md (test isolation requirements).
     internal var isTesting: Bool {
         SharedPlayerManager.isRunningInUITestMode
@@ -1189,7 +1189,11 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         
         super.init()
         
-        setupAudioSession()
+        // Now async (uses configureAudioSessionAsync under the hood). Fire-and-forget is safe here:
+        // activation is non-blocking and any playback paths re-ensure / await as needed.
+        Task { @MainActor in
+            await setupAudioSession()
+        }
         setupNetworkMonitoring()
         
         #if DEBUG
@@ -1414,7 +1418,11 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         
         super.init()
         
-        setupAudioSession()
+        // Now async (uses configureAudioSessionAsync under the hood). Fire-and-forget is safe here:
+        // activation is non-blocking and any playback paths re-ensure / await as needed.
+        Task { @MainActor in
+            await setupAudioSession()
+        }
         setupNetworkMonitoring()
         
         // Observe Low Power Mode changes to dynamically adjust optimizations
@@ -1470,32 +1478,114 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         #endif
     }
     
-    /// Single owner for playback `AVAudioSession` category and activation (cold launch, stream, tuning).
+    /// Reusable @MainActor async helper for AVAudioSession configuration.
     ///
-    /// Under `isTesting` (sourced from `SharedPlayerManager.isRunningInUITestMode`) this is a no-op.
-    /// This prevents background audio activation and any side effects during XCUITest runs.
-    func setupAudioSession() {
+    /// This is the **single source of truth** for audio session category configuration
+    /// and activation.
+    ///
+    /// - Sets the `.playback` category via the synchronous `setCategory` (per Apple guidance).
+    /// - On iOS 27+: activates via the non-blocking async `activate(options:completionHandler:)`
+    ///   wrapped in `withCheckedContinuation`.
+    /// - On iOS 26.2 (deployment target): falls back to the synchronous `setActive(true, options:)`.
+    ///
+    /// All audio activation paths (init setup, `play()`, `startPlayback`, stream switches,
+    /// tuning sound, interruption recovery, route changes, category changes) must flow through
+    /// this method, the thin `setupAudioSession()` wrapper, or (from ViewController) via
+    /// `reconfigureAudioSession()`.
+    ///
+    /// Call sites are already structured as `Task { @MainActor in await ... }` or direct
+    /// `await` from @MainActor contexts. This eliminates the prior direct top-level
+    /// synchronous `setActive` calls from hot paths that triggered main-thread
+    /// unresponsiveness warnings.
+    ///
+    /// Uses `#available(iOS 27.0, *)` + clean fallback. No runtime `Selector` dispatch,
+    /// `NSSelectorFromString`, or other dynamic messaging.
+    ///
+    /// - Returns: `true` on successful category + activate; `false` on error or under `isTesting`.
+    ///
+    /// - Precondition: Must be called from a `@MainActor` context.
+    /// - Note: Respects `isTesting` (SSOT via `SharedPlayerManager.isRunningInUITestMode`) exactly.
+    ///   Under test mode this is a no-op (returns `false`).
+    /// - SeeAlso: ``setupAudioSession()``, `ViewController.reconfigureAudioSession()`,
+    ///   `ViewController.handleInterruption(_:)`, `ViewController.handleRouteChange(_:)`,
+    ///   CODING_AGENT.md (AV session + documentation rules).
+    @MainActor
+    func configureAudioSessionAsync() async -> Bool {
         guard !isTesting else {
             #if DEBUG
-            print("[DirectStreamingPlayer] Skipped audio session setup for tests (isTesting via SharedPlayerManager.isRunningInUITestMode)")
+            print("[DirectStreamingPlayer] Skipped audio session setup for tests...")
             #endif
-            return
+            return false
         }
         
-        let wasAlreadyPlayback = audioSession.category == .playback
+        let session = audioSession
+        let wasAlreadyPlayback = session.category == .playback
+        
         do {
-            try audioSession.setCategory(.playback, mode: .default, options: [.allowAirPlay, .allowBluetoothA2DP])
-            try audioSession.setActive(true)
-            #if DEBUG
-            if !wasAlreadyPlayback {
-                print("[DirectStreamingPlayer] Audio session configured for playback")
+            try session.setCategory(.playback, mode: .default, options: [.allowAirPlay, .allowBluetoothA2DP])
+            
+            let activated: Bool
+            if #available(iOS 27.0, *) {
+                // iOS 27+: use the async completion-based activate (avoids blocking the thread
+                // during activation). This is the preferred path when available.
+                activated = await withCheckedContinuation { continuation in
+                    session.activate(options: []) { success, error in
+                        if let error {
+                            #if DEBUG
+                            print("[DirectStreamingPlayer] Async activate failed: \(error.localizedDescription)")
+                            #endif
+                            continuation.resume(returning: false)
+                        } else {
+                            #if DEBUG
+                            if !wasAlreadyPlayback {
+                                print("[DirectStreamingPlayer] Audio session configured + activated asynchronously")
+                            }
+                            #endif
+                            continuation.resume(returning: success)
+                        }
+                    }
+                }
+            } else {
+                // Clean synchronous fallback required for iOS 26.2 deployment target.
+                // All callers already suspend via await on @MainActor, so this does not
+                // re-introduce the original top-level synchronous main-thread setActive
+                // patterns that produced launch performance warnings.
+                do {
+                    try session.setActive(true, options: [])
+                    #if DEBUG
+                    if !wasAlreadyPlayback {
+                        print("[DirectStreamingPlayer] Audio session configured + activated (sync fallback)")
+                    }
+                    #endif
+                    activated = true
+                } catch {
+                    #if DEBUG
+                    print("[DirectStreamingPlayer] Sync setActive failed: \(error.localizedDescription)")
+                    #endif
+                    activated = false
+                }
             }
-            #endif
+            return activated
         } catch {
             #if DEBUG
             print("[DirectStreamingPlayer] Failed to configure audio session: \(error.localizedDescription)")
             #endif
+            return false
         }
+    }
+
+    /// Thin async wrapper around ``configureAudioSessionAsync()``.
+    ///
+    /// Single owner for playback AVAudioSession category+activation for cold launch,
+    /// stream switches, and tuning sound paths.
+    ///
+    /// Under `isTesting` (SSOT `SharedPlayerManager.isRunningInUITestMode`) this is a no-op.
+    /// Prevents background audio side effects during tests / launch performance tests.
+    ///
+    /// - SeeAlso: ``configureAudioSessionAsync()``, `play()`, `startPlayback(context:)`.
+    @MainActor
+    func setupAudioSession() async {
+        _ = await configureAudioSessionAsync()
     }
     
     /// Starts periodic certificate validation against the *currently preferred* URL
@@ -1634,23 +1724,15 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         } else {
             self.player?.replaceCurrentItem(with: playerItem)
         }
-        // === Important: Activate the audio session before playback ===
-        do {
-            let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback,
-                                    mode: .default,
-                                    options: [.allowAirPlay, .allowBluetoothA2DP])
-            
-            try session.setActive(true)
-            
-            #if DEBUG
+        // === Important: Activate the audio session before playback (async, main-thread safe) ===
+        let audioSessionOK = await configureAudioSessionAsync()
+        #if DEBUG
+        if audioSessionOK {
             print("[DirectStreamingPlayer] [MainActor] AVAudioSession activated successfully (.playback)")
-            #endif
-        } catch {
-            #if DEBUG
-            print("[DirectStreamingPlayer] [MainActor] Failed to activate AVAudioSession: \(error.localizedDescription)")
-            #endif
+        } else {
+            print("[DirectStreamingPlayer] [MainActor] Failed to activate AVAudioSession")
         }
+        #endif
         // ========================================================
         
         self.player?.play()
@@ -1721,13 +1803,11 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                         return
                     }
 
-                    // 1. Audio Session (critical!)
-                    do {
-                        try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.allowAirPlay, .allowBluetoothA2DP])
-                        try AVAudioSession.sharedInstance().setActive(true)
-                    } catch {
+                    // 1. Audio Session (critical!) — now async to avoid main thread warnings
+                    let audioOK = await configureAudioSessionAsync()
+                    if !audioOK {
                         #if DEBUG
-                        print("[DirectStreamingPlayer] AudioSession failed: \(error)")
+                        print("[DirectStreamingPlayer] AudioSession failed")
                         #endif
                         continuation.resume(returning: false)
                         return
@@ -2219,6 +2299,10 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         // issues under the widget extension's compilation context.
         let coldLaunchURL = await urlWithOptimalServer(for: selectedStream)
 
+        // Configure session using the reusable async helper (SSOT) before AVPlayer work.
+        // (Eliminates prior direct top-level synchronous setActive calls from hot paths.)
+        _ = await configureAudioSessionAsync()
+
         await MainActor.run {
             ensurePlayerExists()
             
@@ -2227,16 +2311,6 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 print("[DirectStreamingPlayer] No AVPlayer instance available")
                 #endif
                 return
-            }
-            
-            do {
-                let session = AVAudioSession.sharedInstance()
-                try session.setCategory(.playback, mode: .default, options: [.allowAirPlay, .allowBluetoothA2DP])
-                try session.setActive(true)
-            } catch {
-                #if DEBUG
-                print("[DirectStreamingPlayer] Audio session activation failed: \(error)")
-                #endif
             }
             
             // Item should already exist from setStream (secured preparePlayerItem). Attach only as fallback.
