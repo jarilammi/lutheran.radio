@@ -1511,6 +1511,15 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     ///   CODING_AGENT.md (AV session + documentation rules).
     @MainActor
     func configureAudioSessionAsync() async -> Bool {
+        // Widget / extension safety (lightweight no-op path).
+        // Primary protection: this file is excluded from LutheranRadioWidgetExtension target
+        // via membershipExceptions (see project.pbxproj and CODING_AGENT.md cross-target rules).
+        // If the file is ever accidentally compiled for an extension, this guard + the
+        // early returns in init paths prevent AVAudioSession configuration in the wrong process.
+        if Bundle.main.bundleURL.pathExtension == "appex" {
+            return false
+        }
+
         guard !isTesting else {
             #if DEBUG
             print("[DirectStreamingPlayer] Skipped audio session setup for tests...")
@@ -1585,6 +1594,12 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// - SeeAlso: ``configureAudioSessionAsync()``, `play()`, `startPlayback(context:)`.
     @MainActor
     func setupAudioSession() async {
+        // Widget / extension safety: no-op when running in appex (see configureAudioSessionAsync).
+        // The #available(iOS 27.0, *) block lives only in the configure implementation and is
+        // never reached from widget extension compilations (file excluded from that target).
+        if Bundle.main.bundleURL.pathExtension == "appex" {
+            return
+        }
         _ = await configureAudioSessionAsync()
     }
     
