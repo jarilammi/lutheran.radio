@@ -183,6 +183,8 @@ compiled into *both* the main "Lutheran Radio" app target and
 - `WidgetRefreshManager.swift` (debouncing + active-widgets privacy gate)
 - `StreamProgramMetadata.swift`
 - `LutheranRadioLiveActivityAttributes.swift`
+- `WidgetEventObserver.swift` (lightweight common observer for `PlayerEvent`
+  streams and Live Activity attribute events)
 
 Mechanism: Xcode File System Synchronized Group with `membershipExceptions`
 in the project file (no separate `Shared/` directory or second framework target
@@ -239,7 +241,7 @@ These guidelines exist because the cost of a force-unwrap or a data race in a ba
 | `Info.plist`                                      | ATS pinning (SPKI + domain)                                                    | Never edit without updating `SecurityConfiguration` and validator              |
 | `LutheranRadioWidget/`                            | Home-screen widget                                                             | Must respect same security rules via shared `Core` module                      |
 | `docs/`                                           | All architecture & security decision records                                   | Read before any major change                                                   |
-| `SharedPlayerManager.swift` + `PlayerVisualState.swift` (and 3 siblings) | Cross-target non-security state for widgets / Live Activities (via synchronized group membership) | Single physical copy. See "Cross-target shared source files (non-Core)" above and the SHARED header in each file. Never duplicate widget state logic. |
+| `SharedPlayerManager.swift` + `PlayerVisualState.swift` (and 4 siblings) | Cross-target non-security state for widgets / Live Activities (via synchronized group membership) | Single physical copy. See "Cross-target shared source files (non-Core)" above and the SHARED header in each file. Never duplicate widget state logic. Includes `WidgetEventObserver` for consolidated event/attribute observation. |
 
 ### Core Framework Surface Area (Mandatory Knowledge)
 

@@ -10,6 +10,31 @@
 //  This replaced the prior hybrid UIKit layout. All vertical rhythm is now expressed
 //  declaratively with VStack + explicit paddings so that future layout experiments are cheap.
 //
+//  Role in event-driven architecture:
+//  - Hosts the primary SwiftUI player surface (via UIHostingController in ViewController).
+//  - Owns a lightweight additive `PlayerEventSubscriber` (via @State + modern Observation)
+//    that consumes `SharedPlayerManager.events` for UI-only side effects.
+//  - All direct @Bindable bindings to `PlayerViewModel`, subview inputs, and imperative
+//    coordinator paths remain the primary mechanism and are untouched.
+//
+//  Key invariants (UI layer only):
+//  - No security, certificate, DNS, or Core/ logic lives here or is called from here.
+//  - The subscriber is strictly additive and non-forcing; existing state bindings and
+//    visual derivation in PlayerViewModel continue to drive all rendering.
+//  - Observation lifetime is tied to the view via `.task` / `.onDisappear` (no leaks,
+//    auto-cancel on disappearance).
+//  - Value-type driven updates preferred: @State + onChange(of: subscriber.prop) +
+//    local @State for any animation/refresh coordination.
+//
+//  - SeeAlso: `PlayerEventSubscriber` (the new subscriber helper defined in this file),
+//    `PlayerViewModel`, `ViewController`, `SharedPlayerManager` (``events``, ``PlayerEvent``),
+//    `WidgetEventObserver` (reused internally for task management),
+//    `PlaybackControlsView`, `LanguageSelectorView`, `NowPlayingMetadataView`,
+//    CODING_AGENT.md (Documentation & Comment Standards, Single Source of Truth Principles,
+//    "Cross-target shared source files (non-Core)", Defensive Swift Practices, event-driven direction),
+//    docs/Event-Driven-Refactor-Roadmap.md (Tier 2 UI subscriber item),
+//    <doc:Architecture>.
+//
 //  Created by Jari Lammi on 19.6.2026.
 //
 
@@ -17,6 +42,9 @@ import SwiftUI
 import AVKit
 import MediaPlayer
 import UIKit
+import Observation
+// Observation provides @Observable for the lightweight subscriber helper below.
+// Swift 6 strict concurrency + SWIFT_STRICT_MEMORY_SAFETY = YES are inherited from target settings.
 
 /// The main player interface built in SwiftUI.
 ///
@@ -66,8 +94,190 @@ import UIKit
 ///   `RadioPlayerCoordinator`, `BackgroundImageController`,
 ///   `configureSleepTimerButtonMenu()`, `confirmAndClearLocalState()`, CODING_AGENT.md (Single Source of Truth Principles + Cross-target shared files),
 ///   <doc:Architecture>.
+// MARK: - PlayerEventSubscriber (lightweight UI-layer observer)
+
+/// Lightweight subscriber / observer for `PlayerEvent` values emitted by the shared player layer.
+///
+/// Placed in the main app UI layer (inside the primary player hosting view `RadioPlayerView`).
+/// Its sole responsibility is to react to `playbackIntentChanged` and other key domain events
+/// (stream transitions, metadata, visual state, persisted state) and drive **UI-only** side effects
+/// such as updating local `@State` values that can feed animations, subtree refreshes, or
+/// additional coordination with WidgetKit / Live Activities — without ever mutating player state,
+/// intents, or Core surfaces.
+///
+/// Design choices (per requirements):
+/// - Modern Observation: `@Observable` + `@State` ownership in the hosting `View`.
+/// - Value-type driven: changes flow through published value properties; consumers use
+///   `.onChange(of: ...)` rather than imperative callbacks where possible.
+/// - Additive only: the primary `@Bindable viewModel` and all existing direct bindings in
+///   `PlaybackControlsView`, `LanguageSelectorView`, `NowPlayingMetadataView` etc. are
+///   left 100% untouched.
+/// - Reuses the established `WidgetEventObserver` internally for cancellable task management
+///   and weak-self safe main-actor delivery (no duplicated observation boilerplate).
+/// - Lifetime: started from a `.task` modifier in `RadioPlayerView.body`; cancelled on
+///   disappear. The view's `@State` preserves the instance across SwiftUI updates.
+///
+/// Why a dedicated helper in the UI layer (not inside `PlayerViewModel` or coordinator):
+/// `RadioPlayerView` is the composition root for the visible player chrome. Keeping a
+/// narrow event subscriber here allows future local animation state or view-refresh
+/// triggers to live close to the rendering site while the VM/coordinator retain their
+/// existing responsibilities for authoritative visual + action wiring.
+///
+/// Actor isolation / Sendable:
+/// - The whole type is `@MainActor`.
+/// - `PlayerEvent` and `PlaybackIntent` are `Sendable`.
+/// - The observation Task hops to main actor for all handler delivery.
+/// - No `@unchecked Sendable`, no `nonisolated(unsafe)`, no force-unwraps.
+///
+/// Security Invariant:
+/// This type and all call sites live exclusively in the Lutheran Radio (main app) target
+/// UI layer. It performs zero certificate validation, DNS lookups, security model checks,
+/// or credential handling. All such logic is isolated inside `Core/`. See
+/// CODING_AGENT.md "Core Framework Surface Area".
+///
+/// - SeeAlso: ``beginObserving()``, ``handle(_:)``, `SharedPlayerManager.events`,
+///   ``PlayerEvent``, `PlaybackIntent`, `WidgetEventObserver`,
+///   `RadioPlayerView`, `PlayerViewModel`,
+///   docs/Event-Driven-Refactor-Roadmap.md,
+///   CODING_AGENT.md (event-driven direction, Documentation & Comment Standards,
+///   narrow inputs, Single Source of Truth),
+///   <doc:Architecture>.
+@MainActor
+@Observable
+final class PlayerEventSubscriber {
+
+    // MARK: - Observable state (value-type driven updates)
+
+    /// The most recent `PlaybackIntent` delivered via a `.playbackIntentChanged` event.
+    ///
+    /// Updated only on that specific case (other events only bump the count).
+    /// Consumers in `RadioPlayerView` read this via `.onChange(of: ...)` to drive
+    /// intent-specific UI-only reactions (e.g. animation phase, local derived state).
+    ///
+    /// - Note: Initial value is a safe default; the real value is seeded from
+    ///   `currentPlaybackIntent` on `beginObserving` and then kept in sync by events.
+    /// - SeeAlso: `playbackIntentChanged(PlaybackIntent)`, SharedPlayerManager.`currentPlaybackIntent`.
+    private(set) var lastObservedIntent: PlaybackIntent = .shouldBePlaying
+
+    /// Monotonic counter incremented on every observed `PlayerEvent`.
+    ///
+    /// Provides a simple value that changes for *any* key player-domain transition
+    /// (intent, stream start/pause/stop/fail, metadata, visual, persisted state).
+    /// Ideal attachment point for `.onChange` that wants to react to "something
+    /// important happened in the player" for UI refresh or animation coordination
+    /// without caring about the specific payload.
+    ///
+    /// - Complexity: O(1) per event.
+    /// - Postcondition: Increments exactly once per delivered event (after begin).
+    private(set) var eventCount: Int = 0
+
+    // MARK: - Observation machinery (reuses established helper)
+
+    /// Internal consolidated observer that owns the cancellable `Task`.
+    ///
+    /// Delegates the actual `for await` loop and main-actor handoff to
+    /// `WidgetEventObserver`. The task reference is not exposed from this type
+    /// (UI views do not need the white-box seam that the widget managers require).
+    private let eventObserver = WidgetEventObserver<PlayerEvent>()
+
+    /// Creates a new subscriber. Observation does not begin until `beginObserving()`
+    /// is called from the owning view's `.task` modifier.
+    init() {}
+
+    // MARK: - Public API
+
+    /// Begins (or restarts) observation of `SharedPlayerManager.events`.
+    ///
+    /// Any prior observation is cancelled first. Seeds `lastObservedIntent` from the
+    /// actor's current value (non-blocking for late subscribers) then consumes the
+    /// stream, delivering every element to ``handle(_:)``.
+    ///
+    /// Must be called from a `@MainActor` async context (e.g. SwiftUI `.task`).
+    /// Safe to call multiple times; idempotent with respect to prior cancellation.
+    ///
+    /// - Postcondition: The subscriber is actively consuming events emitted after
+    ///   this call. `eventCount` and `lastObservedIntent` will be updated on the
+    ///   main actor as events arrive.
+    /// - Important: This is additive. Starting observation has no effect on the
+    ///   emitter, on other subscribers (WidgetRefreshManager, etc.), or on any
+    ///   imperative playback paths.
+    /// - Note: Because `events` currently provides no replay, events emitted before
+    ///   `beginObserving` are not seen (matching the contract used by other Tier 2
+    ///   consumers).
+    /// - SeeAlso: `WidgetEventObserver.beginObserving(_:onElement:onTermination:)`,
+    ///   SharedPlayerManager.`events`.
+    func beginObserving() async {
+        eventObserver.cancel()
+
+        guard !SharedPlayerManager.isWidgetProcess() else { return }
+
+        // Seed from SSOT so the first onChange sites see a current value even if
+        // no new event is emitted immediately after the view appears.
+        lastObservedIntent = await SharedPlayerManager.shared.currentPlaybackIntent
+
+        let stream = await SharedPlayerManager.shared.events
+        eventObserver.beginObserving(stream) { [weak self] event in
+            await self?.handle(event)
+        }
+    }
+
+    /// Cancels active observation and releases the underlying task.
+    ///
+    /// Idempotent. Called from `.onDisappear` in `RadioPlayerView` and from
+    /// `beginObserving` before restart. When the owning view is removed from the
+    /// hierarchy the `.task` modifier also cancels its context, providing
+    /// belt-and-suspenders cleanup.
+    ///
+    /// - Postcondition: No further events will be processed by this subscriber
+    ///   instance until the next `beginObserving`.
+    func cancel() {
+        eventObserver.cancel()
+    }
+
+    // MARK: - Internal event handling (UI side effects only)
+
+    /// Reacts to a single `PlayerEvent`.
+    ///
+    /// Updates the observable properties (`lastObservedIntent` and/or `eventCount`).
+    /// All work here stays inside UI-only reactions; no calls are made into
+    /// `SharedPlayerManager` mutating APIs, `DirectStreamingPlayer`, or Core.
+    ///
+    /// - Parameter event: The domain event yielded by the authoritative emitter.
+    /// - Important: This method (and its callers) must never be used to bypass
+    ///   the single sources of truth or to perform player control decisions.
+    private func handle(_ event: PlayerEvent) async {
+        switch event {
+        case .playbackIntentChanged(let intent):
+            lastObservedIntent = intent
+            eventCount += 1
+
+        case .streamDidStart, .streamDidPause, .streamDidStop,
+             .streamDidFail, .metadataDidUpdate, .visualStateDidChange,
+             .persistedWidgetStateDidUpdate:
+            // React to all other key state-transition events as required.
+            // The count change is the value that can drive generic UI refresh sites.
+            eventCount += 1
+        }
+    }
+}
+
+// End of PlayerEventSubscriber
+
 struct RadioPlayerView: View {
     @Bindable var viewModel: PlayerViewModel
+
+    /// Lightweight subscriber that reacts to `playbackIntentChanged` (and other
+    /// `PlayerEvent` cases) from `SharedPlayerManager.events`.
+    ///
+    /// Owned with `@State` so its `@Observable` properties participate in SwiftUI's
+    /// Observation system and can drive additional local `@State` or `.onChange`
+    /// side effects. This is deliberately separate from the primary
+    /// `@Bindable viewModel` surface.
+    ///
+    /// - Important: All existing direct bindings and subview contracts remain
+    ///   unchanged. The subscriber is purely additive.
+    /// - SeeAlso: `PlayerEventSubscriber`, ``body``, CODING_AGENT.md.
+    @State private var playerEventSubscriber = PlayerEventSubscriber()
 
     /// Called when the user taps the sleep timer button (compatibility / side-effect path).
     /// Primary presentation and choice handling for sleep timer now lives in
@@ -167,6 +377,63 @@ struct RadioPlayerView: View {
             }
         }
         .background(Color.clear)
+
+        // --------------------------------------------------------------------
+        // Additive PlayerEvent subscriber wiring (UI layer only)
+        // --------------------------------------------------------------------
+        // The `.task` starts the lightweight `PlayerEventSubscriber` when this
+        // composition root appears. The subscriber consumes `SharedPlayerManager.events`
+        // and updates its `@Observable` value properties.
+        //
+        // `.onChange` sites are the attachment points for UI-only side effects:
+        // - updating local @State (for animations or derived values)
+        // - triggering view refreshes on specific subtrees
+        // - future coordination with WidgetKit timelines or Live Activity intents
+        //   originating from the primary player view.
+        //
+        // All of the above run in parallel with (never instead of) the existing
+        // @Bindable viewModel + coordinator-driven paths.
+        //
+        // - Precondition: The view is hosted on the main actor (guaranteed by
+        //   UIHostingController in ViewController).
+        // - SeeAlso: `playerEventSubscriber`, `PlayerEventSubscriber.beginObserving()`,
+        //   `PlayerEventSubscriber.eventCount`, SharedPlayerManager.`events`,
+        //   docs/Event-Driven-Refactor-Roadmap.md (this completes the listed Tier 2 UI item),
+        //   CODING_AGENT.md.
+        .task {
+            await playerEventSubscriber.beginObserving()
+        }
+        .onDisappear {
+            playerEventSubscriber.cancel()
+        }
+        .onChange(of: playerEventSubscriber.eventCount) { _, _ in
+            // Reacts to *every* key player event (including playbackIntentChanged and
+            // all state transitions). The count is a pure value change that can be
+            // used to drive local @State updates or animation triggers without
+            // depending on the specific event payload.
+            //
+            // Current implementation performs no mutation of other @State (to keep
+            // the change minimal and non-visual). Future additive work can introduce
+            //   @State private var uiAnimationPhase: Int = 0
+            // inside RadioPlayerView (or on the subscriber) and update it here,
+            // then consume via `.animation(..., value: uiAnimationPhase)` or
+            // `.id(...)` on a narrow subtree.
+            //
+            // This site must never perform player control, intent changes, or
+            // security work.
+        }
+        .onChange(of: playerEventSubscriber.lastObservedIntent) { _, newIntent in
+            // Specific reaction to `playbackIntentChanged`.
+            // Provides the value-type hook for intent-driven UI-only effects
+            // (e.g. local animation state that follows "should the user expect audio"
+            // without ever reading the actor directly from the view body).
+            //
+            // Existing playback visuals continue to flow exclusively through
+            // viewModel.visualState / viewModel.controlPresentation etc.
+            // This onChange is additive observation only.
+            //
+            // - SeeAlso: case `playbackIntentChanged(PlaybackIntent)` in PlayerEvent.
+        }
     }
 }
 
