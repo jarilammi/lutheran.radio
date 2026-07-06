@@ -1484,8 +1484,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// and activation.
     ///
     /// - Sets the `.playback` category via the synchronous `setCategory` (per Apple guidance).
-    /// - On iOS 27+: activates via the non-blocking async `activate(options:completionHandler:)`
-    ///   wrapped in `withCheckedContinuation`.
+    /// - On iOS 27+: activates via the non-blocking `activateWithOptions:completionHandler:`
+    ///   (the async spelling) using a cross-SDK IMP call (see `activateAsyncDynamic`).
     /// - On iOS 26.2 (deployment target): falls back to the synchronous `setActive(true, options:)`.
     ///
     /// All audio activation paths (init setup, `play()`, `startPlayback`, stream switches,
@@ -1498,8 +1498,9 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// synchronous `setActive` calls from hot paths that triggered main-thread
     /// unresponsiveness warnings.
     ///
-    /// Uses `#available(iOS 27.0, *)` + clean fallback. No runtime `Selector` dispatch,
-    /// `NSSelectorFromString`, or other dynamic messaging.
+    /// Uses `#available(iOS 27.0, *)` + clean fallback. The iOS 27 path uses a carefully
+    /// typed IMP cast (not the fragile `perform(with:with:)`) so that the source remains
+    /// compilable on Xcode 26 while calling the real API on 27+.
     ///
     /// - Returns: `true` on successful category + activate; `false` on error or under `isTesting`.
     ///
@@ -1535,8 +1536,9 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             
             let activated: Bool
             if #available(iOS 27.0, *) {
-                // iOS 27+: prefer the async activate (avoids main-thread blocking during route selection).
-                // Uses dynamic perform + Selector so Xcode 26 compiler never sees the symbol.
+                // iOS 27+: use the non-blocking async activate (avoids main-thread blocking
+                // during route selection / AirPlay). We dispatch via IMP because the declaration
+                // is not visible when building against the Xcode 26 SDK.
                 activated = await Self.activateAsyncDynamic(session: session, wasAlreadyPlayback: wasAlreadyPlayback)
             } else {
                 // Clean synchronous fallback required for iOS 26.2 deployment target.
@@ -1564,31 +1566,62 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         }
     }
 
-    /// Dynamic dispatch for `activate(options:completionHandler:)` to support building with Xcode 26.
+    /// Dynamic dispatch for `activate(options:completionHandler:)` using the raw IMP.
+    ///
+    /// This exists solely to allow the source to compile under Xcode 26 SDKs (which do not declare
+    /// the iOS 27 `activateWithOptions:completionHandler:` method) while still calling the real
+    /// non-blocking API on iOS 27+ at runtime.
+    ///
+    /// We use `method(for:)` + `unsafeBitCast` to the precise `@convention(c)` signature because
+    /// the method takes a scalar `NSUInteger` (AVAudioSessionActivationOptions) as the first
+    /// argument after SEL, followed by a block. The NSObject `perform(_:with:with:)` API always
+    /// passes `id` arguments and has the wrong ABI, which produced crashes inside the handler
+    /// closure on Xcode 27 beta + iOS 27 simulator.
     @available(iOS 27.0, *)
     private static func activateAsyncDynamic(session: AVAudioSession, wasAlreadyPlayback: Bool) async -> Bool {
         await withCheckedContinuation { continuation in
             let selector = NSSelectorFromString("activateWithOptions:completionHandler:")
-            if session.responds(to: selector) {
-                // Safe dynamic call – avoids direct symbol reference that fails in Xcode 26 SDK
-                unsafe session.perform(selector, with: [] as AVAudioSessionActivationOptions, with: { (success: Bool, error: Error?) in
-                    if let error {
-                        #if DEBUG
-                        print("[DirectStreamingPlayer] Async activate failed: \(error.localizedDescription)")
-                        #endif
-                        continuation.resume(returning: false)
-                    } else {
-                        #if DEBUG
-                        if !wasAlreadyPlayback {
-                            print("[DirectStreamingPlayer] Audio session configured + activated asynchronously")
-                        }
-                        #endif
-                        continuation.resume(returning: success)
-                    }
-                } as Any)
-            } else {
+
+            guard session.responds(to: selector),
+                  let imp = unsafe session.method(for: selector) else {
                 continuation.resume(returning: false)
+                return
             }
+
+            // SAFETY: unsafeBitCast of the IMP is required to obtain a callable function pointer
+            // with the exact C ABI of the ObjC method (scalar UInt options + escaping block).
+            // This is the only viable cross-Xcode-SDK technique that lets us invoke a new API
+            // whose declaration is invisible to the Xcode 26 compiler. The cast is isolated to
+            // this iOS 27+-only helper; the block is invoked exactly once by the framework.
+            // We deliberately pass the raw integer 0 instead of constructing the OptionSet type
+            // (which would require the new SDK symbol).
+            typealias ActivateFn = @convention(c) (
+                AnyObject,
+                Selector,
+                UInt, // AVAudioSessionActivationOptions raw value (.none == 0)
+                @escaping @convention(block) (Bool, Error?) -> Void
+            ) -> Void
+
+            let activateWithOptions = unsafe unsafeBitCast(imp, to: ActivateFn.self)
+
+            let handler: @convention(block) (Bool, Error?) -> Void = { success, error in
+                if let error {
+                    #if DEBUG
+                    print("[DirectStreamingPlayer] Async activate failed: \(error.localizedDescription)")
+                    #endif
+                    continuation.resume(returning: false)
+                } else {
+                    #if DEBUG
+                    if !wasAlreadyPlayback {
+                        print("[DirectStreamingPlayer] Audio session configured + activated asynchronously")
+                    }
+                    #endif
+                    continuation.resume(returning: success)
+                }
+            }
+
+            // Invoke with explicit scalar 0 for options.
+            activateWithOptions(session, selector, 0, handler)
         }
     }
 
