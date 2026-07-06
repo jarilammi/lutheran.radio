@@ -165,7 +165,7 @@ final class WidgetRefreshManager: @unchecked Sendable {
     @MainActor
     func refreshHasActiveWidgets() async {
         // Defense-in-depth test isolation (parallel to refreshIfNeeded and LA manager guards).
-        // Prevents slow WidgetCenter daemon round-trips during unit tests.
+        // Prevents slow WidgetCenter system service round-trips during unit tests.
         if SharedPlayerManager.isRunningInUITestMode {
             return
         }

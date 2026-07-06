@@ -24,7 +24,7 @@ class RadioLiveActivityManagerTests: XCTestCase {
         // - When you are playing the stream, a *real* Live Activity exists in the
         //   simulator (currentActivity holds a live Activity<...>).
         // - endActivity() would capture it and launch Tasks that call the real
-        //   Activity.update(...) + end(...) APIs. Those are synchronous daemon
+        //   Activity.update(...) + end(...) APIs. Those are synchronous calls into ActivityKit's system services
         //   round-trips and become extremely slow under LLDB + active stream,
         //   causing exactly the "listening to the stream and test times out" symptom.
         //

@@ -46,7 +46,7 @@ Agents must apply these standards to all new code and to any symbol or file they
   4. `Core/Core.docc/Articles/Architecture.md` (design rationale and layering).
   5. `README.md` security sections (operational details, history table, verification commands).
   6. Implementation (`///` + inline `// SAFETY:` comments).
-- **Test documentation**: Tests should state the specific invariant, permanent/transient error case, or behavioral property they protect (see existing Core test patterns).
+- **Test documentation**: Tests should state the specific invariant, permanent/transient error case, or behavioral property they protect (see existing Core test patterns). For tests involving AsyncStreams, Live Activities, or widget state, also follow the fast/reliable patterns and "test execution patience" guidance in the "Test Execution Patience and Fast, Reliable Test Patterns" section below. Reference the canonical examples in `SharedPlayerManagerEventTests.swift`.
 
 ### Avoiding Over-Documentation
 Heavy structured documentation is a deliberate investment for security invariants, single sources of truth, and surfaces that future agents will need with limited surrounding context. It should be applied with clear scope rather than uniformly to every symbol.
@@ -217,6 +217,92 @@ more.
 ### Error Handling
 - Prefer explicit modeling of permanent vs transient errors (see the existing `hasPermanentError` + `StreamErrorType` pattern) over boolean flags or implicit assumptions.
 - Typed throws and `Result` types are preferred on internal boundaries where they improve clarity.
+
+### Test Execution Patience and Fast, Reliable Test Patterns
+
+**AGENT NOTE — Exercise patience with test sessions that may appear stalled.**
+
+Certain legitimate test executions (particularly `xcodebuild ... test-without-building` and event-coverage tests) can appear completely stuck for 5–15 minutes. Common causes that were mitigated (but not eliminated) by the work in commit `10e0e46f968f4ecffe2dcd9cc2a1cc7c007cf4cd`:
+
+- First-time round-trips to ActivityKit's system services against **stale Live Activities** left behind by prior manual simulator streaming sessions.
+- Cooperative cancellation delays on `for await` over a **never-finishing live `AsyncStream`** (the shared `SharedPlayerManager.events` stream only delivers to active subscribers; the collector must be attached before any emit).
+- Scheduler jitter under LLDB / the XCTest host combined with timers, WidgetCenter queries, or reconnection logic.
+
+**Rule for agents**: Allow the test process and simulator sufficient time (often 10–15 minutes on a first run after simulator use) before terminating the session. Prematurely terminating and restarting the test process frequently leaves *additional* stale Activity / Widget state, making the next run slower or causing cold-launch stalls (launch screen never dismissed). Wait for the test infrastructure to time out naturally. The patterns below were introduced precisely so that waits are always bounded and expensive paths are never exercised.
+
+When authoring new tests that touch `PlayerEvent` emission, `SharedPlayerManager.events` / `makeEventsStreamWithReplay()`, Live Activities, `PersistedWidgetState`, `WidgetRefreshManager`, or similar surfaces, implement the fast/reliable patterns below. The authoritative living examples are:
+
+- `Lutheran RadioTests/SharedPlayerManagerEventTests.swift` (especially `collectEvents(whilePerforming:)`, `waitForEvent(...)`, `testLiveEmitsTransitionEventsForStopPauseFailAndIntent`, and setUp sanitization)
+- `Lutheran RadioTests/RadioLiveActivityManagerTests.swift` (setUp/tearDown hygiene)
+- `Lutheran Radio/RadioLiveActivityManager.swift` (deferral + guards)
+- `Lutheran Radio/SharedPlayerManager.swift` (`isRunningInUITestMode`)
+- `Lutheran Radio/ViewController.swift` and `DirectStreamingPlayer.swift` (early UITestMode short-circuits)
+
+**Canonical fast-test techniques** (apply these; do not rediscover the slow paths):
+
+1. **UITestMode is the single source of truth for isolation**
+   - XCUITests **must** launch with the explicit `-UITestMode` argument (see `Lutheran_RadioUITests.swift`).
+   - All call sites that could start audio, network, security validation, timers, WidgetCenter, or Live Activity work **must** consult `SharedPlayerManager.isRunningInUITestMode` (preferred) or the DEBUG `isRunningUnderTest` helper.
+   - Under this mode: no DNS, no streaming, no real LA creation, no WidgetCenter queries, stale pending actions are drained silently.
+
+2. **Cheap Live Activity sanitization *before* any clear/end that could trigger expensive system service work**
+   - In test `setUp` (and symmetrically in `tearDown`):
+     ```swift
+     await MainActor.run {
+         let la = RadioLiveActivityManager.shared
+         la.stopLocalUpdateTimer()
+         la.activityObservationTask?.cancel()
+         la.currentActivity = nil
+     }
+     ```
+   - Do this **before** calling `SharedPlayerManager.clearAllLocalState()` (which internally calls `endActivity()`).
+   - Never call real `endActivity(...)` from unit test setup when a Live Activity may exist on the simulator. The guards inside `endActivity`, `startActivity`, etc. rely on the nils + `isRunningUnderTest`.
+
+3. **Defer any synchronous ActivityKit system service calls**
+   - In `RadioLiveActivityManager.init` (and any early construction path):
+     ```swift
+     Task { @MainActor [weak self] in
+         await Task.yield()
+         self?.observeExistingActivities()
+     }
+     ```
+   - `observeExistingActivities()` (and the start/update paths) must contain early returns that do only cheap local work (`currentActivity = nil`, cancel tasks) and never reach `Activity<LutheranRadioLiveActivityAttributes>.activities.first` under test detection.
+
+4. **Reliable bounded collection from live (never-finishing) AsyncStreams**
+   - Subscribe to the stream **before** performing the action that will cause emissions.
+   - Drive *all* exercising actions from inside one call to the collector helper (`collectEvents(whilePerforming:)` or `waitForEvent(whilePerforming:)`).
+   - Never use a bare `Task` + separate timeout `Task`. Use `withTaskGroup` + `cancelAll()` + grace sleep so the `await collectionTask.value` is guaranteed to complete:
+     ```swift
+     let result = await withTaskGroup(of: [PlayerEvent].self) { group in
+         group.addTask { await collectionTask.value }
+         group.addTask {
+             try? await Task.sleep(for: .seconds(Int(timeout)))
+             collectionTask.cancel()
+             try? await Task.sleep(for: .milliseconds(150)) // grace for cooperative cancellation
+             return []
+         }
+         for await first in group {
+             group.cancelAll()
+             return first
+         }
+         return []
+     }
+     ```
+   - After attaching a subscriber and after triggering the action, do `await Task.yield()` (often twice) + a short `Task.sleep(for: .milliseconds(100))`.
+   - Pre-warm the shared stream in setUp: `_ = await manager.events`.
+
+5. **Use direct test seams to avoid system services (ActivityKit, WidgetCenter) entirely**
+   - `WidgetRefreshManager.setHasActiveLutheranWidgets(true)` instead of calling `refreshHasActiveWidgets()`.
+   - The DEBUG notification seam (`Notification.Name("PlayerEventEmittedForTest")`) for one reliable observation point when pure stream timing is fragile under the test host.
+   - Set test-only flags directly rather than going through production refresh paths.
+
+6. **Document the "what" and the "why"**
+   - Every test must state the precise invariant, replay contract, emission ordering property, or behavioral guarantee it protects (see the long documentation comments on the Tier 5 test and the replay test in `SharedPlayerManagerEventTests`).
+   - Add "Why this pattern is required" explanations (scheduler, ActivityKit cost on stale state, live-stream subscription timing) so the next agent does not re-introduce hangs.
+
+Following these keeps the full test suite fast and repeatable while still giving meaningful coverage of the event-driven architecture and media surfaces. Before writing new tests in this area, re-read the implementation of `collectEvents` and the "Live Emission Coverage" test method in full.
+
+- SeeAlso: `SharedPlayerManager.isRunningInUITestMode`, `RadioLiveActivityManager.isRunningUnderTest` and its `observeExistingActivities`, the collection helpers, "Test documentation" rule above, README.md (Agent Verification Commands + Troubleshooting), docs/Event-Driven-Refactor-Roadmap.md.
 
 These guidelines exist because the cost of a force-unwrap or a data race in a backgrounded streaming app is unusually high. They are meant to steer agents toward safer defaults without creating impossible requirements for mechanical or incremental work.
 

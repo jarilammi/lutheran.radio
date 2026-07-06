@@ -146,7 +146,7 @@ class RadioLiveActivityManager: ObservableObject {
     ///
     /// Matches the detection used inside `observeExistingActivities()`.
     /// Used to short-circuit Live Activity creation and update paths that would
-    /// otherwise perform synchronous ActivityKit daemon IPCs or start the 10 s
+    /// otherwise perform synchronous calls to ActivityKit's system services or start the 10 s
     /// repeating timer — both of which keep the test runner / LLDB "alive" and
     /// cause extremely slow / hung tests when run via `xcodebuild` from shell.
     ///
@@ -171,8 +171,9 @@ class RadioLiveActivityManager: ObservableObject {
         // (`Activity<...>.activities.first`) or stream setup.
         //
         // On simulator with stale Live Activities left from prior manual runs or tests,
-        // the daemon round-trips for .activities / contentUpdates can take many minutes
-        // and previously kept the splash visible (or caused the 5-10 min "hangs").
+        // the system service round-trips for `.activities` / contentUpdates can take many minutes
+        // and previously kept the splash visible (or caused the 5-10 min "hangs" during
+        // `xcodebuild test`).
         // The test setUp explicitly nils + cancels for the same reason.
         //
         // We still observe "early" (next suspension point after the window is visible)
@@ -180,9 +181,16 @@ class RadioLiveActivityManager: ObservableObject {
         // The internal guards in observeExistingActivities() continue to short-circuit
         // under UITestMode / isRunningUnderTest.
         //
+        // AGENT NOTE: If you are tempted to move this call back to synchronous init
+        // "for simplicity", you will re-introduce launch stalls and slow test runs
+        // on any simulator that has accumulated Live Activities. The pattern here
+        // (defer + yield + early nil in observe + cheap sanitization in test setUp)
+        // is required for acceptable cold launch and test performance.
+        // See CODING_AGENT.md ("Test Execution Patience and Fast, Reliable Test Patterns").
+        //
         // - SeeAlso: ``observeExistingActivities()``, scene(willConnectTo:), SceneDelegate,
-        //   ``isRunningUnderTest``, CODING_AGENT.md (test isolation patterns), the
-        //   sanitization in SharedPlayerManagerEventTests.setUp.
+        //   ``isRunningUnderTest``, CODING_AGENT.md (test isolation patterns + Test Execution Patience),
+        //   the sanitization in SharedPlayerManagerEventTests.setUp and RadioLiveActivityManagerTests.setUp.
         Task { @MainActor [weak self] in
             // Cooperative yield lets the current runloop tick, layout, and first commit
             // complete so the launch screen is replaced by app content promptly.
@@ -230,7 +238,7 @@ class RadioLiveActivityManager: ObservableObject {
     func startActivity() async {
         // Defense-in-depth UI test isolation using the SSOT.
         // Prevents waking the Chrono widget renderer process (WidgetRenderer_Activities)
-        // and avoids any ActivityKit daemon IPC or timer scheduling during UITestMode
+        // and avoids any calls to ActivityKit's system services or timer scheduling during UITestMode
         // (explicit "-UITestMode" or XCTest environment under DEBUG).
         if SharedPlayerManager.isRunningInUITestMode {
             stopLocalUpdateTimer()
@@ -433,7 +441,7 @@ class RadioLiveActivityManager: ObservableObject {
         activityObservationTask = nil
 
         // Defense-in-depth UI test isolation.
-        // Prevents real Activity.update + .end IPCs (slow daemon round-trips under LLDB
+        // Prevents real Activity.update + .end IPCs (slow system service round-trips under LLDB
         // when a Live Activity exists from a prior streaming session in the simulator).
         // Matches the pattern used in startActivity / updateCurrentActivity / observe.
         // When this fires, clear local references so any subsequent clearAllLocalState
@@ -538,7 +546,7 @@ class RadioLiveActivityManager: ObservableObject {
     ///
     /// - Important: In DEBUG builds this performs a **robust test-environment short-circuit**
     ///   using the shared ``isRunningUnderTest`` helper. A real `Activity<...>.activities.first`
-    ///   lookup is a synchronous daemon IPC that becomes extremely slow under LLDB when any
+    ///   lookup is a synchronous call into ActivityKit's system services that becomes extremely slow under LLDB when any
     ///   Live Activity is present in the simulator (e.g. the app was streaming). The guard
     ///   prevents that cost during unit tests and guarantees `currentActivity` starts as `nil`.
     ///
@@ -565,7 +573,7 @@ class RadioLiveActivityManager: ObservableObject {
 
         #if DEBUG
         // Robust test detection (works in Xcode GUI + xcodebuild + attached LLDB).
-        // We short-circuit *before* the synchronous ActivityKit daemon query
+        // We short-circuit *before* the synchronous call to ActivityKit's system services
         // using the shared `isRunningUnderTest` computed property (DRY).
         if isRunningUnderTest {
             currentActivity = nil

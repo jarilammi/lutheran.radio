@@ -11,14 +11,39 @@ import XCTest
 /// Unit tests for the event-driven surfaces of `SharedPlayerManager`:
 /// `events` AsyncStream emission and `makeEventsStreamWithReplay()` + `currentState`.
 ///
-/// These tests provide the first coverage for the `PlayerEvent` vocabulary and replay
-/// contract (Tier 4 / Tier 5 backlog item in the roadmap). All tests are additive;
-/// they exercise the public actor surfaces without altering any production paths.
+/// These tests provide coverage for the `PlayerEvent` vocabulary and the replay
+/// contract (Tier 4 / Tier 5 items). All tests are additive; they exercise the
+/// public actor surfaces without altering production paths.
+///
+/// ## Fast & Reliable Test Patterns (Reference for Future Agents)
+///
+/// This file (together with RadioLiveActivityManager.swift) is the canonical
+/// reference implementation for fast, terminating tests over live AsyncStreams
+/// and Live Activity surfaces. The patterns here solved the multi-minute hangs
+/// and launch stalls fixed in commit 10e0e46f968f4ecffe2dcd9cc2a1cc7c007cf4cd.
+///
+/// **AGENT RULE**: Allow the test runner sufficient time (often many minutes)
+/// when output appears stalled. Bounded collection + sanitization + UITestMode
+/// guards guarantee progress and termination. Premature termination leaves more
+/// stale ActivityKit state and makes the next run worse.
+///
+/// Core techniques demonstrated:
+/// - Subscribe *before* the action; drive actions inside `collectEvents(whilePerforming:)`.
+/// - `withTaskGroup` + `cancelAll()` + grace sleep for never-finishing streams.
+/// - Cheap sanitization of RadioLiveActivityManager (cancel obs + nil currentActivity)
+///   *before* clearAllLocalState / endActivity paths.
+/// - Direct seams (`setHasActiveLutheranWidgets`) instead of WidgetCenter / ActivityKit.
+/// - Pre-warm + `Task.yield()` + short sleeps around attach and trigger.
+///
+/// Re-read `collectEvents`, `waitForEvent`, the Tier 5 test method body, and its
+/// long documentation comment before writing new event or Live Activity tests.
 ///
 /// - SeeAlso: ``PlayerEvent``, ``SharedPlayerManager/events``, ``SharedPlayerManager/makeEventsStreamWithReplay()``,
 ///   ``SharedPlayerManager/currentState``, ``PlayerCurrentState``,
-///   docs/Event-Driven-Refactor-Roadmap.md (Tier 4 tests item),
-///   CODING_AGENT.md (test documentation, Single Source of Truth Principles).
+///   RadioLiveActivityManager (isRunningUnderTest + deferred observeExistingActivities),
+///   SharedPlayerManager.isRunningInUITestMode,
+///   docs/Event-Driven-Refactor-Roadmap.md,
+///   CODING_AGENT.md (Test Execution Patience and Fast, Reliable Test Patterns).
 final class SharedPlayerManagerEventTests: XCTestCase {
 
     private let manager = SharedPlayerManager.shared
@@ -28,26 +53,24 @@ final class SharedPlayerManagerEventTests: XCTestCase {
     override func setUp() async throws {
         try await super.setUp()
 
-        // Cheap Live Activity sanitization (must precede clearAllLocalState).
+        // Cheap Live Activity sanitization (must precede clearAllLocalState()).
         //
-        // Why:
+        // Why this exact sequence:
         // - clearAllLocalState() always calls RadioLiveActivityManager.shared.endActivity().
-        // - When a real Live Activity exists on the simulator (left by a prior manual
-        //   "play the stream" session), endActivity() would otherwise schedule real
-        //   Activity.update(...) + .end(...) daemon round-trips.
-        // - Those IPCs become extremely slow (multiple minutes) under LLDB / xcodebuild test
-        //   and manifest as "stream keeps going for ages with nothing happening".
-        // - We force nil + cancel the observation task (cheap, local-only) so the guard
-        //   inside endActivity sees no currentActivity and skips the expensive work.
-        // - The same pattern is used in RadioLiveActivityManagerTests.setUp.
-        // - This lets us safely call clearAllLocalState() (needed for a reproducible
-        //   post-privacy state) while still enabling the hasActiveWidgets gate for
-        //   .persistedWidgetStateDidUpdate coverage. We no longer "disable live activities
-        //   altogether"; we accelerate the expensive surfaces under test.
+        // - A real Live Activity left on the simulator (from prior manual play) makes
+        //   endActivity() (and observeExistingActivities) perform expensive synchronous
+        //   calls into ActivityKit's system services that can take many minutes under
+        //   the test host.
+        // - By cancelling the obs task and nilling currentActivity on MainActor *first*,
+        //   the guards inside endActivity / observe see no activity and do only cheap work.
+        // - This is the companion to the defer + yield in RadioLiveActivityManager.init.
         //
-        // The UITestMode / isRunningUnderTest guards in the LA manager and in
-        // WidgetRefreshManager (refreshHasActiveWidgets + performRefresh) provide
-        // defense-in-depth so WidgetCenter / ActivityKit work is never reached.
+        // Do the same pattern in any new test that calls clearAllLocalState or ends
+        // activities. See CODING_AGENT.md (Fast, Reliable Test Patterns) and the
+        // identical sanitization in RadioLiveActivityManagerTests.setUp.
+        //
+        // UITestMode + isRunningUnderTest guards (in LA manager, WidgetRefreshManager,
+        // ViewController, DirectStreamingPlayer, etc.) provide defense-in-depth.
         await MainActor.run {
             let la = RadioLiveActivityManager.shared
             la.stopLocalUpdateTimer()
@@ -82,7 +105,7 @@ final class SharedPlayerManagerEventTests: XCTestCase {
     override func tearDown() async throws {
         // Mirror the cheap LA sanitization from setUp for test isolation hygiene.
         // Ensures no lingering observation tasks or activity references can affect
-        // subsequent tests or keep system daemons "interested" in this xctest process.
+        // subsequent tests or keep system services (ActivityKit etc.) "interested" in this xctest process.
         await MainActor.run {
             let la = RadioLiveActivityManager.shared
             la.stopLocalUpdateTimer()
@@ -96,16 +119,28 @@ final class SharedPlayerManagerEventTests: XCTestCase {
 
     /// Collects up to `count` events from the given stream while (optionally) performing an action.
     ///
+    /// **This is the recommended helper for observing live AsyncStream emissions in tests.**
+    ///
     /// Subscription to the stream begins immediately (so that emissions triggered by the
-    /// action are observed). The action is then executed. Collection completes when the
-    /// requested count is reached or the timeout fires. Designed to be safe under
-    /// strict Swift 6 concurrency.
+    /// action are observed). The action is then executed inside the same bounded wait.
+    /// Collection completes when the requested count is reached or the timeout fires.
+    ///
+    /// Why the specific shape (subscribe-first + inside-action + withTaskGroup + grace):
+    /// - The shared live `events` stream only delivers to *currently active* iterators.
+    /// - A separate collector task + bare timeout Task can leave the `await collectionTask.value`
+    ///   hanging because cancellation of `for await` on a never-finishing stream is cooperative
+    ///   and can be delayed by the XCTest host scheduler.
+    /// - `withTaskGroup` + explicit `cancelAll()` + a short grace sleep after cancel guarantees
+    ///   the outer await always terminates.
+    ///
+    /// See CODING_AGENT.md ("Test Execution Patience and Fast, Reliable Test Patterns")
+    /// and the long comment on `testLiveEmitsTransitionEventsForStopPauseFailAndIntent`.
     ///
     /// - Parameters:
     ///   - stream: The `AsyncStream<PlayerEvent>` to observe (live `events` or replay stream).
     ///   - count: Maximum number of events to collect.
-    ///   - timeout: Maximum wait time in seconds.
-    ///   - action: Work that should cause new events. Called synchronously after subscription begins.
+    ///   - timeout: Maximum wait time in seconds. Use a higher value (e.g. 10s) for simulator noise.
+    ///   - action: Work that should cause new events. Called after subscription is attached.
     /// - Returns: Collected events in yield order.
     private func collectEvents(
         from stream: AsyncStream<PlayerEvent>,
@@ -359,7 +394,7 @@ final class SharedPlayerManagerEventTests: XCTestCase {
     /// properties for live subscribers). All actions use the existing surfaces; the test
     /// is strictly additive and does not alter production logic, guards, or contracts.
     ///
-    /// Live Activity acceleration for test speed:
+    /// Live Activity acceleration for test speed (see commit 10e0e46):
     /// Previously the widget / Live Activity surfaces were "disabled altogether" (flag left
     /// false after clear) to avoid 5-minute stalls. The stalls were caused by
     /// `clearAllLocalState()` → `endActivity()` performing real `Activity.update` + `.end`
@@ -368,22 +403,19 @@ final class SharedPlayerManagerEventTests: XCTestCase {
     ///
     /// Current approach (accelerated, coverage-preserving):
     /// - setUp performs cheap local sanitization (stop timer, cancel obs task, nil
-    ///   `currentActivity`) *before* clearAllLocalState. Combined with the new guards
-    ///   inside `RadioLiveActivityManager.endActivity` (and the existing ones in
-    ///   start/update/observe), the expensive paths are never taken.
-    /// - WidgetCenter surfaces (`refreshHasActiveWidgets`, `performRefresh`) also
-    ///   short-circuit under `isRunningInUITestMode`.
-    /// - We set the `hasActiveLutheranWidgets` gate directly via the test seam instead
-    ///   of going through re-detect. This exercises the real `savePersistedWidgetState`
-    ///   write + `emit(.persistedWidgetStateDidUpdate)` while keeping all system daemons
-    ///   out of the picture.
+    ///   `currentActivity`) *before* clearAllLocalState. Combined with the guards
+    ///   inside `RadioLiveActivityManager` (endActivity/start/update/observe), the
+    ///   expensive system service paths are never taken.
+    /// - WidgetCenter surfaces short-circuit under `isRunningInUITestMode`.
+    /// - We set the `hasActiveLutheranWidgets` gate directly via the test seam.
     ///
     /// `streamDidStart` emission is intentionally not asserted on the live path here:
     /// `setPlaying()` short-circuits under `SharedPlayerManager.isRunningInUITestMode`
     /// (active for these unit tests) to avoid Live Activity / Now Playing side effects.
-    /// The replay contract test plus `currentState` and production paths cover the
-    /// associated state. The two cases noted as follow-on work in prior micro-steps
-    /// (non-nil metadata + persisted snapshot signal) are now exercised.
+    ///
+    /// For the full rationale and copy-paste patterns for new tests, see:
+    /// - The implementation and header comment of `collectEvents(from:count:whilePerforming:)`
+    /// - CODING_AGENT.md → "Test Execution Patience and Fast, Reliable Test Patterns"
     ///
     /// - SeeAlso: ``SharedPlayerManager/events``, `collectEvents(from:count:whilePerforming:)`,
     ///   ``emit(_:)``, ``stop()``, ``setUserPaused()``, ``markPlaybackStoppedByStreamFailure(_:)``,
@@ -391,8 +423,8 @@ final class SharedPlayerManagerEventTests: XCTestCase {
     ///   ``PlayerEvent``, `PlayerCurrentState`,
     ///   ``RadioLiveActivityManager/endActivity()``, ``RadioLiveActivityManager/isRunningUnderTest``,
     ///   `WidgetRefreshManager.refreshHasActiveWidgets`, `WidgetRefreshManager.setHasActiveLutheranWidgets`,
-    ///   RadioLiveActivityManagerTests, docs/Event-Driven-Refactor-Roadmap.md (Tier 5 — comprehensive coverage for every case),
-    ///   CODING_AGENT.md (test documentation standards, Single Source of Truth Principles).
+    ///   RadioLiveActivityManagerTests, docs/Event-Driven-Refactor-Roadmap.md (Tier 5),
+    ///   CODING_AGENT.md (Test Execution Patience..., test documentation standards).
     func testLiveEmitsTransitionEventsForStopPauseFailAndIntent() async {
         // setUp has already established a clean non-blocked state with explicit intent
         // and has pre-warmed the events stream.

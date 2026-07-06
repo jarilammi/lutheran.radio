@@ -216,6 +216,14 @@ If you encounter build or test issues, try these steps:
 
 After cleaning, retry the build and test steps above.
 
+**Test runs that appear to hang (especially after manual simulator use)**
+
+`xcodebuild test` (and sometimes the initial app launch under the test host) can appear completely stuck for many minutes. This is most often caused by expensive calls to ActivityKit's system services against stale Live Activities that were left on the simulator by a previous streaming session.
+
+- Allow the test process sufficient time (often well beyond 5 minutes on first runs). The fixes in commit `10e0e46f` (cheap sanitization in test setUp, deferral of `observeExistingActivities`, `withTaskGroup`-bounded collection from live streams, and UITestMode short-circuits) were designed so waits are bounded and the expensive paths are avoided.
+- Prematurely terminating and restarting the process frequently makes the *next* run slower because more stale state accumulates.
+- See the full agent guidance in [`CODING_AGENT.md`](CODING_AGENT.md) (section "Test Execution Patience and Fast, Reliable Test Patterns") and the reference implementations in `SharedPlayerManagerEventTests.swift` (the `collectEvents` helper and setUp) plus `RadioLiveActivityManager.swift`.
+
 # Security Implementation
 
 > **For AI coding agents and security reviewers**  
