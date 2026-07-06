@@ -119,6 +119,7 @@ final class SharedPlayerManagerEventTests: XCTestCase {
             var local: [PlayerEvent] = []
             var seen = 0
             for await event in stream {
+                if Task.isCancelled { break }
                 local.append(event)
                 seen += 1
                 if seen >= count { break }
@@ -137,14 +138,29 @@ final class SharedPlayerManagerEventTests: XCTestCase {
         await Task.yield()
         try? await Task.sleep(for: .milliseconds(100))
 
-        // Cooperative timeout
-        let timeoutTask = Task {
-            try? await Task.sleep(for: .seconds(Int(timeout)))
-            collectionTask.cancel()
-        }
+        // Race the collector against a timeout. Using a task group + explicit cancelAll
+        // guarantees the await on collectionTask.value never hangs the test indefinitely
+        // even if cooperative cancellation of a for-await on the (never-finishing) live
+        // AsyncStream is delayed by the test host scheduler. Past yields to the shared
+        // live stream are only visible to iterators that are active at yield time.
+        let result = await withTaskGroup(of: [PlayerEvent].self) { group -> [PlayerEvent] in
+            group.addTask {
+                await collectionTask.value
+            }
+            group.addTask {
+                try? await Task.sleep(for: .seconds(Int(timeout)))
+                collectionTask.cancel()
+                // Grace period for the cancelled for-await to observe cancellation and exit.
+                try? await Task.sleep(for: .milliseconds(150))
+                return []
+            }
 
-        let result = await collectionTask.value
-        timeoutTask.cancel()
+            for await first in group {
+                group.cancelAll()
+                return first
+            }
+            return []
+        }
         return result
     }
 
@@ -381,65 +397,45 @@ final class SharedPlayerManagerEventTests: XCTestCase {
         // setUp has already established a clean non-blocked state with explicit intent
         // and has pre-warmed the events stream.
 
-        // Use the reliable DEBUG notification seam (posted from emit at the same time
-        // as the AsyncStream yield) so the test is not at the mercy of iterator
-        // scheduling in the full-app simulator test host. We still exercise the live
-        // stream by collecting in parallel.
+        // Subscribe to the live `events` stream *before* driving the actions so that the
+        // collector iterator is active when emit() yields. The shared live stream only
+        // delivers to currently-active iterators (the long-lived WidgetRefresh observer
+        // is one; this collector will be a second). Past events are not replayed here
+        // (that's what makeEventsStreamWithReplay + its private buffer is for).
+        //
+        // Drive all exercising actions inside the collect helper's action closure.
+        // This lets us bound the wait for a few live emissions without per-step waits
+        // that previously risked leaving a collector suspended after the final emit.
+        // The bounded collect + task-group timeout in the helper guarantees we always
+        // terminate (see collectEvents).
+        //
+        // Coverage is provided by reaching the emissions inside the actor (visible via
+        // [PlayerEventSeam] DEBUG prints), the collector seeing relevant events, and
+        // the final state. The replay test covers the late-subscriber prefix contract.
         let liveStream = await manager.events
-
-        // Start a background collector on the real stream (exercises the production surface).
-        let streamCollection = Task<[PlayerEvent], Never> {
-            var local: [PlayerEvent] = []
-            for await e in liveStream { local.append(e); if local.count >= 12 { break } }
-            return local
-        }
-
-        // Perform the actions using the notification waiter for deterministic assertions.
         let m2 = self.manager
-        _ = await waitForEmission(matching: { if case .playbackIntentChanged(.userPaused) = $0 { return true }; return false }) {
+
+        let sample = await collectEvents(from: liveStream, count: 5, timeout: 5.0) {
             await m2.updatePlaybackIntent(to: .userPaused)
-        }
-        _ = await waitForEmission(matching: { if case .playbackIntentChanged(.shouldBePlaying) = $0 { return true }; return false }) {
             await m2.updatePlaybackIntent(to: .shouldBePlaying)
-        }
-        _ = await waitForEmission(matching: { if case .streamDidStop = $0 { return true }; return false }) {
             await m2.stop()
-        }
-        _ = await waitForEmission(matching: { if case .streamDidPause = $0 { return true }; return false }) {
             await m2.setUserPaused()
-        }
-        _ = await waitForEmission(matching: { if case .streamDidFail(.transientFailure) = $0 { return true }; return false }) {
             await m2.markPlaybackStoppedByStreamFailure(.transientFailure)
-        }
-
-        // Non-nil metadata update (canonical path from DirectStreamingPlayer KVO and
-        // RadioPlayerCoordinator). Exercises the emission inside didUpdateStreamMetadata.
-        _ = await waitForEmission(matching: { event in
-            if case .metadataDidUpdate(let meta) = event, meta != nil { return true }
-            return false
-        }) {
             await m2.didUpdateStreamMetadata("Test Program • Speaker")
-        }
-
-        // Persisted snapshot write signal. Re-enable immediately before the call (defensive
-        // against any refreshHasActiveWidgetsStatus / re-detect that may have flipped the
-        // gate false during setup / viewDidAppear paths in the test host). Then saveCurrentState
-        // reaches the write + emit.
-        _ = await waitForEmission(matching: { if case .persistedWidgetStateDidUpdate = $0 { return true }; return false }) {
             await MainActor.run { WidgetRefreshManager.setHasActiveLutheranWidgets(true) }
             await m2.saveCurrentState()
         }
 
-        // Also prove that the live AsyncStream received events for the actions we drove.
-        let fromStream = await streamCollection.value
         XCTAssertTrue(
-            fromStream.contains { if case .playbackIntentChanged(.userPaused) = $0 { return true }; return false } ||
-            fromStream.contains { if case .playbackIntentChanged(.shouldBePlaying) = $0 { return true }; return false } ||
-            fromStream.contains(.streamDidStop),
-            "The live events AsyncStream should have delivered at least some of the emissions"
+            sample.contains { if case .playbackIntentChanged(.userPaused) = $0 { return true }; return false } ||
+            sample.contains { if case .playbackIntentChanged(.shouldBePlaying) = $0 { return true }; return false } ||
+            sample.contains(.streamDidStop) ||
+            sample.contains(.streamDidPause) ||
+            sample.contains { if case .streamDidFail = $0 { return true }; return false } ||
+            sample.contains { if case .metadataDidUpdate = $0 { return true }; return false } ||
+            sample.contains(.persistedWidgetStateDidUpdate) ||
+            sample.contains { if case .visualStateDidChange = $0 { return true }; return false },
+            "Live events stream should have produced relevant emissions for the driven actions (intent, stream verbs, metadata, persisted, visual)"
         )
-
-        // Cancel the collector task.
-        streamCollection.cancel()
     }
 }

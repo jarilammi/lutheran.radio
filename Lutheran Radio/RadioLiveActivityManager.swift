@@ -165,12 +165,30 @@ class RadioLiveActivityManager: ObservableObject {
     #endif
     
     private init() {
-        // Observe first so any "resume from existing LA" path is exercised (or short-circuited in tests).
-        // The early return via ``isRunningUnderTest`` inside observeExistingActivities() (and the
-        // guards in startActivity / updateCurrentActivity) is what keeps test init + playback
-        // transition time near-zero and prevents the repeating timer from keeping the runner alive.
-        // - SeeAlso: ``observeExistingActivities()``, ``isRunningUnderTest``, ``startActivity()``
-        observeExistingActivities()
+        // Defer observation to a Task + yield so that the initial window + first layout
+        // (which causes the system launch screen / splash to be dismissed) is never
+        // blocked by a potentially slow synchronous ActivityKit query
+        // (`Activity<...>.activities.first`) or stream setup.
+        //
+        // On simulator with stale Live Activities left from prior manual runs or tests,
+        // the daemon round-trips for .activities / contentUpdates can take many minutes
+        // and previously kept the splash visible (or caused the 5-10 min "hangs").
+        // The test setUp explicitly nils + cancels for the same reason.
+        //
+        // We still observe "early" (next suspension point after the window is visible)
+        // so existing LA resumption works for normal cold launches.
+        // The internal guards in observeExistingActivities() continue to short-circuit
+        // under UITestMode / isRunningUnderTest.
+        //
+        // - SeeAlso: ``observeExistingActivities()``, scene(willConnectTo:), SceneDelegate,
+        //   ``isRunningUnderTest``, CODING_AGENT.md (test isolation patterns), the
+        //   sanitization in SharedPlayerManagerEventTests.setUp.
+        Task { @MainActor [weak self] in
+            // Cooperative yield lets the current runloop tick, layout, and first commit
+            // complete so the launch screen is replaced by app content promptly.
+            await Task.yield()
+            self?.observeExistingActivities()
+        }
 
         // Defense-in-depth: also listen for willTerminate so we end the LA even if
         // AppDelegate.applicationWillTerminate is not delivered (common on abrupt kills).

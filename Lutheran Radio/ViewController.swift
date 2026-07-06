@@ -331,7 +331,9 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         // Reset per-launch cellular permission flags early (before network monitoring can fire the expensive path).
         // The manager itself seeds the persisted permission + does legacy migration on init.
         cellularPermissionManager.resetPerLaunchFlags()
-        setupNetworkMonitoring()
+        if !SharedPlayerManager.isRunningInUITestMode {
+            setupNetworkMonitoring()
+        }
         setupInterruptionHandling()
         setupRouteChangeHandling()
         setupStreamingCallbacks()
@@ -654,6 +656,18 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     }
 
     private func setupFastWidgetActionChecking() {
+        // UITestMode: skip entirely. The checker would only risk picking up stale pendings
+        // from prior killed sessions and turning them into "user input". The guard inside
+        // checkForPendingWidgetActions is defense-in-depth; skipping the schedule avoids
+        // the "Fast widget action checking completed" timing marker during unit tests
+        // and reduces scheduler noise in the test host.
+        if SharedPlayerManager.isRunningInUITestMode {
+            #if DEBUG
+            print("[ViewController] UITestMode — skipping fast widget action checking schedule")
+            #endif
+            return
+        }
+
         // Check for widget actions every second for the first 5 seconds after app starts
         // This ensures fast processing of widget actions when app becomes active.
         // Uses repeated asyncAfter (no Timer, no mutable counter, no Sendable data-race issues).
@@ -740,6 +754,12 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     
     // MARK: - Network and Interruption Handling
     private func setupNetworkMonitoring() {
+        if SharedPlayerManager.isRunningInUITestMode {
+            #if DEBUG
+            print("[ViewController] UITestMode — skipping network monitoring setup (prevents any connecting/reconnect logic or timers in test host)")
+            #endif
+            return
+        }
         networkMonitor?.cancel()
         networkMonitor = nil
         networkMonitor = NWPathMonitor()
@@ -958,6 +978,12 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     }
     
     private func setupConnectivityCheckTimer() {
+        if SharedPlayerManager.isRunningInUITestMode {
+            #if DEBUG
+            print("[ViewController] UITestMode — skipping connectivity check timer")
+            #endif
+            return
+        }
         connectivityCheckTimer?.invalidate()
         guard !isDeallocating else { return }
         connectivityCheckTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
@@ -974,6 +1000,9 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     }
     
     private func performActiveConnectivityCheck() {
+        if SharedPlayerManager.isRunningInUITestMode {
+            return
+        }
         guard !hasInternetConnection else { return }
         
         if let lastAttempt = lastConnectionAttemptTime,
@@ -1058,6 +1087,9 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     ///
     /// This path no longer bypasses the playback intent model.
     private func handleNetworkReconnection() {
+        if SharedPlayerManager.isRunningInUITestMode {
+            return
+        }
         hasInternetConnection = true
         
         #if DEBUG
@@ -1371,6 +1403,22 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     /// Handles widget and URL scheme actions for playback control and stream switching.
     /// - Note: Relies on `DirectStreamingPlayer.isSwitchingStream` (set to `internal`) to coordinate stream switches and suppress unnecessary "stopped" status updates during transitions. Ensures smooth UI updates for widget and URL scheme interactions.
     public func checkForPendingWidgetActions() {
+        // UITestMode defense-in-depth.
+        // Even if a prior killed test session (or manual run) left a "play"/"pause" pendingAction
+        // or Darwin notification in the shared App Group, do not interpret it as user input.
+        // This prevents the "background test sessions would be interpreted as user input"
+        // scenario that leaves the host in yellow .prePlay "connecting" state and stalls the
+        // test runner. We still drain the pending key so the next real run starts clean.
+        if SharedPlayerManager.isRunningInUITestMode {
+            if let pending = SharedPlayerManager.shared.getPendingActionIfFresh(maxAge: 30.0) {
+                SharedPlayerManager.shared.clearPendingAction(actionId: pending.actionId)
+                #if DEBUG
+                print("[ViewController] UITestMode — cleared stale pending \(pending.action) without executing (avoids killed-session user input interpretation)")
+                #endif
+            }
+            return
+        }
+
         guard let pending = SharedPlayerManager.shared.getPendingActionIfFresh(maxAge: 30.0) else {
             return
         }
