@@ -76,9 +76,103 @@ Goal: Introduce the first real observers of the `events` stream without forcing 
 - [x] Error and recovery observation surface complete. `streamDidFail(DirectStreamingPlayer.StreamErrorType)` carries the classified failure (transientFailure, permanentFailure, securityFailure, unknown). Recovery success is expressed by a subsequent `streamDidStart`. `PlayerCurrentState.hasError` supplies the terminal condition for late subscribers. After inspection of emission sites, `StreamErrorType`, recovery paths in DirectStreamingPlayer, and all current consumers, no additional `PlayerEvent` cases provide further value. The existing vocabulary plus replay is the complete contract. Documentation updated in `PlayerVisualState.swift` and `WidgetRefreshManager.swift`. (2026-07-06)
 
 ### Tier 4 – Gradual Consolidation (Long-term, High Caution)
-- [ ] Identify places where direct "force" calls or polling can be replaced by event observation (very late stage).
+- [x] Identify places where direct "force" calls or polling can be replaced by event observation (very late stage). The complete inventory appears in the "Identified Candidates for Future Consolidation" subsection below. All findings respect the non-forcing rule: imperative snapshot paths, direct state access, and legacy forcing shims remain primary and untouched. Identification performed via exhaustive search of call sites, timers, widget entry points, coordinator/VC sync logic, and cross-process surfaces. No behavioral changes. (2026-07-06)
 - [ ] Clean up any now-redundant direct mutation paths only after multiple consumers prove the event path is reliable.
 - [ ] Add comprehensive tests for event emission order, stream behavior under actor isolation, and late-subscriber scenarios.
+
+#### Identified Candidates for Future Consolidation
+
+This subsection records the authoritative inventory of direct "force", refresh, persistence-refresh, and polling patterns that became visible once Tier 1–3 emission + replay + first consumers were in place. It is the reference for any future Tier 4 micro-steps. All descriptions use production-level language; replacements remain strictly additive, very late stage, and gated on proven reliability of the event path across widget, Live Activity, UI, and recovery surfaces.
+
+**1. Legacy forcing shims (widget optimistic + termination liveness)**
+
+- `SharedPlayerManager.forcePersistVisualState(_:language:)` and private `_forceSetCurrentVisualState(_:)` (SharedPlayerManager.swift:929).  
+  Nonisolated public surface that writes the authoritative `PersistedWidgetState` snapshot and performs an in-memory visual update inside the actor (widget process only).  
+  Primary callers: widget AppIntent handlers (play/pause/switch paths inside SharedPlayerManager for optimistic cross-process feedback), LutheranRadioWidgetControl.swift, and internal signal paths.  
+  Current status: Explicitly documented as "legacy forcing surface" and "exists solely for widget optimistic instant-feedback paths". The `emit` guard already prevents events from widget processes.  
+  Late-stage note: Snapshot writes from the widget process are required for instant visibility before any Darwin round-trip. Event-driven observation is main-app only. The force path can never be removed; at most some call sites inside the main app could be audited later.
+
+- `SharedPlayerManager.forceStaleLivenessTimestampForTermination()` (SharedPlayerManager.swift:2373).  
+  Writes the `lastUpdateTime = 0` sentinel.  
+  Call sites: AppDelegate.applicationWillTerminate, SceneDelegate.sceneDidDisconnect, tests.  
+  Purpose: Forces passive "tap to open" presentation in widgets/Live Activities after the main process is gone.  
+  Relation to events: Not a player-domain visual or intent transition; it is a process-lifecycle signal. Remains a direct, explicit lifecycle API.
+
+- `refreshVisualStateFromPersistence()` / `syncVisualStateFromPersistence()` (SharedPlayerManager.swift:956, 971).  
+  Read-side helpers that reset the one-shot `hasLoadedVisualStateFromPersistence` guard so long-lived widget extension processes see the latest main-app or forcePersist writes.  
+  Call sites: Every widget Provider entry point (LutheranRadioWidget.swift:307, LutheranRadioWidgetControl.swift:174), RadioPlayerCoordinator.performColdLaunchPlaybackIfAllowed + other paths (217), ViewController cold-launch / foreground guards (428, 499), and defensive spots inside SharedPlayerManager.  
+  Late-stage note: Widget extension processes have no access to `SharedPlayerManager.events`. These read-refresh surfaces are expected to remain for extension hygiene even after main-app consolidation.
+
+**2. Imperative `refreshIfNeeded` call sites (primary path; event observer already parallels them)**
+
+`WidgetRefreshManager.refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)` is invoked directly from many surfaces in addition to the internal Tier 2 `PlayerEvent` observer (which routes through the identical public surface):
+
+- Inside SharedPlayerManager (performActualSave, saveCurrentState, saveCombinedWidgetState, language switch handling, post-mutation sites ~2121, 2157, 3190, 3424).
+- AppDelegate (foreground / launch paths ~80, 118).
+- SceneDelegate (becomeActive, termination cleanup ~67, 90).
+- RadioPlayerCoordinator (updateUserDefaultsLanguage after saveCombined ~860; other resume/switch paths).
+- SharedPlayerManager+NowPlaying.swift (~149).
+- ViewController (post-clear, hasActive re-detect ~493, 1446).
+- Widget providers themselves for optimistic cases (LutheranRadioWidget.swift ~749, 800; LutheranRadioWidgetControl.swift ~78).
+
+The internal observer in WidgetRefreshManager already demonstrates the parallel non-forcing path. Deduplication, coalescing, regress guards, and privacy gating all live inside `refreshIfNeeded`, so duplicate triggers are harmless today.
+
+Late-stage opportunity: Once the event path has demonstrated complete coverage and multiple independent consumers (UI, refresh, LA), some of the direct calls inside main-app mutation paths could be removed or turned into no-ops while keeping the public surface. The observer would become the sole driver for timeline reloads.
+
+**3. Widget / Control Provider state resolution (repeated persistence refresh + snapshot reads)**
+
+Every timeline entry and control value query in widget extension code performs:
+
+```swift
+await manager.refreshVisualStateFromPersistence()
+if let combined = SharedPlayerManager.loadPersistedWidgetState() { ... }
+```
+
+(See: LutheranRadioWidget.swift:getPendingOrCurrentState:307 and Provider paths; LutheranRadioWidgetControl.swift:effectiveVisualStateAndStation:174.)
+
+This is WidgetKit-driven (not a CPU poll loop), but it is an explicit "force read from disk" pattern on every system snapshot request.
+
+Future direction (very late): Rely more heavily on main-app-driven `WidgetCenter.reloadTimelines` (already the dominant mechanism) so providers see fresh snapshots without the refresh call on every execution. The read-refresh guard will likely stay for safety.
+
+**4. Fallback / lifecycle timers that duplicate or guard event-driven surfaces**
+
+- ViewController.setupWidgetActionPolling() (ViewController.swift:589): 30 s repeating `Timer` that calls `checkForPendingWidgetActions()`. Complements the primary Darwin notification listener (`setupDarwinNotificationListener`) and `setupFastWidgetActionChecking`. Widget actions are also delivered via URL schemes and the coordinator.
+- ViewController.setupConnectivityCheckTimer() (ViewController.swift:960): 5 s repeating connectivity probe (unrelated to player visual state but touches recovery paths).
+- RadioLiveActivityManager.updateTimer (RadioLiveActivityManager.swift): 10–30 s fallback heartbeat. Explicitly demoted in production docs and tests ("NoFallbackTimerStartedByDefault", "timer demoted"). Primary updates come from `contentUpdates` attribute events + `PlayerEvent` routed through `WidgetEventObserver`.
+- DirectStreamingPlayer timers (certificateValidationTimer 10 min, bufferingTimer, etc.): Internal to the streaming engine; they drive `saveCurrentState()` which in turn emits events. Not candidates for removal.
+
+The sleep-timer countdown (`SharedPlayerManager+SleepTimer.swift`) uses an internal `Task.sleep` loop + `SleepTimerNotification` (NotificationCenter) precisely "to avoid polling the actor every second". It already produces `playbackIntentChanged` and `visualStateDidChange` events via the normal surfaces.
+
+**5. Coordinator and UIKit-layer direct state synchronization**
+
+- RadioPlayerCoordinator and ViewController contain many eager reads of `currentVisualState`, `currentPlaybackIntent`, `loadPersistedWidgetState`, followed by `updateUI`, `refreshIfNeeded`, `saveCurrentState`, or "force" visual assignments (comments and code around language switch, cold launch guards, post-clear, resume, clearAllLocalState).
+- `PlayerViewModel` is still populated primarily by push from the coordinator and DirectStreamingPlayer callbacks rather than pulled reactively from the replaying event stream.
+- RadioPlayerView hosts the additive `PlayerEventSubscriber` (via `.task` + `.onChange`) strictly for UI-only side effects while the primary visuals continue to flow through `@Bindable viewModel`.
+
+Late-stage direction: Selected orchestration paths inside the coordinator could migrate to observing `makeEventsStreamWithReplay()` (or `currentState` + specific events) for coordination decisions, leaving direct mutation only for the actual engine surfaces. The push model for PlayerViewModel would remain compatible.
+
+**6. Surfaces that are already event-driven or deliberately non-candidates**
+
+- WidgetRefreshManager and RadioPlayerView (PlayerEventSubscriber) already consume the replaying stream.
+- RadioLiveActivityManager consumes Live Activity attribute `contentUpdates` via `WidgetEventObserver` (plus indirect PlayerEvent effects).
+- All Tier 1 emissions inside SharedPlayerManager fire after the corresponding state mutation.
+- DirectStreamingPlayer remains the owner of actual AV playback; it correctly calls `saveCurrentState()` after mutations (events are emitted on the SharedPlayerManager side).
+- Core security actors are deliberately excluded.
+
+**Cross-process and extension reality**
+
+Widget extension processes (home widget, Control Center widget, Live Activity UI) cannot observe `SharedPlayerManager.events` because emission is guarded to the main app process. The architecture therefore keeps snapshot reads (`loadPersistedWidgetState`) + main-app-driven `reloadTimelines` / attribute updates as the cross-process mechanism. Any future consolidation must preserve instant optimistic writes from widget intents and the read-refresh hygiene for long-lived extension processes.
+
+**Selection criteria for actual replacements (when Tier 4 work begins)**
+
+- Only after the event path has multiple independent, long-lived consumers that have been exercised on device for weeks.
+- Changes are tiny, isolated, and additive: an imperative call site may be deleted only after the equivalent event trigger is proven to produce identical observable behavior (including timing, coalescing, and privacy gates).
+- Legacy forcing surfaces that exist for cross-process instant feedback or process-lifecycle sentinels are documented as permanent compatibility shims; they are not removal targets.
+- All edits must upgrade documentation, add SeeAlso links to this roadmap, preserve test seams, and pass the full build + test gates.
+
+- SeeAlso: `WidgetRefreshManager.handlePlayerEvent`, `PlayerEventSubscriber`, `WidgetEventObserver`, `SharedPlayerManager.emit`, `forcePersistVisualState` documentation, `docs/Widget-Presentation-Dataflow.md`, CODING_AGENT.md (Single Source of Truth Principles + event-driven direction).
+
+**Rule (reaffirmed):** Nothing is removed or made secondary until the event-driven path has proven itself as a reliable, complete, and observable replacement for the specific call site under consideration. Direct state access and snapshot writes remain available forever for compatibility and simplicity.
 
 ### Tier 5 – Documentation & Tests
 - [ ] Expand `Core/Core.docc/Articles/Architecture.md` (or create a dedicated Event-Driven Architecture article) describing the `PlayerEvent` + `SharedPlayerManager.events` model.
@@ -122,6 +216,7 @@ Keep a short chronological log of major milestones:
 - Tier 3 architectural evaluation complete: per-actor `AsyncStream`s are sufficient. Higher-level typed event bus rejected. Decision, rationale, and present-tense status recorded in Completed section and Architecture Status. `WidgetEventObserver` is the uniform consumption abstraction. Roadmap updated with final-architecture language. (2026-07-06)
 - Error and recovery surface finalized: evaluation of `streamDidFail` classification, recovery paths, replay, and consumers confirms the existing `PlayerEvent` cases plus `PlayerCurrentState.hasError` constitute the complete observation contract. Documentation in `PlayerVisualState.swift`, `WidgetRefreshManager.swift`, and this roadmap updated to production language. The item is complete; no new cases added. (2026-07-06)
 - Tier 3 post-delivery polish (non-behavioral): added three zero-cost convenience computed properties to `PlayerCurrentState` (`isActivelyPlaying`, `isBlockedByStickyIntent`, `isInPermanentError`) with production documentation; strengthened `makeEventsStreamWithReplay` and `currentState` docs with explicit statement of the replay contract (no synthesized `streamDid*` verbs; state expressed via snapshot fields); added targeted SeeAlso links to `PlaybackIntent.isStickyPauseOrLock`, the new properties, and the error/recovery evaluation. Inline comments tightened in replay synthesis site. All changes strictly additive and documentation-only. Roadmap Update Log and cross-links updated in the same micro-step. Files left in a strictly better state per CODING_AGENT.md standards. (2026-07-06)
+- Tier 4 identification complete: exhaustive location of all direct "force" calls (forcePersistVisualState, _forceSet..., forceStale..., refreshVisualStateFromPersistence), imperative refreshIfNeeded sites, widget-provider persistence refreshes, fallback timers (ViewController widget-action polling + connectivity, LA updateTimer), and coordinator/VC eager state sync patterns. Full categorized inventory recorded under Tier 4 with production language, call-site references, late-stage caveats, and cross-process realities. The "Identify..." backlog item is marked complete. No code behavior changed; only documentation and analysis. (2026-07-06)
 
 ---
 
