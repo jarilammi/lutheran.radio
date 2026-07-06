@@ -397,9 +397,15 @@ class RadioLiveActivityManager: ObservableObject {
     ///   main process is alive).
     /// - Precondition: Only the main app process calls this (widget processes never own
     ///   the Activity instance).
+    /// - Important: Under `isRunningInUITestMode` (and DEBUG `isRunningUnderTest`) this
+    ///   performs only cheap local cleanup and nils references; the real `Activity.end`
+    ///   Task is skipped. This keeps unit tests fast even when a Live Activity was left
+    ///   behind by a prior simulator streaming session. See also the guards in
+    ///   `startActivity`, `updateCurrentActivity`, and `observeExistingActivities`.
     /// - SeeAlso: `handleAppWillTerminate`, AppDelegate.applicationWillTerminate,
     ///   SharedPlayerManager.forceStaleLivenessTimestampForTermination,
-    ///   docs/Widget-Presentation-Dataflow.md (termination section + LA event-driven section).
+    ///   ``isRunningUnderTest``, SharedPlayerManager.isRunningInUITestMode,
+    ///   RadioLiveActivityManagerTests, docs/Widget-Presentation-Dataflow.md (termination section + LA event-driven section).
     func endActivity(dismissalPolicy: ActivityUIDismissalPolicy = .default) {
         stopLocalUpdateTimer()
 
@@ -407,6 +413,26 @@ class RadioLiveActivityManager: ObservableObject {
         // also do this on terminal states, but explicit end must be immediate).
         activityEventObserver.cancel()
         activityObservationTask = nil
+
+        // Defense-in-depth UI test isolation.
+        // Prevents real Activity.update + .end IPCs (slow daemon round-trips under LLDB
+        // when a Live Activity exists from a prior streaming session in the simulator).
+        // Matches the pattern used in startActivity / updateCurrentActivity / observe.
+        // When this fires, clear local references so any subsequent clearAllLocalState
+        // or lifecycle caller sees a no-op end (currentActivity already nil).
+        if SharedPlayerManager.isRunningInUITestMode {
+            currentActivity = nil
+            lastPushedContent = nil
+            return
+        }
+
+        #if DEBUG
+        if isRunningUnderTest {
+            currentActivity = nil
+            lastPushedContent = nil
+            return
+        }
+        #endif
         
         guard let activity = currentActivity else {
             lastPushedContent = nil

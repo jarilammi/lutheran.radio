@@ -27,14 +27,69 @@ final class SharedPlayerManagerEventTests: XCTestCase {
 
     override func setUp() async throws {
         try await super.setUp()
+
+        // Cheap Live Activity sanitization (must precede clearAllLocalState).
+        //
+        // Why:
+        // - clearAllLocalState() always calls RadioLiveActivityManager.shared.endActivity().
+        // - When a real Live Activity exists on the simulator (left by a prior manual
+        //   "play the stream" session), endActivity() would otherwise schedule real
+        //   Activity.update(...) + .end(...) daemon round-trips.
+        // - Those IPCs become extremely slow (multiple minutes) under LLDB / xcodebuild test
+        //   and manifest as "stream keeps going for ages with nothing happening".
+        // - We force nil + cancel the observation task (cheap, local-only) so the guard
+        //   inside endActivity sees no currentActivity and skips the expensive work.
+        // - The same pattern is used in RadioLiveActivityManagerTests.setUp.
+        // - This lets us safely call clearAllLocalState() (needed for a reproducible
+        //   post-privacy state) while still enabling the hasActiveWidgets gate for
+        //   .persistedWidgetStateDidUpdate coverage. We no longer "disable live activities
+        //   altogether"; we accelerate the expensive surfaces under test.
+        //
+        // The UITestMode / isRunningUnderTest guards in the LA manager and in
+        // WidgetRefreshManager (refreshHasActiveWidgets + performRefresh) provide
+        // defense-in-depth so WidgetCenter / ActivityKit work is never reached.
+        await MainActor.run {
+            let la = RadioLiveActivityManager.shared
+            la.stopLocalUpdateTimer()
+            la.activityObservationTask?.cancel()
+            la.currentActivity = nil
+        }
+
         // Establish a clean, known starting state for each test.
         // clearAllLocalState resets intent/visual to the cleared blocker (privacy semantics).
         // Follow with explicit user intent to reach a non-blocked prePlay-like state.
         await SharedPlayerManager.clearAllLocalState()
         await manager.setUserIntentToPlay()
+
+        // For event-emission coverage tests, explicitly enable the widgets-active flag
+        // (clearAllLocalState forces it false for privacy). This allows savePersistedWidgetState
+        // (and therefore the live .persistedWidgetStateDidUpdate emission) to execute the write
+        // path under test isolation. The flag controls only the privacy gate; no widget runtime
+        // is required. This is additive for test observability and does not change production
+        // behavior or any public contract.
+        //
+        // We set directly (instead of refreshHasActiveWidgets) to avoid any WidgetCenter
+        // query cost. The refreshHasActiveWidgets path is also guarded under test.
+        await MainActor.run {
+            WidgetRefreshManager.setHasActiveLutheranWidgets(true)
+        }
+
         // Pre-warm the events stream so the continuation exists before we subscribe in tests.
         // This avoids races between first access creating the stream and subsequent emits.
         _ = await manager.events
+    }
+
+    override func tearDown() async throws {
+        // Mirror the cheap LA sanitization from setUp for test isolation hygiene.
+        // Ensures no lingering observation tasks or activity references can affect
+        // subsequent tests or keep system daemons "interested" in this xctest process.
+        await MainActor.run {
+            let la = RadioLiveActivityManager.shared
+            la.stopLocalUpdateTimer()
+            la.activityObservationTask?.cancel()
+            la.currentActivity = nil
+        }
+        try await super.tearDown()
     }
 
     // MARK: - Event Collection Helper
@@ -279,22 +334,48 @@ final class SharedPlayerManagerEventTests: XCTestCase {
     /// - `streamDidPause` via `setUserPaused()`
     /// - `streamDidFail(_:)` carrying the exact `DirectStreamingPlayer.StreamErrorType` via
     ///   `markPlaybackStoppedByStreamFailure(_:)`
+    /// - `metadataDidUpdate(_:)` (non-nil program metadata) via `didUpdateStreamMetadata(_:)`
+    /// - `persistedWidgetStateDidUpdate` via `saveCurrentState()` (after enabling the
+    ///   active-widgets privacy gate in setUp so the write path is exercised)
     ///
     /// This provides incremental comprehensive coverage for every `PlayerEvent` case
     /// (emission behavior, actor isolation of the continuation, and observable order
     /// properties for live subscribers). All actions use the existing surfaces; the test
     /// is strictly additive and does not alter production logic, guards, or contracts.
     ///
-    /// `streamDidStart` emission is intentionally not asserted here: `setPlaying()` short-circuits
-    /// under `SharedPlayerManager.isRunningInUITestMode` (active for these unit tests). The
-    /// replay contract test already covers state initialization independently of verb history.
-    /// Non-nil `metadataDidUpdate` and `persistedWidgetStateDidUpdate` coverage can be added
-    /// in subsequent micro-steps once reliable triggering paths under test isolation are exercised.
+    /// Live Activity acceleration for test speed:
+    /// Previously the widget / Live Activity surfaces were "disabled altogether" (flag left
+    /// false after clear) to avoid 5-minute stalls. The stalls were caused by
+    /// `clearAllLocalState()` → `endActivity()` performing real `Activity.update` + `.end`
+    /// IPCs whenever a Live Activity had been left on the simulator, and by WidgetCenter
+    /// queries / reloadTimelines when the gate was opened.
+    ///
+    /// Current approach (accelerated, coverage-preserving):
+    /// - setUp performs cheap local sanitization (stop timer, cancel obs task, nil
+    ///   `currentActivity`) *before* clearAllLocalState. Combined with the new guards
+    ///   inside `RadioLiveActivityManager.endActivity` (and the existing ones in
+    ///   start/update/observe), the expensive paths are never taken.
+    /// - WidgetCenter surfaces (`refreshHasActiveWidgets`, `performRefresh`) also
+    ///   short-circuit under `isRunningInUITestMode`.
+    /// - We set the `hasActiveLutheranWidgets` gate directly via the test seam instead
+    ///   of going through re-detect. This exercises the real `savePersistedWidgetState`
+    ///   write + `emit(.persistedWidgetStateDidUpdate)` while keeping all system daemons
+    ///   out of the picture.
+    ///
+    /// `streamDidStart` emission is intentionally not asserted on the live path here:
+    /// `setPlaying()` short-circuits under `SharedPlayerManager.isRunningInUITestMode`
+    /// (active for these unit tests) to avoid Live Activity / Now Playing side effects.
+    /// The replay contract test plus `currentState` and production paths cover the
+    /// associated state. The two cases noted as follow-on work in prior micro-steps
+    /// (non-nil metadata + persisted snapshot signal) are now exercised.
     ///
     /// - SeeAlso: ``SharedPlayerManager/events``, `collectEvents(from:count:whilePerforming:)`,
     ///   ``emit(_:)``, ``stop()``, ``setUserPaused()``, ``markPlaybackStoppedByStreamFailure(_:)``,
-    ///   ``updatePlaybackIntent(to:)``, ``PlayerEvent``, `PlayerCurrentState`,
-    ///   docs/Event-Driven-Refactor-Roadmap.md (Tier 5 — comprehensive coverage for every case),
+    ///   ``updatePlaybackIntent(to:)``, ``didUpdateStreamMetadata(_:)``, ``saveCurrentState()``,
+    ///   ``PlayerEvent``, `PlayerCurrentState`,
+    ///   ``RadioLiveActivityManager/endActivity()``, ``RadioLiveActivityManager/isRunningUnderTest``,
+    ///   `WidgetRefreshManager.refreshHasActiveWidgets`, `WidgetRefreshManager.setHasActiveLutheranWidgets`,
+    ///   RadioLiveActivityManagerTests, docs/Event-Driven-Refactor-Roadmap.md (Tier 5 — comprehensive coverage for every case),
     ///   CODING_AGENT.md (test documentation standards, Single Source of Truth Principles).
     func testLiveEmitsTransitionEventsForStopPauseFailAndIntent() async {
         // setUp has already established a clean non-blocked state with explicit intent
@@ -309,7 +390,7 @@ final class SharedPlayerManagerEventTests: XCTestCase {
         // Start a background collector on the real stream (exercises the production surface).
         let streamCollection = Task<[PlayerEvent], Never> {
             var local: [PlayerEvent] = []
-            for await e in liveStream { local.append(e); if local.count >= 8 { break } }
+            for await e in liveStream { local.append(e); if local.count >= 12 { break } }
             return local
         }
 
@@ -329,6 +410,24 @@ final class SharedPlayerManagerEventTests: XCTestCase {
         }
         _ = await waitForEmission(matching: { if case .streamDidFail(.transientFailure) = $0 { return true }; return false }) {
             await m2.markPlaybackStoppedByStreamFailure(.transientFailure)
+        }
+
+        // Non-nil metadata update (canonical path from DirectStreamingPlayer KVO and
+        // RadioPlayerCoordinator). Exercises the emission inside didUpdateStreamMetadata.
+        _ = await waitForEmission(matching: { event in
+            if case .metadataDidUpdate(let meta) = event, meta != nil { return true }
+            return false
+        }) {
+            await m2.didUpdateStreamMetadata("Test Program • Speaker")
+        }
+
+        // Persisted snapshot write signal. Re-enable immediately before the call (defensive
+        // against any refreshHasActiveWidgetsStatus / re-detect that may have flipped the
+        // gate false during setup / viewDidAppear paths in the test host). Then saveCurrentState
+        // reaches the write + emit.
+        _ = await waitForEmission(matching: { if case .persistedWidgetStateDidUpdate = $0 { return true }; return false }) {
+            await MainActor.run { WidgetRefreshManager.setHasActiveLutheranWidgets(true) }
+            await m2.saveCurrentState()
         }
 
         // Also prove that the live AsyncStream received events for the actions we drove.

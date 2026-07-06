@@ -156,8 +156,20 @@ final class WidgetRefreshManager: @unchecked Sendable {
     /// Re-queries WidgetCenter.currentConfigurations() and updates the hasActiveLutheranWidgets flag.
     /// Primary call sites: sceneDidBecomeActive / foreground (SceneDelegate), after clear (forced false
     /// first, then re-detect allowed on next foreground), and opportunistic on write attempts when suppressed.
+    ///
+    /// Under test isolation (`SharedPlayerManager.isRunningInUITestMode`) this early-returns
+    /// without performing the WidgetCenter IPC. WidgetCenter queries and reloadTimelines can
+    /// wake widget renderers / Chrono (Live Activity surfaces) and cause multi-minute stalls
+    /// in `xcodebuild test` environments. Tests that need the gate open use the direct
+    /// `setHasActiveLutheranWidgets(true)` seam instead.
     @MainActor
     func refreshHasActiveWidgets() async {
+        // Defense-in-depth test isolation (parallel to refreshIfNeeded and LA manager guards).
+        // Prevents slow WidgetCenter daemon round-trips during unit tests.
+        if SharedPlayerManager.isRunningInUITestMode {
+            return
+        }
+
         do {
             let configs = try await WidgetCenter.shared.currentConfigurations()
             let hasActive = configs.contains { Self.ourWidgetKinds.contains($0.kind) }
@@ -446,6 +458,11 @@ final class WidgetRefreshManager: @unchecked Sendable {
     #endif
     
     private func performRefresh(for state: WidgetState) async {
+        // Belt-and-suspenders: even if a caller reached here, never do WidgetCenter work under test.
+        if SharedPlayerManager.isRunningInUITestMode {
+            return
+        }
+
         cancelPendingRefresh()
         lastRefreshTime = Date()
         lastKnownState = state
