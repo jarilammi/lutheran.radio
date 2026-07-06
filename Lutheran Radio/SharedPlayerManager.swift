@@ -619,6 +619,18 @@ actor SharedPlayerManager {
         // intended for observers) come from the main app process only.
         guard !isRunningInWidget() else { return }
         eventContinuation?.yield(event)
+
+        #if DEBUG
+        // Test seam: allows unit tests (and debug tools) to reliably observe emissions
+        // without depending solely on AsyncStream iterator scheduling in the test host.
+        // Production code must not rely on this notification.
+        print("[PlayerEventSeam] posting \(event)")
+        NotificationCenter.default.post(
+            name: Notification.Name("PlayerEventEmittedForTest"),
+            object: nil,
+            userInfo: ["event": event]
+        )
+        #endif
     }
 
     // MARK: - Current State & Replay (Tier 3)
