@@ -907,10 +907,14 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     /// activation logic stays in one place and always uses the async helper
     /// (`configureAudioSessionAsync` is the player SSOT).
     ///
+    /// The underlying implementation guarantees that `setActive` is never invoked directly
+    /// on the main thread (iOS 27+ uses framework async; 26.x uses off-main dispatch).
+    ///
     /// Playback entry points inside the player call `configureAudioSessionAsync()` (or the
     /// thin `setupAudioSession()` wrapper) directly.
     ///
     /// - SeeAlso: ``DirectStreamingPlayer/configureAudioSessionAsync()``,
+    ///   ``DirectStreamingPlayer/deactivateAudioSessionAsync()``,
     ///   ``DirectStreamingPlayer/setupAudioSession()``, `handleInterruption(_:)`,
     ///   `handleRouteChange(_:)`, `playSpecialTuningSound(completion:)`.
     @MainActor
@@ -1245,7 +1249,8 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         
         do {
             // Consolidated through reconfigureAudioSession() (uses the SSOT
-            // `configureAudioSessionAsync` under the hood).
+            // `configureAudioSessionAsync` under the hood). The player ensures
+            // activation never triggers main-thread setActive warnings on 26.x.
             await self.reconfigureAudioSession()
             
             // Strong reference - critical to prevent sound cut-off

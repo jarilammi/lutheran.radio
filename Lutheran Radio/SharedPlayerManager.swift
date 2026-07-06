@@ -3586,13 +3586,16 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     var hasPermanentError: Bool { false }
 
     // Lightweight no-op paths for audio session when this stub is used (widget extension).
-    // The real implementations (with #available(iOS 27.0, *) + setActive paths) live only
-    // in the main-target DirectStreamingPlayer.swift and are never compiled into the widget target.
+    // The real implementations (with #available(iOS 27.0, *) + setActive paths + off-main dispatch)
+    // live only in the main-target DirectStreamingPlayer.swift and are never compiled into the widget target.
     @MainActor
     func configureAudioSessionAsync() async -> Bool { false }
 
     @MainActor
     func setupAudioSession() async {}
+
+    @MainActor
+    func deactivateAudioSessionAsync() async -> Bool { true }
 
     /// Minimal stub to satisfy DirectStreamingPlayer.StreamErrorType references in shared
     /// method signatures that are compiled for the widget target.

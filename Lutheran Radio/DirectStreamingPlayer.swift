@@ -1481,7 +1481,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// Reusable @MainActor async helper for AVAudioSession configuration.
     ///
     /// This is the **single source of truth** for audio session category configuration
-    /// and activation.
+    /// and activation (and the planned deactivation surface).
     ///
     /// - Sets the `.playback` category (via the synchronous `setCategory`) **only** when
     ///   it is not already `.playback`. This follows Apple guidance for the initial
@@ -1491,7 +1491,12 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// - On iOS 27.0 and later: activates via the non-blocking
     ///   `activateWithOptions:completionHandler:` (the async spelling) using a dynamic
     ///   runtime dispatch (see ``activateAsyncDynamic(session:wasAlreadyPlayback:)``).
-    /// - On iOS 26.2 (deployment target): falls back to the synchronous `setActive(true, options:)`.
+    /// - On iOS 26.2 (deployment target): the activation is performed on a background
+    ///   queue via `DispatchQueue.global` + continuation. This ensures the actual
+    ///   `setActive` call is never executed while the main thread is blocked, eliminating
+    ///   the runtime warning:
+    ///   "This method can lead to UI unresponsiveness if called on the main thread.
+    ///    Consider using the asynchronous activate/deactivate API instead."
     ///
     /// All audio activation paths (init setup, `play()`, `startPlayback`, stream switches,
     /// tuning sound, interruption recovery, route changes, category changes) must flow through
@@ -1499,7 +1504,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// `reconfigureAudioSession()`.
     ///
     /// Call sites are already structured as `Task { @MainActor in await ... }` or direct
-    /// `await` from @MainActor contexts.
+    /// `await` from @MainActor contexts. The main thread remains responsive during activation.
     ///
     /// **Xcode / SDK compatibility (important for contributors):**
     /// This file is required to compile on both the minimum supported Xcode (26) and
@@ -1510,9 +1515,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// preserves the ability for the same source to build on Xcode 26.
     ///
     /// Runtime behavior:
-    /// - On iOS 26.x the synchronous fallback is used (source of remaining simulator
-    ///   main-thread warnings for `setActive`).
-    /// - On iOS 27.0+ the async path is taken at runtime via the dynamic call.
+    /// - On iOS 27.0+: real asynchronous activation via the framework completion handler.
+    /// - On iOS 26.x: synchronous `setActive` is executed off the main thread (no main-thread warning).
     /// Local `AVAudioPlayer` usage (tuning clips) can still emit implicit diagnostics
     /// on 26.x even after explicit configuration.
     ///
@@ -1524,7 +1528,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     ///   call unless the minimum supported Xcode version is raised above 26.
     /// - Note: Respects `isTesting` (SSOT via `SharedPlayerManager.isRunningInUITestMode`) exactly.
     ///   Under test mode this is a no-op (returns `false`).
-    /// - SeeAlso: ``setupAudioSession()``, `ViewController.reconfigureAudioSession()`,
+    /// - SeeAlso: ``setupAudioSession()``, ``deactivateAudioSessionAsync()``,
+    ///   `ViewController.reconfigureAudioSession()`,
     ///   `ViewController.handleInterruption(_:)`, `ViewController.handleRouteChange(_:)`,
     ///   CODING_AGENT.md (AV session + documentation rules).
     @MainActor
@@ -1564,21 +1569,11 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 // See the availability and compatibility notes on `configureAudioSessionAsync`.
                 activated = await Self.activateAsyncDynamic(session: session, wasAlreadyPlayback: wasAlreadyPlayback)
             } else {
-                // Clean synchronous fallback required for iOS 26.2 deployment target.
-                do {
-                    try session.setActive(true, options: [])
-                    #if DEBUG
-                    if !wasAlreadyPlayback {
-                        print("[DirectStreamingPlayer] Audio session configured + activated (sync fallback)")
-                    }
-                    #endif
-                    activated = true
-                } catch {
-                    #if DEBUG
-                    print("[DirectStreamingPlayer] Sync setActive failed: \(error.localizedDescription)")
-                    #endif
-                    activated = false
-                }
+                // iOS 26.2 deployment fallback:
+                // Perform setActive off the main thread. This eliminates the AVAudioSession
+                // runtime diagnostic that is emitted when the synchronous API is invoked
+                // directly from a main-thread / @MainActor context.
+                activated = await Self.activateSynchronouslyOffMainThread(session: session)
             }
             return activated
         } catch {
@@ -1661,6 +1656,120 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
 
             // Invoke with explicit scalar 0 for options.
             activateWithOptions(session, selector, 0, handler)
+        }
+    }
+
+    /// Off-main-thread wrapper for the synchronous `setActive(true)` on iOS 26.x.
+    ///
+    /// Executes `setActive` on a global concurrent queue (userInitiated QoS) and bridges
+    /// the result back via continuation. This keeps the `@MainActor` caller responsive
+    /// and prevents the AVAudioSession runtime warning that is emitted when the blocking
+    /// API is invoked directly from the main thread.
+    ///
+    /// - Note: Only used in the `< iOS 27` fallback path inside ``configureAudioSessionAsync()``.
+    /// - Returns: `true` if activation succeeded.
+    private static func activateSynchronouslyOffMainThread(session: AVAudioSession) async -> Bool {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    try session.setActive(true, options: [])
+                    continuation.resume(returning: true)
+                } catch {
+                    #if DEBUG
+                    print("[DirectStreamingPlayer] setActive (off-main) failed: \(error.localizedDescription)")
+                    #endif
+                    continuation.resume(returning: false)
+                }
+            }
+        }
+    }
+
+    // MARK: - Deactivation (symmetric to activation)
+
+    /// Deactivates the audio session using the appropriate API for the runtime.
+    ///
+    /// - On iOS 27.0+: uses the non-blocking `deactivateWithOptions:completionHandler:` via dynamic dispatch.
+    /// - On iOS 26.x: performs the synchronous `setActive(false)` off the main thread.
+    ///
+    /// All future explicit deactivation (e.g. on full stop, backgrounding with no active
+    /// playback, or explicit teardown) must go through this method.
+    ///
+    /// - Returns: `true` on success (or no-op success under test/widget conditions).
+    /// - SeeAlso: ``configureAudioSessionAsync()``
+    @MainActor
+    func deactivateAudioSessionAsync() async -> Bool {
+        if Bundle.main.bundleURL.pathExtension == "appex" {
+            return true
+        }
+        guard !isTesting else {
+            #if DEBUG
+            print("[DirectStreamingPlayer] Skipped audio session deactivation for tests...")
+            #endif
+            return true
+        }
+
+        let session = audioSession
+        if #available(iOS 27.0, *) {
+            return await Self.deactivateAsyncDynamic(session: session)
+        } else {
+            return await Self.deactivateSynchronouslyOffMainThread(session: session)
+        }
+    }
+
+    @available(iOS 27.0, *)
+    private static func deactivateAsyncDynamic(session: AVAudioSession) async -> Bool {
+        await withCheckedContinuation { continuation in
+            let selector = NSSelectorFromString("deactivateWithOptions:completionHandler:")
+
+            guard session.responds(to: selector),
+                  let imp = unsafe session.method(for: selector) else {
+                continuation.resume(returning: false)
+                return
+            }
+
+            // SAFETY: unsafeBitCast mirrors the pattern used for activation.
+            // Required for exact C ABI (options + escaping completion block) and
+            // dual Xcode 26/27+ source compatibility.
+            typealias DeactivateFn = @convention(c) (
+                AnyObject,
+                Selector,
+                UInt, // AVAudioSessionDeactivationOptions
+                @escaping @convention(block) (Bool, Error?) -> Void
+            ) -> Void
+
+            let deactivateWithOptions = unsafe unsafeBitCast(imp, to: DeactivateFn.self)
+
+            let handler: @convention(block) (Bool, Error?) -> Void = { success, error in
+                if let error {
+                    #if DEBUG
+                    print("[DirectStreamingPlayer] Async deactivate failed: \(error.localizedDescription)")
+                    #endif
+                    continuation.resume(returning: false)
+                } else {
+                    #if DEBUG
+                    print("[DirectStreamingPlayer] Audio session deactivated asynchronously")
+                    #endif
+                    continuation.resume(returning: success)
+                }
+            }
+
+            deactivateWithOptions(session, selector, 0, handler)
+        }
+    }
+
+    private static func deactivateSynchronouslyOffMainThread(session: AVAudioSession) async -> Bool {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    try session.setActive(false, options: [])
+                    continuation.resume(returning: true)
+                } catch {
+                    #if DEBUG
+                    print("[DirectStreamingPlayer] setActive(false) (off-main) failed: \(error.localizedDescription)")
+                    #endif
+                    continuation.resume(returning: false)
+                }
+            }
         }
     }
 

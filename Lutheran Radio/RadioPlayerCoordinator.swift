@@ -1268,7 +1268,9 @@ final class RadioPlayerCoordinator {
         }
 
         // Ensure AVAudioSession is configured before AVAudioPlayer creation/play.
-        // This reduces implicit main-thread session diagnostics on iOS 26.x simulators.
+        // Routes through DirectStreamingPlayer.configureAudioSessionAsync (SSOT) which
+        // uses the iOS 27+ async API when available or off-main dispatch on 26.x to
+        // avoid main-thread setActive warnings.
         _ = await streamingPlayer.configureAudioSessionAsync()
 
         do {
@@ -1322,8 +1324,9 @@ final class RadioPlayerCoordinator {
         }
 
         // Ensure AVAudioSession is configured before AVAudioPlayer creation/play.
-        // This reduces implicit main-thread session diagnostics on iOS 26.x simulators.
-        // (Mirrors the pre-configure already present for the special tuning path.)
+        // Routes through DirectStreamingPlayer.configureAudioSessionAsync (SSOT) which
+        // uses the iOS 27+ async API when available or off-main dispatch on 26.x to
+        // avoid main-thread setActive warnings.
         _ = await streamingPlayer.configureAudioSessionAsync()
 
         do {
