@@ -73,11 +73,12 @@ import os
 /// `PlayerEvent` for the player domain.
 ///
 /// It enables safe state sharing between the main app, widgets, and Live Activities
-/// via App Groups + `UserDefaults`, while the `events` AsyncStream provides the
-/// primary non-forcing, decoupled notification path for significant transitions.
-/// Event emission (via ``emit(_:)`` after mutations) is the canonical direction
-/// for the event-driven architecture; direct state access and widget snapshot
-/// writes remain fully supported for compatibility and instant feedback.
+/// via App Groups + `UserDefaults`, while the `events` AsyncStream (and its
+/// replaying companion) provides the primary non-forcing, decoupled notification
+/// path for significant transitions. `currentState` supplies initialization for
+/// late subscribers. Event emission (via ``emit(_:)`` after mutations) is the
+/// canonical direction for the event-driven architecture; direct state access and
+/// widget snapshot writes remain fully supported for compatibility and instant feedback.
 ///
 /// **Division of responsibilities (Single Source of Truth)**:
 /// - `DirectStreamingPlayer` owns actual playback state, stream selection, error state,
@@ -91,7 +92,8 @@ import os
 /// - **Event emission (non-forcing canonical)**: All Tier 1 `PlayerEvent` cases
 ///   (playbackIntentChanged, streamDid*, metadataDidUpdate, visualStateDidChange,
 ///   persistedWidgetStateDidUpdate) are emitted from inside this actor after the
-///   corresponding mutation. See ``events`` and ``emit(_:)``.
+///   corresponding mutation. See ``events``, ``currentState``, ``makeEventsStreamWithReplay()``,
+///   and ``emit(_:)``.
 /// - **Widget / Intent actions**: Optimistic instant feedback via App Group + Darwin notifications;
 ///   the main app performs the real work and persists authoritative state.
 /// - **State persistence**: `saveCurrentState()` + `saveVisualState()` /
@@ -106,9 +108,10 @@ import os
 ///   and are not the preferred mechanism for new observers.
 ///
 /// - SeeAlso: `DirectStreamingPlayer` (actual playback),
-///   ``PlayerVisualState``, ``PlayerEvent``, ``events``, ``emit(_:)``,
+///   ``PlayerVisualState``, ``PlayerEvent``, ``events``, ``currentState``,
+///   ``makeEventsStreamWithReplay()``, ``emit(_:)``,
 ///   `WidgetRefreshManager.swift`, `RadioLiveActivityManager.swift`,
-///   `WidgetEventObserver`,
+///   `WidgetEventObserver`, `PlayerCurrentState`,
 ///   CODING_AGENT.md (event-driven direction),
 ///   docs/Event-Driven-Refactor-Roadmap.md.
 ///
@@ -562,16 +565,18 @@ actor SharedPlayerManager {
     /// - Returns: The `AsyncStream<PlayerEvent>` for this manager instance.
     /// - SeeAlso: ``emit(_:)``, ``updatePlaybackIntent(to:)``, ``setPlaying()``, ``stop()``,
     ///   ``markPlaybackStoppedByStreamFailure(_:)``, ``didUpdateStreamMetadata(_:)``,
-    ///   `PlayerEvent`, `PlayerVisualState.swift`, CODING_AGENT.md (Single Source of Truth
-    ///   Principles, event-driven direction, cross-target shared files, Documentation & Comment Standards),
+    ///   ``currentState``, ``makeEventsStreamWithReplay()``, `PlayerEvent`, `PlayerVisualState.swift`,
+    ///   `PlayerCurrentState`, CODING_AGENT.md (Single Source of Truth Principles,
+    ///   event-driven direction, cross-target shared files, Documentation & Comment Standards),
     ///   docs/Event-Driven-Refactor-Roadmap.md.
     /// - Important: Emission is always additive. Existing imperative paths
     ///   (`setPlaying`, `stop`, `setUserPaused`, `markAsUserPaused`, `saveCurrentState`,
     ///   widget/Live Activity updates, notifications) are never bypassed or altered.
     ///   Direct state surfaces and forcing shims (e.g. `forcePersistVisualState`) continue
     ///   to operate for compatibility.
-    /// - Note: The continuation is retained for the actor's lifetime; late subscribers
-    ///   receive only events emitted after they start consuming (replay is future work).
+    /// - Note: The continuation is retained for the actor's lifetime. Late subscribers
+    ///   obtain the state that existed before subscription through ``currentState`` or
+    ///   ``makeEventsStreamWithReplay()``.
     /// - Precondition: Must be accessed via `await SharedPlayerManager.shared.events`.
     public var events: AsyncStream<PlayerEvent> {
         get async {
@@ -595,10 +600,11 @@ actor SharedPlayerManager {
     /// - Parameter event: The domain event to deliver to observers of `events`.
     /// - Postcondition: If a continuation exists, the event has been yielded to
     ///   active subscribers. No other side effects.
-    /// - SeeAlso: ``events``, ``updatePlaybackIntent(to:)``, ``setPlaying()``,
+    /// - SeeAlso: ``events``, ``currentState``, ``makeEventsStreamWithReplay()``,
+    ///   ``updatePlaybackIntent(to:)``, ``setPlaying()``,
     ///   ``stop()``, ``setUserPaused()``, ``markAsUserPaused()``,
     ///   ``markPlaybackStoppedByStreamFailure(_:)``, ``didUpdateStreamMetadata(_:)``,
-    ///   `PlayerEvent`, CODING_AGENT.md (Documentation & Comment Standards),
+    ///   `PlayerEvent`, `PlayerCurrentState`, CODING_AGENT.md (Documentation & Comment Standards),
     ///   docs/Event-Driven-Refactor-Roadmap.md.
     /// - Important: Never call `emit` from outside this actor or from widget-only paths
     ///   that would duplicate the main-app classification. Emissions for all Tier 1
@@ -613,6 +619,101 @@ actor SharedPlayerManager {
         // intended for observers) come from the main app process only.
         guard !isRunningInWidget() else { return }
         eventContinuation?.yield(event)
+    }
+
+    // MARK: - Current State & Replay (Tier 3)
+
+    /// The current authoritative player-domain state.
+    ///
+    /// Late subscribers (UI views that appear after playback has started, future
+    /// widget or Live Activity surfaces, test harnesses, or recovery observers)
+    /// read this snapshot to initialize themselves to the present rather than
+    /// waiting for the next transition.
+    ///
+    /// The snapshot is constructed from the same in-actor values that drive
+    /// event emission (`currentVisualState`, `playbackIntent`, `currentStreamMetadata`)
+    /// together with the persisted error flag.
+    ///
+    /// - Returns: A `PlayerCurrentState` reflecting the state at the moment of the call.
+    /// - SeeAlso: ``events``, ``makeEventsStreamWithReplay()``, `PlayerCurrentState`,
+    ///   ``loadPersistedWidgetState()``, `PlayerEvent.visualStateDidChange`,
+    ///   `PlayerEvent.playbackIntentChanged`, `PlayerEvent.metadataDidUpdate`,
+    ///   CODING_AGENT.md, docs/Event-Driven-Refactor-Roadmap.md.
+    /// - Important: `currentState` is a read-only derived surface. All mutation
+    ///   continues to occur through the existing canonical methods; the snapshot
+    ///   simply observes.
+    /// - Note: Safe to call from any context that can await the actor (main app
+    ///   UI, recovery paths). Widget extension processes read equivalent data via
+    ///   the persisted snapshot facades.
+    public var currentState: PlayerCurrentState {
+        get async {
+            // hasError is carried in the full persisted blob (not the public tuple
+            // facade). For replay fidelity we read the blob directly when present.
+            var errorFlag = currentVisualState == .securityLocked
+            if let data = sharedDefaults?.data(forKey: "persistedWidgetState"),
+               let decoded = try? JSONDecoder().decode(PersistedWidgetState.self, from: data) {
+                errorFlag = errorFlag || decoded.hasError
+            }
+            return PlayerCurrentState(
+                visualState: currentVisualState,
+                playbackIntent: playbackIntent,
+                streamMetadata: currentStreamMetadata,
+                hasError: errorFlag
+            )
+        }
+    }
+
+    /// Returns an `AsyncStream<PlayerEvent>` that replays the current state as the
+    /// corresponding events and then forwards every subsequent live emission.
+    ///
+    /// This surface supplies replay for late subscribers while preserving the
+    /// original `events` contract for existing observers.
+    ///
+    /// On first iteration the returned stream yields:
+    /// - `.visualStateDidChange` with the present visual state
+    /// - `.playbackIntentChanged` with the present intent
+    /// - `.metadataDidUpdate` (with current or nil value)
+    /// - `.persistedWidgetStateDidUpdate` (as a signal that snapshot state exists)
+    ///
+    /// All future events from the authoritative emitter follow immediately.
+    ///
+    /// - Returns: A stream whose first elements represent the state at the time
+    ///   the stream was created, followed by live events.
+    /// - SeeAlso: ``events``, ``currentState``, `PlayerCurrentState`, `PlayerEvent`,
+    ///   `WidgetEventObserver`, `PlayerEventSubscriber`,
+    ///   docs/Event-Driven-Refactor-Roadmap.md.
+    /// - Important: Each call produces an independent stream. Existing direct
+    ///   observation of `events` and all imperative paths are unaffected.
+    /// - Note: The replay events are synthesized from current state; they do not
+    ///   represent historical transition ordering.
+    public func makeEventsStreamWithReplay() async -> AsyncStream<PlayerEvent> {
+        let (stream, continuation) = AsyncStream.makeStream(of: PlayerEvent.self)
+
+        // Replay current state as the events that would have produced it.
+        // This gives late subscribers the present without requiring them to
+        // read multiple SSOT surfaces before subscribing.
+        let state = await currentState
+        continuation.yield(.visualStateDidChange(state.visualState))
+        continuation.yield(.playbackIntentChanged(state.playbackIntent))
+        continuation.yield(.metadataDidUpdate(state.streamMetadata))
+        continuation.yield(.persistedWidgetStateDidUpdate)
+
+        // Forward every future live event from the primary stream.
+        // The forwarding task lives for the lifetime of this per-subscriber
+        // stream (or until the process ends). Yields to a finished continuation
+        // are ignored by AsyncStream.
+        Task { [weak self] in
+            guard let self else {
+                continuation.finish()
+                return
+            }
+            for await event in await self.events {
+                continuation.yield(event)
+            }
+            continuation.finish()
+        }
+
+        return stream
     }
 
     // MARK: - Intent-Driven Playback Execution

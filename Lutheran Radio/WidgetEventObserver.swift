@@ -25,11 +25,13 @@
 //
 //  - SeeAlso: `WidgetRefreshManager` (PlayerEvent observation),
 //    `RadioLiveActivityManager` (Live Activity contentUpdates / attribute events),
-//    `SharedPlayerManager.events`, `PlayerEvent`,
+//    `SharedPlayerManager.events`, `SharedPlayerManager.currentState`,
+//    `SharedPlayerManager.makeEventsStreamWithReplay()`, `PlayerEvent`,
+//    `PlayerCurrentState`,
 //    CODING_AGENT.md (Single Source of Truth Principles, "Cross-target shared
 //    source files (non-Core)", Documentation & Comment Standards),
 //    docs/Widget-Presentation-Dataflow.md (Live Activity Event-Driven + events observation),
-//    docs/Event-Driven-Refactor-Roadmap.md (Tier 2 polish item),
+//    docs/Event-Driven-Refactor-Roadmap.md (Tier 2 polish item + Tier 3 replay),
 //    <doc:Architecture>.
 //
 
@@ -78,6 +80,8 @@ import Foundation
 ///   ``beginObserving(unsafeSequence:onElement:onTermination:)``,
 ///   `WidgetRefreshManager.beginObservingPlayerEvents`,
 ///   `RadioLiveActivityManager.beginObservingActivityEvents`,
+///   `SharedPlayerManager.makeEventsStreamWithReplay()`,
+///   `SharedPlayerManager.currentState`,
 ///   docs/Widget-Presentation-Dataflow.md,
 ///   docs/Event-Driven-Refactor-Roadmap.md,
 ///   CODING_AGENT.md.

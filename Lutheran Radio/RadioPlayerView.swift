@@ -105,6 +105,10 @@ import Observation
 /// additional coordination with WidgetKit / Live Activities — without ever mutating player state,
 /// intents, or Core surfaces.
 ///
+/// The subscriber consumes the replaying stream (`makeEventsStreamWithReplay`) so that
+/// late appearance of the player UI receives the current state as initial events
+/// before live updates.
+///
 /// Design choices (per requirements):
 /// - Modern Observation: `@Observable` + `@State` ownership in the hosting `View`.
 /// - Value-type driven: changes flow through published value properties; consumers use
@@ -135,7 +139,9 @@ import Observation
 /// or credential handling. All such logic is isolated inside `Core/`. See
 /// CODING_AGENT.md "Core Framework Surface Area".
 ///
-/// - SeeAlso: ``beginObserving()``, ``handle(_:)``, `SharedPlayerManager.events`,
+/// - SeeAlso: ``beginObserving()``, ``handle(_:)``,
+///   `SharedPlayerManager.makeEventsStreamWithReplay()`, `SharedPlayerManager.events`,
+///   `SharedPlayerManager.currentState`, `PlayerCurrentState`,
 ///   ``PlayerEvent``, `PlaybackIntent`, `WidgetEventObserver`,
 ///   `RadioPlayerView`, `PlayerViewModel`,
 ///   docs/Event-Driven-Refactor-Roadmap.md,
@@ -197,25 +203,26 @@ final class PlayerEventSubscriber {
     ///
     /// - Postcondition: The subscriber is actively consuming events emitted after
     ///   this call. `eventCount` and `lastObservedIntent` will be updated on the
-    ///   main actor as events arrive.
+    ///   main actor as events arrive. Because the replaying stream is used, the
+    ///   subscriber also receives synthetic events representing the state present
+    ///   at the moment observation began.
     /// - Important: This is additive. Starting observation has no effect on the
     ///   emitter, on other subscribers (WidgetRefreshManager, etc.), or on any
     ///   imperative playback paths.
-    /// - Note: Because `events` currently provides no replay, events emitted before
-    ///   `beginObserving` are not seen (matching the contract used by other Tier 2
-    ///   consumers).
     /// - SeeAlso: `WidgetEventObserver.beginObserving(_:onElement:onTermination:)`,
-    ///   SharedPlayerManager.`events`.
+    ///   `SharedPlayerManager.makeEventsStreamWithReplay()`, `SharedPlayerManager.events`,
+    ///   `SharedPlayerManager.currentState`.
     func beginObserving() async {
         eventObserver.cancel()
 
         guard !SharedPlayerManager.isWidgetProcess() else { return }
 
-        // Seed from SSOT so the first onChange sites see a current value even if
-        // no new event is emitted immediately after the view appears.
+        // The replaying stream supplies current state as the initial events.
+        // An additional direct seed of intent provides an observable value
+        // immediately even before the first replay event is delivered.
         lastObservedIntent = await SharedPlayerManager.shared.currentPlaybackIntent
 
-        let stream = await SharedPlayerManager.shared.events
+        let stream = await SharedPlayerManager.shared.makeEventsStreamWithReplay()
         eventObserver.beginObserving(stream) { [weak self] event in
             await self?.handle(event)
         }

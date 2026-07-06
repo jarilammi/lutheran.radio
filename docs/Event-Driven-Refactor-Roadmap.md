@@ -26,13 +26,15 @@ It serves as both the project backlog for remaining work and a self-contained re
 - Surface cleanup in `SharedPlayerManager.swift` + `PlayerViewModel.swift` (commit d219f8e): event-driven non-forcing architecture promoted in headers and public API docs; legacy forcing shims (e.g. `forcePersistVisualState` and related) explicitly scoped to widget optimistic paths only; stronger SeeAlso/cross-links to ``PlayerEvent``, ``events``, and this roadmap.
 - Tier 2 first consumer: lightweight internal observer added inside `WidgetRefreshManager` (main-app only). It reacts to key `PlayerEvent` cases and drives timeline reloads exclusively by calling the pre-existing `refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)` surface with state derived from the same SSOT readers (`loadPersistedWidgetState`, `loadSharedState`). All imperative snapshot paths, debouncing, coalescing, and guards remain 100% unchanged and primary. Full structured documentation and present-tense final-architecture comments added per CODING_AGENT.md. (2026-07-04)
 - Tier 2 UI subscriber: lightweight `PlayerEventSubscriber` (Observation/@State/.task/onChange/Task) added in the primary player UI hosting view (`RadioPlayerView`). Reacts to `playbackIntentChanged` + state transition events; updates local observable values for UI-only side effects (animations, refreshes, Widget/LA coordination). Existing direct bindings untouched. Full production docs + file header improvements. (2026-07-05)
+- Tier 3 current-state replay implemented: `PlayerCurrentState` type + `SharedPlayerManager.currentState` snapshot and `makeEventsStreamWithReplay()` added. `PlayerEventSubscriber` wired to the replaying stream. All surfaces carry production-level documentation. Late subscribers receive current state on subscription. (2026-07-06)
 
 **Architecture Status**
 - `SharedPlayerManager` is the single source of truth for emitting player events.
 - All Tier 1 `PlayerEvent` cases are now emitted after their state mutations inside the actor.
 - Emissions are strictly additive; direct state access, imperative paths, and widget snapshot writes remain the primary mechanism. Legacy forcing surfaces exist only for compatibility and are documented as such.
-- First consumers exist: `WidgetRefreshManager` maintains a lightweight internal observer of `events` (started only in the main app process) and `RadioLiveActivityManager` consumes Live Activity attribute events. Both now delegate to the consolidated `WidgetEventObserver` helper. The main-app player UI layer (`RadioPlayerView`) now also hosts an additive `PlayerEventSubscriber` (Observation-driven) that reacts to the same stream for UI-only effects. All snapshot + refresh + LA + direct-binding logic, seams, and behavior are unchanged. Event-driven and imperative paths operate in parallel.
-- Widget, Live Activity, and UI paths continue to rely on direct state access and snapshot derivation as the primary mechanism. The event path is available for decoupled observation. See player SSOT file docs for non-forcing direction and cross-references.
+- `SharedPlayerManager` supplies `currentState` (snapshot) and `makeEventsStreamWithReplay()` for late-subscriber initialization. The primary `events` stream continues unchanged.
+- Consumers exist: `WidgetRefreshManager` maintains a lightweight internal observer of `events` (started only in the main app process) and `RadioLiveActivityManager` consumes Live Activity attribute events. Both delegate to the consolidated `WidgetEventObserver` helper. The main-app player UI layer (`RadioPlayerView`) hosts an additive `PlayerEventSubscriber` that consumes the replaying stream for UI-only effects and seeds from `currentState`. All snapshot + refresh + LA + direct-binding logic, seams, and behavior are unchanged. Event-driven and imperative paths operate in parallel.
+- Widget, Live Activity, and UI paths continue to rely on direct state access and snapshot derivation as the primary mechanism. The event path (with replay) is available for decoupled observation. See player SSOT file docs for non-forcing direction and cross-references.
 
 ---
 
@@ -64,7 +66,7 @@ Goal: Introduce the first real observers of the `events` stream without forcing 
 **Rule**: Consumers must be additive. The imperative/snapshot paths stay as the primary mechanism. Event-driven paths run in parallel initially.
 
 ### Tier 3 – Richer Event Surface & Replay (Higher Value, More Care)
-- [ ] Decide on and implement current-state replay for late subscribers (important for widgets and Live Activities that start after the manager has already emitted events). Options include a `currentState` snapshot alongside the stream or a `AsyncStream` with replay.
+- [x] `PlayerCurrentState` value type introduced alongside `PlayerEvent`. `SharedPlayerManager` now exposes `currentState` (authoritative snapshot) and `makeEventsStreamWithReplay()` (per-subscriber stream that first yields events synthesized from current state then forwards the live stream). `PlayerEventSubscriber` (RadioPlayerView) now consumes the replaying stream. All additions are strictly additive; the original `events` surface and all imperative/snapshot paths remain unchanged and primary. Full production documentation, cross-links, and present-tense final-architecture comments applied in `PlayerVisualState.swift`, `SharedPlayerManager.swift`, `RadioPlayerView.swift`, `WidgetEventObserver.swift`, and `WidgetRefreshManager.swift`. (2026-07-06)
 - [ ] Evaluate whether a higher-level typed event bus (wrapping multiple domain actors) is needed, or whether per-actor `AsyncStream`s are sufficient.
 - [ ] Add error and recovery events (`securityValidationFailed`, `streamRecoveryAttempted`, etc.) if they provide clear value for observers.
 
@@ -82,7 +84,7 @@ Goal: Introduce the first real observers of the `events` stream without forcing 
 
 ## Selecting and Implementing Micro-Steps
 
-The next item is always the highest-priority remaining entry in Tier 1.
+The next item is always the highest-priority remaining entry in the backlog (Tier 3 onward now that Tier 1 and Tier 2 coverage are complete).
 
 Each micro-step is a tiny, isolated, additive change (for example, adding a single emission site or a small non-forcing consumer) that follows every rule in `CODING_AGENT.md`, including reading target files first, using production-level comments, updating cross-references, and passing build gates.
 
@@ -111,6 +113,7 @@ Keep a short chronological log of major milestones:
 - Live Activity attribute events complete: `RadioLiveActivityManager` now observes the `activity.contentUpdates` AsyncStream (events for ContentState + state). Aligns dedup record + self-heals on dismissal. Additive, production docs, cross-links. (2026-07-04)
 - Tier 2 polish (consolidation): The common observation pattern used by both `WidgetRefreshManager` (PlayerEvent) and `RadioLiveActivityManager` (Live Activity attribute events) has been extracted into the internal `WidgetEventObserver` helper. Both managers delegate to it while preserving all task seams, property names, contracts, and behavior. `WidgetEventObserver` is now part of the cross-target shared sources, carries full production documentation, and is referenced from the dataflow and roadmap docs. No behavior change, no new polling. (2026-07-04)
 - UI subscriber (main app layer): `PlayerEventSubscriber` added to `RadioPlayerView` (the primary player UI hosting view). Uses `@Observable`, `@State`, `.task`, `.onChange`, and `Task` for lightweight reactions to `playbackIntentChanged` + state transition events. Value-type updates; UI-only side effects only; zero impact on existing bindings or Core. Full structured docs and header uplift. Roadmap updated. (2026-07-05)
+- Tier 3 current-state replay delivered: `PlayerCurrentState` type added to the canonical vocabulary in `PlayerVisualState.swift`. `SharedPlayerManager` now provides `currentState` (snapshot for initialization) and `makeEventsStreamWithReplay()` (replaying stream). `PlayerEventSubscriber` consumes the replaying stream. All touched files received production-level documentation (structured `///`, present-tense final language, SeeAlso links to new surfaces and this roadmap, AGENT NOTE where appropriate). Changes are strictly additive. No existing `events` contract, imperative paths, or snapshot surfaces were altered. (2026-07-06)
 
 ---
 

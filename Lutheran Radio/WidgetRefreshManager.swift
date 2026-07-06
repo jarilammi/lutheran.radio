@@ -66,10 +66,16 @@ import WidgetKit
 /// snapshot paths use. The two mechanisms run in parallel; existing snapshot +
 /// direct-refresh logic is untouched and remains authoritative for behavior.
 ///
+/// `SharedPlayerManager.currentState` and `makeEventsStreamWithReplay()` are
+/// available for any observer (including future widget paths) that requires
+/// replay of state present before subscription.
+///
 /// - SeeAlso: `refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)`,
-///   `SharedPlayerManager.events`, `PlayerEvent`, ``beginObservingPlayerEvents()``,
+///   `SharedPlayerManager.events`, `SharedPlayerManager.currentState`,
+///   `SharedPlayerManager.makeEventsStreamWithReplay()`, `PlayerEvent`,
+///   `PlayerCurrentState`, ``beginObservingPlayerEvents()``,
 ///   `WidgetEventObserver`,
-///   docs/Event-Driven-Refactor-Roadmap.md (Tier 2 first consumer),
+///   docs/Event-Driven-Refactor-Roadmap.md (Tier 2 first consumer + Tier 3 replay),
 ///   CODING_AGENT.md, <doc:Architecture>.
 @MainActor
 final class WidgetRefreshManager: @unchecked Sendable {

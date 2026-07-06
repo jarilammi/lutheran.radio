@@ -279,6 +279,8 @@ extension PlaybackIntent {
 /// - Note: `PlayerEvent` conforms to Sendable so it can be safely sent across actor
 ///   boundaries and between the main app and widget/Live Activity extension processes.
 ///   Hashable + Equatable support snapshot comparison and testing.
+/// - `SharedPlayerManager.currentState` and the replaying stream surface provide
+///   initialization for late subscribers; see ``PlayerCurrentState``.
 /// - Warning: Do not add security-sensitive or certificate-related cases here.
 ///   Security events stay inside Core/.
 ///
@@ -334,10 +336,10 @@ enum PlayerEvent: Sendable, Hashable, Equatable {
     /// optimistic write will let consumers invalidate or update without tight coupling
     /// to `savePersistedWidgetState` / `persistWidgetSnapshot`.
     ///
-    /// Implementation note: carried as a signal-only case. The payload form
-    /// `persistedWidgetStateDidUpdate(SharedPlayerManager.PersistedWidgetState)` will be
-    /// adopted in a follow-up implementation change after `PersistedWidgetState` is upgraded with
-    /// explicit Hashable/Equatable/Sendable conformances in its owning file.
+    /// The case is emitted as a signal after authoritative snapshot writes.
+    /// A payload-carrying variant may be introduced later if observers require
+    /// the concrete state in the event itself; current consumers derive from
+    /// the SSOT loaders.
     case persistedWidgetStateDidUpdate
 
     /// The in-memory visual state used for UI decisions and resurrection changed.
@@ -347,6 +349,62 @@ enum PlayerEvent: Sendable, Hashable, Equatable {
     /// event bus, test harnesses, debug overlays) stay in sync without observing the
     /// actor property directly.
     case visualStateDidChange(PlayerVisualState)
+}
+
+// MARK: - PlayerCurrentState
+
+/// Snapshot of the current player-domain state for initializing late subscribers.
+///
+/// `PlayerCurrentState` captures the facts that `PlayerEvent` cases convey so that
+/// observers starting after the manager has already emitted events can obtain the
+/// present state without missing prior transitions.
+///
+/// `SharedPlayerManager` publishes this snapshot via ``SharedPlayerManager/currentState``.
+/// A companion replaying stream (``SharedPlayerManager/makeEventsStreamWithReplay()``)
+/// yields the equivalent `PlayerEvent` values first and then forwards live events.
+///
+/// The snapshot contains exactly the data carried by the Tier 1 events:
+/// - `visualState` (from `visualStateDidChange`)
+/// - `playbackIntent` (from `playbackIntentChanged`)
+/// - `streamMetadata` (from `metadataDidUpdate`)
+/// - `hasError` (derived from security locked state and persisted snapshot)
+///
+/// **Single Source of Truth relationship**:
+/// `PlayerCurrentState` is a derived, read-only convenience. The authoritative
+/// values live in `SharedPlayerManager` (`currentVisualState`, `currentPlaybackIntent`,
+/// `currentStreamMetadata`) and in `PersistedWidgetState` (via `loadPersistedWidgetState`).
+/// Consumers may read the snapshot for initialization and then observe events for
+/// subsequent deltas.
+///
+/// - Important: This type is additive. Existing direct state access, snapshot
+///   loaders, and imperative paths remain the primary mechanism everywhere.
+/// - Note: `PlayerCurrentState` is `Sendable`, `Equatable`, and `Hashable` so it
+///   participates safely in Observation, actor boundaries, testing, and diffing.
+/// - SeeAlso: ``PlayerEvent``, `SharedPlayerManager.currentState`,
+///   `SharedPlayerManager.makeEventsStreamWithReplay()`,
+///   `PlayerEventSubscriber`, `WidgetRefreshManager`,
+///   docs/Event-Driven-Refactor-Roadmap.md (Tier 3 current-state replay),
+///   CODING_AGENT.md (event-driven direction, Single Source of Truth Principles,
+///   cross-target shared source files).
+///
+/// AGENT NOTE: `PlayerCurrentState` is the canonical replay surface for the
+/// `PlayerEvent` vocabulary. When new event cases are added that carry state,
+/// evaluate whether they must be reflected here and update the construction site
+/// inside SharedPlayerManager together with this declaration.
+struct PlayerCurrentState: Sendable, Equatable, Hashable {
+    /// Current visual state (drives colors, glyphs, resurrection policy, and
+    /// presentation derivations).
+    let visualState: PlayerVisualState
+
+    /// Authoritative playback intent (the SSOT answering "does the user want audio playing?").
+    let playbackIntent: PlaybackIntent
+
+    /// Latest program metadata parsed from the stream, if present.
+    let streamMetadata: StreamProgramMetadata?
+
+    /// Whether the current state reflects a permanent error (security lock or
+    /// persisted hasError flag).
+    let hasError: Bool
 }
 
 // MARK: - PlayerVisualState (existing visual + legacy intent surface)
