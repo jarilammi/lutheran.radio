@@ -82,6 +82,8 @@ import Foundation
 ///   `RadioLiveActivityManager.beginObservingActivityEvents`,
 ///   `SharedPlayerManager.makeEventsStreamWithReplay()`,
 ///   `SharedPlayerManager.currentState`,
+///   `PlayerCurrentState`,
+///   `PlayerCurrentState.isInPermanentError`,
 ///   docs/Widget-Presentation-Dataflow.md,
 ///   docs/Event-Driven-Refactor-Roadmap.md,
 ///   CODING_AGENT.md.

@@ -636,6 +636,9 @@ actor SharedPlayerManager {
     ///
     /// - Returns: A `PlayerCurrentState` reflecting the state at the moment of the call.
     /// - SeeAlso: ``events``, ``makeEventsStreamWithReplay()``, `PlayerCurrentState`,
+    ///   `PlayerCurrentState.isActivelyPlaying`,
+    ///   `PlayerCurrentState.isBlockedByStickyIntent`,
+    ///   `PlayerCurrentState.isInPermanentError`,
     ///   ``loadPersistedWidgetState()``, `PlayerEvent.visualStateDidChange`,
     ///   `PlayerEvent.playbackIntentChanged`, `PlayerEvent.metadataDidUpdate`,
     ///   CODING_AGENT.md, docs/Event-Driven-Refactor-Roadmap.md.
@@ -677,11 +680,20 @@ actor SharedPlayerManager {
     ///
     /// All future events from the authoritative emitter follow immediately.
     ///
+    /// Stream transition verbs (`streamDidStart`, `streamDidPause`, `streamDidStop`,
+    /// `streamDidFail`) are deliberately not synthesized here. The resulting
+    /// terminal state (including permanent errors) is expressed via the fields
+    /// of the yielded `PlayerCurrentState` (in particular `hasError`). This is
+    /// the finalized Tier 3 replay contract. See ``PlayerCurrentState`` and the
+    /// architectural evaluation in the roadmap.
+    ///
     /// - Returns: A stream whose first elements represent the state at the time
     ///   the stream was created, followed by live events.
     /// - SeeAlso: ``events``, ``currentState``, `PlayerCurrentState`, `PlayerEvent`,
     ///   `WidgetEventObserver`, `PlayerEventSubscriber`,
-    ///   docs/Event-Driven-Refactor-Roadmap.md.
+    ///   `PlayerCurrentState.isInPermanentError`,
+    ///   `PlayerCurrentState.isBlockedByStickyIntent`,
+    ///   docs/Event-Driven-Refactor-Roadmap.md (Tier 3 current-state replay + error and recovery surface).
     /// - Important: Each call produces an independent stream. Existing direct
     ///   observation of `events` and all imperative paths are unaffected.
     /// - Note: The replay events are synthesized from current state; they do not
@@ -692,6 +704,11 @@ actor SharedPlayerManager {
         // Replay current state as the events that would have produced it.
         // This gives late subscribers the present without requiring them to
         // read multiple SSOT surfaces before subscribing.
+        //
+        // NOTE (Tier 3 replay contract): Only the four state-carrying facts are
+        // synthesized. No `streamDid*` verbs are emitted here; terminal conditions
+        // (including errors) are carried by the `PlayerCurrentState` fields and
+        // its convenience accessors. See ``makeEventsStreamWithReplay()`` docs.
         let state = await currentState
         continuation.yield(.visualStateDidChange(state.visualState))
         continuation.yield(.playbackIntentChanged(state.playbackIntent))

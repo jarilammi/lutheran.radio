@@ -543,8 +543,10 @@ final class WidgetRefreshManager: @unchecked Sendable {
     ///   Duplicate triggers are expected and are deduplicated by the existing
     ///   debouncing logic inside `refreshIfNeeded`.
     /// - Note: Reacts to the high-signal cases that historically drove widget
-    ///   refreshes. Future events (e.g. richer error or recovery) can be added
-    ///   here without touching callers.
+    ///   refreshes. Error and recovery conditions are expressed through the
+    ///   existing `streamDidFail(DirectStreamingPlayer.StreamErrorType)` classification
+    ///   together with subsequent `streamDidStart` events and `hasError` derived from
+    ///   the SSOT. The observer surface is complete for these transitions.
     /// - SeeAlso: ``beginObservingPlayerEvents()``, `refreshIfNeeded`,
     ///   `SharedPlayerManager.loadPersistedWidgetState`,
     ///   `SharedPlayerManager.loadSharedState`, `PlayerEvent`,

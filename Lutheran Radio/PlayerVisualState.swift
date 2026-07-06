@@ -317,6 +317,13 @@ enum PlayerEvent: Sendable, Hashable, Equatable {
 
     /// The active stream reported a classified failure.
     ///
+    /// The `StreamErrorType` payload distinguishes transient failures (subject to
+    /// engine recovery via recreate and network paths) from permanentFailure and
+    /// securityFailure. Successful recovery after a transient failure surfaces as
+    /// a subsequent `streamDidStart`. `PlayerCurrentState.hasError` supplies the
+    /// terminal error condition to late subscribers through the replaying stream
+    /// and currentState snapshot.
+    ///
     /// Why this event exists: routes permanent vs transient errors through the same
     /// vocabulary used for success paths, enabling a single error surface for widgets,
     /// user-visible status, and recovery decisions.
@@ -369,6 +376,11 @@ enum PlayerEvent: Sendable, Hashable, Equatable {
 /// - `streamMetadata` (from `metadataDidUpdate`)
 /// - `hasError` (derived from security locked state and persisted snapshot)
 ///
+/// Stream transition verbs (`streamDidStart`, `streamDidPause`, `streamDidStop`,
+/// `streamDidFail`) are **not** synthesized during replay. The resulting terminal
+/// state is expressed through the four fields (especially `hasError` for terminal
+/// error conditions). See the Tier 3 architectural evaluation in the roadmap.
+///
 /// **Single Source of Truth relationship**:
 /// `PlayerCurrentState` is a derived, read-only convenience. The authoritative
 /// values live in `SharedPlayerManager` (`currentVisualState`, `currentPlaybackIntent`,
@@ -383,14 +395,18 @@ enum PlayerEvent: Sendable, Hashable, Equatable {
 /// - SeeAlso: ``PlayerEvent``, `SharedPlayerManager.currentState`,
 ///   `SharedPlayerManager.makeEventsStreamWithReplay()`,
 ///   `PlayerEventSubscriber`, `WidgetRefreshManager`,
-///   docs/Event-Driven-Refactor-Roadmap.md (Tier 3 current-state replay),
+///   `PlaybackIntent.isStickyPauseOrLock`,
+///   `PlayerVisualState.isActivelyPlaying`,
+///   docs/Event-Driven-Refactor-Roadmap.md (Tier 3 current-state replay + error and recovery surface),
 ///   CODING_AGENT.md (event-driven direction, Single Source of Truth Principles,
 ///   cross-target shared source files).
 ///
 /// AGENT NOTE: `PlayerCurrentState` is the canonical replay surface for the
 /// `PlayerEvent` vocabulary. When new event cases are added that carry state,
 /// evaluate whether they must be reflected here and update the construction site
-/// inside SharedPlayerManager together with this declaration.
+/// inside SharedPlayerManager together with this declaration. The computed
+/// convenience properties below exist solely to reduce boilerplate for common
+/// questions asked of a replay snapshot; they delegate to the authoritative types.
 struct PlayerCurrentState: Sendable, Equatable, Hashable {
     /// Current visual state (drives colors, glyphs, resurrection policy, and
     /// presentation derivations).
@@ -405,6 +421,36 @@ struct PlayerCurrentState: Sendable, Equatable, Hashable {
     /// Whether the current state reflects a permanent error (security lock or
     /// persisted hasError flag).
     let hasError: Bool
+
+    // MARK: - Convenience accessors (derived, zero-cost)
+
+    /// True when audio is actively flowing.
+    ///
+    /// Delegates to `PlayerVisualState.isActivelyPlaying` for semantic consistency
+    /// with resurrection guards, LIVE indicators, and control glyph decisions.
+    var isActivelyPlaying: Bool {
+        visualState.isActivelyPlaying
+    }
+
+    /// True when the current intent is a sticky blocker that only an explicit
+    /// user play action can clear.
+    ///
+    /// Delegates to `PlaybackIntent.isStickyPauseOrLock`. Useful for late
+    /// subscribers that need to decide whether to show blocked UI without
+    /// re-reading the raw intent.
+    var isBlockedByStickyIntent: Bool {
+        playbackIntent.isStickyPauseOrLock
+    }
+
+    /// True when a permanent error condition is present (security failure or
+    /// unrecoverable stream failure persisted in the widget snapshot).
+    ///
+    /// Equivalent to `hasError`. Provided for naming symmetry with
+    /// `DirectStreamingPlayer.StreamErrorType.isPermanent` and consumer code
+    /// that talks about "permanent error" vs transient.
+    var isInPermanentError: Bool {
+        hasError
+    }
 }
 
 // MARK: - PlayerVisualState (existing visual + legacy intent surface)
