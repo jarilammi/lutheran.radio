@@ -144,7 +144,6 @@
 				LutheranRadioLiveActivityAttributes.swift,
 				PlayerVisualState.swift,
 				SharedPlayerManager.swift,
-				StreamingSessionDelegate.swift,
 				StreamProgramMetadata.swift,
 				WidgetEventObserver.swift,
 				WidgetRefreshManager.swift,
