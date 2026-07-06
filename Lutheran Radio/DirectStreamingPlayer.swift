@@ -1483,9 +1483,14 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// This is the **single source of truth** for audio session category configuration
     /// and activation.
     ///
-    /// - Sets the `.playback` category via the synchronous `setCategory` (per Apple guidance).
-    /// - On iOS 27+: activates via the non-blocking `activateWithOptions:completionHandler:`
-    ///   (the async spelling) using a cross-SDK IMP call (see `activateAsyncDynamic`).
+    /// - Sets the `.playback` category (via the synchronous `setCategory`) **only** when
+    ///   it is not already `.playback`. This follows Apple guidance for the initial
+    ///   configuration while avoiding "called on the main thread while the audio session
+    ///   is active" warnings from SessionCore during re-entrancy (route changes,
+    ///   interruptions, stream switches, tuning sound setup, etc.).
+    /// - On iOS 27.0 and later: activates via the non-blocking
+    ///   `activateWithOptions:completionHandler:` (the async spelling) using a dynamic
+    ///   runtime dispatch (see ``activateAsyncDynamic(session:wasAlreadyPlayback:)``).
     /// - On iOS 26.2 (deployment target): falls back to the synchronous `setActive(true, options:)`.
     ///
     /// All audio activation paths (init setup, `play()`, `startPlayback`, stream switches,
@@ -1494,17 +1499,29 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// `reconfigureAudioSession()`.
     ///
     /// Call sites are already structured as `Task { @MainActor in await ... }` or direct
-    /// `await` from @MainActor contexts. This eliminates the prior direct top-level
-    /// synchronous `setActive` calls from hot paths that triggered main-thread
-    /// unresponsiveness warnings.
+    /// `await` from @MainActor contexts.
     ///
-    /// Uses `#available(iOS 27.0, *)` + clean fallback. The iOS 27 path uses a carefully
-    /// typed IMP cast (not the fragile `perform(with:with:)`) so that the source remains
-    /// compilable on Xcode 26 while calling the real API on 27+.
+    /// **Xcode / SDK compatibility (important for contributors):**
+    /// This file is required to compile on both the minimum supported Xcode (26) and
+    /// newer Xcode versions. The dynamic IMP dispatch is used so that a direct reference
+    /// to the iOS 27 API never appears in source when built against the Xcode 26 SDK.
+    /// When built with Xcode 27+, the `#available(iOS 27.0, *)` branch executes, but we
+    /// deliberately continue using the runtime lookup instead of the typed API. This
+    /// preserves the ability for the same source to build on Xcode 26.
+    ///
+    /// Runtime behavior:
+    /// - On iOS 26.x the synchronous fallback is used (source of remaining simulator
+    ///   main-thread warnings for `setActive`).
+    /// - On iOS 27.0+ the async path is taken at runtime via the dynamic call.
+    /// Local `AVAudioPlayer` usage (tuning clips) can still emit implicit diagnostics
+    /// on 26.x even after explicit configuration.
     ///
     /// - Returns: `true` on successful category + activate; `false` on error or under `isTesting`.
     ///
     /// - Precondition: Must be called from a `@MainActor` context.
+    /// - Important: Never call `setCategory` or `setActive` directly outside this helper.
+    ///   Never replace the dynamic dispatch with a direct `activate(options:completionHandler:)`
+    ///   call unless the minimum supported Xcode version is raised above 26.
     /// - Note: Respects `isTesting` (SSOT via `SharedPlayerManager.isRunningInUITestMode`) exactly.
     ///   Under test mode this is a no-op (returns `false`).
     /// - SeeAlso: ``setupAudioSession()``, `ViewController.reconfigureAudioSession()`,
@@ -1532,13 +1549,19 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         let wasAlreadyPlayback = session.category == .playback
         
         do {
-            try session.setCategory(.playback, mode: .default, options: [.allowAirPlay, .allowBluetoothA2DP])
+            if !wasAlreadyPlayback {
+                // Conditional to avoid SessionCore "while audio session is active" warnings
+                // when reconfiguring an already-active playback session.
+                try session.setCategory(.playback, mode: .default, options: [.allowAirPlay, .allowBluetoothA2DP])
+            }
             
             let activated: Bool
             if #available(iOS 27.0, *) {
-                // iOS 27+: use the non-blocking async activate (avoids main-thread blocking
-                // during route selection / AirPlay). We dispatch via IMP because the declaration
-                // is not visible when building against the Xcode 26 SDK.
+                // iOS 27.0+: use the non-blocking async activation path.
+                // We always resolve via dynamic dispatch (selector + IMP) rather than the
+                // typed API. This is required so the identical source compiles on Xcode 26
+                // (where the declaration does not exist in the SDK).
+                // See the availability and compatibility notes on `configureAudioSessionAsync`.
                 activated = await Self.activateAsyncDynamic(session: session, wasAlreadyPlayback: wasAlreadyPlayback)
             } else {
                 // Clean synchronous fallback required for iOS 26.2 deployment target.
@@ -1566,11 +1589,20 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         }
     }
 
-    /// Dynamic dispatch for `activate(options:completionHandler:)` using the raw IMP.
+    /// Dynamic dispatch for `activateWithOptions:completionHandler:` using the raw IMP.
     ///
-    /// This exists solely to allow the source to compile under Xcode 26 SDKs (which do not declare
-    /// the iOS 27 `activateWithOptions:completionHandler:` method) while still calling the real
-    /// non-blocking API on iOS 27+ at runtime.
+    /// This wrapper lets the project compile from a single source on both the minimum
+    /// supported Xcode (26, against the iOS 26 SDK) *and* Xcode 27+ (against the iOS 27 SDK).
+    ///
+    /// - When built with Xcode 26 the iOS 27 API symbol does not exist, so any direct
+    ///   call would fail to compile.
+    /// - When built with Xcode 27+ the API is visible, but we intentionally keep using
+    ///   the runtime `NSSelectorFromString` + `method(for:)` + `unsafeBitCast` path.
+    ///   This guarantees the source remains buildable on Xcode 26 without `#if` / compiler
+    ///   version conditionals.
+    ///
+    /// At runtime on iOS 27.0+, `responds(to:)` succeeds and the real asynchronous
+    /// implementation is invoked.
     ///
     /// We use `method(for:)` + `unsafeBitCast` to the precise `@convention(c)` signature because
     /// the method takes a scalar `NSUInteger` (AVAudioSessionActivationOptions) as the first
@@ -1590,11 +1622,18 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
 
             // SAFETY: unsafeBitCast of the IMP is required to obtain a callable function pointer
             // with the exact C ABI of the ObjC method (scalar UInt options + escaping block).
-            // This is the only viable cross-Xcode-SDK technique that lets us invoke a new API
-            // whose declaration is invisible to the Xcode 26 compiler. The cast is isolated to
-            // this iOS 27+-only helper; the block is invoked exactly once by the framework.
+            //
+            // This is the only technique that lets us invoke the iOS 27+ async activation API
+            // while keeping the identical source compilable on both Xcode 26 (where the
+            // declaration is absent from the SDK) and Xcode 27+. The cast is isolated to this
+            // helper; the completion block is invoked exactly once by the framework.
+            //
             // We deliberately pass the raw integer 0 instead of constructing the OptionSet type
             // (which would require the new SDK symbol).
+            //
+            // Do not replace this with a direct typed call to the public API. Doing so would
+            // make the file unbuildable on the project's minimum supported Xcode (26).
+            // See the full compatibility notes on `configureAudioSessionAsync`.
             typealias ActivateFn = @convention(c) (
                 AnyObject,
                 Selector,
@@ -1637,8 +1676,10 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     @MainActor
     func setupAudioSession() async {
         // Widget / extension safety: no-op when running in appex (see configureAudioSessionAsync).
-        // The #available(iOS 27.0, *) block lives only in the configure implementation and is
-        // never reached from widget extension compilations (file excluded from that target).
+        // The #available(iOS 27.0, *) + dynamic dispatch logic lives only inside the
+        // configure implementation. It is never reached from widget extension compilations
+        // (file excluded from that target) and is carefully written for dual Xcode 26 / 27+
+        // source compatibility.
         if Bundle.main.bundleURL.pathExtension == "appex" {
             return
         }

@@ -1267,6 +1267,10 @@ final class RadioPlayerCoordinator {
             return
         }
 
+        // Ensure AVAudioSession is configured before AVAudioPlayer creation/play.
+        // This reduces implicit main-thread session diagnostics on iOS 26.x simulators.
+        _ = await streamingPlayer.configureAudioSessionAsync()
+
         do {
             tuningPlayer = try AVAudioPlayer(contentsOf: tuningURL)
             tuningPlayer?.delegate = nil // Coordinator does not conform to AVAudioPlayerDelegate; completion is fire-and-forget for special clip
@@ -1316,6 +1320,11 @@ final class RadioPlayerCoordinator {
             }
             return
         }
+
+        // Ensure AVAudioSession is configured before AVAudioPlayer creation/play.
+        // This reduces implicit main-thread session diagnostics on iOS 26.x simulators.
+        // (Mirrors the pre-configure already present for the special tuning path.)
+        _ = await streamingPlayer.configureAudioSessionAsync()
 
         do {
             tuningPlayer = try AVAudioPlayer(contentsOf: tuningURL)
