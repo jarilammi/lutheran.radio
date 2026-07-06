@@ -32,9 +32,9 @@ Run any command in the environment's shell (typically zsh or bash on macOS with 
 call tool bash with command is dig +short +dnssec TXT securitymodels.lutheran.radio
 ```
 
-**Example — Clean build (from README)**:
+**Example — Clean build (canonical gate from CODING_AGENT.md — bleeding-edge for agents)**:
 ```xml
-call tool bash with command is xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.5 -destination 'platform=iOS Simulator,name=iPhone 17' clean build
+call tool bash with command is xcrun simctl list devices available && xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.0 -destination 'platform=iOS Simulator,OS=27.0,name=iPhone 17 Pro' clean build-for-testing
 ```
 
 **Best practice**: After any edit, always run the relevant build/test gate and include output in your reasoning.

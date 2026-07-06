@@ -94,19 +94,26 @@ These rules are especially strict for anything that could affect security invari
    - Any change touching DNS validation must preserve or strengthen the documented security properties. (This change strengthened validation without altering caching, state machine, or public API.)
 
 2. **Build & Test Gate**
-   - Every single change must keep these commands green:
+   - Every single change must keep these commands green.
+   - AI agents and full security validation use **bleeding-edge** Xcode 27 / iOS 27 simulators (required to exercise complete MIE/EMTE and latest runtime protections).
+   - First discover available simulators:
      ```bash
-     # Clean build (iPhone 17 simulator, iOS 26.5)
-     xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.5 \
-       -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17' clean build-for-testing
+     xcrun simctl list devices available
+     ```
+   - Canonical reference commands for agents (Xcode 27+):
+     ```bash
+     # Clean build (bleeding-edge reference)
+     xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.0 \
+       -destination 'platform=iOS Simulator,OS=27.0,name=iPhone 17 Pro' clean build-for-testing
      # Look for: ** TEST BUILD SUCCEEDED **
 
      # Full test suite
-     xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.5 \
-       -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17' test-without-building
+     xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator27.0 \
+       -destination 'platform=iOS Simulator,OS=27.0,name=iPhone 17 Pro' test-without-building
      # Look for: ** TEST SUCCEEDED **
      ```
-   - If either fails → fix it before suggesting the change.
+   - Any iPhone 17-class device on iOS 27.0 is preferred for agents. The project minimum deployment target is iOS 26.2. Stable Xcode 26 development uses iOS 26.5 (see README.md for human contributor guidance). Substitute from discovery output when needed.
+   - If either gate fails → fix it before suggesting the change.
 
    **Build Gate Exceptions for Mechanical / Warning / Refactoring Work**
 
@@ -131,7 +138,8 @@ These rules are especially strict for anything that could affect security invari
 4. **iOS 26+ and Swift Toolchain**
    - Minimum deployment target is **iOS 26.2** (no exceptions).
    - Required for full **EMTE + MIE** hardware-backed memory protections.
-   - Requires Xcode 26+ (Swift 6.3 toolchain) for MIE/EMTE build support and Swift 6 language mode.
+   - Agents must use Xcode 27+ for complete MIE/EMTE and latest simulator validation.
+   - Human contributors may use stable Xcode 26.6+.
    - **All targets** use `SWIFT_VERSION = 6`, `SWIFT_STRICT_CONCURRENCY = complete`, `SWIFT_APPROACHABLE_CONCURRENCY = NO`, and `SWIFT_STRICT_MEMORY_SAFETY = YES`. Do not weaken or remove these without owner approval and a documented security impact assessment.
    - Prefer modern APIs and leverage Memory Integrity Enforcement wherever possible.
 
@@ -223,7 +231,7 @@ These guidelines exist because the cost of a force-unwrap or a data race in a ba
   * `Core/Security/CertificateValidator.swift` (runtime full DER SHA-256 digest pinning + transition window leniency with time-skew protection; SPKI pinning is enforced exclusively by ATS in Info.plist)
   * ATS + NSPinnedDomains in Info.plist
   * DNS TXT security model validation (1-hour cache in UserDefaults)
-  * MIE/EMTE: Enabled via hardened runtime entitlements (requires Xcode 26+ for build support)
+  * MIE/EMTE: Enabled via hardened runtime entitlements (agents use Xcode 27+ for full validation; minimum build support is Xcode 26)
 - Security logic is now isolated into the `Core/` framework module (`Core/Configuration/`, `Core/Actors/`, and `Core/Security/`) using Swift actors and strict concurrency for better isolation, testability, and maintainability. All security decisions flow through `SecurityConfiguration`, `SecurityModelValidator`, and `CertificateValidator`.
 - **Tests**: Unit + UI tests in dedicated targets
 - **Scripts**: Minimal Python (1%) — treat as build helpers only
@@ -255,9 +263,9 @@ The `Core` framework is the **single source of truth** for all security decision
 
 ## Development Workflow (Always Follow)
 
-1. Open `Lutheran Radio.xcodeproj` in Xcode 26+ (latest stable version recommended).
-2. Use iPhone 17 simulator, iOS 26.5.
-3. Run the two xcodebuild commands above when you have the final implementation.
+1. Open `Lutheran Radio.xcodeproj` in Xcode 27+ (bleeding-edge recommended for agents).
+2. Use an iPhone 17-class simulator on iOS 27.0. The canonical gate commands above use iPhone 17 Pro; run `xcrun simctl list devices available` and substitute as needed.
+3. Run the two xcodebuild commands above when you have the final implementation. Stable Xcode 26 is acceptable for human contributors (see README.md) but agents should target the latest for full security verification.
    For pure compiler warning cleanup, dead code removal, or mechanical refactoring, the lighter rules under "Build Gate Exceptions for Mechanical / Warning / Refactoring Work" apply.
    When running both gates in the same environment, execute them sequentially (build first, then test) to avoid transient build-database contention.
 4. Update `README.md`, relevant `docs/` files, and DocC articles (when security policy or architecture changes). **Improve inline source comments and `///` documentation per the "Documentation & Comment Standards for AI Coding Agents" section above.** Behavior changes must be reflected in the authoritative sources. Every touched file must be left in a better state for future agents (more self-contained, better "Why"/invariants, stronger cross-links).

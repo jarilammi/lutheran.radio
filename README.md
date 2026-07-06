@@ -128,22 +128,32 @@ openssl s_client -connect livestream.lutheran.radio:443 -servername livestream.l
 
 **4. Run the mandatory build & test gates (execute sequentially; see CODING_AGENT.md for mechanical-work exceptions):**
 
+First discover available simulators:
 ```bash
-# Clean build (iPhone 17 simulator, iOS 26.5)
-xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.5 \
-  -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17' clean build-for-testing
+xcrun simctl list devices available
+```
+
+**Stable development (Xcode 26.6+, recommended for contributors and CI):**
+```bash
+# Clean build (stable reference)
+xcodebuild -scheme "Lutheran Radio" \
+  -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17 Pro' clean build-for-testing
 # Look for: ** TEST BUILD SUCCEEDED **
 
 # Full test suite
-xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.5 \
-  -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17' test-without-building
+xcodebuild -scheme "Lutheran Radio" \
+  -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17 Pro' test-without-building
 # Look for: ** TEST SUCCEEDED **
 
-# Fast path when working on Core / security / networking
-xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.5 \
-  -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17' clean test -only-testing:CoreTests
+# Fast path (Core / security / networking)
+xcodebuild -scheme "Lutheran Radio" \
+  -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17 Pro' clean test -only-testing:CoreTests
 # Look for: ** TEST EXECUTE SUCCEEDED **
 ```
+
+Any iPhone 17-class device on iOS 26.5 or newer satisfies the gate on stable Xcode 26. The project minimum deployment target is iOS 26.2.
+
+**Bleeding-edge (full EMTE/MIE and latest simulator testing):** Use Xcode 27+ with iOS 27 simulators. See the canonical commands in `CODING_AGENT.md`.
 
 **5. (Optional but recommended for security work) Build DocC for the best invariants/architecture reading experience:**
 
@@ -154,9 +164,10 @@ xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.5 \
 Cross-reference: "Current Security Snapshot" and "Single Sources of Truth — Key Files" tables above, the AI checklist, and the exact gates in [`CODING_AGENT.md`](CODING_AGENT.md).
 
 ### Prerequisites
- - Xcode 26+ (Swift 6.3 toolchain; language mode `SWIFT_VERSION = 6`)
+ - Xcode 26.6+ (Swift 6.3 toolchain; language mode `SWIFT_VERSION = 6`) for stable development
  - Minimum deployment target: iOS 26.2 (required for EMTE + MIE hardened memory protections)
- - Recommended local/CI test environment: iOS 26.5 simulator (iPhone 17) — used in the xcodebuild commands below
+ - Recommended for most work and contributions: iPhone 17-class simulator on iOS 26.5 (stable Xcode 26)
+ - For complete security feature validation (latest MIE/EMTE): Xcode 27+ with iOS 27 simulators (see CODING_AGENT.md)
 
 ### Swift Build Settings
 
@@ -176,14 +187,19 @@ Clean builds should produce **zero Swift compiler warnings**. If enabling a new 
 
 To ensure a smooth development experience, follow these steps before contributing:
 
-1. **Verify Project Build:** Confirm the project builds successfully with: ```xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.5 -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17' clean build```
+First run `xcrun simctl list devices available` to confirm a suitable simulator.
+
+**Stable path (Xcode 26):**
+1. **Verify Project Build:** ```xcodebuild -scheme "Lutheran Radio" -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17 Pro' clean build```
    Ensure the output includes: **```** BUILD SUCCEEDED **```**
 
-2. **Run Test Suite:** Validate the test suite passes with: ```xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.5 -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17' clean test```
+2. **Run Test Suite:** ```xcodebuild -scheme "Lutheran Radio" -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17 Pro' clean test```
    Check that the output includes: **```** TEST SUCCEEDED **```**
 
-3. **Run Core Module Tests Only (Fast Path):** When working on security, networking, or the Core framework, use this much faster command: ```xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.5 -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17' clean test -testPlan Core```
+3. **Run Core Module Tests Only (Fast Path):** ```xcodebuild -scheme "Lutheran Radio" -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17 Pro' clean test -testPlan Core```
    Check that the output includes: **```** TEST SUCCEEDED **```**
+
+Bleeding-edge verification (Xcode 27+) is documented in `CODING_AGENT.md`.
 
 By verifying these steps on your local machine, you'll help maintain a consistent development environment for the project.
 
@@ -192,7 +208,7 @@ By verifying these steps on your local machine, you'll help maintain a consisten
 If you encounter build or test issues, try these steps:
 
 1. **Set Xcode Path:** If Xcode commands aren't found, run: ```sudo xcode-select -s /Applications/Xcode.app```
-   Verify that your desired iPhone model is available with: ```xcrun simctl list```
+   List available simulators with: ```xcrun simctl list devices available```. Use an iPhone 17-class device on iOS 26.5 for stable development.
 
 2. **Clean Build Folder**: ```xcodebuild clean```
 
