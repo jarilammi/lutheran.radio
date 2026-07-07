@@ -1144,6 +1144,137 @@ final class SharedPlayerManagerEventTests: XCTestCase {
         XCTAssertEqual(current.languageCode, other.languageCode)
     }
 
+    /// Verifies the Tier 3 replay prefix after ``markPlaybackStoppedByStreamFailure(_:)``
+    /// and after subsequent recovery via ``setPlaying()``.
+    ///
+    /// Stream failure is visually identical to explicit pause (`.userPaused`) but
+    /// **must not** flip `playbackIntent` to sticky `.userPaused`. Late subscribers
+    /// (`PlayerEventSubscriber`, `WidgetEventObserver`) initialize from the replay
+    /// prefix — not from historical `streamDidFail` verbs — so the synthesized
+    /// `.playbackIntentChanged` value is the contract that distinguishes auto-resume
+    /// failure UI from sticky user pause.
+    ///
+    /// **Failure phase:** prefix carries `.userPaused` visual and `.shouldBePlaying`
+    /// intent; `currentState.isBlockedByStickyIntent` is false.
+    ///
+    /// **Recovery phase:** after `setPlaying()`, a fresh replay stream prefix reflects
+    /// `.playing` / `.shouldBePlaying` and `isActivelyPlaying == true`.
+    ///
+    /// Replay live-forwarding of recovery emissions on the first stream is best-effort
+    /// only (same XCTest host attach-race caveat as the `stop()` replay test).
+    ///
+    /// - SeeAlso: ``markPlaybackStoppedByStreamFailure(_:)``, ``setPlaying()``,
+    ///   ``makeEventsStreamWithReplay()``, ``currentState``, ``PlayerCurrentState``,
+    ///   `PlayerCurrentState.isBlockedByStickyIntent`,
+    ///   docs/Event-Driven-Refactor-Roadmap.md (Tier 3 error/recovery + Tier 5 late-subscriber),
+    ///   CODING_AGENT.md (Test Execution Patience and Fast, Reliable Test Patterns).
+    func testReplayPrefixAfterStreamFailurePreservesIntentThenReflectsRecovery() async {
+        let intentBefore = await manager.currentPlaybackIntent
+        XCTAssertEqual(
+            intentBefore,
+            .shouldBePlaying,
+            "Precondition: failure replay tests intent preservation from an active-play intent"
+        )
+
+        await manager.markPlaybackStoppedByStreamFailure(.transientFailure)
+
+        let failureSnapshot = await manager.currentState
+        XCTAssertEqual(failureSnapshot.visualState, .userPaused)
+        XCTAssertEqual(
+            failureSnapshot.playbackIntent,
+            .shouldBePlaying,
+            "Failure grey UI must not convert intent to sticky .userPaused"
+        )
+        XCTAssertFalse(
+            failureSnapshot.isBlockedByStickyIntent,
+            "Late subscribers must see recoverable failure (not sticky pause) via replay"
+        )
+
+        let replayStream = await manager.makeEventsStreamWithReplay()
+        let m = self.manager
+
+        let failurePrefix = await collectEvents(from: replayStream, count: 4, timeout: 2.0)
+        guard failurePrefix.count == 4 else {
+            XCTFail("Replay after failure must begin with four prefix events; got \(failurePrefix.count): \(failurePrefix)")
+            return
+        }
+
+        guard case let .visualStateDidChange(prefixVisual) = failurePrefix[0] else {
+            XCTFail("First replay event after failure must be .visualStateDidChange")
+            return
+        }
+        XCTAssertEqual(prefixVisual, .userPaused)
+
+        guard case let .playbackIntentChanged(prefixIntent) = failurePrefix[1] else {
+            XCTFail("Second replay event after failure must be .playbackIntentChanged")
+            return
+        }
+        XCTAssertEqual(
+            prefixIntent,
+            .shouldBePlaying,
+            "Replay prefix must expose preserved intent, not sticky pause"
+        )
+        XCTAssertEqual(prefixIntent, failureSnapshot.playbackIntent)
+
+        guard case let .metadataDidUpdate(prefixMetadata) = failurePrefix[2] else {
+            XCTFail("Third replay event after failure must be .metadataDidUpdate")
+            return
+        }
+        XCTAssertEqual(prefixMetadata, failureSnapshot.streamMetadata)
+
+        XCTAssertEqual(
+            failurePrefix[3],
+            .persistedWidgetStateDidUpdate,
+            "Fourth replay event after failure must be the persisted snapshot signal"
+        )
+
+        // Best-effort: drive recovery on the first replay stream so forwarding is exercised.
+        // Attach races in the XCTest host may deliver only a trailing `.persistedWidgetStateDidUpdate`
+        // (or nothing); recovery prefix assertions below are the primary contract (same pattern as
+        // `testReplayStreamPrefixesStateThenForwardsLiveStopEmissionsInOrder`).
+        _ = await collectEvents(from: replayStream, count: 1, timeout: 2.0) {
+            await m.setPlaying()
+        }
+
+        let recoverySnapshot = await manager.currentState
+        XCTAssertEqual(recoverySnapshot.visualState, .playing)
+        XCTAssertEqual(recoverySnapshot.playbackIntent, .shouldBePlaying)
+        XCTAssertTrue(recoverySnapshot.isActivelyPlaying)
+
+        let recoveryReplay = await manager.makeEventsStreamWithReplay()
+        let recoveryPrefix = await collectEvents(from: recoveryReplay, count: 4, timeout: 2.0)
+        guard recoveryPrefix.count == 4 else {
+            XCTFail("Replay after recovery must begin with four prefix events; got \(recoveryPrefix.count): \(recoveryPrefix)")
+            return
+        }
+
+        guard case let .visualStateDidChange(recoveryVisual) = recoveryPrefix[0] else {
+            XCTFail("First replay event after recovery must be .visualStateDidChange")
+            return
+        }
+        XCTAssertEqual(recoveryVisual, .playing)
+        XCTAssertEqual(recoveryVisual, recoverySnapshot.visualState)
+
+        guard case let .playbackIntentChanged(recoveryIntent) = recoveryPrefix[1] else {
+            XCTFail("Second replay event after recovery must be .playbackIntentChanged")
+            return
+        }
+        XCTAssertEqual(recoveryIntent, .shouldBePlaying)
+        XCTAssertEqual(recoveryIntent, recoverySnapshot.playbackIntent)
+
+        guard case let .metadataDidUpdate(recoveryMetadata) = recoveryPrefix[2] else {
+            XCTFail("Third replay event after recovery must be .metadataDidUpdate")
+            return
+        }
+        XCTAssertEqual(recoveryMetadata, recoverySnapshot.streamMetadata)
+
+        XCTAssertEqual(
+            recoveryPrefix[3],
+            .persistedWidgetStateDidUpdate,
+            "Fourth replay event after recovery must be the persisted snapshot signal"
+        )
+    }
+
     /// Picks a stream guaranteed to differ from the engine's current selection so
     /// `switchToStream` exercises the language-change silent-stop path under test.
     private func targetStreamDifferentFromCurrent(
