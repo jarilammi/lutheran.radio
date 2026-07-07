@@ -620,19 +620,27 @@ final class SharedPlayerManagerEventTests: XCTestCase {
     ///
     /// Verifies that the authoritative emitter surfaces deliver the expected `PlayerEvent`
     /// cases to subscribers on the live path:
-    /// - `playbackIntentChanged` via `updatePlaybackIntent(to:)`
+    /// - `playbackIntentChanged` via canonical ``stop()`` and ``setPlaying()`` paths
     /// - `streamDidStop` + `visualStateDidChange(.userPaused)` via the canonical `stop()`
     /// - `streamDidPause` via `setUserPaused()`
     /// - `streamDidFail(_:)` carrying the exact `DirectStreamingPlayer.StreamErrorType` via
     ///   `markPlaybackStoppedByStreamFailure(_:)`
+    /// - `streamDidStart` via ``setPlaying()`` on the recovery path (UITestMode performs
+    ///   canonical mutations + emission while skipping Live Activity / Now Playing IPC)
     /// - `metadataDidUpdate(_:)` (non-nil program metadata) via `didUpdateStreamMetadata(_:)`
-    /// - `persistedWidgetStateDidUpdate` via `saveCurrentState()` (after enabling the
-    ///   active-widgets privacy gate in setUp so the write path is exercised)
+    /// - `persistedWidgetStateDidUpdate` via `saveCurrentState()` (privacy gate enabled in setUp)
+    /// - `visualStateDidChange` for `.userPaused` and `.playing` transitions
     ///
-    /// This provides incremental comprehensive coverage for every `PlayerEvent` case
-    /// (emission behavior, actor isolation of the continuation, and observable order
-    /// properties for live subscribers). All actions use the existing surfaces; the test
-    /// is strictly additive and does not alter production logic, guards, or contracts.
+    /// Each `PlayerEvent` case above is asserted independently (not a single OR).
+    /// **Hybrid collection**: a long-lived live iterator plus the DEBUG notification seam
+    /// run in parallel over one action sequence. Each case is asserted with per-case
+    /// `contains` on **live OR seam** because the shared live `AsyncStream` delivery is
+    /// non-deterministic in the XCTest host (see CODING_AGENT.md); the seam proves every
+    /// `emit(_:)` site ran while the live iterator proves the production stream still
+    /// delivers a non-empty subset.
+    ///
+    /// Canonical emission order for individual transitions is protected by the dedicated
+    /// seam-based order tests in this file.
     ///
     /// Live Activity acceleration for test speed (see commit 10e0e46):
     /// Previously the widget / Live Activity surfaces were "disabled altogether" (flag left
@@ -649,16 +657,13 @@ final class SharedPlayerManagerEventTests: XCTestCase {
     /// - WidgetCenter surfaces short-circuit under `isRunningInUITestMode`.
     /// - We set the `hasActiveLutheranWidgets` gate directly via the test seam.
     ///
-    /// `streamDidStart` emission is intentionally not asserted on the live path here:
-    /// `setPlaying()` short-circuits under `SharedPlayerManager.isRunningInUITestMode`
-    /// (active for these unit tests) to avoid Live Activity / Now Playing side effects.
-    ///
     /// For the full rationale and copy-paste patterns for new tests, see:
     /// - The implementation and header comment of `collectEvents(from:count:whilePerforming:)`
     /// - CODING_AGENT.md → "Test Execution Patience and Fast, Reliable Test Patterns"
     ///
     /// - SeeAlso: ``SharedPlayerManager/events``, `collectEvents(from:count:whilePerforming:)`,
-    ///   ``emit(_:)``, ``stop()``, ``setUserPaused()``, ``markPlaybackStoppedByStreamFailure(_:)``,
+    ///   ``emit(_:)``, ``stop()``, ``setUserPaused()``, ``setPlaying()``,
+    ///   ``markPlaybackStoppedByStreamFailure(_:)``,
     ///   ``updatePlaybackIntent(to:)``, ``didUpdateStreamMetadata(_:)``, ``saveCurrentState()``,
     ///   ``PlayerEvent``, `PlayerCurrentState`,
     ///   ``RadioLiveActivityManager/endActivity()``, ``RadioLiveActivityManager/isRunningUnderTest``,
@@ -669,46 +674,126 @@ final class SharedPlayerManagerEventTests: XCTestCase {
         // setUp has already established a clean non-blocked state with explicit intent
         // and has pre-warmed the events stream.
 
-        // Subscribe to the live `events` stream *before* driving the actions so that the
-        // collector iterator is active when emit() yields. The shared live stream only
-        // delivers to currently-active iterators (the long-lived WidgetRefresh observer
-        // is one; this collector will be a second). Past events are not replayed here
-        // (that's what makeEventsStreamWithReplay + its private buffer is for).
-        //
-        // Drive all exercising actions inside the collect helper's action closure.
-        // This lets us bound the wait for a few live emissions without per-step waits
-        // that previously risked leaving a collector suspended after the final emit.
-        // The bounded collect + task-group timeout in the helper guarantees we always
-        // terminate (see collectEvents).
-        //
-        // Coverage is provided by reaching the emissions inside the actor (visible via
-        // [PlayerEventSeam] DEBUG prints), the collector seeing relevant events, and
-        // the final state. The replay test covers the late-subscriber prefix contract.
+        // Hybrid live + seam collection over one action sequence (see doc comment).
         let liveStream = await manager.events
-        let m2 = self.manager
+        let m = self.manager
 
-        let sample = await collectEvents(from: liveStream, count: 5, timeout: 5.0) {
-            await m2.updatePlaybackIntent(to: .userPaused)
-            await m2.updatePlaybackIntent(to: .shouldBePlaying)
-            await m2.stop()
-            await m2.setUserPaused()
-            await m2.markPlaybackStoppedByStreamFailure(.transientFailure)
-            await m2.didUpdateStreamMetadata("Test Program • Speaker")
-            await MainActor.run { WidgetRefreshManager.setHasActiveLutheranWidgets(true) }
-            await m2.saveCurrentState()
+        final class HybridCollector: @unchecked Sendable {
+            var live: [PlayerEvent] = []
+            var seam: [PlayerEvent] = []
+            var seamToken: NSObjectProtocol?
+        }
+        let hybrid = HybridCollector()
+
+        hybrid.seamToken = NotificationCenter.default.addObserver(
+            forName: Notification.Name("PlayerEventEmittedForTest"),
+            object: nil,
+            queue: .main
+        ) { note in
+            if let event = note.userInfo?["event"] as? PlayerEvent {
+                hybrid.seam.append(event)
+            }
         }
 
-        XCTAssertTrue(
-            sample.contains { if case .playbackIntentChanged(.userPaused) = $0 { return true }; return false } ||
-            sample.contains { if case .playbackIntentChanged(.shouldBePlaying) = $0 { return true }; return false } ||
-            sample.contains(.streamDidStop) ||
-            sample.contains(.streamDidPause) ||
-            sample.contains { if case .streamDidFail = $0 { return true }; return false } ||
-            sample.contains { if case .metadataDidUpdate = $0 { return true }; return false } ||
-            sample.contains(.persistedWidgetStateDidUpdate) ||
-            sample.contains { if case .visualStateDidChange = $0 { return true }; return false },
-            "Live events stream should have produced relevant emissions for the driven actions (intent, stream verbs, metadata, persisted, visual)"
+        let liveSample = await withTaskGroup(of: [PlayerEvent].self) { group -> [PlayerEvent] in
+            group.addTask {
+                for await event in liveStream {
+                    if Task.isCancelled { break }
+                    hybrid.live.append(event)
+                }
+                return hybrid.live
+            }
+
+            await Task.yield()
+            await Task.yield()
+            try? await Task.sleep(for: .milliseconds(250))
+
+            await m.stop()
+            await m.setUserPaused()
+            await m.setPlaying()
+            await m.markPlaybackStoppedByStreamFailure(.transientFailure)
+            await m.didUpdateStreamMetadata("Test Program • Speaker")
+            await m.saveCurrentState()
+
+            await Task.yield()
+            try? await Task.sleep(for: .milliseconds(600))
+
+            group.cancelAll()
+            try? await Task.sleep(for: .milliseconds(150))
+
+            for await result in group {
+                return result
+            }
+            return hybrid.live
+        }
+
+        if let token = hybrid.seamToken {
+            NotificationCenter.default.removeObserver(token)
+            hybrid.seamToken = nil
+        }
+        let seamSample = hybrid.seam
+
+        XCTAssertFalse(
+            liveSample.isEmpty,
+            "Live stream must deliver events across the action sequence; got none"
         )
+        XCTAssertFalse(
+            seamSample.isEmpty,
+            "DEBUG seam must observe emissions across the action sequence; got none"
+        )
+
+        XCTAssertTrue(
+            liveOrSeamContains(liveSample, seamSample) { if case .playbackIntentChanged(.userPaused) = $0 { return true }; return false },
+            "Must include playbackIntentChanged(.userPaused) on live or seam; live: \(liveSample), seam: \(seamSample)"
+        )
+        XCTAssertTrue(
+            liveOrSeamContains(liveSample, seamSample) { if case .playbackIntentChanged(.shouldBePlaying) = $0 { return true }; return false },
+            "Must include playbackIntentChanged(.shouldBePlaying) on live or seam; live: \(liveSample), seam: \(seamSample)"
+        )
+        XCTAssertTrue(
+            liveOrSeamContains(liveSample, seamSample) { if case .visualStateDidChange(.userPaused) = $0 { return true }; return false },
+            "Must include visualStateDidChange(.userPaused) on live or seam; live: \(liveSample), seam: \(seamSample)"
+        )
+        XCTAssertTrue(
+            liveOrSeamContains(liveSample, seamSample) { if case .visualStateDidChange(.playing) = $0 { return true }; return false },
+            "Must include visualStateDidChange(.playing) on live or seam; live: \(liveSample), seam: \(seamSample)"
+        )
+        XCTAssertTrue(
+            liveOrSeamContains(liveSample, seamSample) { if case .streamDidStop = $0 { return true }; return false },
+            "Must include streamDidStop on live or seam; live: \(liveSample), seam: \(seamSample)"
+        )
+        XCTAssertTrue(
+            liveOrSeamContains(liveSample, seamSample) { if case .streamDidPause = $0 { return true }; return false },
+            "Must include streamDidPause on live or seam; live: \(liveSample), seam: \(seamSample)"
+        )
+        XCTAssertTrue(
+            liveOrSeamContains(liveSample, seamSample) { if case .streamDidStart = $0 { return true }; return false },
+            "Must include streamDidStart from setPlaying() on live or seam; live: \(liveSample), seam: \(seamSample)"
+        )
+        XCTAssertTrue(
+            liveOrSeamContains(liveSample, seamSample) { if case .streamDidFail(.transientFailure) = $0 { return true }; return false },
+            "Must include streamDidFail(.transientFailure) on live or seam; live: \(liveSample), seam: \(seamSample)"
+        )
+        XCTAssertTrue(
+            liveOrSeamContains(liveSample, seamSample) { if case .metadataDidUpdate(let metadata) = $0, metadata != nil { return true }; return false },
+            "Must include non-nil metadataDidUpdate on live or seam; live: \(liveSample), seam: \(seamSample)"
+        )
+        XCTAssertTrue(
+            liveOrSeamContains(liveSample, seamSample) { if case .persistedWidgetStateDidUpdate = $0 { return true }; return false },
+            "Must include persistedWidgetStateDidUpdate on live or seam; live: \(liveSample), seam: \(seamSample)"
+        )
+    }
+
+    /// Returns whether `live` or `seam` contains an event matching `predicate`.
+    ///
+    /// Used by the hybrid live-emission smoke test when the XCTest host drops a subset
+    /// of yields on the shared live `AsyncStream` but the DEBUG seam still proves emit.
+    private func liveOrSeamContains(
+        _ live: [PlayerEvent],
+        _ seam: [PlayerEvent],
+        matching predicate: (PlayerEvent) -> Bool
+    ) -> Bool {
+        live.contains(where: predicate) || seam.contains(where: predicate)
     }
 
     // MARK: - Replay Forwarding & Emission Order (Tier 5)
@@ -1013,6 +1098,42 @@ final class SharedPlayerManagerEventTests: XCTestCase {
         let intentAfter = await manager.currentPlaybackIntent
         XCTAssertEqual(visualAfter, visualBefore)
         XCTAssertEqual(intentAfter, intentBefore)
+    }
+
+    /// Verifies that ``saveCurrentState()`` does not emit ``PlayerEvent/persistedWidgetStateDidUpdate``
+    /// when the privacy write gate is closed (`hasActiveLutheranWidgets == false`).
+    ///
+    /// The gate suppresses `performActualSave` and `savePersistedWidgetState` in the main app;
+    /// emission occurs only after an authoritative snapshot write. Closed gate ⇒ no write ⇒ no event.
+    ///
+    /// setUp enables the gate for other tests; this test explicitly closes it before driving
+    /// `saveCurrentState()`. Collection uses the DEBUG notification seam with a bounded timeout
+    /// (no `minimumCount` contract — absence of emissions is the assertion).
+    ///
+    /// - SeeAlso: ``saveCurrentState()``, ``savePersistedWidgetState(visualState:language:streamMetadata:hasError:)``,
+    ///   `WidgetRefreshManager.setHasActiveLutheranWidgets`, `SharedPlayerManager.hasActiveWidgets`,
+    ///   `PlayerEvent.persistedWidgetStateDidUpdate`, docs/Event-Driven-Refactor-Roadmap.md (Tier 5),
+    ///   CODING_AGENT.md (Test Execution Patience and Fast, Reliable Test Patterns).
+    func testSaveCurrentStateWithPrivacyGateClosedSuppressesPersistedWidgetStateEmission() async {
+        await MainActor.run {
+            WidgetRefreshManager.setHasActiveLutheranWidgets(false)
+            XCTAssertFalse(
+                WidgetRefreshManager.hasActiveLutheranWidgets,
+                "Precondition: privacy gate must be closed for this negative-path test"
+            )
+        }
+
+        let m = self.manager
+        // `minimumCount` is unreachable; the timeout path returns whatever was collected
+        // during the action + grace window (expected: none).
+        let liveEmissions = await collectSeamEvents(minimumCount: 100, timeout: 1.0) {
+            await m.saveCurrentState()
+        }
+
+        XCTAssertFalse(
+            liveEmissions.contains(.persistedWidgetStateDidUpdate),
+            "Closed privacy gate must suppress persisted snapshot write and emit; got: \(liveEmissions)"
+        )
     }
 
     /// Verifies the canonical emission order for ``setPlaying()`` on the recovery path.
