@@ -206,9 +206,16 @@ final class SharedPlayerManagerEventTests: XCTestCase {
     }
 
     /// One-shot box for safe single resume of a continuation.
+    ///
+    /// Uses `NSLock` because grace-delay `Task`s spawned from the notification
+    /// observer can race when `minimumCount` is reached on one event and trailing
+    /// emissions arrive before the grace sleep completes.
     private final class OneShotResume: @unchecked Sendable {
-        var did = false
+        private let lock = NSLock()
+        private var did = false
         func markAndCheck() -> Bool {
+            lock.lock()
+            defer { lock.unlock() }
             if did { return false }
             did = true
             return true
@@ -242,7 +249,10 @@ final class SharedPlayerManagerEventTests: XCTestCase {
             ) { note in
                 if let event = note.userInfo?["event"] as? PlayerEvent {
                     collector.events.append(event)
-                    if collector.events.count >= minimumCount, !oneShot.did {
+                    // Schedule exactly one grace window when the threshold is first reached
+                    // so trailing async emissions (e.g. `.persistedWidgetStateDidUpdate`)
+                    // are captured without spawning duplicate grace tasks.
+                    if collector.events.count == minimumCount {
                         // Grace for trailing async emissions (e.g. `.persistedWidgetStateDidUpdate`
                         // from `saveCurrentState()` immediately after `streamDidStop`).
                         Task { @Sendable in
@@ -681,5 +691,200 @@ final class SharedPlayerManagerEventTests: XCTestCase {
             forwarded.contains { if case .visualStateDidChange(.userPaused) = $0 { return true }; return false },
             "Replay stream must forward at least one live stop emission; got: \(forwarded)"
         )
+    }
+
+    /// Verifies the canonical emission order and intent preservation for
+    /// ``markPlaybackStoppedByStreamFailure(_:)``.
+    ///
+    /// Stream failure is distinct from explicit user pause or terminal stop:
+    /// - Visual moves to grey `.userPaused` for error UI.
+    /// - `playbackIntent` stays unchanged (typically `.shouldBePlaying`) so language
+    ///   switches can auto-resume without an extra play tap.
+    /// - The classified `streamDidFail` verb follows the visual mutation and precedes
+    ///   the persisted snapshot signal when the privacy gate allows the write path.
+    ///
+    /// Consumers (`PlayerEventSubscriber`, `WidgetRefreshManager`) rely on this ordering
+    /// and on the absence of `playbackIntentChanged` during failure recovery paths.
+    ///
+    /// Collection uses the DEBUG notification seam (same rationale as the `stop()` order
+    /// test) so assertions are not subject to AsyncStream iterator attach races.
+    ///
+    /// - SeeAlso: ``markPlaybackStoppedByStreamFailure(_:)``, ``emit(_:)``,
+    ///   `PlayerEvent.streamDidFail`, ``currentPlaybackIntent``,
+    ///   docs/Event-Driven-Refactor-Roadmap.md (Tier 5 emission order),
+    ///   CODING_AGENT.md (Test Execution Patience and Fast, Reliable Test Patterns).
+    func testStreamFailureEmissionOrderPreservesIntentAndMutationSequence() async {
+        // setUp established .shouldBePlaying intent (via setUserIntentToPlay).
+        let intentBefore = await manager.currentPlaybackIntent
+        XCTAssertEqual(
+            intentBefore,
+            .shouldBePlaying,
+            "Precondition: failure path tests intent preservation from an active-play intent"
+        )
+
+        let m = self.manager
+        let liveEmissions = await collectSeamEvents(minimumCount: 2, timeout: 5.0) {
+            await m.markPlaybackStoppedByStreamFailure(.transientFailure)
+        }
+
+        assertEvents(liveEmissions, containInOrder: [
+            { if case .visualStateDidChange(.userPaused) = $0 { return true }; return false },
+            { if case .streamDidFail(.transientFailure) = $0 { return true }; return false },
+        ])
+        XCTAssertTrue(
+            liveEmissions.contains(.persistedWidgetStateDidUpdate),
+            "Failure path should emit .persistedWidgetStateDidUpdate when the write path runs; got: \(liveEmissions)"
+        )
+        XCTAssertFalse(
+            liveEmissions.contains { if case .playbackIntentChanged = $0 { return true }; return false },
+            "Stream failure must not emit playbackIntentChanged — intent stays \(intentBefore); got: \(liveEmissions)"
+        )
+        XCTAssertFalse(
+            liveEmissions.contains { if case .streamDidPause = $0 { return true }; return false },
+            "Stream failure must emit streamDidFail, not streamDidPause; got: \(liveEmissions)"
+        )
+        XCTAssertFalse(
+            liveEmissions.contains { if case .streamDidStop = $0 { return true }; return false },
+            "Stream failure must emit streamDidFail, not streamDidStop; got: \(liveEmissions)"
+        )
+
+        let intentAfter = await manager.currentPlaybackIntent
+        XCTAssertEqual(
+            intentAfter,
+            intentBefore,
+            "playbackIntent must remain unchanged after stream failure (auto-resume contract)"
+        )
+    }
+
+    /// Verifies the canonical emission order for ``setUserPaused()``.
+    ///
+    /// Explicit user pause is distinct from terminal ``stop()`` and from
+    /// ``markPlaybackStoppedByStreamFailure(_:)``:
+    /// - Visual and intent both move to sticky `.userPaused` (resurrection protection).
+    /// - The `streamDidPause` verb follows the mutation events and precedes the
+    ///   persisted snapshot signal when the privacy gate allows the write path.
+    ///
+    /// Consumers use this ordering to distinguish pause from stop/fail and to update
+    /// controls before snapshot-driven widget reloads.
+    ///
+    /// Collection uses the DEBUG notification seam (same rationale as the `stop()` and
+    /// failure order tests).
+    ///
+    /// - SeeAlso: ``setUserPaused()``, ``markAsUserPaused()``, ``stop()``,
+    ///   ``markPlaybackStoppedByStreamFailure(_:)``, ``emit(_:)``,
+    ///   `PlayerEvent.streamDidPause`, docs/Event-Driven-Refactor-Roadmap.md (Tier 5),
+    ///   CODING_AGENT.md (Test Execution Patience and Fast, Reliable Test Patterns).
+    func testSetUserPausedEmissionOrderMatchesCanonicalMutationSequence() async {
+        // setUp established .shouldBePlaying intent and .prePlay visual.
+        let intentBefore = await manager.currentPlaybackIntent
+        XCTAssertEqual(
+            intentBefore,
+            .shouldBePlaying,
+            "Precondition: pause path tests transition from an active-play intent"
+        )
+
+        let m = self.manager
+        let liveEmissions = await collectSeamEvents(minimumCount: 3, timeout: 5.0) {
+            await m.setUserPaused()
+        }
+
+        assertEvents(liveEmissions, containInOrder: [
+            { if case .visualStateDidChange(.userPaused) = $0 { return true }; return false },
+            { if case .playbackIntentChanged(.userPaused) = $0 { return true }; return false },
+            { if case .streamDidPause = $0 { return true }; return false },
+        ])
+        XCTAssertTrue(
+            liveEmissions.contains(.persistedWidgetStateDidUpdate),
+            "Pause path should emit .persistedWidgetStateDidUpdate when the write path runs; got: \(liveEmissions)"
+        )
+        XCTAssertFalse(
+            liveEmissions.contains { if case .streamDidStop = $0 { return true }; return false },
+            "User pause must emit streamDidPause, not streamDidStop; got: \(liveEmissions)"
+        )
+        XCTAssertFalse(
+            liveEmissions.contains { if case .streamDidFail = $0 { return true }; return false },
+            "User pause must emit streamDidPause, not streamDidFail; got: \(liveEmissions)"
+        )
+
+        let visualAfter = await manager.currentVisualState
+        let intentAfter = await manager.currentPlaybackIntent
+        XCTAssertEqual(visualAfter, .userPaused)
+        XCTAssertEqual(intentAfter, .userPaused)
+    }
+
+    /// Verifies that ``clearSoftPauseMetadataStashForLanguageChange()`` emits
+    /// `.metadataDidUpdate(nil)` without mutating playback visual or intent state.
+    ///
+    /// Paused language switches must drop stale ICY program titles so widgets and
+    /// Now Playing show the new station name instead of the prior language's program.
+    /// The canonical clear path routes through `_clearIcyMetadataStash()` which emits
+    /// after the nil assignment. This is distinct from ``didUpdateStreamMetadata(_:)``
+    /// (non-nil updates) and from stream transition verbs.
+    ///
+    /// Collection uses the DEBUG notification seam so the assertion is isolated to
+    /// emissions triggered by the clear action.
+    ///
+    /// - SeeAlso: ``clearSoftPauseMetadataStashForLanguageChange()``,
+    ///   ``didUpdateStreamMetadata(_:)``, `_clearIcyMetadataStash()`,
+    ///   `PlayerEvent.metadataDidUpdate`, ``currentState``,
+    ///   docs/Event-Driven-Refactor-Roadmap.md (Tier 5),
+    ///   CODING_AGENT.md (Test Execution Patience and Fast, Reliable Test Patterns).
+    func testMetadataClearEmitsNilWithoutPlaybackMutation() async {
+        // Arrange: establish non-nil metadata (paused language-switch precondition).
+        await manager.setUserPaused()
+        await manager.didUpdateStreamMetadata("Test Program • Speaker")
+
+        let stateBefore = await manager.currentState
+        XCTAssertNotNil(
+            stateBefore.streamMetadata,
+            "Precondition: metadata must be present before the language-change clear"
+        )
+        let visualBefore = await manager.currentVisualState
+        let intentBefore = await manager.currentPlaybackIntent
+
+        let m = self.manager
+        let liveEmissions = await collectSeamEvents(minimumCount: 1, timeout: 5.0) {
+            await m.clearSoftPauseMetadataStashForLanguageChange()
+        }
+
+        XCTAssertEqual(
+            liveEmissions.count,
+            1,
+            "Clear path should emit exactly one metadata event; got: \(liveEmissions)"
+        )
+        XCTAssertEqual(
+            liveEmissions[0],
+            .metadataDidUpdate(nil),
+            "Language-change metadata clear must emit .metadataDidUpdate(nil)"
+        )
+        XCTAssertFalse(
+            liveEmissions.contains { if case .visualStateDidChange = $0 { return true }; return false },
+            "Metadata clear must not emit visualStateDidChange; got: \(liveEmissions)"
+        )
+        XCTAssertFalse(
+            liveEmissions.contains { if case .playbackIntentChanged = $0 { return true }; return false },
+            "Metadata clear must not emit playbackIntentChanged; got: \(liveEmissions)"
+        )
+        XCTAssertFalse(
+            liveEmissions.contains { if case .streamDidStart = $0 { return true }; return false } ||
+            liveEmissions.contains { if case .streamDidPause = $0 { return true }; return false } ||
+            liveEmissions.contains { if case .streamDidStop = $0 { return true }; return false } ||
+            liveEmissions.contains { if case .streamDidFail = $0 { return true }; return false },
+            "Metadata clear must not emit stream transition verbs; got: \(liveEmissions)"
+        )
+        XCTAssertFalse(
+            liveEmissions.contains(.persistedWidgetStateDidUpdate),
+            "Metadata clear must not persist widget snapshot (no .persistedWidgetStateDidUpdate); got: \(liveEmissions)"
+        )
+
+        let stateAfter = await manager.currentState
+        XCTAssertNil(
+            stateAfter.streamMetadata,
+            "Postcondition: streamMetadata must be nil after the clear"
+        )
+        let visualAfter = await manager.currentVisualState
+        let intentAfter = await manager.currentPlaybackIntent
+        XCTAssertEqual(visualAfter, visualBefore)
+        XCTAssertEqual(intentAfter, intentBefore)
     }
 }
