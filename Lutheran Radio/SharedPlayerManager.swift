@@ -731,16 +731,22 @@ actor SharedPlayerManager {
         // The forwarding task lives for the lifetime of this per-subscriber
         // stream (or until the process ends). Yields to a finished continuation
         // are ignored by AsyncStream.
-        Task { [weak self] in
-            guard let self else {
-                continuation.finish()
-                return
-            }
-            for await event in await self.events {
+        //
+        // Materialize the shared live stream while already actor-isolated so the
+        // forwarding task does not need a second actor hop before subscribing.
+        let liveEvents = await events
+        Task {
+            for await event in liveEvents {
                 continuation.yield(event)
             }
             continuation.finish()
         }
+
+        // Allow the forwarding task to reach its first suspended `for await` before
+        // callers drive live mutations (closes the subscribe race in Tier 5 tests).
+        await Task.yield()
+        await Task.yield()
+        try? await Task.sleep(for: .milliseconds(50))
 
         return stream
     }
