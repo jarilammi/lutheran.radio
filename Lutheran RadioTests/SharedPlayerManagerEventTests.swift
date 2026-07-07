@@ -1996,6 +1996,27 @@ final class SharedPlayerManagerEventTests: XCTestCase {
         _ = await manager.events
     }
 
+    /// Protects cold-launch auto-play: stale persisted `.thermalPaused` must not survive when
+    /// the device has cooled (simulator is always nominal/fair).
+    func testStalePersistedThermalPausedSanitizedToPrePlayOnRestore() async {
+        // Simulate a pre-fix snapshot left in the App Group from a prior overheating session.
+        let stale = SharedPlayerManager.PersistedWidgetState(
+            visualState: .thermalPaused,
+            currentLanguage: "sv"
+        )
+        let data = try! JSONEncoder().encode(stale)
+        UserDefaults(suiteName: "group.radio.lutheran.shared")?
+            .set(data, forKey: "persistedWidgetState")
+
+        await manager.refreshVisualStateFromPersistence()
+
+        let visual = await manager.currentVisualState
+        XCTAssertEqual(visual, .prePlay)
+        XCTAssertTrue(visual.shouldAutoPlayOrResume)
+
+        XCTAssertEqual(SharedPlayerManager.loadPersistedVisualStateDirect(), .prePlay)
+    }
+
     /// Picks a stream guaranteed to differ from the engine's current selection so
     /// `switchToStream` exercises the language-change silent-stop path under test.
     private func targetStreamDifferentFromCurrent(

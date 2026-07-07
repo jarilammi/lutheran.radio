@@ -902,7 +902,7 @@ actor SharedPlayerManager {
               let decoded = try? JSONDecoder().decode(PlayerVisualState.self, from: data) else {
             return .prePlay
         }
-        return decoded
+        return Self.sanitizedVisualStateForCrossProcessRestore(decoded)
     }
     
     nonisolated func isRunningInWidget() -> Bool {
@@ -2069,7 +2069,7 @@ actor SharedPlayerManager {
         // Do not treat `.prePlay` as “missing data”; the old `loaded != .prePlay` branch wrongly
         // mapped snapshot prePlay + legacy playing=false to `.userPaused` (grey pause on launch).
         if let combined = Self.loadPersistedWidgetState() {
-            var loadedVisual = combined.visualState
+            var loadedVisual = Self.sanitizedVisualStateForCrossProcessRestore(combined.visualState)
             // Defensive anti-regression for *user pause only*: if we had an explicit sticky .userPaused
             // in memory (from stop/mark) and the snapshot contains .prePlay (stale from prior switch/cold),
             // keep the grey paused visual and re-establish the intent. (Post-clear relaunches have no snapshot
@@ -2092,7 +2092,7 @@ actor SharedPlayerManager {
             }
         } else if let data = sharedDefaults?.data(forKey: "playerVisualState"),
                   let decoded = try? JSONDecoder().decode(PlayerVisualState.self, from: data) {
-            currentVisualState = decoded
+            currentVisualState = Self.sanitizedVisualStateForCrossProcessRestore(decoded)
         } else {
             // No snapshot (brand-new install or post-clearAllLocalState privacy clear, or
             // widgets were never added / snapshot was wiped) and no legacy JSON: treat as
@@ -2626,13 +2626,13 @@ actor SharedPlayerManager {
         // Prefer the combined snapshot for actor in-memory initialization
         // (both main app and widget extension processes). Legacy key is migration-only.
         if let combined = Self.loadPersistedWidgetState() {
-            return combined.visualState
+            return Self.sanitizedVisualStateForCrossProcessRestore(combined.visualState)
         }
         guard let data = sharedDefaults?.data(forKey: "playerVisualState"),
               let decoded = try? JSONDecoder().decode(PlayerVisualState.self, from: data) else {
             return .prePlay   // safe fallback for first launch
         }
-        return decoded
+        return Self.sanitizedVisualStateForCrossProcessRestore(decoded)
     }
 
     // MARK: - Legacy Migration
@@ -2691,6 +2691,52 @@ actor SharedPlayerManager {
         #if DEBUG
         print("🔄 [SharedPlayerManager] Migrated legacy isPlaying=\(legacyIsPlaying) → PersistedWidgetState")
         #endif
+    }
+
+    // MARK: - Thermal visual state (ephemeral — never sticky across launches)
+
+    /// Returns whether `ProcessInfo` reports a thermal state that warrants pausing playback.
+    ///
+    /// - Note: Simulators report `.nominal` or `.fair`; a persisted `.thermalPaused` snapshot
+    ///   on cold launch is therefore always stale unless the device is still overheating.
+    ///
+    /// - SeeAlso: ``sanitizedVisualStateForCrossProcessRestore(_:)``,
+    ///   ``visualStateForPersistenceWrite(_:)``, `DirectStreamingPlayer.setupThermalProtection()`.
+    nonisolated static func isDeviceThermallyStressed() -> Bool {
+        switch ProcessInfo.processInfo.thermalState {
+        case .serious, .critical:
+            return true
+        case .nominal, .fair:
+            return false
+        @unknown default:
+            return false
+        }
+    }
+
+    /// Restores a persisted visual state, downgrading stale `.thermalPaused` when the device has cooled.
+    ///
+    /// `thermalPaused` is an in-session hardware gate only. Unlike `.userPaused` it must not
+    /// block cold-launch auto-play after the thermal condition clears (simulator always clears).
+    ///
+    /// - Parameter state: Raw visual state from a snapshot or legacy JSON key.
+    /// - Returns: `state`, or `.prePlay` when `state` was `.thermalPaused` and the device is cool.
+    nonisolated static func sanitizedVisualStateForCrossProcessRestore(_ state: PlayerVisualState) -> PlayerVisualState {
+        guard state == .thermalPaused, !isDeviceThermallyStressed() else { return state }
+        #if DEBUG
+        print("[SharedPlayerManager] Sanitized stale persisted .thermalPaused → .prePlay (device no longer overheating)")
+        #endif
+        return .prePlay
+    }
+
+    /// Maps in-memory visual state to a value safe to write into `PersistedWidgetState`.
+    ///
+    /// Never persist `.thermalPaused`; it is re-derived from `ProcessInfo` when needed.
+    nonisolated static func visualStateForPersistenceWrite(_ state: PlayerVisualState) -> PlayerVisualState {
+        guard state == .thermalPaused else { return state }
+        #if DEBUG
+        print("[SharedPlayerManager] Not persisting ephemeral .thermalPaused — writing .prePlay instead")
+        #endif
+        return .prePlay
     }
 
     // MARK: - Persisted Widget State (visual + language snapshot)
@@ -2760,6 +2806,8 @@ actor SharedPlayerManager {
         streamMetadata: StreamProgramMetadata? = nil,
         hasError: Bool = false
     ) {
+        let visualToWrite = Self.visualStateForPersistenceWrite(visualState)
+
         // Privacy gate (see persistWidgetSnapshot for rationale and hasActiveWidgets docs).
         // Allow widget process bypass (optimistic paths from intents may route here in future).
         guard Self.hasActiveWidgets || Self.isWidgetProcess() else {
@@ -2771,7 +2819,7 @@ actor SharedPlayerManager {
 
         let metadataToPersist = streamMetadata ?? currentStreamMetadata
         let snapshot = PersistedWidgetState(
-            visualState: visualState,
+            visualState: visualToWrite,
             currentLanguage: language,
             lastLanguageChangeTime: Date(),
             streamMetadata: metadataToPersist,
@@ -2829,7 +2877,8 @@ actor SharedPlayerManager {
         // check this first.
         if let data = defaults.data(forKey: "persistedWidgetState"),
            let decoded = try? JSONDecoder().decode(PersistedWidgetState.self, from: data) {
-            return (decoded.visualState, decoded.currentLanguage, decoded.streamMetadata)
+            let visual = sanitizedVisualStateForCrossProcessRestore(decoded.visualState)
+            return (visual, decoded.currentLanguage, decoded.streamMetadata)
         }
 
         // No migration fallback remains for the retired playerVisualState / currentLanguage keys.
@@ -2888,6 +2937,8 @@ actor SharedPlayerManager {
         // (See initial-play-widget.log and WidgetToggleRadioIntent for the race this fixes.)
         // Main-app writes continue to respect the gate (re-detect on foreground/widget-action processing
         // will flip it true for subsequent saves).
+        let visualToWrite = Self.visualStateForPersistenceWrite(visualState)
+
         guard Self.hasActiveWidgets || Self.isWidgetProcess() else {
             if !Self.isWidgetProcess() {
                 Self.refreshHasActiveWidgetsStatus() // fire-and-forget re-detect so a later play/foreground after adding widget can resume writes
@@ -2908,7 +2959,7 @@ actor SharedPlayerManager {
         }
 
         let snapshot = PersistedWidgetState(
-            visualState: visualState,
+            visualState: visualToWrite,
             currentLanguage: language,
             lastLanguageChangeTime: Date(),
             streamMetadata: resolvedMetadata,
@@ -3226,7 +3277,7 @@ extension SharedPlayerManager {
         // hasError is now carried in the snapshot so loadSharedState can derive exclusively
         // from it (plus direct player state where appropriate in the main app).
         savePersistedWidgetState(
-            visualState: currentVisualState,
+            visualState: Self.visualStateForPersistenceWrite(currentVisualState),
             language: state.currentLanguage,
             streamMetadata: currentStreamMetadata,
             hasError: state.hasError

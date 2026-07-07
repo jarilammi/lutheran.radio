@@ -451,10 +451,13 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
             
             await self.playSpecialTuningSound()
             
+            // Re-fetch after tuning: persistence refresh and thermal sanitization may have
+            // updated in-memory state while the tuning clip played.
+            let visualStateAfterTuning = await SharedPlayerManager.shared.currentVisualState
+            let intentAfterTuning = await SharedPlayerManager.shared.currentPlaybackIntent
+            
             #if DEBUG
-            let afterTuneVisual = await SharedPlayerManager.shared.currentVisualState
-            let afterTuneIntent = await SharedPlayerManager.shared.currentPlaybackIntent
-            print("[ViewController] After tuning — visualState = \(afterTuneVisual), intent = \(afterTuneIntent)")
+            print("[ViewController] After tuning — visualState = \(visualStateAfterTuning), intent = \(intentAfterTuning)")
             #endif
             
             // Post-clear (or normal first) cold launch first play.
@@ -465,14 +468,14 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
             // Identifying writes (snapshot seed + lastUpdateTime bump) happen only on this
             // success path so that clearAllLocalState + post-clear launches do not re-create
             // deleted data until the first explicit or allowed cold play.
-            guard visualState == .prePlay || visualState == .cleared || visualState.shouldAutoPlayOrResume || intent == .cleared else {
+            guard visualStateAfterTuning == .prePlay || visualStateAfterTuning == .cleared || visualStateAfterTuning.shouldAutoPlayOrResume || intentAfterTuning == .cleared else {
                 #if DEBUG
-                print("[ViewController] Blocked initial playback — state = \(visualState)")
+                print("[ViewController] Blocked initial playback — state = \(visualStateAfterTuning)")
                 #endif
                 return
             }
             
-            if intent == .cleared {
+            if intentAfterTuning == .cleared {
                 #if DEBUG
                 print("[ViewController] post-clear cold launch — allowing initial playback and state creation")
                 #endif
