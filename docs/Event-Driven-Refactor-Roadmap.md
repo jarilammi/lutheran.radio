@@ -45,7 +45,8 @@ It serves as both the project backlog for remaining work and a self-contained re
 - Tier 5 test expansion (fifteenth micro-step): `streamDidFail(.securityFailure)` classified payload protected by `testSecurityFailureStreamDidFailPayloadIsFaithfullyEmitted`. Asserts `visualStateDidChange(.userPaused)` → `streamDidFail(.securityFailure)` → `.persistedWidgetStateDidUpdate` subsequence, exactly one fail emission carrying `.securityFailure` (no transient/permanent misclassification), negative guards (no `playbackIntentChanged`, `streamDidPause`, or `streamDidStop`), and unchanged `currentPlaybackIntent`. See Tier 5 and Update Log. (2026-07-07)
 - Tier 5 consumer coverage (sixteenth micro-step): `WidgetRefreshManager.handlePlayerEvent` visual derivation protected by `WidgetRefreshManagerEventTests.swift`. Extracts shared `deriveRefreshParameters(for:)` helper; DEBUG white-box seams `_test_deriveRefreshParameters(for:)`, `_test_handlePlayerEventBypassingUITestMode(_:)`, and `_test_setRecordHandlePlayerEventDerivation(_:)` bypass UITestMode guards without WidgetCenter IPC. Asserts carried `.visualStateDidChange` preference over stale persisted snapshots, persisted fallback for non-carrying events (`.streamDidStart`, `.persistedWidgetStateDidUpdate`), `.prePlay` default when snapshot absent, and `hasError` propagation from SSOT readers. See Tier 5 and Update Log. (2026-07-07)
 - Tier 5 consumer coverage (seventeenth micro-step): `PlayerEventSubscriber` observation contract protected by `PlayerEventSubscriberEventTests.swift`. MainActor tests drive `beginObserving()` for the four-event replay prefix (`eventCount`, `lastObservedIntent` alignment with `currentState`), `_test_applyPlayerEvent(_:)` for intent vs non-intent observable update rules, and `cancel()` suppression of replay-stream delivery. DEBUG observation-suppression seams on `WidgetRefreshManager` isolate the shared `events` iterator for replay attachment. See Tier 5 and Update Log. (2026-07-07)
-- Cold-launch thermal snapshot sanitization (adjacent SSOT fix, 2026-07-07): `SharedPlayerManager` no longer treats persisted `.thermalPaused` as a sticky cold-launch blocker when `ProcessInfo.thermalState` is `.nominal` or `.fair`. Read paths (`ensureVisualStateLoaded`, `loadPersistedWidgetState`, `loadPersistedVisualStateDirect`) downgrade stale `.thermalPaused` → `.prePlay`. Write paths (`persistWidgetSnapshot`, `savePersistedWidgetState`, `performActualSave`) never persist ephemeral `.thermalPaused`. `ViewController` re-fetches visual state after the tuning sound instead of using a pre-tuning captured value. Protected by `testStalePersistedThermalPausedSanitizedToPrePlayOnRestore`. Symptom addressed: simulator and device cold launches that showed yellow connecting indefinitely until explicit play when an App Group snapshot still carried `.thermalPaused` from a prior overheating session. See Open Issue **OI-1** for the broader restore-semantics work still required.
+- Cold-launch thermal snapshot sanitization (adjacent SSOT fix, 2026-07-07): superseded by memory-only policy below.
+- Memory-only visual state policy (2026-07-07): `SharedPlayerManager` no longer writes visual/playback state to UserDefaults. ``resetToFactoryDefaultsOnLaunch()`` clears on-disk `persistedWidgetState` / `playerVisualState` / legacy bools on every cold launch; `PersistedWidgetState` is an in-process session snapshot only (`inMemorySessionWidgetSnapshot`). `loadPersistedWidgetState()` never reads disk; widgets show factory `.prePlay` after relaunch. In-session thermal sanitization retained. `ViewController` cold-launch Task calls reset before resurrection guards and no longer seeds on-disk snapshots. Protected by `testColdLaunchFactoryResetClearsDiskVisualStateAndReturnsPrePlay`. Resolves Open Issue **OI-1**.
 
 **Architecture Status**
 - `SharedPlayerManager` is the single source of truth for emitting player events. It owns the canonical `PlayerEvent` vocabulary and the long-lived `events` `AsyncStream`.
@@ -66,34 +67,16 @@ These items are architectural defects or policy gaps exposed by production-like 
 
 ### OI-1 — Cold-launch snapshot restore applies persisted visual state verbatim
 
-**Status:** Open (partial mitigation only; full fix deferred)
+**Status:** Resolved (2026-07-07) — memory-only visual policy
 
-**Observed symptoms**
-- Development iPhone exhibits an unexpected full cold-start path (tuning sound + prePlay yellow connecting) on **every power-on**, even when the prior session was actively playing and no explicit user pause occurred.
-- iOS Simulator cold launch (2026-07-07): UI showed yellow connecting (`prePlay`) then stalled until explicit play. Console trace: `viewDidAppear` read `currentVisualState = thermalPaused` and skipped auto-play; after the tuning sound, `visualState = thermalPaused` with `intent = shouldBePlaying`; `Blocked initial playback — state = thermalPaused`. Manual `userRequestedPlay()` then proceeded (`Cold-launch first play – resurrection protection relaxed`) and playback reached green `.playing`. Root of the stall: `refreshVisualStateFromPersistence()` had loaded `.thermalPaused` from `PersistedWidgetState` while in-memory intent remained `.shouldBePlaying` — sticky-intent guard passed, post-tuning auto-play guard failed.
-- Widget refresh logs showed `stale debounced .playing vs persisted .thermalPaused`, indicating in-memory/event-driven state and on-disk snapshot diverged.
+**Resolution**
+- Visual/playback state is **never** written to UserDefaults. ``resetToFactoryDefaultsOnLaunch()`` purges on-disk keys and resets to factory `.prePlay` on every cold launch.
+- `PersistedWidgetState` remains as an **in-process session snapshot** (`inMemorySessionWidgetSnapshot`) for widget refresh derivation within the current runtime only.
+- `loadPersistedWidgetState()` reads memory only; cross-process widget timelines default to safe `.prePlay` after relaunch.
+- In-session thermal sanitization (`sanitizedVisualStateForCrossProcessRestore`, `visualStateForPersistenceWrite`) retained for active playback.
+- Regression: `testColdLaunchFactoryResetClearsDiskVisualStateAndReturnsPrePlay`.
 
-**Root cause (current model)**
-- `ensureVisualStateLoaded()` / `refreshVisualStateFromPersistence()` treat the `PersistedWidgetState.visualState` field as authoritative on cold launch and copy it directly into `currentVisualState` with only narrow exceptions (sticky `.userPaused` anti-regression against stale `.prePlay` snapshots).
-- `PlaybackIntent` is **not** stored in the snapshot. Intent is inferred only for `.userPaused` and `.securityLocked` visuals. Ephemeral or session-scoped visuals (`.thermalPaused`, transient `.prePlay` from an in-flight connect, etc.) can therefore produce **visual/intent mismatch** after restore.
-- Cross-process writes and KVO-driven `saveCurrentState()` can persist session-local visuals that were never meant to survive process death, power-off, or the next launch's resurrection policy.
-
-**Point fix already shipped (2026-07-07)**
-- `.thermalPaused` is sanitized on read when the device has cooled and is never written to disk. This closes one manifestation of the verbatim-restore bug but does not change the overall restore contract.
-
-**Required future work (scrutinize and fix)**
-1. **Classify which `PlayerVisualState` values are persistable across process boundaries** vs in-session only. Candidates for non-persistence or launch-time downgrade: `.thermalPaused`, possibly transient `.prePlay` written mid-connect, and any visual that does not imply a matching `PlaybackIntent` sticky rule.
-2. **Audit every `persistWidgetSnapshot` / `performActualSave` / `forcePersistVisualState` write site** for visuals that should not survive power-off. Document an explicit persistence allowlist/denylist in `SharedPlayerManager` resurrection tables.
-3. **Reconcile cold-launch policy with device power-on + visible Lock Screen Live Activity**: determine whether a prior `.playing` snapshot + `shouldBePlaying` intent (once intent is modeled correctly) should skip the tuning/cold-start path, or whether power-on must always present passive UI per `hasExplicitTerminationSentinel()` — today these policies interact inconsistently on development hardware.
-4. **Add device-level regression coverage** for power-on / wake after active playback (not only simulator cold launch and not only stale `.thermalPaused`). Capture App Group snapshot contents, `lastUpdateTime`, intent, and visual at launch decision points.
-5. **Emit or log a launch-classification `PlayerEvent` or DEBUG seam** (future, additive) so cold-launch vs resurrection vs post-termination paths are observable in tests without parsing multi-hundred-line console traces.
-
-**Acceptance criteria**
-- Power-on on a development device with prior active playback and no explicit user pause does not spuriously enter the blocked or full cold-tuning path unless resurrection policy explicitly requires it (termination sentinel, sticky intent, or security lock).
-- Restored visual state always implies a consistent playback intent, or intent is persisted alongside visual in the snapshot SSOT.
-- No ephemeral hardware- or session-gated visual survives `PersistedWidgetState` across process death.
-
-**SeeAlso:** `SharedPlayerManager.ensureVisualStateLoaded()`, `refreshVisualStateFromPersistence()`, `ViewController.viewDidLoad` cold-launch Task, `RadioPlayerCoordinator.performColdLaunchPlaybackIfAllowed`, `hasExplicitTerminationSentinel()`, resurrection tables in `SharedPlayerManager.swift`, CODING_AGENT.md (Single Source of Truth Principles).
+**SeeAlso:** ``SharedPlayerManager/resetToFactoryDefaultsOnLaunch()``, ``ensureVisualStateLoaded()``, ViewController.viewDidLoad cold-launch Task, resurrection tables in `SharedPlayerManager.swift`, CODING_AGENT.md (Single Source of Truth Principles).
 
 ---
 

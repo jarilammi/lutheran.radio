@@ -383,6 +383,10 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
                 self.updateUI(for: .prePlay)
                 return
             }
+
+            // Memory-only policy: purge any stale on-disk visual keys and reset to factory .prePlay
+            // before resurrection guards or tuning. Auto-play on first launch remains intact.
+            await SharedPlayerManager.shared.resetToFactoryDefaultsOnLaunch()
             
             let initialStream = SharedPlayerManager.streamForLanguageCode(languageCode)
             
@@ -402,8 +406,7 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
             // ─────────────────────────────────────────────────────────────────────────
             // Resurrection / wake guard — MUST run before any tuning sound or play().
             //
-            // Loads authoritative snapshot + intent (so .userPaused / .securityLocked /
-            // .cleared are reflected, and sticky intent is synced from PersistedWidgetState).
+            // Loads in-session visual + intent (memory-only; cold launch is always .prePlay).
             //
             // The combination `intent.isStickyPauseOrLock || hasExplicitTerminationSentinel()`
             // is the hard blocker required by policy:
@@ -483,26 +486,13 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
             
             guard self.hasInternetConnection else { return }
             
-            // Identifying / persistence writes (snapshot seed, lastUpdateTime bump, combined state,
-            // widget refresh) happen here — only on the path that will actually start the post-clear
-            // first play. This satisfies the "deleted data not re-created until play or post-clear cold launch".
-            // Seed snapshot here (after guard) rather than before player init; status handling and
-            // prePlay visual now tolerate the timing.
-            //
-            // Post-clear + widget-installed: the clear path forces hasActiveWidgets=false (to avoid
-            // immediate re-population of identifying state). On the *successful post-clear cold-start play*
-            // we are now at the permitted moment to (re)create the snapshot with the reseeded language
-            // (bestInitialLanguageCode via the captured initialStream). Re-query here so the gate in
-            // persistWidgetSnapshot / saveCombined opens for this explicit first write.
+            // In-session widget refresh only (no on-disk visual persistence). Re-query widget
+            // presence so saveCurrentState / performActualSave can update the in-memory session
+            // snapshot after play() attaches.
             if !SharedPlayerManager.hasActiveWidgets {
                 await WidgetRefreshManager.shared.refreshHasActiveWidgets()
             }
-            SharedPlayerManager.persistWidgetSnapshot(
-                visualState: .prePlay,
-                language: initialStream.languageCode
-            )
-            await SharedPlayerManager.shared.refreshVisualStateFromPersistence()
-            
+
             radioPlayerCoordinator?.updateUserDefaultsLanguage(initialStream.languageCode)
             
             #if DEBUG

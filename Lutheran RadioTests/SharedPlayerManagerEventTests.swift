@@ -1996,25 +1996,33 @@ final class SharedPlayerManagerEventTests: XCTestCase {
         _ = await manager.events
     }
 
-    /// Protects cold-launch auto-play: stale persisted `.thermalPaused` must not survive when
-    /// the device has cooled (simulator is always nominal/fair).
-    func testStalePersistedThermalPausedSanitizedToPrePlayOnRestore() async {
-        // Simulate a pre-fix snapshot left in the App Group from a prior overheating session.
+    /// Protects cold-launch factory reset: stale on-disk visual state must never restore after relaunch.
+    ///
+    /// Simulates an App Group blob left by a prior session (`.playing`, `.thermalPaused`, etc.).
+    /// ``resetToFactoryDefaultsOnLaunch()`` must purge disk keys and leave `.prePlay` with no
+    /// in-memory session snapshot so auto-play on first launch remains viable.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/resetToFactoryDefaultsOnLaunch()``,
+    ///   ``SharedPlayerManager/loadPersistedWidgetState()``, docs/Event-Driven-Refactor-Roadmap.md.
+    func testColdLaunchFactoryResetClearsDiskVisualStateAndReturnsPrePlay() async {
         let stale = SharedPlayerManager.PersistedWidgetState(
             visualState: .thermalPaused,
             currentLanguage: "sv"
         )
         let data = try! JSONEncoder().encode(stale)
-        UserDefaults(suiteName: "group.radio.lutheran.shared")?
-            .set(data, forKey: "persistedWidgetState")
+        let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared")
+        defaults?.set(data, forKey: "persistedWidgetState")
+        defaults?.set(data, forKey: "playerVisualState")
 
-        await manager.refreshVisualStateFromPersistence()
+        await manager.resetToFactoryDefaultsOnLaunch()
 
         let visual = await manager.currentVisualState
         XCTAssertEqual(visual, .prePlay)
         XCTAssertTrue(visual.shouldAutoPlayOrResume)
-
+        XCTAssertNil(SharedPlayerManager.loadPersistedWidgetState())
         XCTAssertEqual(SharedPlayerManager.loadPersistedVisualStateDirect(), .prePlay)
+        XCTAssertNil(defaults?.data(forKey: "persistedWidgetState"))
+        XCTAssertNil(defaults?.data(forKey: "playerVisualState"))
     }
 
     /// Picks a stream guaranteed to differ from the engine's current selection so
