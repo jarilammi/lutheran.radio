@@ -222,20 +222,25 @@ more.
 
 **AGENT NOTE — Exercise patience with test sessions that may appear stalled.**
 
-Certain legitimate test executions (particularly `xcodebuild ... test-without-building` and event-coverage tests) can appear completely stuck for 5–15 minutes. Common causes that were mitigated (but not eliminated) by the work in commit `10e0e46f968f4ecffe2dcd9cc2a1cc7c007cf4cd`:
+Certain legitimate test executions (particularly `xcodebuild ... test-without-building` and event-coverage tests) can appear completely stuck for 5–15 minutes. Two distinct failure families exist; do not conflate them:
 
-- First-time round-trips to ActivityKit's system services against **stale Live Activities** left behind by prior manual simulator streaming sessions.
-- Cooperative cancellation delays on `for await` over a **never-finishing live `AsyncStream`** (the shared `SharedPlayerManager.events` stream only delivers to active subscribers; the collector must be attached before any emit).
-- Scheduler jitter under LLDB / the XCTest host combined with timers, WidgetCenter queries, or reconnection logic.
+1. **System-service stalls** (mitigated in commit `10e0e46f968f4ecffe2dcd9cc2a1cc7c007cf4cd`):
+   - First-time round-trips to ActivityKit's system services against **stale Live Activities** left behind by prior manual simulator streaming sessions.
+   - WidgetCenter queries or `endActivity()` IPC when a Live Activity was left on the simulator.
+2. **AsyncStream subscribe races** (mitigated in commit `a76708eaddb2c305c87231e339a4a7ea516c84d6`):
+   - The shared live `events` stream only delivers to **currently active** iterators; collectors must attach before any emit.
+   - `makeEventsStreamWithReplay()` live-forwarding can miss the first post-prefix yield if the forwarding task has not reached its first suspended `for await` before callers drive mutations.
+   - Cooperative cancellation delays on `for await` over a never-finishing live `AsyncStream`.
+   - Scheduler jitter under LLDB / the XCTest host combined with timers or reconnection logic.
 
 **Rule for agents**: Allow the test process and simulator sufficient time (often 10–15 minutes on a first run after simulator use) before terminating the session. Prematurely terminating and restarting the test process frequently leaves *additional* stale Activity / Widget state, making the next run slower or causing cold-launch stalls (launch screen never dismissed). Wait for the test infrastructure to time out naturally. The patterns below were introduced precisely so that waits are always bounded and expensive paths are never exercised.
 
 When authoring new tests that touch `PlayerEvent` emission, `SharedPlayerManager.events` / `makeEventsStreamWithReplay()`, Live Activities, `PersistedWidgetState`, `WidgetRefreshManager`, or similar surfaces, implement the fast/reliable patterns below. The authoritative living examples are:
 
-- `Lutheran RadioTests/SharedPlayerManagerEventTests.swift` (especially `collectEvents(whilePerforming:)`, `waitForEvent(...)`, `testLiveEmitsTransitionEventsForStopPauseFailAndIntent`, and setUp sanitization)
+- `Lutheran RadioTests/SharedPlayerManagerEventTests.swift` — helpers: `collectEvents(whilePerforming:)`, `waitForEvent(whilePerforming:)`, `collectSeamEvents(minimumCount:whilePerforming:)`, `assertEvents(_:containInOrder:)`, `waitForEmission(matching:whilePerforming:)`; tests: `testMakeEventsStreamWithReplayYieldsCurrentStateThenLiveEvents` (Tier 3 prefix), `testLiveEmitsTransitionEventsForStopPauseFailAndIntent` (live coverage), `testReplayStreamPrefixesStateThenForwardsLiveStopEmissionsInOrder` (hybrid replay + emission order); setUp sanitization
 - `Lutheran RadioTests/RadioLiveActivityManagerTests.swift` (setUp/tearDown hygiene)
 - `Lutheran Radio/RadioLiveActivityManager.swift` (deferral + guards)
-- `Lutheran Radio/SharedPlayerManager.swift` (`isRunningInUITestMode`)
+- `Lutheran Radio/SharedPlayerManager.swift` (`isRunningInUITestMode`, `makeEventsStreamWithReplay()` yield hardening)
 - `Lutheran Radio/ViewController.swift` and `DirectStreamingPlayer.swift` (early UITestMode short-circuits)
 
 **Canonical fast-test techniques** (apply these; do not rediscover the slow paths):
@@ -270,7 +275,7 @@ When authoring new tests that touch `PlayerEvent` emission, `SharedPlayerManager
 
 4. **Reliable bounded collection from live (never-finishing) AsyncStreams**
    - Subscribe to the stream **before** performing the action that will cause emissions.
-   - Drive *all* exercising actions from inside one call to the collector helper (`collectEvents(whilePerforming:)` or `waitForEvent(whilePerforming:)`).
+   - Drive *all* exercising actions from inside one call to the collector helper (`collectEvents(whilePerforming:)` or `waitForEvent(whilePerforming:)`). Both helpers use the same subscribe-before-action shape: start the `for await` task, double-yield + short sleep, run the action, yield + sleep again, then race against timeout.
    - Never use a bare `Task` + separate timeout `Task`. Use `withTaskGroup` + `cancelAll()` + grace sleep so the `await collectionTask.value` is guaranteed to complete:
      ```swift
      let result = await withTaskGroup(of: [PlayerEvent].self) { group in
@@ -279,7 +284,8 @@ When authoring new tests that touch `PlayerEvent` emission, `SharedPlayerManager
              try? await Task.sleep(for: .seconds(Int(timeout)))
              collectionTask.cancel()
              try? await Task.sleep(for: .milliseconds(150)) // grace for cooperative cancellation
-             return []
+             // Return partial progress so callers can XCTFail instead of trapping on subscripts.
+             return await collectionTask.value
          }
          for await first in group {
              group.cancelAll()
@@ -293,14 +299,31 @@ When authoring new tests that touch `PlayerEvent` emission, `SharedPlayerManager
 
 5. **Use direct test seams to avoid system services (ActivityKit, WidgetCenter) entirely**
    - `WidgetRefreshManager.setHasActiveLutheranWidgets(true)` instead of calling `refreshHasActiveWidgets()`.
-   - The DEBUG notification seam (`Notification.Name("PlayerEventEmittedForTest")`) for one reliable observation point when pure stream timing is fragile under the test host.
+   - The DEBUG notification seam (`Notification.Name("PlayerEventEmittedForTest")`) posted synchronously from `emit(_:)` — use for emission-order and single-event assertions when pure `AsyncStream` timing is fragile under the test host.
+   - **`collectSeamEvents(minimumCount:whilePerforming:)`** — batch collection via the seam until `minimumCount` events arrive; includes ~400ms grace for trailing async emissions (e.g. `.persistedWidgetStateDidUpdate` immediately after `streamDidStop`). Prefer over replay-stream collection for canonical order from `stop()` and similar bursts.
+   - **`waitForEmission(matching:whilePerforming:)`** — one-shot seam wait for a single matching event.
+   - **`assertEvents(_:containInOrder:)`** — ordered **subsequence** matching (not fixed total count). Side effects from `DirectStreamingPlayer.stop()` and similar paths may interleave between canonical mutation → verb → persist steps.
    - Set test-only flags directly rather than going through production refresh paths.
 
 6. **Document the "what" and the "why"**
-   - Every test must state the precise invariant, replay contract, emission ordering property, or behavioral guarantee it protects (see the long documentation comments on the Tier 5 test and the replay test in `SharedPlayerManagerEventTests`).
-   - Add "Why this pattern is required" explanations (scheduler, ActivityKit cost on stale state, live-stream subscription timing) so the next agent does not re-introduce hangs.
+   - Every test must state the precise invariant, replay contract, emission ordering property, or behavioral guarantee it protects (see the long documentation comments on the Tier 5 replay/emission-order test and the Tier 3 replay-prefix test in `SharedPlayerManagerEventTests`).
+   - Add "Why this pattern is required" explanations (scheduler, ActivityKit cost on stale state, live-stream subscription timing, replay-forwarding attach races) so the next agent does not re-introduce hangs.
 
-Following these keeps the full test suite fast and repeatable while still giving meaningful coverage of the event-driven architecture and media surfaces. Before writing new tests in this area, re-read the implementation of `collectEvents` and the "Live Emission Coverage" test method in full.
+7. **Hybrid collection for replay + emission-order tests**
+   - Split contracts across collection surfaces; do not gate everything on one `AsyncStream` iterator in the XCTest host.
+   - **Prefix contract (gates):** `makeEventsStreamWithReplay()` + `collectEvents(count: 4)` — the four synthesized state events are buffered at stream creation and are reliable.
+   - **Emission order (gates):** `collectSeamEvents` + `assertEvents(containInOrder:)` on the DEBUG notification seam — not subject to replay live-forwarding attach races.
+   - **Replay live-forwarding (best-effort only):** a second `collectEvents` on the same replay stream after the prefix may return empty under XCTest host timing; that is acceptable when the seam already proved the emission. Never `XCTFail` the suite on forwarding alone.
+   - **Production replay hardening:** `makeEventsStreamWithReplay()` materializes `events` while already actor-isolated (`let liveEvents = await events` before spawning the forwarding task) and yields before return (`Task.yield()` ×2 + ~50ms sleep) so forwarding iterators reach their first suspended `for await` before callers drive live mutations. Any change to replay creation must preserve this invariant.
+   - Canonical reference: `testReplayStreamPrefixesStateThenForwardsLiveStopEmissionsInOrder`.
+
+   **Never (replay / emission-order tests):**
+   - Never gate primary contracts on replay-stream live-forwarding in the XCTest host.
+   - Never drive live mutations before `makeEventsStreamWithReplay()` returns (subscribe race).
+   - Never assert a fixed total event count for `stop()` or similar multi-emit paths — use ordered subsequence matching.
+   - Never use bare `Task` + separate timeout for never-finishing streams (use `collectEvents` / `waitForEvent` helpers).
+
+Following these keeps the full test suite fast and repeatable while still giving meaningful coverage of the event-driven architecture and media surfaces. Before writing new tests in this area, re-read the implementation of `collectEvents`, `collectSeamEvents`, `assertEvents(containInOrder:)`, and the test methods under "Replay Scenario", "Live Emission Coverage", and "Replay Forwarding & Emission Order" in `SharedPlayerManagerEventTests.swift`.
 
 - SeeAlso: `SharedPlayerManager.isRunningInUITestMode`, `RadioLiveActivityManager.isRunningUnderTest` and its `observeExistingActivities`, the collection helpers, "Test documentation" rule above, README.md (Agent Verification Commands + Troubleshooting), docs/Event-Driven-Refactor-Roadmap.md.
 
