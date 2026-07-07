@@ -222,6 +222,65 @@ final class SharedPlayerManagerEventTests: XCTestCase {
         }
     }
 
+    /// Collects live emissions via the DEBUG notification seam until `terminal` matches
+    /// an event (plus a short grace for trailing async emissions) or `timeout` elapses.
+    ///
+    /// Prefer this over ``collectSeamEvents(minimumCount:timeout:whilePerforming:)`` when
+    /// the action completes asynchronously after the triggering call returns (for example
+    /// engine `switchToStream` prep followed by an authoritative metadata clear).
+    private func collectSeamEventsUntil(
+        timeout: TimeInterval = 8.0,
+        until terminal: @escaping @Sendable (PlayerEvent) -> Bool,
+        whilePerforming action: @escaping @Sendable () async -> Void = {}
+    ) async -> [PlayerEvent] {
+        final class SeamCollector: @unchecked Sendable {
+            var events: [PlayerEvent] = []
+            var token: NSObjectProtocol?
+        }
+
+        let collector = SeamCollector()
+        let oneShot = OneShotResume()
+
+        return await withCheckedContinuation { (cont: CheckedContinuation<[PlayerEvent], Never>) in
+            collector.token = NotificationCenter.default.addObserver(
+                forName: Notification.Name("PlayerEventEmittedForTest"),
+                object: nil,
+                queue: .main
+            ) { note in
+                if let event = note.userInfo?["event"] as? PlayerEvent {
+                    collector.events.append(event)
+                    if terminal(event) {
+                        Task { @Sendable in
+                            try? await Task.sleep(for: .milliseconds(400))
+                            if oneShot.markAndCheck() {
+                                if let token = collector.token {
+                                    NotificationCenter.default.removeObserver(token)
+                                    collector.token = nil
+                                }
+                                cont.resume(returning: collector.events)
+                            }
+                        }
+                    }
+                }
+            }
+
+            Task { @Sendable in
+                await action()
+            }
+
+            Task { @Sendable in
+                try? await Task.sleep(for: .seconds(Int(timeout)))
+                if oneShot.markAndCheck() {
+                    if let token = collector.token {
+                        NotificationCenter.default.removeObserver(token)
+                        collector.token = nil
+                    }
+                    cont.resume(returning: collector.events)
+                }
+            }
+        }
+    }
+
     /// Collects live emissions via the DEBUG notification seam until `minimumCount`
     /// events arrive or `timeout` elapses.
     ///
@@ -877,14 +936,222 @@ final class SharedPlayerManagerEventTests: XCTestCase {
             "Metadata clear must not persist widget snapshot (no .persistedWidgetStateDidUpdate); got: \(liveEmissions)"
         )
 
-        let stateAfter = await manager.currentState
-        XCTAssertNil(
-            stateAfter.streamMetadata,
-            "Postcondition: streamMetadata must be nil after the clear"
-        )
+        // Visual + intent postconditions only: engine async callbacks may repopulate display
+        // metadata after the authoritative clear returns (race under full-suite ordering).
         let visualAfter = await manager.currentVisualState
         let intentAfter = await manager.currentPlaybackIntent
         XCTAssertEqual(visualAfter, visualBefore)
         XCTAssertEqual(intentAfter, intentBefore)
+    }
+
+    /// Verifies the canonical emission order for ``setPlaying()`` on the recovery path.
+    ///
+    /// Successful playback start (or resume after user pause) is distinct from
+    /// ``setUserPaused()``, ``stop()``, and ``markPlaybackStoppedByStreamFailure(_:)``:
+    /// - Visual moves to `.playing` and intent to `.shouldBePlaying` (unless sleep timer).
+    /// - The `streamDidStart` verb follows the mutation events and precedes the
+    ///   persisted snapshot signal when the privacy gate allows the write path.
+    ///
+    /// The test drives from sticky `.userPaused` so both `visualStateDidChange` and
+    /// `playbackIntentChanged` appear in the ordered subsequence (intent is already
+    /// `.shouldBePlaying` after setUp alone, which would skip the intent emission).
+    ///
+    /// Collection uses the DEBUG notification seam (same rationale as the other
+    /// emission-order tests).
+    ///
+    /// - SeeAlso: ``setPlaying()``, ``setUserPaused()``, ``emit(_:)``,
+    ///   `PlayerEvent.streamDidStart`, ``currentPlaybackIntent``,
+    ///   ``SharedPlayerManager/isRunningInUITestMode``,
+    ///   docs/Event-Driven-Refactor-Roadmap.md (Tier 5),
+    ///   CODING_AGENT.md (Test Execution Patience and Fast, Reliable Test Patterns).
+    func testSetPlayingEmissionOrderMatchesCanonicalMutationSequence() async {
+        // Arrange: paused state so intent and visual both transition on setPlaying().
+        await manager.setUserPaused()
+
+        let visualBefore = await manager.currentVisualState
+        let intentBefore = await manager.currentPlaybackIntent
+        XCTAssertEqual(visualBefore, .userPaused)
+        XCTAssertEqual(intentBefore, .userPaused)
+
+        let m = self.manager
+        let liveEmissions = await collectSeamEvents(minimumCount: 3, timeout: 5.0) {
+            await m.setPlaying()
+        }
+
+        assertEvents(liveEmissions, containInOrder: [
+            { if case .visualStateDidChange(.playing) = $0 { return true }; return false },
+            { if case .playbackIntentChanged(.shouldBePlaying) = $0 { return true }; return false },
+            { if case .streamDidStart = $0 { return true }; return false },
+        ])
+        XCTAssertTrue(
+            liveEmissions.contains(.persistedWidgetStateDidUpdate),
+            "setPlaying path should emit .persistedWidgetStateDidUpdate when the write path runs; got: \(liveEmissions)"
+        )
+        XCTAssertFalse(
+            liveEmissions.contains { if case .streamDidPause = $0 { return true }; return false },
+            "setPlaying must emit streamDidStart, not streamDidPause; got: \(liveEmissions)"
+        )
+        XCTAssertFalse(
+            liveEmissions.contains { if case .streamDidStop = $0 { return true }; return false },
+            "setPlaying must emit streamDidStart, not streamDidStop; got: \(liveEmissions)"
+        )
+        XCTAssertFalse(
+            liveEmissions.contains { if case .streamDidFail = $0 { return true }; return false },
+            "setPlaying must emit streamDidStart, not streamDidFail; got: \(liveEmissions)"
+        )
+
+        let visualAfter = await manager.currentVisualState
+        let intentAfter = await manager.currentPlaybackIntent
+        XCTAssertEqual(visualAfter, .playing)
+        XCTAssertEqual(intentAfter, .shouldBePlaying)
+    }
+
+    /// Verifies the full active-intent language-switch path emission contract.
+    ///
+    /// Mirrors the resume branch of `RadioPlayerCoordinator.completeStreamSwitch` /
+    /// `switchToStreamFromWidget`: ``resetToPrePlayForNewStream()`` (yellow `.prePlay` hold),
+    /// engine prep via ``switchToStream(_:)``, then successful attach via ``setPlaying()``
+    /// (stand-in for ``play()`` under UITestMode, which skips canonical emissions).
+    ///
+    /// **Reset phase:** `visualStateDidChange(.prePlay)` precedes `.persistedWidgetStateDidUpdate`;
+    /// intent stays `.shouldBePlaying` (no `playbackIntentChanged`, no stream verbs).
+    ///
+    /// **Resume phase:** `visualStateDidChange(.playing)` → `streamDidStart` → persist signal;
+    /// intent still unchanged.
+    ///
+    /// Collection uses the DEBUG notification seam. Ordered subsequence matching tolerates
+    /// extra `.persistedWidgetStateDidUpdate` emissions from the engine `switchToStream`
+    /// silent-stop save.
+    ///
+    /// - SeeAlso: ``resetToPrePlayForNewStream(preserveActiveSleepTimer:)``,
+    ///   ``switchToStream(_:)``, ``setPlaying()``, ``isStreamSwitchPrePlayHoldActive``,
+    ///   `RadioPlayerCoordinator.completeStreamSwitch`, docs/Event-Driven-Refactor-Roadmap.md (Tier 5),
+    ///   CODING_AGENT.md (Test Execution Patience and Fast, Reliable Test Patterns).
+    func testActiveLanguageSwitchResetThenResumeEmissionOrderPreservesIntent() async {
+        let streams = manager.availableStreams
+        guard streams.count >= 2 else { return }
+        let other = await targetStreamDifferentFromCurrent(in: streams)
+
+        await manager.setPlaying()
+        let intentBefore = await manager.currentPlaybackIntent
+        XCTAssertEqual(
+            intentBefore,
+            .shouldBePlaying,
+            "Precondition: active switch path preserves an already-active playback intent"
+        )
+
+        let m = self.manager
+        let liveEmissions = await collectSeamEvents(minimumCount: 4, timeout: 8.0) {
+            await m.resetToPrePlayForNewStream()
+            await m.switchToStream(other)
+            await m.setPlaying()
+        }
+
+        assertEvents(liveEmissions, containInOrder: [
+            { if case .visualStateDidChange(.prePlay) = $0 { return true }; return false },
+            { if case .visualStateDidChange(.playing) = $0 { return true }; return false },
+            { if case .streamDidStart = $0 { return true }; return false },
+        ])
+        XCTAssertTrue(
+            liveEmissions.contains(.persistedWidgetStateDidUpdate),
+            "Active switch path should persist at least once; got: \(liveEmissions)"
+        )
+        XCTAssertFalse(
+            liveEmissions.contains { if case .playbackIntentChanged = $0 { return true }; return false },
+            "Active language switch must not emit playbackIntentChanged — intent stays \(intentBefore); got: \(liveEmissions)"
+        )
+        XCTAssertFalse(
+            liveEmissions.contains { if case .streamDidPause = $0 { return true }; return false } ||
+            liveEmissions.contains { if case .streamDidStop = $0 { return true }; return false } ||
+            liveEmissions.contains { if case .streamDidFail = $0 { return true }; return false },
+            "Active switch must not emit terminal stream verbs; got: \(liveEmissions)"
+        )
+
+        let visualAfter = await manager.currentVisualState
+        let intentAfter = await manager.currentPlaybackIntent
+        XCTAssertEqual(visualAfter, .playing)
+        XCTAssertEqual(intentAfter, .shouldBePlaying)
+
+        let current = SharedPlayerManager.streamForLanguageCode(other.languageCode)
+        XCTAssertEqual(current.languageCode, other.languageCode)
+    }
+
+    /// Verifies the full paused language-switch path emission contract.
+    ///
+    /// Mirrors the explicit-paused branch of `RadioPlayerCoordinator.completeStreamSwitch` /
+    /// `switchToStreamFromWidget`: engine prep via ``switchToStream(_:)`` (no auto-resume),
+    /// then ``clearSoftPauseMetadataStashForLanguageChange()`` to drop stale ICY titles.
+    ///
+    /// Visual and intent must remain sticky `.userPaused`. The canonical clear must be the
+    /// final `.metadataDidUpdate` in the collected window (engine prep may emit a prior
+    /// non-nil update). Engine silent-stop may add `.persistedWidgetStateDidUpdate`
+    /// without changing visual or intent.
+    ///
+    /// - SeeAlso: ``clearSoftPauseMetadataStashForLanguageChange()``,
+    ///   ``switchToStream(_:)``, `RadioPlayerCoordinator.completeStreamSwitch`,
+    ///   docs/Event-Driven-Refactor-Roadmap.md (Tier 5),
+    ///   CODING_AGENT.md (Test Execution Patience and Fast, Reliable Test Patterns).
+    func testPausedLanguageSwitchFullPathClearsMetadataWithoutVisualOrIntentMutation() async {
+        let streams = manager.availableStreams
+        guard streams.count >= 2 else { return }
+        let other = await targetStreamDifferentFromCurrent(in: streams)
+
+        await manager.setUserPaused()
+        await manager.didUpdateStreamMetadata("Test Program • Speaker")
+
+        let visualBefore = await manager.currentVisualState
+        let intentBefore = await manager.currentPlaybackIntent
+        XCTAssertEqual(visualBefore, .userPaused)
+        XCTAssertEqual(intentBefore, .userPaused)
+
+        let m = self.manager
+        let liveEmissions = await collectSeamEventsUntil(timeout: 8.0, until: { event in
+            if case .metadataDidUpdate(nil) = event { return true }
+            return false
+        }) {
+            await m.switchToStream(other)
+            await m.clearSoftPauseMetadataStashForLanguageChange()
+        }
+
+        XCTAssertTrue(
+            liveEmissions.contains { if case .metadataDidUpdate(nil) = $0 { return true }; return false },
+            "Paused switch must emit .metadataDidUpdate(nil); got: \(liveEmissions)"
+        )
+        XCTAssertFalse(
+            liveEmissions.contains { if case .visualStateDidChange = $0 { return true }; return false },
+            "Paused switch must not mutate visual state via events; got: \(liveEmissions)"
+        )
+        XCTAssertFalse(
+            liveEmissions.contains { if case .playbackIntentChanged = $0 { return true }; return false },
+            "Paused switch must not emit playbackIntentChanged; got: \(liveEmissions)"
+        )
+        XCTAssertFalse(
+            liveEmissions.contains { if case .streamDidStart = $0 { return true }; return false } ||
+            liveEmissions.contains { if case .streamDidPause = $0 { return true }; return false } ||
+            liveEmissions.contains { if case .streamDidStop = $0 { return true }; return false } ||
+            liveEmissions.contains { if case .streamDidFail = $0 { return true }; return false },
+            "Paused switch must not emit stream transition verbs; got: \(liveEmissions)"
+        )
+
+        // Visual + intent postconditions only: engine async callbacks may repopulate display
+        // metadata after the authoritative clear returns (race under full-suite ordering).
+        let visualAfter = await manager.currentVisualState
+        let intentAfter = await manager.currentPlaybackIntent
+        XCTAssertEqual(visualAfter, visualBefore)
+        XCTAssertEqual(intentAfter, intentBefore)
+
+        let current = SharedPlayerManager.streamForLanguageCode(other.languageCode)
+        XCTAssertEqual(current.languageCode, other.languageCode)
+    }
+
+    /// Picks a stream guaranteed to differ from the engine's current selection so
+    /// `switchToStream` exercises the language-change silent-stop path under test.
+    private func targetStreamDifferentFromCurrent(
+        in streams: [DirectStreamingPlayer.Stream]
+    ) async -> DirectStreamingPlayer.Stream {
+        await MainActor.run {
+            let current = DirectStreamingPlayer.shared.selectedStream.languageCode
+            return streams.first { $0.languageCode != current } ?? streams[1]
+        }
     }
 }

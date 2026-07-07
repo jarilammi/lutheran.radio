@@ -1894,9 +1894,10 @@ actor SharedPlayerManager {
     /// Call after successful playback start or resume from the engine
     /// (`DirectStreamingPlayer.startPlayback` / `resumeFromSoftPauseIfAvailable`).
     ///
-    /// - Postcondition: `currentVisualState == .playing` (except in UITestMode),
-    ///   intent updated if appropriate, snapshot saved, Now Playing / Live Activity
-    ///   surfaces notified (main app), and `streamDidStart` emitted.
+    /// - Postcondition: `currentVisualState == .playing`, intent updated if appropriate,
+    ///   snapshot saved (when the privacy gate allows), Now Playing / Live Activity
+    ///   surfaces notified (main app, skipped in UITestMode), and `streamDidStart` emitted
+    ///   after the visual + intent mutations.
     ///
     /// - SeeAlso: ``emit(_:)``, `DirectStreamingPlayer.startPlayback(context:)`,
     ///   ``play()``, ``markPlaybackStoppedByStreamFailure(_:)``, `PlayerEvent.streamDidStart`,
@@ -1907,11 +1908,23 @@ actor SharedPlayerManager {
     /// on successful streaming state transition to active. Do not duplicate in callers.
     /// Existing LA/NowPlaying/save paths are untouched.
     func setPlaying() async {
-        // UI Test isolation (SSOT): never trigger Live Activities, Now Playing, or widget saves.
-        // Visual is still set to .playing for explicit test assertions that observe
-        // currentVisualState after a userRequestedPlay tap.
+        // UI Test isolation (SSOT): perform the canonical visual + intent + event mutations
+        // and persist the snapshot (when the privacy gate allows) so unit tests can assert
+        // emission order on the DEBUG notification seam. Skip Live Activity and Now Playing
+        // IPC — the expensive surfaces that previously caused multi-minute test stalls.
         if Self.isRunningInUITestMode {
-            currentVisualState = .playing
+            ensureVisualStateLoaded()
+            holdPrePlayVisualUntilPlayback = false
+            applyVisualState(.playing)
+
+            if playbackIntent != .sleepTimer {
+                updatePlaybackIntent(to: .shouldBePlaying)
+            }
+
+            emit(.streamDidStart)
+
+            saveVisualState()
+            await saveCurrentState()
             return
         }
 
