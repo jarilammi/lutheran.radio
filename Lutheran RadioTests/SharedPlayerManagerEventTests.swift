@@ -1275,6 +1275,142 @@ final class SharedPlayerManagerEventTests: XCTestCase {
         )
     }
 
+    /// Verifies that late-subscriber replay distinguishes explicit user pause from
+    /// stream failure when both surfaces present identical grey `.userPaused` visuals.
+    ///
+    /// ``setUserPaused()`` moves intent to sticky `.userPaused` (`isBlockedByStickyIntent`
+    /// is true). ``markPlaybackStoppedByStreamFailure(_:)`` preserves `.shouldBePlaying`
+    /// so auto-resume paths can recover without an extra play tap (`isBlockedByStickyIntent`
+    /// is false). Consumers (`PlayerEventSubscriber`, `WidgetRefreshManager`) initialize
+    /// from the replay prefix — not from historical `streamDidPause` / `streamDidFail`
+    /// verbs — so the synthesized `.playbackIntentChanged` value is the contract that
+    /// separates sticky pause from recoverable failure UI.
+    ///
+    /// **Explicit pause phase:** `currentState` and replay prefix carry `.userPaused`
+    /// visual and intent; `isBlockedByStickyIntent == true`.
+    ///
+    /// **Failure phase** (after isolated reset): same grey visual with preserved
+    /// `.shouldBePlaying` intent; `isBlockedByStickyIntent == false`.
+    ///
+    /// - SeeAlso: ``setUserPaused()``, ``markPlaybackStoppedByStreamFailure(_:)``,
+    ///   ``makeEventsStreamWithReplay()``, ``currentState``, ``PlayerCurrentState``,
+    ///   `PlayerCurrentState.isBlockedByStickyIntent`,
+    ///   ``testReplayPrefixAfterStreamFailurePreservesIntentThenReflectsRecovery``,
+    ///   docs/Event-Driven-Refactor-Roadmap.md (Tier 5 late-subscriber),
+    ///   CODING_AGENT.md (Test Execution Patience and Fast, Reliable Test Patterns).
+    func testReplayPrefixDistinguishesExplicitPauseFromStreamFailure() async {
+        // Phase 1 — explicit sticky pause.
+        await manager.setUserPaused()
+
+        let pauseSnapshot = await manager.currentState
+        XCTAssertEqual(pauseSnapshot.visualState, .userPaused)
+        XCTAssertEqual(pauseSnapshot.playbackIntent, .userPaused)
+        XCTAssertTrue(
+            pauseSnapshot.isBlockedByStickyIntent,
+            "Explicit pause must block auto-resume via sticky intent"
+        )
+
+        let pauseReplay = await manager.makeEventsStreamWithReplay()
+        let pausePrefix = await collectEvents(from: pauseReplay, count: 4, timeout: 2.0)
+        guard pausePrefix.count == 4 else {
+            XCTFail("Replay after explicit pause must begin with four prefix events; got \(pausePrefix.count): \(pausePrefix)")
+            return
+        }
+
+        guard case let .visualStateDidChange(pauseVisual) = pausePrefix[0] else {
+            XCTFail("First replay event after explicit pause must be .visualStateDidChange")
+            return
+        }
+        XCTAssertEqual(pauseVisual, .userPaused)
+
+        guard case let .playbackIntentChanged(pauseIntent) = pausePrefix[1] else {
+            XCTFail("Second replay event after explicit pause must be .playbackIntentChanged")
+            return
+        }
+        XCTAssertEqual(
+            pauseIntent,
+            .userPaused,
+            "Explicit pause replay prefix must expose sticky intent"
+        )
+        XCTAssertEqual(pauseIntent, pauseSnapshot.playbackIntent)
+
+        // Phase 2 — recoverable stream failure (isolated reset to the same starting intent).
+        await resetManagerForContrastPhase()
+
+        let intentBeforeFailure = await manager.currentPlaybackIntent
+        XCTAssertEqual(
+            intentBeforeFailure,
+            .shouldBePlaying,
+            "Precondition: failure contrast tests intent preservation from active-play intent"
+        )
+
+        await manager.markPlaybackStoppedByStreamFailure(.transientFailure)
+
+        let failureSnapshot = await manager.currentState
+        XCTAssertEqual(failureSnapshot.visualState, .userPaused)
+        XCTAssertEqual(
+            failureSnapshot.playbackIntent,
+            .shouldBePlaying,
+            "Stream failure grey UI must not convert intent to sticky .userPaused"
+        )
+        XCTAssertFalse(
+            failureSnapshot.isBlockedByStickyIntent,
+            "Failure replay must not present as sticky pause"
+        )
+
+        let failureReplay = await manager.makeEventsStreamWithReplay()
+        let failurePrefix = await collectEvents(from: failureReplay, count: 4, timeout: 2.0)
+        guard failurePrefix.count == 4 else {
+            XCTFail("Replay after stream failure must begin with four prefix events; got \(failurePrefix.count): \(failurePrefix)")
+            return
+        }
+
+        guard case let .visualStateDidChange(failureVisual) = failurePrefix[0] else {
+            XCTFail("First replay event after stream failure must be .visualStateDidChange")
+            return
+        }
+        XCTAssertEqual(failureVisual, .userPaused)
+
+        guard case let .playbackIntentChanged(failureIntent) = failurePrefix[1] else {
+            XCTFail("Second replay event after stream failure must be .playbackIntentChanged")
+            return
+        }
+        XCTAssertEqual(
+            failureIntent,
+            .shouldBePlaying,
+            "Failure replay prefix must expose preserved intent, not sticky pause"
+        )
+        XCTAssertEqual(failureIntent, failureSnapshot.playbackIntent)
+
+        // Cross-phase contrast: identical grey visual, divergent intent contract.
+        XCTAssertEqual(pauseVisual, failureVisual, "Both paths share grey .userPaused visual")
+        XCTAssertNotEqual(
+            pauseIntent,
+            failureIntent,
+            "Replay prefix intent is the sole late-subscriber discriminator between pause and failure"
+        )
+    }
+
+    /// Re-establishes the same non-blocked starting state as ``setUp()`` for a second
+    /// emission scenario inside a single test method (explicit-pause vs failure contrast).
+    private func resetManagerForContrastPhase() async {
+        await MainActor.run {
+            let la = RadioLiveActivityManager.shared
+            la.stopLocalUpdateTimer()
+            la.activityObservationTask?.cancel()
+            la.currentActivity = nil
+        }
+
+        await SharedPlayerManager.clearAllLocalState()
+        await manager.setUserIntentToPlay()
+
+        await MainActor.run {
+            WidgetRefreshManager.setHasActiveLutheranWidgets(true)
+        }
+
+        _ = await manager.events
+    }
+
     /// Picks a stream guaranteed to differ from the engine's current selection so
     /// `switchToStream` exercises the language-change silent-stop path under test.
     private func targetStreamDifferentFromCurrent(
