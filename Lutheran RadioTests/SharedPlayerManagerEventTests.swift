@@ -200,6 +200,77 @@ final class SharedPlayerManagerEventTests: XCTestCase {
         return result
     }
 
+    /// Collects up to `countEach` events from multiple streams concurrently while
+    /// performing a single shared action after every iterator has attached.
+    ///
+    /// Use this for multi-subscriber replay tests: each `makeEventsStreamWithReplay()`
+    /// call produces an independent stream, but live forwarding races are only meaningful
+    /// when all collectors subscribe before the one mutation that should fan out.
+    ///
+    /// - Parameters:
+    ///   - streams: Independent replay (or live) streams to observe in parallel.
+    ///   - countEach: Maximum events to collect per stream.
+    ///   - timeout: Per-stream bounded wait in seconds.
+    ///   - action: Work expected to cause live emissions visible to every attached iterator.
+    /// - Returns: Collected events per stream in the same order as `streams`.
+    private func collectEventsConcurrently(
+        from streams: [AsyncStream<PlayerEvent>],
+        countEach: Int,
+        timeout: TimeInterval = 5.0,
+        whilePerforming action: () async -> Void = {}
+    ) async -> [[PlayerEvent]] {
+        let collectionTasks = streams.map { stream in
+            Task<[PlayerEvent], Never> {
+                var local: [PlayerEvent] = []
+                var seen = 0
+                for await event in stream {
+                    if Task.isCancelled { break }
+                    local.append(event)
+                    seen += 1
+                    if seen >= countEach { break }
+                }
+                return local
+            }
+        }
+
+        await Task.yield()
+        await Task.yield()
+        try? await Task.sleep(for: .milliseconds(150))
+
+        await action()
+
+        await Task.yield()
+        try? await Task.sleep(for: .milliseconds(100))
+
+        return await withTaskGroup(of: (Int, [PlayerEvent]).self) { group -> [[PlayerEvent]] in
+            for (index, task) in collectionTasks.enumerated() {
+                group.addTask {
+                    let events = await withTaskGroup(of: [PlayerEvent].self) { inner -> [PlayerEvent] in
+                        inner.addTask { await task.value }
+                        inner.addTask {
+                            try? await Task.sleep(for: .seconds(Int(timeout)))
+                            task.cancel()
+                            try? await Task.sleep(for: .milliseconds(150))
+                            return await task.value
+                        }
+                        for await first in inner {
+                            inner.cancelAll()
+                            return first
+                        }
+                        return []
+                    }
+                    return (index, events)
+                }
+            }
+
+            var results = Array(repeating: [PlayerEvent](), count: streams.count)
+            for await (index, events) in group {
+                results[index] = events
+            }
+            return results
+        }
+    }
+
     /// Helper box to avoid escaping capture issues with observer token.
     private final class EmissionObserverBox: @unchecked Sendable {
         var token: NSObjectProtocol?
@@ -1388,6 +1459,238 @@ final class SharedPlayerManagerEventTests: XCTestCase {
             pauseIntent,
             failureIntent,
             "Replay prefix intent is the sole late-subscriber discriminator between pause and failure"
+        )
+    }
+
+    /// Verifies that late-subscriber replay surfaces permanent-error state via
+    /// ``currentState`` / ``PlayerCurrentState/hasError``, not via synthesized
+    /// `streamDidFail` verbs.
+    ///
+    /// Tier 3 replay deliberately omits stream transition verbs; terminal error
+    /// conditions are expressed through snapshot fields (especially `hasError`).
+    /// Consumers (`PlayerEventSubscriber`, `WidgetRefreshManager`) must combine
+    /// the four-event replay prefix with `currentState` (or
+    /// `PlayerCurrentState.isInPermanentError`) to distinguish permanent failure
+    /// chrome from recoverable grey pause UI.
+    ///
+    /// **Security-lock phase:** ``setSecurityLocked()`` yields `.securityLocked`
+    /// visual in the replay prefix; `hasError` and `isInPermanentError` are true.
+    ///
+    /// **Permanent stream-failure phase:** grey `.userPaused` visual (identical to
+    /// transient failure) with `hasError == true` when the engine's
+    /// `hasPermanentError` flag is set before ``markPlaybackStoppedByStreamFailure(_:)``.
+    ///
+    /// **Transient-failure contrast:** same grey visual with `hasError == false`.
+    ///
+    /// - SeeAlso: ``setSecurityLocked()``, ``markPlaybackStoppedByStreamFailure(_:)``,
+    ///   ``makeEventsStreamWithReplay()``, ``currentState``, ``PlayerCurrentState``,
+    ///   `PlayerCurrentState.isInPermanentError`, `PlayerCurrentState.hasError`,
+    ///   ``testReplayPrefixDistinguishesExplicitPauseFromStreamFailure``,
+    ///   docs/Event-Driven-Refactor-Roadmap.md (Tier 5 late-subscriber),
+    ///   CODING_AGENT.md (Test Execution Patience and Fast, Reliable Test Patterns).
+    func testReplayPrefixReflectsPermanentErrorInCurrentStateSnapshot() async {
+        // Phase 1 — security lock: hasError derived from .securityLocked visual.
+        await manager.setSecurityLocked()
+
+        let lockSnapshot = await manager.currentState
+        XCTAssertEqual(lockSnapshot.visualState, .securityLocked)
+        XCTAssertTrue(
+            lockSnapshot.hasError,
+            "Security lock must surface permanent error in replay snapshot"
+        )
+        XCTAssertTrue(lockSnapshot.isInPermanentError)
+
+        let lockReplay = await manager.makeEventsStreamWithReplay()
+        let lockPrefix = await collectEvents(from: lockReplay, count: 4, timeout: 2.0)
+        guard lockPrefix.count == 4 else {
+            XCTFail("Replay after security lock must begin with four prefix events; got \(lockPrefix.count): \(lockPrefix)")
+            return
+        }
+
+        guard case let .visualStateDidChange(lockVisual) = lockPrefix[0] else {
+            XCTFail("First replay event after security lock must be .visualStateDidChange")
+            return
+        }
+        XCTAssertEqual(lockVisual, .securityLocked)
+        XCTAssertEqual(lockVisual, lockSnapshot.visualState)
+
+        // Phase 2 — permanent stream failure: grey visual + hasError via persisted snapshot.
+        await resetManagerForContrastPhase()
+
+        await MainActor.run {
+            DirectStreamingPlayer.shared.hasPermanentError = true
+        }
+        await manager.markPlaybackStoppedByStreamFailure(.permanentFailure)
+
+        let permSnapshot = await manager.currentState
+        XCTAssertEqual(permSnapshot.visualState, .userPaused)
+        XCTAssertTrue(
+            permSnapshot.hasError,
+            "Permanent stream failure must set hasError in replay snapshot"
+        )
+        XCTAssertTrue(permSnapshot.isInPermanentError)
+        XCTAssertFalse(
+            permSnapshot.isBlockedByStickyIntent,
+            "Permanent failure grey UI must not imply sticky pause intent"
+        )
+
+        let permSharedState = await manager.loadSharedState()
+        XCTAssertTrue(
+            permSharedState.hasError,
+            "Persisted widget snapshot must carry hasError for permanent stream failure"
+        )
+
+        let permReplay = await manager.makeEventsStreamWithReplay()
+        let permPrefix = await collectEvents(from: permReplay, count: 4, timeout: 2.0)
+        guard permPrefix.count == 4 else {
+            XCTFail("Replay after permanent failure must begin with four prefix events; got \(permPrefix.count): \(permPrefix)")
+            return
+        }
+
+        guard case let .visualStateDidChange(permVisual) = permPrefix[0] else {
+            XCTFail("First replay event after permanent failure must be .visualStateDidChange")
+            return
+        }
+        XCTAssertEqual(permVisual, .userPaused)
+        XCTAssertEqual(permVisual, permSnapshot.visualState)
+
+        // Phase 3 — transient failure contrast: identical grey visual, hasError false.
+        await resetManagerForContrastPhase()
+
+        await MainActor.run {
+            DirectStreamingPlayer.shared.hasPermanentError = false
+        }
+        await manager.markPlaybackStoppedByStreamFailure(.transientFailure)
+
+        let transientSnapshot = await manager.currentState
+        XCTAssertEqual(transientSnapshot.visualState, .userPaused)
+        XCTAssertFalse(
+            transientSnapshot.hasError,
+            "Transient failure must not set hasError in replay snapshot"
+        )
+        XCTAssertFalse(transientSnapshot.isInPermanentError)
+
+        let transientReplay = await manager.makeEventsStreamWithReplay()
+        let transientPrefix = await collectEvents(from: transientReplay, count: 4, timeout: 2.0)
+        guard transientPrefix.count == 4 else {
+            XCTFail("Replay after transient failure must begin with four prefix events; got \(transientPrefix.count): \(transientPrefix)")
+            return
+        }
+
+        guard case let .visualStateDidChange(transientVisual) = transientPrefix[0] else {
+            XCTFail("First replay event after transient failure must be .visualStateDidChange")
+            return
+        }
+        XCTAssertEqual(transientVisual, .userPaused)
+
+        // Cross-phase contrast: grey visual alone does not signal permanence.
+        XCTAssertEqual(permVisual, transientVisual, "Permanent and transient failures share grey .userPaused visual")
+        XCTAssertNotEqual(
+            permSnapshot.hasError,
+            transientSnapshot.hasError,
+            "hasError in currentState is the late-subscriber discriminator for permanent stream failure"
+        )
+        XCTAssertNotEqual(
+            lockVisual,
+            permVisual,
+            "Security lock uses distinct .securityLocked visual vs grey stream failure"
+        )
+    }
+
+    /// Verifies multi-subscriber replay attach ordering for independent per-call streams.
+    ///
+    /// Each ``makeEventsStreamWithReplay()`` invocation materializes an independent
+    /// stream whose four-event prefix reflects ``currentState`` at creation time.
+    /// Subsequent live emissions fan out to every replay stream whose forwarding
+    /// iterator was active before the mutation.
+    ///
+    /// **Attach-time independence:** an early subscriber's prefix reflects pre-mutation
+    /// state; a late subscriber created after ``setUserPaused()`` reflects post-mutation
+    /// state without synthesizing historical `streamDid*` verbs.
+    ///
+    /// **Concurrent same-state attach:** two replay streams created together must yield
+    /// identical four-event prefixes when both iterators attach in parallel via
+    /// ``collectEventsConcurrently(from:countEach:timeout:whilePerforming:)``.
+    ///
+    /// Canonical live pause ordering with multiple concurrent ``events`` iterators is
+    /// covered by the DEBUG notification seam in
+    /// ``testSetUserPausedEmissionOrderMatchesCanonicalMutationSequence`` (the live
+    /// stream shares each yield across iterators; ``WidgetRefreshManager`` also
+    /// observes the stream in the test host). Replay live-forwarding to multiple
+    /// independent replay streams remains best-effort only (same XCTest host caveat
+    /// as ``testReplayStreamPrefixesStateThenForwardsLiveStopEmissionsInOrder``).
+    ///
+    /// - SeeAlso: ``makeEventsStreamWithReplay()``, ``currentState``, ``setUserPaused()``,
+    ///   ``collectEventsConcurrently(from:countEach:timeout:whilePerforming:)``,
+    ///   ``testSetUserPausedEmissionOrderMatchesCanonicalMutationSequence``,
+    ///   ``testReplayStreamPrefixesStateThenForwardsLiveStopEmissionsInOrder``,
+    ///   docs/Event-Driven-Refactor-Roadmap.md (Tier 5 multi-subscriber),
+    ///   CODING_AGENT.md (Test Execution Patience and Fast, Reliable Test Patterns).
+    func testMultiSubscriberReplayAttachOrderingPreservesIndependentPrefixesAndLiveOrder() async {
+        // Phase 1 — attach-time prefix independence.
+        let initialSnapshot = await manager.currentState
+
+        let earlyStream = await manager.makeEventsStreamWithReplay()
+        let earlyPrefix = await collectEvents(from: earlyStream, count: 4, timeout: 2.0)
+        guard earlyPrefix.count == 4 else {
+            XCTFail("Early replay stream must begin with four prefix events; got \(earlyPrefix.count): \(earlyPrefix)")
+            return
+        }
+
+        guard case let .visualStateDidChange(earlyVisual) = earlyPrefix[0],
+              case let .playbackIntentChanged(earlyIntent) = earlyPrefix[1],
+              case let .metadataDidUpdate(earlyMetadata) = earlyPrefix[2] else {
+            XCTFail("Early replay prefix must carry visual, intent, and metadata; got: \(earlyPrefix)")
+            return
+        }
+        XCTAssertEqual(earlyVisual, initialSnapshot.visualState)
+        XCTAssertEqual(earlyIntent, initialSnapshot.playbackIntent)
+        XCTAssertEqual(earlyMetadata, initialSnapshot.streamMetadata)
+        XCTAssertEqual(earlyPrefix[3], .persistedWidgetStateDidUpdate)
+
+        await manager.setUserPaused()
+        let pausedSnapshot = await manager.currentState
+        XCTAssertEqual(pausedSnapshot.visualState, .userPaused)
+        XCTAssertEqual(pausedSnapshot.playbackIntent, .userPaused)
+
+        let lateStream = await manager.makeEventsStreamWithReplay()
+        let latePrefix = await collectEvents(from: lateStream, count: 4, timeout: 2.0)
+        guard latePrefix.count == 4 else {
+            XCTFail("Late replay stream must begin with four prefix events; got \(latePrefix.count): \(latePrefix)")
+            return
+        }
+
+        guard case let .visualStateDidChange(lateVisual) = latePrefix[0],
+              case let .playbackIntentChanged(lateIntent) = latePrefix[1] else {
+            XCTFail("Late replay prefix must carry visual and intent; got: \(latePrefix)")
+            return
+        }
+        XCTAssertEqual(lateVisual, pausedSnapshot.visualState)
+        XCTAssertEqual(lateIntent, pausedSnapshot.playbackIntent)
+        XCTAssertNotEqual(earlyIntent, lateIntent, "Late subscriber prefix must reflect post-mutation intent")
+        XCTAssertFalse(
+            latePrefix.contains { if case .streamDidPause = $0 { return true }; return false },
+            "Late subscriber prefix must not synthesize historical streamDidPause verbs"
+        )
+
+        // Phase 2 — concurrent same-state replay prefixes (reliable attach ordering).
+        await resetManagerForContrastPhase()
+
+        let streamA = await manager.makeEventsStreamWithReplay()
+        let streamB = await manager.makeEventsStreamWithReplay()
+
+        let prefixes = await collectEventsConcurrently(
+            from: [streamA, streamB],
+            countEach: 4,
+            timeout: 2.0
+        )
+        XCTAssertEqual(prefixes.count, 2)
+        XCTAssertEqual(prefixes[0].count, 4)
+        XCTAssertEqual(prefixes[1].count, 4)
+        XCTAssertEqual(
+            prefixes[0],
+            prefixes[1],
+            "Replay streams created at the same state must synthesize identical prefixes"
         )
     }
 
