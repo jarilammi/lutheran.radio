@@ -148,6 +148,7 @@ import Observation
 ///   ``PlayerEvent``, `PlaybackIntent`, `WidgetEventObserver`,
 ///   `RadioPlayerView`, `PlayerViewModel`,
 ///   docs/Event-Driven-Refactor-Roadmap.md,
+///   `PlayerEventSubscriberEventTests` (consumer replay + observable-state contract),
 ///   CODING_AGENT.md (event-driven direction, Documentation & Comment Standards,
 ///   narrow inputs, Single Source of Truth),
 ///   <doc:Architecture>.
@@ -239,10 +240,28 @@ final class PlayerEventSubscriber {
     /// belt-and-suspenders cleanup.
     ///
     /// - Postcondition: No further events will be processed by this subscriber
-    ///   instance until the next `beginObserving`.
+    ///   instance until the next `beginObserving`. The replay live-forwarding attachment
+    ///   on ``SharedPlayerManager/events`` is released so other observers can attach.
+    /// - SeeAlso: ``SharedPlayerManager/cancelReplayForwarding()``.
     func cancel() {
         eventObserver.cancel()
+        Task {
+            await SharedPlayerManager.shared.cancelReplayForwarding()
+        }
     }
+
+    #if DEBUG
+    /// Applies a ``PlayerEvent`` through the production ``handle(_:)`` path for white-box tests.
+    ///
+    /// Exercises ``eventCount`` and ``lastObservedIntent`` update rules without requiring a
+    /// second ``AsyncStream`` iterator on the shared live ``events`` source.
+    ///
+    /// - Parameter event: Domain event to deliver.
+    /// - SeeAlso: ``handle(_:)``, ``PlayerEventSubscriberEventTests``.
+    func _test_applyPlayerEvent(_ event: PlayerEvent) async {
+        await handle(event)
+    }
+    #endif
 
     // MARK: - Internal event handling (UI side effects only)
 

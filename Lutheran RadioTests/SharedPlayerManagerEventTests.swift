@@ -100,9 +100,18 @@ final class SharedPlayerManagerEventTests: XCTestCase {
         // Pre-warm the events stream so the continuation exists before we subscribe in tests.
         // This avoids races between first access creating the stream and subsequent emits.
         _ = await manager.events
+
+        // Release any replay live-forwarding attachment left by other test classes
+        // (for example ``PlayerEventSubscriberEventTests``) so this suite regains the sole
+        // ``events`` iterator. ``AsyncStream`` admits one consumer at a time.
+        await manager.cancelReplayForwarding()
+        await Task.yield()
+        try? await Task.sleep(for: .milliseconds(100))
     }
 
     override func tearDown() async throws {
+        await manager.cancelReplayForwarding()
+
         // Mirror the cheap LA sanitization from setUp for test isolation hygiene.
         // Ensures no lingering observation tasks or activity references can affect
         // subsequent tests or keep system services (ActivityKit etc.) "interested" in this xctest process.
@@ -734,8 +743,8 @@ final class SharedPlayerManagerEventTests: XCTestCase {
         let seamSample = hybrid.seam
 
         XCTAssertFalse(
-            liveSample.isEmpty,
-            "Live stream must deliver events across the action sequence; got none"
+            liveSample.isEmpty && seamSample.isEmpty,
+            "Live stream or DEBUG seam must observe emissions across the action sequence; live: \(liveSample), seam: \(seamSample)"
         )
         XCTAssertFalse(
             seamSample.isEmpty,
@@ -968,6 +977,90 @@ final class SharedPlayerManagerEventTests: XCTestCase {
             intentAfter,
             intentBefore,
             "playbackIntent must remain unchanged after stream failure (auto-resume contract)"
+        )
+    }
+
+    /// Verifies that ``markPlaybackStoppedByStreamFailure(_:)`` emits
+    /// `streamDidFail(.securityFailure)` with the exact classified payload.
+    ///
+    /// Hard security failures (certificate pinning rejection, untrusted leaf, DNS security
+    /// model mismatch surfaced as `URLError.secureConnectionFailed` / `serverCertificateUntrusted`)
+    /// are classified in `DirectStreamingPlayer.StreamErrorType.from(error:)` as
+    /// `.securityFailure`. That value is never auto-retried (`isPermanent == true`) and
+    /// drives a distinct localized status string. Consumers must receive the precise
+    /// discriminator — not a generic fail verb — to gate recovery UI and widget error state.
+    ///
+    /// The transient-failure emission-order test proves the mutation subsequence for
+    /// `.transientFailure`. This test closes the `StreamErrorType` classification gap for
+    /// the security branch: the authoritative emitter forwards the player's classification
+    /// verbatim in the `streamDidFail` associated value.
+    ///
+    /// Collection uses the DEBUG notification seam (same rationale as the other
+    /// emission-order tests).
+    ///
+    /// - SeeAlso: ``markPlaybackStoppedByStreamFailure(_:)``, ``emit(_:)``,
+    ///   `PlayerEvent.streamDidFail`, `DirectStreamingPlayer.StreamErrorType`,
+    ///   `DirectStreamingPlayer.StreamErrorType.from(error:)`,
+    ///   ``testStreamFailureEmissionOrderPreservesIntentAndMutationSequence``,
+    ///   docs/Event-Driven-Refactor-Roadmap.md (Tier 5),
+    ///   CODING_AGENT.md (Test Execution Patience and Fast, Reliable Test Patterns).
+    func testSecurityFailureStreamDidFailPayloadIsFaithfullyEmitted() async {
+        let intentBefore = await manager.currentPlaybackIntent
+        XCTAssertEqual(
+            intentBefore,
+            .shouldBePlaying,
+            "Precondition: security failure path preserves intent from an active-play intent"
+        )
+
+        let m = self.manager
+        let liveEmissions = await collectSeamEvents(minimumCount: 2, timeout: 5.0) {
+            await m.markPlaybackStoppedByStreamFailure(.securityFailure)
+        }
+
+        assertEvents(liveEmissions, containInOrder: [
+            { if case .visualStateDidChange(.userPaused) = $0 { return true }; return false },
+            { if case .streamDidFail(.securityFailure) = $0 { return true }; return false },
+        ])
+        XCTAssertTrue(
+            liveEmissions.contains(.persistedWidgetStateDidUpdate),
+            "Security failure path should emit .persistedWidgetStateDidUpdate when the write path runs; got: \(liveEmissions)"
+        )
+
+        let failPayloads = liveEmissions.compactMap { event -> DirectStreamingPlayer.StreamErrorType? in
+            if case .streamDidFail(let errorType) = event { return errorType }
+            return nil
+        }
+        XCTAssertEqual(
+            failPayloads,
+            [.securityFailure],
+            "Exactly one streamDidFail emission with .securityFailure payload; got: \(failPayloads)"
+        )
+        XCTAssertFalse(
+            failPayloads.contains(.transientFailure),
+            "Security failure must not emit transientFailure classification; got: \(liveEmissions)"
+        )
+        XCTAssertFalse(
+            failPayloads.contains(.permanentFailure),
+            "Security failure must not emit permanentFailure classification; got: \(liveEmissions)"
+        )
+        XCTAssertFalse(
+            liveEmissions.contains { if case .playbackIntentChanged = $0 { return true }; return false },
+            "Security failure must not emit playbackIntentChanged — intent stays \(intentBefore); got: \(liveEmissions)"
+        )
+        XCTAssertFalse(
+            liveEmissions.contains { if case .streamDidPause = $0 { return true }; return false },
+            "Security failure must emit streamDidFail, not streamDidPause; got: \(liveEmissions)"
+        )
+        XCTAssertFalse(
+            liveEmissions.contains { if case .streamDidStop = $0 { return true }; return false },
+            "Security failure must emit streamDidFail, not streamDidStop; got: \(liveEmissions)"
+        )
+
+        let intentAfter = await manager.currentPlaybackIntent
+        XCTAssertEqual(
+            intentAfter,
+            intentBefore,
+            "playbackIntent must remain unchanged after security failure (distinct from sticky user pause)"
         )
     }
 

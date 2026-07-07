@@ -522,12 +522,23 @@ final class WidgetRefreshManager: @unchecked Sendable {
         guard !SharedPlayerManager.isWidgetProcess(),
               eventObservationTask == nil else { return }
 
+        #if DEBUG
+        // Unit tests that exercise replay live-forwarding (for example
+        // ``PlayerEventSubscriber``) require an exclusive iterator on the shared
+        // ``SharedPlayerManager/events`` stream. AsyncStream supports one consumer
+        // at a time; suppress observation for those tests only.
+        guard unsafe !Self._test_suppressPlayerEventObservation else { return }
+        #endif
+
         // Materialize the (lazily created) events stream, then delegate to the
         // consolidated `WidgetEventObserver`. The resulting task is assigned to
         // the stored property to preserve the exact test seam contract and
         // documentation.
         Task { @MainActor [weak self] in
             guard let self else { return }
+            #if DEBUG
+            guard unsafe !Self._test_suppressPlayerEventObservation else { return }
+            #endif
             let stream = await SharedPlayerManager.shared.events
             self.playerEventObserver.beginObserving(stream) { [weak self] event in
                 await self?.handlePlayerEvent(event)
@@ -570,41 +581,199 @@ final class WidgetRefreshManager: @unchecked Sendable {
     ///   `WidgetEventObserver`,
     ///   docs/Event-Driven-Refactor-Roadmap.md,
     ///   CODING_AGENT.md (non-forcing architecture, SSOT principles).
-    private func handlePlayerEvent(_ event: PlayerEvent) async {
-        // UITestMode defense (mirrors the guard at the top of refreshIfNeeded).
-        if SharedPlayerManager.isRunningInUITestMode {
-            return
-        }
+    /// Parameters derived from a ``PlayerEvent`` and SSOT readers for ``refreshIfNeeded``.
+    ///
+    /// Extraction keeps the derivation contract testable without exercising WidgetCenter
+    /// or debounce timers. Both ``handlePlayerEvent(_:)`` and the DEBUG white-box seams
+    /// route through this helper so production and test observation share one code path.
+    private struct RefreshDerivation: Equatable, Sendable {
+        let visualState: PlayerVisualState
+        let currentLanguage: String
+        let hasError: Bool
+    }
 
-        // Derive parameters using the exact SSOT facades that imperative paths use.
-        // This guarantees the event path produces identical inputs to the primary path.
+    /// Derives ``refreshIfNeeded`` inputs from a ``PlayerEvent`` using the same SSOT
+    /// facades as every imperative caller.
+    ///
+    /// - Parameter event: The domain event emitted after a state mutation.
+    /// - Returns: Visual, language, and error flag for the canonical refresh surface.
+    /// - Important: For ``PlayerEvent/visualStateDidChange(_:)`` the carried visual is
+    ///   preferred even when the persisted snapshot is stale. All other cases fall back
+    ///   to ``SharedPlayerManager/loadPersistedWidgetState()`` (or `.prePlay` when absent).
+    /// - SeeAlso: ``handlePlayerEvent(_:)``, ``refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)``,
+    ///   `SharedPlayerManager.loadSharedState`, docs/Event-Driven-Refactor-Roadmap.md.
+    private func deriveRefreshParameters(for event: PlayerEvent) -> RefreshDerivation {
         let persisted = SharedPlayerManager.loadPersistedWidgetState()
         let sharedState = SharedPlayerManager.shared.loadSharedState()
 
         let language = persisted?.currentLanguage ?? sharedState.currentLanguage
         let hasError = sharedState.hasError
 
-        // Prefer a carried visual when the event provides one; otherwise fall back
-        // to the authoritative persisted snapshot (or safe default).
         let visualState: PlayerVisualState
         switch event {
-        case .visualStateDidChange(let vs):
-            visualState = vs
+        case .visualStateDidChange(let carriedVisual):
+            visualState = carriedVisual
         default:
             visualState = persisted?.visualState ?? .prePlay
         }
+
+        return RefreshDerivation(
+            visualState: visualState,
+            currentLanguage: language,
+            hasError: hasError
+        )
+    }
+
+    private func handlePlayerEvent(_ event: PlayerEvent) async {
+        // UITestMode defense (mirrors the guard at the top of refreshIfNeeded).
+        if SharedPlayerManager.isRunningInUITestMode {
+            return
+        }
+
+        let derived = deriveRefreshParameters(for: event)
 
         // Route through the public surface exactly as every other caller does.
         // All debouncing, coalescing, privacy, regress, and immediate logic applies.
         // This is the canonical non-forcing trigger site for Tier 2.
         refreshIfNeeded(
-            visualState: visualState,
-            currentLanguage: language,
-            hasError: hasError,
+            visualState: derived.visualState,
+            currentLanguage: derived.currentLanguage,
+            hasError: derived.hasError,
             immediate: false   // let the manager's internal heuristics decide urgency
         )
     }
 }
+
+#if DEBUG
+extension WidgetRefreshManager {
+
+    /// Snapshot of refresh parameters derived by ``handlePlayerEvent(_:)`` for white-box tests.
+    ///
+    /// Compiled out of Release builds; zero production effect.
+    struct HandlePlayerEventDerivation: Equatable, Sendable {
+        let visualState: PlayerVisualState
+        let currentLanguage: String
+        let hasError: Bool
+    }
+
+    // SAFETY: DEBUG-only test observation flags written exclusively from @MainActor test
+    // entry points; reads occur on the same actor during XCTest. Matches the established
+    // nonisolated(unsafe) pattern for privacy-gate cache state in this file.
+    nonisolated(unsafe) private static var _test_recordHandlePlayerEventDerivation = false
+    nonisolated(unsafe) private static var _test_cachedHandlePlayerEventDerivation: HandlePlayerEventDerivation?
+
+    // SAFETY: DEBUG-only gate for suspending the Tier 2 live ``events`` observer so
+    // other consumers can attach the sole AsyncStream iterator during XCTest (replay
+    // forwarding in ``makeEventsStreamWithReplay()``). Written from @MainActor tests.
+    nonisolated(unsafe) private static var _test_suppressPlayerEventObservation = false
+
+    /// Prevents ``beginObservingPlayerEvents()`` from starting while enabled.
+    ///
+    /// Replay live-forwarding in ``SharedPlayerManager/makeEventsStreamWithReplay()``
+    /// requires the shared ``events`` iterator. ``AsyncStream`` admits one consumer;
+    /// tests that drive ``PlayerEventSubscriber`` enable this gate and call
+    /// ``_test_suspendPlayerEventObservation()`` to release any observer started
+    /// before the flag was set.
+    ///
+    /// - Parameter suppress: Whether Tier 2 live observation must remain idle.
+    /// - SeeAlso: ``_test_suspendPlayerEventObservation()``, ``PlayerEventSubscriberEventTests``,
+    ///   CODING_AGENT.md (fast test patterns).
+    @MainActor
+    static func _test_setSuppressPlayerEventObservation(_ suppress: Bool) {
+        unsafe _test_suppressPlayerEventObservation = suppress
+    }
+
+    /// Cancels the active Tier 2 ``PlayerEvent`` observation task, if any.
+    ///
+    /// Idempotent. Used with ``_test_setSuppressPlayerEventObservation(true)`` so
+    /// replay-forwarding tests can consume live emissions without WidgetCenter work.
+    ///
+    /// - SeeAlso: ``beginObservingPlayerEvents()``, ``PlayerEventSubscriberEventTests``.
+    @MainActor
+    func _test_suspendPlayerEventObservation() {
+        playerEventObserver.cancel()
+        eventObservationTask = nil
+    }
+
+    /// Enables recording of derived refresh parameters without calling ``refreshIfNeeded``
+    /// or WidgetCenter IPC.
+    ///
+    /// When enabled, ``_test_handlePlayerEventBypassingUITestMode(_:)`` stores the derived
+    /// snapshot and returns immediately. Tests assert against
+    /// ``_test_lastHandlePlayerEventDerivation()`` instead of observing timeline reloads.
+    ///
+    /// - Parameter enabled: Whether the bypass seam records derivations.
+    /// - SeeAlso: ``_test_handlePlayerEventBypassingUITestMode(_:)``,
+    ///   ``_test_deriveRefreshParameters(for:)``, CODING_AGENT.md (fast test patterns).
+    @MainActor
+    static func _test_setRecordHandlePlayerEventDerivation(_ enabled: Bool) {
+        unsafe _test_recordHandlePlayerEventDerivation = enabled
+        if !enabled {
+            unsafe _test_cachedHandlePlayerEventDerivation = nil
+        }
+    }
+
+    /// Returns the most recent derivation captured by the bypass seam, if any.
+    @MainActor
+    static func _test_lastHandlePlayerEventDerivation() -> HandlePlayerEventDerivation? {
+        unsafe _test_cachedHandlePlayerEventDerivation
+    }
+
+    /// Exposes ``deriveRefreshParameters(for:)`` for white-box consumer tests.
+    ///
+    /// - Parameter event: The ``PlayerEvent`` under test.
+    /// - Returns: The visual, language, and error inputs that ``handlePlayerEvent(_:)``
+    ///   would pass to ``refreshIfNeeded``.
+    /// - SeeAlso: ``handlePlayerEvent(_:)``, ``HandlePlayerEventDerivation``,
+    ///   docs/Event-Driven-Refactor-Roadmap.md (Tier 5 consumer coverage).
+    @MainActor
+    func _test_deriveRefreshParameters(for event: PlayerEvent) -> HandlePlayerEventDerivation {
+        let derived = deriveRefreshParameters(for: event)
+        return HandlePlayerEventDerivation(
+            visualState: derived.visualState,
+            currentLanguage: derived.currentLanguage,
+            hasError: derived.hasError
+        )
+    }
+
+    /// Invokes ``handlePlayerEvent(_:)`` derivation with UITestMode guards bypassed.
+    ///
+    /// Production ``handlePlayerEvent(_:)`` returns immediately under
+    /// ``SharedPlayerManager/isRunningInUITestMode``; this seam exercises the same
+    /// derivation path for unit tests without requiring a `-UITestMode` launch or
+    /// WidgetCenter round-trips.
+    ///
+    /// When ``_test_setRecordHandlePlayerEventDerivation(true)`` is active, the method
+    /// records the derived parameters and does not call ``refreshIfNeeded``. Otherwise
+    /// it routes through the full refresh surface (subject to the standard UITestMode
+    /// guard inside ``refreshIfNeeded``).
+    ///
+    /// - Parameter event: The ``PlayerEvent`` to derive from.
+    /// - SeeAlso: ``deriveRefreshParameters(for:)``, ``_test_deriveRefreshParameters(for:)``,
+    ///   `SharedPlayerManager.loadPersistedWidgetState`, CODING_AGENT.md.
+    @MainActor
+    func _test_handlePlayerEventBypassingUITestMode(_ event: PlayerEvent) async {
+        let derived = deriveRefreshParameters(for: event)
+        let snapshot = HandlePlayerEventDerivation(
+            visualState: derived.visualState,
+            currentLanguage: derived.currentLanguage,
+            hasError: derived.hasError
+        )
+
+        if unsafe Self._test_recordHandlePlayerEventDerivation {
+            unsafe Self._test_cachedHandlePlayerEventDerivation = snapshot
+            return
+        }
+
+        refreshIfNeeded(
+            visualState: derived.visualState,
+            currentLanguage: derived.currentLanguage,
+            hasError: derived.hasError,
+            immediate: false
+        )
+    }
+}
+#endif
 
 // MARK: - WidgetState (lightweight projection of PlayerVisualState)
 

@@ -548,6 +548,11 @@ actor SharedPlayerManager {
 
     private var eventContinuation: AsyncStream<PlayerEvent>.Continuation?
     private var _events: AsyncStream<PlayerEvent>?
+    /// Live-forwarding task for the most recent ``makeEventsStreamWithReplay()`` consumer.
+    ///
+    /// ``AsyncStream`` admits one iterator on ``events``; this task is cancelled when a replay
+    /// consumer ends or when a new replay stream is created so other observers can attach.
+    private var replayForwardingTask: Task<Void, Never>?
 
     /// The stream of `PlayerEvent` instances emitted by this manager.
     ///
@@ -710,7 +715,21 @@ actor SharedPlayerManager {
     ///   observation of `events` and all imperative paths are unaffected.
     /// - Note: The replay events are synthesized from current state; they do not
     ///   represent historical transition ordering.
+    /// Cancels the active replay live-forwarding attachment on ``events``.
+    ///
+    /// Called when a replay consumer ends (for example ``PlayerEventSubscriber/cancel()``)
+    /// or before creating a new replay stream so the shared ``AsyncStream`` iterator is
+    /// released for the Tier 2 refresh observer or direct test collectors.
+    ///
+    /// - SeeAlso: ``makeEventsStreamWithReplay()``, ``events``, ``PlayerEventSubscriber``.
+    func cancelReplayForwarding() {
+        replayForwardingTask?.cancel()
+        replayForwardingTask = nil
+    }
+
     public func makeEventsStreamWithReplay() async -> AsyncStream<PlayerEvent> {
+        cancelReplayForwarding()
+
         let (stream, continuation) = AsyncStream.makeStream(of: PlayerEvent.self)
 
         // Replay current state as the events that would have produced it.
@@ -735,8 +754,9 @@ actor SharedPlayerManager {
         // Materialize the shared live stream while already actor-isolated so the
         // forwarding task does not need a second actor hop before subscribing.
         let liveEvents = await events
-        Task {
+        replayForwardingTask = Task {
             for await event in liveEvents {
+                if Task.isCancelled { break }
                 continuation.yield(event)
             }
             continuation.finish()
