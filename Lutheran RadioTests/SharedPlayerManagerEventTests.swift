@@ -987,7 +987,9 @@ final class SharedPlayerManagerEventTests: XCTestCase {
     ///
     /// - SeeAlso: ``setUserPaused()``, ``markAsUserPaused()``, ``stop()``,
     ///   ``markPlaybackStoppedByStreamFailure(_:)``, ``emit(_:)``,
-    ///   `PlayerEvent.streamDidPause`, docs/Event-Driven-Refactor-Roadmap.md (Tier 5),
+    ///   `PlayerEvent.streamDidPause`,
+    ///   ``testMarkAsUserPausedEmissionOrderMatchesCanonicalMutationSequence``,
+    ///   docs/Event-Driven-Refactor-Roadmap.md (Tier 5),
     ///   CODING_AGENT.md (Test Execution Patience and Fast, Reliable Test Patterns).
     func testSetUserPausedEmissionOrderMatchesCanonicalMutationSequence() async {
         // setUp established .shouldBePlaying intent and .prePlay visual.
@@ -1019,6 +1021,72 @@ final class SharedPlayerManagerEventTests: XCTestCase {
         XCTAssertFalse(
             liveEmissions.contains { if case .streamDidFail = $0 { return true }; return false },
             "User pause must emit streamDidPause, not streamDidFail; got: \(liveEmissions)"
+        )
+
+        let visualAfter = await manager.currentVisualState
+        let intentAfter = await manager.currentPlaybackIntent
+        XCTAssertEqual(visualAfter, .userPaused)
+        XCTAssertEqual(intentAfter, .userPaused)
+    }
+
+    /// Verifies the canonical emission order for ``markAsUserPaused()``.
+    ///
+    /// ``markAsUserPaused()`` is the authoritative pause surface invoked from
+    /// `DirectStreamingPlayer` user-action stop paths (remote commands, in-app pause)
+    /// when resurrection protection must lock visual and intent to sticky `.userPaused`
+    /// before the engine tears down playback. The event subsequence matches
+    /// ``setUserPaused()`` because both routes perform the same mutation sequence
+    /// (`applyVisualState` → `updatePlaybackIntent` → `streamDidPause` →
+    /// `saveCurrentState`) even though ``markAsUserPaused()`` omits the early
+    /// `saveVisualState()` call and the post-save Live Activity update task present
+    /// in ``setUserPaused()``.
+    ///
+    /// Consumers (`WidgetRefreshManager`, ``PlayerEventSubscriber``) observe the
+    /// identical pause vocabulary regardless of which canonical surface the player
+    /// invoked. This test guards that contract independently so a future refactor
+    /// cannot diverge the two paths silently.
+    ///
+    /// Collection uses the DEBUG notification seam (same rationale as
+    /// ``testSetUserPausedEmissionOrderMatchesCanonicalMutationSequence``).
+    ///
+    /// - SeeAlso: ``markAsUserPaused()``, ``setUserPaused()``, ``stop()``,
+    ///   ``markPlaybackStoppedByStreamFailure(_:)``, ``emit(_:)``,
+    ///   `PlayerEvent.streamDidPause`, `DirectStreamingPlayer.markAsUserPaused()`,
+    ///   ``testSetUserPausedEmissionOrderMatchesCanonicalMutationSequence``,
+    ///   docs/Event-Driven-Refactor-Roadmap.md (Tier 5),
+    ///   CODING_AGENT.md (Test Execution Patience and Fast, Reliable Test Patterns).
+    func testMarkAsUserPausedEmissionOrderMatchesCanonicalMutationSequence() async {
+        // setUp established .shouldBePlaying intent and .prePlay visual — the
+        // typical precondition when DirectStreamingPlayer calls markAsUserPaused()
+        // after a user-initiated pause from an active-play intent.
+        let intentBefore = await manager.currentPlaybackIntent
+        XCTAssertEqual(
+            intentBefore,
+            .shouldBePlaying,
+            "Precondition: markAsUserPaused path tests transition from an active-play intent"
+        )
+
+        let m = self.manager
+        let liveEmissions = await collectSeamEvents(minimumCount: 3, timeout: 5.0) {
+            await m.markAsUserPaused()
+        }
+
+        assertEvents(liveEmissions, containInOrder: [
+            { if case .visualStateDidChange(.userPaused) = $0 { return true }; return false },
+            { if case .playbackIntentChanged(.userPaused) = $0 { return true }; return false },
+            { if case .streamDidPause = $0 { return true }; return false },
+        ])
+        XCTAssertTrue(
+            liveEmissions.contains(.persistedWidgetStateDidUpdate),
+            "markAsUserPaused path should emit .persistedWidgetStateDidUpdate when the write path runs; got: \(liveEmissions)"
+        )
+        XCTAssertFalse(
+            liveEmissions.contains { if case .streamDidStop = $0 { return true }; return false },
+            "markAsUserPaused must emit streamDidPause, not streamDidStop; got: \(liveEmissions)"
+        )
+        XCTAssertFalse(
+            liveEmissions.contains { if case .streamDidFail = $0 { return true }; return false },
+            "markAsUserPaused must emit streamDidPause, not streamDidFail; got: \(liveEmissions)"
         )
 
         let visualAfter = await manager.currentVisualState

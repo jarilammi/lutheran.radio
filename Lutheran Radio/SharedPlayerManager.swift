@@ -1504,7 +1504,16 @@ actor SharedPlayerManager {
     ///   persisted, and `streamDidPause` emitted.
     ///
     /// - SeeAlso: ``setUserPaused()``, ``stop()``, ``emit(_:)``, `PlayerEvent.streamDidPause`,
-    ///   `DirectStreamingPlayer.stop(reason:)`, CODING_AGENT.md (resurrection tables).
+    ///   `DirectStreamingPlayer.stop(reason:)`, `DirectStreamingPlayer.markAsUserPaused()`,
+    ///   ``testMarkAsUserPausedEmissionOrderMatchesCanonicalMutationSequence``,
+    ///   docs/Event-Driven-Refactor-Roadmap.md (Tier 5 emission order),
+    ///   CODING_AGENT.md (resurrection tables).
+    ///
+    /// - Note: Emission subsequence matches ``setUserPaused()`` (`visualStateDidChange` →
+    ///   `playbackIntentChanged` → `streamDidPause` → `persistedWidgetStateDidUpdate`).
+    ///   This surface omits the early `saveVisualState()` and post-save Live Activity
+    ///   update task present in ``setUserPaused()``; those differences do not alter the
+    ///   event vocabulary consumers observe.
     ///
     /// AGENT NOTE: Emission site for pause is after mutation. This method is called
     /// by the player; do not move pause decision logic here.
