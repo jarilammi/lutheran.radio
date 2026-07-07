@@ -685,10 +685,8 @@ actor SharedPlayerManager {
     ///   the persisted snapshot facades.
     public var currentState: PlayerCurrentState {
         get async {
-            // hasError is carried in the full persisted blob (not the public tuple
-            // facade). For replay fidelity we read the blob directly when present.
             var errorFlag = currentVisualState == .securityLocked
-            if let snapshot = Self.inMemorySessionWidgetSnapshot {
+            if let snapshot = Self.loadPersistedWidgetState() {
                 errorFlag = errorFlag || snapshot.hasError
             }
             return PlayerCurrentState(
@@ -894,7 +892,7 @@ actor SharedPlayerManager {
     /// Synchronous factory reset invoked from ``init()`` before any caller can observe stale disk state.
     private init() {
         Self.clearPersistedVisualStateKeysFromDisk()
-        Self.inMemorySessionWidgetSnapshot = nil
+        Self.clearInMemorySessionSnapshot()
     }
 
     /// Forces factory-default visual/playback state on every cold launch and actor (re)initialization.
@@ -918,7 +916,7 @@ actor SharedPlayerManager {
     /// this (or rely on `init()` + this explicit await) before `refreshVisualStateFromPersistence`.
     func resetToFactoryDefaultsOnLaunch() {
         Self.clearPersistedVisualStateKeysFromDisk()
-        Self.inMemorySessionWidgetSnapshot = nil
+        Self.clearInMemorySessionSnapshot()
         currentVisualState = .prePlay
         currentStreamMetadata = nil
         hasLoadedVisualStateFromPersistence = false
@@ -1806,7 +1804,7 @@ actor SharedPlayerManager {
     /// On next launch the no-snapshot path in ensureVisualStateLoaded allows the normal cold-launch flow.
     /// SECURITY: This touches only in-memory actor state for the current process.
     func resetStateToClearedForPrivacy() {
-        Self.inMemorySessionWidgetSnapshot = nil
+        Self.clearInMemorySessionSnapshot()
         applyVisualState(.cleared)
         holdPrePlayVisualUntilPlayback = false
         initialPlaybackHasRun = false
@@ -2671,6 +2669,13 @@ actor SharedPlayerManager {
         defaults.removeObject(forKey: "hasError")
     }
 
+    /// Drops the in-process session snapshot. SSOT write helper — sole `nil` assignment site.
+    ///
+    /// - SeeAlso: ``loadPersistedWidgetState()``, ``updateInMemorySessionSnapshot(visualState:language:streamMetadata:hasError:clearStreamMetadata:)``.
+    nonisolated private static func clearInMemorySessionSnapshot() {
+        unsafe inMemorySessionWidgetSnapshot = nil
+    }
+
     /// Updates the in-process session snapshot (never written to UserDefaults).
     nonisolated private static func updateInMemorySessionSnapshot(
         visualState: PlayerVisualState,
@@ -2686,9 +2691,9 @@ actor SharedPlayerManager {
         } else if let streamMetadata {
             resolvedMetadata = streamMetadata
         } else {
-            resolvedMetadata = inMemorySessionWidgetSnapshot?.streamMetadata
+            resolvedMetadata = unsafe inMemorySessionWidgetSnapshot?.streamMetadata
         }
-        inMemorySessionWidgetSnapshot = PersistedWidgetState(
+        unsafe inMemorySessionWidgetSnapshot = PersistedWidgetState(
             visualState: visualToStore,
             currentLanguage: language,
             lastLanguageChangeTime: Date(),
@@ -2839,8 +2844,9 @@ actor SharedPlayerManager {
     ///
     /// Primary reader for widget refresh derivation and in-session SSOT consumers.
     ///
-    /// - Returns: The current session snapshot, or `nil` after cold launch / before any
-    ///   in-session write. Callers must treat `nil` as "default to `.prePlay` + best initial language".
+    /// - Returns: The current session snapshot fields, or `nil` after cold launch / before any
+    ///   in-session write. Callers must treat `nil` as "default to `.prePlay` + best initial language
+    ///   + `hasError == false`".
     ///
     /// - Note: Purges any legacy on-disk visual keys before returning. Cross-process widget
     ///   timelines see `nil` after relaunch (factory "Tap to Play" defaults).
@@ -2849,17 +2855,19 @@ actor SharedPlayerManager {
     ///   ``loadPersistedVisualStateDirect()``, `loadSharedState()`,
     ///   CODING_AGENT.md (Single Source of Truth Principles).
     ///
-    /// Thread-safety: nonisolated; safe from any widget/extension context.
+    /// Thread-safety: nonisolated; safe from any widget/extension context. Sole canonical reader
+    /// for ``inMemorySessionWidgetSnapshot`` — do not access that storage elsewhere.
     nonisolated static func loadPersistedWidgetState() -> (
         visualState: PlayerVisualState,
         currentLanguage: String,
-        streamMetadata: StreamProgramMetadata?
+        streamMetadata: StreamProgramMetadata?,
+        hasError: Bool
     )? {
         migrateLegacyIsPlayingIfNeeded()
 
-        guard let snapshot = inMemorySessionWidgetSnapshot else { return nil }
+        guard let snapshot = unsafe inMemorySessionWidgetSnapshot else { return nil }
         let visual = sanitizedVisualStateForCrossProcessRestore(snapshot.visualState)
-        return (visual, snapshot.currentLanguage, snapshot.streamMetadata)
+        return (visual, snapshot.currentLanguage, snapshot.streamMetadata, snapshot.hasError)
     }
 
     /// Returns the latest persisted stream program metadata, if any.
@@ -3181,10 +3189,7 @@ extension SharedPlayerManager {
         let previousLanguage = previousSnapshot?.currentLanguage ?? ""
         let isLanguageChange = !previousLanguage.isEmpty && previousLanguage != state.currentLanguage
 
-        // Derive previous values from the snapshot (now SSOT) when present.
-        // Legacy bool reads are retained only as fallback for the absolute oldest installs
-        // during the transition off the separate bool keys.
-        let previousHasError = Self.inMemorySessionWidgetSnapshot?.hasError ?? false
+        let previousHasError = previousSnapshot?.hasError ?? false
         let previousIsPlaying = previousSnapshot?.visualState.isActivelyPlaying ?? false
 
         let metadataUnchanged = previousSnapshot?.streamMetadata == currentStreamMetadata
@@ -3271,9 +3276,10 @@ extension SharedPlayerManager {
             // Use the documented instant-feedback timeout.
             if age < Constants.instantFeedbackTimeout {
                 // Prefer the just-written PersistedWidgetState snapshot (SSOT) for both
-                // isPlaying and hasError. Legacy bool fallbacks only for pre-snapshot installs.
-                let isPlaying = Self.loadPersistedWidgetState()?.visualState.isActivelyPlaying ?? false
-                let hasError = Self.inMemorySessionWidgetSnapshot?.hasError ?? false
+                // isPlaying and hasError.
+                let persisted = Self.loadPersistedWidgetState()
+                let isPlaying = persisted?.visualState.isActivelyPlaying ?? false
+                let hasError = persisted?.hasError ?? false
                 
                 #if DEBUG
                 print("[SharedPlayerManager] Using instant feedback state: \(instantFeedbackLanguage), age: \(age)s")
@@ -3292,12 +3298,10 @@ extension SharedPlayerManager {
             }
         }
         
-        // Normal state loading
-        // Derive strictly from the PersistedWidgetState snapshot (sole SSOT for visual +
-        // language + hasError). Legacy bools are only for one-time migration on installs
-        // that predate the unified snapshot.
-        let isPlaying = Self.loadPersistedWidgetState()?.visualState.isActivelyPlaying ?? false
-        let hasError = Self.inMemorySessionWidgetSnapshot?.hasError ?? false
+        // Normal state loading — derive strictly from the PersistedWidgetState snapshot.
+        let persisted = Self.loadPersistedWidgetState()
+        let isPlaying = persisted?.visualState.isActivelyPlaying ?? false
+        let hasError = persisted?.hasError ?? false
         // Language is returned via the preferred helper (combined snapshot first).
         // This gives the large majority of call sites (Live Activities, many ViewController
         // paths, etc.) the authoritative language with no further changes.
@@ -3388,7 +3392,7 @@ extension SharedPlayerManager {
     /// The clear always removes the primary snapshot even if widgets are configured (user explicitly requested it).
     /// After clear, `loadPersistedWidgetState()` returns nil and providers fall back to safe .prePlay / "en".
     nonisolated static func removeAllLocalPlaybackKeys() {
-        inMemorySessionWidgetSnapshot = nil
+        clearInMemorySessionSnapshot()
         guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return }
 
         clearPersistedVisualStateKeysFromDisk()

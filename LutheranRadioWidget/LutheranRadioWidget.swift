@@ -318,7 +318,7 @@ struct Provider: AppIntentTimelineProvider {
         // on persist/save/writeInstant/bump/schedule/pending/liveness paths). The App Group then carries
         // no recent language/visual/metadata/liveness signal.
         if let combined = SharedPlayerManager.loadPersistedWidgetState() {
-            return (combined.currentLanguage, false, combined.visualState, combined.streamMetadata)
+            return (combined.currentLanguage, combined.hasError, combined.visualState, combined.streamMetadata)
         }
 
         return (SharedPlayerManager.preferredWidgetLanguage(), false, .prePlay, nil)
