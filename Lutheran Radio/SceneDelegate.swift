@@ -66,6 +66,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         MainActor.assumeIsolated {
             WidgetRefreshManager.shared.cancelPendingRefresh()
         }
+        SharedPlayerManager.clearSystemNowPlayingMetadataSynchronously()
 
         window?.rootViewController = nil
         window = nil

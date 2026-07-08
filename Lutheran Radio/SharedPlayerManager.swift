@@ -906,7 +906,8 @@ actor SharedPlayerManager {
     /// pause/lock semantics continue to apply until the process ends.
     ///
     /// - Precondition: Safe to call from main-app launch (`ViewController` cold-launch Task) and tests.
-    /// - Postcondition: `loadPersistedWidgetState()` returns `nil`; widgets show safe defaults.
+    /// - Postcondition: `loadPersistedWidgetState()` returns `nil`; widgets show safe defaults;
+    ///   system Now Playing metadata cleared (main app).
     ///
     /// - SeeAlso: ``ensureVisualStateLoaded()``, ``loadPersistedWidgetState()``,
     ///   ``clearPersistedVisualStateKeysFromDisk()``, ViewController.viewDidLoad,
@@ -914,7 +915,7 @@ actor SharedPlayerManager {
     ///
     /// AGENT NOTE: Any new launch path that could observe stale App Group visual keys must call
     /// this (or rely on `init()` + this explicit await) before `refreshVisualStateFromPersistence`.
-    func resetToFactoryDefaultsOnLaunch() {
+    func resetToFactoryDefaultsOnLaunch() async {
         Self.clearPersistedVisualStateKeysFromDisk()
         Self.clearInMemorySessionSnapshot()
         currentVisualState = .prePlay
@@ -924,6 +925,9 @@ actor SharedPlayerManager {
         if playbackIntent != .securityLocked {
             updatePlaybackIntent(to: .shouldBePlaying)
         }
+        #if LUTHERAN_MAIN_APP
+        await teardownNowPlayingSession()
+        #endif
         #if DEBUG
         print("[SharedPlayerManager] resetToFactoryDefaultsOnLaunch → .prePlay (memory-only, disk visual keys cleared)")
         #endif
@@ -3471,6 +3475,11 @@ extension SharedPlayerManager {
         // the app is still running; they may still see the final state briefly.
         #if LUTHERAN_MAIN_APP
         RadioLiveActivityManager.shared.endActivity()   // .default
+        #endif
+
+        // 6b. Clear system Now Playing (MPNowPlayingInfoCenter persists independently of widget state).
+        #if LUTHERAN_MAIN_APP
+        await Self.shared.teardownNowPlayingSession()
         #endif
 
         // 7. Notify (widgets, Live Activities, UI coordinator, SceneDelegate etc. can react and fall back to defaults)

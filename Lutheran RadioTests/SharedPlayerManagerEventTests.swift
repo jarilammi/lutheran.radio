@@ -5,6 +5,7 @@
 //  Created by Jari Lammi on 6.7.2026.
 //
 
+import MediaPlayer
 import XCTest
 @testable import Lutheran_Radio
 
@@ -2004,6 +2005,27 @@ final class SharedPlayerManagerEventTests: XCTestCase {
     ///
     /// - SeeAlso: ``SharedPlayerManager/resetToFactoryDefaultsOnLaunch()``,
     ///   ``SharedPlayerManager/loadPersistedWidgetState()``, docs/Event-Driven-Refactor-Roadmap.md.
+    /// System Now Playing metadata must be cleared on factory reset / teardown so stale
+    /// Lock Screen / Control Center cards do not survive relaunch or reboot.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/teardownNowPlayingSession()``,
+    ///   ``SharedPlayerManager/resetToFactoryDefaultsOnLaunch()``.
+    func testTeardownNowPlayingSessionClearsSystemMetadata() async {
+        await MainActor.run {
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = [
+                MPMediaItemPropertyTitle: "Svenska LIVE"
+            ]
+            MPNowPlayingInfoCenter.default().playbackState = .playing
+        }
+
+        await manager.teardownNowPlayingSession()
+
+        await MainActor.run {
+            XCTAssertNil(MPNowPlayingInfoCenter.default().nowPlayingInfo)
+            XCTAssertEqual(MPNowPlayingInfoCenter.default().playbackState, .stopped)
+        }
+    }
+
     func testColdLaunchFactoryResetClearsDiskVisualStateAndReturnsPrePlay() async {
         let stale = SharedPlayerManager.PersistedWidgetState(
             visualState: .thermalPaused,

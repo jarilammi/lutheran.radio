@@ -209,5 +209,46 @@ extension SharedPlayerManager {
             MPNowPlayingInfoCenter.default().nowPlayingInfo = info
         }
     }
+
+    /// Aggressively clears the system Now Playing session (Lock Screen, Control Center,
+    /// Dynamic Island media card) and detaches the AVPlayer item.
+    ///
+    /// `MPNowPlayingInfoCenter` persists at the OS level across relaunch and reboot unless
+    /// explicitly cleared — independent of the memory-only widget/visual policy.
+    ///
+    /// - Precondition: Main-app target only. Call during cold-launch factory reset, privacy
+    ///   clear, or process termination — **not** while intentionally backgrounding live playback.
+    /// - Postcondition: `nowPlayingInfo == nil`, `playbackState == .stopped`; secured item detached.
+    /// - SeeAlso: ``resetToFactoryDefaultsOnLaunch()``, ``SharedPlayerManager/clearAllLocalState()``,
+    ///   ``DirectStreamingPlayer/teardownSystemMediaSession()``, CODING_AGENT.md.
+    func teardownNowPlayingSession() async {
+        guard !isRunningInWidget() else { return }
+
+        #if DEBUG
+        print("[SessionTeardown] Clearing MPNowPlayingInfoCenter + AVPlayer item")
+        #endif
+
+        await MainActor.run {
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+            MPNowPlayingInfoCenter.default().playbackState = .stopped
+        }
+
+        await DirectStreamingPlayer.shared.teardownSystemMediaSession()
+    }
+
+    /// Best-effort synchronous clear of system Now Playing metadata.
+    ///
+    /// Used on `applicationWillTerminate` / `sceneDidDisconnect` where async deactivation
+    /// may not complete before the process exits. The metadata clear is the critical privacy step.
+    ///
+    /// - SeeAlso: ``teardownNowPlayingSession()``, AppDelegate.applicationWillTerminate,
+    ///   SceneDelegate.sceneDidDisconnect.
+    nonisolated static func clearSystemNowPlayingMetadataSynchronously() {
+        MainActor.assumeIsolated {
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+            MPNowPlayingInfoCenter.default().playbackState = .stopped
+            DirectStreamingPlayer.shared.teardownSystemMediaSessionSynchronously()
+        }
+    }
 }
 #endif

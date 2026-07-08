@@ -138,8 +138,11 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
             WidgetRefreshManager.shared.cancelPendingRefresh()
         }
 
+        // 4. Best-effort system Now Playing teardown (MPNowPlayingInfoCenter survives reboot otherwise).
+        SharedPlayerManager.clearSystemNowPlayingMetadataSynchronously()
+
         #if DEBUG
-        print("[AppDelegate] applicationWillTerminate — liveness staled, LA end requested, pending refreshes cancelled")
+        print("[AppDelegate] applicationWillTerminate — liveness staled, LA end requested, pending refreshes cancelled, Now Playing cleared")
         #endif
     }
 }

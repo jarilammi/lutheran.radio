@@ -1684,6 +1684,36 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         }
     }
 
+    // MARK: - System media session teardown (Now Playing hygiene)
+
+    /// Hard-detaches the secured `AVPlayerItem` for privacy / cold-launch factory reset.
+    ///
+    /// Complements ``SharedPlayerManager/teardownNowPlayingSession()`` which clears
+    /// `MPNowPlayingInfoCenter`. Safe when playback is already stopped or during privacy clear.
+    ///
+    /// - Postcondition: Player paused, current item nil, soft-pause stash cleared.
+    /// - SeeAlso: ``teardownSystemMediaSession()``, ``deactivateAudioSessionAsync()``.
+    @MainActor
+    func teardownSystemMediaSessionSynchronously() {
+        guard !isTesting else { return }
+
+        player?.pause()
+        player?.rate = 0.0
+        player?.replaceCurrentItem(with: nil)
+        playerItem = nil
+        clearAttachedItemBinding()
+        isSoftPaused = false
+    }
+
+    /// Full async teardown: synchronous player detach plus audio session deactivation.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/teardownNowPlayingSession()``.
+    @MainActor
+    func teardownSystemMediaSession() async {
+        teardownSystemMediaSessionSynchronously()
+        _ = await deactivateAudioSessionAsync()
+    }
+
     // MARK: - Deactivation (symmetric to activation)
 
     /// Deactivates the audio session using the appropriate API for the runtime.
