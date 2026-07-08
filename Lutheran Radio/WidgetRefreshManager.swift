@@ -253,6 +253,21 @@ final class WidgetRefreshManager: @unchecked Sendable {
         hasError: Bool,
         immediate: Bool = false
     ) {
+        #if DEBUG
+        // White-box gate observation for session-teardown orchestration tests.
+        // Bypasses UITestMode and WidgetCenter IPC while preserving the teardown
+        // gate decision order used in production.
+        if unsafe Self._test_bypassUITestModeForRefreshGateObservation {
+            let outcome: RefreshIfNeededGateOutcome = Self.isSessionTeardownInProgress
+                ? .suppressedBySessionTeardown
+                : .passedGuards
+            if unsafe Self._test_recordRefreshIfNeededGateOutcomes {
+                unsafe Self._test_refreshGateOutcomeLog.append(outcome)
+            }
+            return
+        }
+        #endif
+
         // Defense-in-depth UI test isolation (SSOT).
         // Prevents WidgetKit timeline reloads that can wake widget renderers
         // (including Chrono for Live Activities) during -UITestMode launches.
@@ -681,6 +696,67 @@ final class WidgetRefreshManager: @unchecked Sendable {
 
 #if DEBUG
 extension WidgetRefreshManager {
+
+    /// Outcome of the early guards in ``refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)``.
+    ///
+    /// Recorded only when ``_test_setRecordRefreshIfNeededGateOutcomes(true)`` and
+    /// ``_test_setBypassUITestModeForRefreshGateObservation(true)`` are active. Compiled out of Release.
+    enum RefreshIfNeededGateOutcome: Equatable, Sendable {
+        /// The call passed both UITestMode and session-teardown guards (WidgetCenter IPC skipped in test mode).
+        case passedGuards
+        /// The call returned early because ``isSessionTeardownInProgress`` was true.
+        case suppressedBySessionTeardown
+    }
+
+    // SAFETY: DEBUG-only gate-observation flags written from @MainActor test entry points;
+    // reads occur on the same actor during XCTest. Matches the established nonisolated(unsafe)
+    // pattern for privacy-gate and event-observation test seams in this file.
+    nonisolated(unsafe) private static var _test_bypassUITestModeForRefreshGateObservation = false
+    nonisolated(unsafe) private static var _test_recordRefreshIfNeededGateOutcomes = false
+    nonisolated(unsafe) private static var _test_refreshGateOutcomeLog: [RefreshIfNeededGateOutcome] = []
+
+    /// Bypasses the UITestMode early return in ``refreshIfNeeded`` so unit tests can observe
+    /// the session-teardown gate without WidgetCenter IPC.
+    ///
+    /// - Parameter bypass: When `true`, ``refreshIfNeeded`` evaluates only
+    ///   ``isSessionTeardownInProgress`` and returns before debounce/coalesce logic.
+    /// - SeeAlso: ``_test_setRecordRefreshIfNeededGateOutcomes(_:)``,
+    ///   ``_test_refreshIfNeededGateOutcomeLog()``, ``setSessionTeardownInProgress(_:)``,
+    ///   ``SharedPlayerManager/performSessionAndWidgetTeardown(includeFactoryReset:liveActivityTeardown:refreshWidgets:widgetVisualState:staleLiveness:)``,
+    ///   docs/Event-Driven-Refactor-Roadmap.md (session teardown coverage).
+    @MainActor
+    static func _test_setBypassUITestModeForRefreshGateObservation(_ bypass: Bool) {
+        unsafe _test_bypassUITestModeForRefreshGateObservation = bypass
+        if !bypass {
+            unsafe _test_refreshGateOutcomeLog = []
+        }
+    }
+
+    /// Enables append-only recording of refresh guard outcomes for white-box tests.
+    ///
+    /// - Parameter enabled: Whether each ``refreshIfNeeded`` call appends to
+    ///   ``_test_refreshIfNeededGateOutcomeLog()``.
+    /// - SeeAlso: ``_test_setBypassUITestModeForRefreshGateObservation(_:)``,
+    ///   ``SharedPlayerManagerEventTests``.
+    @MainActor
+    static func _test_setRecordRefreshIfNeededGateOutcomes(_ enabled: Bool) {
+        unsafe _test_recordRefreshIfNeededGateOutcomes = enabled
+        if !enabled {
+            unsafe _test_refreshGateOutcomeLog = []
+        }
+    }
+
+    /// Returns the guard-outcome log captured since the last clear or disable.
+    @MainActor
+    static func _test_refreshIfNeededGateOutcomeLog() -> [RefreshIfNeededGateOutcome] {
+        unsafe _test_refreshGateOutcomeLog
+    }
+
+    /// Clears the guard-outcome log without changing observation flags.
+    @MainActor
+    static func _test_clearRefreshIfNeededGateOutcomeLog() {
+        unsafe _test_refreshGateOutcomeLog = []
+    }
 
     /// Snapshot of refresh parameters derived by ``handlePlayerEvent(_:)`` for white-box tests.
     ///

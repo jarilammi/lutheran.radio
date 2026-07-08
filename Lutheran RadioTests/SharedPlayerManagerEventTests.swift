@@ -121,6 +121,9 @@ final class SharedPlayerManagerEventTests: XCTestCase {
             la.stopLocalUpdateTimer()
             la.activityObservationTask?.cancel()
             la.currentActivity = nil
+            WidgetRefreshManager.setSessionTeardownInProgress(false)
+            WidgetRefreshManager._test_setBypassUITestModeForRefreshGateObservation(false)
+            WidgetRefreshManager._test_setRecordRefreshIfNeededGateOutcomes(false)
         }
         try await super.tearDown()
     }
@@ -1997,14 +2000,139 @@ final class SharedPlayerManagerEventTests: XCTestCase {
         _ = await manager.events
     }
 
-    /// Protects cold-launch factory reset: stale on-disk visual state must never restore after relaunch.
+    // MARK: - Session teardown orchestration
+
+    /// Verifies that ``WidgetRefreshManager/refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)``
+    /// suppresses timeline work while ``WidgetRefreshManager/isSessionTeardownInProgress`` is held and
+    /// accepts the call once the gate releases.
     ///
-    /// Simulates an App Group blob left by a prior session (`.playing`, `.thermalPaused`, etc.).
-    /// ``resetToFactoryDefaultsOnLaunch()`` must purge disk keys and leave `.prePlay` with no
-    /// in-memory session snapshot so auto-play on first launch remains viable.
+    /// Uses DEBUG gate-observation seams to bypass UITestMode and WidgetCenter IPC while preserving
+    /// the production teardown-guard order exercised during ``SharedPlayerManager/teardownNowPlayingSession()``.
     ///
-    /// - SeeAlso: ``SharedPlayerManager/resetToFactoryDefaultsOnLaunch()``,
-    ///   ``SharedPlayerManager/loadPersistedWidgetState()``, docs/Event-Driven-Refactor-Roadmap.md.
+    /// - SeeAlso: ``WidgetRefreshManager/setSessionTeardownInProgress(_:)``,
+    ///   ``WidgetRefreshManager/_test_setBypassUITestModeForRefreshGateObservation(_:)``,
+    ///   ``SharedPlayerManager/teardownNowPlayingSession()``, docs/Event-Driven-Refactor-Roadmap.md.
+    func testRefreshIfNeededSuppressesWhileSessionTeardownGateIsHeld() async {
+        await MainActor.run {
+            WidgetRefreshManager._test_setBypassUITestModeForRefreshGateObservation(true)
+            WidgetRefreshManager._test_setRecordRefreshIfNeededGateOutcomes(true)
+            WidgetRefreshManager._test_clearRefreshIfNeededGateOutcomeLog()
+
+            WidgetRefreshManager.setSessionTeardownInProgress(true)
+            WidgetRefreshManager.shared.refreshIfNeeded(
+                visualState: .prePlay,
+                currentLanguage: "en",
+                hasError: false,
+                immediate: true
+            )
+            XCTAssertEqual(
+                WidgetRefreshManager._test_refreshIfNeededGateOutcomeLog(),
+                [.suppressedBySessionTeardown],
+                "Refresh must not run while the cross-process teardown gate is held"
+            )
+
+            WidgetRefreshManager._test_clearRefreshIfNeededGateOutcomeLog()
+            WidgetRefreshManager.setSessionTeardownInProgress(false)
+            WidgetRefreshManager.shared.refreshIfNeeded(
+                visualState: .prePlay,
+                currentLanguage: "en",
+                hasError: false,
+                immediate: true
+            )
+            XCTAssertEqual(
+                WidgetRefreshManager._test_refreshIfNeededGateOutcomeLog(),
+                [.passedGuards],
+                "Refresh must proceed after the teardown gate releases"
+            )
+        }
+    }
+
+    /// Verifies the orchestration contract of ``SharedPlayerManager/performSessionAndWidgetTeardown(includeFactoryReset:liveActivityTeardown:refreshWidgets:widgetVisualState:staleLiveness:)``.
+    ///
+    /// The test drives the full awaited path with factory reset, termination liveness sentinel,
+    /// system Now Playing teardown, and post-teardown widget refresh. Live Activity dismissal is
+    /// skipped (`.none`) to avoid ActivityKit IPC under the XCTest host.
+    ///
+    /// **Contracts protected:**
+    /// - Optional factory reset purges on-disk visual keys and restores `.prePlay`.
+    /// - `staleLiveness` writes the termination sentinel (`lastUpdateTime == 0`).
+    /// - Phase-1 Now Playing metadata is cleared before widget refresh runs.
+    /// - The session-teardown gate is released when orchestration completes.
+    /// - The terminal `refreshIfNeeded(..., immediate: true)` passes guards after teardown.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/teardownNowPlayingSession()``,
+    ///   ``SharedPlayerManager/resetToFactoryDefaultsOnLaunch()``,
+    ///   ``SharedPlayerManager/hasExplicitTerminationSentinel()``,
+    ///   `WidgetRefreshManager.isSessionTeardownInProgress`,
+    ///   docs/Event-Driven-Refactor-Roadmap.md (session + widget teardown follow-up).
+    func testPerformSessionAndWidgetTeardownOrchestratesMetadataClearFactoryResetAndPostTeardownRefresh() async {
+        let stale = SharedPlayerManager.PersistedWidgetState(
+            visualState: .playing,
+            currentLanguage: "sv"
+        )
+        let data = try! JSONEncoder().encode(stale)
+        let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared")
+        defaults?.set(data, forKey: "persistedWidgetState")
+        defaults?.set(data, forKey: "playerVisualState")
+
+        SharedPlayerManager.bumpWidgetLivenessTimestamp(force: true)
+        XCTAssertFalse(
+            SharedPlayerManager.hasExplicitTerminationSentinel(),
+            "Precondition: liveness heartbeat must be non-sentinel before teardown"
+        )
+
+        await manager.setUserPaused()
+
+        await MainActor.run {
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = [
+                MPMediaItemPropertyTitle: "Svenska LIVE"
+            ]
+            MPNowPlayingInfoCenter.default().playbackState = .playing
+
+            WidgetRefreshManager._test_setBypassUITestModeForRefreshGateObservation(true)
+            WidgetRefreshManager._test_setRecordRefreshIfNeededGateOutcomes(true)
+            WidgetRefreshManager._test_clearRefreshIfNeededGateOutcomeLog()
+        }
+
+        await manager.performSessionAndWidgetTeardown(
+            includeFactoryReset: true,
+            liveActivityTeardown: .none,
+            refreshWidgets: true,
+            staleLiveness: true
+        )
+
+        let visual = await manager.currentVisualState
+        XCTAssertEqual(visual, .prePlay, "Factory reset must restore the safe pre-play visual")
+        XCTAssertNil(SharedPlayerManager.loadPersistedWidgetState())
+        XCTAssertNil(defaults?.data(forKey: "persistedWidgetState"))
+        XCTAssertNil(defaults?.data(forKey: "playerVisualState"))
+        XCTAssertTrue(
+            SharedPlayerManager.hasExplicitTerminationSentinel(),
+            "Termination liveness sentinel must be written when staleLiveness is true"
+        )
+
+        await MainActor.run {
+            XCTAssertNil(MPNowPlayingInfoCenter.default().nowPlayingInfo)
+            XCTAssertEqual(MPNowPlayingInfoCenter.default().playbackState, .stopped)
+            XCTAssertFalse(
+                WidgetRefreshManager.isSessionTeardownInProgress,
+                "Orchestration must release the teardown gate before returning"
+            )
+
+            let gateLog = WidgetRefreshManager._test_refreshIfNeededGateOutcomeLog()
+            XCTAssertTrue(
+                gateLog.contains(.passedGuards),
+                "Post-teardown widget refresh must pass guards; log: \(gateLog)"
+            )
+            XCTAssertFalse(
+                gateLog.contains(.suppressedBySessionTeardown),
+                "Terminal refresh must not be suppressed after orchestration completes; log: \(gateLog)"
+            )
+        }
+    }
+
+    // MARK: - Cold launch and Now Playing hygiene
+
     /// System Now Playing metadata must be cleared on factory reset / teardown so stale
     /// Lock Screen / Control Center cards do not survive relaunch or reboot.
     ///
@@ -2026,6 +2154,14 @@ final class SharedPlayerManagerEventTests: XCTestCase {
         }
     }
 
+    /// Protects cold-launch factory reset: stale on-disk visual state must never restore after relaunch.
+    ///
+    /// Simulates an App Group blob left by a prior session (`.playing`, `.thermalPaused`, etc.).
+    /// ``resetToFactoryDefaultsOnLaunch()`` must purge disk keys and leave `.prePlay` with no
+    /// in-memory session snapshot so auto-play on first launch remains viable.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/resetToFactoryDefaultsOnLaunch()``,
+    ///   ``SharedPlayerManager/loadPersistedWidgetState()``, docs/Event-Driven-Refactor-Roadmap.md.
     func testColdLaunchFactoryResetClearsDiskVisualStateAndReturnsPrePlay() async {
         let stale = SharedPlayerManager.PersistedWidgetState(
             visualState: .thermalPaused,
