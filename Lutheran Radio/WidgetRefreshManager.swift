@@ -153,6 +153,25 @@ final class WidgetRefreshManager: @unchecked Sendable {
         unsafe _hasActiveLutheranWidgets = value
     }
 
+    /// Cross-process teardown gate: suppresses WidgetCenter IPC while system Now Playing
+    /// session teardown is in flight (cold-launch factory reset, privacy clear, terminate).
+    ///
+    /// Set by ``SharedPlayerManager/teardownNowPlayingSession()`` and
+    /// ``SharedPlayerManager/clearSystemNowPlayingMetadataSynchronously()``.
+    /// Prevents debounced `reloadTimelines` from racing MediaRemoteUI during launch watchdog windows.
+    ///
+    /// - SeeAlso: ``setSessionTeardownInProgress(_:)``, ``refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)``,
+    ///   docs/Event-Driven-Refactor-Roadmap.md.
+    // SAFETY: Written from @MainActor teardown entry points and SharedPlayerManager actor
+    // `finishSessionTeardown`; read from refresh guards on @MainActor and nonisolated paths.
+    // Stale `true` only delays one refresh cycle; stale `false` may allow one extra reload.
+    nonisolated(unsafe) static private var _isSessionTeardownInProgress: Bool = false
+    nonisolated static var isSessionTeardownInProgress: Bool { unsafe _isSessionTeardownInProgress }
+
+    nonisolated static func setSessionTeardownInProgress(_ value: Bool) {
+        unsafe _isSessionTeardownInProgress = value
+    }
+
     /// Re-queries WidgetCenter.currentConfigurations() and updates the hasActiveLutheranWidgets flag.
     /// Primary call sites: sceneDidBecomeActive / foreground (SceneDelegate), after clear (forced false
     /// first, then re-detect allowed on next foreground), and opportunistic on write attempts when suppressed.
@@ -167,6 +186,9 @@ final class WidgetRefreshManager: @unchecked Sendable {
         // Defense-in-depth test isolation (parallel to refreshIfNeeded and LA manager guards).
         // Prevents slow WidgetCenter system service round-trips during unit tests.
         if SharedPlayerManager.isRunningInUITestMode {
+            return
+        }
+        if Self.isSessionTeardownInProgress {
             return
         }
 
@@ -235,6 +257,12 @@ final class WidgetRefreshManager: @unchecked Sendable {
         // Prevents WidgetKit timeline reloads that can wake widget renderers
         // (including Chrono for Live Activities) during -UITestMode launches.
         if SharedPlayerManager.isRunningInUITestMode {
+            return
+        }
+        if Self.isSessionTeardownInProgress {
+            #if DEBUG
+            print("[WidgetRefreshManager] Skipped refresh — session teardown in progress")
+            #endif
             return
         }
 
@@ -462,6 +490,9 @@ final class WidgetRefreshManager: @unchecked Sendable {
         if SharedPlayerManager.isRunningInUITestMode {
             return
         }
+        if Self.isSessionTeardownInProgress {
+            return
+        }
 
         cancelPendingRefresh()
         lastRefreshTime = Date()
@@ -627,6 +658,9 @@ final class WidgetRefreshManager: @unchecked Sendable {
     private func handlePlayerEvent(_ event: PlayerEvent) async {
         // UITestMode defense (mirrors the guard at the top of refreshIfNeeded).
         if SharedPlayerManager.isRunningInUITestMode {
+            return
+        }
+        if Self.isSessionTeardownInProgress {
             return
         }
 

@@ -126,6 +126,8 @@ extension SharedPlayerManager {
     /// emitting nil explicitly if observers require it.
     func didUpdateStreamMetadata(_ metadata: String?) async {
         guard !isRunningInWidget() else { return }
+        guard !WidgetRefreshManager.isSessionTeardownInProgress else { return }
+
         nowPlayingStreamMetadata = metadata
         currentStreamMetadata = StreamProgramMetadata.from(rawICYMetadata: metadata)
 
@@ -176,6 +178,7 @@ extension SharedPlayerManager {
     /// for program vs. raw vs. station here. Update the SSOT in StreamProgramMetadata when rules change.
     func updateNowPlayingInfo() async {
         guard !isRunningInWidget() else { return }
+        guard !WidgetRefreshManager.isSessionTeardownInProgress else { return }
 
         let stationName = String(localized: "lutheran_radio_title", table: "Localizable")
         let isActivelyPlaying = currentVisualState.isActivelyPlaying
@@ -210,44 +213,128 @@ extension SharedPlayerManager {
         }
     }
 
-    /// Aggressively clears the system Now Playing session (Lock Screen, Control Center,
-    /// Dynamic Island media card) and detaches the AVPlayer item.
+    /// Clears the system Now Playing session (Lock Screen, Control Center, Dynamic Island
+    /// media card) and detaches the secured AVPlayer item without blocking cold launch.
     ///
     /// `MPNowPlayingInfoCenter` persists at the OS level across relaunch and reboot unless
     /// explicitly cleared — independent of the memory-only widget/visual policy.
     ///
+    /// Phase 1 (awaited, lightweight): nil `nowPlayingInfo`, stop playback state, cancel
+    /// pending widget reloads, and set the cross-process teardown gate.
+    ///
+    /// Phase 2 (detached): pause + item detach (+ optional audio-session deactivation on
+    /// device only). Returns before phase 2 completes so MediaRemoteUI's launch watchdog
+    /// is not tripped by synchronous main-thread AVFoundation work during factory reset.
+    ///
     /// - Precondition: Main-app target only. Call during cold-launch factory reset, privacy
     ///   clear, or process termination — **not** while intentionally backgrounding live playback.
-    /// - Postcondition: `nowPlayingInfo == nil`, `playbackState == .stopped`; secured item detached.
+    /// - Postcondition: `nowPlayingInfo == nil`, `playbackState == .stopped`; player detach
+    ///   scheduled (or skipped when debounced / re-entrant).
     /// - SeeAlso: ``resetToFactoryDefaultsOnLaunch()``, ``SharedPlayerManager/clearAllLocalState()``,
-    ///   ``DirectStreamingPlayer/teardownSystemMediaSession()``, CODING_AGENT.md.
+    ///   ``DirectStreamingPlayer/teardownSystemMediaSession()``, `WidgetRefreshManager.isSessionTeardownInProgress`,
+    ///   docs/Event-Driven-Refactor-Roadmap.md, CODING_AGENT.md.
     func teardownNowPlayingSession() async {
         guard !isRunningInWidget() else { return }
 
+        if isTeardownInProgress {
+            #if DEBUG
+            print("[SessionTeardown] Skipped — teardown already in progress")
+            #endif
+            return
+        }
+
+        isTeardownInProgress = true
+        WidgetRefreshManager.setSessionTeardownInProgress(true)
+
         #if DEBUG
-        print("[SessionTeardown] Clearing MPNowPlayingInfoCenter + AVPlayer item")
+        print("[SessionTeardown] Phase 1 — clearing MPNowPlayingInfoCenter (lightweight)")
         #endif
 
         await MainActor.run {
+            WidgetRefreshManager.shared.cancelPendingRefresh()
             MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
             MPNowPlayingInfoCenter.default().playbackState = .stopped
         }
 
-        await DirectStreamingPlayer.shared.teardownSystemMediaSession()
+        // Release the launch-window gate once metadata is cleared; phase 2 must not block
+        // subsequent explicit teardowns (e.g. privacy clear after factory reset in tests).
+        isTeardownInProgress = false
+        WidgetRefreshManager.setSessionTeardownInProgress(false)
+
+        // SAFETY: Phase 2 runs in a detached utility task so cold-launch factory reset and
+        // privacy clear return immediately after the metadata clear. Awaiting synchronous
+        // AVPlayer.replaceCurrentItem + audio-session deactivation on the main actor during
+        // launch previously provoked MediaRemoteUI's 0x8BADF00D watchdog (excessive CPU while
+        // the system process handles Now Playing teardown). AVPlayer APIs require MainActor;
+        // the detached task only hops to MainActor for the minimal pause/nil-item work.
+        // Audio-session deactivation is skipped on simulator (shorter watchdog budget).
+        let detachPlayerItem = true
+        #if targetEnvironment(simulator)
+        let deactivateAudioSession = false
+        #else
+        let deactivateAudioSession = true
+        #endif
+
+        Task.detached(priority: .utility) {
+            await Self.performDeferredSystemMediaTeardown(
+                detachPlayerItem: detachPlayerItem,
+                deactivateAudioSession: deactivateAudioSession
+            )
+        }
+    }
+
+    /// Phase 2 of session teardown: minimal AVPlayer detach off the hot launch path.
+    ///
+    /// - Parameters:
+    ///   - detachPlayerItem: When `true`, pauses and nils the current item (no full player replace).
+    ///   - deactivateAudioSession: When `true`, deactivates `AVAudioSession` after detach.
+    private static func performDeferredSystemMediaTeardown(
+        detachPlayerItem: Bool,
+        deactivateAudioSession: Bool
+    ) async {
+        guard detachPlayerItem else { return }
+
+        await MainActor.run {
+            DirectStreamingPlayer.shared.teardownSystemMediaSessionSynchronously()
+        }
+
+        guard deactivateAudioSession else { return }
+
+        // Audio-session deactivation is skipped on simulator (shorter watchdog budget); see
+        // ``teardownNowPlayingSession()`` where `deactivateAudioSession` is already `false`.
+        #if !targetEnvironment(simulator)
+        let timeoutNanoseconds: UInt64 = 500_000_000
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask {
+                _ = await DirectStreamingPlayer.shared.deactivateAudioSessionAsync()
+            }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: timeoutNanoseconds)
+            }
+            _ = await group.next()
+            group.cancelAll()
+        }
+        #endif
+
+        #if DEBUG
+        print("[SessionTeardown] Phase 2 complete — deferred media detach finished")
+        #endif
     }
 
     /// Best-effort synchronous clear of system Now Playing metadata.
     ///
     /// Used on `applicationWillTerminate` / `sceneDidDisconnect` where async deactivation
-    /// may not complete before the process exits. The metadata clear is the critical privacy step.
+    /// may not complete before the process exits. The metadata clear is the critical privacy step;
+    /// AVPlayer detach is intentionally omitted here to avoid main-thread MediaRemoteUI watchdog
+    /// pressure during process exit.
     ///
     /// - SeeAlso: ``teardownNowPlayingSession()``, AppDelegate.applicationWillTerminate,
-    ///   SceneDelegate.sceneDidDisconnect.
+    ///   SceneDelegate.sceneDidDisconnect, docs/Event-Driven-Refactor-Roadmap.md.
     nonisolated static func clearSystemNowPlayingMetadataSynchronously() {
         MainActor.assumeIsolated {
+            WidgetRefreshManager.shared.cancelPendingRefresh()
             MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
             MPNowPlayingInfoCenter.default().playbackState = .stopped
-            DirectStreamingPlayer.shared.teardownSystemMediaSessionSynchronously()
         }
     }
 }

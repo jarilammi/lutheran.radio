@@ -460,6 +460,15 @@ actor SharedPlayerManager {
     var currentStreamMetadata: StreamProgramMetadata?
     var remoteCommandsConfigured = false
 
+    /// Re-entrancy guard for ``teardownNowPlayingSession()`` (main app only).
+    ///
+    /// Prevents stacked AVPlayer / audio-session work when cold-launch factory reset,
+    /// privacy clear, and termination surfaces fire in quick succession.
+    ///
+    /// - SeeAlso: ``teardownNowPlayingSession()``, ``SharedPlayerManager+NowPlaying``,
+    ///   `WidgetRefreshManager.isSessionTeardownInProgress`, docs/Event-Driven-Refactor-Roadmap.md.
+    var isTeardownInProgress = false
+
     /// Internal implementation detail: the actual assignment that clears both ICY stash fields.
     /// Used by language-change paths so there is one place that performs this specific nil-ing.
     ///
