@@ -555,6 +555,39 @@ final class SharedPlayerManagerEventTests: XCTestCase {
         return result
     }
 
+    // MARK: - Sleep Timer Test Fixtures
+
+    /// Establishes active sleep-timer countdown semantics: `.playing` visual and
+    /// `.sleepTimer` intent with no running actor countdown task.
+    ///
+    /// Cancels the scheduled task without restoring intent so
+    /// ``applySleepTimerElapsedPause()`` can be driven deterministically.
+    private func establishActiveSleepTimerCountdownState() async {
+        await manager.setPlaying()
+        _ = await manager.setSleepTimer(duration: 3600)
+        await manager.cancelSleepTimer(restorePlaybackIntent: false, notifyStateChange: false)
+
+        let visual = await manager.currentVisualState
+        let intent = await manager.currentPlaybackIntent
+        XCTAssertEqual(visual, .playing)
+        XCTAssertEqual(intent, .sleepTimer)
+    }
+
+    /// Establishes post-elapsed sleep-timer semantics: grey `.userPaused` visual with
+    /// preserved `.sleepTimer` intent (non-sticky pause contract).
+    private func establishSleepTimerElapsedPauseState() async {
+        await establishActiveSleepTimerCountdownState()
+        await manager.applySleepTimerElapsedPause()
+
+        let snapshot = await manager.currentState
+        XCTAssertEqual(snapshot.visualState, .userPaused)
+        XCTAssertEqual(snapshot.playbackIntent, .sleepTimer)
+        XCTAssertFalse(
+            snapshot.isBlockedByStickyIntent,
+            "Elapsed sleep timer must not present as sticky user pause"
+        )
+    }
+
     // MARK: - Replay Scenario (Tier 3 contract)
 
     /// Verifies the replay contract for late subscribers.
@@ -1361,6 +1394,130 @@ final class SharedPlayerManagerEventTests: XCTestCase {
         let intentAfter = await manager.currentPlaybackIntent
         XCTAssertEqual(visualAfter, .playing)
         XCTAssertEqual(intentAfter, .shouldBePlaying)
+    }
+
+    /// Verifies the canonical emission order for ``applySleepTimerElapsedPause()``.
+    ///
+    /// When the sleep timer elapses, the authoritative pause surface writes grey
+    /// `.userPaused` chrome while retaining `.sleepTimer` intent so resurrection,
+    /// replay, and coordinator glue can distinguish timer-driven pause from sticky
+    /// explicit pause or recoverable stream failure.
+    ///
+    /// **Ordered subsequence:** `visualStateDidChange(.userPaused)` →
+    /// `metadataDidUpdate(nil)` (ICY stash clear) → `.persistedWidgetStateDidUpdate`
+    /// when the privacy gate allows the write path.
+    ///
+    /// **Negative guards:** no `playbackIntentChanged` when intent is already
+    /// `.sleepTimer`; no `streamDidPause`, `streamDidStop`, or `streamDidFail`
+    /// (engine stop uses `.interruption`, which deliberately skips stream verbs).
+    ///
+    /// Collection uses the DEBUG notification seam.
+    ///
+    /// - SeeAlso: ``applySleepTimerElapsedPause()``, ``setSleepTimer(duration:)``,
+    ///   ``cancelSleepTimer(restorePlaybackIntent:notifyStateChange:)``,
+    ///   ``PlaybackIntent/sleepTimer``, ``testReplayPrefixDistinguishesExplicitPauseFromStreamFailure``,
+    ///   docs/Event-Driven-Refactor-Roadmap.md (Tier 5),
+    ///   CODING_AGENT.md (Test Execution Patience and Fast, Reliable Test Patterns).
+    func testApplySleepTimerElapsedPauseEmissionOrderPreservesSleepTimerIntent() async {
+        await establishActiveSleepTimerCountdownState()
+
+        let m = self.manager
+        let liveEmissions = await collectSeamEvents(minimumCount: 2, timeout: 8.0) {
+            await m.applySleepTimerElapsedPause()
+        }
+
+        assertEvents(liveEmissions, containInOrder: [
+            { if case .visualStateDidChange(.userPaused) = $0 { return true }; return false },
+            { if case .metadataDidUpdate(nil) = $0 { return true }; return false },
+        ])
+        XCTAssertTrue(
+            liveEmissions.contains(.persistedWidgetStateDidUpdate),
+            "Elapsed sleep timer must persist the widget snapshot; got: \(liveEmissions)"
+        )
+        XCTAssertFalse(
+            liveEmissions.contains { if case .playbackIntentChanged = $0 { return true }; return false },
+            "Intent is already .sleepTimer — applySleepTimerElapsedPause must not re-emit playbackIntentChanged; got: \(liveEmissions)"
+        )
+        XCTAssertFalse(
+            liveEmissions.contains { if case .streamDidPause = $0 { return true }; return false },
+            "Interruption stop must not emit streamDidPause; got: \(liveEmissions)"
+        )
+        XCTAssertFalse(
+            liveEmissions.contains { if case .streamDidStop = $0 { return true }; return false },
+            "Interruption stop must not emit streamDidStop; got: \(liveEmissions)"
+        )
+        XCTAssertFalse(
+            liveEmissions.contains { if case .streamDidFail = $0 { return true }; return false },
+            "Elapsed sleep timer must not emit streamDidFail; got: \(liveEmissions)"
+        )
+
+        let snapshot = await manager.currentState
+        XCTAssertEqual(snapshot.visualState, .userPaused)
+        XCTAssertEqual(snapshot.playbackIntent, .sleepTimer)
+        XCTAssertFalse(snapshot.isBlockedByStickyIntent)
+    }
+
+    /// Verifies that ``setPlaying()`` preserves `.sleepTimer` intent without emitting
+    /// `playbackIntentChanged(.shouldBePlaying)` when the user resumes after timer
+    /// elapsed pause.
+    ///
+    /// The sleep-timer guard inside ``setPlaying()`` keeps intent at `.sleepTimer`
+    /// so stream-switch holds, resurrection tables, and coordinator countdown UI remain
+    /// aligned with the active-timer contract through successful engine attach.
+    ///
+    /// **Ordered subsequence:** `visualStateDidChange(.playing)` → `streamDidStart` →
+    /// `.persistedWidgetStateDidUpdate` when the write path runs.
+    ///
+    /// **Negative guards:** no `playbackIntentChanged`; no pause/stop/fail verbs.
+    ///
+    /// Collection uses the DEBUG notification seam.
+    ///
+    /// - SeeAlso: ``setPlaying()``, ``applySleepTimerElapsedPause()``,
+    ///   ``PlaybackIntent/sleepTimer``, ``canProceedWithPlayback()``,
+    ///   ``testSetPlayingEmissionOrderMatchesCanonicalMutationSequence``,
+    ///   docs/Event-Driven-Refactor-Roadmap.md (Tier 5),
+    ///   CODING_AGENT.md (Test Execution Patience and Fast, Reliable Test Patterns).
+    func testSetPlayingWithSleepTimerIntentPreservesIntentWithoutPlaybackIntentChanged() async {
+        await establishSleepTimerElapsedPauseState()
+
+        let m = self.manager
+        let liveEmissions = await collectSeamEvents(minimumCount: 2, timeout: 5.0) {
+            await m.setPlaying()
+        }
+
+        assertEvents(liveEmissions, containInOrder: [
+            { if case .visualStateDidChange(.playing) = $0 { return true }; return false },
+            { if case .streamDidStart = $0 { return true }; return false },
+        ])
+        XCTAssertTrue(
+            liveEmissions.contains(.persistedWidgetStateDidUpdate),
+            "setPlaying resume after sleep timer must persist snapshot when gate allows; got: \(liveEmissions)"
+        )
+        XCTAssertFalse(
+            liveEmissions.contains { if case .playbackIntentChanged = $0 { return true }; return false },
+            "setPlaying must preserve .sleepTimer without playbackIntentChanged; got: \(liveEmissions)"
+        )
+        XCTAssertFalse(
+            liveEmissions.contains { if case .playbackIntentChanged(.shouldBePlaying) = $0 { return true }; return false },
+            "setPlaying must not rewrite .sleepTimer to .shouldBePlaying; got: \(liveEmissions)"
+        )
+        XCTAssertFalse(
+            liveEmissions.contains { if case .streamDidPause = $0 { return true }; return false },
+            "setPlaying must emit streamDidStart, not streamDidPause; got: \(liveEmissions)"
+        )
+        XCTAssertFalse(
+            liveEmissions.contains { if case .streamDidStop = $0 { return true }; return false },
+            "setPlaying must emit streamDidStart, not streamDidStop; got: \(liveEmissions)"
+        )
+        XCTAssertFalse(
+            liveEmissions.contains { if case .streamDidFail = $0 { return true }; return false },
+            "setPlaying must emit streamDidStart, not streamDidFail; got: \(liveEmissions)"
+        )
+
+        let snapshot = await manager.currentState
+        XCTAssertEqual(snapshot.visualState, .playing)
+        XCTAssertEqual(snapshot.playbackIntent, .sleepTimer)
+        XCTAssertTrue(snapshot.playbackIntent.isActivePlaybackIntent)
     }
 
     /// Verifies the full active-intent language-switch path emission contract.
