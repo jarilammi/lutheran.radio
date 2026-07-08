@@ -126,23 +126,11 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // SAFETY: All calls here are best-effort and non-throwing; they only touch in-process
         // state and UserDefaults. No force-unwraps.
 
-        // 1. Stale liveness first (widgets read this cross-process).
-        SharedPlayerManager.forceStaleLivenessTimestampForTermination()
-
-        // 2. End Live Activity with conservative immediate dismissal.
-        RadioLiveActivityManager.shared.handleAppWillTerminate()
-
-        // 3. Cancel any pending debounced widget work originating from this process.
-        // We are on the main thread during willTerminate; use assumeIsolated for strict Swift 6.
-        MainActor.assumeIsolated {
-            WidgetRefreshManager.shared.cancelPendingRefresh()
-        }
-
-        // 4. Best-effort system Now Playing teardown (MPNowPlayingInfoCenter survives reboot otherwise).
-        SharedPlayerManager.clearSystemNowPlayingMetadataSynchronously()
+        // Canonical synchronous session + widget teardown (liveness, LA, widgets, Now Playing).
+        SharedPlayerManager.performSessionTeardownSynchronouslyForTermination()
 
         #if DEBUG
-        print("[AppDelegate] applicationWillTerminate — liveness staled, LA end requested, pending refreshes cancelled, Now Playing cleared")
+        print("[AppDelegate] applicationWillTerminate — performSessionTeardownSynchronouslyForTermination complete")
         #endif
     }
 }

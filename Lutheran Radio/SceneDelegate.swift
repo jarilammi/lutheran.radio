@@ -61,12 +61,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     func sceneDidDisconnect(_ scene: UIScene) {
         // Conservative quit cleanup for widget + LA surfaces (see AppDelegate.applicationWillTerminate
         // for the full rationale and invariant).
-        SharedPlayerManager.forceStaleLivenessTimestampForTermination()
-        // Scene lifecycle callbacks run on main; use assumeIsolated under strict concurrency.
-        MainActor.assumeIsolated {
-            WidgetRefreshManager.shared.cancelPendingRefresh()
-        }
-        SharedPlayerManager.clearSystemNowPlayingMetadataSynchronously()
+        SharedPlayerManager.performSessionTeardownSynchronouslyForTermination()
 
         window?.rootViewController = nil
         window = nil
@@ -77,6 +72,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     func sceneDidBecomeActive(_ scene: UIScene) {
         // Called when the scene has moved from an inactive state to an active state.
         // Use this method to restart any tasks that were paused (or not yet started) when the scene was inactive.
+
+        #if DEBUG
+        print("[SceneDelegate] sceneDidBecomeActive — unlock/active cycle")
+        #endif
         
         // Check for pending widget actions when app becomes active
         if let viewController = window?.rootViewController as? ViewController {
@@ -98,7 +97,31 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     /// - Parameter scene: The scene that will resign active.
     func sceneWillResignActive(_ scene: UIScene) {
         // Called when the scene will move from an active state to an inactive state.
-        // This may occur due to temporary interruptions (ex. an incoming phone call).
+        // This may occur due to temporary interruptions (ex. an incoming phone call) or device lock.
+
+        #if DEBUG
+        print("[SceneDelegate] sceneWillResignActive — lock/inactive cycle begin")
+        #endif
+
+        // Session hygiene when not actively playing: end stale LA surfaces and push passive widget state.
+        // Skipped during background audio so lock-screen playback and LA controls remain intact.
+        Task {
+            let manager = SharedPlayerManager.shared
+            let isActivelyPlaying = await manager.currentVisualState.isActivelyPlaying
+            guard !isActivelyPlaying else {
+                #if DEBUG
+                print("[SceneDelegate] sceneWillResignActive — skipping session teardown (active playback)")
+                #endif
+                return
+            }
+            await manager.performSessionAndWidgetTeardown(
+                includeFactoryReset: false,
+                liveActivityTeardown: .immediate,
+                refreshWidgets: true,
+                widgetVisualState: nil,
+                staleLiveness: false
+            )
+        }
     }
 
     /// Called when the scene enters the foreground.

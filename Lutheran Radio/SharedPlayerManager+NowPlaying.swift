@@ -238,7 +238,7 @@ extension SharedPlayerManager {
 
         if isTeardownInProgress {
             #if DEBUG
-            print("[SessionTeardown] Skipped — teardown already in progress")
+            print("[SessionTeardown] LOCK held — skipped re-entrant teardownNowPlayingSession")
             #endif
             return
         }
@@ -247,7 +247,7 @@ extension SharedPlayerManager {
         WidgetRefreshManager.setSessionTeardownInProgress(true)
 
         #if DEBUG
-        print("[SessionTeardown] Phase 1 — clearing MPNowPlayingInfoCenter (lightweight)")
+        print("[SessionTeardown] LOCK — teardownNowPlayingSession phase 1 (MPNowPlayingInfoCenter clear)")
         #endif
 
         await MainActor.run {
@@ -260,6 +260,10 @@ extension SharedPlayerManager {
         // subsequent explicit teardowns (e.g. privacy clear after factory reset in tests).
         isTeardownInProgress = false
         WidgetRefreshManager.setSessionTeardownInProgress(false)
+
+        #if DEBUG
+        print("[SessionTeardown] UNLOCK — teardownNowPlayingSession phase 1 complete; phase 2 detached")
+        #endif
 
         // SAFETY: Phase 2 runs in a detached utility task so cold-launch factory reset and
         // privacy clear return immediately after the metadata clear. Awaiting synchronous

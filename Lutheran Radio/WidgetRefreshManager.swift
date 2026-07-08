@@ -328,7 +328,8 @@ final class WidgetRefreshManager: @unchecked Sendable {
         // Defer lone .prePlay / .cleared refreshes briefly so a fast .playing follow-up can supersede them.
         // (.cleared is rare for widgets because clear wipes snapshot + forces hasActive false, but
         // keep symmetric so in-process main-app driven paths behave consistently.)
-        if !hasError, newState.visualState == .prePlay || newState.visualState == .cleared {
+        // `immediate: true` bypasses deferral for session teardown follow-up and termination hygiene.
+        if !immediate, !hasError, newState.visualState == .prePlay || newState.visualState == .cleared {
             #if DEBUG
             print("[WidgetRefreshManager] Widget refresh deferred: awaiting possible .playing follow-up — lang: \(newState.currentLanguage)")
             #endif

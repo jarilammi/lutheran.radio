@@ -69,6 +69,7 @@ import Foundation
 import Core
 #if LUTHERAN_MAIN_APP
 import os
+import WidgetKit
 #endif
 
 /// `SharedPlayerManager` is the central actor **and authoritative emitter** of
@@ -925,6 +926,15 @@ actor SharedPlayerManager {
     /// AGENT NOTE: Any new launch path that could observe stale App Group visual keys must call
     /// this (or rely on `init()` + this explicit await) before `refreshVisualStateFromPersistence`.
     func resetToFactoryDefaultsOnLaunch() async {
+        #if LUTHERAN_MAIN_APP
+        await performSessionAndWidgetTeardown(
+            includeFactoryReset: true,
+            liveActivityTeardown: .immediate,
+            refreshWidgets: true,
+            widgetVisualState: .prePlay,
+            staleLiveness: false
+        )
+        #else
         Self.clearPersistedVisualStateKeysFromDisk()
         Self.clearInMemorySessionSnapshot()
         currentVisualState = .prePlay
@@ -934,13 +944,164 @@ actor SharedPlayerManager {
         if playbackIntent != .securityLocked {
             updatePlaybackIntent(to: .shouldBePlaying)
         }
-        #if LUTHERAN_MAIN_APP
-        await teardownNowPlayingSession()
         #endif
         #if DEBUG
         print("[SharedPlayerManager] resetToFactoryDefaultsOnLaunch → .prePlay (memory-only, disk visual keys cleared)")
         #endif
     }
+
+    #if LUTHERAN_MAIN_APP
+    /// How Live Activities are dismissed during session teardown.
+    enum LiveActivityTeardownStyle: Sendable {
+        /// Leave Live Activities unchanged.
+        case none
+        /// Graceful end while the app remains running (privacy clear).
+        case graceful
+        /// Immediate dismissal (termination, cold-launch hygiene).
+        case immediate
+    }
+
+    /// Comprehensive session + widget teardown for privacy, termination, cold launch, and post-stop hygiene.
+    ///
+    /// Orchestrates optional factory reset, system Now Playing teardown (phase 1 + detached phase 2),
+    /// Live Activity dismissal, liveness sentinel, and immediate widget timeline reload. Widget IPC runs
+    /// only after the teardown gate is released so MediaRemoteUI launch watchdog windows stay safe.
+    ///
+    /// - Parameters:
+    ///   - includeFactoryReset: When `true`, purges on-disk visual keys, drops the in-memory session
+    ///     snapshot, and resets visual state to `.prePlay` (preserving `.securityLocked` intent).
+    ///   - liveActivityTeardown: Whether to end Live Activities gracefully or immediately.
+    ///   - refreshWidgets: When `true`, calls `WidgetCenter.reloadAllTimelines()` and
+    ///     `WidgetRefreshManager.refreshIfNeeded(..., immediate: true)`.
+    ///   - widgetVisualState: Target visual for the widget refresh; defaults to `currentVisualState`.
+    ///   - staleLiveness: When `true`, writes the termination liveness sentinel (`lastUpdateTime = 0`).
+    ///
+    /// - Precondition: Main-app target only. Do not call while intentionally backgrounding live playback
+    ///   unless `refreshWidgets` is `false` and factory reset is `false`.
+    /// - Postcondition: System Now Playing cleared; optional LA ended; widgets reloaded when requested.
+    ///
+    /// - SeeAlso: ``teardownNowPlayingSession()``, ``resetToFactoryDefaultsOnLaunch()``,
+    ///   ``clearAllLocalState()``, ``performPostStopWidgetHygiene()``,
+    ///   ``performSessionTeardownSynchronouslyForTermination()``,
+    ///   `WidgetRefreshManager.refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)`,
+    ///   docs/Event-Driven-Refactor-Roadmap.md, CODING_AGENT.md.
+    func performSessionAndWidgetTeardown(
+        includeFactoryReset: Bool = false,
+        liveActivityTeardown: LiveActivityTeardownStyle = .immediate,
+        refreshWidgets: Bool = true,
+        widgetVisualState: PlayerVisualState? = nil,
+        staleLiveness: Bool = false
+    ) async {
+        guard !isRunningInWidget() else { return }
+
+        #if DEBUG
+        print("[SessionTeardown] LOCK — performSessionAndWidgetTeardown entered (factoryReset: \(includeFactoryReset), staleLiveness: \(staleLiveness), refreshWidgets: \(refreshWidgets), la: \(liveActivityTeardown))")
+        #endif
+
+        if staleLiveness {
+            Self.forceStaleLivenessTimestampForTermination()
+        }
+
+        if includeFactoryReset {
+            Self.clearPersistedVisualStateKeysFromDisk()
+            Self.clearInMemorySessionSnapshot()
+            currentVisualState = .prePlay
+            currentStreamMetadata = nil
+            hasLoadedVisualStateFromPersistence = false
+            lastUserPauseTimestamp = 0
+            if playbackIntent != .securityLocked {
+                updatePlaybackIntent(to: .shouldBePlaying)
+            }
+        }
+
+        await MainActor.run {
+            switch liveActivityTeardown {
+            case .none:
+                break
+            case .graceful:
+                RadioLiveActivityManager.shared.endActivity()
+            case .immediate:
+                RadioLiveActivityManager.shared.handleAppWillTerminate()
+            }
+        }
+
+        await teardownNowPlayingSession()
+
+        if refreshWidgets {
+            let visual = widgetVisualState ?? currentVisualState
+            let shared = loadSharedState()
+            await MainActor.run {
+                WidgetCenter.shared.reloadAllTimelines()
+                WidgetRefreshManager.shared.refreshIfNeeded(
+                    visualState: visual,
+                    currentLanguage: shared.currentLanguage,
+                    hasError: shared.hasError,
+                    immediate: true
+                )
+            }
+        }
+
+        #if DEBUG
+        print("[SessionTeardown] UNLOCK — performSessionAndWidgetTeardown complete")
+        #endif
+    }
+
+    /// Post-stop widget hygiene after ``stop()``: immediate timeline reload without factory reset or LA end.
+    ///
+    /// Keeps home-screen widgets and Control Center in sync with the sticky `.userPaused` lock while
+    /// preserving the Live Activity paused presentation.
+    ///
+    /// - SeeAlso: ``stop()``, ``performSessionAndWidgetTeardown(includeFactoryReset:liveActivityTeardown:refreshWidgets:widgetVisualState:staleLiveness:)``,
+    ///   docs/Event-Driven-Refactor-Roadmap.md.
+    func performPostStopWidgetHygiene() async {
+        guard !isRunningInWidget() else { return }
+
+        let shared = loadSharedState()
+        await MainActor.run {
+            WidgetCenter.shared.reloadAllTimelines()
+            WidgetRefreshManager.shared.refreshIfNeeded(
+                visualState: .userPaused,
+                currentLanguage: shared.currentLanguage,
+                hasError: shared.hasError,
+                immediate: true
+            )
+        }
+
+        #if DEBUG
+        print("[SessionTeardown] Post-stop widget hygiene — immediate .userPaused refresh")
+        #endif
+    }
+
+    /// Best-effort synchronous session teardown for process exit (`applicationWillTerminate`,
+    /// `sceneDidDisconnect`) where async actor work may not complete before exit.
+    ///
+    /// - Important: Metadata clear is the critical privacy step; widget reload is best-effort on the
+    ///   main thread before the process dies.
+    ///
+    /// - SeeAlso: ``performSessionAndWidgetTeardown(includeFactoryReset:liveActivityTeardown:refreshWidgets:widgetVisualState:staleLiveness:)``,
+    ///   ``clearSystemNowPlayingMetadataSynchronously()``, AppDelegate.applicationWillTerminate,
+    ///   SceneDelegate.sceneDidDisconnect, docs/Event-Driven-Refactor-Roadmap.md.
+    nonisolated static func performSessionTeardownSynchronouslyForTermination() {
+        forceStaleLivenessTimestampForTermination()
+        // Termination callbacks run on the main thread; assumeIsolated satisfies strict Swift 6.
+        MainActor.assumeIsolated {
+            RadioLiveActivityManager.shared.handleAppWillTerminate()
+            WidgetRefreshManager.shared.cancelPendingRefresh()
+            WidgetCenter.shared.reloadAllTimelines()
+            WidgetRefreshManager.shared.refreshIfNeeded(
+                visualState: .prePlay,
+                currentLanguage: preferredWidgetLanguage(),
+                hasError: false,
+                immediate: true
+            )
+        }
+        clearSystemNowPlayingMetadataSynchronously()
+
+        #if DEBUG
+        print("[SessionTeardown] SYNC termination teardown — liveness staled, LA ended, widgets reloaded, Now Playing cleared")
+        #endif
+    }
+    #endif
     
     // MARK: - Nonisolated Public Surface (Widget / Extension Safe)
     //
@@ -1704,6 +1865,8 @@ actor SharedPlayerManager {
         Task { @MainActor in
             await RadioLiveActivityManager.shared.updateCurrentActivity()
         }
+
+        await performPostStopWidgetHygiene()
         #endif
         
         #if DEBUG
@@ -3479,16 +3642,15 @@ extension SharedPlayerManager {
         print("[SharedPlayerManager] hasActiveWidgets forced false after privacy clear (suppressing re-writes until re-detect)")
         #endif
 
-        // 6. End any Live Activity (privacy: no visible "I was listening" on lock screen / Dynamic Island).
-        // Uses .default policy (grace period) because the user explicitly requested clear while
-        // the app is still running; they may still see the final state briefly.
+        // 6–6b. Session + widget teardown (Now Playing, LA graceful end, immediate widget reload to .cleared).
         #if LUTHERAN_MAIN_APP
-        RadioLiveActivityManager.shared.endActivity()   // .default
-        #endif
-
-        // 6b. Clear system Now Playing (MPNowPlayingInfoCenter persists independently of widget state).
-        #if LUTHERAN_MAIN_APP
-        await Self.shared.teardownNowPlayingSession()
+        await Self.shared.performSessionAndWidgetTeardown(
+            includeFactoryReset: false,
+            liveActivityTeardown: .graceful,
+            refreshWidgets: true,
+            widgetVisualState: .cleared,
+            staleLiveness: false
+        )
         #endif
 
         // 7. Notify (widgets, Live Activities, UI coordinator, SceneDelegate etc. can react and fall back to defaults)
