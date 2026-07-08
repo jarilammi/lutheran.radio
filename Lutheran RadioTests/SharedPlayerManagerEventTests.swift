@@ -1101,6 +1101,182 @@ final class SharedPlayerManagerEventTests: XCTestCase {
         )
     }
 
+    /// Verifies that ``markPlaybackStoppedByStreamFailure(_:)`` emits
+    /// `streamDidFail(.permanentFailure)` with the exact classified payload.
+    ///
+    /// Hard post-DNS stream failures (resource gone, TCP connect after successful name
+    /// resolution, resource unavailable) are classified in
+    /// `DirectStreamingPlayer.StreamErrorType.from(error:)` as `.permanentFailure`.
+    /// That value is never auto-retried (`isPermanent == true`) and drives the
+    /// `status_failed` localized status string. Consumers must receive the precise
+    /// discriminator — not a generic fail verb or a security/transient
+    /// misclassification — to gate recovery UI and widget error state.
+    ///
+    /// The transient-failure and security-failure emission-order tests prove the mutation
+    /// subsequence for their respective branches. This test closes the `StreamErrorType`
+    /// classification gap for the permanent branch: the authoritative emitter forwards
+    /// the player's classification verbatim in the `streamDidFail` associated value.
+    ///
+    /// Collection uses the DEBUG notification seam (same rationale as the other
+    /// emission-order tests).
+    ///
+    /// - SeeAlso: ``markPlaybackStoppedByStreamFailure(_:)``, ``emit(_:)``,
+    ///   `PlayerEvent.streamDidFail`, `DirectStreamingPlayer.StreamErrorType`,
+    ///   `DirectStreamingPlayer.StreamErrorType.from(error:)`,
+    ///   ``testSecurityFailureStreamDidFailPayloadIsFaithfullyEmitted``,
+    ///   ``testStreamFailureEmissionOrderPreservesIntentAndMutationSequence``,
+    ///   docs/Event-Driven-Refactor-Roadmap.md (Tier 5),
+    ///   CODING_AGENT.md (Test Execution Patience and Fast, Reliable Test Patterns).
+    func testPermanentFailureStreamDidFailPayloadIsFaithfullyEmitted() async {
+        let intentBefore = await manager.currentPlaybackIntent
+        XCTAssertEqual(
+            intentBefore,
+            .shouldBePlaying,
+            "Precondition: permanent failure path preserves intent from an active-play intent"
+        )
+
+        let m = self.manager
+        let liveEmissions = await collectSeamEvents(minimumCount: 2, timeout: 5.0) {
+            await m.markPlaybackStoppedByStreamFailure(.permanentFailure)
+        }
+
+        assertEvents(liveEmissions, containInOrder: [
+            { if case .visualStateDidChange(.userPaused) = $0 { return true }; return false },
+            { if case .streamDidFail(.permanentFailure) = $0 { return true }; return false },
+        ])
+        XCTAssertTrue(
+            liveEmissions.contains(.persistedWidgetStateDidUpdate),
+            "Permanent failure path should emit .persistedWidgetStateDidUpdate when the write path runs; got: \(liveEmissions)"
+        )
+
+        let failPayloads = liveEmissions.compactMap { event -> DirectStreamingPlayer.StreamErrorType? in
+            if case .streamDidFail(let errorType) = event { return errorType }
+            return nil
+        }
+        XCTAssertEqual(
+            failPayloads,
+            [.permanentFailure],
+            "Exactly one streamDidFail emission with .permanentFailure payload; got: \(failPayloads)"
+        )
+        XCTAssertFalse(
+            failPayloads.contains(.securityFailure),
+            "Permanent failure must not emit securityFailure classification; got: \(liveEmissions)"
+        )
+        XCTAssertFalse(
+            failPayloads.contains(.transientFailure),
+            "Permanent failure must not emit transientFailure classification; got: \(liveEmissions)"
+        )
+        XCTAssertFalse(
+            liveEmissions.contains { if case .playbackIntentChanged = $0 { return true }; return false },
+            "Permanent failure must not emit playbackIntentChanged — intent stays \(intentBefore); got: \(liveEmissions)"
+        )
+        XCTAssertFalse(
+            liveEmissions.contains { if case .streamDidPause = $0 { return true }; return false },
+            "Permanent failure must emit streamDidFail, not streamDidPause; got: \(liveEmissions)"
+        )
+        XCTAssertFalse(
+            liveEmissions.contains { if case .streamDidStop = $0 { return true }; return false },
+            "Permanent failure must emit streamDidFail, not streamDidStop; got: \(liveEmissions)"
+        )
+
+        let intentAfter = await manager.currentPlaybackIntent
+        XCTAssertEqual(
+            intentAfter,
+            intentBefore,
+            "playbackIntent must remain unchanged after permanent failure (distinct from sticky user pause)"
+        )
+    }
+
+    /// Verifies that ``markPlaybackStoppedByStreamFailure(_:)`` emits
+    /// `streamDidFail(.unknown)` with the exact classified payload.
+    ///
+    /// Unclassified errors (`StreamErrorType.from(error:)` when `error` is `nil`, or when
+    /// the NSError domain/code does not match a known security, permanent, or transient
+    /// branch) surface as `.unknown`. Recovery paths treat this conservatively as transient
+    /// in early-window recreate logic, but the emitter must still forward the precise
+    /// discriminator so consumers can distinguish unclassified failures from the other
+    /// `StreamErrorType` cases.
+    ///
+    /// The transient-, security-, and permanent-failure emission tests prove the mutation
+    /// subsequence for their respective branches. This test closes the final
+    /// `StreamErrorType` classification gap: the authoritative emitter forwards the
+    /// player's classification verbatim in the `streamDidFail` associated value.
+    ///
+    /// Collection uses the DEBUG notification seam (same rationale as the other
+    /// emission-order tests).
+    ///
+    /// - SeeAlso: ``markPlaybackStoppedByStreamFailure(_:)``, ``emit(_:)``,
+    ///   `PlayerEvent.streamDidFail`, `DirectStreamingPlayer.StreamErrorType`,
+    ///   `DirectStreamingPlayer.StreamErrorType.from(error:)`,
+    ///   ``testSecurityFailureStreamDidFailPayloadIsFaithfullyEmitted``,
+    ///   ``testPermanentFailureStreamDidFailPayloadIsFaithfullyEmitted``,
+    ///   ``testStreamFailureEmissionOrderPreservesIntentAndMutationSequence``,
+    ///   docs/Event-Driven-Refactor-Roadmap.md (Tier 5),
+    ///   CODING_AGENT.md (Test Execution Patience and Fast, Reliable Test Patterns).
+    func testUnknownStreamDidFailPayloadIsFaithfullyEmitted() async {
+        let intentBefore = await manager.currentPlaybackIntent
+        XCTAssertEqual(
+            intentBefore,
+            .shouldBePlaying,
+            "Precondition: unknown failure path preserves intent from an active-play intent"
+        )
+
+        let m = self.manager
+        let liveEmissions = await collectSeamEvents(minimumCount: 2, timeout: 5.0) {
+            await m.markPlaybackStoppedByStreamFailure(.unknown)
+        }
+
+        assertEvents(liveEmissions, containInOrder: [
+            { if case .visualStateDidChange(.userPaused) = $0 { return true }; return false },
+            { if case .streamDidFail(.unknown) = $0 { return true }; return false },
+        ])
+        XCTAssertTrue(
+            liveEmissions.contains(.persistedWidgetStateDidUpdate),
+            "Unknown failure path should emit .persistedWidgetStateDidUpdate when the write path runs; got: \(liveEmissions)"
+        )
+
+        let failPayloads = liveEmissions.compactMap { event -> DirectStreamingPlayer.StreamErrorType? in
+            if case .streamDidFail(let errorType) = event { return errorType }
+            return nil
+        }
+        XCTAssertEqual(
+            failPayloads,
+            [.unknown],
+            "Exactly one streamDidFail emission with .unknown payload; got: \(failPayloads)"
+        )
+        XCTAssertFalse(
+            failPayloads.contains(.securityFailure),
+            "Unknown failure must not emit securityFailure classification; got: \(liveEmissions)"
+        )
+        XCTAssertFalse(
+            failPayloads.contains(.transientFailure),
+            "Unknown failure must not emit transientFailure classification; got: \(liveEmissions)"
+        )
+        XCTAssertFalse(
+            failPayloads.contains(.permanentFailure),
+            "Unknown failure must not emit permanentFailure classification; got: \(liveEmissions)"
+        )
+        XCTAssertFalse(
+            liveEmissions.contains { if case .playbackIntentChanged = $0 { return true }; return false },
+            "Unknown failure must not emit playbackIntentChanged — intent stays \(intentBefore); got: \(liveEmissions)"
+        )
+        XCTAssertFalse(
+            liveEmissions.contains { if case .streamDidPause = $0 { return true }; return false },
+            "Unknown failure must emit streamDidFail, not streamDidPause; got: \(liveEmissions)"
+        )
+        XCTAssertFalse(
+            liveEmissions.contains { if case .streamDidStop = $0 { return true }; return false },
+            "Unknown failure must emit streamDidFail, not streamDidStop; got: \(liveEmissions)"
+        )
+
+        let intentAfter = await manager.currentPlaybackIntent
+        XCTAssertEqual(
+            intentAfter,
+            intentBefore,
+            "playbackIntent must remain unchanged after unknown failure (auto-resume contract)"
+        )
+    }
+
     /// Verifies the canonical emission order for ``setUserPaused()``.
     ///
     /// Explicit user pause is distinct from terminal ``stop()`` and from
@@ -2200,6 +2376,60 @@ final class SharedPlayerManagerEventTests: XCTestCase {
                 WidgetRefreshManager._test_refreshIfNeededGateOutcomeLog(),
                 [.passedGuards],
                 "Refresh must proceed after the teardown gate releases"
+            )
+        }
+    }
+
+    /// Verifies that ``SharedPlayerManager/performPostStopWidgetHygiene()`` triggers an
+    /// immediate ``WidgetRefreshManager/refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)``
+    /// call that passes production guards when the session-teardown gate is not held.
+    ///
+    /// Post-stop hygiene runs at the end of ``stop()`` (main-app only) to keep home-screen
+    /// widgets and Control Center aligned with the sticky `.userPaused` lock without ending
+    /// the Live Activity. The refresh uses `immediate: true` so coalesce deferral for
+    /// `.prePlay`/`.cleared` cannot delay the sticky-pause presentation.
+    ///
+    /// Uses the same DEBUG gate-observation seams as
+    /// ``testRefreshIfNeededSuppressesWhileSessionTeardownGateIsHeld`` and
+    /// ``testPerformSessionAndWidgetTeardownOrchestratesMetadataClearFactoryResetAndPostTeardownRefresh``
+    /// to bypass UITestMode and WidgetCenter IPC while preserving the guard order.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/stop()``, ``performPostStopWidgetHygiene()``,
+    ///   ``WidgetRefreshManager/_test_setBypassUITestModeForRefreshGateObservation(_:)``,
+    ///   ``WidgetRefreshManager/_test_setRecordRefreshIfNeededGateOutcomes(_:)``,
+    ///   docs/Event-Driven-Refactor-Roadmap.md (session + widget teardown follow-up),
+    ///   CODING_AGENT.md (Test Execution Patience and Fast, Reliable Test Patterns).
+    func testPerformPostStopWidgetHygieneTriggersImmediateRefresh() async {
+        await manager.setUserPaused()
+        let visual = await manager.currentVisualState
+        XCTAssertEqual(
+            visual,
+            .userPaused,
+            "Precondition: post-stop hygiene targets the sticky .userPaused presentation"
+        )
+
+        await MainActor.run {
+            WidgetRefreshManager._test_setBypassUITestModeForRefreshGateObservation(true)
+            WidgetRefreshManager._test_setRecordRefreshIfNeededGateOutcomes(true)
+            WidgetRefreshManager._test_clearRefreshIfNeededGateOutcomeLog()
+            XCTAssertFalse(
+                WidgetRefreshManager.isSessionTeardownInProgress,
+                "Precondition: post-stop hygiene must not run while the teardown gate is held"
+            )
+        }
+
+        await manager.performPostStopWidgetHygiene()
+
+        await MainActor.run {
+            let gateLog = WidgetRefreshManager._test_refreshIfNeededGateOutcomeLog()
+            XCTAssertEqual(
+                gateLog,
+                [.passedGuards],
+                "Post-stop hygiene must trigger exactly one refresh that passes guards; log: \(gateLog)"
+            )
+            XCTAssertFalse(
+                WidgetRefreshManager.isSessionTeardownInProgress,
+                "Post-stop hygiene must not acquire the session-teardown gate"
             )
         }
     }

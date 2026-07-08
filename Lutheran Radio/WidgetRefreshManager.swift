@@ -673,9 +673,16 @@ final class WidgetRefreshManager: @unchecked Sendable {
 
     private func handlePlayerEvent(_ event: PlayerEvent) async {
         // UITestMode defense (mirrors the guard at the top of refreshIfNeeded).
+        #if DEBUG
+        if SharedPlayerManager.isRunningInUITestMode,
+           !(unsafe Self._test_bypassUITestModeForRefreshGateObservation) {
+            return
+        }
+        #else
         if SharedPlayerManager.isRunningInUITestMode {
             return
         }
+        #endif
         if Self.isSessionTeardownInProgress {
             return
         }
@@ -715,15 +722,18 @@ extension WidgetRefreshManager {
     nonisolated(unsafe) private static var _test_recordRefreshIfNeededGateOutcomes = false
     nonisolated(unsafe) private static var _test_refreshGateOutcomeLog: [RefreshIfNeededGateOutcome] = []
 
-    /// Bypasses the UITestMode early return in ``refreshIfNeeded`` so unit tests can observe
-    /// the session-teardown gate without WidgetCenter IPC.
+    /// Bypasses the UITestMode early return in ``handlePlayerEvent(_:)`` and
+    /// ``refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)`` so unit tests can
+    /// observe the Tier 2 event observer → refresh gate chain without WidgetCenter IPC.
     ///
-    /// - Parameter bypass: When `true`, ``refreshIfNeeded`` evaluates only
-    ///   ``isSessionTeardownInProgress`` and returns before debounce/coalesce logic.
+    /// - Parameter bypass: When `true`, ``handlePlayerEvent(_:)`` and ``refreshIfNeeded`` evaluate
+    ///   only ``isSessionTeardownInProgress`` (refresh path records gate outcomes and returns
+    ///   before debounce/coalesce logic).
     /// - SeeAlso: ``_test_setRecordRefreshIfNeededGateOutcomes(_:)``,
-    ///   ``_test_refreshIfNeededGateOutcomeLog()``, ``setSessionTeardownInProgress(_:)``,
+    ///   ``_test_refreshIfNeededGateOutcomeLog()``, ``_test_invokeHandlePlayerEvent(_:)``,
+    ///   ``setSessionTeardownInProgress(_:)``,
     ///   ``SharedPlayerManager/performSessionAndWidgetTeardown(includeFactoryReset:liveActivityTeardown:refreshWidgets:widgetVisualState:staleLiveness:)``,
-    ///   docs/Event-Driven-Refactor-Roadmap.md (session teardown coverage).
+    ///   ``WidgetRefreshManagerEventTests``, docs/Event-Driven-Refactor-Roadmap.md (session teardown coverage).
     @MainActor
     static func _test_setBypassUITestModeForRefreshGateObservation(_ bypass: Bool) {
         unsafe _test_bypassUITestModeForRefreshGateObservation = bypass
@@ -855,13 +865,15 @@ extension WidgetRefreshManager {
     /// WidgetCenter round-trips.
     ///
     /// When ``_test_setRecordHandlePlayerEventDerivation(true)`` is active, the method
-    /// records the derived parameters and does not call ``refreshIfNeeded``. Otherwise
-    /// it routes through the full refresh surface (subject to the standard UITestMode
-    /// guard inside ``refreshIfNeeded``).
+    /// records the derived parameters. It still calls ``refreshIfNeeded`` when
+    /// ``_test_setRecordRefreshIfNeededGateOutcomes(true)`` is also active so derivation
+    /// and gate-outcome integration can be asserted in one drive. Otherwise it routes
+    /// through the full refresh surface (subject to gate-observation bypass flags).
     ///
     /// - Parameter event: The ``PlayerEvent`` to derive from.
     /// - SeeAlso: ``deriveRefreshParameters(for:)``, ``_test_deriveRefreshParameters(for:)``,
-    ///   `SharedPlayerManager.loadPersistedWidgetState`, CODING_AGENT.md.
+    ///   ``_test_invokeHandlePlayerEvent(_:)``, `SharedPlayerManager.loadPersistedWidgetState`,
+    ///   CODING_AGENT.md.
     @MainActor
     func _test_handlePlayerEventBypassingUITestMode(_ event: PlayerEvent) async {
         let derived = deriveRefreshParameters(for: event)
@@ -873,7 +885,9 @@ extension WidgetRefreshManager {
 
         if unsafe Self._test_recordHandlePlayerEventDerivation {
             unsafe Self._test_cachedHandlePlayerEventDerivation = snapshot
-            return
+            if !(unsafe Self._test_recordRefreshIfNeededGateOutcomes) {
+                return
+            }
         }
 
         refreshIfNeeded(
@@ -882,6 +896,21 @@ extension WidgetRefreshManager {
             hasError: derived.hasError,
             immediate: false
         )
+    }
+
+    /// Invokes production ``handlePlayerEvent(_:)`` for event-path integration tests.
+    ///
+    /// Requires ``_test_setBypassUITestModeForRefreshGateObservation(true)`` under the XCTest
+    /// host so the observer callback and this seam share the same UITestMode bypass. Pair with
+    /// ``_test_setRecordRefreshIfNeededGateOutcomes(true)`` to assert gate outcomes without
+    /// WidgetCenter IPC.
+    ///
+    /// - Parameter event: The ``PlayerEvent`` delivered by the Tier 2 observer.
+    /// - SeeAlso: ``beginObservingPlayerEvents()``, ``handlePlayerEvent(_:)``,
+    ///   ``_test_refreshIfNeededGateOutcomeLog()``, ``WidgetRefreshManagerEventTests``.
+    @MainActor
+    func _test_invokeHandlePlayerEvent(_ event: PlayerEvent) async {
+        await handlePlayerEvent(event)
     }
 }
 #endif

@@ -86,7 +86,8 @@ import Foundation
 ///   `PlayerCurrentState.isInPermanentError`,
 ///   docs/Widget-Presentation-Dataflow.md,
 ///   docs/Event-Driven-Refactor-Roadmap.md,
-///   CODING_AGENT.md.
+///   CODING_AGENT.md,
+///   `WidgetEventObserverTests` (cancel/restart, delivery, termination contracts).
 ///
 /// AGENT NOTE: Single source of truth for the common event/attribute observation
 /// pattern in widget surfaces. Any evolution of delivery (e.g. adding replay,
