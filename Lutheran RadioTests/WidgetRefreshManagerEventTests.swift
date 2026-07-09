@@ -14,6 +14,9 @@ import XCTest
 /// These tests exercise the consumer-side contract that emitter tests in
 /// ``SharedPlayerManagerEventTests`` do not cover: how ``PlayerEvent`` cases map
 /// to ``refreshIfNeeded`` inputs before debouncing and WidgetCenter IPC run.
+/// Debouncing and coalescing timing contracts are exercised through
+/// ``_test_setBypassUITestModeForDebounceObservation(_:)`` and
+/// ``_test_debounceOutcomeLog()``.
 ///
 /// ## Why the bypass seam is required
 ///
@@ -63,6 +66,8 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
             WidgetRefreshManager._test_setRecordRefreshIfNeededGateOutcomes(false)
             WidgetRefreshManager._test_setRecordHandlePlayerEventDerivation(false)
             WidgetRefreshManager._test_setRecordHandlePlayerEventImmediate(false)
+            WidgetRefreshManager._test_setBypassUITestModeForDebounceObservation(false)
+            WidgetRefreshManager._test_setRecordDebounceOutcomes(false)
 
             let la = RadioLiveActivityManager.shared
             la.stopLocalUpdateTimer()
@@ -95,6 +100,48 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
         WidgetRefreshManager._test_setRecordRefreshIfNeededGateOutcomes(true)
         WidgetRefreshManager._test_clearRefreshIfNeededGateOutcomeLog()
         XCTAssertFalse(WidgetRefreshManager.isSessionTeardownInProgress)
+    }
+
+    private func enableDebounceObservation() {
+        WidgetRefreshManager._test_setBypassUITestModeForDebounceObservation(true)
+        WidgetRefreshManager._test_setRecordDebounceOutcomes(true)
+        WidgetRefreshManager._test_clearDebounceOutcomeLog()
+        refreshManager._test_resetRefreshTimingState()
+        XCTAssertFalse(WidgetRefreshManager.isSessionTeardownInProgress)
+    }
+
+    /// Polls until the debounce observation log contains `outcome`.
+    private func waitForDebounceOutcome(
+        _ outcome: WidgetRefreshManager.DebounceObservationOutcome,
+        timeout: TimeInterval = 2.0
+    ) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if WidgetRefreshManager._test_debounceOutcomeLog().contains(outcome) { return true }
+            await Task.yield()
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        return WidgetRefreshManager._test_debounceOutcomeLog().contains(outcome)
+    }
+
+    private func refreshExecutedCount() -> Int {
+        WidgetRefreshManager._test_debounceOutcomeLog()
+            .filter { $0 == .refreshExecuted }
+            .count
+    }
+
+    /// Polls until ``refreshExecuted`` appears at least `minimum` times in the observation log.
+    private func waitForRefreshExecutedCount(
+        atLeast minimum: Int,
+        timeout: TimeInterval = 2.0
+    ) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if refreshExecutedCount() >= minimum { return true }
+            await Task.yield()
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        return refreshExecutedCount() >= minimum
     }
 
     // MARK: - Carried visual preference
@@ -436,5 +483,121 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
             false,
             "Non-terminal visuals use deferred refresh heuristics on the event path"
         )
+    }
+
+    // MARK: - Debouncing and coalescing
+
+    /// Verifies that a lone ``PlayerVisualState/prePlay`` refresh is deferred behind the
+    /// coalesce window and executes once the window elapses without a ``playing`` follow-up.
+    ///
+    /// - SeeAlso: ``refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)``,
+    ///   ``_test_debounceOutcomeLog()``, docs/Event-Driven-Refactor-Roadmap.md (Tier 5).
+    func testRefreshIfNeededDefersPrePlayUntilCoalesceWindowElapses() async {
+        enableDebounceObservation()
+
+        refreshManager.refreshIfNeeded(
+            visualState: .prePlay,
+            currentLanguage: "fi",
+            hasError: false,
+            immediate: false
+        )
+
+        XCTAssertEqual(
+            WidgetRefreshManager._test_debounceOutcomeLog(),
+            [.scheduledPrePlayDeferral],
+            "Lone prePlay must schedule deferral without immediate execution"
+        )
+        XCTAssertEqual(refreshExecutedCount(), 0)
+
+        let executed = await waitForDebounceOutcome(.refreshExecuted, timeout: 1.0)
+        XCTAssertTrue(
+            executed,
+            "Deferred prePlay must execute after the coalesce window; log: \(WidgetRefreshManager._test_debounceOutcomeLog())"
+        )
+        XCTAssertEqual(refreshExecutedCount(), 1)
+    }
+
+    /// Verifies that a fast ``PlayerVisualState/playing`` follow-up coalesces a deferred
+    /// ``PlayerVisualState/prePlay`` refresh into a single timeline reload.
+    ///
+    /// - SeeAlso: ``refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)``,
+    ///   docs/Event-Driven-Refactor-Roadmap.md (Tier 2 consumer depth).
+    func testRefreshIfNeededCoalescesPrePlayToPlayingWithinWindow() async {
+        enableDebounceObservation()
+
+        refreshManager.refreshIfNeeded(
+            visualState: .prePlay,
+            currentLanguage: "fi",
+            hasError: false,
+            immediate: false
+        )
+        refreshManager.refreshIfNeeded(
+            visualState: .playing,
+            currentLanguage: "fi",
+            hasError: false,
+            immediate: false
+        )
+
+        let executed = await waitForDebounceOutcome(.refreshExecuted, timeout: 1.0)
+        let log = WidgetRefreshManager._test_debounceOutcomeLog()
+
+        XCTAssertTrue(log.contains(.scheduledPrePlayDeferral))
+        XCTAssertTrue(log.contains(.coalescedPrePlayToPlaying))
+        XCTAssertTrue(
+            executed,
+            "Coalesced playing refresh must execute; log: \(log)"
+        )
+        XCTAssertEqual(
+            refreshExecutedCount(),
+            1,
+            "prePlay deferral must not produce a separate reload when playing supersedes it"
+        )
+    }
+
+    /// Verifies that rapid repeat ``PlayerVisualState/playing`` refreshes schedule adaptive
+    /// debouncing instead of executing back-to-back timeline reloads.
+    ///
+    /// - SeeAlso: ``refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)``,
+    ///   ``WidgetRefreshManagerEventTests``.
+    func testRefreshIfNeededSchedulesAdaptiveDebounceForRapidRepeats() async {
+        enableDebounceObservation()
+
+        refreshManager.refreshIfNeeded(
+            visualState: .playing,
+            currentLanguage: "fi",
+            hasError: false,
+            immediate: true
+        )
+
+        let firstExecuted = await waitForDebounceOutcome(.refreshExecuted, timeout: 1.0)
+        XCTAssertTrue(
+            firstExecuted,
+            "Immediate playing refresh must execute asynchronously; log: \(WidgetRefreshManager._test_debounceOutcomeLog())"
+        )
+        XCTAssertEqual(refreshExecutedCount(), 1)
+
+        refreshManager.refreshIfNeeded(
+            visualState: .playing,
+            currentLanguage: "fi",
+            hasError: false,
+            immediate: false
+        )
+
+        XCTAssertTrue(
+            WidgetRefreshManager._test_debounceOutcomeLog().contains(.scheduledAdaptiveDebounce),
+            "Second playing refresh within the adaptive interval must defer"
+        )
+        XCTAssertEqual(
+            refreshExecutedCount(),
+            1,
+            "Debounced refresh must not execute synchronously"
+        )
+
+        let secondExecuted = await waitForRefreshExecutedCount(atLeast: 2, timeout: 2.0)
+        XCTAssertTrue(
+            secondExecuted,
+            "Adaptive debounce must eventually execute a second reload; log: \(WidgetRefreshManager._test_debounceOutcomeLog())"
+        )
+        XCTAssertEqual(refreshExecutedCount(), 2)
     }
 }

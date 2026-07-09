@@ -271,12 +271,16 @@ final class WidgetRefreshManager: @unchecked Sendable {
             }
             return
         }
+
+        let debounceObservationActive = unsafe Self._test_bypassUITestModeForDebounceObservation
+        #else
+        let debounceObservationActive = false
         #endif
 
         // Defense-in-depth UI test isolation (SSOT).
         // Prevents WidgetKit timeline reloads that can wake widget renderers
         // (including Chrono for Live Activities) during -UITestMode launches.
-        if SharedPlayerManager.isRunningInUITestMode {
+        if SharedPlayerManager.isRunningInUITestMode, !debounceObservationActive {
             return
         }
         if Self.isSessionTeardownInProgress {
@@ -337,6 +341,7 @@ final class WidgetRefreshManager: @unchecked Sendable {
                 cancelCoalescedPrePlayRefresh()
                 #if DEBUG
                 print("[WidgetRefreshManager] Widget refresh coalesced: .prePlay → .playing, lang: \(newState.currentLanguage)")
+                recordDebounceOutcome(.coalescedPrePlayToPlaying)
                 #endif
                 Task { @MainActor in
                     await performRefreshIfNotStale(for: newState)
@@ -352,6 +357,7 @@ final class WidgetRefreshManager: @unchecked Sendable {
         if !immediate, !hasError, newState.visualState == .prePlay || newState.visualState == .cleared {
             #if DEBUG
             print("[WidgetRefreshManager] Widget refresh deferred: awaiting possible .playing follow-up — lang: \(newState.currentLanguage)")
+            recordDebounceOutcome(.scheduledPrePlayDeferral)
             #endif
             scheduleCoalescedPrePlayRefresh(for: newState)
             return
@@ -367,6 +373,7 @@ final class WidgetRefreshManager: @unchecked Sendable {
            lastState.hasError == newState.hasError {
             #if DEBUG
             print("[WidgetRefreshManager] Widget refresh coalesced: sticky \(newState.debugVisualStateLabel) unchanged")
+            recordDebounceOutcome(.coalescedStickyImmediateDuplicate)
             #endif
             return
         }
@@ -380,6 +387,9 @@ final class WidgetRefreshManager: @unchecked Sendable {
                 if timeSinceLastRefresh < adaptiveInterval {
                     refreshCount += 1
                     adaptiveInterval = min(adaptiveInterval * 1.5, 3.0)
+                    #if DEBUG
+                    recordDebounceOutcome(.scheduledAdaptiveDebounce)
+                    #endif
                     scheduleDelayedRefresh(for: newState, delay: adaptiveInterval)
                     return
                 } else if timeSinceLastRefresh > 5.0 {
@@ -504,9 +514,25 @@ final class WidgetRefreshManager: @unchecked Sendable {
             hasError: false
         ).debugVisualStateLabel
     }
+
+    /// Appends a debounce/coalesce observation outcome when recording is enabled.
+    private func recordDebounceOutcome(_ outcome: DebounceObservationOutcome) {
+        guard unsafe Self._test_recordDebounceOutcomes else { return }
+        unsafe Self._test_recordedDebounceOutcomes.append(outcome)
+    }
     #endif
     
     private func performRefresh(for state: WidgetState) async {
+        #if DEBUG
+        recordDebounceOutcome(.refreshExecuted)
+        if unsafe Self._test_bypassUITestModeForDebounceObservation {
+            cancelPendingRefresh()
+            lastRefreshTime = Date()
+            lastKnownState = state
+            return
+        }
+        #endif
+
         // Belt-and-suspenders: even if a caller reached here, never do WidgetCenter work under test.
         if SharedPlayerManager.isRunningInUITestMode {
             return
@@ -747,12 +773,33 @@ extension WidgetRefreshManager {
         case suppressedByPrivacyGate
     }
 
+    /// Outcome of debouncing and coalescing branches inside
+    /// ``refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)``.
+    ///
+    /// Recorded when ``_test_setBypassUITestModeForDebounceObservation(true)`` exercises the
+    /// full timing heuristics while ``performRefresh`` skips WidgetCenter IPC. Compiled out of Release.
+    enum DebounceObservationOutcome: Equatable, Sendable {
+        /// A lone ``PlayerVisualState/prePlay`` or ``PlayerVisualState/cleared`` refresh was deferred.
+        case scheduledPrePlayDeferral
+        /// A fast ``PlayerVisualState/playing`` follow-up superseded a deferred prePlay refresh.
+        case coalescedPrePlayToPlaying
+        /// A rapid repeat refresh was scheduled behind the adaptive debounce interval.
+        case scheduledAdaptiveDebounce
+        /// An immediate sticky-pause refresh was dropped as a duplicate of ``lastKnownState``.
+        case coalescedStickyImmediateDuplicate
+        /// ``performRefresh`` reached the execution point (timeline reload skipped under observation).
+        case refreshExecuted
+    }
+
     // SAFETY: DEBUG-only gate-observation flags written from @MainActor test entry points;
     // reads occur on the same actor during XCTest. Matches the established nonisolated(unsafe)
     // pattern for privacy-gate and event-observation test seams in this file.
     nonisolated(unsafe) private static var _test_bypassUITestModeForRefreshGateObservation = false
     nonisolated(unsafe) private static var _test_recordRefreshIfNeededGateOutcomes = false
     nonisolated(unsafe) private static var _test_refreshGateOutcomeLog: [RefreshIfNeededGateOutcome] = []
+    nonisolated(unsafe) private static var _test_bypassUITestModeForDebounceObservation = false
+    nonisolated(unsafe) private static var _test_recordDebounceOutcomes = false
+    nonisolated(unsafe) private static var _test_recordedDebounceOutcomes: [DebounceObservationOutcome] = []
 
     /// Bypasses the UITestMode early return in ``handlePlayerEvent(_:)`` and
     /// ``refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)`` so unit tests can
@@ -798,6 +845,65 @@ extension WidgetRefreshManager {
     @MainActor
     static func _test_clearRefreshIfNeededGateOutcomeLog() {
         unsafe _test_refreshGateOutcomeLog = []
+    }
+
+    /// Bypasses the UITestMode early return so ``refreshIfNeeded`` runs debouncing and
+    /// coalescing heuristics while ``performRefresh`` records ``refreshExecuted`` without
+    /// WidgetCenter IPC.
+    ///
+    /// Pair with ``_test_setRecordDebounceOutcomes(true)`` and
+    /// ``_test_debounceOutcomeLog()`` in timing-dependent consumer tests.
+    ///
+    /// - Parameter bypass: When `true`, the full deferral/coalesce/adaptive-debounce path executes.
+    /// - SeeAlso: ``DebounceObservationOutcome``, ``_test_debounceOutcomeLog()``,
+    ///   ``WidgetRefreshManagerEventTests``, docs/Event-Driven-Refactor-Roadmap.md (Tier 5).
+    @MainActor
+    static func _test_setBypassUITestModeForDebounceObservation(_ bypass: Bool) {
+        unsafe _test_bypassUITestModeForDebounceObservation = bypass
+        if !bypass {
+            unsafe _test_recordedDebounceOutcomes = []
+        }
+    }
+
+    /// Enables append-only recording of debounce and coalesce branch outcomes.
+    ///
+    /// - Parameter enabled: Whether each qualifying ``refreshIfNeeded`` branch appends to
+    ///   ``_test_debounceOutcomeLog()``.
+    /// - SeeAlso: ``_test_setBypassUITestModeForDebounceObservation(_:)``.
+    @MainActor
+    static func _test_setRecordDebounceOutcomes(_ enabled: Bool) {
+        unsafe _test_recordDebounceOutcomes = enabled
+        if !enabled {
+            unsafe _test_recordedDebounceOutcomes = []
+        }
+    }
+
+    /// Returns debounce/coalesce outcomes captured since the last clear or disable.
+    @MainActor
+    static func _test_debounceOutcomeLog() -> [DebounceObservationOutcome] {
+        unsafe _test_recordedDebounceOutcomes
+    }
+
+    /// Clears the debounce observation log without changing bypass flags.
+    @MainActor
+    static func _test_clearDebounceOutcomeLog() {
+        unsafe _test_recordedDebounceOutcomes = []
+    }
+
+    /// Resets debounce, coalesce, and last-known refresh state for timing-isolated unit tests.
+    ///
+    /// Cancels pending work items and clears ``lastRefreshTime`` / ``lastKnownState`` so
+    /// successive tests do not inherit coalesce windows from prior drives.
+    ///
+    /// - SeeAlso: ``_test_setBypassUITestModeForDebounceObservation(_:)``,
+    ///   ``WidgetRefreshManagerEventTests``.
+    @MainActor
+    func _test_resetRefreshTimingState() {
+        cancelPendingRefresh()
+        lastRefreshTime = nil
+        lastKnownState = nil
+        refreshCount = 0
+        adaptiveInterval = 0.5
     }
 
     /// Snapshot of refresh parameters derived by ``handlePlayerEvent(_:)`` for white-box tests.

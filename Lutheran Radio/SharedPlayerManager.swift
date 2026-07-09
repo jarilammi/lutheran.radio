@@ -1151,10 +1151,21 @@ actor SharedPlayerManager {
     }
 
     /// Returns true when executing inside the widget extension target.
+    ///
     /// Used to bypass privacy write gates for optimistic updates originating from
-    /// App Intents (proof that a Lutheran widget is present and was just interacted with).
+    /// App Intents (proof that a Lutheran widget is present and was just interacted with)
+    /// and to suppress main-app-only ``PlayerEvent`` observation in
+    /// ``PlayerEventSubscriber/beginObserving()`` and
+    /// ``WidgetRefreshManager/beginObservingPlayerEvents()``.
+    ///
+    /// - SeeAlso: ``isRunningInWidget()``, ``emit(_:)``,
+    ///   ``_test_setSimulateWidgetProcessContext(_:)`` (DEBUG), ``PlayerEventSubscriber``,
+    ///   docs/Event-Driven-Refactor-Roadmap.md.
     nonisolated static func isWidgetProcess() -> Bool {
         #if LUTHERAN_MAIN_APP
+        #if DEBUG
+        if unsafe Self._test_simulateWidgetProcessContext { return true }
+        #endif
         return false
         #else
         return true
@@ -3569,15 +3580,18 @@ extension SharedPlayerManager {
     // the established nonisolated(unsafe) pattern for gate-observation seams in WidgetRefreshManager.
     nonisolated(unsafe) private static var _test_simulateWidgetProcessContext = false
 
-    /// Simulates widget-extension process context for unit tests of the ``emit(_:)`` guard.
+    /// Simulates widget-extension process context for unit tests of cross-process guards.
     ///
-    /// When `true`, ``isRunningInWidget()`` returns `true` in the main-app test host so
-    /// ``emit(_:)`` suppresses both ``events`` yield and the DEBUG notification seam.
+    /// When `true` in the main-app test host, ``isRunningInWidget()`` and
+    /// ``isWidgetProcess()`` report widget context so ``emit(_:)`` suppresses stream delivery,
+    /// ``PlayerEventSubscriber/beginObserving()`` returns before replay attachment, and
+    /// ``WidgetRefreshManager`` does not start the Tier 2 live observer.
     ///
     /// - Parameter simulate: Pass `true` to exercise widget-process suppression; `false`
     ///   restores normal main-app behavior.
-    /// - SeeAlso: ``isRunningInWidget()``, ``emit(_:)``, ``SharedPlayerManagerEventTests``,
-    ///   CODING_AGENT.md (Test Execution Patience and Fast, Reliable Test Patterns),
+    /// - SeeAlso: ``isRunningInWidget()``, ``isWidgetProcess()``, ``emit(_:)``,
+    ///   ``PlayerEventSubscriber``, ``SharedPlayerManagerEventTests``,
+    ///   ``PlayerEventSubscriberEventTests``, CODING_AGENT.md (fast test patterns),
     ///   docs/Event-Driven-Refactor-Roadmap.md.
     nonisolated static func _test_setSimulateWidgetProcessContext(_ simulate: Bool) {
         unsafe _test_simulateWidgetProcessContext = simulate

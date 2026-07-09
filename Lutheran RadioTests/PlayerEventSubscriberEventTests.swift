@@ -26,6 +26,8 @@ import XCTest
 ///   emissions continue to update ``eventCount`` and ``lastObservedIntent`` (intent events only).
 /// - **Cancellation:** ``cancel()`` ends replay-stream observation so later emissions do not
 ///   reach ``handle(_:)``.
+/// - **Widget process:** ``beginObserving()`` returns before intent seeding or replay attachment
+///   when ``SharedPlayerManager/isWidgetProcess()`` is `true`.
 ///
 /// - SeeAlso: ``PlayerEventSubscriber/beginObserving()``, ``PlayerEventSubscriber/eventCount``,
 ///   ``PlayerEventSubscriber/lastObservedIntent``, ``SharedPlayerManager/makeEventsStreamWithReplay()``,
@@ -65,6 +67,8 @@ final class PlayerEventSubscriberEventTests: XCTestCase {
             WidgetRefreshManager.setHasActiveLutheranWidgets(true)
         }
 
+        SharedPlayerManager._test_setSimulateWidgetProcessContext(false)
+
         _ = await manager.events
 
         // Release any stale replay live-forwarding attachment so
@@ -82,6 +86,7 @@ final class PlayerEventSubscriberEventTests: XCTestCase {
         await Task.yield()
         try? await Task.sleep(for: .milliseconds(100))
         WidgetRefreshManager._test_setSuppressPlayerEventObservation(false)
+        SharedPlayerManager._test_setSimulateWidgetProcessContext(false)
 
         await MainActor.run {
             let la = RadioLiveActivityManager.shared
@@ -170,6 +175,55 @@ final class PlayerEventSubscriberEventTests: XCTestCase {
             satisfied,
             "Replay prefix must deliver four events; got eventCount=\(subscriber.eventCount)"
         )
+    }
+
+    // MARK: - Widget process guard
+
+    /// Verifies that ``beginObserving()`` returns before replay attachment when
+    /// ``SharedPlayerManager/isWidgetProcess()`` reports widget-extension context.
+    ///
+    /// Widget processes perform optimistic snapshot writes but never consume the authoritative
+    /// ``PlayerEvent`` stream. Observable state must remain at factory defaults and no replay
+    /// prefix or live forwarding may run.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/isWidgetProcess()``,
+    ///   ``SharedPlayerManager/_test_setSimulateWidgetProcessContext(_:)``,
+    ///   ``SharedPlayerManagerEventTests/testEmitSuppressesYieldWhenRunningInWidgetProcess()``,
+    ///   docs/Event-Driven-Refactor-Roadmap.md (Tier 5).
+    func testBeginObservingReturnsEarlyInWidgetProcessContext() async {
+        SharedPlayerManager._test_setSimulateWidgetProcessContext(true)
+        defer { SharedPlayerManager._test_setSimulateWidgetProcessContext(false) }
+
+        await manager.setUserPaused()
+
+        let subscriber = PlayerEventSubscriber()
+        await subscriber.beginObserving()
+
+        await Task.yield()
+        try? await Task.sleep(for: .milliseconds(200))
+
+        XCTAssertEqual(
+            subscriber.eventCount,
+            0,
+            "Widget process context must not deliver replay prefix or live events"
+        )
+        XCTAssertEqual(
+            subscriber.lastObservedIntent,
+            .shouldBePlaying,
+            "Widget process guard must skip intent seeding from the actor"
+        )
+
+        await manager.setPlaying()
+        await Task.yield()
+        try? await Task.sleep(for: .milliseconds(200))
+
+        XCTAssertEqual(subscriber.eventCount, 0)
+        XCTAssertEqual(subscriber.lastObservedIntent, .shouldBePlaying)
+
+        SharedPlayerManager._test_setSimulateWidgetProcessContext(false)
+
+        await beginObservingAndAwaitReplayPrefix(subscriber)
+        XCTAssertEqual(subscriber.eventCount, 4)
     }
 
     // MARK: - Replay prefix

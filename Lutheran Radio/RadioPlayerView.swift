@@ -213,9 +213,13 @@ final class PlayerEventSubscriber {
     /// - Important: This is additive. Starting observation has no effect on the
     ///   emitter, on other subscribers (WidgetRefreshManager, etc.), or on any
     ///   imperative playback paths.
+    /// - Precondition: Returns immediately without seeding observable state or attaching
+    ///   a replay stream when ``SharedPlayerManager/isWidgetProcess()`` is `true`. Widget
+    ///   extension processes cannot observe authoritative ``PlayerEvent`` emissions.
     /// - SeeAlso: `WidgetEventObserver.beginObserving(_:onElement:onTermination:)`,
     ///   `SharedPlayerManager.makeEventsStreamWithReplay()`, `SharedPlayerManager.events`,
-    ///   `SharedPlayerManager.currentState`.
+    ///   `SharedPlayerManager.currentState`, ``SharedPlayerManager/isWidgetProcess()``,
+    ///   ``PlayerEventSubscriberEventTests``.
     func beginObserving() async {
         eventObserver.cancel()
 
