@@ -18,6 +18,8 @@ import XCTest
 ///   non-intent payloads. Live ``events`` forwarding shares the single ``AsyncStream`` iterator
 ///   with ``WidgetRefreshManager``; emitter-side forwarding contracts remain in
 ///   ``SharedPlayerManagerEventTests``.
+/// - **Stream verbs:** ``streamDidStart``, ``streamDidPause``, ``streamDidStop``, and
+///   ``streamDidFail`` increment ``eventCount`` without mutating ``lastObservedIntent``.
 /// - **Cancellation:** ``cancel()`` ends replay-stream observation so later emissions do not
 ///   reach ``handle(_:)``.
 ///
@@ -144,6 +146,46 @@ final class PlayerEventSubscriberEventTests: XCTestCase {
         await subscriber._test_applyPlayerEvent(.metadataDidUpdate(metadata))
         XCTAssertEqual(subscriber.eventCount, 2)
         XCTAssertEqual(subscriber.lastObservedIntent, .userPaused)
+    }
+
+    /// Verifies that stream transition verbs increment ``eventCount`` without mutating
+    /// ``lastObservedIntent``.
+    ///
+    /// ``handle(_:)`` updates intent only for ``PlayerEvent/playbackIntentChanged(_:)``.
+    /// Stream verbs are observability signals for generic UI refresh sites (``.onChange`` on
+    /// ``eventCount``) and must not overwrite the last intent delivered by a prior
+    /// ``playbackIntentChanged`` event.
+    ///
+    /// - SeeAlso: ``PlayerEvent/streamDidStart``, ``PlayerEvent/streamDidPause``,
+    ///   ``PlayerEvent/streamDidStop``, ``PlayerEvent/streamDidFail(_:)``,
+    ///   ``RadioPlayerView``, docs/Event-Driven-Refactor-Roadmap.md (Tier 5).
+    func testHandleStreamVerbsIncrementEventCountWithoutMutatingIntent() async {
+        let subscriber = PlayerEventSubscriber()
+
+        await subscriber._test_applyPlayerEvent(.playbackIntentChanged(.shouldBePlaying))
+        XCTAssertEqual(subscriber.eventCount, 1)
+        XCTAssertEqual(subscriber.lastObservedIntent, .shouldBePlaying)
+
+        let streamVerbs: [PlayerEvent] = [
+            .streamDidStart,
+            .streamDidPause,
+            .streamDidStop,
+            .streamDidFail(.transientFailure),
+        ]
+
+        for (index, verb) in streamVerbs.enumerated() {
+            await subscriber._test_applyPlayerEvent(verb)
+            XCTAssertEqual(
+                subscriber.eventCount,
+                index + 2,
+                "Expected eventCount \(index + 2) after \(verb)"
+            )
+            XCTAssertEqual(
+                subscriber.lastObservedIntent,
+                .shouldBePlaying,
+                "Stream verb \(verb) must not mutate lastObservedIntent"
+            )
+        }
     }
 
     // MARK: - Cancellation
