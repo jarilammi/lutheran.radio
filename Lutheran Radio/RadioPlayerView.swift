@@ -281,10 +281,13 @@ final class PlayerEventSubscriber {
             eventCount += 1
 
         case .streamDidStart, .streamDidPause, .streamDidStop,
-             .streamDidFail, .metadataDidUpdate, .visualStateDidChange,
-             .persistedWidgetStateDidUpdate:
-            // React to all other key state-transition events as required.
-            // The count change is the value that can drive generic UI refresh sites.
+             .streamDidFail, .metadataDidUpdate:
+            // Stream verbs and metadata carry no `PlaybackIntent`; only bump the counter.
+            eventCount += 1
+
+        case .visualStateDidChange, .persistedWidgetStateDidUpdate:
+            // Visual and persisted-snapshot signals drive generic UI refresh sites via
+            // `.onChange(of: eventCount)` without overwriting `lastObservedIntent`.
             eventCount += 1
         }
     }

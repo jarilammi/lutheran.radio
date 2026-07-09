@@ -62,6 +62,7 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
             WidgetRefreshManager._test_setBypassUITestModeForRefreshGateObservation(false)
             WidgetRefreshManager._test_setRecordRefreshIfNeededGateOutcomes(false)
             WidgetRefreshManager._test_setRecordHandlePlayerEventDerivation(false)
+            WidgetRefreshManager._test_setRecordHandlePlayerEventImmediate(false)
 
             let la = RadioLiveActivityManager.shared
             la.stopLocalUpdateTimer()
@@ -372,6 +373,68 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
         XCTAssertFalse(
             gateLog.contains(.suppressedBySessionTeardown),
             "Post-emission refresh must not be suppressed without teardown; log: \(gateLog)"
+        )
+    }
+
+    // MARK: - Event-path privacy gate
+
+    /// Verifies that ``handlePlayerEvent(_:)`` records privacy suppression when
+    /// ``hasActiveLutheranWidgets`` is false and the event is
+    /// ``PlayerEvent/persistedWidgetStateDidUpdate``.
+    ///
+    /// The write-side privacy gate suppresses snapshot persistence and emission on the
+    /// emitter path; the Tier 2 consumer must honor the same gate before scheduling
+    /// timeline reload work.
+    ///
+    /// - SeeAlso: ``SharedPlayerManagerEventTests/testSaveCurrentStateWithPrivacyGateClosedSuppressesPersistedWidgetStateEmission()``,
+    ///   ``WidgetRefreshManager/setHasActiveLutheranWidgets(_:)``,
+    ///   docs/Event-Driven-Refactor-Roadmap.md (Tier 5).
+    func testHandlePlayerEventEventPathSuppressesRefreshWhenPrivacyGateClosed() async {
+        WidgetRefreshManager.setHasActiveLutheranWidgets(false)
+        XCTAssertFalse(WidgetRefreshManager.hasActiveLutheranWidgets)
+
+        enableRefreshGateObservation()
+
+        await refreshManager._test_invokeHandlePlayerEvent(.persistedWidgetStateDidUpdate)
+
+        XCTAssertEqual(
+            WidgetRefreshManager._test_refreshIfNeededGateOutcomeLog(),
+            [.suppressedByPrivacyGate],
+            "Closed privacy gate must suppress event-path refresh before WidgetCenter IPC"
+        )
+    }
+
+    // MARK: - Event-path immediate delivery
+
+    /// Verifies that ``handlePlayerEvent(_:)`` passes `immediate: true` to
+    /// ``refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)`` when the
+    /// derived visual is ``PlayerVisualState/prePlay`` or ``PlayerVisualState/cleared``.
+    ///
+    /// Factory-reset and privacy-clear presentations must not be deferred behind the
+    /// `.prePlay` → `.playing` coalesce window on the Tier 2 observer path (parity with
+    /// imperative teardown and widget-intent callers).
+    ///
+    /// - SeeAlso: ``handlePlayerEvent(_:)``,
+    ///   ``WidgetRefreshManager/_test_lastHandlePlayerEventImmediate()``,
+    ///   docs/Event-Driven-Refactor-Roadmap.md (Tier 5).
+    func testHandlePlayerEventEventPathUsesImmediateForPrePlayAndCleared() async {
+        WidgetRefreshManager._test_setBypassUITestModeForRefreshGateObservation(true)
+        WidgetRefreshManager._test_setRecordHandlePlayerEventImmediate(true)
+
+        for visual in [PlayerVisualState.prePlay, .cleared] {
+            await refreshManager._test_invokeHandlePlayerEvent(.visualStateDidChange(visual))
+            XCTAssertEqual(
+                WidgetRefreshManager._test_lastHandlePlayerEventImmediate(),
+                true,
+                "Event path must pass immediate: true for \(visual)"
+            )
+        }
+
+        await refreshManager._test_invokeHandlePlayerEvent(.visualStateDidChange(.playing))
+        XCTAssertEqual(
+            WidgetRefreshManager._test_lastHandlePlayerEventImmediate(),
+            false,
+            "Non-terminal visuals use deferred refresh heuristics on the event path"
         )
     }
 }

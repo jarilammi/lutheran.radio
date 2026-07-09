@@ -1138,7 +1138,7 @@ actor SharedPlayerManager {
     ///   ``_test_setSimulateWidgetProcessContext(_:)`` (DEBUG), docs/Event-Driven-Refactor-Roadmap.md.
     nonisolated func isRunningInWidget() -> Bool {
         #if DEBUG
-        if Self._test_simulateWidgetProcessContext { return true }
+        if unsafe Self._test_simulateWidgetProcessContext { return true }
         #endif
         #if LUTHERAN_MAIN_APP
         // Main app never owns widget intent execution; WidgetKit env covers Xcode previews only.

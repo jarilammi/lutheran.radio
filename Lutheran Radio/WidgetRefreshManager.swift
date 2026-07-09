@@ -258,9 +258,14 @@ final class WidgetRefreshManager: @unchecked Sendable {
         // Bypasses UITestMode and WidgetCenter IPC while preserving the teardown
         // gate decision order used in production.
         if unsafe Self._test_bypassUITestModeForRefreshGateObservation {
-            let outcome: RefreshIfNeededGateOutcome = Self.isSessionTeardownInProgress
-                ? .suppressedBySessionTeardown
-                : .passedGuards
+            let outcome: RefreshIfNeededGateOutcome
+            if Self.isSessionTeardownInProgress {
+                outcome = .suppressedBySessionTeardown
+            } else if !Self.hasActiveLutheranWidgets {
+                outcome = .suppressedByPrivacyGate
+            } else {
+                outcome = .passedGuards
+            }
             if unsafe Self._test_recordRefreshIfNeededGateOutcomes {
                 unsafe Self._test_refreshGateOutcomeLog.append(outcome)
             }
@@ -606,7 +611,9 @@ final class WidgetRefreshManager: @unchecked Sendable {
     /// The call always goes through the full existing implementation of
     /// `refreshIfNeeded` (language-change urgency, prePlay coalescing, adaptive
     /// debounce, regress checks against persisted snapshot, UITestMode short,
-    /// privacy gate, etc.).
+    /// privacy gate, etc.). Derived `.prePlay` and `.cleared` visuals request
+    /// `immediate: true` so factory-reset and privacy-clear presentations are not
+    /// deferred behind the coalesce window (parity with imperative teardown callers).
     ///
     /// - Parameter event: The domain event emitted by `SharedPlayerManager`
     ///   after a corresponding state mutation.
@@ -672,6 +679,21 @@ final class WidgetRefreshManager: @unchecked Sendable {
         )
     }
 
+    /// Returns whether the event path must bypass `.prePlay` / `.cleared` coalesce deferral.
+    ///
+    /// Factory-reset and privacy-clear visuals are terminal presentation states; the Tier 2
+    /// observer matches imperative callers (`performSessionAndWidgetTeardown`, widget intents)
+    /// by requesting immediate delivery so timeline reloads are not deferred behind the
+    /// `.prePlay` → `.playing` coalesce window.
+    ///
+    /// - Parameter visualState: The visual derived from the ``PlayerEvent`` payload or SSOT readers.
+    /// - Returns: `true` when ``PlayerVisualState/prePlay`` or ``PlayerVisualState/cleared``.
+    /// - SeeAlso: ``refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)``,
+    ///   ``handlePlayerEvent(_:)``, docs/Event-Driven-Refactor-Roadmap.md.
+    private func refreshUsesImmediateDelivery(for visualState: PlayerVisualState) -> Bool {
+        visualState == .prePlay || visualState == .cleared
+    }
+
     private func handlePlayerEvent(_ event: PlayerEvent) async {
         // UITestMode defense (mirrors the guard at the top of refreshIfNeeded).
         #if DEBUG
@@ -689,6 +711,13 @@ final class WidgetRefreshManager: @unchecked Sendable {
         }
 
         let derived = deriveRefreshParameters(for: event)
+        let immediate = refreshUsesImmediateDelivery(for: derived.visualState)
+
+        #if DEBUG
+        if unsafe Self._test_recordHandlePlayerEventImmediate {
+            unsafe Self._test_cachedHandlePlayerEventImmediate = immediate
+        }
+        #endif
 
         // Route through the public surface exactly as every other caller does.
         // All debouncing, coalescing, privacy, regress, and immediate logic applies.
@@ -697,7 +726,7 @@ final class WidgetRefreshManager: @unchecked Sendable {
             visualState: derived.visualState,
             currentLanguage: derived.currentLanguage,
             hasError: derived.hasError,
-            immediate: false   // let the manager's internal heuristics decide urgency
+            immediate: immediate
         )
     }
 }
@@ -710,10 +739,12 @@ extension WidgetRefreshManager {
     /// Recorded only when ``_test_setRecordRefreshIfNeededGateOutcomes(true)`` and
     /// ``_test_setBypassUITestModeForRefreshGateObservation(true)`` are active. Compiled out of Release.
     enum RefreshIfNeededGateOutcome: Equatable, Sendable {
-        /// The call passed both UITestMode and session-teardown guards (WidgetCenter IPC skipped in test mode).
+        /// The call passed UITestMode, session-teardown, and privacy guards (WidgetCenter IPC skipped in test mode).
         case passedGuards
         /// The call returned early because ``isSessionTeardownInProgress`` was true.
         case suppressedBySessionTeardown
+        /// The call returned early because ``hasActiveLutheranWidgets`` is false (write/read privacy gate).
+        case suppressedByPrivacyGate
     }
 
     // SAFETY: DEBUG-only gate-observation flags written from @MainActor test entry points;
@@ -728,8 +759,8 @@ extension WidgetRefreshManager {
     /// observe the Tier 2 event observer → refresh gate chain without WidgetCenter IPC.
     ///
     /// - Parameter bypass: When `true`, ``handlePlayerEvent(_:)`` and ``refreshIfNeeded`` evaluate
-    ///   only ``isSessionTeardownInProgress`` (refresh path records gate outcomes and returns
-    ///   before debounce/coalesce logic).
+    ///   ``isSessionTeardownInProgress`` and ``hasActiveLutheranWidgets`` (refresh path records
+    ///   gate outcomes and returns before debounce/coalesce logic).
     /// - SeeAlso: ``_test_setRecordRefreshIfNeededGateOutcomes(_:)``,
     ///   ``_test_refreshIfNeededGateOutcomeLog()``, ``_test_invokeHandlePlayerEvent(_:)``,
     ///   ``setSessionTeardownInProgress(_:)``,
@@ -783,6 +814,11 @@ extension WidgetRefreshManager {
     // nonisolated(unsafe) pattern for privacy-gate cache state in this file.
     nonisolated(unsafe) private static var _test_recordHandlePlayerEventDerivation = false
     nonisolated(unsafe) private static var _test_cachedHandlePlayerEventDerivation: HandlePlayerEventDerivation?
+
+    // SAFETY: DEBUG-only immediate-flag observation for event-path white-box tests.
+    // Written from @MainActor ``handlePlayerEvent(_:)``; read on the same actor during XCTest.
+    nonisolated(unsafe) private static var _test_recordHandlePlayerEventImmediate = false
+    nonisolated(unsafe) private static var _test_cachedHandlePlayerEventImmediate: Bool?
 
     // SAFETY: DEBUG-only gate for suspending the Tier 2 live ``events`` observer so
     // other consumers can attach the sole AsyncStream iterator during XCTest (replay
@@ -841,6 +877,25 @@ extension WidgetRefreshManager {
         unsafe _test_cachedHandlePlayerEventDerivation
     }
 
+    /// Enables recording of the `immediate` flag passed from ``handlePlayerEvent(_:)`` to
+    /// ``refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)``.
+    ///
+    /// - Parameter enabled: Whether each ``handlePlayerEvent(_:)`` call stores the urgency flag.
+    /// - SeeAlso: ``_test_lastHandlePlayerEventImmediate()``, ``WidgetRefreshManagerEventTests``.
+    @MainActor
+    static func _test_setRecordHandlePlayerEventImmediate(_ enabled: Bool) {
+        unsafe _test_recordHandlePlayerEventImmediate = enabled
+        if !enabled {
+            unsafe _test_cachedHandlePlayerEventImmediate = nil
+        }
+    }
+
+    /// Returns the most recent `immediate` value recorded by ``handlePlayerEvent(_:)``, if any.
+    @MainActor
+    static func _test_lastHandlePlayerEventImmediate() -> Bool? {
+        unsafe _test_cachedHandlePlayerEventImmediate
+    }
+
     /// Exposes ``deriveRefreshParameters(for:)`` for white-box consumer tests.
     ///
     /// - Parameter event: The ``PlayerEvent`` under test.
@@ -891,11 +946,13 @@ extension WidgetRefreshManager {
             }
         }
 
+        let immediate = refreshUsesImmediateDelivery(for: derived.visualState)
+
         refreshIfNeeded(
             visualState: derived.visualState,
             currentLanguage: derived.currentLanguage,
             hasError: derived.hasError,
-            immediate: false
+            immediate: immediate
         )
     }
 
