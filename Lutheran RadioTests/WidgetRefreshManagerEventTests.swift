@@ -61,6 +61,8 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
 
     override func tearDown() async throws {
         await MainActor.run {
+            refreshManager._test_suspendPlayerEventObservation()
+            WidgetRefreshManager._test_setSuppressPlayerEventObservation(true)
             WidgetRefreshManager.setSessionTeardownInProgress(false)
             WidgetRefreshManager._test_setBypassUITestModeForRefreshGateObservation(false)
             WidgetRefreshManager._test_setRecordRefreshIfNeededGateOutcomes(false)
@@ -396,7 +398,16 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
     /// Verifies the live Tier 2 observer path: ``SharedPlayerManager`` emissions delivered
     /// through ``beginObservingPlayerEvents()`` invoke ``handlePlayerEvent(_:)`` and record
     /// refresh gate outcomes without WidgetCenter IPC.
+    ///
+    /// XCTest hosts suppress observation at ``WidgetRefreshManager`` ``init()``; this test
+    /// re-enables it via ``_test_beginObservingPlayerEventsForTests()`` after cancelling
+    /// replay forwarding.
     func testLivePlayerEventObserverRecordsPassedGuardsOnEmittedTransition() async {
+        await manager.cancelReplayForwarding()
+        refreshManager._test_beginObservingPlayerEventsForTests()
+        await Task.yield()
+        try? await Task.sleep(for: .milliseconds(150))
+
         await manager.setUserIntentToPlay()
 
         enableRefreshGateObservation()

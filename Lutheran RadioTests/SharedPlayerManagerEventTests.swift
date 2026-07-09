@@ -35,6 +35,9 @@ import XCTest
 ///   *before* clearAllLocalState / endActivity paths.
 /// - Direct seams (`setHasActiveLutheranWidgets`) instead of WidgetCenter / ActivityKit.
 /// - Pre-warm + `Task.yield()` + short sleeps around attach and trigger.
+/// - Suspend Tier 2 observation in `setUp()`; recreate the live stream with
+///   ``_test_resetEventsStreamForIsolation()`` when a test must assert pure ``events``
+///   delivery without buffered emissions from an arrange-phase mutation.
 ///
 /// Re-read `collectEvents`, `waitForEvent`, the Tier 5 test method body, and its
 /// long documentation comment before writing new event or Live Activity tests.
@@ -98,14 +101,19 @@ final class SharedPlayerManagerEventTests: XCTestCase {
             WidgetRefreshManager.setHasActiveLutheranWidgets(true)
         }
 
-        // Pre-warm the events stream so the continuation exists before we subscribe in tests.
-        // This avoids races between first access creating the stream and subsequent emits.
-        _ = await manager.events
-
-        // Release any replay live-forwarding attachment left by other test classes
-        // (for example ``PlayerEventSubscriberEventTests``) so this suite regains the sole
-        // ``events`` iterator. ``AsyncStream`` admits one consumer at a time.
+        // Release replay forwarding and suspend Tier 2 observation so emitter tests can
+        // attach the sole ``events`` iterator when required.
         await manager.cancelReplayForwarding()
+        await MainActor.run {
+            WidgetRefreshManager._test_setSuppressPlayerEventObservation(true)
+            WidgetRefreshManager.shared._test_suspendPlayerEventObservation()
+        }
+        await Task.yield()
+        await Task.yield()
+        try? await Task.sleep(for: .milliseconds(150))
+
+        // Pre-warm the events stream so the continuation exists before we subscribe in tests.
+        _ = await manager.events
         await Task.yield()
         try? await Task.sleep(for: .milliseconds(100))
     }
@@ -124,6 +132,7 @@ final class SharedPlayerManagerEventTests: XCTestCase {
             WidgetRefreshManager.setSessionTeardownInProgress(false)
             WidgetRefreshManager._test_setBypassUITestModeForRefreshGateObservation(false)
             WidgetRefreshManager._test_setRecordRefreshIfNeededGateOutcomes(false)
+            WidgetRefreshManager._test_setSuppressPlayerEventObservation(false)
             SharedPlayerManager._test_setSimulateWidgetProcessContext(false)
         }
         try await super.tearDown()
@@ -736,8 +745,8 @@ final class SharedPlayerManagerEventTests: XCTestCase {
     /// - `streamDidPause` via `setUserPaused()`
     /// - `streamDidFail(_:)` carrying the exact `DirectStreamingPlayer.StreamErrorType` via
     ///   `markPlaybackStoppedByStreamFailure(_:)`
-    /// - `streamDidStart` via ``setPlaying()`` on the recovery path (UITestMode performs
-    ///   canonical mutations + emission while skipping Live Activity / Now Playing IPC)
+    /// - `streamDidStart` via ``setPlaying()`` on the recovery path (live-stream contract
+    ///   also protected by ``testLiveEventsStreamDeliversStreamDidStartFromSetPlaying``)
     /// - `metadataDidUpdate(_:)` (non-nil program metadata) via `didUpdateStreamMetadata(_:)`
     /// - `persistedWidgetStateDidUpdate` via `saveCurrentState()` (privacy gate enabled in setUp)
     /// - `visualStateDidChange` for `.userPaused` and `.playing` transitions
@@ -1629,6 +1638,57 @@ final class SharedPlayerManagerEventTests: XCTestCase {
         XCTAssertFalse(
             liveEmissions.contains { if case .streamDidFail = $0 { return true }; return false },
             "setPlaying must emit streamDidStart, not streamDidFail; got: \(liveEmissions)"
+        )
+
+        let visualAfter = await manager.currentVisualState
+        let intentAfter = await manager.currentPlaybackIntent
+        XCTAssertEqual(visualAfter, .playing)
+        XCTAssertEqual(intentAfter, .shouldBePlaying)
+    }
+
+    /// Verifies that ``setPlaying()`` delivers `PlayerEvent.streamDidStart` on the
+    /// authoritative live ``events`` AsyncStream.
+    ///
+    /// ``play()`` skips stream attach and does not invoke ``setPlaying()`` under
+    /// ``isRunningInUITestMode``; unit tests therefore drive the canonical emission
+    /// surface directly. This contract protects consumers that subscribe to the live
+    /// stream independently of the DEBUG notification seam used by emission-order tests.
+    ///
+    /// Collection uses ``waitForEvent(from:timeout:matching:whilePerforming:)`` with
+    /// subscribe-before-action semantics on the shared live stream. A fresh stream is
+    /// materialized after the arrange-phase pause so buffered pause emissions do not
+    /// satisfy the collector before ``setPlaying()`` runs.
+    ///
+    /// - SeeAlso: ``setPlaying()``, ``play()``, ``events``, `PlayerEvent.streamDidStart`,
+    ///   ``SharedPlayerManager/isRunningInUITestMode``,
+    ///   ``WidgetRefreshManager/_test_setSuppressPlayerEventObservation(_:)``,
+    ///   ``WidgetRefreshManager/_test_suspendPlayerEventObservation()``,
+    ///   ``_test_resetEventsStreamForIsolation()``,
+    ///   ``testSetPlayingEmissionOrderMatchesCanonicalMutationSequence``,
+    ///   ``testLiveEmitsTransitionEventsForStopPauseFailAndIntent``,
+    ///   docs/Event-Driven-Refactor-Roadmap.md (Tier 5),
+    ///   CODING_AGENT.md (Test Execution Patience and Fast, Reliable Test Patterns).
+    func testLiveEventsStreamDeliversStreamDidStartFromSetPlaying() async {
+        await manager.setUserPaused()
+        await manager._test_resetEventsStreamForIsolation()
+        let liveStream = await manager.events
+        let m = manager
+
+        let matched = await waitForEvent(
+            from: liveStream,
+            timeout: 10.0,
+            matching: { event in
+                if case .streamDidStart = event { return true }
+                return false
+            }
+        ) {
+            await m.setPlaying()
+        }
+
+        XCTAssertEqual(
+            matched,
+            .streamDidStart,
+            "Live events stream must deliver streamDidStart from setPlaying()"
         )
 
         let visualAfter = await manager.currentVisualState

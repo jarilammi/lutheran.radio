@@ -3596,6 +3596,26 @@ extension SharedPlayerManager {
     nonisolated static func _test_setSimulateWidgetProcessContext(_ simulate: Bool) {
         unsafe _test_simulateWidgetProcessContext = simulate
     }
+
+    /// Recreates the authoritative ``events`` ``AsyncStream`` for XCTest isolation.
+    ///
+    /// ``AsyncStream`` admits one iterator at a time. A cancelled Tier 2 observer or replay
+    /// forwarding task can leave the shared stream in a state where new collectors receive
+    /// no yields even though ``emit(_:)`` continues to post the DEBUG notification seam.
+    /// Emitter live-stream contract tests call this after suspending ``WidgetRefreshManager``
+    /// observation and before attaching a fresh collector.
+    ///
+    /// - Important: DEBUG and XCTest only. Production observers must never call this.
+    /// - SeeAlso: ``events``, ``cancelReplayForwarding()``,
+    ///   ``WidgetRefreshManager/_test_suspendPlayerEventObservation()``,
+    ///   ``testLiveEventsStreamDeliversStreamDidStartFromSetPlaying``,
+    ///   CODING_AGENT.md (fast test patterns).
+    func _test_resetEventsStreamForIsolation() {
+        cancelReplayForwarding()
+        eventContinuation?.finish()
+        eventContinuation = nil
+        _events = nil
+    }
 }
 #endif
 

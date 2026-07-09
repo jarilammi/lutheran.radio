@@ -207,6 +207,17 @@ final class WidgetRefreshManager: @unchecked Sendable {
     }
     
     private init() {
+        #if DEBUG
+        // XCTest hosts share this singleton with emitter unit tests. Suppress Tier 2
+        // live observation by default so ``SharedPlayerManager/events`` remains available
+        // for direct AsyncStream contract tests (single-iterator ``AsyncStream`` semantics).
+        // Consumer tests that need the production observer call
+        // ``_test_beginObservingPlayerEventsForTests()``.
+        if SharedPlayerManager.isRunningInUITestMode {
+            unsafe Self._test_suppressPlayerEventObservation = true
+        }
+        #endif
+
         // Start the additive internal observer of `SharedPlayerManager.events`.
         // Only the main app process emits; the guard inside prevents starting
         // a no-op consumer in the widget extension.
@@ -957,6 +968,23 @@ extension WidgetRefreshManager {
     func _test_suspendPlayerEventObservation() {
         playerEventObserver.cancel()
         eventObservationTask = nil
+    }
+
+    /// Starts Tier 2 live ``PlayerEvent`` observation for tests that exercise the
+    /// production observer path.
+    ///
+    /// XCTest hosts suppress observation at ``init()`` so emitter tests can attach the
+    /// sole ``SharedPlayerManager/events`` iterator. Call this after
+    /// ``SharedPlayerManager/cancelReplayForwarding()`` when a test needs the live
+    /// observer to route emissions through ``handlePlayerEvent(_:)``.
+    ///
+    /// - SeeAlso: ``_test_setSuppressPlayerEventObservation(_:)``,
+    ///   ``_test_suspendPlayerEventObservation()``, ``WidgetRefreshManagerEventTests``,
+    ///   ``SharedPlayerManagerEventTests``, CODING_AGENT.md (fast test patterns).
+    @MainActor
+    func _test_beginObservingPlayerEventsForTests() {
+        unsafe Self._test_suppressPlayerEventObservation = false
+        beginObservingPlayerEvents()
     }
 
     /// Enables recording of derived refresh parameters without calling ``refreshIfNeeded``
