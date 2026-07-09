@@ -152,7 +152,7 @@ Mixing player presentation events into `Core/` would couple widget compilation t
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    SharedPlayerManager (actor)                │
+│                    SharedPlayerManager (actor)              │
 │                                                             │
 │  Canonical mutations (setPlaying, stop, saveCurrentState…)  │
 │           │                                                 │
@@ -161,7 +161,7 @@ Mixing player presentation events into `Core/` would couple widget compilation t
 │           │                      │                          │
 │           │                      ├──▶ WidgetRefreshManager  │
 │           │                      ├──▶ PlayerEventSubscriber │
-│           │                      └──▶ test observers (DEBUG)  │
+│           │                      └──▶ test observers (DEBUG)│
 │           │                                                 │
 │      currentState ──▶ PlayerCurrentState snapshot           │
 │      makeEventsStreamWithReplay() ──▶ prefix + live forward │

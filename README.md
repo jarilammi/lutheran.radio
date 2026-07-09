@@ -482,19 +482,39 @@ Source articles (also on GitHub):
 - [Security Invariants](https://github.com/jarilammi/lutheran.radio/blob/HEAD/Core/Core.docc/Articles/Security-Invariants.md)
 - [Architecture](https://github.com/jarilammi/lutheran.radio/blob/HEAD/Core/Core.docc/Articles/Architecture.md)
 
-The gradual migration toward a fully event-driven architecture is tracked in `docs/Event-Driven-Refactor-Roadmap.md`.
-
 See also: the "Current Security Snapshot" table above, [`CODING_AGENT.md`](CODING_AGENT.md) (Key Files table + Core Framework Surface Area rule + "before writing any code..." checklist), ``<doc:Security-Invariants>``, ``<doc:Architecture>``.
 
 **Non-security cross-target shared sources (app + widget)**
 
-A small number of files under `Lutheran Radio/` are compiled into both the main app and `LutheranRadioWidgetExtension` (via File System Synchronized Group membership exceptions, no separate framework). These implement widget / Live Activity state:
+A small number of files under `Lutheran Radio/` are compiled into both the main app and `LutheranRadioWidgetExtension` (via File System Synchronized Group membership exceptions, no separate framework). These implement widget / Live Activity state and the player event vocabulary:
 
-- `SharedPlayerManager.swift` (actor + `PersistedWidgetState`)
-- `PlayerVisualState.swift`
-- `WidgetRefreshManager.swift`, `StreamProgramMetadata.swift`, `LutheranRadioLiveActivityAttributes.swift`
+- `SharedPlayerManager.swift` (actor + `PersistedWidgetState` + authoritative `PlayerEvent` emission)
+- `PlayerVisualState.swift` (`PlayerEvent`, `PlayerCurrentState`, `PlaybackIntent`, `PlayerVisualState`)
+- `WidgetRefreshManager.swift`, `WidgetEventObserver.swift`, `StreamProgramMetadata.swift`, `LutheranRadioLiveActivityAttributes.swift`
 
 Each carries an explicit "SHARED" header block listing the invariants and pointing back here and to `CODING_AGENT.md`. New non-security shared logic should be added to one of these (or documented here) rather than duplicated. Security items stay in `Core/`.
+
+**Event-driven player state (outside `Core/`)**
+
+Player-domain transitions are expressed through typed `PlayerEvent` notifications. Security actors (`SecurityModelValidator`, `CertificateValidator`) remain deliberately excluded from this surface. The vocabulary and replay snapshot type live in `PlayerVisualState.swift`; emission and mutation live in `SharedPlayerManager`.
+
+| File / Symbol | Responsibility | Important notes for agents |
+|---------------|----------------|----------------------------|
+| `PlayerVisualState.swift` — `PlayerEvent` | Canonical player-domain event vocabulary (`playbackIntentChanged`, `visualStateDidChange`, `streamDidStart` / `Pause` / `Stop` / `Fail`, `metadataDidUpdate`, `persistedWidgetStateDidUpdate`) | Pure `Sendable` enum; no side effects. Do not add certificate, DNS, or security-model cases. |
+| `PlayerVisualState.swift` — `PlayerCurrentState` | Replay snapshot for late subscribers (`visualState`, `playbackIntent`, `streamMetadata`, `hasError`) | Convenience accessors: `isActivelyPlaying`, `isBlockedByStickyIntent`, `isInPermanentError`. No synthesized `streamDid*` verbs in replay prefix. |
+| `SharedPlayerManager` — `emit(_:)` | Central emission point after in-actor state mutations | Main-app process only (`isRunningInWidgetProcess` guard suppresses yields). Emission is strictly additive; imperative mutation paths remain primary. |
+| `SharedPlayerManager` — `events` | Live `AsyncStream<PlayerEvent>` | Delivers events after subscription only. Widget extensions cannot observe this stream. |
+| `SharedPlayerManager` — `currentState` | Authoritative present-state snapshot | Read at observation start; use with `makeEventsStreamWithReplay()` for late subscribers. |
+| `SharedPlayerManager` — `makeEventsStreamWithReplay()` | Per-subscriber stream: four synthesized prefix events from `currentState`, then live forward | Materializes the shared live stream while actor-isolated and yields before return so forwarding iterators attach before callers drive mutations. |
+| `SharedPlayerManager` — `PersistedWidgetState` / `loadPersistedWidgetState()` / `savePersistedWidgetState()` | In-process session snapshot for widget refresh derivation | Memory-only within a runtime; cold launch resets to factory `.prePlay` via `resetToFactoryDefaultsOnLaunch()`. Cross-process widget timelines read snapshots, not `events`. |
+| `SharedPlayerManager` — `currentPlaybackIntent` / `PlaybackIntent` | Authoritative playback intent decisions | Sticky pause/lock semantics; stream-failure paths preserve intent for auto-resume. |
+| `WidgetRefreshManager` — `handlePlayerEvent` | Tier 2 consumer: derives refresh parameters from carried events or persisted SSOT | Routes through existing `refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)`; privacy gate, teardown gate, debouncing, and coalescing unchanged. |
+| `WidgetEventObserver` | Shared observation helper for `PlayerEvent` streams and Live Activity `contentUpdates` | Cancel-before-start task lifetime; used by `WidgetRefreshManager` and `RadioLiveActivityManager`. |
+| `PlayerEventSubscriber` (`RadioPlayerView`) | UI-only consumer of `makeEventsStreamWithReplay()` | Local observable state (`eventCount`, `lastObservedIntent`); does not replace `@Bindable` view model bindings. |
+
+**Non-forcing rule:** Event emission and observation are additive. Direct calls (`setPlaying()`, `stop()`, snapshot writes, `refreshIfNeeded`, widget optimistic `forcePersistVisualState`) remain the primary mechanism. Nothing is removed from imperative paths until the event path proves reliable on device. Widget extension processes perform optimistic snapshot writes for instant feedback but never originate authoritative `PlayerEvent` yields.
+
+Canonical architecture detail: ``<doc:Architecture>`` ("Event-Driven Player Architecture (Outside `Core/`)"). Backlog and protected test contracts: [`docs/Event-Driven-Refactor-Roadmap.md`](docs/Event-Driven-Refactor-Roadmap.md). Widget/Live Activity presentation flow: [`docs/Widget-Presentation-Dataflow.md`](docs/Widget-Presentation-Dataflow.md). Canonical test files: `Lutheran RadioTests/SharedPlayerManagerEventTests.swift`, `WidgetRefreshManagerEventTests.swift`, `PlayerEventSubscriberEventTests.swift`, `WidgetEventObserverTests.swift`.
 
 **Widget & Live Activity presentation surfaces**
 
