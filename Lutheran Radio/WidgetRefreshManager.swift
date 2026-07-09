@@ -645,7 +645,8 @@ final class WidgetRefreshManager: @unchecked Sendable {
     /// - Parameter event: The domain event emitted after a state mutation.
     /// - Returns: Visual, language, and error flag for the canonical refresh surface.
     /// - Important: For ``PlayerEvent/visualStateDidChange(_:)`` the carried visual is
-    ///   preferred even when the persisted snapshot is stale. All other cases fall back
+    ///   preferred even when the persisted snapshot is stale. All other cases — including
+    ///   stream verbs, intent changes, metadata updates, and persist signals — fall back
     ///   to ``SharedPlayerManager/loadPersistedWidgetState()`` (or `.prePlay` when absent).
     /// - SeeAlso: ``handlePlayerEvent(_:)``, ``refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)``,
     ///   `SharedPlayerManager.loadSharedState`, docs/Event-Driven-Refactor-Roadmap.md.

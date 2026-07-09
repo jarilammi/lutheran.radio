@@ -644,8 +644,10 @@ actor SharedPlayerManager {
     ///   events occur after the corresponding state mutation inside this actor.
     ///   The method is internal to allow coordinated emission sites inside the
     ///   type's implementation files (e.g. SharedPlayerManager+NowPlaying.swift).
-    /// - Note: Widget processes are explicitly guarded; they perform optimistic
-    ///   snapshot writes but authoritative events originate from the main app.
+    /// - Note: Widget processes are explicitly guarded via ``isRunningInWidget()``; they
+    ///   perform optimistic snapshot writes but authoritative events originate from the
+    ///   main app. DEBUG tests simulate widget context through
+    ///   ``_test_setSimulateWidgetProcessContext(_:)``.
     internal func emit(_ event: PlayerEvent) {
         // Widget processes perform optimistic visual/intent writes for instant feedback
         // but must never emit; authoritative emissions (and the single stream instance
@@ -1125,7 +1127,19 @@ actor SharedPlayerManager {
         return .prePlay
     }
     
+    /// Returns whether the current execution context is a widget extension process.
+    ///
+    /// Authoritative ``PlayerEvent`` emission is suppressed when this returns `true`;
+    /// widget processes use optimistic snapshot writes instead.
+    ///
+    /// - Returns: `true` in the widget extension target, or in the main app when the
+    ///   WidgetKit preview environment is active.
+    /// - SeeAlso: ``emit(_:)``, ``isWidgetProcess()``, ``forcePersistVisualState(_:language:)``,
+    ///   ``_test_setSimulateWidgetProcessContext(_:)`` (DEBUG), docs/Event-Driven-Refactor-Roadmap.md.
     nonisolated func isRunningInWidget() -> Bool {
+        #if DEBUG
+        if Self._test_simulateWidgetProcessContext { return true }
+        #endif
         #if LUTHERAN_MAIN_APP
         // Main app never owns widget intent execution; WidgetKit env covers Xcode previews only.
         return ProcessInfo.processInfo.environment["WidgetKit"] != nil
@@ -3544,6 +3558,32 @@ extension SharedPlayerManager {
     }
     #endif
 }
+
+#if DEBUG
+// MARK: - DEBUG test seams (compiled out of Release)
+
+extension SharedPlayerManager {
+
+    // SAFETY: DEBUG-only process-context flag written from XCTest entry points; reads occur
+    // from actor-isolated and nonisolated ``isRunningInWidget()`` during unit tests. Matches
+    // the established nonisolated(unsafe) pattern for gate-observation seams in WidgetRefreshManager.
+    nonisolated(unsafe) private static var _test_simulateWidgetProcessContext = false
+
+    /// Simulates widget-extension process context for unit tests of the ``emit(_:)`` guard.
+    ///
+    /// When `true`, ``isRunningInWidget()`` returns `true` in the main-app test host so
+    /// ``emit(_:)`` suppresses both ``events`` yield and the DEBUG notification seam.
+    ///
+    /// - Parameter simulate: Pass `true` to exercise widget-process suppression; `false`
+    ///   restores normal main-app behavior.
+    /// - SeeAlso: ``isRunningInWidget()``, ``emit(_:)``, ``SharedPlayerManagerEventTests``,
+    ///   CODING_AGENT.md (Test Execution Patience and Fast, Reliable Test Patterns),
+    ///   docs/Event-Driven-Refactor-Roadmap.md.
+    nonisolated static func _test_setSimulateWidgetProcessContext(_ simulate: Bool) {
+        unsafe _test_simulateWidgetProcessContext = simulate
+    }
+}
+#endif
 
 // MARK: - Privacy: Clear Local Playback State and Write Suppression
 //

@@ -124,6 +124,7 @@ final class SharedPlayerManagerEventTests: XCTestCase {
             WidgetRefreshManager.setSessionTeardownInProgress(false)
             WidgetRefreshManager._test_setBypassUITestModeForRefreshGateObservation(false)
             WidgetRefreshManager._test_setRecordRefreshIfNeededGateOutcomes(false)
+            SharedPlayerManager._test_setSimulateWidgetProcessContext(false)
         }
         try await super.tearDown()
     }
@@ -657,6 +658,70 @@ final class SharedPlayerManagerEventTests: XCTestCase {
         // Still exercise consuming from the replayStream after the prefix (non-gating for timing).
         _ = await collectEvents(from: replayStream, count: 1, timeout: 2.0)
         // We don't hard-assert more here; the seam above already proved the emission happened.
+    }
+
+    // MARK: - Widget Process Emission Guard
+
+    /// Verifies that ``emit(_:)`` suppresses ``events`` yield and the DEBUG notification seam
+    /// when ``isRunningInWidget()`` reports widget-process context.
+    ///
+    /// Widget extension processes perform optimistic snapshot writes via legacy forcing surfaces
+    /// but never deliver authoritative ``PlayerEvent``s to the main-app observation stream.
+    ///
+    /// - SeeAlso: ``isRunningInWidget()``, ``emit(_:)``,
+    ///   ``_test_setSimulateWidgetProcessContext(_:)``, docs/Event-Driven-Refactor-Roadmap.md.
+    func testEmitSuppressesYieldWhenRunningInWidgetProcess() async {
+        SharedPlayerManager._test_setSimulateWidgetProcessContext(true)
+        defer { SharedPlayerManager._test_setSimulateWidgetProcessContext(false) }
+
+        let liveStream = await manager.events
+        let m = manager
+
+        let streamEvents = await collectEvents(
+            from: liveStream,
+            count: 1,
+            timeout: 1.0
+        ) {
+            await m.emit(.visualStateDidChange(.playing))
+            await m.emit(.playbackIntentChanged(.shouldBePlaying))
+            await m.emit(.streamDidStart)
+            await m.emit(.streamDidPause)
+            await m.emit(.streamDidStop)
+            await m.emit(.streamDidFail(.transientFailure))
+            await m.emit(
+                .metadataDidUpdate(StreamProgramMetadata(programTitle: "Test", speaker: nil))
+            )
+            await m.emit(.persistedWidgetStateDidUpdate)
+        }
+
+        XCTAssertTrue(
+            streamEvents.isEmpty,
+            "Widget process context must suppress all AsyncStream yields from emit"
+        )
+
+        let seamEvents = await collectSeamEvents(
+            minimumCount: 1,
+            timeout: 1.0
+        ) {
+            await m.emit(.visualStateDidChange(.playing))
+        }
+
+        XCTAssertTrue(
+            seamEvents.isEmpty,
+            "Widget process context must suppress the DEBUG notification seam"
+        )
+
+        SharedPlayerManager._test_setSimulateWidgetProcessContext(false)
+
+        let controlEvents = await collectSeamEvents(
+            minimumCount: 1,
+            timeout: 3.0
+        ) {
+            await m.emit(.visualStateDidChange(.userPaused))
+        }
+
+        XCTAssertEqual(controlEvents.count, 1)
+        XCTAssertEqual(controlEvents.first, .visualStateDidChange(.userPaused))
     }
 
     // MARK: - Live Emission Coverage (Tier 5 incremental)

@@ -122,8 +122,11 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
 
     // MARK: - Persisted fallback
 
-    /// Verifies that non-carrying events (for example ``PlayerEvent/streamDidStart``)
-    /// fall back to the authoritative persisted visual.
+    /// Verifies that non-carrying stream verbs fall back to the authoritative persisted visual.
+    ///
+    /// ``deriveRefreshParameters(for:)`` treats every event except
+    /// ``PlayerEvent/visualStateDidChange(_:)`` identically; this test anchors
+    /// ``PlayerEvent/streamDidStart`` on the shared persisted-fallback path.
     func testDeriveRefreshParametersFallsBackToPersistedVisualForStreamDidStart() {
         SharedPlayerManager.persistWidgetSnapshot(
             visualState: .userPaused,
@@ -135,6 +138,73 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
 
         XCTAssertEqual(derived.visualState, .userPaused)
         XCTAssertEqual(derived.currentLanguage, "de")
+        XCTAssertFalse(derived.hasError)
+    }
+
+    /// Verifies persisted visual fallback for ``PlayerEvent/streamDidPause``.
+    func testDeriveRefreshParametersFallsBackToPersistedVisualForStreamDidPause() {
+        SharedPlayerManager.persistWidgetSnapshot(
+            visualState: .playing,
+            language: "fi",
+            hasError: false
+        )
+
+        let derived = refreshManager._test_deriveRefreshParameters(for: .streamDidPause)
+
+        XCTAssertEqual(derived.visualState, .playing)
+        XCTAssertEqual(derived.currentLanguage, "fi")
+        XCTAssertFalse(derived.hasError)
+    }
+
+    /// Verifies persisted visual fallback for ``PlayerEvent/streamDidStop``.
+    func testDeriveRefreshParametersFallsBackToPersistedVisualForStreamDidStop() {
+        SharedPlayerManager.persistWidgetSnapshot(
+            visualState: .userPaused,
+            language: "sv",
+            hasError: false
+        )
+
+        let derived = refreshManager._test_deriveRefreshParameters(for: .streamDidStop)
+
+        XCTAssertEqual(derived.visualState, .userPaused)
+        XCTAssertEqual(derived.currentLanguage, "sv")
+        XCTAssertFalse(derived.hasError)
+    }
+
+    /// Verifies persisted visual fallback for ``PlayerEvent/playbackIntentChanged(_:)``.
+    func testDeriveRefreshParametersFallsBackToPersistedVisualForPlaybackIntentChanged() {
+        SharedPlayerManager.persistWidgetSnapshot(
+            visualState: .playing,
+            language: "nb",
+            hasError: false
+        )
+
+        let derived = refreshManager._test_deriveRefreshParameters(
+            for: .playbackIntentChanged(.shouldBePlaying)
+        )
+
+        XCTAssertEqual(derived.visualState, .playing)
+        XCTAssertEqual(derived.currentLanguage, "nb")
+        XCTAssertFalse(derived.hasError)
+    }
+
+    /// Verifies persisted visual fallback for non-nil ``PlayerEvent/metadataDidUpdate(_:)``.
+    ///
+    /// Metadata payloads do not carry visual state; derivation must still read the snapshot.
+    func testDeriveRefreshParametersFallsBackToPersistedVisualForMetadataDidUpdateNonNil() {
+        SharedPlayerManager.persistWidgetSnapshot(
+            visualState: .playing,
+            language: "et",
+            hasError: false
+        )
+
+        let metadata = StreamProgramMetadata(programTitle: "Sunday Sermon", speaker: "Speaker")
+        let derived = refreshManager._test_deriveRefreshParameters(
+            for: .metadataDidUpdate(metadata)
+        )
+
+        XCTAssertEqual(derived.visualState, .playing)
+        XCTAssertEqual(derived.currentLanguage, "et")
         XCTAssertFalse(derived.hasError)
     }
 
