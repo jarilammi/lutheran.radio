@@ -135,6 +135,16 @@ class RadioLiveActivityManager: ObservableObject {
     /// assign this directly.
     internal private(set) var activityObservationTask: Task<Void, Never>?
 
+    #if DEBUG
+    /// When true, attribute-events observation termination performs the same local cleanup
+    /// as production ``performAttributeObservationTerminationHygiene()`` when
+    /// ``currentActivity`` is non-nil, without ActivityKit IPC.
+    ///
+    /// Used exclusively by ``_test_beginObservingSyntheticContentUpdates(_:)`` and
+    /// RadioLiveActivityManagerTests.
+    private var _test_harnessSimulatesActiveActivity = false
+    #endif
+
     /// Consolidated observer for the Live Activity attribute events stream
     /// (`contentUpdates`). Delegates to `WidgetEventObserver` (the extracted
     /// common implementation) while continuing to publish the resulting task
@@ -600,6 +610,102 @@ class RadioLiveActivityManager: ObservableObject {
 
     // MARK: - Live Activity Attribute Events Observation
 
+    /// Records a system-accepted ``ContentState`` from the attribute-events stream.
+    ///
+    /// Keeps ``lastPushedContent`` aligned with the Live Activity surface so
+    /// ``updateCurrentActivity()`` can suppress redundant `Activity.update` IPC.
+    private func handleActivityContentUpdate(
+        _ content: ActivityContent<LutheranRadioLiveActivityAttributes.ContentState>
+    ) {
+        lastPushedContent = content.state
+    }
+
+    /// Clears local activity tracking when attribute-events observation ends.
+    ///
+    /// Self-healing hygiene runs when ``currentActivity`` is still non-nil (for example
+    /// after system dismissal) so stale references do not drive spurious update attempts.
+    private func performAttributeObservationTerminationHygiene() {
+        #if DEBUG
+        if _test_harnessSimulatesActiveActivity {
+            _test_harnessSimulatesActiveActivity = false
+            currentActivity = nil
+            lastPushedContent = nil
+            return
+        }
+        #endif
+        guard currentActivity != nil else { return }
+        currentActivity = nil
+        lastPushedContent = nil
+    }
+
+    /// Publishes the consolidated observer task into ``activityObservationTask``.
+    private func publishActivityObservationTask() {
+        activityObservationTask = activityEventObserver.task
+    }
+
+    #if DEBUG
+    /// White-box seam: wires production-identical attribute-events handlers against a
+    /// synthetic ``AsyncStream`` fixture instead of ActivityKit ``contentUpdates`` IPC.
+    ///
+    /// - Parameter stream: In-memory ``ActivityContent`` sequence for unit tests.
+    /// - Postcondition: ``activityObservationTask`` holds the observer task published by
+    ///   ``WidgetEventObserver``.
+    /// - SeeAlso: ``beginObservingActivityEvents(_:)``, RadioLiveActivityManagerTests,
+    ///   ``_test_wouldSuppressLiveActivityUpdate(visualState:streamMetadata:)``,
+    ///   ``_test_setHarnessSimulatesActiveActivity(_:)``.
+    func _test_beginObservingSyntheticContentUpdates(
+        _ stream: AsyncStream<ActivityContent<LutheranRadioLiveActivityAttributes.ContentState>>
+    ) {
+        activityEventObserver.beginObserving(
+            stream,
+            onElement: { [weak self] content in
+                self?.handleActivityContentUpdate(content)
+            },
+            onTermination: { [weak self] in
+                self?.performAttributeObservationTerminationHygiene()
+            }
+        )
+        publishActivityObservationTask()
+    }
+
+    /// Returns whether ``updateCurrentActivity()`` would suppress an ActivityKit push because
+    /// ``lastPushedContent`` already matches the candidate. Performs no IPC.
+    ///
+    /// - Parameters:
+    ///   - visualState: Candidate visual state from the player SSOT.
+    ///   - streamMetadata: Candidate ICY metadata (nil when absent).
+    /// - Returns: `true` when the candidate equals ``lastPushedContent``.
+    func _test_wouldSuppressLiveActivityUpdate(
+        visualState: PlayerVisualState,
+        streamMetadata: StreamProgramMetadata?
+    ) -> Bool {
+        let candidate = LutheranRadioLiveActivityAttributes.ContentState(
+            visualState: visualState,
+            streamMetadata: streamMetadata
+        )
+        if let last = lastPushedContent, last == candidate {
+            return true
+        }
+        return false
+    }
+
+    /// Enables termination self-healing coverage in RadioLiveActivityManagerTests without
+    /// creating a real ``Activity``.
+    func _test_setHarnessSimulatesActiveActivity(_ simulates: Bool) {
+        _test_harnessSimulatesActiveActivity = simulates
+    }
+
+    /// Cancels synthetic attribute-events observation through the consolidated observer.
+    ///
+    /// Mirrors the cancellation path in ``endActivity(dismissalPolicy:)`` without
+    /// clearing ``currentActivity`` / ``lastPushedContent`` upfront so termination
+    /// hygiene can be asserted in isolation.
+    func _test_cancelAttributeEventObservation() {
+        activityEventObserver.cancel()
+        activityObservationTask = nil
+    }
+    #endif
+
     /// Begins observation of the supplied activity's attribute events stream
     /// (`contentUpdates`).
     ///
@@ -647,18 +753,13 @@ class RadioLiveActivityManager: ObservableObject {
         activityEventObserver.beginObserving(
             unsafeSequence: unsafe contentUpdates,
             onElement: { [weak self] content in
-                guard let self else { return }
-                self.lastPushedContent = content.state
+                self?.handleActivityContentUpdate(content)
             },
             onTermination: { [weak self] in
-                guard let self else { return }
-                if self.currentActivity != nil {
-                    self.currentActivity = nil
-                    self.lastPushedContent = nil
-                }
+                self?.performAttributeObservationTerminationHygiene()
             }
         )
-        activityObservationTask = activityEventObserver.task
+        publishActivityObservationTask()
     }
 }
 

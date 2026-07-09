@@ -4,6 +4,17 @@
 //
 //  Created by Jari Lammi on 29.8.2025.
 //
+//  White-box unit tests for ``RadioLiveActivityManager`` timer demotion, change-detection
+//  guards, and Live Activity attribute-events (`contentUpdates`) observation contracts.
+//
+//  Attribute-events tests consume DEBUG synthetic-stream seams on the manager
+//  (`_test_beginObservingSyntheticContentUpdates`, `_test_wouldSuppressLiveActivityUpdate`,
+//  `_test_setHarnessSimulatesActiveActivity`, `_test_cancelAttributeEventObservation`)
+//  so ActivityKit IPC is never exercised under the XCTest host.
+//
+//  - SeeAlso: ``RadioLiveActivityManager``, ``WidgetEventObserver``,
+//    docs/Event-Driven-Refactor-Roadmap.md (Tier 2 LA events / Tier 5),
+//    CODING_AGENT.md (Test Execution Patience and Fast, Reliable Test Patterns).
 
 import XCTest
 import ActivityKit
@@ -150,5 +161,203 @@ class RadioLiveActivityManagerTests: XCTestCase {
         // Still no activity and lastPushed must be unchanged (nil).
         XCTAssertNil(manager.currentActivity)
         XCTAssertEqual(manager.lastPushedContent, before)
+    }
+
+    // MARK: - Attribute Events (contentUpdates) Observation
+
+    /// Polls until `condition()` is true or the timeout elapses.
+    private func waitUntil(
+        _ condition: @escaping () -> Bool,
+        timeout: TimeInterval = 2.0
+    ) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() { return true }
+            await Task.yield()
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        return condition()
+    }
+
+    private func makeContentState(
+        visualState: PlayerVisualState,
+        metadata: StreamProgramMetadata? = nil
+    ) -> LutheranRadioLiveActivityAttributes.ContentState {
+        LutheranRadioLiveActivityAttributes.ContentState(
+            visualState: visualState,
+            streamMetadata: metadata
+        )
+    }
+
+    private func makeActivityContent(
+        visualState: PlayerVisualState,
+        metadata: StreamProgramMetadata? = nil
+    ) -> ActivityContent<LutheranRadioLiveActivityAttributes.ContentState> {
+        ActivityContent(
+            state: makeContentState(visualState: visualState, metadata: metadata),
+            staleDate: nil
+        )
+    }
+
+    /// Verifies that synthetic attribute-events observation synchronizes
+    /// ``lastPushedContent`` with each yielded ``ActivityContent`` state.
+    ///
+    /// Production consumes ActivityKit ``contentUpdates`` via
+    /// ``beginObservingActivityEvents(_:)``. This test exercises the identical
+    /// element handler through ``_test_beginObservingSyntheticContentUpdates(_:)``
+    /// without system-service IPC.
+    func testContentUpdatesObservationSynchronizesLastPushedContent() async {
+        let playingContent = makeActivityContent(
+            visualState: .playing,
+            metadata: StreamProgramMetadata(programTitle: "Sunday Sermon", speaker: "Speaker")
+        )
+
+        let stream = AsyncStream<ActivityContent<LutheranRadioLiveActivityAttributes.ContentState>> { continuation in
+            continuation.yield(playingContent)
+            continuation.finish()
+        }
+
+        manager._test_beginObservingSyntheticContentUpdates(stream)
+
+        let synchronized = await waitUntil({
+            self.manager.lastPushedContent == playingContent.state
+        })
+        XCTAssertTrue(
+            synchronized,
+            "Attribute-events yield must align lastPushedContent with the system-accepted state"
+        )
+        XCTAssertEqual(manager.lastPushedContent?.visualState, .playing)
+        XCTAssertEqual(manager.lastPushedContent?.streamMetadata, playingContent.state.streamMetadata)
+    }
+
+    /// Verifies that successive attribute-events yields replace ``lastPushedContent``
+    /// so diff-driven suppression in ``updateCurrentActivity()`` tracks the latest
+    /// rendered content.
+    func testContentUpdatesObservationReplacesLastPushedContentOnSubsequentYield() async {
+        let first = makeActivityContent(visualState: .playing)
+        let second = makeActivityContent(
+            visualState: .userPaused,
+            metadata: StreamProgramMetadata(programTitle: "Paused Program", speaker: nil)
+        )
+
+        var continuation: AsyncStream<ActivityContent<LutheranRadioLiveActivityAttributes.ContentState>>.Continuation?
+        let stream = AsyncStream { continuation = $0 }
+
+        manager._test_beginObservingSyntheticContentUpdates(stream)
+
+        continuation?.yield(first)
+        let firstReady = await waitUntil({ self.manager.lastPushedContent == first.state })
+        XCTAssertTrue(firstReady, "Precondition: first yield must synchronize lastPushedContent")
+
+        continuation?.yield(second)
+        let secondReady = await waitUntil({ self.manager.lastPushedContent == second.state })
+        XCTAssertTrue(secondReady, "Second yield must replace lastPushedContent with the latest state")
+        XCTAssertEqual(manager.lastPushedContent?.visualState, .userPaused)
+    }
+
+    /// Verifies that ``lastPushedContent`` diff logic suppresses redundant pushes when
+    /// the candidate matches the attribute-events-aligned record.
+    func testUpdateCurrentActivitySuppressesWhenLastPushedContentMatchesCandidate() async {
+        let metadata = StreamProgramMetadata(programTitle: "Live Program", speaker: "Host")
+        let aligned = makeActivityContent(visualState: .playing, metadata: metadata)
+
+        let stream = AsyncStream<ActivityContent<LutheranRadioLiveActivityAttributes.ContentState>> { continuation in
+            continuation.yield(aligned)
+            continuation.finish()
+        }
+
+        manager._test_beginObservingSyntheticContentUpdates(stream)
+        let alignedReady = await waitUntil({ self.manager.lastPushedContent == aligned.state })
+        XCTAssertTrue(alignedReady, "Precondition: attribute-events alignment must populate lastPushedContent")
+
+        XCTAssertTrue(
+            manager._test_wouldSuppressLiveActivityUpdate(visualState: .playing, streamMetadata: metadata),
+            "Matching candidate must suppress Activity.update IPC"
+        )
+        XCTAssertFalse(
+            manager._test_wouldSuppressLiveActivityUpdate(visualState: .userPaused, streamMetadata: metadata),
+            "Visual change must not suppress"
+        )
+        XCTAssertFalse(
+            manager._test_wouldSuppressLiveActivityUpdate(
+                visualState: .playing,
+                streamMetadata: StreamProgramMetadata(programTitle: "Different", speaker: nil)
+            ),
+            "Metadata change must not suppress"
+        )
+    }
+
+    /// Verifies termination self-healing clears stale tracking when observation ends
+    /// while an activity reference is still considered active.
+    func testAttributeObservationTerminationClearsStaleTrackingWhenActivityPresent() async {
+        let content = makeActivityContent(visualState: .playing)
+        var continuation: AsyncStream<ActivityContent<LutheranRadioLiveActivityAttributes.ContentState>>.Continuation?
+        let stream = AsyncStream { continuation = $0 }
+
+        manager._test_setHarnessSimulatesActiveActivity(true)
+        manager._test_beginObservingSyntheticContentUpdates(stream)
+        XCTAssertNotNil(manager.activityObservationTask, "Observation must publish activityObservationTask")
+
+        continuation?.yield(content)
+        let populated = await waitUntil({ self.manager.lastPushedContent == content.state })
+        XCTAssertTrue(populated, "Precondition: attribute-events yield must populate lastPushedContent")
+
+        manager._test_cancelAttributeEventObservation()
+
+        let cleared = await waitUntil({ self.manager.lastPushedContent == nil })
+        XCTAssertTrue(
+            cleared,
+            "Termination hygiene must clear lastPushedContent when activity tracking was active"
+        )
+        XCTAssertNil(manager.currentActivity)
+    }
+
+    /// Verifies that ``endActivity()`` cancels attribute-events observation and clears
+    /// ``activityObservationTask`` without ActivityKit IPC under test isolation.
+    func testEndActivityCancelsAttributeObservationTask() async {
+        let stream = AsyncStream<ActivityContent<LutheranRadioLiveActivityAttributes.ContentState>> { _ in }
+        manager._test_beginObservingSyntheticContentUpdates(stream)
+        XCTAssertNotNil(manager.activityObservationTask, "Precondition: observation task must be live")
+
+        manager.endActivity()
+
+        XCTAssertNil(manager.activityObservationTask, "endActivity must cancel attribute-events observation")
+        XCTAssertNil(manager.lastPushedContent, "endActivity must clear lastPushedContent under test isolation")
+        XCTAssertNil(manager.currentActivity)
+    }
+
+    /// Verifies restart semantics: a second synthetic stream cancels the prior observation
+    /// so only the replacement sequence updates ``lastPushedContent``.
+    func testRestartingAttributeObservationCancelsPriorStream() async {
+        var firstContinuation: AsyncStream<ActivityContent<LutheranRadioLiveActivityAttributes.ContentState>>.Continuation?
+        let firstStream = AsyncStream { firstContinuation = $0 }
+
+        let firstContent = makeActivityContent(visualState: .playing)
+        manager._test_beginObservingSyntheticContentUpdates(firstStream)
+
+        firstContinuation?.yield(firstContent)
+        let firstReady = await waitUntil({ self.manager.lastPushedContent == firstContent.state })
+        XCTAssertTrue(firstReady, "Precondition: first stream must deliver before restart")
+
+        let secondContent = makeActivityContent(visualState: .userPaused)
+        let secondStream = AsyncStream<ActivityContent<LutheranRadioLiveActivityAttributes.ContentState>> { continuation in
+            continuation.yield(secondContent)
+            continuation.finish()
+        }
+
+        manager._test_beginObservingSyntheticContentUpdates(secondStream)
+
+        let secondReady = await waitUntil({ self.manager.lastPushedContent == secondContent.state })
+        XCTAssertTrue(secondReady, "Restarted observation must deliver from the replacement stream")
+
+        firstContinuation?.yield(makeActivityContent(visualState: .prePlay))
+        await Task.yield()
+        try? await Task.sleep(for: .milliseconds(150))
+
+        XCTAssertEqual(
+            manager.lastPushedContent,
+            secondContent.state,
+            "Prior stream must not update lastPushedContent after restart"
+        )
     }
 }
