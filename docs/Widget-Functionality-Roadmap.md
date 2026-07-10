@@ -6,6 +6,35 @@ This document is the authoritative living record of **WidgetKit home-screen widg
 
 It serves as both the project backlog for remaining widget work and a self-contained reference for developers and coding agents. It complements (does not replace) the player **event** backlog in [`docs/Event-Driven-Refactor-Roadmap.md`](Event-Driven-Refactor-Roadmap.md) and the presentation contract in [`docs/Widget-Presentation-Dataflow.md`](Widget-Presentation-Dataflow.md).
 
+**Target Architecture (Ultimate Goal)**
+
+The finish line is a **hybrid, two-zone model** — not a migration from snapshots to cross-process events. WidgetKit and ActivityKit require frozen value-type snapshots; that constraint is permanent.
+
+| Zone | Mechanism | Ultimate state |
+|------|-----------|----------------|
+| Main app | `SharedPlayerManager` actor + imperative snapshot saves + `PlayerEvent` | Hybrid: events are an **additive** in-process consumer path; authoritative mutations and snapshot writes remain primary |
+| Extension + LA presentation | `PersistedWidgetState` → `SimpleEntry` / `ContentState` + `reloadTimelines` / LA push | **Snapshot-driven permanently**; extension never observes `PlayerEvent` (OI-W2) |
+
+**Cross-process (widgets, Control Center, Live Activity UI)**
+
+- Frozen value-type snapshots are the permanent integration model. See [`docs/Widget-Presentation-Dataflow.md`](Widget-Presentation-Dataflow.md).
+- Freshness stacks: session snapshot (`loadPersistedWidgetState` / `savePersistedWidgetState`), App Group optimistic instant-feedback keys, pending-action round-trips, and main-app-driven `WidgetRefreshManager.refreshIfNeeded` / `WidgetCenter.reloadTimelines`.
+- Live Activity hot path uses in-memory pushes from `RadioLiveActivityManager`; widgets and Control widgets read persisted snapshots.
+
+**Presentation**
+
+- Three narrow, `Equatable` surfaces derived **once per snapshot**: `PlayerStatusPresentation`, `PlayerControlPresentation`, `WidgetNowPlayingDisplayModel`.
+- Leaf views and LA regions consume explicit slices — not full `PlayerVisualState` policy re-derived in `body`.
+
+**Commands & shims (permanent, not legacy)**
+
+- Optimistic `forcePersistVisualState`, `refreshVisualStateFromPersistence`, liveness sentinel (`lastUpdateTime = 0`), and pending-action App Group keys stay in place. Tier 3 “consolidation” does not remove them.
+
+**What “done” means**
+
+- **Required:** Tier 1 presentation hygiene + Tier 2 snapshot/intent test contracts (OI-W3 strategy).
+- **Optional, late-stage:** Tier 3–4 main-app refresh dedup and media-surface coordination — observable widget/LA behavior unchanged; no architectural model change.
+
 **Core Principles (Never Violate)**
 
 - Progress must be **slow and piece-by-piece**. Every micro-step must be small, reviewable, and non-breaking.
@@ -175,6 +204,7 @@ Ordered by increasing risk and decreasing isolation. Earlier items are safer.
 - [ ] **`widgetNowPlayingDisplayModel` resolver matrix:** New `WidgetDisplayModelsTests.swift` (or section in existing test target) asserting title/speaker/emphasis for every `PlayerVisualState` × metadata presence/absence × language fallback. Pure function; no WidgetCenter IPC.
 - [ ] **Pending-action dedup contract:** Test `scheduleWidgetAction` / `clearPendingAction(actionId:)` — rapid double-tap produces one processing path; stale `pendingActionTime` ignored by providers.
 - [ ] **Optimistic `forcePersistVisualState` contract:** Snapshot visual + optional language written in widget context; main-app authoritative save overwrites without corrupting intent; no `PlayerEvent` yield under simulated widget process (extends existing `testEmitSuppressesYieldWhenRunningInWidgetProcess`).
+- [ ] **Rename `forcePersistVisualState` → `persistOptimisticWidgetSnapshot`:** Mechanical rename (+ optional body refactor: `persistWidgetSnapshot` + `refreshVisualStateFromPersistence()` instead of `_forceSetCurrentVisualState`) so the API name reflects permanent widget infrastructure, not a legacy event-migration shim. Keep a deprecated typealias or forwarding wrapper only if external/docs churn requires a transition beat; update `///` headers, roadmap/consolidation inventory, and Event-Driven Refactor Roadmap cross-references. Gate on the optimistic contract test above.
 - [ ] **Widget switch SSOT regression:** Automated coverage for checklist §6 — `handleWidgetSwitchToLanguage` → model-only `switchToStream` → single `stop(.streamSwitch)` → `play()`; selector needle matches audible stream (2026-06-12 desync fix must not regress). See `ViewController.handleWidgetSwitchToLanguage`, `RadioPlayerCoordinator`, `SharedPlayerManager.handleWidgetSwitch`.
 - [ ] **Instant-feedback expiry:** Assert `loadSharedState` prefers instant-feedback tuple within 15 s window, then falls back to authoritative snapshot.
 
@@ -183,6 +213,8 @@ Ordered by increasing risk and decreasing isolation. Earlier items are safer.
 ### Tier 3 – Refresh & Provider Orchestration (Medium–High Risk, Late Stage)
 
 **Goal:** Reduce redundant work without altering observable widget behavior.
+
+**Scope:** Consolidation here is **main-app `refreshIfNeeded` call-site dedup only** — not replacing the snapshot model, not streaming `PlayerEvent` across process boundaries, and not removing optimistic extension writes or provider read-refresh hygiene.
 
 - [ ] **Provider `refreshVisualStateFromPersistence` audit:** Document which Provider paths require the actor hop vs. safe direct `loadPersistedWidgetState` after main-app `reloadTimelines`. Any removal gated on device-proven timeline freshness.
 - [ ] **Imperative `refreshIfNeeded` deduplication (main app only):** After event path is device-proven for weeks, audit duplicate call sites inside SharedPlayerManager mutation paths (Event-Driven Roadmap Tier 4 inventory §2). Observer becomes sole driver only when proven identical timing/coalescing/privacy behavior.
@@ -223,7 +255,7 @@ Authoritative inventory (no behavior change until device-proven). Mirrors Event-
 
 **1. Legacy forcing & lifecycle shims (permanent)**
 
-- `forcePersistVisualState` — widget optimistic instant feedback; cannot remove.
+- `forcePersistVisualState` (rename candidate: `persistOptimisticWidgetSnapshot`) — widget optimistic instant feedback; permanent infrastructure, not a removal target.
 - `forceStaleLivenessTimestampForTermination` — process-lifecycle sentinel; not a player event.
 - `refreshVisualStateFromPersistence` / `syncVisualStateFromPersistence` — extension hygiene; expected to remain.
 
@@ -295,6 +327,8 @@ For presentation mapping rules and termination invariants, use [`docs/Widget-Pre
 
 ## Update Log
 
+- **2026-07-10:** Tier 2 backlog: rename `forcePersistVisualState` → `persistOptimisticWidgetSnapshot` (permanent widget infrastructure naming); consolidation inventory updated.
+- **2026-07-10:** Added **Target Architecture (Ultimate Goal)** section (two-zone hybrid model, permanent snapshot cross-process boundary, definition of “done”) and Tier 3 scope note clarifying consolidation is main-app refresh dedup only.
 - **2026-07-10:** Initial roadmap drafted from codebase inventory + canonical docs (`Widget-Presentation-Dataflow.md`, `Event-Driven-Refactor-Roadmap.md`, `cold-launch-streamplay-regression-checklist.md`, `SharedPlayerManager+NowPlaying.swift`, `StreamProgramMetadata.swift`). Completed section consolidates control presentation migration, Provider/LA pre-derivation, memory-only snapshot policy, refresh/teardown/event-consumer tests, and cross-process intent SSOT. Open issues OI-W1–W4 recorded. Backlog Tiers 1–5 populated; Tier 2 tests and Tier 1 presentation hygiene are highest priority.
 
 ---
