@@ -51,14 +51,16 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
             la.stopLocalUpdateTimer()
             la.activityObservationTask?.cancel()
             la.currentActivity = nil
+
+            // Suspend before clear so teardown emissions cannot re-persist a snapshot mid-setUp.
+            refreshManager._test_suspendPlayerEventObservation()
+            WidgetRefreshManager._test_setSuppressPlayerEventObservation(true)
         }
 
         await SharedPlayerManager.clearAllLocalState()
         await manager.cancelReplayForwarding()
 
         await MainActor.run {
-            refreshManager._test_suspendPlayerEventObservation()
-            WidgetRefreshManager._test_setSuppressPlayerEventObservation(true)
             WidgetRefreshManager.setHasActiveLutheranWidgets(true)
             WidgetRefreshManager._test_setRecordHandlePlayerEventDerivation(true)
         }
@@ -282,7 +284,16 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
     }
 
     /// Verifies the safe default when no persisted snapshot exists.
-    func testDeriveRefreshParametersDefaultsVisualToPrePlayWhenSnapshotAbsent() {
+    ///
+    /// Re-runs ``SharedPlayerManager/clearAllLocalState()`` locally because sibling derivation
+    /// tests persist snapshots and async clear work from ``setUp`` must settle before the nil
+    /// precondition is asserted.
+    func testDeriveRefreshParametersDefaultsVisualToPrePlayWhenSnapshotAbsent() async {
+        await SharedPlayerManager.clearAllLocalState()
+        await MainActor.run {
+            WidgetRefreshManager.setHasActiveLutheranWidgets(true)
+            WidgetRefreshManager._test_setSuppressPlayerEventObservation(true)
+        }
         XCTAssertNil(SharedPlayerManager.loadPersistedWidgetState())
 
         let derived = refreshManager._test_deriveRefreshParameters(
