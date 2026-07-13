@@ -25,7 +25,8 @@ All presentation is organized into three narrow, `Equatable` value types derived
 
 **Derivation rule (snapshot-driven):**
 
-- **Widgets**: All three are computed **once per entry** inside the `Provider` (`placeholder`, `snapshot`, `timeline` / `createEntry`) and stored directly on `SimpleEntry`. Leaf views read the narrow properties.
+- **Home widgets**: All three are computed **once per entry** inside the `Provider` (`placeholder`, `snapshot`, `timeline` / `createEntry`) and stored directly on `SimpleEntry`. Family views read the narrow properties.
+- **Control Center widget**: Status and control surfaces are computed **once per value** inside `LutheranRadioWidgetControl.Provider` (`previewValue`, `currentValue`) and stored on `LutheranRadioWidgetControl.Value`. The toggle label closure reads `statusPresentation` and `controlPresentation` only (no inline mapper calls in the view body).
 - **Live Activities**: The three are computed **once at the top of `LockScreenLiveActivityView.body`** and **once inside the outer `dynamicIsland` closure**, then closed over by the region builders and subviews. No repeated derivation inside individual `.leading`/`.center`/etc. blocks for the presentation concerns.
 
 `WidgetMetadataRegion` is deliberately narrow: it receives only a `WidgetNowPlayingDisplayModel`.

@@ -39,7 +39,9 @@ The finish line is a **hybrid, two-zone model** — not a migration from snapsho
 
 - Progress must be **slow and piece-by-piece**. Every micro-step must be small, reviewable, and non-breaking.
 - **Nothing is forced**: Imperative snapshot reads, direct `refreshIfNeeded` calls, Darwin notification round-trips, and widget optimistic writes remain primary. Event-driven refresh and additive observation run in parallel (see Event-Driven Refactor Roadmap).
-- All comments and documentation must be written at **production level** (present tense, final architecture language). No "phase", "step", "temporary", "will be", or migration language is allowed in source.
+- **Documentation voice & reference discipline** (applies to every touched file, including this roadmap):
+  - **Voice:** Comments and `///` documentation describe the system as it exists *now* — present tense, final architecture language. Source must not read like a plan in progress: no "phase", "step", "temporary", "will be", "TODO migrate", or migration scaffolding in production code.
+  - **Canonical references only:** `SeeAlso:`, file headers, and cross-links cite documents that are **committed and tracked** on the branch being edited. Staged-but-unmerged drafts, untracked scratch files, agent prompts, and one-off analysis notes are not authoritative until they ship — do not point future readers at them. When uncertain whether a path is canonical, confirm with `git ls-files <path>` (empty output means do not cite).
 - **Security invariants come first.** No changes may touch `Core/`, certificate validation, DNS TXT validation, or `SecurityModelValidator`. Widget extension code must not duplicate security logic.
 - Every user-visible string uses `String(localized:)` / `NSLocalizedString` with table `"Localizable"` (all 21 languages).
 - Every change must follow `CODING_AGENT.md` (structured documentation, `SeeAlso`, AGENT NOTE where appropriate, build gates).
@@ -69,6 +71,7 @@ The finish line is a **hybrid, two-zone model** — not a migration from snapsho
 - **Widget Provider pre-derivation complete:** `SimpleEntry` carries `statusPresentation`, `controlPresentation`, and `widgetNowPlayingDisplayModel`, each computed once in `Provider.placeholder`, `snapshot`, `timeline` / `createEntry`. Family views read narrow fields from the entry; `WidgetMetadataRegion` receives only `WidgetNowPlayingDisplayModel`.
 - **Live Activity outer-closure pre-derivation complete:** `dynamicIsland` closure hoists `statusPres`, `controlPres`, `metadataModel`, `isPlaying`, and `radioIconTint` once; expanded, compact, and minimal regions close over these values (no inline `makeStatusPresentation()` in region builders). `LockScreenLiveActivityView` derives status/metadata/control at the top of `body`.
 - **Narrow family view inputs (2026-07-13):** `LutheranRadioWidgetEntryView` projects explicit slices into `SmallWidgetView` / `MediumWidgetView` / `LargeWidgetView` instead of passing full `SimpleEntry`. Reduces WidgetKit invalidation surface when unrelated entry fields change.
+- **Control widget provider pre-derivation (2026-07-13):** `LutheranRadioWidgetControl.Value` carries pre-derived `statusPresentation` and `controlPresentation`; `Provider` derives once per read; toggle label consumes narrow fields only (symmetric with `SimpleEntry`).
 - **Exhaustive `#Preview` matrix** in `LutheranRadioWidget.swift` exercises visual states × metadata presence/absence.
 - **Canonical presentation reference doc** [`docs/Widget-Presentation-Dataflow.md`](Widget-Presentation-Dataflow.md) (termination invariant, LA event-driven update model, contributor guidance). README SSOT subsection cross-links it.
 
@@ -133,11 +136,11 @@ This is **permanent architecture**, not a gap to close with events.
 
 ### Presentation Derivation Sites (Canonical)
 
-| Surface | WidgetKit (`SimpleEntry`) | ActivityKit (`ContentState` views) |
-|---------|---------------------------|-------------------------------------|
-| Status | Once in `Provider` → projected in `LutheranRadioWidgetEntryView` | Once at top of `LockScreenLiveActivityView` and outer `dynamicIsland` closure |
-| Control | Once in `Provider` | Once in outer `dynamicIsland` + `LockScreenLiveActivityView` |
-| Metadata | Once in `Provider` → `entry.widgetNowPlayingDisplayModel` | Once in outer `dynamicIsland` + `LockScreenLiveActivityView` |
+| Surface | WidgetKit (`SimpleEntry`) | Control Center (`Value`) | ActivityKit (`ContentState` views) |
+|---------|---------------------------|--------------------------|-------------------------------------|
+| Status | Once in `Provider` → projected in `LutheranRadioWidgetEntryView` | Once in `Provider` → `Value.statusPresentation` | Once at top of `LockScreenLiveActivityView` and outer `dynamicIsland` closure |
+| Control | Once in `Provider` | Once in `Provider` → `Value.controlPresentation` | Once in outer `dynamicIsland` + `LockScreenLiveActivityView` |
+| Metadata | Once in `Provider` → `entry.widgetNowPlayingDisplayModel` | N/A (not shown) | Once in outer `dynamicIsland` + `LockScreenLiveActivityView` |
 
 Leaf views (`WidgetMetadataRegion`, play/pause buttons) must not re-derive canonical mapping rules.
 
@@ -194,6 +197,7 @@ Ordered by increasing risk and decreasing isolation. Earlier items are safer.
 - [x] Hoist metadata + control derivation to outer `dynamicIsland` closure.
 - [x] **Narrow family view inputs (2026-07-13):** `SmallWidgetView` / `MediumWidgetView` / `LargeWidgetView` accept explicit slices (`statusPresentation`, `controlPresentation`, `metadataModel`, `currentStation`, `currentLanguageCode`, `availableStreams`); projected at `LutheranRadioWidgetEntryView`. No `visualState` on family views (semantic policy not required in bodies).
 - [x] **LA expanded-region status dedup (2026-07-13):** `statusPres` hoisted in outer `dynamicIsland` closure; expanded `.center`, `.bottom`, and `minimal` close over it (no inline `makeStatusPresentation()` in region builders).
+- [x] **Control widget provider pre-derivation (2026-07-13):** `LutheranRadioWidgetControl.Value` stores `statusPresentation` + `controlPresentation`; `Provider` derives once; toggle label reads narrow fields only (symmetric with `SimpleEntry`).
 - [ ] **Optional `WidgetDisplayProjection` bundle:** Single `Equatable` struct bundling the three presentation surfaces for explicit Provider → view handoff. Only if narrow-parameter migration proves noisy.
 
 **Rule:** Presentation-only. No changes to snapshot writes, intents, or refresh timing.
@@ -300,7 +304,7 @@ The next item is always the highest-priority unchecked entry in the backlog abov
 2. Tier 2 pending-action dedup contract tests.
 3. Tier 1 optional `WidgetDisplayProjection` bundle (only if future call-site churn warrants it).
 
-Each micro-step: read target files first, minimal diff, production docs, update this roadmap Completed + Update Log, run build + test gates per `CODING_AGENT.md`.
+Each micro-step: read target files first, minimal diff, apply the documentation voice & reference discipline above, update this roadmap Completed + Update Log, run build + test gates per `CODING_AGENT.md`.
 
 An item is marked complete only when wired, documented, and the project compiles with zero warnings.
 
@@ -328,6 +332,8 @@ For presentation mapping rules and termination invariants, use [`docs/Widget-Pre
 
 ## Update Log
 
+- **2026-07-13:** Tier 1 — Control widget `Value` pre-derivation (`statusPresentation` + `controlPresentation` in Provider; toggle label consumes narrow fields; symmetric with `SimpleEntry`).
+- **2026-07-13:** Core Principles — added **Documentation voice & reference discipline** (production-grade source language; cross-links only to committed, tracked docs).
 - **2026-07-13:** Tier 1 complete — narrow family view inputs (`LutheranRadioWidgetEntryView` projection) and LA expanded-region `statusPres` dedup (outer `dynamicIsland` closure).
 - **2026-07-10:** Tier 2 backlog: rename `forcePersistVisualState` → `persistOptimisticWidgetSnapshot` (permanent widget infrastructure naming); consolidation inventory updated.
 - **2026-07-10:** Added **Target Architecture (Ultimate Goal)** section (two-zone hybrid model, permanent snapshot cross-process boundary, definition of “done”) and Tier 3 scope note clarifying consolidation is main-app refresh dedup only.

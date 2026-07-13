@@ -4,6 +4,15 @@
 //
 //  Created by Jari Lammi on 3.6.2025.
 //
+//  Control Center toggle widget. Snapshot-driven presentation matches home widgets:
+//  `Provider` pre-derives `PlayerStatusPresentation` and `PlayerControlPresentation`
+//  onto `Value` once per `currentValue` / `previewValue` read; the toggle label closure
+//  consumes only those narrow fields (no inline `makeStatusPresentation()` /
+//  `makeControlPresentation()` in the view body).
+//
+//  - SeeAlso: `SimpleEntry` (WidgetKit parallel), `LutheranRadioWidget.swift` (Provider),
+//    docs/Widget-Presentation-Dataflow.md, docs/Widget-Functionality-Roadmap.md (Tier 1),
+//    CODING_AGENT.md (narrow inputs, cross-target shared sources).
 
 import AppIntents
 import SwiftUI
@@ -106,22 +115,18 @@ struct LutheranRadioWidgetControl: ControlWidget {
             ) { isPlaying in
                 Label {
                     VStack(alignment: .leading, spacing: 1) {
-                        // Consume PlayerStatusPresentation (via makeStatusPresentation) so the
-                        // control widget uses the same text mapping as the home widget / main app.
-                        // This eliminates the local thermal/playing/stopped ternary duplication.
-                        Text(value.visualState.makeStatusPresentation().text)
+                        // Pre-derived in Provider (parallel to SimpleEntry.statusPresentation).
+                        Text(value.statusPresentation.text)
                             .font(.caption2)
                         Text(value.currentStation)
                             .font(.caption2)
                             .foregroundColor(.secondary)
                     }
                 } icon: {
-                    // Source the control glyph from the canonical mapper (parallel to how the
-                    // label text above uses makeStatusPresentation). This eliminates the
-                    // inline ternary on the semantic isPlaying flag for presentation purposes.
-                    // isPlaying (derived from visualState.isActivelyPlaying) is still used
-                    // for the ControlWidgetToggle isOn contract (semantic toggle state).
-                    Image(systemName: value.visualState.makeControlPresentation().systemImage)
+                    // Pre-derived in Provider (parallel to SimpleEntry.controlPresentation).
+                    // `value.isPlaying` remains semantic-only for the ControlWidgetToggle contract.
+                    Image(systemName: value.controlPresentation.systemImage)
+                        .foregroundStyle(value.controlPresentation.tint)
                 }
             }
         }
@@ -133,25 +138,42 @@ struct LutheranRadioWidgetControl: ControlWidget {
 extension LutheranRadioWidgetControl {
     /// Snapshot value for the Control Widget.
     ///
-    /// Carries the authoritative visualState (from persisted snapshot) so that
-    /// status text can be derived via `makeStatusPresentation()` and the control
-    /// glyph via `makeControlPresentation()`.
+    /// Carries the authoritative `visualState` (from persisted snapshot) plus the two
+    /// narrow presentation surfaces pre-derived once in `Provider` — the Control Center
+    /// parallel to `SimpleEntry.statusPresentation` / `SimpleEntry.controlPresentation`.
     ///
     /// `isPlaying` is intentionally kept as a semantic Bool for the `SetValueIntent`
-    /// / toggle contract. Presentation glyph choice no longer re-tests it directly.
+    /// / toggle contract. Presentation glyph and status text read only the narrow fields.
+    ///
+    /// - SeeAlso: `SimpleEntry`, ``PlayerVisualState/makeStatusPresentation()``,
+    ///   ``PlayerVisualState/makeControlPresentation()``, docs/Widget-Presentation-Dataflow.md.
     struct Value: Sendable {
         let visualState: PlayerVisualState
         let currentStation: String
-        
+        let statusPresentation: PlayerStatusPresentation
+        let controlPresentation: PlayerControlPresentation
+
         var isPlaying: Bool {
             visualState.isActivelyPlaying
         }
-        
+
         var hasError: Bool {
             visualState == .securityLocked
         }
+
+        /// Builds a control-widget snapshot with narrow presentations derived once from `visualState`.
+        ///
+        /// - Parameters:
+        ///   - visualState: Authoritative policy state from the persisted snapshot.
+        ///   - currentStation: Localized station label (flag + language name).
+        init(visualState: PlayerVisualState, currentStation: String) {
+            self.visualState = visualState
+            self.currentStation = currentStation
+            self.statusPresentation = visualState.makeStatusPresentation()
+            self.controlPresentation = visualState.makeControlPresentation()
+        }
     }
-    
+
     struct Provider: AppIntentControlValueProvider {
         func previewValue(configuration: NoOpControlConfiguration) -> Value {
             Value(
@@ -159,7 +181,7 @@ extension LutheranRadioWidgetControl {
                 currentStation: "🇺🇸 " + String(localized: "language_english", table: "Localizable")
             )
         }
-        
+
         func currentValue(configuration: NoOpControlConfiguration) async throws -> Value {
             let (visualState, currentStation) = await effectiveVisualStateAndStation()
             return Value(visualState: visualState, currentStation: currentStation)
