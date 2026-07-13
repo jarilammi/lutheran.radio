@@ -21,8 +21,9 @@ import Foundation
 // - `controlPresentation: PlayerControlPresentation` (from `makeControlPresentation`)
 // - `widgetNowPlayingDisplayModel: WidgetNowPlayingDisplayModel` (from the resolver)
 //
-// Family views (`Small`/`Medium`/`Large`) and `WidgetMetadataRegion` receive only the
-// narrow slices required for rendering.
+// `LutheranRadioWidgetEntryView` projects narrow slices from `SimpleEntry` into
+// `SmallWidgetView` / `MediumWidgetView` / `LargeWidgetView`. `WidgetMetadataRegion`
+// receives only `WidgetNowPlayingDisplayModel`.
 //
 // The identical top-level derivation pattern is used by Live Activity views.
 //
@@ -391,6 +392,14 @@ struct SimpleEntry: TimelineEntry, Sendable {
     let configuration: RadioWidgetConfiguration
 }
 
+/// Routes a timeline snapshot to the correct family view using narrow presentation slices.
+///
+/// Projects only the fields each family view reads from `SimpleEntry`, so unrelated
+/// entry fields (for example `configuration` or `streamMetadata`) do not participate
+/// in the family view's stored property dependency set.
+///
+/// - SeeAlso: `SmallWidgetView`, `MediumWidgetView`, `LargeWidgetView`,
+///   docs/Widget-Presentation-Dataflow.md, docs/Widget-Functionality-Roadmap.md.
 struct LutheranRadioWidgetEntryView: View {
     var entry: Provider.Entry
     @Environment(\.widgetFamily) var family
@@ -410,13 +419,37 @@ struct LutheranRadioWidgetEntryView: View {
         Group {
             switch family {
             case .systemSmall:
-                SmallWidgetView(entry: entry)
+                SmallWidgetView(
+                    statusPresentation: entry.statusPresentation,
+                    controlPresentation: entry.controlPresentation,
+                    currentLanguageCode: entry.currentLanguageCode,
+                    availableStreams: entry.availableStreams
+                )
             case .systemMedium:
-                MediumWidgetView(entry: entry)
+                MediumWidgetView(
+                    statusPresentation: entry.statusPresentation,
+                    controlPresentation: entry.controlPresentation,
+                    metadataModel: entry.widgetNowPlayingDisplayModel,
+                    currentStation: entry.currentStation,
+                    currentLanguageCode: entry.currentLanguageCode,
+                    availableStreams: entry.availableStreams
+                )
             case .systemLarge:
-                LargeWidgetView(entry: entry)
+                LargeWidgetView(
+                    statusPresentation: entry.statusPresentation,
+                    controlPresentation: entry.controlPresentation,
+                    metadataModel: entry.widgetNowPlayingDisplayModel,
+                    currentStation: entry.currentStation,
+                    currentLanguageCode: entry.currentLanguageCode,
+                    availableStreams: entry.availableStreams
+                )
             default:
-                SmallWidgetView(entry: entry)
+                SmallWidgetView(
+                    statusPresentation: entry.statusPresentation,
+                    controlPresentation: entry.controlPresentation,
+                    currentLanguageCode: entry.currentLanguageCode,
+                    availableStreams: entry.availableStreams
+                )
             }
         }
         .containerBackground(for: .widget) {
@@ -427,9 +460,19 @@ struct LutheranRadioWidgetEntryView: View {
 
 // MARK: - Small Widget (2x2)
 
+/// Two-by-two home-screen widget.
+///
+/// Receives only the narrow slices required for rendering: status and control
+/// presentations plus stream-selection data. Does not depend on the full `SimpleEntry`.
+///
+/// - SeeAlso: `LutheranRadioWidgetEntryView` (projection site), `MediumWidgetView`,
+///   docs/Widget-Presentation-Dataflow.md.
 struct SmallWidgetView: View {
-    let entry: SimpleEntry
-    
+    let statusPresentation: PlayerStatusPresentation
+    let controlPresentation: PlayerControlPresentation
+    let currentLanguageCode: String
+    let availableStreams: [DirectStreamingPlayer.Stream]
+
     var body: some View {
         if !isAppRunning() {
             VStack(spacing: 8) {
@@ -449,14 +492,14 @@ struct SmallWidgetView: View {
             .widgetURL(URL(string: "lutheranradio://open"))
         } else {
             VStack(spacing: 4) {
-                Text(entry.statusPresentation.text)
+                Text(statusPresentation.text)
                     .font(.caption2)
-                    .foregroundStyle(entry.statusPresentation.foreground)
+                    .foregroundStyle(statusPresentation.foreground)
                     .lineLimit(1)
 
-                if entry.availableStreams.count > 1 {
-                    let topRow = Array(entry.availableStreams.prefix(3))
-                    let bottomRow = Array(entry.availableStreams.dropFirst(3).prefix(2))
+                if availableStreams.count > 1 {
+                    let topRow = Array(availableStreams.prefix(3))
+                    let bottomRow = Array(availableStreams.dropFirst(3).prefix(2))
 
                     VStack(spacing: 3) {
                         HStack(spacing: 4) {
@@ -478,9 +521,9 @@ struct SmallWidgetView: View {
                 // PlayerControlPresentation (populated via makeControlPresentation in the Provider).
                 // This removes the last direct read of visualState for glyph/tint inside SmallWidgetView.
                 Button(intent: WidgetToggleRadioIntent()) {
-                    Image(systemName: entry.controlPresentation.systemImage)
+                    Image(systemName: controlPresentation.systemImage)
                         .font(.title2)
-                        .foregroundColor(entry.controlPresentation.tint)
+                        .foregroundColor(controlPresentation.tint)
                 }
                 .buttonStyle(.plain)
             }
@@ -490,7 +533,7 @@ struct SmallWidgetView: View {
 
     @ViewBuilder
     private func smallWidgetStreamFlagButton(for stream: DirectStreamingPlayer.Stream) -> some View {
-        let isSelected = stream.languageCode == entry.currentLanguageCode
+        let isSelected = stream.languageCode == currentLanguageCode
 
         Button(intent: SwitchStreamIntent(streamLanguageCode: stream.languageCode)) {
             Text(stream.flag)
@@ -510,9 +553,21 @@ struct SmallWidgetView: View {
 
 // MARK: - Medium Widget (4x2)
 
+/// Four-by-two home-screen widget.
+///
+/// Receives pre-derived narrow presentation slices plus station and metadata models.
+/// Does not depend on the full `SimpleEntry` snapshot.
+///
+/// - SeeAlso: `LutheranRadioWidgetEntryView`, `WidgetMetadataRegion`,
+///   docs/Widget-Presentation-Dataflow.md.
 struct MediumWidgetView: View {
-    let entry: SimpleEntry
-    
+    let statusPresentation: PlayerStatusPresentation
+    let controlPresentation: PlayerControlPresentation
+    let metadataModel: WidgetNowPlayingDisplayModel
+    let currentStation: String
+    let currentLanguageCode: String
+    let availableStreams: [DirectStreamingPlayer.Stream]
+
     var body: some View {
         if !isAppRunning() {
             HStack {
@@ -545,35 +600,35 @@ struct MediumWidgetView: View {
                     Spacer()
                     // Control affordance from narrow PlayerControlPresentation (SSOT derivation).
                     Button(intent: WidgetToggleRadioIntent()) {
-                        Image(systemName: entry.controlPresentation.systemImage)
+                        Image(systemName: controlPresentation.systemImage)
                             .font(.title3)
-                            .foregroundColor(entry.controlPresentation.tint)
+                            .foregroundColor(controlPresentation.tint)
                     }
                     .buttonStyle(.plain)
                 }
 
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(entry.currentStation)
+                    Text(currentStation)
                         .font(.subheadline)
                         .fontWeight(.semibold)
                         .foregroundColor(.primary)
                         .lineLimit(1)
                         .truncationMode(.tail)
                     Spacer(minLength: 0)
-                    Text(entry.statusPresentation.text)
+                    Text(statusPresentation.text)
                         .font(.caption2)
-                        .foregroundStyle(entry.statusPresentation.foreground)
+                        .foregroundStyle(statusPresentation.foreground)
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
 
-                WidgetMetadataRegion(model: entry.widgetNowPlayingDisplayModel, layout: .medium)
+                WidgetMetadataRegion(model: metadataModel, layout: .medium)
 
                 Spacer(minLength: 4)
 
-                if entry.availableStreams.count > 1 {
+                if availableStreams.count > 1 {
                     HStack(spacing: 6) {
-                        ForEach(entry.availableStreams, id: \.languageCode) { stream in
+                        ForEach(availableStreams, id: \.languageCode) { stream in
                             mediumWidgetStreamFlagButton(for: stream)
                         }
                     }
@@ -586,7 +641,7 @@ struct MediumWidgetView: View {
 
     @ViewBuilder
     private func mediumWidgetStreamFlagButton(for stream: DirectStreamingPlayer.Stream) -> some View {
-        let isSelected = stream.languageCode == entry.currentLanguageCode
+        let isSelected = stream.languageCode == currentLanguageCode
 
         Button(intent: SwitchStreamIntent(streamLanguageCode: stream.languageCode)) {
             Text(stream.flag)
@@ -606,9 +661,21 @@ struct MediumWidgetView: View {
 
 // MARK: - Large Widget (4x4)
 
+/// Four-by-four home-screen widget.
+///
+/// Receives the same narrow input contract as `MediumWidgetView` with large-family layout.
+/// Does not depend on the full `SimpleEntry` snapshot.
+///
+/// - SeeAlso: `LutheranRadioWidgetEntryView`, `WidgetMetadataRegion`,
+///   docs/Widget-Presentation-Dataflow.md.
 struct LargeWidgetView: View {
-    let entry: SimpleEntry
-    
+    let statusPresentation: PlayerStatusPresentation
+    let controlPresentation: PlayerControlPresentation
+    let metadataModel: WidgetNowPlayingDisplayModel
+    let currentStation: String
+    let currentLanguageCode: String
+    let availableStreams: [DirectStreamingPlayer.Stream]
+
     var body: some View {
         if !isAppRunning() {
             VStack(spacing: 16) {
@@ -639,25 +706,25 @@ struct LargeWidgetView: View {
                     Spacer()
                     // Control affordance from narrow PlayerControlPresentation (SSOT derivation).
                     Button(intent: WidgetToggleRadioIntent()) {
-                        Image(systemName: entry.controlPresentation.systemImage)
+                        Image(systemName: controlPresentation.systemImage)
                             .font(.title2)
-                            .foregroundColor(entry.controlPresentation.tint)
+                            .foregroundColor(controlPresentation.tint)
                     }
                     .buttonStyle(.plain)
                 }
 
                 VStack(spacing: 4) {
-                    Text(entry.currentStation)
+                    Text(currentStation)
                         .font(.title2)
                         .fontWeight(.semibold)
                         .foregroundColor(.primary)
 
-                    Text(entry.statusPresentation.text)
+                    Text(statusPresentation.text)
                         .font(.subheadline)
-                        .foregroundStyle(entry.statusPresentation.foreground)
+                        .foregroundStyle(statusPresentation.foreground)
                 }
 
-                WidgetMetadataRegion(model: entry.widgetNowPlayingDisplayModel, layout: .large)
+                WidgetMetadataRegion(model: metadataModel, layout: .large)
 
                 Spacer(minLength: 4)
 
@@ -670,8 +737,8 @@ struct LargeWidgetView: View {
                     columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3),
                     spacing: 8
                 ) {
-                    ForEach(entry.availableStreams, id: \.languageCode) { stream in
-                        let isSelected = stream.languageCode == entry.currentLanguageCode
+                    ForEach(availableStreams, id: \.languageCode) { stream in
+                        let isSelected = stream.languageCode == currentLanguageCode
 
                         Button(intent: SwitchStreamIntent(streamLanguageCode: stream.languageCode)) {
                             HStack(spacing: 4) {
@@ -916,9 +983,33 @@ private func makePreviewEntry(
     )
 }
 
+/// Projects a preview `SimpleEntry` into the narrow inputs `MediumWidgetView` consumes at runtime.
+private func mediumWidgetView(from entry: SimpleEntry) -> MediumWidgetView {
+    MediumWidgetView(
+        statusPresentation: entry.statusPresentation,
+        controlPresentation: entry.controlPresentation,
+        metadataModel: entry.widgetNowPlayingDisplayModel,
+        currentStation: entry.currentStation,
+        currentLanguageCode: entry.currentLanguageCode,
+        availableStreams: entry.availableStreams
+    )
+}
+
+/// Projects a preview `SimpleEntry` into the narrow inputs `LargeWidgetView` consumes at runtime.
+private func largeWidgetView(from entry: SimpleEntry) -> LargeWidgetView {
+    LargeWidgetView(
+        statusPresentation: entry.statusPresentation,
+        controlPresentation: entry.controlPresentation,
+        metadataModel: entry.widgetNowPlayingDisplayModel,
+        currentStation: entry.currentStation,
+        currentLanguageCode: entry.currentLanguageCode,
+        availableStreams: entry.availableStreams
+    )
+}
+
 // userPaused + nil metadata (shows placeholder)
 #Preview("1. userPaused + nil metadata", traits: .sizeThatFitsLayout) {
-    MediumWidgetView(entry: makePreviewEntry(
+    mediumWidgetView(from: makePreviewEntry(
         visualState: .userPaused,
         programTitle: nil,
         speaker: nil
@@ -927,7 +1018,7 @@ private func makePreviewEntry(
 
 // userPaused + title only (subdued last-known, no speaker)
 #Preview("2. userPaused + title only", traits: .sizeThatFitsLayout) {
-    LargeWidgetView(entry: makePreviewEntry(
+    largeWidgetView(from: makePreviewEntry(
         visualState: .userPaused,
         programTitle: "Evening Prayer",
         speaker: nil
@@ -936,7 +1027,7 @@ private func makePreviewEntry(
 
 // userPaused + title + speaker (subdued)
 #Preview("3. userPaused + title + speaker", traits: .sizeThatFitsLayout) {
-    MediumWidgetView(entry: makePreviewEntry(
+    mediumWidgetView(from: makePreviewEntry(
         visualState: .userPaused,
         programTitle: "Sermon Title Here",
         speaker: "Rev. Martin Luther"
@@ -945,7 +1036,7 @@ private func makePreviewEntry(
 
 // prePlay + nil metadata (stream switch during connect)
 #Preview("4. prePlay + nil (stream switch)", traits: .sizeThatFitsLayout) {
-    LargeWidgetView(entry: makePreviewEntry(
+    largeWidgetView(from: makePreviewEntry(
         visualState: .prePlay,
         programTitle: nil,
         speaker: nil
@@ -954,7 +1045,7 @@ private func makePreviewEntry(
 
 // playing + nil metadata (ICY pending / live fallback active)
 #Preview("5. playing + nil (ICY pending)", traits: .sizeThatFitsLayout) {
-    MediumWidgetView(entry: makePreviewEntry(
+    mediumWidgetView(from: makePreviewEntry(
         visualState: .playing,
         programTitle: nil,
         speaker: nil
@@ -963,7 +1054,7 @@ private func makePreviewEntry(
 
 // playing + title (active, no speaker)
 #Preview("6. playing + title", traits: .sizeThatFitsLayout) {
-    LargeWidgetView(entry: makePreviewEntry(
+    largeWidgetView(from: makePreviewEntry(
         visualState: .playing,
         programTitle: "The Means of Grace",
         speaker: nil
@@ -972,7 +1063,7 @@ private func makePreviewEntry(
 
 // playing + title + speaker (active)
 #Preview("7. playing + title + speaker", traits: .sizeThatFitsLayout) {
-    MediumWidgetView(entry: makePreviewEntry(
+    mediumWidgetView(from: makePreviewEntry(
         visualState: .playing,
         programTitle: "Daily Chapel",
         speaker: "Dr. John T. Pless"
@@ -981,7 +1072,7 @@ private func makePreviewEntry(
 
 // thermalPaused with metadata (subdued)
 #Preview("8. thermalPaused + metadata", traits: .sizeThatFitsLayout) {
-    LargeWidgetView(entry: makePreviewEntry(
+    largeWidgetView(from: makePreviewEntry(
         visualState: .thermalPaused,
         programTitle: "Last Known Program",
         speaker: "Speaker Name"
@@ -990,7 +1081,7 @@ private func makePreviewEntry(
 
 // securityLocked with metadata (subdued, red tint on other elements)
 #Preview("9. securityLocked + metadata", traits: .sizeThatFitsLayout) {
-    MediumWidgetView(entry: makePreviewEntry(
+    mediumWidgetView(from: makePreviewEntry(
         visualState: .securityLocked,
         currentStation: "🇩🇪 Deutsch",
         currentLanguageCode: "de",
@@ -1001,7 +1092,7 @@ private func makePreviewEntry(
 
 // securityLocked without metadata (placeholder)
 #Preview("10. securityLocked + nil (placeholder)", traits: .sizeThatFitsLayout) {
-    LargeWidgetView(entry: makePreviewEntry(
+    largeWidgetView(from: makePreviewEntry(
         visualState: .securityLocked,
         programTitle: nil,
         speaker: nil

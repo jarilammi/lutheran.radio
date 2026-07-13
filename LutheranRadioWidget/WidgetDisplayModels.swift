@@ -43,8 +43,9 @@ import Foundation
 //
 // - In home widgets: `SimpleEntry` is populated inside the `Provider`
 //   (`placeholder(in:)`, `snapshot(for:in:)`, `timeline(for:in:)` via `createEntry`).
-//   `SmallWidgetView`, `MediumWidgetView`, `LargeWidgetView`, and `WidgetMetadataRegion`
-//   consume the pre-derived values directly; no derivation inside `body`.
+//   `LutheranRadioWidgetEntryView` projects the pre-derived values into
+//   `SmallWidgetView`, `MediumWidgetView`, `LargeWidgetView`, and `WidgetMetadataRegion`;
+//   family views receive narrow slices only; no derivation inside `body`.
 // - In Live Activities: `LockScreenLiveActivityView.body` and the outer `dynamicIsland`
 //   closure each compute the three narrow models once near the top, then close over them
 //   for the various regions and sub-layouts.

@@ -67,7 +67,8 @@ The finish line is a **hybrid, two-zone model** — not a migration from snapsho
 - **Three narrow presentation surfaces** established and documented: `PlayerStatusPresentation` (`makeStatusPresentation()`), `PlayerControlPresentation` (`makeControlPresentation()`), `WidgetNowPlayingDisplayModel` (`widgetNowPlayingDisplayModel(...)`). See `PlayerVisualState.swift`, `WidgetDisplayModels.swift`, [`docs/Widget-Presentation-Dataflow.md`](Widget-Presentation-Dataflow.md).
 - **P0 control migration complete (2026-06-27):** All play/pause glyph + tint sites in Small/Medium/Large widgets, Dynamic Island trailing/compactTrailing, Lock Screen, and Control widget consume `PlayerControlPresentation` exclusively. Remaining `isActivelyPlaying` / `buttonTintColor` reads are non-control (LIVE indicator, animation bars, decorative radio glyph) and are documented.
 - **Widget Provider pre-derivation complete:** `SimpleEntry` carries `statusPresentation`, `controlPresentation`, and `widgetNowPlayingDisplayModel`, each computed once in `Provider.placeholder`, `snapshot`, `timeline` / `createEntry`. Family views read narrow fields from the entry; `WidgetMetadataRegion` receives only `WidgetNowPlayingDisplayModel`.
-- **Live Activity outer-closure pre-derivation complete:** `dynamicIsland` closure hoists `controlPres`, `metadataModel`, `isPlaying`, and `radioIconTint` once; `LockScreenLiveActivityView` derives status/metadata/control at the top of `body`.
+- **Live Activity outer-closure pre-derivation complete:** `dynamicIsland` closure hoists `statusPres`, `controlPres`, `metadataModel`, `isPlaying`, and `radioIconTint` once; expanded, compact, and minimal regions close over these values (no inline `makeStatusPresentation()` in region builders). `LockScreenLiveActivityView` derives status/metadata/control at the top of `body`.
+- **Narrow family view inputs (2026-07-13):** `LutheranRadioWidgetEntryView` projects explicit slices into `SmallWidgetView` / `MediumWidgetView` / `LargeWidgetView` instead of passing full `SimpleEntry`. Reduces WidgetKit invalidation surface when unrelated entry fields change.
 - **Exhaustive `#Preview` matrix** in `LutheranRadioWidget.swift` exercises visual states × metadata presence/absence.
 - **Canonical presentation reference doc** [`docs/Widget-Presentation-Dataflow.md`](Widget-Presentation-Dataflow.md) (termination invariant, LA event-driven update model, contributor guidance). README SSOT subsection cross-links it.
 
@@ -134,7 +135,7 @@ This is **permanent architecture**, not a gap to close with events.
 
 | Surface | WidgetKit (`SimpleEntry`) | ActivityKit (`ContentState` views) |
 |---------|---------------------------|-------------------------------------|
-| Status | Once in `Provider` | Once at top of `LockScreenLiveActivityView`; some expanded DI regions still call `makeStatusPresentation()` inline |
+| Status | Once in `Provider` → projected in `LutheranRadioWidgetEntryView` | Once at top of `LockScreenLiveActivityView` and outer `dynamicIsland` closure |
 | Control | Once in `Provider` | Once in outer `dynamicIsland` + `LockScreenLiveActivityView` |
 | Metadata | Once in `Provider` → `entry.widgetNowPlayingDisplayModel` | Once in outer `dynamicIsland` + `LockScreenLiveActivityView` |
 
@@ -191,8 +192,8 @@ Ordered by increasing risk and decreasing isolation. Earlier items are safer.
 - [x] Introduce `PlayerControlPresentation` + `makeControlPresentation()` and migrate all control-glyph sites (2026-06-27).
 - [x] Pre-derive `widgetNowPlayingDisplayModel` onto `SimpleEntry` in Provider (widgets).
 - [x] Hoist metadata + control derivation to outer `dynamicIsland` closure.
-- [ ] **Narrow family view inputs:** Change `SmallWidgetView` / `MediumWidgetView` / `LargeWidgetView` to accept explicit slices (`statusPresentation`, `controlPresentation`, `metadataModel`, `currentLanguageCode`, `availableStreams`, `visualState` only where semantic policy required) instead of full `SimpleEntry`. Project at `LutheranRadioWidgetEntryView` level. Reduces WidgetKit invalidation surface when unrelated `SimpleEntry` fields change.
-- [ ] **LA expanded-region status dedup:** Remove remaining inline `makeStatusPresentation()` calls inside Dynamic Island expanded regions (lines ~428, ~484, ~587 in `LutheranRadioWidgetLiveActivity.swift`); close over hoisted `statusPres` from outer closure (Lock Screen path already hoists).
+- [x] **Narrow family view inputs (2026-07-13):** `SmallWidgetView` / `MediumWidgetView` / `LargeWidgetView` accept explicit slices (`statusPresentation`, `controlPresentation`, `metadataModel`, `currentStation`, `currentLanguageCode`, `availableStreams`); projected at `LutheranRadioWidgetEntryView`. No `visualState` on family views (semantic policy not required in bodies).
+- [x] **LA expanded-region status dedup (2026-07-13):** `statusPres` hoisted in outer `dynamicIsland` closure; expanded `.center`, `.bottom`, and `minimal` close over it (no inline `makeStatusPresentation()` in region builders).
 - [ ] **Optional `WidgetDisplayProjection` bundle:** Single `Equatable` struct bundling the three presentation surfaces for explicit Provider → view handoff. Only if narrow-parameter migration proves noisy.
 
 **Rule:** Presentation-only. No changes to snapshot writes, intents, or refresh timing.
@@ -293,11 +294,11 @@ Present in `LutheranRadioWidget.swift:getPendingOrCurrentState` and `LutheranRad
 
 The next item is always the highest-priority unchecked entry in the backlog above.
 
-**Recommended starting order (2026-07-10):**
+**Recommended starting order (2026-07-13):**
 
 1. Tier 2 `widgetNowPlayingDisplayModel` resolver tests (pure, fast, high value for OI-W3).
-2. Tier 1 narrow family view inputs (presentation-only, no IPC).
-3. Tier 1 LA expanded-region status dedup (small diff in one file).
+2. Tier 2 pending-action dedup contract tests.
+3. Tier 1 optional `WidgetDisplayProjection` bundle (only if future call-site churn warrants it).
 
 Each micro-step: read target files first, minimal diff, production docs, update this roadmap Completed + Update Log, run build + test gates per `CODING_AGENT.md`.
 
@@ -327,6 +328,7 @@ For presentation mapping rules and termination invariants, use [`docs/Widget-Pre
 
 ## Update Log
 
+- **2026-07-13:** Tier 1 complete — narrow family view inputs (`LutheranRadioWidgetEntryView` projection) and LA expanded-region `statusPres` dedup (outer `dynamicIsland` closure).
 - **2026-07-10:** Tier 2 backlog: rename `forcePersistVisualState` → `persistOptimisticWidgetSnapshot` (permanent widget infrastructure naming); consolidation inventory updated.
 - **2026-07-10:** Added **Target Architecture (Ultimate Goal)** section (two-zone hybrid model, permanent snapshot cross-process boundary, definition of “done”) and Tier 3 scope note clarifying consolidation is main-app refresh dedup only.
 - **2026-07-10:** Initial roadmap drafted from codebase inventory + canonical docs (`Widget-Presentation-Dataflow.md`, `Event-Driven-Refactor-Roadmap.md`, `cold-launch-streamplay-regression-checklist.md`, `SharedPlayerManager+NowPlaying.swift`, `StreamProgramMetadata.swift`). Completed section consolidates control presentation migration, Provider/LA pre-derivation, memory-only snapshot policy, refresh/teardown/event-consumer tests, and cross-process intent SSOT. Open issues OI-W1–W4 recorded. Backlog Tiers 1–5 populated; Tier 2 tests and Tier 1 presentation hygiene are highest priority.

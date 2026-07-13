@@ -34,8 +34,9 @@
 //
 // Presentation surfaces (snapshot-driven, all three derived once at the top level):
 // - Status indicator: `makeStatusPresentation()` → `PlayerStatusPresentation`.
-//   Computed at top of `LockScreenLiveActivityView.body` and inside the outer
-//   `dynamicIsland` closure; consumed by regions and status text.
+//   Computed at top of `LockScreenLiveActivityView.body` and once inside the outer
+//   `dynamicIsland` closure; all expanded, compact, and minimal regions close over
+//   the hoisted value (no inline re-derivation inside region builders).
 // - Primary control: `makeControlPresentation()` → `PlayerControlPresentation`.
 //   Computed once per view/closure and closed over by play/pause buttons.
 // - Metadata/emphasis: `widgetNowPlayingDisplayModel(...)` → `WidgetNowPlayingDisplayModel`.
@@ -305,6 +306,8 @@ struct LutheranRadioLiveActivityWidget: Widget {
             // (the ActivityKit counterpart to Provider pre-derivation into SimpleEntry).
             // All Dynamic Island regions and compact variants close over these values.
             //
+            // - statusPres: narrow PlayerStatusPresentation for status text + indicator colors
+            //   (via makeStatusPresentation). Used by expanded .center, .bottom, and minimal.
             // - controlPres: narrow PlayerControlPresentation for play/pause glyph + tint
             //   (via makeControlPresentation). Used by trailing and compactTrailing buttons.
             // - metadataModel: narrow WidgetNowPlayingDisplayModel for program title + speaker.
@@ -321,6 +324,7 @@ struct LutheranRadioLiveActivityWidget: Widget {
             // - SeeAlso: docs/Widget-Presentation-Dataflow.md (Live Activity derivation
             //   pattern), `PlayerControlPresentation`, `WidgetNowPlayingDisplayModel`,
             //   `LutheranRadioWidget.swift` (SimpleEntry parallel), CODING_AGENT.md.
+            let statusPres = context.state.visualState.makeStatusPresentation()
             let controlPres = context.state.visualState.makeControlPresentation()
 
             let currentLanguageForMetadata = SharedPlayerManager.preferredWidgetLanguage()
@@ -424,8 +428,7 @@ struct LutheranRadioLiveActivityWidget: Widget {
                 }
                 
                 DynamicIslandExpandedRegion(.center) {
-                    // metadataModel and language for it are computed once at the outer dynamicIsland level.
-                    let statusPres = context.state.visualState.makeStatusPresentation()
+                    // statusPres and metadataModel are computed once at the outer dynamicIsland level.
                     VStack(spacing: 6) {
                         VStack(spacing: 2) {
                             Text(statusPres.text)
@@ -479,9 +482,7 @@ struct LutheranRadioLiveActivityWidget: Widget {
                 
                 DynamicIslandExpandedRegion(.bottom) {
                     HStack {
-                        // Status is re-derived here for the bottom region (cheap, O(1) switch).
-                        // It is independent of the control/metadata surfaces hoisted above.
-                        let statusPres = context.state.visualState.makeStatusPresentation()
+                        // Status indicator closes over the hoisted statusPres from the outer closure.
                         HStack(spacing: 4) {
                             Circle()
                                 .fill(statusPres.background)
@@ -581,10 +582,8 @@ struct LutheranRadioLiveActivityWidget: Widget {
                 .buttonStyle(.plain)
             } minimal: {
                 ZStack {
-                    // Status background uses makeStatusPresentation (consistent with other sites).
-                    // The icon choice (play vs radio) is a pure visual decision driven by the
-                    // hoisted `isPlaying` to avoid a direct context.state.visualState read here.
-                    let statusPres = context.state.visualState.makeStatusPresentation()
+                    // Status background closes over hoisted statusPres; icon choice (play vs radio)
+                    // is a pure visual decision driven by isPlaying.
                     Circle()
                         .fill(statusPres.background.opacity(0.3))
                         .frame(width: 18, height: 18)
