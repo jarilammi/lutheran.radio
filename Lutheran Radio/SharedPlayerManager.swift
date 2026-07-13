@@ -107,9 +107,9 @@ import WidgetKit
 /// Usage:
 /// - Main app / recovery logic: `await SharedPlayerManager.shared.play()`, `.stop()`, etc.
 /// - Widgets / Live Activities / intents: `SharedPlayerManager.shared.loadSharedState()`,
-///   ``loadPersistedVisualStateDirect()`` (snapshot-first). Legacy forcing surfaces
-///   (``forcePersistVisualState(_:language:)``) exist only for widget optimistic paths
-///   and are not the preferred mechanism for new observers.
+///   ``loadPersistedVisualStateDirect()`` (snapshot-first). Optimistic extension writes use
+///   ``persistOptimisticWidgetSnapshot(_:language:)`` (permanent widget infrastructure;
+///   not the preferred mechanism for new main-app observers).
 ///
 /// - SeeAlso: `DirectStreamingPlayer` (actual playback),
 ///   ``PlayerVisualState``, ``PlayerEvent``, ``events``, ``currentState``,
@@ -605,7 +605,7 @@ actor SharedPlayerManager {
     /// - Important: Emission is always additive. Existing imperative paths
     ///   (`setPlaying`, `stop`, `setUserPaused`, `markAsUserPaused`, `saveCurrentState`,
     ///   widget/Live Activity updates, notifications) are never bypassed or altered.
-    ///   Direct state surfaces and forcing shims (e.g. `forcePersistVisualState`) continue
+    ///   Direct state surfaces and optimistic widget shims (e.g. `persistOptimisticWidgetSnapshot`) continue
     ///   to operate for compatibility.
     /// - Note: The continuation is retained for the actor's lifetime. Late subscribers
     ///   obtain the state that existed before subscription through ``currentState`` or
@@ -1134,7 +1134,7 @@ actor SharedPlayerManager {
     ///
     /// - Returns: `true` in the widget extension target, or in the main app when the
     ///   WidgetKit preview environment is active.
-    /// - SeeAlso: ``emit(_:)``, ``isWidgetProcess()``, ``forcePersistVisualState(_:language:)``,
+    /// - SeeAlso: ``emit(_:)``, ``isWidgetProcess()``, ``persistOptimisticWidgetSnapshot(_:language:)``,
     ///   ``_test_setSimulateWidgetProcessContext(_:)`` (DEBUG), docs/Event-Driven-Refactor-Roadmap.md.
     nonisolated func isRunningInWidget() -> Bool {
         #if DEBUG
@@ -1190,26 +1190,31 @@ actor SharedPlayerManager {
     ///
     /// Also updates the in-memory currentVisualState in this process.
     ///
-    /// **Legacy forcing surface**: `forcePersistVisualState` exists solely for widget
-    /// optimistic instant-feedback paths (App Intents, Control Center). It is not part of
-    /// the canonical non-forcing event-driven architecture. New consumers should observe
-    /// ``events`` (or use snapshot reads) instead of introducing new forcing call sites.
-    /// The implementation remains unchanged and additive.
+    /// Writes an optimistic widget snapshot for instant extension feedback (App Intents, Control Center).
+    ///
+    /// Permanent cross-process widget infrastructure: persists the in-memory session snapshot and
+    /// updates the actor's `currentVisualState` in the executing process. Main-app authoritative
+    /// saves via ``saveCurrentState()`` / ``performActualSave`` overwrite without corrupting pending
+    /// actions. Widget processes never emit ``PlayerEvent`` (see ``emit(_:)`` guard).
+    ///
+    /// New main-app consumers should observe ``events`` (or snapshot reads) instead of introducing
+    /// additional optimistic write call sites.
     ///
     /// - Parameters:
-    ///   - state: Target visual state (typically .playing or .userPaused from widget intent).
-    ///   - language: Optional explicit language code. When nil, falls back to preferredWidgetLanguage().
-    ///     Passing the language the widget entry was rendered with ensures optimistic UI and
-    ///     persisted snapshot stay consistent (prevents "en" appearing for fi stream in refresh logs).
+    ///   - state: Target visual state (typically `.playing` or `.userPaused` from a widget intent).
+    ///   - language: Optional explicit language code. When nil, falls back to ``preferredWidgetLanguage()``.
+    ///     Passing the language the widget entry was rendered with keeps optimistic UI and the
+    ///     snapshot consistent (prevents transient `"en"` for a `fi` stream in refresh logs).
     ///
-    /// Widget/AppIntent callers should prefer passing a language derived from
-    /// ``loadPersistedWidgetState()`` so the snapshot reflects the station the user saw/tapped.
+    /// Widget/AppIntent callers should prefer a language derived from ``loadPersistedWidgetState()``
+    /// so the snapshot reflects the station the user saw/tapped.
     ///
     /// - SeeAlso: ``signalWidgetPendingAction(visualState:action:language:)``,
+    ///   ``persistWidgetSnapshot(visualState:language:streamMetadata:clearStreamMetadata:hasError:)``,
     ///   ``WidgetToggleRadioIntent``, ``events``, ``emit(_:)``,
-    ///   docs/Event-Driven-Refactor-Roadmap.md,
+    ///   docs/Widget-Functionality-Roadmap.md, docs/Event-Driven-Refactor-Roadmap.md,
     ///   CODING_AGENT.md (SSOT + event-driven direction).
-    nonisolated public func forcePersistVisualState(_ state: PlayerVisualState, language: String? = nil) {
+    nonisolated public func persistOptimisticWidgetSnapshot(_ state: PlayerVisualState, language: String? = nil) {
         let lang = language ?? Self.preferredWidgetLanguage()
         Self.persistWidgetSnapshot(visualState: state, language: lang)
         // Update in-memory so the widget process sees the fresh state on the next snapshot
@@ -1217,16 +1222,22 @@ actor SharedPlayerManager {
         Task { await Self.shared._forceSetCurrentVisualState(state) }
     }
 
-    /// Internal helper supporting the legacy widget `forcePersistVisualState` path only.
+    /// Deprecated alias retained for one release beat. Use ``persistOptimisticWidgetSnapshot(_:language:)``.
+    @available(*, deprecated, renamed: "persistOptimisticWidgetSnapshot(_:language:)")
+    nonisolated public func forcePersistVisualState(_ state: PlayerVisualState, language: String? = nil) {
+        persistOptimisticWidgetSnapshot(state, language: language)
+    }
+
+    /// Internal helper supporting the optimistic widget ``persistOptimisticWidgetSnapshot`` path only.
     ///
     /// Applies the visual state directly inside the actor after a nonisolated hop.
     /// Sets the persistence-loaded guard so subsequent `ensureVisualStateLoaded` calls
     /// see the value. Never emits (widget processes are guarded in ``emit(_:)``).
     ///
     /// - Parameter state: The visual state written optimistically by a widget intent.
-    /// - SeeAlso: ``forcePersistVisualState(_:language:)``, ``events``.
+    /// - SeeAlso: ``persistOptimisticWidgetSnapshot(_:language:)``, ``events``.
     private func _forceSetCurrentVisualState(_ state: PlayerVisualState) {
-        // Purpose: apply forced visual update from widget forcePersistVisualState path only.
+        // Purpose: apply optimistic visual update from persistOptimisticWidgetSnapshot path only.
         // Key constraint: only invoked via Task hop from nonisolated public surface; sets the loaded guard.
         // This is a compatibility shim for cross-process widget instant feedback.
         // Event-driven observers receive authoritative transitions via the main-app emit path.
@@ -1242,7 +1253,7 @@ actor SharedPlayerManager {
     
     /// Re-applies the factory-default visual load path for widget/extension hygiene.
     /// Widget Providers should call this before reading `currentVisualState` for UI decisions.
-    /// Resets the one-shot guard so in-session updates from `forcePersistVisualState` are visible
+    /// Resets the one-shot guard so in-session updates from `persistOptimisticWidgetSnapshot` are visible
     /// in long-lived extension processes. Never reads visual state from UserDefaults.
     ///
     /// This is a read-side refresh helper for long-lived widget processes. It is unrelated to
@@ -2445,7 +2456,7 @@ actor SharedPlayerManager {
         // Preserve the current play/pause (or other) visual across language switch for the
         // optimistic PersistedWidgetState snapshot. Must use loadPersistedVisualStateDirect()
         // (prefers the combined snapshot written by widget pause/play signals via
-        // forcePersistVisualState / persistWidgetSnapshot) rather than loadSharedState().isPlaying.
+        // persistOptimisticWidgetSnapshot / persistWidgetSnapshot) rather than loadSharedState().isPlaying.
         //
         // Historical: the legacy "isPlaying" bool (written only by older performActualSave paths)
         // lagged after widget pause (snapshot would be .userPaused but the bool stayed true).
@@ -2667,7 +2678,7 @@ actor SharedPlayerManager {
     ///   - visualState: Target (.playing or .userPaused) for instant widget icon/state flip.
     ///   - action: "play" or "pause".
     ///   - language: Language code to pair with the snapshot (strongly recommended from widget).
-    ///     If omitted, falls back inside forcePersist. Always pass the language the widget
+    ///     If omitted, falls back inside ``persistOptimisticWidgetSnapshot``. Always pass the language the widget
     ///     timeline was using to avoid transient "en" in mixed-language initial-play scenarios.
     ///
     /// Always bypasses privacy gate (via force + isWidgetProcess) because intent execution
@@ -2678,7 +2689,7 @@ actor SharedPlayerManager {
         action: String,
         language: String? = nil
     ) -> String? {
-        forcePersistVisualState(visualState, language: language)
+        persistOptimisticWidgetSnapshot(visualState, language: language)
         // Also bump liveness from the widget action itself so isAppRunning() flips true
         // without requiring main-app processing (prevents "tap_to_open" after widget play).
         Self.bumpWidgetLivenessTimestamp(force: true)
@@ -2712,7 +2723,7 @@ actor SharedPlayerManager {
         // pending so the main app can act.
         //
         // Note (post-fix): snapshot + liveness are now also written from widget process via
-        // the isWidgetProcess() bypass inside persist/bump (see forcePersist + signal*).
+        // the isWidgetProcess() bypass inside persist/bump (see persistOptimisticWidgetSnapshot + signal*).
         // Main processing still does explicit refreshHasActive + save for authoritative values.
         let isPrivacySuppressed = !Self.hasActiveWidgets
         if isPrivacySuppressed {
@@ -3081,7 +3092,7 @@ actor SharedPlayerManager {
     /// Primary writer used by:
     /// - Main-app `performActualSave` / `saveCurrentState` (authoritative path)
     /// - Widget intents (optimistic instant-feedback path)
-    /// - `forcePersistVisualState`
+    /// - `persistOptimisticWidgetSnapshot`
     ///
     /// The snapshot is the **single source of truth** for what widgets and Live
     /// Activities should display.

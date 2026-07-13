@@ -206,12 +206,12 @@ Ordered by increasing risk and decreasing isolation. Earlier items are safer.
 
 **Goal:** Protect widget/LA/Control intent round-trips and optimistic snapshot semantics with fast unit tests (main-app host + DEBUG seams).
 
-- [ ] **`widgetNowPlayingDisplayModel` resolver matrix:** New `WidgetDisplayModelsTests.swift` (or section in existing test target) asserting title/speaker/emphasis for every `PlayerVisualState` × metadata presence/absence × language fallback. Pure function; no WidgetCenter IPC.
-- [ ] **Pending-action dedup contract:** Test `scheduleWidgetAction` / `clearPendingAction(actionId:)` — rapid double-tap produces one processing path; stale `pendingActionTime` ignored by providers.
-- [ ] **Optimistic `forcePersistVisualState` contract:** Snapshot visual + optional language written in widget context; main-app authoritative save overwrites without corrupting intent; no `PlayerEvent` yield under simulated widget process (extends existing `testEmitSuppressesYieldWhenRunningInWidgetProcess`).
-- [ ] **Rename `forcePersistVisualState` → `persistOptimisticWidgetSnapshot`:** Mechanical rename (+ optional body refactor: `persistWidgetSnapshot` + `refreshVisualStateFromPersistence()` instead of `_forceSetCurrentVisualState`) so the API name reflects permanent widget infrastructure, not a legacy event-migration shim. Keep a deprecated typealias or forwarding wrapper only if external/docs churn requires a transition beat; update `///` headers, roadmap/consolidation inventory, and Event-Driven Refactor Roadmap cross-references. Gate on the optimistic contract test above.
-- [ ] **Widget switch SSOT regression:** Automated coverage for checklist §6 — `handleWidgetSwitchToLanguage` → model-only `switchToStream` → single `stop(.streamSwitch)` → `play()`; selector needle matches audible stream (2026-06-12 desync fix must not regress). See `ViewController.handleWidgetSwitchToLanguage`, `RadioPlayerCoordinator`, `SharedPlayerManager.handleWidgetSwitch`.
-- [ ] **Instant-feedback expiry:** Assert `loadSharedState` prefers instant-feedback tuple within 15 s window, then falls back to authoritative snapshot.
+- [x] **`widgetNowPlayingDisplayModel` resolver matrix (2026-07-13):** `WidgetDisplayModelsTests.swift` — title/speaker/emphasis for every `PlayerVisualState` × metadata presence/absence × language fallback. Pure function; no WidgetCenter IPC.
+- [x] **Pending-action dedup contract (2026-07-13):** `WidgetIntentContractTests` — rapid schedule replaces pending; `clearPendingAction(actionId:)` ignores stale IDs; `getPendingActionIfFresh` clears expired `pendingActionTime`.
+- [x] **Optimistic `persistOptimisticWidgetSnapshot` contract (2026-07-13):** `WidgetIntentContractTests.testPersistOptimisticWidgetSnapshotWritesSnapshotWithoutPlayerEventYield` + authoritative overwrite + pending preservation; extends `testEmitSuppressesYieldWhenRunningInWidgetProcess`.
+- [x] **Rename `forcePersistVisualState` → `persistOptimisticWidgetSnapshot` (2026-07-13):** Renamed public API; deprecated `forcePersistVisualState` forwarding wrapper retained; `///` headers updated in `SharedPlayerManager.swift`.
+- [x] **Widget switch SSOT regression (2026-07-13):** `WidgetIntentContractTests` — paused optimistic snapshot preserved on widget switch; `handleWidgetSwitchToLanguage` paused reconciliation + `processedActionIds` dedup (checklist §6.11 / §6.13).
+- [x] **Instant-feedback expiry (2026-07-13):** `WidgetIntentContractTests` — `loadSharedState` prefers instant-feedback within 15 s, falls back after expiry.
 
 **Rule:** Use UITestMode / DEBUG seams; never call real `WidgetCenter.reloadTimelines` or ActivityKit IPC in unit tests. Follow fast-test patterns in `CODING_AGENT.md`.
 
@@ -260,7 +260,7 @@ Authoritative inventory (no behavior change until device-proven). Mirrors Event-
 
 **1. Legacy forcing & lifecycle shims (permanent)**
 
-- `forcePersistVisualState` (rename candidate: `persistOptimisticWidgetSnapshot`) — widget optimistic instant feedback; permanent infrastructure, not a removal target.
+- `persistOptimisticWidgetSnapshot` (formerly `forcePersistVisualState`) — widget optimistic instant feedback; permanent infrastructure, not a removal target.
 - `forceStaleLivenessTimestampForTermination` — process-lifecycle sentinel; not a player event.
 - `refreshVisualStateFromPersistence` / `syncVisualStateFromPersistence` — extension hygiene; expected to remain.
 
@@ -300,9 +300,9 @@ The next item is always the highest-priority unchecked entry in the backlog abov
 
 **Recommended starting order (2026-07-13):**
 
-1. Tier 2 `widgetNowPlayingDisplayModel` resolver tests (pure, fast, high value for OI-W3).
-2. Tier 2 pending-action dedup contract tests.
-3. Tier 1 optional `WidgetDisplayProjection` bundle (only if future call-site churn warrants it).
+1. Tier 1 optional `WidgetDisplayProjection` bundle (only if future call-site churn warrants it).
+2. Tier 3 provider `refreshVisualStateFromPersistence` audit (late stage).
+3. Tier 5 cross-link from Event-Driven Refactor Roadmap.
 
 Each micro-step: read target files first, minimal diff, apply the documentation voice & reference discipline above, update this roadmap Completed + Update Log, run build + test gates per `CODING_AGENT.md`.
 
@@ -332,6 +332,7 @@ For presentation mapping rules and termination invariants, use [`docs/Widget-Pre
 
 ## Update Log
 
+- **2026-07-13:** Tier 2 complete — `WidgetDisplayModelsTests.swift` (resolver matrix), `WidgetIntentContractTests.swift` (pending-action dedup, instant-feedback expiry, optimistic persist contract, widget switch SSOT); `forcePersistVisualState` renamed to `persistOptimisticWidgetSnapshot` with deprecated forwarding wrapper.
 - **2026-07-13:** Tier 1 — Control widget `Value` pre-derivation (`statusPresentation` + `controlPresentation` in Provider; toggle label consumes narrow fields; symmetric with `SimpleEntry`).
 - **2026-07-13:** Core Principles — added **Documentation voice & reference discipline** (production-grade source language; cross-links only to committed, tracked docs).
 - **2026-07-13:** Tier 1 complete — narrow family view inputs (`LutheranRadioWidgetEntryView` projection) and LA expanded-region `statusPres` dedup (outer `dynamicIsland` closure).

@@ -145,6 +145,7 @@
 				PlayerVisualState.swift,
 				SharedPlayerManager.swift,
 				StreamProgramMetadata.swift,
+				WidgetDisplayModels.swift,
 				WidgetEventObserver.swift,
 				WidgetRefreshManager.swift,
 			);

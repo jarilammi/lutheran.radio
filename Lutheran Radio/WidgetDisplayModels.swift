@@ -1,6 +1,6 @@
 //
 //  WidgetDisplayModels.swift
-//  LutheranRadioWidget
+//  Lutheran Radio
 //
 //  Created by Jari Lammi on 12.6.2026.
 //
