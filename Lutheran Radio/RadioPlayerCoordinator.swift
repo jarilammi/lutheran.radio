@@ -846,9 +846,9 @@ final class RadioPlayerCoordinator {
             // simulator (fast scheduling) but produced the "pause → language change → resume"
             // failures on physical devices and TestFlight builds.
             //
-            // The saveCombined + isLanguageChange path in performActualSave already marks urgent
-            // and the snapshot itself is the SSOT read by providers. We still issue an immediate
-            // refresh here (after the persist) for prompt cross-process visibility of the lang.
+            // Widget timeline reload is driven by ``.persistedWidgetStateDidUpdate`` on the Tier 2
+            // observer path. ``WidgetRefreshManager/refreshIfNeeded`` always bypasses debounce on
+            // language changes (Tier 3 dedup removed the redundant imperative call here).
             //
             // See: SharedPlayerManager.swift (handleWidgetSwitch, signalWidgetSwitchAction,
             // loadPersistedVisualStateDirect, setUserIntentToPlay, ensureVisualStateLoaded
@@ -856,13 +856,6 @@ final class RadioPlayerCoordinator {
             // completeStreamSwitch paused branch, WidgetToggleRadioIntent.perform,
             // CODING_AGENT.md (Single Source of Truth Principles + cross-target shared files),
             // WidgetRefreshManager (language change urgency + refreshWouldRegress).
-            let visual = await SharedPlayerManager.shared.currentVisualState
-            WidgetRefreshManager.shared.refreshIfNeeded(
-                visualState: visual,
-                currentLanguage: languageCode,
-                hasError: false,
-                immediate: true
-            )
         }
 
         #if DEBUG

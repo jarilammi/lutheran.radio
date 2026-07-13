@@ -144,15 +144,9 @@ extension SharedPlayerManager {
 
         // Persist for widgets (program title in snapshot) — intentionally after the
         // LA push so that LA responsiveness is not gated on disk I/O.
-        // This keeps widget observable behavior unchanged while giving LA the fast path.
+        // Widget timeline reload is driven by ``.metadataDidUpdate`` and
+        // ``.persistedWidgetStateDidUpdate`` on the Tier 2 observer path (Tier 3 dedup).
         persistStreamMetadataForWidgets()
-
-        let state = loadSharedState()
-        await WidgetRefreshManager.shared.refreshIfNeeded(
-            visualState: currentVisualState,
-            currentLanguage: Self.preferredWidgetLanguage(),
-            hasError: state.hasError
-        )
     }
     
     /// Refreshes the system Now Playing info (MPNowPlayingInfoCenter) for Lock Screen,

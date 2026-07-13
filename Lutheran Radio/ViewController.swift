@@ -345,7 +345,6 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
             object: nil
         )
         
-        setupWidgetActionPolling()
         setupFastWidgetActionChecking()
         isInitialSetupComplete = true
 
@@ -581,15 +580,6 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         #endif
     }
     
-    private func setupWidgetActionPolling() {
-        // Check for widget actions every 30 seconds as fallback
-        Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.checkForPendingWidgetActions()
-            }
-        }
-    }
-    
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         
@@ -649,6 +639,11 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     }
 
     private func setupFastWidgetActionChecking() {
+        // Widget-action delivery does not use a repeating foreground poll timer (Tier 3).
+        // Primary path: Darwin notify → checkForPendingWidgetActions. Defense-in-depth:
+        // this 1…5 s burst after launch, SceneDelegate sceneDidBecomeActive /
+        // sceneWillEnterForeground, and AppDelegate foreground hooks.
+        //
         // UITestMode: skip entirely. The checker would only risk picking up stale pendings
         // from prior killed sessions and turning them into "user input". The guard inside
         // checkForPendingWidgetActions is defense-in-depth; skipping the schedule avoids

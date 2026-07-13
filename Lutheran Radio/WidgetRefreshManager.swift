@@ -98,10 +98,9 @@ final class WidgetRefreshManager: @unchecked Sendable {
     /// `refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)` entry
     /// point.
     ///
-    /// - Important: This task is strictly part of the additive event path.
-    ///   All existing imperative calls from `SharedPlayerManager.performActualSave`,
-    ///   `saveCurrentState`, AppDelegate, RadioPlayerCoordinator, widget intents,
-    ///   NowPlaying surfaces, etc. continue to invoke `refreshIfNeeded` directly.
+    /// - Important: This task is the **sole driver** for main-app mutation-path timeline
+    ///   reloads (Tier 3 dedup, 2026-07-13). Imperative callers remain for lifecycle,
+    ///   foreground, teardown, and widget-extension optimistic paths only.
     ///   The observer never forces a reload or mutates any debounce/coalesce state
     ///   outside the public surface.
     /// - Note: Guarded against widget extension process (no emissions occur there).
@@ -716,19 +715,31 @@ final class WidgetRefreshManager: @unchecked Sendable {
         )
     }
 
-    /// Returns whether the event path must bypass `.prePlay` / `.cleared` coalesce deferral.
+    /// Returns whether the event path must bypass coalesce deferral and adaptive debouncing.
     ///
-    /// Factory-reset and privacy-clear visuals are terminal presentation states; the Tier 2
-    /// observer matches imperative callers (`performSessionAndWidgetTeardown`, widget intents)
-    /// by requesting immediate delivery so timeline reloads are not deferred behind the
-    /// `.prePlay` → `.playing` coalesce window.
+    /// Parity with the urgency rules formerly carried only by imperative ``performActualSave``
+    /// callers: factory-reset and privacy-clear visuals, sticky pause/lock states, and permanent
+    /// error chrome must not wait behind the `.prePlay` → `.playing` coalesce window or adaptive
+    /// debounce. Active ``PlayerVisualState/playing`` alone remains eligible for coalescing.
     ///
-    /// - Parameter visualState: The visual derived from the ``PlayerEvent`` payload or SSOT readers.
-    /// - Returns: `true` when ``PlayerVisualState/prePlay`` or ``PlayerVisualState/cleared``.
+    /// - Parameters:
+    ///   - visualState: The visual derived from the ``PlayerEvent`` payload or SSOT readers.
+    ///   - hasError: Permanent-error flag from ``SharedPlayerManager/loadSharedState()``.
+    /// - Returns: `true` when the derived refresh must execute immediately.
     /// - SeeAlso: ``refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)``,
-    ///   ``handlePlayerEvent(_:)``, docs/Event-Driven-Refactor-Roadmap.md.
-    private func refreshUsesImmediateDelivery(for visualState: PlayerVisualState) -> Bool {
-        visualState == .prePlay || visualState == .cleared
+    ///   ``handlePlayerEvent(_:)``, ``SharedPlayerManager/performActualSave(_:widgetState:at:)``,
+    ///   docs/Widget-Functionality-Roadmap.md (Tier 3), docs/Event-Driven-Refactor-Roadmap.md.
+    private func refreshUsesImmediateDelivery(
+        for visualState: PlayerVisualState,
+        hasError: Bool
+    ) -> Bool {
+        if hasError { return true }
+        switch visualState {
+        case .prePlay, .cleared, .userPaused, .thermalPaused, .securityLocked:
+            return true
+        case .playing:
+            return false
+        }
     }
 
     private func handlePlayerEvent(_ event: PlayerEvent) async {
@@ -748,7 +759,10 @@ final class WidgetRefreshManager: @unchecked Sendable {
         }
 
         let derived = deriveRefreshParameters(for: event)
-        let immediate = refreshUsesImmediateDelivery(for: derived.visualState)
+        let immediate = refreshUsesImmediateDelivery(
+            for: derived.visualState,
+            hasError: derived.hasError
+        )
 
         #if DEBUG
         if unsafe Self._test_recordHandlePlayerEventImmediate {
@@ -987,6 +1001,26 @@ extension WidgetRefreshManager {
         beginObservingPlayerEvents()
     }
 
+    /// Polls until the Tier 2 ``PlayerEvent`` observation task is attached or `timeout` elapses.
+    ///
+    /// XCTest hosts must await attachment before driving live mutations; ``AsyncStream`` does not
+    /// replay yields to iterators that suspend after emission.
+    ///
+    /// - Parameter timeout: Maximum wait in seconds.
+    /// - Returns: `true` when ``eventObservationTask`` is non-nil before timeout.
+    @MainActor
+    func _test_waitForPlayerEventObservationAttached(timeout: TimeInterval = 5.0) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if eventObservationTask != nil {
+                return true
+            }
+            await Task.yield()
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        return eventObservationTask != nil
+    }
+
     /// Enables recording of derived refresh parameters without calling ``refreshIfNeeded``
     /// or WidgetCenter IPC.
     ///
@@ -1080,7 +1114,10 @@ extension WidgetRefreshManager {
             }
         }
 
-        let immediate = refreshUsesImmediateDelivery(for: derived.visualState)
+        let immediate = refreshUsesImmediateDelivery(
+            for: derived.visualState,
+            hasError: derived.hasError
+        )
 
         refreshIfNeeded(
             visualState: derived.visualState,

@@ -137,10 +137,9 @@ extension UIColor {
 // truth. It is written from the main app on every authoritative save and from widget
 // intents for instant feedback.
 //
-// 1. Always call refreshVisualStateFromPersistence() first (actor isolation hygiene).
-// 2. Check loadPersistedWidgetState() early — this is the normal hot path.
-// 3. Only remaining fallback: very old installs that have never written a snapshot
-//    (safe .prePlay + preferred language default).
+// Provider snapshot resolution is centralized in ``WidgetProviderSnapshotResolver``.
+// See docs/Widget-Functionality-Roadmap.md (Tier 3 provider audit) for which paths
+// require an actor hop versus safe direct ``loadPersistedWidgetState()`` reads.
 
 struct LutheranRadioWidget: Widget {
     let kind: String = "LutheranRadioWidget"
@@ -304,25 +303,16 @@ struct Provider: AppIntentTimelineProvider {
         visualState: PlayerVisualState,
         streamMetadata: StreamProgramMetadata?
     ) {
-        // Always refresh from persistence first (fresh actor starts at .prePlay).
-        await manager.refreshVisualStateFromPersistence()
-
-        // Snapshot-first (modern path for all current installs). Single simple fallback for
-        // first-launch or installs that have never persisted a snapshot.
-        //
-        // Privacy (write suppression when no widgets configured / clear local state):
-        // loadPersistedWidgetState() returns nil (we fall back to safe .prePlay + preferredWidgetLanguage(),
-        // which is "en" + suppressed writes for post-clear/no-widgets, or bestInitial when hasActiveWidgets).
-        // after the "Clear local playback state" action (sleep timer menu) or when the
-        // main app has suppressed all writes because no LutheranRadioWidget / LutheranRadioWidgetControl
-        // is currently installed (WidgetRefreshManager.hasActiveLutheranWidgets + SharedPlayerManager guards
-        // on persist/save/writeInstant/bump/schedule/pending/liveness paths). The App Group then carries
-        // no recent language/visual/metadata/liveness signal.
-        if let combined = SharedPlayerManager.loadPersistedWidgetState() {
-            return (combined.currentLanguage, combined.hasError, combined.visualState, combined.streamMetadata)
-        }
-
-        return (SharedPlayerManager.preferredWidgetLanguage(), false, .prePlay, nil)
+        // Actor hygiene for long-lived extension processes; snapshot fields are static reads.
+        // - SeeAlso: ``WidgetProviderSnapshotResolver/resolveWithActorHygiene(manager:)``,
+        //   docs/Widget-Functionality-Roadmap.md (Tier 3).
+        let fields = await WidgetProviderSnapshotResolver.resolveWithActorHygiene(manager: manager)
+        return (
+            fields.currentLanguage,
+            fields.hasError,
+            fields.visualState,
+            fields.streamMetadata
+        )
     }
 }
 

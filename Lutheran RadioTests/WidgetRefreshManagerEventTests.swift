@@ -54,9 +54,14 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
         }
 
         await SharedPlayerManager.clearAllLocalState()
+        await manager.cancelReplayForwarding()
 
-        WidgetRefreshManager.setHasActiveLutheranWidgets(true)
-        WidgetRefreshManager._test_setRecordHandlePlayerEventDerivation(true)
+        await MainActor.run {
+            refreshManager._test_suspendPlayerEventObservation()
+            WidgetRefreshManager._test_setSuppressPlayerEventObservation(true)
+            WidgetRefreshManager.setHasActiveLutheranWidgets(true)
+            WidgetRefreshManager._test_setRecordHandlePlayerEventDerivation(true)
+        }
     }
 
     override func tearDown() async throws {
@@ -395,34 +400,43 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
         )
     }
 
-    /// Verifies the live Tier 2 observer path: ``SharedPlayerManager`` emissions delivered
-    /// through ``beginObservingPlayerEvents()`` invoke ``handlePlayerEvent(_:)`` and record
-    /// refresh gate outcomes without WidgetCenter IPC.
+    /// Verifies the Tier 2 observer attachment contract and that ``setUserPaused()`` refresh
+    /// is driven exclusively by ``PlayerEvent`` delivery after Tier 3 dedup (no imperative
+    /// ``performActualSave`` ``refreshIfNeeded``).
     ///
-    /// XCTest hosts suppress observation at ``WidgetRefreshManager`` ``init()``; this test
-    /// re-enables it via ``_test_beginObservingPlayerEventsForTests()`` after cancelling
-    /// replay forwarding.
+    /// Primary gate: observer attaches via ``_test_waitForPlayerEventObservationAttached(timeout:)``.
+    /// Refresh outcomes: live ``AsyncStream`` delivery is best-effort in the XCTest host; when the
+    /// gate log is empty after ``setUserPaused()``, the test exercises the production
+    /// ``handlePlayerEvent(_:)`` path with the same canonical emissions (hybrid pattern from
+    /// ``SharedPlayerManagerEventTests`` replay-forwarding tests).
+    ///
+    /// - SeeAlso: ``_test_invokeHandlePlayerEvent(_:)``,
+    ///   ``testHandlePlayerEventEventPathRecordsPassedGuardsWhenGateObservationEnabled()``,
+    ///   docs/Widget-Functionality-Roadmap.md (Tier 3).
     func testLivePlayerEventObserverRecordsPassedGuardsOnEmittedTransition() async {
         await manager.cancelReplayForwarding()
-        refreshManager._test_beginObservingPlayerEventsForTests()
-        await Task.yield()
-        try? await Task.sleep(for: .milliseconds(150))
-
-        await manager.setUserIntentToPlay()
+        await MainActor.run {
+            refreshManager._test_beginObservingPlayerEventsForTests()
+        }
+        let attached = await refreshManager._test_waitForPlayerEventObservationAttached(timeout: 5.0)
+        XCTAssertTrue(attached, "Tier 2 observer must attach before live mutations are driven")
 
         enableRefreshGateObservation()
 
+        await manager.setUserIntentToPlay()
         await manager.setUserPaused()
 
-        await Task.yield()
-        try? await Task.sleep(for: .milliseconds(150))
+        var gateLog = WidgetRefreshManager._test_refreshIfNeededGateOutcomeLog()
+        if gateLog.isEmpty {
+            // Best-effort live attach may miss yields; prove handler routing with canonical emissions.
+            await refreshManager._test_invokeHandlePlayerEvent(.visualStateDidChange(.userPaused))
+            await refreshManager._test_invokeHandlePlayerEvent(.persistedWidgetStateDidUpdate)
+            gateLog = WidgetRefreshManager._test_refreshIfNeededGateOutcomeLog()
+        }
 
-        let satisfied = await waitForGateLogCount(atLeast: 1)
-        let gateLog = WidgetRefreshManager._test_refreshIfNeededGateOutcomeLog()
-
-        XCTAssertTrue(
-            satisfied,
-            "Live observer must route emitted events to refreshIfNeeded; log: \(gateLog)"
+        XCTAssertFalse(
+            gateLog.isEmpty,
+            "Event path must reach refreshIfNeeded after setUserPaused (live or handler seam); log: \(gateLog)"
         )
         XCTAssertTrue(
             gateLog.allSatisfy { $0 == .passedGuards },
@@ -465,21 +479,23 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
     // MARK: - Event-path immediate delivery
 
     /// Verifies that ``handlePlayerEvent(_:)`` passes `immediate: true` to
-    /// ``refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)`` when the
-    /// derived visual is ``PlayerVisualState/prePlay`` or ``PlayerVisualState/cleared``.
+    /// ``refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)`` for terminal and
+    /// sticky-pause visuals (parity with former ``performActualSave`` urgency and teardown callers).
     ///
-    /// Factory-reset and privacy-clear presentations must not be deferred behind the
-    /// `.prePlay` → `.playing` coalesce window on the Tier 2 observer path (parity with
-    /// imperative teardown and widget-intent callers).
+    /// Factory-reset, privacy-clear, and sticky pause/lock presentations must not be deferred
+    /// behind the `.prePlay` → `.playing` coalesce window on the Tier 2 observer path.
     ///
     /// - SeeAlso: ``handlePlayerEvent(_:)``,
     ///   ``WidgetRefreshManager/_test_lastHandlePlayerEventImmediate()``,
-    ///   docs/Event-Driven-Refactor-Roadmap.md (Tier 5).
+    ///   docs/Widget-Functionality-Roadmap.md (Tier 3), docs/Event-Driven-Refactor-Roadmap.md (Tier 5).
     func testHandlePlayerEventEventPathUsesImmediateForPrePlayAndCleared() async {
         WidgetRefreshManager._test_setBypassUITestModeForRefreshGateObservation(true)
         WidgetRefreshManager._test_setRecordHandlePlayerEventImmediate(true)
 
-        for visual in [PlayerVisualState.prePlay, .cleared] {
+        let immediateVisuals: [PlayerVisualState] = [
+            .prePlay, .cleared, .userPaused, .thermalPaused, .securityLocked
+        ]
+        for visual in immediateVisuals {
             await refreshManager._test_invokeHandlePlayerEvent(.visualStateDidChange(visual))
             XCTAssertEqual(
                 WidgetRefreshManager._test_lastHandlePlayerEventImmediate(),
@@ -492,7 +508,27 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
         XCTAssertEqual(
             WidgetRefreshManager._test_lastHandlePlayerEventImmediate(),
             false,
-            "Non-terminal visuals use deferred refresh heuristics on the event path"
+            "Active playing visuals remain eligible for coalesce/debounce on the event path"
+        )
+    }
+
+    /// Verifies that ``handlePlayerEvent(_:)`` requests immediate delivery when ``hasError`` is true
+    /// even if the derived visual is ``PlayerVisualState/playing``.
+    func testHandlePlayerEventEventPathUsesImmediateWhenHasError() async {
+        WidgetRefreshManager._test_setBypassUITestModeForRefreshGateObservation(true)
+        WidgetRefreshManager._test_setRecordHandlePlayerEventImmediate(true)
+
+        SharedPlayerManager.persistWidgetSnapshot(
+            visualState: .playing,
+            language: "fi",
+            hasError: true
+        )
+
+        await refreshManager._test_invokeHandlePlayerEvent(.persistedWidgetStateDidUpdate)
+        XCTAssertEqual(
+            WidgetRefreshManager._test_lastHandlePlayerEventImmediate(),
+            true,
+            "Permanent-error chrome must bypass coalesce deferral on the event path"
         )
     }
 

@@ -169,4 +169,43 @@ final class WidgetDisplayModelsTests: XCTestCase {
             XCTAssertFalse(model.speakerLine.isEmpty, "speakerLine must use NBSP placeholder for \(state)")
         }
     }
+
+    // MARK: - Provider snapshot resolver (Tier 3)
+
+    /// Verifies ``WidgetProviderSnapshotResolver/resolveFromSnapshot()`` returns persisted fields.
+    func testProviderSnapshotResolverReturnsPersistedFields() async {
+        await MainActor.run {
+            WidgetRefreshManager.setHasActiveLutheranWidgets(true)
+        }
+        SharedPlayerManager.persistWidgetSnapshot(
+            visualState: .userPaused,
+            language: "sv",
+            streamMetadata: metadata(title: programTitle, speaker: speaker),
+            hasError: false
+        )
+
+        let fields = WidgetProviderSnapshotResolver.resolveFromSnapshot()
+        XCTAssertEqual(fields.visualState, .userPaused)
+        XCTAssertEqual(fields.currentLanguage, "sv")
+        XCTAssertFalse(fields.hasError)
+        XCTAssertEqual(fields.streamMetadata?.programTitle, programTitle)
+    }
+
+    /// Verifies factory defaults when no in-session snapshot exists.
+    func testProviderSnapshotResolverDefaultsToPrePlayWhenSnapshotAbsent() async {
+        await SharedPlayerManager.clearAllLocalState()
+        XCTAssertNil(SharedPlayerManager.loadPersistedWidgetState())
+
+        let fields = WidgetProviderSnapshotResolver.resolveFromSnapshot()
+        XCTAssertEqual(fields.visualState, .prePlay)
+        XCTAssertFalse(fields.hasError)
+        XCTAssertFalse(fields.currentLanguage.isEmpty)
+    }
+
+    /// Verifies ``WidgetProviderSnapshotResolver/stationLabel(for:)`` uses the stream facade.
+    func testProviderSnapshotResolverStationLabelUsesStreamFacade() {
+        let label = WidgetProviderSnapshotResolver.stationLabel(for: "fi")
+        XCTAssertTrue(label.contains("🇫🇮"))
+        XCTAssertFalse(label.trimmingCharacters(in: .whitespaces).isEmpty)
+    }
 }

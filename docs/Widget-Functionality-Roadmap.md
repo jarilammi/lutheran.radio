@@ -221,12 +221,37 @@ Ordered by increasing risk and decreasing isolation. Earlier items are safer.
 
 **Scope:** Consolidation here is **main-app `refreshIfNeeded` call-site dedup only** — not replacing the snapshot model, not streaming `PlayerEvent` across process boundaries, and not removing optimistic extension writes or provider read-refresh hygiene.
 
-- [ ] **Provider `refreshVisualStateFromPersistence` audit:** Document which Provider paths require the actor hop vs. safe direct `loadPersistedWidgetState` after main-app `reloadTimelines`. Any removal gated on device-proven timeline freshness.
-- [ ] **Imperative `refreshIfNeeded` deduplication (main app only):** After event path is device-proven for weeks, audit duplicate call sites inside SharedPlayerManager mutation paths (Event-Driven Roadmap Tier 4 inventory §2). Observer becomes sole driver only when proven identical timing/coalescing/privacy behavior.
-- [ ] **Widget-action polling timer evaluation:** `ViewController.setupWidgetActionPolling()` (30 s) complements Darwin listener — measure whether event-driven + foreground `checkForPendingWidgetActions` makes it removable (very late).
-- [ ] **Control widget value-provider freshness:** Verify `LutheranRadioWidgetControl.Provider` read path matches home-widget Provider hygiene after long-lived extension process (read-refresh guard).
+- [x] **Provider `refreshVisualStateFromPersistence` audit (2026-07-13):** Documented in **Provider snapshot audit** below and implemented via ``WidgetProviderSnapshotResolver`` in `WidgetDisplayModels.swift`. Home-widget and Control-widget Providers call ``resolveWithActorHygiene(manager:)``; snapshot fields remain static ``loadPersistedWidgetState()`` reads. Actor hop retained for extension hygiene (not removed — device-proven removal deferred).
+- [x] **Imperative `refreshIfNeeded` deduplication (main app only, 2026-07-13):** Removed duplicate imperative calls from ``performActualSave``, ``didUpdateStreamMetadata``, and ``RadioPlayerCoordinator/updateUserDefaultsLanguage``. Tier 2 observer is now the sole driver for mutation-path timeline reloads; ``refreshUsesImmediateDelivery(for:hasError:)`` extended for sticky-pause and error urgency parity. Retained imperative paths: lifecycle/teardown (`performSessionAndWidgetTeardown`, ``performPostStopWidgetHygiene``, termination), AppDelegate foreground, widget-extension optimistic intents, widget-process ``handleWidgetPlay``/``handleWidgetStop`` delayed refresh.
+- [x] **Widget-action polling timer evaluation (2026-07-13):** Removed `ViewController.setupWidgetActionPolling()` (30 s repeating timer). Darwin notify + 1…5 s launch burst + `SceneDelegate` become-active/foreground hooks are sufficient; background timers are unreliable while suspended.
+- [x] **Control widget value-provider freshness (2026-07-13):** ``LutheranRadioWidgetControl/Provider`` uses ``WidgetProviderSnapshotResolver`` (symmetric hygiene with home-widget ``getPendingOrCurrentState``).
 
 **Rule:** Nothing removed until event + imperative paths produce identical observable widget/LA behavior on device.
+
+#### Provider snapshot audit (canonical)
+
+| Provider path | Actor hop (`refreshVisualStateFromPersistence`) | Snapshot read | Notes |
+|---------------|--------------------------------------------------|---------------|-------|
+| Home widget `placeholder` | No | N/A (synthetic `.prePlay`) | Static preview only |
+| Home widget `snapshot` / `timeline` / `createEntry` | **Yes** (via ``WidgetProviderSnapshotResolver``) | ``loadPersistedWidgetState()`` only | Never falls back to ``currentVisualState``; hop resets loaded-guard for long-lived extension processes |
+| Control widget `previewValue` | No | N/A (synthetic `.prePlay`) | Static preview only |
+| Control widget `currentValue` | **Yes** (via resolver) | ``loadPersistedWidgetState()`` primary | Actor fallback when App Group unavailable or snapshot absent |
+| Widget AppIntent optimistic (`ToggleRadioIntent`, etc.) | No | ``loadPersistedWidgetState()`` before write | Followed by extension-local ``refreshIfNeeded(..., immediate: true)`` |
+
+**Safe direct-read rule:** Code that reads **only** ``loadPersistedWidgetState()`` / ``resolveFromSnapshot()`` and never ``currentVisualState`` could skip the actor hop in theory; Providers keep the hop as permanent extension hygiene until device-proven otherwise.
+
+#### Imperative `refreshIfNeeded` inventory post-dedup
+
+| Caller | Status | Reason |
+|--------|--------|--------|
+| ``WidgetRefreshManager/handlePlayerEvent`` | **Primary** (mutation path) | Tier 2 observer; urgency via ``refreshUsesImmediateDelivery`` |
+| ``performActualSave`` | Removed (2026-07-13) | Duplicate with observer + ``cancelPendingRefresh`` retained |
+| ``didUpdateStreamMetadata`` | Removed (2026-07-13) | ``metadataDidUpdate`` + ``persistedWidgetStateDidUpdate`` |
+| ``updateUserDefaultsLanguage`` | Removed (2026-07-13) | ``persistedWidgetStateDidUpdate``; language branch in ``refreshIfNeeded`` |
+| ``performSessionAndWidgetTeardown`` / ``performPostStopWidgetHygiene`` / termination | Retained | Lifecycle + explicit ``reloadAllTimelines`` |
+| `AppDelegate.applicationWillEnterForeground` | Retained | Foreground liveness; no ``PlayerEvent`` |
+| Widget extension intents | Retained | Cross-process optimistic; no event emission in extension |
+| Widget-process ``handleWidgetPlay``/``handleWidgetStop`` | Retained | Extension-only; ``emit`` guarded |
 
 ### Tier 4 – Media Surface Coordination (Cross-Cutting)
 
@@ -246,7 +271,7 @@ Ordered by increasing risk and decreasing isolation. Earlier items are safer.
 - [x] README SSOT widget presentation subsection + Architecture DocC event-driven section (cross-links widgets).
 - [x] `WidgetRefreshManager` consumer test suite (19 tests) + teardown/post-stop + liveness + cold-launch factory reset.
 - [ ] **This roadmap** — initial draft (2026-07-10). Update after each micro-step.
-- [ ] **Cross-link from Event-Driven Refactor Roadmap** — add SeeAlso entry pointing here for widget-specific backlog.
+- [x] **Cross-link from Event-Driven Refactor Roadmap (2026-07-13):** Tier 3 completion entry + mutation-path dedup inventory cross-link added.
 - [ ] **DocC article or README subsection:** "Widget & Live Activity Functionality" summarizing intent table, App Group keys, and test file index (if this roadmap grows too large for README).
 - [ ] **Tier 2 test items above** — track completion here with test method names.
 
@@ -301,7 +326,7 @@ The next item is always the highest-priority unchecked entry in the backlog abov
 **Recommended starting order (2026-07-13):**
 
 1. Tier 1 optional `WidgetDisplayProjection` bundle (only if future call-site churn warrants it).
-2. Tier 3 provider `refreshVisualStateFromPersistence` audit (late stage).
+2. Tier 4 LA stacking validation (optional).
 3. Tier 5 cross-link from Event-Driven Refactor Roadmap.
 
 Each micro-step: read target files first, minimal diff, apply the documentation voice & reference discipline above, update this roadmap Completed + Update Log, run build + test gates per `CODING_AGENT.md`.
@@ -332,6 +357,7 @@ For presentation mapping rules and termination invariants, use [`docs/Widget-Pre
 
 ## Update Log
 
+- **2026-07-13:** Tier 3 complete — ``WidgetProviderSnapshotResolver`` + provider audit table; imperative ``refreshIfNeeded`` dedup in ``performActualSave``, ``didUpdateStreamMetadata``, ``updateUserDefaultsLanguage``; ``refreshUsesImmediateDelivery`` urgency parity on event path; removed `setupWidgetActionPolling`; Control widget Provider aligned with home-widget hygiene; tests in `WidgetRefreshManagerEventTests` + `WidgetDisplayModelsTests`.
 - **2026-07-13:** Tier 2 complete — `WidgetDisplayModelsTests.swift` (resolver matrix), `WidgetIntentContractTests.swift` (pending-action dedup, instant-feedback expiry, optimistic persist contract, widget switch SSOT); `forcePersistVisualState` renamed to `persistOptimisticWidgetSnapshot` with deprecated forwarding wrapper.
 - **2026-07-13:** Tier 1 — Control widget `Value` pre-derivation (`statusPresentation` + `controlPresentation` in Provider; toggle label consumes narrow fields; symmetric with `SimpleEntry`).
 - **2026-07-13:** Core Principles — added **Documentation voice & reference discipline** (production-grade source language; cross-links only to committed, tracked docs).

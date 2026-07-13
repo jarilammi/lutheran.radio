@@ -3273,8 +3273,9 @@ extension SharedPlayerManager {
     ///   differs and we are in the `.prePlay`/hold window. This closes the exact race
     ///   that caused widget language taps to revert to the previous stream.
     ///
-    /// - Postcondition: If a write occurs, `persistedWidgetState` contains the latest
-    ///   (visualState, currentLanguage, hasError, metadata) and a refresh is scheduled.
+    /// - Postcondition: If a write occurs, the in-process session snapshot contains the latest
+    ///   (visualState, currentLanguage, hasError, metadata). Widget timeline reload is scheduled
+    ///   by the Tier 2 ``PlayerEvent`` observer (``.persistedWidgetStateDidUpdate`` and related cases).
     ///
     /// - SeeAlso: ``performActualSave(_:widgetState:at:)``, ``preferredWidgetLanguage()``,
     ///   ``persistWidgetSnapshot(visualState:language:streamMetadata:clearStreamMetadata:hasError:)``,
@@ -3447,19 +3448,16 @@ extension SharedPlayerManager {
         sharedDefaults?.removeObject(forKey: "instantFeedbackTime")
         sharedDefaults?.removeObject(forKey: "instantFeedbackLanguage")
 
-        let visualStateForRefresh = currentVisualState
-
         // Always hop to MainActor for WidgetRefreshManager (required in Swift 6)
         Task { @MainActor in
             if visualStateChanged {
                 WidgetRefreshManager.shared.cancelPendingRefresh()
             }
-            WidgetRefreshManager.shared.refreshIfNeeded(
-                visualState: visualStateForRefresh,
-                currentLanguage: state.currentLanguage,
-                hasError: state.hasError,
-                immediate: isUrgentUpdate
-            )
+            // Widget timeline reload is driven by the Tier 2 ``PlayerEvent`` observer
+            // (``.visualStateDidChange``, ``.persistedWidgetStateDidUpdate``, stream verbs, etc.)
+            // which routes through ``WidgetRefreshManager/handlePlayerEvent(_:)`` with urgency
+            // parity via ``refreshUsesImmediateDelivery(for:hasError:)``. Imperative
+            // ``refreshIfNeeded`` here was removed in Tier 3 — duplicate with the observer.
 
             // Live Activity refresh (parallel to widget timeline reload).
             // The call goes through the manager's change detection (lastPushedContent).

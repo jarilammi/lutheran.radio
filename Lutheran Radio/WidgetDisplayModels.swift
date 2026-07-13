@@ -258,3 +258,81 @@ internal func displayFlag(for code: String) -> String {
     default: return "🌍"
     }
 }
+
+// MARK: - Provider snapshot resolution (Tier 3 hygiene)
+
+/// Snapshot fields resolved for WidgetKit Provider timeline and Control Center reads.
+///
+/// Populated exclusively from ``SharedPlayerManager/loadPersistedWidgetState()`` (or safe
+/// `.prePlay` defaults). Providers pre-derive presentation surfaces from these fields once
+/// per entry — never from raw ``PlayerVisualState`` policy inside leaf `body` builders.
+///
+/// - SeeAlso: ``WidgetProviderSnapshotResolver``, `SimpleEntry`, `LutheranRadioWidgetControl/Value`,
+///   docs/Widget-Functionality-Roadmap.md (Tier 3 provider audit).
+struct WidgetProviderSnapshotFields: Sendable, Equatable {
+    let currentLanguage: String
+    let hasError: Bool
+    let visualState: PlayerVisualState
+    let streamMetadata: StreamProgramMetadata?
+}
+
+/// Canonical resolver for home-widget and Control-widget Provider entry points.
+///
+/// Documents which paths require an actor hop versus safe direct snapshot reads.
+/// Cross-process freshness still depends on main-app ``WidgetRefreshManager`` timeline reloads;
+/// the resolver only governs in-process read hygiene inside the extension.
+///
+/// - SeeAlso: ``SharedPlayerManager/refreshVisualStateFromPersistence()``,
+///   ``SharedPlayerManager/loadPersistedWidgetState()``, docs/Widget-Functionality-Roadmap.md.
+enum WidgetProviderSnapshotResolver {
+
+    /// Resolves snapshot fields without an actor hop.
+    ///
+    /// Safe when the Provider consumes only static snapshot readers (`loadPersistedWidgetState`,
+    /// `preferredWidgetLanguage`, `streamForLanguageCode`) and never consults
+    /// ``SharedPlayerManager/currentVisualState``. Home-widget timeline rendering uses this
+    /// after optional hygiene because `getPendingOrCurrentState` never falls back to actor state.
+    ///
+    /// - Returns: Authoritative session snapshot fields, or factory `.prePlay` defaults when absent.
+    nonisolated static func resolveFromSnapshot() -> WidgetProviderSnapshotFields {
+        if let combined = SharedPlayerManager.loadPersistedWidgetState() {
+            return WidgetProviderSnapshotFields(
+                currentLanguage: combined.currentLanguage,
+                hasError: combined.hasError,
+                visualState: combined.visualState,
+                streamMetadata: combined.streamMetadata
+            )
+        }
+        return WidgetProviderSnapshotFields(
+            currentLanguage: SharedPlayerManager.preferredWidgetLanguage(),
+            hasError: false,
+            visualState: .prePlay,
+            streamMetadata: nil
+        )
+    }
+
+    /// Full provider hygiene: resets the actor loaded-guard, then resolves snapshot fields.
+    ///
+    /// Required when a Provider may consult ``SharedPlayerManager/currentVisualState`` (Control Center
+    /// App Group-unavailable fallback) and recommended for every timeline `snapshot` / `timeline`
+    /// request in long-lived extension processes after optimistic ``persistOptimisticWidgetSnapshot``
+    /// writes. The hop synchronizes the actor guard; snapshot reads remain static.
+    ///
+    /// - Parameter manager: The shared actor instance for the executing process.
+    /// - Returns: Fields from ``resolveFromSnapshot()`` after hygiene.
+    static func resolveWithActorHygiene(
+        manager: SharedPlayerManager = .shared
+    ) async -> WidgetProviderSnapshotFields {
+        await manager.refreshVisualStateFromPersistence()
+        return resolveFromSnapshot()
+    }
+
+    /// Localized station label (`flag + language name`) for a language code.
+    ///
+    /// - Parameter languageCode: BCP-47-style stream code from the snapshot.
+    /// - Returns: Display string used by home-widget `currentStation` and Control-widget `Value`.
+    nonisolated static func stationLabel(for languageCode: String) -> String {
+        let stream = SharedPlayerManager.streamForLanguageCode(languageCode)
+        return stream.flag + " " + stream.language
+    }
+}

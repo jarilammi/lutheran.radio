@@ -191,30 +191,25 @@ extension LutheranRadioWidgetControl {
         
         private func effectiveVisualStateAndStation() async -> (visualState: PlayerVisualState, currentStation: String) {
             let manager = SharedPlayerManager.shared
-            
-            // Always refresh from persistence first (fresh actor).
-            await manager.refreshVisualStateFromPersistence()
-            
-            // App Group unavailable (extremely rare). Fall back to in-memory state + preferred language helper.
+            let fields = await WidgetProviderSnapshotResolver.resolveWithActorHygiene(manager: manager)
+
+            // App Group unavailable (extremely rare): actor fallback after hygiene.
             if UserDefaults(suiteName: "group.radio.lutheran.shared") == nil {
                 let vs = await manager.currentVisualState
-                let lang = SharedPlayerManager.preferredWidgetLanguage()
-                let stream = SharedPlayerManager.streamForLanguageCode(lang)
-                return (vs, stream.flag + " " + stream.language)
+                return (vs, WidgetProviderSnapshotResolver.stationLabel(for: fields.currentLanguage))
             }
-            
-            // The unified snapshot is the single source of truth.
-            if let combined = SharedPlayerManager.loadPersistedWidgetState() {
-                let stream = SharedPlayerManager.streamForLanguageCode(combined.currentLanguage)
-                return (combined.visualState, stream.flag + " " + stream.language)
+
+            // Snapshot present — SSOT path (symmetric with home-widget Provider).
+            if SharedPlayerManager.loadPersistedWidgetState() != nil {
+                return (
+                    fields.visualState,
+                    WidgetProviderSnapshotResolver.stationLabel(for: fields.currentLanguage)
+                )
             }
-            
-            // Ultimate fallback for installs that never wrote a combined snapshot.
+
+            // No snapshot yet: actor visual + preferred language (installs that never wrote).
             let vs = await manager.currentVisualState
-            let lang = SharedPlayerManager.preferredWidgetLanguage()
-            let stream = SharedPlayerManager.streamForLanguageCode(lang)
-            let station = stream.flag + " " + stream.language
-            return (vs, station)
+            return (vs, WidgetProviderSnapshotResolver.stationLabel(for: fields.currentLanguage))
         }
     }
 }
