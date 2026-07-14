@@ -1,6 +1,6 @@
 //
 //  StreamProgramMetadata.swift
-//  Lutheran Radio
+//  WidgetSurface
 //
 //  Parsed ICY/Shoutcast program metadata for widgets and Live Activities.
 //
