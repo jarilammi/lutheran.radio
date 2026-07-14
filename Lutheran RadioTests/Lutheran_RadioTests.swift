@@ -6,6 +6,7 @@
 //
 
 import XCTest
+import WidgetSurface
 @testable import Lutheran_Radio
 
 /// Protocol that our mock will implement to match DirectStreamingPlayer interface

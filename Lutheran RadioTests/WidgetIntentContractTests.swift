@@ -8,6 +8,7 @@
 //
 
 import XCTest
+import WidgetSurface
 @testable import Lutheran_Radio
 
 /// Fast unit tests for App Group pending actions, instant-feedback windows,

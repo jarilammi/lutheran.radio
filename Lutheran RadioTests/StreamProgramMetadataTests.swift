@@ -6,6 +6,7 @@
 //
 
 import XCTest
+import WidgetSurface
 @testable import Lutheran_Radio
 
 /// Protects ``StreamProgramMetadata/from(rawICYMetadata:)`` and

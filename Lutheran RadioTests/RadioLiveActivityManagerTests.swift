@@ -18,6 +18,7 @@
 
 import XCTest
 import ActivityKit
+import WidgetSurface
 @testable import Lutheran_Radio
 
 @MainActor

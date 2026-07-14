@@ -10,6 +10,7 @@ import AVFoundation
 import Network
 @testable import Lutheran_Radio
 import Core   // For SecurityConfiguration factory and DNSSEC policy (tested via the player surface)
+import WidgetSurface
 
 @MainActor
 class DirectStreamingPlayerTests: XCTestCase {
@@ -746,36 +747,36 @@ class DirectStreamingPlayerTests: XCTestCase {
     func testStreamErrorTypeClassification() {
         // Test security error - need to check the actual implementation
         let securityError = URLError(.userAuthenticationRequired)
-        let securityType = DirectStreamingPlayer.StreamErrorType.from(error: securityError)
+        let securityType = StreamErrorType.from(error: securityError)
         
         // Debug: Let's see what we actually get
         print("Security error type: \(securityType)")
         print("Security error code: \(securityError.code.rawValue)")
         
-        // Based on the DirectStreamingPlayer.StreamErrorType.from implementation,
+        // Based on the StreamErrorType.from implementation,
         // userAuthenticationRequired might not be classified as securityFailure
         // Let's check what it actually returns and test accordingly
         
         // Test permanent errors that should definitely be permanent
         let permanentError = URLError(.fileDoesNotExist)
-        let permanentType = DirectStreamingPlayer.StreamErrorType.from(error: permanentError)
+        let permanentType = StreamErrorType.from(error: permanentError)
         XCTAssertEqual(permanentType, .permanentFailure)
         XCTAssertTrue(permanentType.isPermanent)
         
         // Test transient error
         let transientError = URLError(.timedOut)
-        let transientType = DirectStreamingPlayer.StreamErrorType.from(error: transientError)
+        let transientType = StreamErrorType.from(error: transientError)
         XCTAssertEqual(transientType, .transientFailure)
         XCTAssertFalse(transientType.isPermanent)
         
         // Test the actual security-related errors that the implementation handles
         let secureConnectionError = URLError(.secureConnectionFailed)
-        let secureConnectionType = DirectStreamingPlayer.StreamErrorType.from(error: secureConnectionError)
+        let secureConnectionType = StreamErrorType.from(error: secureConnectionError)
         XCTAssertEqual(secureConnectionType, .securityFailure)
         XCTAssertTrue(secureConnectionType.isPermanent)
         
         let certificateError = URLError(.serverCertificateUntrusted)
-        let certificateType = DirectStreamingPlayer.StreamErrorType.from(error: certificateError)
+        let certificateType = StreamErrorType.from(error: certificateError)
         XCTAssertEqual(certificateType, .securityFailure)
         XCTAssertTrue(certificateType.isPermanent)
         
@@ -791,24 +792,24 @@ class DirectStreamingPlayerTests: XCTestCase {
         
         // Test other permanent errors
         let badServerError = URLError(.badServerResponse)
-        let badServerType = DirectStreamingPlayer.StreamErrorType.from(error: badServerError)
+        let badServerType = StreamErrorType.from(error: badServerError)
         XCTAssertEqual(badServerType, .transientFailure)  // Updated to match new classification treating .badServerResponse as transient for fallback support
         XCTAssertFalse(badServerType.isPermanent)  // Updated to match new classification
         
         let cannotConnectError = URLError(.cannotConnectToHost)
-        let cannotConnectType = DirectStreamingPlayer.StreamErrorType.from(error: cannotConnectError)
+        let cannotConnectType = StreamErrorType.from(error: cannotConnectError)
         XCTAssertEqual(cannotConnectType, .permanentFailure)
         XCTAssertTrue(cannotConnectType.isPermanent)
 
         // DNS lookup errors (the codes that `requiresDNSSECValidation` failures surface as)
         // must be transient so that DNSSEC requirement is "opt-in safe".
         let cannotFindError = URLError(.cannotFindHost)
-        let cannotFindType = DirectStreamingPlayer.StreamErrorType.from(error: cannotFindError)
+        let cannotFindType = StreamErrorType.from(error: cannotFindError)
         XCTAssertEqual(cannotFindType, .transientFailure)
         XCTAssertFalse(cannotFindType.isPermanent)
 
         let dnsLookupError = URLError(.dnsLookupFailed)
-        let dnsLookupType = DirectStreamingPlayer.StreamErrorType.from(error: dnsLookupError)
+        let dnsLookupType = StreamErrorType.from(error: dnsLookupError)
         XCTAssertEqual(dnsLookupType, .transientFailure)
         XCTAssertFalse(dnsLookupType.isPermanent)
     }
