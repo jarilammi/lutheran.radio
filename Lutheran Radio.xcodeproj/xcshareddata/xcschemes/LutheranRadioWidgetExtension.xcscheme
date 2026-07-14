@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Scheme
-   LastUpgradeVersion = "2650"
+   LastUpgradeVersion = "2700"
    wasCreatedForAppExtension = "YES"
    version = "2.0">
    <BuildAction
@@ -53,6 +53,16 @@
                BlueprintIdentifier = "B77E54262F6E6A6700A055DA"
                BuildableName = "CoreTests.xctest"
                BlueprintName = "CoreTests"
+               ReferencedContainer = "container:Lutheran Radio.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "YES">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "B72A089C30067E5600560CD1"
+               BuildableName = "WidgetSurfaceTests.xctest"
                ReferencedContainer = "container:Lutheran Radio.xcodeproj">
             </BuildableReference>
          </TestableReference>
