@@ -103,7 +103,8 @@ The finish line is a **hybrid, two-zone model** — not a migration from snapsho
 
 ### Documentation & Tests (Widget-Adjacent, Complete)
 
-- **Event-driven consumer tests:** `WidgetRefreshManagerEventTests.swift` (19), `WidgetEventObserverTests.swift` (6), `RadioLiveActivityManagerTests.swift` attribute-events subset (6), widget-process guards in `SharedPlayerManagerEventTests.swift` / `PlayerEventSubscriberEventTests.swift`.
+- **Event-driven consumer tests:** `WidgetRefreshManagerEventTests.swift` (20), `WidgetEventObserverTests.swift` (6), `RadioLiveActivityManagerTests.swift` attribute-events subset (6), widget-process guards in `SharedPlayerManagerEventTests.swift` / `PlayerEventSubscriberEventTests.swift`.
+- **Presentation mapper matrices (2026-07-14):** `PlayerPresentationMapperTests.swift` (9) — `makeStatusPresentation()` and `makeControlPresentation()` for all six `PlayerVisualState` cases; complements `WidgetDisplayModelsTests.swift` metadata resolver coverage.
 - **Snapshot / lifecycle tests:** cold-launch factory reset, liveness sentinel, session teardown, post-stop hygiene, Now Playing metadata clear.
 - **Now Playing metadata alignment (2026-06-25/26):** `updateNowPlayingInfo()` delegates to `StreamProgramMetadata.nowPlayingDisplayStrings(...)`; language-switch metadata clear triggers immediate Now Playing refresh. Same formatter family as widget/LA title resolution.
 - **README + Architecture DocC** cross-link widget presentation surfaces and event-driven refresh.
@@ -269,11 +270,12 @@ Ordered by increasing risk and decreasing isolation. Earlier items are safer.
 
 - [x] [`docs/Widget-Presentation-Dataflow.md`](Widget-Presentation-Dataflow.md) — canonical presentation reference.
 - [x] README SSOT widget presentation subsection + Architecture DocC event-driven section (cross-links widgets).
-- [x] `WidgetRefreshManager` consumer test suite (19 tests) + teardown/post-stop + liveness + cold-launch factory reset.
+- [x] `WidgetRefreshManager` consumer test suite (20 tests) + teardown/post-stop + liveness + cold-launch factory reset.
 - [x] **This roadmap** — living document; update after each micro-step.
 - [x] **Cross-link from Event-Driven Refactor Roadmap (2026-07-13):** Tier 3 completion entry + mutation-path dedup inventory cross-link added.
 - [x] **README subsection (2026-07-14):** "Widget & Live Activity functionality" table (presentation, stacking doc, wrapper, test index).
-- [ ] **Tier 2 test items above** — track completion here with test method names.
+- [x] **Presentation mapper test index (2026-07-14):** `PlayerPresentationMapperTests` — `testMakeStatusPresentationMatrixMapsEveryVisualState`, `testMakeStatusPresentationSystemImagePolicyPerVisualState`, `testMakeStatusPresentationProducesNonEmptyLocalizedTextForAllStates`, `testMakeStatusPresentationIsDistinctAcrossAllVisualStates`, `testMakeControlPresentationMatrixMapsEveryVisualState`, `testMakeControlPresentationUsesPauseGlyphOnlyWhenActivelyPlaying`, `testMakeControlPresentationTintMatchesButtonTintColorPolicy`, `testMakeControlPresentationPlayingDiffersFromAllNonPlayingStates`, `testMakeControlPresentationNonPlayingStatesRemainDistinctByTint`.
+- [x] **Tier 2 test index (2026-07-13):** `WidgetDisplayModelsTests` (metadata resolver matrix + `WidgetProviderSnapshotResolver`); `WidgetIntentContractTests` (pending-action dedup, instant-feedback expiry, `persistOptimisticWidgetSnapshot`, widget switch SSOT).
 
 **Tier 5 complete when:** Tier 2 checklist is green, OI-W3 has a documented test strategy (even if extension target remains deferred), and all touched files carry production `///` docs with `SeeAlso:` to this roadmap.
 
@@ -356,6 +358,7 @@ For presentation mapping rules and termination invariants, use [`docs/Widget-Pre
 
 ## Update Log
 
+- **2026-07-14:** Presentation mapper matrices — `PlayerPresentationMapperTests.swift` (status + control SSOT for all six `PlayerVisualState` cases); Tier 5 test index closed; `WidgetRefreshManager` test count corrected to 20.
 - **2026-07-14:** Tier 4 complete — [`docs/Live-Activity-Stacking-and-Media-Surfaces.md`](Live-Activity-Stacking-and-Media-Surfaces.md) (stacking matrix, LA start policy, push-cost validation); ``refreshAllMediaSurfaces`` wrapper + call-site consolidation; OI-W4 closed; README functionality table; `testRefreshAllMediaSurfacesCompletesAndOptionalWidgetRefreshPassesGates`.
 - **2026-07-13:** Tier 3 complete — ``WidgetProviderSnapshotResolver`` + provider audit table; imperative ``refreshIfNeeded`` dedup in ``performActualSave``, ``didUpdateStreamMetadata``, ``updateUserDefaultsLanguage``; ``refreshUsesImmediateDelivery`` urgency parity on event path; removed `setupWidgetActionPolling`; Control widget Provider aligned with home-widget hygiene; tests in `WidgetRefreshManagerEventTests` + `WidgetDisplayModelsTests`.
 - **2026-07-13:** Tier 2 complete — `WidgetDisplayModelsTests.swift` (resolver matrix), `WidgetIntentContractTests.swift` (pending-action dedup, instant-feedback expiry, optimistic persist contract, widget switch SSOT); `forcePersistVisualState` renamed to `persistOptimisticWidgetSnapshot` with deprecated forwarding wrapper.

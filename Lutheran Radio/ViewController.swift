@@ -1398,13 +1398,22 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         // scenario that leaves the host in yellow .prePlay "connecting" state and stalls the
         // test runner. We still drain the pending key so the next real run starts clean.
         if SharedPlayerManager.isRunningInUITestMode {
+            #if DEBUG
+            if Self._test_bypassUITestModeForPendingActionProcessing {
+                // Unit-test host: exercise the real play/pause drain contract (see WidgetIntentContractTests).
+            } else {
+                if let pending = SharedPlayerManager.shared.getPendingActionIfFresh(maxAge: 30.0) {
+                    SharedPlayerManager.shared.clearPendingAction(actionId: pending.actionId)
+                    print("[ViewController] UITestMode — cleared stale pending \(pending.action) without executing (avoids killed-session user input interpretation)")
+                }
+                return
+            }
+            #else
             if let pending = SharedPlayerManager.shared.getPendingActionIfFresh(maxAge: 30.0) {
                 SharedPlayerManager.shared.clearPendingAction(actionId: pending.actionId)
-                #if DEBUG
-                print("[ViewController] UITestMode — cleared stale pending \(pending.action) without executing (avoids killed-session user input interpretation)")
-                #endif
             }
             return
+            #endif
         }
 
         guard let pending = SharedPlayerManager.shared.getPendingActionIfFresh(maxAge: 30.0) else {
@@ -1770,3 +1779,29 @@ extension ViewController: StreamingPlayerDelegate {
         }
     }
 }
+
+// MARK: - DEBUG test seams (WidgetIntentContractTests)
+
+#if DEBUG
+extension ViewController {
+
+    /// When `true`, ``checkForPendingWidgetActions()`` processes play/pause/switch pendings
+    /// under the XCTest host instead of the UITestMode drain-only path.
+    ///
+    /// Mirrors ``WidgetRefreshManager/_test_setBypassUITestModeForRefreshGateObservation(_:)``.
+    ///
+    /// - SeeAlso: ``WidgetIntentContractTests``, ``checkForPendingWidgetActions()``,
+    ///   ``SharedPlayerManager/isRunningInUITestMode``, docs/Widget-Functionality-Roadmap.md (Tier 2).
+    nonisolated(unsafe) private static var _test_bypassUITestModeForPendingActionProcessing = false
+
+    /// Enables or disables real pending-action processing while `isRunningInUITestMode` is true.
+    nonisolated static func _test_setBypassUITestModeForPendingActionProcessing(_ bypass: Bool) {
+        unsafe _test_bypassUITestModeForPendingActionProcessing = bypass
+    }
+
+    /// Resets widget play/pause debounce so back-to-back contract tests do not interfere.
+    func _test_resetWidgetActionDebounceForTests() {
+        lastWidgetActionTime = .distantPast
+    }
+}
+#endif

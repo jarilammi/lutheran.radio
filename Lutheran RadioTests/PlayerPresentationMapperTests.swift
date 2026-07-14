@@ -13,7 +13,11 @@ import XCTest
 @testable import Lutheran_Radio
 
 /// Protects the canonical status-pill and play/pause control mappings for every
-/// ``PlayerVisualState`` case (OI-W3 strategy: main-app host, pure functions, no IPC).
+/// ``PlayerVisualState`` case.
+///
+/// **Invariant:** These mappers are pure functions with no WidgetCenter IPC, ActivityKit,
+/// or actor hops. They run in the main-app test host and mirror the derivation performed
+/// once per snapshot in widget Providers and Live Activity outer closures.
 ///
 /// **Contracts protected:**
 /// - Status axis: background, foreground, localized text, and optional `systemImage` per case.
@@ -21,8 +25,8 @@ import XCTest
 /// - Control tint derives from ``PlayerVisualState/buttonTintColor`` via a single `Color(uiColor:)` bridge.
 ///
 /// - SeeAlso: ``PlayerStatusPresentation``, ``PlayerControlPresentation``,
-///   `PlayerVisualState.swift`, docs/Widget-Presentation-Dataflow.md,
-///   docs/widget-test-gaps-analysis.md (P0).
+///   ``PlayerVisualState``, docs/Widget-Presentation-Dataflow.md,
+///   docs/Widget-Functionality-Roadmap.md (Tier 5 presentation mapper coverage).
 final class PlayerPresentationMapperTests: XCTestCase {
 
     private let allVisualStates: [PlayerVisualState] = [
@@ -72,6 +76,12 @@ final class PlayerPresentationMapperTests: XCTestCase {
             ),
         ]
 
+        XCTAssertEqual(
+            expectations.count,
+            allVisualStates.count,
+            "Status matrix must include every PlayerVisualState case"
+        )
+
         for state in allVisualStates {
             guard let expected = expectations[state] else {
                 XCTFail("Missing status expectation for \(state)")
@@ -85,7 +95,27 @@ final class PlayerPresentationMapperTests: XCTestCase {
         }
     }
 
-    /// Every visual state must surface non-empty localized status copy for widget/LA chrome.
+    /// Verifies the optional status glyph policy: only ``PlayerVisualState/cleared`` omits `systemImage`.
+    func testMakeStatusPresentationSystemImagePolicyPerVisualState() {
+        let expectedGlyphs: [PlayerVisualState: String?] = [
+            .playing: "play.fill",
+            .prePlay: "play.circle",
+            .cleared: nil,
+            .userPaused: "pause.fill",
+            .thermalPaused: "pause.fill",
+            .securityLocked: "lock.fill",
+        ]
+
+        for state in allVisualStates {
+            XCTAssertEqual(
+                state.makeStatusPresentation().systemImage,
+                expectedGlyphs[state] ?? nil,
+                "Status systemImage must match SSOT for \(state)"
+            )
+        }
+    }
+
+    /// Every visual state must surface non-empty localized status copy for widget and Live Activity chrome.
     func testMakeStatusPresentationProducesNonEmptyLocalizedTextForAllStates() {
         for state in allVisualStates {
             let presentation = state.makeStatusPresentation()
@@ -141,23 +171,37 @@ final class PlayerPresentationMapperTests: XCTestCase {
 
     /// Control tint must remain aligned with ``buttonTintColor`` (single bridge site in mapper).
     func testMakeControlPresentationTintMatchesButtonTintColorPolicy() {
+        let expectedUIColors: [PlayerVisualState: UIColor] = [
+            .prePlay: .systemYellow,
+            .cleared: .systemBlue,
+            .playing: .systemGreen,
+            .userPaused: .secondaryLabel,
+            .thermalPaused: .systemOrange,
+            .securityLocked: .systemRed,
+        ]
+
         for state in allVisualStates {
             let presentation = state.makeControlPresentation()
-            let expectedTint = Color(uiColor: state.buttonTintColor)
+            let policyColor = expectedUIColors[state] ?? state.buttonTintColor
+            XCTAssertEqual(
+                state.buttonTintColor,
+                policyColor,
+                "buttonTintColor policy must remain stable for \(state)"
+            )
             XCTAssertEqual(
                 presentation.tint,
-                expectedTint,
+                Color(uiColor: policyColor),
                 "Control tint must mirror buttonTintColor for \(state)"
             )
         }
     }
 
-    /// Regression guard: control presentations differ across at least playing vs paused families.
-    func testMakeControlPresentationPlayingDiffersFromStickyPauseFamily() {
+    /// Regression guard: control presentations differ across playing vs every non-playing state.
+    func testMakeControlPresentationPlayingDiffersFromAllNonPlayingStates() {
         let playing = PlayerVisualState.playing.makeControlPresentation()
-        let pausedFamily: [PlayerVisualState] = [.userPaused, .thermalPaused, .securityLocked, .prePlay, .cleared]
+        let nonPlaying = allVisualStates.filter { $0 != .playing }
 
-        for state in pausedFamily {
+        for state in nonPlaying {
             XCTAssertNotEqual(
                 playing,
                 state.makeControlPresentation(),
@@ -166,4 +210,19 @@ final class PlayerPresentationMapperTests: XCTestCase {
         }
     }
 
+    /// Non-playing states that share the play glyph must still differ by tint policy.
+    func testMakeControlPresentationNonPlayingStatesRemainDistinctByTint() {
+        let nonPlaying = allVisualStates.filter { !$0.isActivelyPlaying }
+        let presentations = nonPlaying.map { ($0, $0.makeControlPresentation()) }
+
+        for i in presentations.indices {
+            for j in presentations.indices where j > i {
+                XCTAssertNotEqual(
+                    presentations[i].1,
+                    presentations[j].1,
+                    "Control presentation must differ for \(presentations[i].0) vs \(presentations[j].0)"
+                )
+            }
+        }
+    }
 }
