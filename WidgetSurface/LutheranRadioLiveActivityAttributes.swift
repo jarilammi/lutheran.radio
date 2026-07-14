@@ -1,6 +1,6 @@
 //
 //  LutheranRadioLiveActivityAttributes.swift
-//  Lutheran Radio
+//  WidgetSurface
 //
 //  Created by Jari Lammi on 13.6.2025.
 //
