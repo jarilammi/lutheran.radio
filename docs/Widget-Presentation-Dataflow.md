@@ -179,6 +179,16 @@ The fallback timer is retained for the rare situation where normal event deliver
 
 See `RadioLiveActivityManager.swift` (class docs, ``updateCurrentActivity()``, ``lastPushedContent``, ``beginObservingActivityEvents(_:)``, ``activityObservationTask``, `startLocalUpdateTimer`) and the call sites in `SharedPlayerManager` (set* methods + `didUpdateStreamMetadata`) and `RadioPlayerCoordinator`.
 
+## Media Surface Coordination & Lock Screen Stacking
+
+System Now Playing, Live Activities, and widgets are three independent iOS surfaces with intentional coexistence. When both Now Playing and a Live Activity are active, iOS stacks both cards on the Lock Screen — expected platform behavior, not a defect.
+
+- **Formatter parity:** `StreamProgramMetadata.nowPlayingDisplayStrings(...)` is shared with ``updateNowPlayingInfo()`` and widget/LA title resolution.
+- **Coordinated refresh:** ``SharedPlayerManager/refreshAllMediaSurfaces(liveActivity:widgetRefresh:widgetRefreshImmediate:)`` (main app) aligns Now Playing + Live Activity after visual transitions; widget reloads remain on the Tier 2 ``PlayerEvent`` observer unless explicitly requested.
+- **LA start policy:** First `.playing` via ``setPlaying()`` (``.startOrUpdate``); background catch-up via ``RadioLiveActivityManager/handleAppWillEnterBackground()``; termination ends LA immediately.
+
+Full stacking matrix, push-cost analysis, and QA scenarios: [`docs/Live-Activity-Stacking-and-Media-Surfaces.md`](Live-Activity-Stacking-and-Media-Surfaces.md).
+
 ## Cross-References
 
 - `PlayerVisualState.swift` — authoritative source of `makeStatusPresentation()` / `makeControlPresentation()` + semantics of `isActivelyPlaying`.

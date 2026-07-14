@@ -2559,6 +2559,41 @@ final class SharedPlayerManagerEventTests: XCTestCase {
         }
     }
 
+    /// Protects the Tier 4 ``refreshAllMediaSurfaces(liveActivity:widgetRefresh:widgetRefreshImmediate:)``
+    /// wrapper: visual mutations complete without trapping, and optional imperative widget refresh
+    /// reaches ``WidgetRefreshManager/refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)``
+    /// when explicitly requested (default mutation paths remain on the PlayerEvent observer).
+    ///
+    /// - SeeAlso: docs/Live-Activity-Stacking-and-Media-Surfaces.md,
+    ///   ``SharedPlayerManager/setPlaying()``, ``SharedPlayerManager/markAsUserPaused()``.
+    func testRefreshAllMediaSurfacesCompletesAndOptionalWidgetRefreshPassesGates() async {
+        await manager.setPlaying()
+        await manager.refreshAllMediaSurfaces(liveActivity: .updateIfActive)
+
+        await manager.markAsUserPaused()
+        let visual = await manager.currentVisualState
+        XCTAssertEqual(visual, .userPaused, "markAsUserPaused must lock sticky pause visual")
+
+        await MainActor.run {
+            WidgetRefreshManager._test_setBypassUITestModeForRefreshGateObservation(true)
+            WidgetRefreshManager._test_setRecordRefreshIfNeededGateOutcomes(true)
+            WidgetRefreshManager._test_clearRefreshIfNeededGateOutcomeLog()
+        }
+
+        await manager.refreshAllMediaSurfaces(
+            liveActivity: .none,
+            widgetRefresh: true,
+            widgetRefreshImmediate: true
+        )
+
+        await MainActor.run {
+            XCTAssertTrue(
+                WidgetRefreshManager._test_refreshIfNeededGateOutcomeLog().contains(.passedGuards),
+                "Optional widget refresh must pass gates when widgetRefresh is true"
+            )
+        }
+    }
+
     /// Verifies the orchestration contract of ``SharedPlayerManager/performSessionAndWidgetTeardown(includeFactoryReset:liveActivityTeardown:refreshWidgets:widgetVisualState:staleLiveness:)``.
     ///
     /// The test drives the full awaited path with factory reset, termination liveness sentinel,

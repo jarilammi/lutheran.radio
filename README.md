@@ -528,6 +528,18 @@ Derivation happens once in the WidgetKit `Provider` (for `SimpleEntry`) or once 
 
 See [docs/Widget-Presentation-Dataflow.md](docs/Widget-Presentation-Dataflow.md) for the snapshot-driven pattern, rationale, terminology, and contributor guidance. The same surfaces are used by the Control widget and the main player UI.
 
+**Widget & Live Activity functionality (intents, stacking, media coordination)**
+
+| Topic | Document / symbol |
+|-------|-------------------|
+| Presentation contract (three narrow surfaces) | [docs/Widget-Presentation-Dataflow.md](docs/Widget-Presentation-Dataflow.md) |
+| Backlog + architecture status | [docs/Widget-Functionality-Roadmap.md](docs/Widget-Functionality-Roadmap.md) |
+| Now Playing + LA stacking, start policy, metadata push cost | [docs/Live-Activity-Stacking-and-Media-Surfaces.md](docs/Live-Activity-Stacking-and-Media-Surfaces.md) |
+| Media surface refresh wrapper | `SharedPlayerManager.refreshAllMediaSurfaces(liveActivity:widgetRefresh:widgetRefreshImmediate:)` |
+| Intent + snapshot contract tests | `WidgetIntentContractTests.swift`, `WidgetDisplayModelsTests.swift` |
+| LA diff suppression tests | `RadioLiveActivityManagerTests.swift` |
+| Widget refresh consumer tests | `WidgetRefreshManagerEventTests.swift` |
+
 `DirectStreamingPlayer.swift` and `Core/Security/CertificateValidator.swift` now consume these shared components instead of duplicating logic. The prior refactor improved maintainability/testability while enforcing Swift 6 strict concurrency + `SWIFT_STRICT_MEMORY_SAFETY = YES` on all targets and preserving identical runtime behavior and security guarantees.
 
 ### Security Model TXT Record Usage

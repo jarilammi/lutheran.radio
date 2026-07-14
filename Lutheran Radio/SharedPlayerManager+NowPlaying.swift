@@ -13,6 +13,23 @@ import Foundation
 import MediaPlayer
 import UIKit
 
+// MARK: - Media surface coordination (Now Playing + Live Activity + optional widgets)
+
+/// Selects how ``SharedPlayerManager/refreshAllMediaSurfaces(liveActivity:widgetRefresh:widgetRefreshImmediate:)``
+/// refreshes the Live Activity surface.
+///
+/// - SeeAlso: ``SharedPlayerManager/refreshAllMediaSurfaces(liveActivity:widgetRefresh:widgetRefreshImmediate:)``,
+///   ``RadioLiveActivityManager/startActivity()``, ``RadioLiveActivityManager/updateCurrentActivity()``,
+///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+enum MediaSurfaceLiveActivityMode: Sendable {
+    /// Skip Live Activity IPC (Now Playing and optional widget refresh only).
+    case none
+    /// Push when an activity is already active; no-op when `currentActivity == nil`.
+    case updateIfActive
+    /// Start on first `.playing` transition, otherwise update (``setPlaying()`` policy).
+    case startOrUpdate
+}
+
 // MARK: - MainActor-only MediaPlayer wiring (MPRemoteCommandCenter requires main thread)
 
 @MainActor
@@ -204,6 +221,82 @@ extension SharedPlayerManager {
             }
 
             MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+        }
+    }
+
+    /// Synchronizes system Now Playing, Live Activity, and optionally home-screen widget
+    /// timelines from the current in-memory actor state.
+    ///
+    /// This is the canonical coordination surface for visual/metadata transitions that
+    /// must stay aligned across MPNowPlayingInfoCenter, ActivityKit, and WidgetKit without
+    /// duplicating formatter rules or LA start policy at each call site.
+    ///
+    /// - Parameters:
+    ///   - liveActivity: How to refresh the Live Activity. Default ``MediaSurfaceLiveActivityMode/updateIfActive``.
+    ///   - widgetRefresh: When `true`, imperatively schedules ``WidgetRefreshManager/refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)``.
+    ///     Default `false` because mutation paths already emit ``PlayerEvent``s consumed by the Tier 2 observer.
+    ///   - widgetRefreshImmediate: Urgency when `widgetRefresh` is `true`.
+    ///
+    /// - Precondition: Main-app ``SharedPlayerManager`` actor only. No-op in the widget extension
+    ///   and during session teardown. Under ``SharedPlayerManager/isRunningInUITestMode``, Now Playing
+    ///   and Live Activity IPC are skipped; ``widgetRefresh`` may still run (subject to ``WidgetRefreshManager`` gates).
+    /// - Postcondition: Requested surfaces reflect ``currentVisualState``, ``currentStreamMetadata``,
+    ///   and live playback rate via ``StreamProgramMetadata/nowPlayingDisplayStrings(fromParsed:rawFallback:stationName:languageName:)``.
+    ///
+    /// - Important: Does **not** replace ``didUpdateStreamMetadata(_:)`` ordering (Live Activity before
+    ///   widget persist). Use there only for the shared formatter via ``updateNowPlayingInfo()``.
+    /// - Note: Live Activity pushes are diff-suppressed by ``RadioLiveActivityManager/lastPushedContent``;
+    ///   redundant calls are cheap. Now Playing coalesces frequent updates at the system layer.
+    ///
+    /// - SeeAlso: ``updateNowPlayingInfo()``, ``didUpdateStreamMetadata(_:)``, ``setPlaying()``, ``stop()``,
+    ///   ``RadioLiveActivityManager/startActivity()``, ``RadioLiveActivityManager/updateCurrentActivity()``,
+    ///   ``WidgetRefreshManager/refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md, docs/Widget-Presentation-Dataflow.md,
+    ///   CODING_AGENT.md (Single Source of Truth Principles).
+    ///
+    /// AGENT NOTE: Prefer this wrapper over ad-hoc ``updateNowPlayingInfo()`` + detached
+    /// `Task { @MainActor in … updateCurrentActivity() }` pairs at new call sites.
+    func refreshAllMediaSurfaces(
+        liveActivity: MediaSurfaceLiveActivityMode = .updateIfActive,
+        widgetRefresh: Bool = false,
+        widgetRefreshImmediate: Bool = false
+    ) async {
+        guard !isRunningInWidget() else { return }
+        guard !WidgetRefreshManager.isSessionTeardownInProgress else { return }
+
+        // Now Playing + Live Activity IPC are skipped under UITestMode (matches ``setPlaying()``
+        // isolation). Optional imperative widget refresh remains available for tests that enable
+        // the WidgetRefreshManager gate-observation bypass seam.
+        if !Self.isRunningInUITestMode {
+            await updateNowPlayingInfo()
+
+            switch liveActivity {
+            case .none:
+                break
+            case .updateIfActive:
+                await RadioLiveActivityManager.shared.updateCurrentActivity()
+            case .startOrUpdate:
+                // SAFETY: `currentActivity` is MainActor-isolated; read it on the main actor
+                // before choosing start vs. update from the SharedPlayerManager actor.
+                let needsStart = await MainActor.run {
+                    RadioLiveActivityManager.shared.currentActivity == nil
+                }
+                if needsStart {
+                    await RadioLiveActivityManager.shared.startActivity()
+                } else {
+                    await RadioLiveActivityManager.shared.updateCurrentActivity()
+                }
+            }
+        }
+
+        if widgetRefresh {
+            let shared = loadSharedState()
+            await WidgetRefreshManager.shared.refreshIfNeeded(
+                visualState: currentVisualState,
+                currentLanguage: shared.currentLanguage,
+                hasError: shared.hasError,
+                immediate: widgetRefreshImmediate
+            )
         }
     }
 

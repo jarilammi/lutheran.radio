@@ -176,9 +176,9 @@ All widget contract tests run in `Lutheran RadioTests` (main-app host) via DEBUG
 
 ### OI-W4 — Now Playing + Live Activity stacking (user education / strategy)
 
-**Status:** Partially addressed; strategic validation open
+**Status:** Documented (2026-07-14); dual-card UX accepted
 
-iOS renders **both** system Now Playing and Live Activity when both are active — expected behavior, not a bug. Program metadata is aligned via `StreamProgramMetadata.nowPlayingDisplayStrings(...)`, but the dual-card UX remains. Open work: document LA start policy (foreground start on first `.playing` is intentional), capture stacking scenarios with/without user-added lock widgets, and confirm metadata push cost is negligible.
+iOS renders **both** system Now Playing and Live Activity when both are active — expected behavior, not a bug. Program metadata is aligned via `StreamProgramMetadata.nowPlayingDisplayStrings(...)`. Stacking scenarios, LA start policy, metadata push cost, and QA screenshot matrix are canonical in [`docs/Live-Activity-Stacking-and-Media-Surfaces.md`](Live-Activity-Stacking-and-Media-Surfaces.md). Coordinated refresh uses ``SharedPlayerManager/refreshAllMediaSurfaces(liveActivity:widgetRefresh:widgetRefreshImmediate:)``.
 
 **SeeAlso:** `SharedPlayerManager+NowPlaying.swift`, `RadioLiveActivityManager.swift`, `StreamProgramMetadata.swift`.
 
@@ -258,8 +258,8 @@ Ordered by increasing risk and decreasing isolation. Earlier items are safer.
 **Goal:** Keep Now Playing, Live Activity, and widget metadata visually aligned without duplicating formatters.
 
 - [x] **Shared metadata formatter:** `StreamProgramMetadata.nowPlayingDisplayStrings(...)` SSOT; `updateNowPlayingInfo()` delegates; language-switch metadata clear triggers immediate Now Playing update.
-- [ ] **Stacking & LA policy validation:** Document LA start policy (foreground start on first `.playing` is intentional); capture stacking screenshots with/without user-added lock widgets; confirm metadata push cost is negligible.
-- [ ] **Thin `refreshAllMediaSurfaces()` wrapper (optional):** Actor method calling Now Playing update + LA update + `WidgetRefreshManager.refreshIfNeeded` to prevent drift. Add only if call-site audit shows divergence risk.
+- [x] **Stacking & LA policy validation (2026-07-14):** [`docs/Live-Activity-Stacking-and-Media-Surfaces.md`](Live-Activity-Stacking-and-Media-Surfaces.md) — LA start policy, stacking matrix, metadata push cost (`lastPushedContent` dedup), manual QA screenshot scenarios.
+- [x] **`refreshAllMediaSurfaces()` wrapper (2026-07-14):** ``SharedPlayerManager/refreshAllMediaSurfaces(liveActivity:widgetRefresh:widgetRefreshImmediate:)`` in `SharedPlayerManager+NowPlaying.swift`; consolidated `setPlaying` / `stop` / pause surfaces; fixed `markAsUserPaused` / `markPlaybackStoppedByStreamFailure` LA drift; removed redundant coordinator NP+LA duplicates.
 
 **Rule:** No security surface changes. Metadata formatters stay in shared non-Core types.
 
@@ -270,9 +270,9 @@ Ordered by increasing risk and decreasing isolation. Earlier items are safer.
 - [x] [`docs/Widget-Presentation-Dataflow.md`](Widget-Presentation-Dataflow.md) — canonical presentation reference.
 - [x] README SSOT widget presentation subsection + Architecture DocC event-driven section (cross-links widgets).
 - [x] `WidgetRefreshManager` consumer test suite (19 tests) + teardown/post-stop + liveness + cold-launch factory reset.
-- [ ] **This roadmap** — initial draft (2026-07-10). Update after each micro-step.
+- [x] **This roadmap** — living document; update after each micro-step.
 - [x] **Cross-link from Event-Driven Refactor Roadmap (2026-07-13):** Tier 3 completion entry + mutation-path dedup inventory cross-link added.
-- [ ] **DocC article or README subsection:** "Widget & Live Activity Functionality" summarizing intent table, App Group keys, and test file index (if this roadmap grows too large for README).
+- [x] **README subsection (2026-07-14):** "Widget & Live Activity functionality" table (presentation, stacking doc, wrapper, test index).
 - [ ] **Tier 2 test items above** — track completion here with test method names.
 
 **Tier 5 complete when:** Tier 2 checklist is green, OI-W3 has a documented test strategy (even if extension target remains deferred), and all touched files carry production `///` docs with `SeeAlso:` to this roadmap.
@@ -323,11 +323,10 @@ Present in `LutheranRadioWidget.swift:getPendingOrCurrentState` and `LutheranRad
 
 The next item is always the highest-priority unchecked entry in the backlog above.
 
-**Recommended starting order (2026-07-13):**
+**Recommended starting order (2026-07-14):**
 
 1. Tier 1 optional `WidgetDisplayProjection` bundle (only if future call-site churn warrants it).
-2. Tier 4 LA stacking validation (optional).
-3. Tier 5 cross-link from Event-Driven Refactor Roadmap.
+2. Tier 5 remaining test-index maintenance as new contracts land.
 
 Each micro-step: read target files first, minimal diff, apply the documentation voice & reference discipline above, update this roadmap Completed + Update Log, run build + test gates per `CODING_AGENT.md`.
 
@@ -357,6 +356,7 @@ For presentation mapping rules and termination invariants, use [`docs/Widget-Pre
 
 ## Update Log
 
+- **2026-07-14:** Tier 4 complete — [`docs/Live-Activity-Stacking-and-Media-Surfaces.md`](Live-Activity-Stacking-and-Media-Surfaces.md) (stacking matrix, LA start policy, push-cost validation); ``refreshAllMediaSurfaces`` wrapper + call-site consolidation; OI-W4 closed; README functionality table; `testRefreshAllMediaSurfacesCompletesAndOptionalWidgetRefreshPassesGates`.
 - **2026-07-13:** Tier 3 complete — ``WidgetProviderSnapshotResolver`` + provider audit table; imperative ``refreshIfNeeded`` dedup in ``performActualSave``, ``didUpdateStreamMetadata``, ``updateUserDefaultsLanguage``; ``refreshUsesImmediateDelivery`` urgency parity on event path; removed `setupWidgetActionPolling`; Control widget Provider aligned with home-widget hygiene; tests in `WidgetRefreshManagerEventTests` + `WidgetDisplayModelsTests`.
 - **2026-07-13:** Tier 2 complete — `WidgetDisplayModelsTests.swift` (resolver matrix), `WidgetIntentContractTests.swift` (pending-action dedup, instant-feedback expiry, optimistic persist contract, widget switch SSOT); `forcePersistVisualState` renamed to `persistOptimisticWidgetSnapshot` with deprecated forwarding wrapper.
 - **2026-07-13:** Tier 1 — Control widget `Value` pre-derivation (`statusPresentation` + `controlPresentation` in Provider; toggle label consumes narrow fields; symmetric with `SimpleEntry`).

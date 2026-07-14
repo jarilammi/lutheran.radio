@@ -244,6 +244,8 @@ class RadioLiveActivityManager: ObservableObject {
     ///   in `observeExistingActivities()`. It is what made the prior partial fix
     ///   (commit 2af37cf) insufficient.
     /// - SeeAlso: `updateCurrentActivity()`, `SharedPlayerManager.setPlaying`,
+    ///   ``SharedPlayerManager/refreshAllMediaSurfaces(liveActivity:widgetRefresh:widgetRefreshImmediate:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (start policy),
     ///   ``isRunningUnderTest``, ``observeExistingActivities()``, <doc:Architecture>
     func startActivity() async {
         // Defense-in-depth UI test isolation using the SSOT.

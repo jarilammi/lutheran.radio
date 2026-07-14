@@ -504,7 +504,7 @@ actor SharedPlayerManager {
         _clearIcyMetadataStash()
 
         #if LUTHERAN_MAIN_APP
-        await updateNowPlayingInfo()
+        await refreshAllMediaSurfaces(liveActivity: .updateIfActive)
         #endif
     }
     
@@ -1821,7 +1821,7 @@ actor SharedPlayerManager {
         await saveCurrentState()
         
         #if LUTHERAN_MAIN_APP
-        await updateNowPlayingInfo()
+        await refreshAllMediaSurfaces(liveActivity: .updateIfActive)
         #endif
         
         #if DEBUG
@@ -1893,15 +1893,7 @@ actor SharedPlayerManager {
         notifyMainApp(action: "pause")
         
         #if LUTHERAN_MAIN_APP
-        await updateNowPlayingInfo()
-
-        // Event-driven LA update (decoupled from the widget snapshot write above).
-        // The saveCurrentState was required for PersistedWidgetState (widgets + relaunch).
-        // LA sees the fresh in-memory state and pushes only on actual difference.
-        Task { @MainActor in
-            await RadioLiveActivityManager.shared.updateCurrentActivity()
-        }
-
+        await refreshAllMediaSurfaces(liveActivity: .updateIfActive)
         await performPostStopWidgetHygiene()
         #endif
         
@@ -2125,7 +2117,7 @@ actor SharedPlayerManager {
         saveVisualState()
         await saveCurrentState()
         #if LUTHERAN_MAIN_APP
-        await updateNowPlayingInfo()
+        await refreshAllMediaSurfaces(liveActivity: .updateIfActive)
         #endif
     }
 
@@ -2165,14 +2157,7 @@ actor SharedPlayerManager {
         saveVisualState()
         await saveCurrentState()
         #if LUTHERAN_MAIN_APP
-        await updateNowPlayingInfo()
-
-        // Event-driven LA update after the widget-persisting save. The LA manager's
-        // last-pushed comparison ensures we only perform ActivityKit work when the
-        // visible content (status + controls) actually changed.
-        Task { @MainActor in
-            await RadioLiveActivityManager.shared.updateCurrentActivity()
-        }
+        await refreshAllMediaSurfaces(liveActivity: .updateIfActive)
         #endif
     }
     
@@ -2184,11 +2169,12 @@ actor SharedPlayerManager {
     ///
     /// - Postcondition: `currentVisualState == .playing`, intent updated if appropriate,
     ///   snapshot saved (when the privacy gate allows), Now Playing / Live Activity
-    ///   surfaces notified (main app, skipped in UITestMode), and `streamDidStart` emitted
-    ///   after the visual + intent mutations.
+    ///   surfaces notified via ``refreshAllMediaSurfaces(liveActivity: .startOrUpdate)``
+    ///   (main app, skipped in UITestMode), and `streamDidStart` emitted after the visual + intent mutations.
     ///
-    /// - SeeAlso: ``emit(_:)``, `DirectStreamingPlayer.startPlayback(context:)`,
-    ///   ``play()``, ``markPlaybackStoppedByStreamFailure(_:)``, `PlayerEvent.streamDidStart`,
+    /// - SeeAlso: ``emit(_:)``, ``refreshAllMediaSurfaces(liveActivity:widgetRefresh:widgetRefreshImmediate:)``,
+    ///   `DirectStreamingPlayer.startPlayback(context:)`, ``play()``, ``markPlaybackStoppedByStreamFailure(_:)``,
+    ///   `PlayerEvent.streamDidStart`, docs/Live-Activity-Stacking-and-Media-Surfaces.md,
     ///   CODING_AGENT.md (SSOT for visual/intent, additive event emission).
     ///
     /// AGENT NOTE: Emission of `.streamDidStart` occurs here (after visual + intent
@@ -2232,20 +2218,7 @@ actor SharedPlayerManager {
         saveVisualState()
         await saveCurrentState()
         #if LUTHERAN_MAIN_APP
-        await updateNowPlayingInfo()
-
-        // Drive Live Activity via the decoupled in-memory path.
-        // We still performed the widget PersistedWidgetState save above (required for
-        // widgets + liveness + relaunch). The LA surface now receives its own immediate
-        // push (with change detection inside the manager) without depending on that write.
-        // Start the Activity on the first successful transition to .playing.
-        Task { @MainActor in
-            if RadioLiveActivityManager.shared.currentActivity == nil {
-                await RadioLiveActivityManager.shared.startActivity()
-            } else {
-                await RadioLiveActivityManager.shared.updateCurrentActivity()
-            }
-        }
+        await refreshAllMediaSurfaces(liveActivity: .startOrUpdate)
         #endif
     }
     
