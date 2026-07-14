@@ -161,16 +161,28 @@ extension LutheranRadioWidgetControl {
             visualState == .securityLocked
         }
 
-        /// Builds a control-widget snapshot with narrow presentations derived once from `visualState`.
+        /// Builds a synthetic control-widget snapshot for previews.
         ///
         /// - Parameters:
-        ///   - visualState: Authoritative policy state from the persisted snapshot.
+        ///   - visualState: Preview visual state (typically `.prePlay`).
         ///   - currentStation: Localized station label (flag + language name).
         init(visualState: PlayerVisualState, currentStation: String) {
             self.visualState = visualState
             self.currentStation = currentStation
             self.statusPresentation = visualState.makeStatusPresentation()
             self.controlPresentation = visualState.makeControlPresentation()
+        }
+
+        /// Builds a control-widget snapshot from pre-derived presentation slices.
+        ///
+        /// - Parameters:
+        ///   - fields: Authoritative snapshot fields from ``WidgetProviderSnapshotResolver``.
+        ///   - slices: Presentation assembly from ``WidgetProviderSnapshotResolver/assemblePresentationSlices(from:)``.
+        init(fields: WidgetProviderSnapshotFields, slices: WidgetProviderPresentationSlices) {
+            self.visualState = fields.visualState
+            self.currentStation = slices.currentStation
+            self.statusPresentation = slices.statusPresentation
+            self.controlPresentation = slices.controlPresentation
         }
     }
 
@@ -183,33 +195,44 @@ extension LutheranRadioWidgetControl {
         }
 
         func currentValue(configuration: NoOpControlConfiguration) async throws -> Value {
-            let (visualState, currentStation) = await effectiveVisualStateAndStation()
-            return Value(visualState: visualState, currentStation: currentStation)
+            await resolveControlWidgetValue()
         }
-        
+
         // MARK: - State resolution (snapshot is the sole SSOT)
-        
-        private func effectiveVisualStateAndStation() async -> (visualState: PlayerVisualState, currentStation: String) {
+
+        private func resolveControlWidgetValue() async -> Value {
             let manager = SharedPlayerManager.shared
             let fields = await WidgetProviderSnapshotResolver.resolveWithActorHygiene(manager: manager)
+            let slices = WidgetProviderSnapshotResolver.assemblePresentationSlices(from: fields)
 
             // App Group unavailable (extremely rare): actor fallback after hygiene.
             if UserDefaults(suiteName: "group.radio.lutheran.shared") == nil {
                 let vs = await manager.currentVisualState
-                return (vs, WidgetProviderSnapshotResolver.stationLabel(for: fields.currentLanguage))
+                let fallbackFields = WidgetProviderSnapshotFields(
+                    currentLanguage: fields.currentLanguage,
+                    hasError: fields.hasError,
+                    visualState: vs,
+                    streamMetadata: fields.streamMetadata
+                )
+                let fallbackSlices = WidgetProviderSnapshotResolver.assemblePresentationSlices(from: fallbackFields)
+                return Value(fields: fallbackFields, slices: fallbackSlices)
             }
 
             // Snapshot present — SSOT path (symmetric with home-widget Provider).
             if SharedPlayerManager.loadPersistedWidgetState() != nil {
-                return (
-                    fields.visualState,
-                    WidgetProviderSnapshotResolver.stationLabel(for: fields.currentLanguage)
-                )
+                return Value(fields: fields, slices: slices)
             }
 
             // No snapshot yet: actor visual + preferred language (installs that never wrote).
             let vs = await manager.currentVisualState
-            return (vs, WidgetProviderSnapshotResolver.stationLabel(for: fields.currentLanguage))
+            let fallbackFields = WidgetProviderSnapshotFields(
+                currentLanguage: fields.currentLanguage,
+                hasError: fields.hasError,
+                visualState: vs,
+                streamMetadata: fields.streamMetadata
+            )
+            let fallbackSlices = WidgetProviderSnapshotResolver.assemblePresentationSlices(from: fallbackFields)
+            return Value(fields: fallbackFields, slices: fallbackSlices)
         }
     }
 }

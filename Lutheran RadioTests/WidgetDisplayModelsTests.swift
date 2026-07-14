@@ -17,8 +17,10 @@ import XCTest
 /// Pure-function coverage — no WidgetCenter IPC or ActivityKit.
 ///
 /// - SeeAlso: `WidgetDisplayModels.swift`, docs/Widget-Presentation-Dataflow.md,
-///   docs/Widget-Functionality-Roadmap.md (Tier 2).
+///   docs/Widget-Functionality-Roadmap.md (Tier 2 + Tier 5 provider synthesis).
 final class WidgetDisplayModelsTests: XCTestCase {
+
+    private let manager = SharedPlayerManager.shared
 
     private let languageName = "TestLang"
     private let programTitle = "Sunday Sermon"
@@ -46,6 +48,33 @@ final class WidgetDisplayModelsTests: XCTestCase {
             streamMetadata: metadata,
             languageName: languageName
         )
+    }
+
+    private func snapshotFields(
+        visualState: PlayerVisualState,
+        language: String = "fi",
+        metadata: StreamProgramMetadata? = nil,
+        hasError: Bool = false
+    ) -> WidgetProviderSnapshotFields {
+        WidgetProviderSnapshotFields(
+            currentLanguage: language,
+            hasError: hasError,
+            visualState: visualState,
+            streamMetadata: metadata
+        )
+    }
+
+    override func setUp() async throws {
+        try await super.setUp()
+        await MainActor.run {
+            WidgetRefreshManager.setHasActiveLutheranWidgets(true)
+        }
+        SharedPlayerManager.removeAllLocalPlaybackKeys()
+    }
+
+    override func tearDown() async throws {
+        SharedPlayerManager.removeAllLocalPlaybackKeys()
+        try await super.tearDown()
     }
 
     // MARK: - Playing
@@ -207,5 +236,160 @@ final class WidgetDisplayModelsTests: XCTestCase {
         let label = WidgetProviderSnapshotResolver.stationLabel(for: "fi")
         XCTAssertTrue(label.contains("🇫🇮"))
         XCTAssertFalse(label.trimmingCharacters(in: .whitespaces).isEmpty)
+    }
+
+    // MARK: - resolveWithActorHygiene (Tier 3 provider hygiene)
+
+    /// Verifies ``resolveWithActorHygiene(manager:)`` returns the same snapshot fields as
+    /// ``resolveFromSnapshot()`` after the actor hygiene hop.
+    func testResolveWithActorHygieneMatchesResolveFromSnapshot() async {
+        SharedPlayerManager.persistWidgetSnapshot(
+            visualState: .playing,
+            language: "de",
+            streamMetadata: metadata(title: programTitle, speaker: speaker)
+        )
+
+        let hygieneFields = await WidgetProviderSnapshotResolver.resolveWithActorHygiene(manager: manager)
+        let directFields = WidgetProviderSnapshotResolver.resolveFromSnapshot()
+
+        XCTAssertEqual(hygieneFields, directFields)
+        XCTAssertEqual(hygieneFields.visualState, .playing)
+        XCTAssertEqual(hygieneFields.currentLanguage, "de")
+        XCTAssertEqual(hygieneFields.streamMetadata?.programTitle, programTitle)
+    }
+
+    /// Verifies the hygiene hop reloads ``SharedPlayerManager/currentVisualState`` from the
+    /// in-session snapshot when the actor holds stale in-memory policy.
+    func testResolveWithActorHygieneReloadsActorVisualStateFromSnapshot() async {
+        SharedPlayerManager.persistWidgetSnapshot(
+            visualState: .userPaused,
+            language: "sv",
+            streamMetadata: metadata(title: programTitle)
+        )
+        await manager.setVisualState(.prePlay)
+
+        let fields = await WidgetProviderSnapshotResolver.resolveWithActorHygiene(manager: manager)
+
+        XCTAssertEqual(fields.visualState, .userPaused)
+        XCTAssertEqual(fields.currentLanguage, "sv")
+        let actorVisual = await manager.currentVisualState
+        XCTAssertEqual(actorVisual, .userPaused)
+    }
+
+    /// Verifies factory defaults survive hygiene when no in-session snapshot exists.
+    func testResolveWithActorHygieneDefaultsToPrePlayWhenSnapshotAbsent() async {
+        await SharedPlayerManager.clearAllLocalState()
+        XCTAssertNil(SharedPlayerManager.loadPersistedWidgetState())
+
+        let fields = await WidgetProviderSnapshotResolver.resolveWithActorHygiene(manager: manager)
+
+        XCTAssertEqual(fields.visualState, .prePlay)
+        XCTAssertFalse(fields.hasError)
+        XCTAssertFalse(fields.currentLanguage.isEmpty)
+        let actorVisual = await manager.currentVisualState
+        XCTAssertEqual(actorVisual, .prePlay)
+    }
+
+    // MARK: - Provider presentation assembly (SimpleEntry / Control Value synthesis)
+
+    /// Verifies ``assemblePresentationSlices(from:)`` maps every visual state through the
+    /// three canonical presentation SSOTs (status, control, metadata).
+    func testAssemblePresentationSlicesMatrixMapsEveryVisualState() {
+        let states: [PlayerVisualState] = [
+            .prePlay, .cleared, .playing, .userPaused, .thermalPaused, .securityLocked
+        ]
+
+        for state in states {
+            let fields = snapshotFields(visualState: state, language: "en")
+            let slices = WidgetProviderSnapshotResolver.assemblePresentationSlices(from: fields)
+            let stream = SharedPlayerManager.streamForLanguageCode("en")
+
+            XCTAssertEqual(slices.currentLanguageCode, "en")
+            XCTAssertEqual(slices.currentStation, WidgetProviderSnapshotResolver.stationLabel(for: "en"))
+            XCTAssertEqual(slices.statusPresentation, state.makeStatusPresentation())
+            XCTAssertEqual(slices.controlPresentation, state.makeControlPresentation())
+            XCTAssertEqual(
+                slices.widgetNowPlayingDisplayModel,
+                widgetNowPlayingDisplayModel(
+                    visualState: state,
+                    streamMetadata: nil,
+                    languageName: stream.language
+                )
+            )
+            XCTAssertEqual(slices.statusMessage, slices.statusPresentation.text)
+        }
+    }
+
+    /// Verifies connection-error chrome overrides status text while preserving presentations.
+    func testAssemblePresentationSlicesUsesConnectionErrorWhenHasError() {
+        let fields = snapshotFields(visualState: .playing, language: "fi", hasError: true)
+        let slices = WidgetProviderSnapshotResolver.assemblePresentationSlices(from: fields)
+        let expectedError = String(
+            localized: "Connection error",
+            defaultValue: "Connection error",
+            table: "Localizable"
+        )
+
+        XCTAssertEqual(slices.statusMessage, expectedError)
+        XCTAssertEqual(slices.statusPresentation, PlayerVisualState.playing.makeStatusPresentation())
+        XCTAssertEqual(slices.controlPresentation, PlayerVisualState.playing.makeControlPresentation())
+    }
+
+    /// Verifies metadata-bearing snapshots flow into ``widgetNowPlayingDisplayModel`` using
+    /// the stream display name (SimpleEntry / Value synthesis contract).
+    func testAssemblePresentationSlicesCarriesStreamMetadataIntoNowPlayingModel() {
+        let meta = metadata(title: programTitle, speaker: speaker)
+        let fields = snapshotFields(visualState: .playing, language: "fi", metadata: meta)
+        let slices = WidgetProviderSnapshotResolver.assemblePresentationSlices(from: fields)
+        let stream = SharedPlayerManager.streamForLanguageCode("fi")
+        let expectedModel = widgetNowPlayingDisplayModel(
+            visualState: .playing,
+            streamMetadata: meta,
+            languageName: stream.language
+        )
+
+        XCTAssertEqual(slices.widgetNowPlayingDisplayModel, expectedModel)
+        XCTAssertEqual(slices.widgetNowPlayingDisplayModel.programTitle, programTitle)
+        XCTAssertTrue(slices.widgetNowPlayingDisplayModel.speakerVisible)
+    }
+
+    /// Verifies Control-widget ``Value`` synthesis contract: slices match independent mapper calls.
+    func testAssemblePresentationSlicesMatchesControlWidgetValueDerivation() {
+        let fields = snapshotFields(
+            visualState: .userPaused,
+            language: "de",
+            metadata: metadata(title: programTitle)
+        )
+        let slices = WidgetProviderSnapshotResolver.assemblePresentationSlices(from: fields)
+
+        XCTAssertEqual(slices.statusPresentation, fields.visualState.makeStatusPresentation())
+        XCTAssertEqual(slices.controlPresentation, fields.visualState.makeControlPresentation())
+        XCTAssertEqual(slices.currentStation, WidgetProviderSnapshotResolver.stationLabel(for: "de"))
+        XCTAssertEqual(slices.currentLanguageCode, fields.currentLanguage)
+    }
+
+    /// Verifies persisted snapshot → assembly path mirrors home-widget Provider entry synthesis.
+    func testAssemblePresentationSlicesFromPersistedSnapshotMatchesProviderContract() async {
+        SharedPlayerManager.persistWidgetSnapshot(
+            visualState: .playing,
+            language: "et",
+            streamMetadata: metadata(title: programTitle, speaker: speaker)
+        )
+
+        let fields = await WidgetProviderSnapshotResolver.resolveWithActorHygiene(manager: manager)
+        let slices = WidgetProviderSnapshotResolver.assemblePresentationSlices(from: fields)
+        let stream = SharedPlayerManager.streamForLanguageCode("et")
+
+        XCTAssertEqual(fields.visualState, .playing)
+        XCTAssertEqual(slices.currentLanguageCode, "et")
+        XCTAssertEqual(slices.statusPresentation, PlayerVisualState.playing.makeStatusPresentation())
+        XCTAssertEqual(
+            slices.widgetNowPlayingDisplayModel,
+            widgetNowPlayingDisplayModel(
+                visualState: .playing,
+                streamMetadata: fields.streamMetadata,
+                languageName: stream.language
+            )
+        )
     }
 }

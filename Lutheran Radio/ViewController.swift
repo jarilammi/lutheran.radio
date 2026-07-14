@@ -1399,7 +1399,7 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         // test runner. We still drain the pending key so the next real run starts clean.
         if SharedPlayerManager.isRunningInUITestMode {
             #if DEBUG
-            if Self._test_bypassUITestModeForPendingActionProcessing {
+            if unsafe Self._test_bypassUITestModeForPendingActionProcessing {
                 // Unit-test host: exercise the real play/pause drain contract (see WidgetIntentContractTests).
             } else {
                 if let pending = SharedPlayerManager.shared.getPendingActionIfFresh(maxAge: 30.0) {

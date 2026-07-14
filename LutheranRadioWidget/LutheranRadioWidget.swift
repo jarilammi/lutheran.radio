@@ -196,47 +196,22 @@ struct Provider: AppIntentTimelineProvider {
     
     func timeline(for configuration: RadioWidgetConfiguration, in context: Context) async -> Timeline<SimpleEntry> {
         Task { @MainActor in WidgetRefreshManager.setHasActiveLutheranWidgets(true) }
-        let (currentLanguage, hasError, visualState, streamMetadata) = await getPendingOrCurrentState(manager: SharedPlayerManager.shared)
-        
-        let manager = SharedPlayerManager.shared
-        
-        // Use the centralized facade (delegates to DirectStreamingPlayer.streamForLanguageCode
-        // with its documented English default). Removes duplicated first/??/ [0] logic.
-        let currentStream = SharedPlayerManager.streamForLanguageCode(currentLanguage)
-        
-        let currentStation = currentStream.flag + " " + currentStream.language
-
-        // Derive from the single sources of truth:
-        // - makeStatusPresentation + makeControlPresentation (status / control axes)
-        // - widgetNowPlayingDisplayModel(...) (metadata/emphasis axis)
-        //
-        // All three narrow values are stored on the TimelineEntry snapshot (SimpleEntry)
-        // so family views receive only the slices they render. Mirrors the Live Activity
-        // "derive once at top" rule.
-        let pres = visualState.makeStatusPresentation()
-        let controlPres = visualState.makeControlPresentation()
-        let statusMessage: String = hasError
-            ? String(localized: "Connection error", defaultValue: "Connection error", table: "Localizable")
-            : pres.text
-
-        // Pre-derive the WidgetNowPlayingDisplayModel using the already-resolved language display name.
-        // languageName comes from the authoritative stream (via streamForLanguageCode).
-        let metadataModel = widgetNowPlayingDisplayModel(
-            visualState: visualState,
-            streamMetadata: streamMetadata,
-            languageName: currentStream.language
+        let fields = await WidgetProviderSnapshotResolver.resolveWithActorHygiene(
+            manager: SharedPlayerManager.shared
         )
+        let slices = WidgetProviderSnapshotResolver.assemblePresentationSlices(from: fields)
+        let manager = SharedPlayerManager.shared
 
         let entry = SimpleEntry(
             date: Date(),
-            visualState: visualState,
-            currentStation: currentStation,
-            currentLanguageCode: currentLanguage,
-            statusMessage: statusMessage,
-            statusPresentation: pres,
-            controlPresentation: controlPres,
-            widgetNowPlayingDisplayModel: metadataModel,
-            streamMetadata: streamMetadata,
+            visualState: fields.visualState,
+            currentStation: slices.currentStation,
+            currentLanguageCode: slices.currentLanguageCode,
+            statusMessage: slices.statusMessage,
+            statusPresentation: slices.statusPresentation,
+            controlPresentation: slices.controlPresentation,
+            widgetNowPlayingDisplayModel: slices.widgetNowPlayingDisplayModel,
+            streamMetadata: fields.streamMetadata,
             availableStreams: manager.availableStreams,
             configuration: configuration
         )
@@ -253,65 +228,25 @@ struct Provider: AppIntentTimelineProvider {
     private func createEntry(with configuration: RadioWidgetConfiguration) async -> SimpleEntry {
         Task { @MainActor in WidgetRefreshManager.setHasActiveLutheranWidgets(true) }
         let manager = SharedPlayerManager.shared
-        let (currentLanguage, hasError, visualState, streamMetadata) = await getPendingOrCurrentState(manager: manager)
-
-        // Use the centralized facade (see SharedPlayerManager.streamForLanguageCode).
-        let currentStream = SharedPlayerManager.streamForLanguageCode(currentLanguage)
-        let currentStation = currentStream.flag + " " + currentStream.language
-
-        // Derive from the single sources of truth (makeStatusPresentation + makeControlPresentation
-        // + widgetNowPlayingDisplayModel) instead of duplicating case-by-case text/glyph/mapping.
-        // All narrow values are stored on the TimelineEntry snapshot so that family views
-        // receive only the slices they render. Mirrors the timeline path and the Live Activity
-        // "derive once at top" rule for both WidgetKit and ActivityKit.
-        let pres = visualState.makeStatusPresentation()
-        let controlPres = visualState.makeControlPresentation()
-        let statusMessage: String = hasError
-            ? String(localized: "Connection error", defaultValue: "Connection error", table: "Localizable")
-            : pres.text
-
-        // Pre-derive the metadata/emphasis model here. The languageName is the display
-        // name from the stream resolved via the centralized streamForLanguageCode facade.
-        let metadataModel = widgetNowPlayingDisplayModel(
-            visualState: visualState,
-            streamMetadata: streamMetadata,
-            languageName: currentStream.language
-        )
+        let fields = await WidgetProviderSnapshotResolver.resolveWithActorHygiene(manager: manager)
+        let slices = WidgetProviderSnapshotResolver.assemblePresentationSlices(from: fields)
 
         #if DEBUG
-        print("[LutheranRadioWidget] Widget creating entry: visualState=\(visualState), station=\(currentStation)")
+        print("[LutheranRadioWidget] Widget creating entry: visualState=\(fields.visualState), station=\(slices.currentStation)")
         #endif
 
         return SimpleEntry(
             date: Date(),
-            visualState: visualState,
-            currentStation: currentStation,
-            currentLanguageCode: currentLanguage,
-            statusMessage: statusMessage,
-            statusPresentation: pres,
-            controlPresentation: controlPres,
-            widgetNowPlayingDisplayModel: metadataModel,
-            streamMetadata: streamMetadata,
+            visualState: fields.visualState,
+            currentStation: slices.currentStation,
+            currentLanguageCode: slices.currentLanguageCode,
+            statusMessage: slices.statusMessage,
+            statusPresentation: slices.statusPresentation,
+            controlPresentation: slices.controlPresentation,
+            widgetNowPlayingDisplayModel: slices.widgetNowPlayingDisplayModel,
+            streamMetadata: fields.streamMetadata,
             availableStreams: manager.availableStreams,
             configuration: configuration
-        )
-    }
-    
-    private func getPendingOrCurrentState(manager: SharedPlayerManager) async -> (
-        currentLanguage: String,
-        hasError: Bool,
-        visualState: PlayerVisualState,
-        streamMetadata: StreamProgramMetadata?
-    ) {
-        // Actor hygiene for long-lived extension processes; snapshot fields are static reads.
-        // - SeeAlso: ``WidgetProviderSnapshotResolver/resolveWithActorHygiene(manager:)``,
-        //   docs/Widget-Functionality-Roadmap.md (Tier 3).
-        let fields = await WidgetProviderSnapshotResolver.resolveWithActorHygiene(manager: manager)
-        return (
-            fields.currentLanguage,
-            fields.hasError,
-            fields.visualState,
-            fields.streamMetadata
         )
     }
 }

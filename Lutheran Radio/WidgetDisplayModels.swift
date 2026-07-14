@@ -87,7 +87,7 @@ import Foundation
 //
 // All user-visible strings use `String(localized: "key", table: "Localizable")` with explicit table.
 
-internal enum WidgetMetadataEmphasis {
+internal enum WidgetMetadataEmphasis: Equatable {
     case active
     case subdued
     case placeholder
@@ -116,7 +116,7 @@ internal enum WidgetMetadataEmphasis {
 ///   `WidgetMetadataRegion`, `SimpleEntry.widgetNowPlayingDisplayModel`,
 ///   `LutheranRadioWidget.swift`, `LutheranRadioWidgetLiveActivity.swift`,
 ///   `WidgetMetadataEmphasis`, CODING_AGENT.md.
-internal struct WidgetNowPlayingDisplayModel {
+internal struct WidgetNowPlayingDisplayModel: Equatable {
     /// Localized program title (or live fallback / "No track information" placeholder).
     let programTitle: String
 
@@ -276,6 +276,24 @@ struct WidgetProviderSnapshotFields: Sendable, Equatable {
     let streamMetadata: StreamProgramMetadata?
 }
 
+/// Pre-derived presentation slices assembled once from resolved snapshot fields.
+///
+/// Shared contract for home-widget ``SimpleEntry`` population and Control-widget ``Value``
+/// derivation. Providers call ``WidgetProviderSnapshotResolver/assemblePresentationSlices(from:)``
+/// after ``resolveWithActorHygiene(manager:)`` (or ``resolveFromSnapshot()`` for static previews)
+/// so leaf views never re-derive mapping rules inside `body`.
+///
+/// - SeeAlso: ``WidgetProviderSnapshotResolver``, `SimpleEntry`, docs/Widget-Presentation-Dataflow.md,
+///   docs/Widget-Functionality-Roadmap.md (Tier 3 provider audit).
+struct WidgetProviderPresentationSlices: Sendable, Equatable {
+    let currentLanguageCode: String
+    let currentStation: String
+    let statusPresentation: PlayerStatusPresentation
+    let controlPresentation: PlayerControlPresentation
+    let statusMessage: String
+    let widgetNowPlayingDisplayModel: WidgetNowPlayingDisplayModel
+}
+
 /// Canonical resolver for home-widget and Control-widget Provider entry points.
 ///
 /// Documents which paths require an actor hop versus safe direct snapshot reads.
@@ -334,5 +352,42 @@ enum WidgetProviderSnapshotResolver {
     nonisolated static func stationLabel(for languageCode: String) -> String {
         let stream = SharedPlayerManager.streamForLanguageCode(languageCode)
         return stream.flag + " " + stream.language
+    }
+
+    /// Assembles the three narrow presentation surfaces plus station label from snapshot fields.
+    ///
+    /// Single source of truth for Provider entry synthesis after snapshot resolution.
+    /// Home-widget ``SimpleEntry`` and Control-widget ``Value`` must consume these slices
+    /// rather than re-invoking ``PlayerVisualState/makeStatusPresentation()``,
+    /// ``PlayerVisualState/makeControlPresentation()``, or ``widgetNowPlayingDisplayModel(visualState:streamMetadata:languageName:)``
+    /// in timeline or value-provider paths.
+    ///
+    /// - Parameter fields: Authoritative snapshot fields from ``resolveFromSnapshot()`` or
+    ///   ``resolveWithActorHygiene(manager:)``.
+    /// - Returns: Pre-derived slices ready to populate ``SimpleEntry`` / Control-widget ``Value``.
+    /// - SeeAlso: ``WidgetProviderPresentationSlices``, ``WidgetProviderSnapshotFields``,
+    ///   docs/Widget-Presentation-Dataflow.md, docs/Widget-Functionality-Roadmap.md.
+    nonisolated static func assemblePresentationSlices(
+        from fields: WidgetProviderSnapshotFields
+    ) -> WidgetProviderPresentationSlices {
+        let currentStream = SharedPlayerManager.streamForLanguageCode(fields.currentLanguage)
+        let statusPresentation = fields.visualState.makeStatusPresentation()
+        let controlPresentation = fields.visualState.makeControlPresentation()
+        let statusMessage: String = fields.hasError
+            ? String(localized: "Connection error", defaultValue: "Connection error", table: "Localizable")
+            : statusPresentation.text
+        let metadataModel = widgetNowPlayingDisplayModel(
+            visualState: fields.visualState,
+            streamMetadata: fields.streamMetadata,
+            languageName: currentStream.language
+        )
+        return WidgetProviderPresentationSlices(
+            currentLanguageCode: fields.currentLanguage,
+            currentStation: stationLabel(for: fields.currentLanguage),
+            statusPresentation: statusPresentation,
+            controlPresentation: controlPresentation,
+            statusMessage: statusMessage,
+            widgetNowPlayingDisplayModel: metadataModel
+        )
     }
 }
