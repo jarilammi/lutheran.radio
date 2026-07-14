@@ -96,31 +96,11 @@ private struct WidgetMetadataRegion: View {
     }
 }
 
-/// Returns whether the main app process is considered recently active.
-///
-/// Delegates to the Single Source of Truth `SharedPlayerManager.isMainAppProcessRecentlyActive()`.
-/// The 60 s heuristic (plus explicit 0 sentinel on termination) decides whether widget family
-/// views render full interactive chrome (status, controls via `controlPresentation`,
-/// metadata, flags) or the stable passive "tap to open" surface.
-///
-/// **Post-quit contract (Cleanup Invariant)**:
-/// - Main app termination paths call `forceStaleLivenessTimestampForTermination()` which writes
-///   the sentinel 0 → this immediately returns false.
-/// - Subsequent Provider executions (system 15 min timelines or any lingering reloads) render
-///   the "tap_to_open" + `widgetURL("lutheranradio://open")` path only.
-/// - That path performs a clean app launch via the widget's URL handler (Apple-approved,
-///   no playback side-effect, no implicit reload, no resurrection).
-/// - No code in these views or the passive branch may trigger `WidgetCenter.reloadTimelines`,
-///   network, timers, or Darwin that would wake the (now-dead) main process.
-/// - Force-quit may leave a <60 s window of "active" presentation until the timestamp ages;
-///   this is documented and accepted (no write possible after abrupt kill).
-///
-/// - SeeAlso: ``SharedPlayerManager/isMainAppProcessRecentlyActive()``,
-///   ``SharedPlayerManager/forceStaleLivenessTimestampForTermination()``,
-///   `LutheranRadioWidgetEntryView`, the three *WidgetView bodies (the `if !isAppRunning()`
-///   branches), CODING_AGENT.md (SSOT + cross-target), docs/Widget-Presentation-Dataflow.md.
-private func isAppRunning() -> Bool {
-    SharedPlayerManager.isMainAppProcessRecentlyActive()
+/// Whether widget family views should render the passive `tap_to_open` launch surface.
+private func shouldShowPassiveTapToOpen() -> Bool {
+    WidgetLivenessPresentation.shouldShowPassiveTapToOpen(
+        isMainAppRecentlyActive: SharedPlayerManager.isMainAppProcessRecentlyActive()
+    )
 }
 
 // MARK: - UIKit → SwiftUI Bridge
@@ -197,25 +177,8 @@ struct Provider: AppIntentTimelineProvider {
     
     func timeline(for configuration: RadioWidgetConfiguration, in context: Context) async -> Timeline<SimpleEntry> {
         Task { @MainActor in WidgetRefreshManager.setHasActiveLutheranWidgets(true) }
-        let fields = await WidgetProviderSnapshotResolver.resolveWithActorHygiene(
-            manager: SharedPlayerManager.shared
-        )
-        let slices = WidgetProviderSnapshotResolver.assemblePresentationSlices(from: fields)
         let manager = SharedPlayerManager.shared
-
-        let entry = SimpleEntry(
-            date: Date(),
-            visualState: fields.visualState,
-            currentStation: slices.currentStation,
-            currentLanguageCode: slices.currentLanguageCode,
-            statusMessage: slices.statusMessage,
-            statusPresentation: slices.statusPresentation,
-            controlPresentation: slices.controlPresentation,
-            widgetNowPlayingDisplayModel: slices.widgetNowPlayingDisplayModel,
-            streamMetadata: fields.streamMetadata,
-            availableStreams: manager.availableStreams,
-            configuration: configuration
-        )
+        let entry = await makeTimelineEntry(with: configuration, manager: manager)
         
         // Safe date calculation
         let nextUpdate = Calendar.current.date(byAdding: .minute, value: 15, to: Date())
@@ -228,27 +191,26 @@ struct Provider: AppIntentTimelineProvider {
     
     private func createEntry(with configuration: RadioWidgetConfiguration) async -> SimpleEntry {
         Task { @MainActor in WidgetRefreshManager.setHasActiveLutheranWidgets(true) }
-        let manager = SharedPlayerManager.shared
+        return await makeTimelineEntry(with: configuration, manager: SharedPlayerManager.shared)
+    }
+
+    private func makeTimelineEntry(
+        with configuration: RadioWidgetConfiguration,
+        manager: SharedPlayerManager
+    ) async -> SimpleEntry {
         let fields = await WidgetProviderSnapshotResolver.resolveWithActorHygiene(manager: manager)
         let slices = WidgetProviderSnapshotResolver.assemblePresentationSlices(from: fields)
+        let blueprint = WidgetTimelineEntryFactory.makeHomeWidgetBlueprint(
+            date: Date(),
+            fields: fields,
+            slices: slices
+        )
 
         #if DEBUG
-        print("[LutheranRadioWidget] Widget creating entry: visualState=\(fields.visualState), station=\(slices.currentStation)")
+        print("[LutheranRadioWidget] Widget creating entry: visualState=\(blueprint.visualState), station=\(blueprint.currentStation)")
         #endif
 
-        return SimpleEntry(
-            date: Date(),
-            visualState: fields.visualState,
-            currentStation: slices.currentStation,
-            currentLanguageCode: slices.currentLanguageCode,
-            statusMessage: slices.statusMessage,
-            statusPresentation: slices.statusPresentation,
-            controlPresentation: slices.controlPresentation,
-            widgetNowPlayingDisplayModel: slices.widgetNowPlayingDisplayModel,
-            streamMetadata: fields.streamMetadata,
-            availableStreams: manager.availableStreams,
-            configuration: configuration
-        )
+        return SimpleEntry(blueprint: blueprint, availableStreams: manager.availableStreams, configuration: configuration)
     }
 }
 
@@ -258,6 +220,50 @@ struct SimpleEntry: TimelineEntry, Sendable {
     let currentStation: String
     let currentLanguageCode: String
     let statusMessage: String
+
+    init(
+        blueprint: WidgetHomeTimelineEntryBlueprint,
+        availableStreams: [DirectStreamingPlayer.Stream],
+        configuration: RadioWidgetConfiguration
+    ) {
+        self.date = blueprint.date
+        self.visualState = blueprint.visualState
+        self.currentStation = blueprint.currentStation
+        self.currentLanguageCode = blueprint.currentLanguageCode
+        self.statusMessage = blueprint.statusMessage
+        self.statusPresentation = blueprint.statusPresentation
+        self.controlPresentation = blueprint.controlPresentation
+        self.widgetNowPlayingDisplayModel = blueprint.widgetNowPlayingDisplayModel
+        self.streamMetadata = blueprint.streamMetadata
+        self.availableStreams = availableStreams
+        self.configuration = configuration
+    }
+
+    init(
+        date: Date,
+        visualState: PlayerVisualState,
+        currentStation: String,
+        currentLanguageCode: String,
+        statusMessage: String,
+        statusPresentation: PlayerStatusPresentation,
+        controlPresentation: PlayerControlPresentation,
+        widgetNowPlayingDisplayModel: WidgetNowPlayingDisplayModel,
+        streamMetadata: StreamProgramMetadata?,
+        availableStreams: [DirectStreamingPlayer.Stream],
+        configuration: RadioWidgetConfiguration
+    ) {
+        self.date = date
+        self.visualState = visualState
+        self.currentStation = currentStation
+        self.currentLanguageCode = currentLanguageCode
+        self.statusMessage = statusMessage
+        self.statusPresentation = statusPresentation
+        self.controlPresentation = controlPresentation
+        self.widgetNowPlayingDisplayModel = widgetNowPlayingDisplayModel
+        self.streamMetadata = streamMetadata
+        self.availableStreams = availableStreams
+        self.configuration = configuration
+    }
 
     /// Narrow presentation for the status indicator (text + associated colors).
     /// Populated from `visualState.makeStatusPresentation()` (the single canonical mapper)
@@ -400,7 +406,7 @@ struct SmallWidgetView: View {
     let availableStreams: [DirectStreamingPlayer.Stream]
 
     var body: some View {
-        if !isAppRunning() {
+        if shouldShowPassiveTapToOpen() {
             VStack(spacing: 8) {
                 Image(systemName: "radio")
                     .font(.title2)
@@ -495,7 +501,7 @@ struct MediumWidgetView: View {
     let availableStreams: [DirectStreamingPlayer.Stream]
 
     var body: some View {
-        if !isAppRunning() {
+        if shouldShowPassiveTapToOpen() {
             HStack {
                 VStack(spacing: 8) {
                     Image(systemName: "radio")
@@ -603,7 +609,7 @@ struct LargeWidgetView: View {
     let availableStreams: [DirectStreamingPlayer.Stream]
 
     var body: some View {
-        if !isAppRunning() {
+        if shouldShowPassiveTapToOpen() {
             VStack(spacing: 16) {
                 Spacer()
                 Image(systemName: "radio")
@@ -708,48 +714,24 @@ struct WidgetToggleRadioIntent: AppIntent {
         #if DEBUG
         print("[LutheranRadioWidget] WidgetToggleRadioIntent.perform called")
         #endif
-        
-        // Reliable SSOT read for widget extension process
-        let visualState = SharedPlayerManager.loadPersistedVisualStateDirect()
-        let shouldPlay = !visualState.isActivelyPlaying
-        let action = shouldPlay ? "play" : "pause"
-        let targetVisualState: PlayerVisualState = shouldPlay ? .playing : .userPaused
-        
-        #if DEBUG
-        print("[LutheranRadioWidget] Widget wants to \(action) → target state: \(targetVisualState) (visualState.isActivelyPlaying = \(visualState.isActivelyPlaying))")
-        #endif
-        
-        // === OPTIMISTIC UPDATE (needed for instant icon flip) ===
-        // Read language from the persisted snapshot first (the value the widget timeline/provider
-        // just used for this entry). This avoids re-computing preferredWidgetLanguage() which can
-        // fall back to "en" when hasActiveWidgets cache is still false on first interaction.
-        // The main app will later authoritatively save the actually-selected stream language.
-        let persisted = SharedPlayerManager.loadPersistedWidgetState()
-        let langForOptimistic = persisted?.currentLanguage ?? SharedPlayerManager.preferredWidgetLanguage()
 
-        if let actionId = SharedPlayerManager.shared.signalWidgetPendingAction(
-            visualState: targetVisualState,
-            action: action,
-            language: langForOptimistic
-        ) {
-            #if DEBUG
-            print("[LutheranRadioWidget] Widget set pendingAction = \(action) (ID: \(actionId))")
-            #endif
-        }
-        
-        // Immediate widget UI update — use the same lang we just persisted for the snapshot.
-        let state = SharedPlayerManager.shared.loadSharedState()
-        await WidgetRefreshManager.shared.refreshIfNeeded(
-            visualState: targetVisualState,
-            currentLanguage: langForOptimistic,
-            hasError: state.hasError,
-            immediate: true
+        let visualState = SharedPlayerManager.loadPersistedVisualStateDirect()
+        let plan = WidgetIntentCoordinators.planHomeWidgetToggle(from: visualState)
+        let language = WidgetIntentCoordinators.languageForOptimisticUpdate(
+            persistedLanguage: SharedPlayerManager.loadPersistedWidgetState()?.currentLanguage,
+            preferredLanguage: SharedPlayerManager.preferredWidgetLanguage()
         )
-        
+
         #if DEBUG
-        print("[LutheranRadioWidget] WidgetToggleRadioIntent completed. Signaled \(action), refreshed widget to \(targetVisualState)")
+        print("[LutheranRadioWidget] Widget wants to \(plan.action) → target state: \(plan.targetVisualState)")
         #endif
-        
+
+        await WidgetIntentExecution.executeOptimisticToggle(plan: plan, language: language)
+
+        #if DEBUG
+        print("[LutheranRadioWidget] WidgetToggleRadioIntent completed. Signaled \(plan.action), refreshed widget to \(plan.targetVisualState)")
+        #endif
+
         return .result()
     }
 }
@@ -773,29 +755,7 @@ public struct SwitchStreamIntent: AppIntent {
         print("[LutheranRadioWidget] SwitchStreamIntent.perform called for language: \(streamLanguageCode)")
         #endif
 
-        Task { @MainActor in WidgetRefreshManager.setHasActiveLutheranWidgets(true) }
-
-        let manager = SharedPlayerManager.shared
-
-        guard let targetStream = manager.availableStreams.first(where: { $0.languageCode == streamLanguageCode }) else {
-            #if DEBUG
-            print("[LutheranRadioWidget] SwitchStreamIntent: Language stream not found")
-            #endif
-            return .result()
-        }
-
-        // Route through switchToStream → handleWidgetSwitch → signalWidgetSwitchAction
-        // (same path as LiveActivitySwitchStreamIntent).
-        await manager.switchToStream(targetStream)
-
-        let state = manager.loadSharedState()
-        let visualState = SharedPlayerManager.loadPersistedVisualStateDirect()
-        await WidgetRefreshManager.shared.refreshIfNeeded(
-            visualState: visualState,
-            currentLanguage: streamLanguageCode,
-            hasError: state.hasError,
-            immediate: true
-        )
+        await WidgetIntentExecution.executeHomeWidgetStreamSwitch(languageCode: streamLanguageCode)
 
         #if DEBUG
         print("[LutheranRadioWidget] SwitchStreamIntent completed for \(streamLanguageCode)")

@@ -88,145 +88,6 @@ import WidgetSurface
 //
 // All user-visible strings use `String(localized: "key", table: "Localizable")` with explicit table.
 
-internal enum WidgetMetadataEmphasis: Equatable {
-    case active
-    case subdued
-    case placeholder
-
-    var opacity: Double {
-        switch self {
-        case .active: 1.0
-        case .subdued: 0.55
-        case .placeholder: 0.45
-        }
-    }
-}
-
-/// Narrow value type carrying the pre-computed program title, speaker line,
-/// speaker visibility, and emphasis level for the metadata region.
-///
-/// This is the single data shape passed from `SimpleEntry` (widgets) or
-/// computed once at the top of Live Activity views into `WidgetMetadataRegion`
-/// and the equivalent fixed metadata blocks in lock screen / Dynamic Island center.
-///
-/// Produced exclusively by `widgetNowPlayingDisplayModel(visualState:streamMetadata:languageName:)`.
-/// Consumers must treat the four fields as the complete contract for that axis
-/// (no re-inspection of `PlayerVisualState` or raw `StreamProgramMetadata` for title/speaker decisions).
-///
-/// - SeeAlso: `widgetNowPlayingDisplayModel(visualState:streamMetadata:languageName:)`,
-///   `WidgetMetadataRegion`, `SimpleEntry.widgetNowPlayingDisplayModel`,
-///   `LutheranRadioWidget.swift`, `LutheranRadioWidgetLiveActivity.swift`,
-///   `WidgetMetadataEmphasis`, CODING_AGENT.md.
-internal struct WidgetNowPlayingDisplayModel: Equatable {
-    /// Localized program title (or live fallback / "No track information" placeholder).
-    let programTitle: String
-
-    /// Speaker line, or a non-breaking space (U+00A0) when absent (for stable layout).
-    let speakerLine: String
-
-    /// Whether the speaker line should be visible (subject to emphasis.opacity).
-    let speakerVisible: Bool
-
-    /// Emphasis level controlling opacity and semantic treatment (active / subdued / placeholder).
-    let emphasis: WidgetMetadataEmphasis
-}
-
-/// Returns the localized "X · Live Stream" fallback used when no ICY programTitle.
-internal func widgetLiveStreamFallback(languageName: String) -> String {
-    unsafe String(
-        format: String(localized: "live_activity_program_fallback", defaultValue: "%@ · Live Stream", table: "Localizable"),
-        languageName
-    )
-}
-
-/// Returns speaker line if present and non-empty in metadata.
-internal func widgetProgramSpeakerLine(metadata: StreamProgramMetadata?) -> String? {
-    guard let speaker = metadata?.speaker, !speaker.isEmpty else { return nil }
-    return speaker
-}
-
-/// Returns a `WidgetNowPlayingDisplayModel` by applying the canonical title/speaker/emphasis
-/// rules to the given `PlayerVisualState` and optional `StreamProgramMetadata`.
-///
-/// This is the Single Source of Truth for the metadata/emphasis axis. It is called:
-/// - Once per snapshot in `Provider.placeholder`, `Provider.snapshot`, `Provider.timeline`
-///   (via `createEntry`) to populate `SimpleEntry.widgetNowPlayingDisplayModel`.
-/// - Once at the top level of `LockScreenLiveActivityView.body` and once inside the
-///   outer `dynamicIsland` closure for Live Activities.
-///
-/// The caller supplies the `languageName` (display name for the current stream) because
-/// `LutheranRadioLiveActivityAttributes.ContentState` does not carry the language;
-/// widgets carry it on `SimpleEntry.currentLanguageCode` + `availableStreams`.
-///
-/// The returned model always provides stable values (title present, speakerLine either
-/// real value or "\u{00A0}" placeholder) so that `WidgetMetadataRegion` and LA metadata
-/// blocks can use fixed-height frames without conditional view insertion.
-///
-/// - Parameters:
-///   - visualState: The authoritative `PlayerVisualState` from the persisted snapshot.
-///   - streamMetadata: Optional ICY `StreamProgramMetadata` (programTitle + speaker).
-///   - languageName: Localized display name of the active stream (e.g. "English") for
-///     the "X · Live Stream" fallback.
-/// - Returns: A narrow display model with title, speakerLine, speakerVisible, emphasis.
-/// - SeeAlso: `WidgetNowPlayingDisplayModel`, `SimpleEntry.widgetNowPlayingDisplayModel`,
-///   `widgetLiveStreamFallback(languageName:)`, `widgetProgramSpeakerLine(metadata:)`,
-///   `LutheranRadioWidget.swift` (Provider derivation sites),
-///   `LutheranRadioWidgetLiveActivity.swift` (top-level calls in LA views),
-///   `PlayerVisualState`, `WidgetDisplayModels.swift` (module header for pattern rationale),
-///   CODING_AGENT.md (snapshot-driven pattern, narrow inputs).
-internal func widgetNowPlayingDisplayModel(
-    visualState: PlayerVisualState,
-    streamMetadata: StreamProgramMetadata?,
-    languageName: String
-) -> WidgetNowPlayingDisplayModel {
-    let metadata = streamMetadata
-    let state = visualState
-    let liveFallback = widgetLiveStreamFallback(languageName: languageName)
-    let noTrack = String(localized: "no_track_info", defaultValue: "No track information", table: "Localizable")
-    let speaker = widgetProgramSpeakerLine(metadata: metadata)
-
-    let programTitle: String
-    let emphasis: WidgetMetadataEmphasis
-
-    switch state {
-    case .playing:
-        programTitle = metadata?.programTitle.flatMap { $0.isEmpty ? nil : $0 } ?? liveFallback
-        emphasis = .active
-    case .prePlay, .cleared:
-        programTitle = metadata?.programTitle.flatMap { $0.isEmpty ? nil : $0 } ?? liveFallback
-        emphasis = .subdued
-    case .userPaused:
-        if let title = metadata?.programTitle, !title.isEmpty {
-            programTitle = title
-            emphasis = .subdued
-        } else {
-            programTitle = noTrack
-            emphasis = .placeholder
-        }
-    case .thermalPaused, .securityLocked:
-        if let title = metadata?.programTitle, !title.isEmpty {
-            programTitle = title
-            emphasis = .subdued
-        } else {
-            programTitle = noTrack
-            emphasis = .placeholder
-        }
-
-    @unknown default:
-        programTitle = noTrack
-        emphasis = .placeholder
-    }
-
-    let speakerVisible = speaker != nil && (state.isActivelyPlaying || state == .userPaused || state == .prePlay || state == .cleared)
-
-    return WidgetNowPlayingDisplayModel(
-        programTitle: programTitle,
-        speakerLine: speaker ?? "\u{00A0}",
-        speakerVisible: speakerVisible,
-        emphasis: emphasis
-    )
-}
-
 // MARK: - Display name / flag helpers (module-internal)
 //
 // Used by the SwiftUI preview matrix and (via the existing thin get* wrappers)
@@ -265,39 +126,6 @@ internal func displayFlag(for code: String) -> String {
 }
 
 // MARK: - Provider snapshot resolution (Tier 3 hygiene)
-
-/// Snapshot fields resolved for WidgetKit Provider timeline and Control Center reads.
-///
-/// Populated exclusively from ``SharedPlayerManager/loadPersistedWidgetState()`` (or safe
-/// `.prePlay` defaults). Providers pre-derive presentation surfaces from these fields once
-/// per entry — never from raw ``PlayerVisualState`` policy inside leaf `body` builders.
-///
-/// - SeeAlso: ``WidgetProviderSnapshotResolver``, `SimpleEntry`, `LutheranRadioWidgetControl/Value`,
-///   docs/Widget-Functionality-Roadmap.md (Tier 3 provider audit).
-struct WidgetProviderSnapshotFields: Sendable, Equatable {
-    let currentLanguage: String
-    let hasError: Bool
-    let visualState: PlayerVisualState
-    let streamMetadata: StreamProgramMetadata?
-}
-
-/// Pre-derived presentation slices assembled once from resolved snapshot fields.
-///
-/// Shared contract for home-widget ``SimpleEntry`` population and Control-widget ``Value``
-/// derivation. Providers call ``WidgetProviderSnapshotResolver/assemblePresentationSlices(from:)``
-/// after ``resolveWithActorHygiene(manager:)`` (or ``resolveFromSnapshot()`` for static previews)
-/// so leaf views never re-derive mapping rules inside `body`.
-///
-/// - SeeAlso: ``WidgetProviderSnapshotResolver``, `SimpleEntry`, docs/Widget-Presentation-Dataflow.md,
-///   docs/Widget-Functionality-Roadmap.md (Tier 3 provider audit).
-struct WidgetProviderPresentationSlices: Sendable, Equatable {
-    let currentLanguageCode: String
-    let currentStation: String
-    let statusPresentation: PlayerStatusPresentation
-    let controlPresentation: PlayerControlPresentation
-    let statusMessage: String
-    let widgetNowPlayingDisplayModel: WidgetNowPlayingDisplayModel
-}
 
 /// Canonical resolver for home-widget and Control-widget Provider entry points.
 ///
@@ -394,5 +222,90 @@ enum WidgetProviderSnapshotResolver {
             statusMessage: statusMessage,
             widgetNowPlayingDisplayModel: metadataModel
         )
+    }
+}
+
+// MARK: - Intent execution (cross-target SSOT)
+
+/// Executes widget intent plans that require ``SharedPlayerManager`` and ``WidgetRefreshManager``.
+///
+/// Planning (pure mapping) lives in ``WidgetIntentCoordinators`` (WidgetSurface).
+/// Extension `perform()` bodies delegate here so optimistic toggle and stream-switch
+/// side effects stay in one cross-target location.
+///
+/// - SeeAlso: ``WidgetIntentCoordinators``, docs/WidgetSurface-OI-W3-Plan-and-Status.md (PR 2).
+enum WidgetIntentExecution {
+
+    /// Optimistic snapshot + pending action + immediate widget refresh for play/pause toggles.
+    ///
+    /// - Parameters:
+    ///   - plan: Home-widget or Control-widget toggle plan.
+    ///   - language: Language code from ``WidgetIntentCoordinators/languageForOptimisticUpdate(persistedLanguage:preferredLanguage:)``.
+    static func executeOptimisticToggle(plan: WidgetToggleActionPlan, language: String) async {
+        let manager = SharedPlayerManager.shared
+        _ = manager.signalWidgetPendingAction(
+            visualState: plan.targetVisualState,
+            action: plan.action,
+            language: language
+        )
+        let state = manager.loadSharedState()
+        await WidgetRefreshManager.shared.refreshIfNeeded(
+            visualState: plan.targetVisualState,
+            currentLanguage: language,
+            hasError: state.hasError,
+            immediate: true
+        )
+    }
+
+    /// Home-widget stream switch: optimistic path through ``SharedPlayerManager/switchToStream(_:)`` + refresh.
+    ///
+    /// - Parameter languageCode: Target stream BCP-47-style code from ``SwitchStreamIntent``.
+    static func executeHomeWidgetStreamSwitch(languageCode: String) async {
+        Task { @MainActor in WidgetRefreshManager.setHasActiveLutheranWidgets(true) }
+
+        let manager = SharedPlayerManager.shared
+        guard let targetStream = manager.availableStreams.first(where: { $0.languageCode == languageCode }) else {
+            return
+        }
+
+        await manager.switchToStream(targetStream)
+
+        let state = manager.loadSharedState()
+        let visualState = SharedPlayerManager.loadPersistedVisualStateDirect()
+        await WidgetRefreshManager.shared.refreshIfNeeded(
+            visualState: visualState,
+            currentLanguage: languageCode,
+            hasError: state.hasError,
+            immediate: true
+        )
+    }
+
+    /// Live Activity stream switch via canonical ``SharedPlayerManager/switchToStream(_:)``.
+    ///
+    /// - Parameter languageCode: Target stream code from ``LiveActivitySwitchStreamIntent``.
+    /// - Returns: `true` when a matching stream was found and the switch was invoked.
+    @discardableResult
+    static func executeLiveActivityStreamSwitch(languageCode: String) async -> Bool {
+        let manager = SharedPlayerManager.shared
+        guard let targetStream = manager.availableStreams.first(where: { $0.languageCode == languageCode }) else {
+            return false
+        }
+        await manager.switchToStream(targetStream)
+        return true
+    }
+
+    /// Live Activity play/pause toggle via actor-isolated manager APIs.
+    ///
+    /// - Parameter plan: Direction from ``WidgetIntentCoordinators/planLiveActivityToggle(from:)``.
+    static func executeLiveActivityToggle(plan: WidgetLiveActivityTogglePlan) async {
+        let manager = SharedPlayerManager.shared
+        switch plan {
+        case .pause:
+            await manager.stop()
+        case .play:
+            await manager.userRequestedPlay()
+        @unknown default:
+            break
+        }
     }
 }

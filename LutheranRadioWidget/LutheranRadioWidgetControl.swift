@@ -59,43 +59,18 @@ struct ToggleRadioIntent: SetValueIntent {
 
         Task { @MainActor in WidgetRefreshManager.setHasActiveLutheranWidgets(true) }
 
-        let manager = SharedPlayerManager.shared
-        
-        // Widget extension cannot own AVPlayer. We only signal intent via shared defaults + Darwin notification.
-        // The main app (receiving the Darwin notification via checkForPendingWidgetActions) is the sole executor
-        // of actual playback changes. This matches the design used by WidgetToggleRadioIntent (home widget).
-        // Direct play()/stop() calls here caused double-execution (widget optimistic path + main app heavy path),
-        // producing tuning-sound waits, full stream re-setup, intermediate playing=false saves, and state thrashing.
-        
-        // Brave: also force-persist the full visual state JSON from the widget process.
-        // This makes the next Control Widget timeline / currentValue read the correct icon immediately.
-        // (The inner persist / schedule paths are gated by hasActiveWidgets; when the Control widget
-        // itself is present the flag is true. After a main-app privacy clear the snapshot will be absent
-        // until re-detect, and providers fall back gracefully.)
-        let targetVisualState: PlayerVisualState = value ? .playing : .userPaused
-        let action = value ? "play" : "pause"
-
-        // Use persisted language for consistency (same as home widget fix).
-        let persisted = SharedPlayerManager.loadPersistedWidgetState()
-        let langForOptimistic = persisted?.currentLanguage ?? SharedPlayerManager.preferredWidgetLanguage()
-
-        // Same optimistic path as WidgetToggleRadioIntent: snapshot + pendingAction + Darwin notify.
-        manager.signalWidgetPendingAction(visualState: targetVisualState, action: action, language: langForOptimistic)
-        
-        // Immediate widget UI feedback — now using modern PlayerVisualState API
-        let state = manager.loadSharedState()
-        
-        await WidgetRefreshManager.shared.refreshIfNeeded(
-            visualState: targetVisualState,
-            currentLanguage: langForOptimistic,
-            hasError: state.hasError,
-            immediate: true
+        let plan = WidgetIntentCoordinators.planControlWidgetToggle(isPlayingRequested: value)
+        let language = WidgetIntentCoordinators.languageForOptimisticUpdate(
+            persistedLanguage: SharedPlayerManager.loadPersistedWidgetState()?.currentLanguage,
+            preferredLanguage: SharedPlayerManager.preferredWidgetLanguage()
         )
-        
+
+        await WidgetIntentExecution.executeOptimisticToggle(plan: plan, language: language)
+
         #if DEBUG
-        print("[LutheranRadioWidgetControl] ToggleRadioIntent completed successfully (signaled \(value ? "play" : "pause") via pendingAction + Darwin)")
+        print("[LutheranRadioWidgetControl] ToggleRadioIntent completed successfully (signaled \(plan.action) via pendingAction + Darwin)")
         #endif
-        
+
         return .result()
     }
 }
@@ -185,6 +160,14 @@ extension LutheranRadioWidgetControl {
             self.statusPresentation = slices.statusPresentation
             self.controlPresentation = slices.controlPresentation
         }
+
+        /// Builds a control-widget snapshot from ``WidgetTimelineEntryFactory`` output.
+        init(blueprint: WidgetControlValueBlueprint) {
+            self.visualState = blueprint.visualState
+            self.currentStation = blueprint.currentStation
+            self.statusPresentation = blueprint.statusPresentation
+            self.controlPresentation = blueprint.controlPresentation
+        }
     }
 
     struct Provider: AppIntentControlValueProvider {
@@ -216,12 +199,12 @@ extension LutheranRadioWidgetControl {
                     streamMetadata: fields.streamMetadata
                 )
                 let fallbackSlices = WidgetProviderSnapshotResolver.assemblePresentationSlices(from: fallbackFields)
-                return Value(fields: fallbackFields, slices: fallbackSlices)
+                return Value(blueprint: WidgetTimelineEntryFactory.makeControlWidgetBlueprint(fields: fallbackFields, slices: fallbackSlices))
             }
 
             // Snapshot present — SSOT path (symmetric with home-widget Provider).
             if SharedPlayerManager.loadPersistedWidgetState() != nil {
-                return Value(fields: fields, slices: slices)
+                return Value(blueprint: WidgetTimelineEntryFactory.makeControlWidgetBlueprint(fields: fields, slices: slices))
             }
 
             // No snapshot yet: actor visual + preferred language (installs that never wrote).
@@ -233,7 +216,7 @@ extension LutheranRadioWidgetControl {
                 streamMetadata: fields.streamMetadata
             )
             let fallbackSlices = WidgetProviderSnapshotResolver.assemblePresentationSlices(from: fallbackFields)
-            return Value(fields: fallbackFields, slices: fallbackSlices)
+            return Value(blueprint: WidgetTimelineEntryFactory.makeControlWidgetBlueprint(fields: fallbackFields, slices: fallbackSlices))
         }
     }
 }

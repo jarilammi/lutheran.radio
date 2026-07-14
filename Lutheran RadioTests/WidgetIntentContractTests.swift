@@ -51,23 +51,6 @@ final class WidgetIntentContractTests: XCTestCase {
         try await super.tearDown()
     }
 
-    // MARK: - Play/pause drain helpers
-
-    /// Mirrors ``WidgetToggleRadioIntent.perform()`` action selection (extension target; contract asserted here).
-    private func expectedHomeWidgetToggleAction(
-        for visualState: PlayerVisualState
-    ) -> (action: String, target: PlayerVisualState) {
-        let shouldPlay = !visualState.isActivelyPlaying
-        return (shouldPlay ? "play" : "pause", shouldPlay ? .playing : .userPaused)
-    }
-
-    /// Mirrors ``ToggleRadioIntent.perform()`` bool mapping (Control widget extension target).
-    private func expectedControlWidgetToggleAction(
-        value: Bool
-    ) -> (action: String, target: PlayerVisualState) {
-        (value ? "play" : "pause", value ? .playing : .userPaused)
-    }
-
     @MainActor
     private static func makePendingActionDrainHost() -> ViewController {
         let host = ViewController()
@@ -538,25 +521,25 @@ final class WidgetIntentContractTests: XCTestCase {
             .prePlay, .userPaused, .cleared, .thermalPaused, .securityLocked
         ]
         for state in nonPlayingStates {
-            let mapped = expectedHomeWidgetToggleAction(for: state)
+            let mapped = WidgetIntentCoordinators.planHomeWidgetToggle(from: state)
             XCTAssertEqual(mapped.action, "play", "Non-playing \(state) must schedule play")
-            XCTAssertEqual(mapped.target, .playing)
+            XCTAssertEqual(mapped.targetVisualState, .playing)
         }
 
-        let playingMapped = expectedHomeWidgetToggleAction(for: .playing)
+        let playingMapped = WidgetIntentCoordinators.planHomeWidgetToggle(from: .playing)
         XCTAssertEqual(playingMapped.action, "pause")
-        XCTAssertEqual(playingMapped.target, .userPaused)
+        XCTAssertEqual(playingMapped.targetVisualState, .userPaused)
     }
 
     /// Control widget `SetValueIntent` bool maps true → play, false → pause.
     func testControlWidgetToggleActionMappingMatrix() {
-        let playMapped = expectedControlWidgetToggleAction(value: true)
+        let playMapped = WidgetIntentCoordinators.planControlWidgetToggle(isPlayingRequested: true)
         XCTAssertEqual(playMapped.action, "play")
-        XCTAssertEqual(playMapped.target, .playing)
+        XCTAssertEqual(playMapped.targetVisualState, .playing)
 
-        let pauseMapped = expectedControlWidgetToggleAction(value: false)
+        let pauseMapped = WidgetIntentCoordinators.planControlWidgetToggle(isPlayingRequested: false)
         XCTAssertEqual(pauseMapped.action, "pause")
-        XCTAssertEqual(pauseMapped.target, .userPaused)
+        XCTAssertEqual(pauseMapped.targetVisualState, .userPaused)
     }
 
     /// End-to-end widget-simulated home-widget toggle uses the home-widget action mapping.
@@ -566,14 +549,14 @@ final class WidgetIntentContractTests: XCTestCase {
 
         for state in [PlayerVisualState.prePlay, .userPaused, .playing] {
             SharedPlayerManager.persistWidgetSnapshot(visualState: state, language: "en")
-            let mapped = expectedHomeWidgetToggleAction(for: state)
+            let mapped = WidgetIntentCoordinators.planHomeWidgetToggle(from: state)
 
             if let stale = manager.getPendingAction() {
                 manager.clearPendingAction(actionId: stale.actionId)
             }
 
             let actionId = SharedPlayerManager.shared.signalWidgetPendingAction(
-                visualState: mapped.target,
+                visualState: mapped.targetVisualState,
                 action: mapped.action,
                 language: "en"
             )
@@ -586,7 +569,7 @@ final class WidgetIntentContractTests: XCTestCase {
             XCTAssertEqual(pending.action, mapped.action)
 
             let snapshot = SharedPlayerManager.loadPersistedWidgetState()
-            XCTAssertEqual(snapshot?.visualState, mapped.target)
+            XCTAssertEqual(snapshot?.visualState, mapped.targetVisualState)
         }
     }
 
@@ -598,13 +581,13 @@ final class WidgetIntentContractTests: XCTestCase {
         SharedPlayerManager.persistWidgetSnapshot(visualState: .userPaused, language: "sv")
 
         for value in [true, false] {
-            let mapped = expectedControlWidgetToggleAction(value: value)
+            let mapped = WidgetIntentCoordinators.planControlWidgetToggle(isPlayingRequested: value)
             if let stale = manager.getPendingAction() {
                 manager.clearPendingAction(actionId: stale.actionId)
             }
 
             let actionId = SharedPlayerManager.shared.signalWidgetPendingAction(
-                visualState: mapped.target,
+                visualState: mapped.targetVisualState,
                 action: mapped.action,
                 language: "sv"
             )
@@ -615,7 +598,7 @@ final class WidgetIntentContractTests: XCTestCase {
                 continue
             }
             XCTAssertEqual(pending.action, mapped.action)
-            XCTAssertEqual(SharedPlayerManager.loadPersistedWidgetState()?.visualState, mapped.target)
+            XCTAssertEqual(SharedPlayerManager.loadPersistedWidgetState()?.visualState, mapped.targetVisualState)
         }
     }
 

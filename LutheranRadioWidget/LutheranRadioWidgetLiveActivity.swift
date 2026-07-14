@@ -209,25 +209,15 @@ struct LiveActivityTogglePlaybackIntent: AppIntent {
         #if DEBUG
         print("[LutheranRadioWidgetLiveActivity] LiveActivityTogglePlaybackIntent.perform called")
         #endif
-        
-        let manager = SharedPlayerManager.shared
-        let visualState = await manager.currentVisualState   // Safe actor access (SSOT)
-        
-        if visualState.isActivelyPlaying {
-            await manager.stop()
-        } else {
-            // Explicit user action from Live Activity (treated as an explicit play surface).
-            // Must go through userRequestedPlay() (not raw play()) so that setUserIntentToPlay()
-            // and the full guard sequence run. Distinction: internal continuation
-            // (post-intent resume in the two canonical switch methods) is the only case
-            // allowed to call play() directly.
-            await manager.userRequestedPlay()
-        }
-        
+
+        let visualState = await SharedPlayerManager.shared.currentVisualState
+        let plan = WidgetIntentCoordinators.planLiveActivityToggle(from: visualState)
+        await WidgetIntentExecution.executeLiveActivityToggle(plan: plan)
+
         #if DEBUG
         print("[LutheranRadioWidgetLiveActivity] LiveActivityTogglePlaybackIntent completed – visualState was \(visualState)")
         #endif
-        
+
         return .result()
     }
 }
@@ -263,22 +253,17 @@ struct LiveActivitySwitchStreamIntent: AppIntent {
         #if DEBUG
         print("[LutheranRadioWidgetLiveActivity] LiveActivitySwitchStreamIntent.perform called for language: \(languageCode)")
         #endif
-        
-        let manager = SharedPlayerManager.shared
-        
-        guard let targetStream = manager.availableStreams.first(where: { $0.languageCode == languageCode }) else {
-            #if DEBUG
-            print("[LutheranRadioWidgetLiveActivity] LiveActivitySwitchStreamIntent: Language stream not found")
-            #endif
-            return .result()
-        }
-        
-        await manager.switchToStream(targetStream)
-        
+
+        let switched = await WidgetIntentExecution.executeLiveActivityStreamSwitch(languageCode: languageCode)
+
         #if DEBUG
-        print("[LutheranRadioWidgetLiveActivity] LiveActivitySwitchStreamIntent completed for \(targetStream.language)")
+        if !switched {
+            print("[LutheranRadioWidgetLiveActivity] LiveActivitySwitchStreamIntent: Language stream not found")
+        } else {
+            print("[LutheranRadioWidgetLiveActivity] LiveActivitySwitchStreamIntent completed for \(languageCode)")
+        }
         #endif
-        
+
         return .result()
     }
 }
