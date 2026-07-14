@@ -9,6 +9,7 @@ import AppIntents
 import SwiftUI
 import WidgetKit
 import Foundation
+import WidgetSurface
 
 // MARK: - Shared Display Logic
 //
