@@ -34,6 +34,7 @@ import UIKit
 @unsafe @preconcurrency import AVFoundation
 import WidgetKit
 import Core
+import WidgetSurface
 
 /// Lightweight coordinator (wiring + orchestration only). Does not own playback execution, security,
 /// streaming engine decisions, or widget snapshot authority — those remain exclusively in
@@ -1692,6 +1693,11 @@ final class RadioPlayerCoordinator {
             // In-process post-clear: visual .cleared (blue) is shown; intent blocks. Same skip for auto-play.
             #if DEBUG
             print("[RadioPlayerCoordinator] viewDidAppear → .cleared (post privacy clear) → SKIPPING (explicit play required)")
+            #endif
+
+        @unknown default:
+            #if DEBUG
+            print("[RadioPlayerCoordinator] viewDidAppear → unknown visualState → SKIPPING auto-play")
             #endif
         }
 

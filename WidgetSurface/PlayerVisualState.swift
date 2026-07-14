@@ -1,14 +1,14 @@
 //
 //  PlayerVisualState.swift
-//  Lutheran Radio
+//  WidgetSurface
 //
 //  Created by Jari Lammi on 18.3.2026.
 //
 
-// SHARED: Cross-target source (main app + LutheranRadioWidgetExtension)
+// WidgetSurface framework — presentation-only (no security logic).
 //
-// Single physical file on disk, compiled into both targets via Xcode
-// File System Synchronized Group + membershipExceptions (see project.pbxproj).
+// Compiled into the `WidgetSurface` embedded framework; consumed by the main app,
+// widget extension, and (in PR 3) `LutheranRadioWidgetTests` via `import WidgetSurface`.
 //
 // Purpose:
 // Defines the core value types for visual playback state and user intent
@@ -88,19 +88,26 @@ import SwiftUI
 ///   ``PlayerVisualState/makeControlPresentation()``, ``PlayerViewModel/statusPresentation``,
 ///   `SimpleEntry.statusPresentation`, CODING_AGENT.md (narrow inputs, value types,
 ///   cached derived on @Observable, docs/Widget-Presentation-Dataflow.md).
-struct PlayerStatusPresentation: Equatable {
+public struct PlayerStatusPresentation: Sendable, Equatable {
     /// Background fill color for the status pill / indicator.
-    let background: Color
+    public let background: Color
 
     /// Foreground color for text (and optional image) drawn on the background.
-    let foreground: Color
+    public let foreground: Color
 
     /// Localized status text (e.g. "Playing", "Paused", "Connecting", ...).
-    let text: String
+    public let text: String
 
     /// Optional SF Symbol name to accompany the text (e.g. "play.fill", "pause.fill", "lock.fill").
     /// Consumers may ignore this if they render the glyph elsewhere (main player controls do).
-    let systemImage: String?
+    public let systemImage: String?
+
+    public init(background: Color, foreground: Color, text: String, systemImage: String?) {
+        self.background = background
+        self.foreground = foreground
+        self.text = text
+        self.systemImage = systemImage
+    }
 }
 
 // MARK: - PlayerControlPresentation
@@ -142,18 +149,23 @@ struct PlayerStatusPresentation: Equatable {
 ///   `LutheranRadioLiveActivityAttributes.ContentState`,
 ///   CODING_AGENT.md (narrow inputs for value types + WidgetKit/ActivityKit snapshot constraints),
 ///   WidgetDisplayModels.swift (sibling presentation axis for metadata/emphasis).
-struct PlayerControlPresentation: Sendable, Equatable {
+public struct PlayerControlPresentation: Sendable, Equatable {
     /// SF Symbol name for the playback toggle control.
     ///
     /// Typically "play.fill" or "pause.fill". Consumers are free to use variant forms
     /// (e.g. "play.circle.fill") when the design calls for it, but the choice of which
     /// base glyph (play vs pause) must be driven by this value.
-    let systemImage: String
+    public let systemImage: String
 
     /// Tint color to apply to the control glyph (and commonly to its enclosing circle or background).
     ///
     /// Already a SwiftUI `Color` so leaf buttons and regions do not perform UIColor bridging.
-    let tint: Color
+    public let tint: Color
+
+    public init(systemImage: String, tint: Color) {
+        self.systemImage = systemImage
+        self.tint = tint
+    }
 }
 
 // MARK: - Playback Intent
@@ -200,7 +212,7 @@ struct PlayerControlPresentation: Sendable, Equatable {
 ///                    resurrection blocker (via intent). Only an explicit user play action clears it
 ///                    (and transitions visual to .prePlay on the way to playing). On next launch
 ///                    (no snapshot) the app starts fresh with .prePlay visual.
-enum PlaybackIntent: Codable, Equatable, Hashable, Sendable {
+public enum PlaybackIntent: Codable, Equatable, Hashable, Sendable {
     case shouldBePlaying
     case shouldBePaused
     case userPaused
@@ -209,7 +221,7 @@ enum PlaybackIntent: Codable, Equatable, Hashable, Sendable {
     case cleared
 }
 
-extension PlaybackIntent {
+public extension PlaybackIntent {
     /// True when the user still wants audio playing (normal play or active sleep-timer countdown).
     var isActivePlaybackIntent: Bool {
         self == .shouldBePlaying || self == .sleepTimer
@@ -288,7 +300,7 @@ extension PlaybackIntent {
 /// must preserve Sendable + Hashable and must be reviewed for impact on widget/Live
 /// Activity snapshot derivation. All cases must carry a documentation comment
 /// explaining the long-term decoupling or testability benefit.
-enum PlayerEvent: Sendable, Hashable, Equatable {
+@frozen public enum PlayerEvent: Sendable, Hashable, Equatable {
     /// The authoritative playback intent changed.
     ///
     /// Why this event exists: centralizes the signal ("does the user want audio playing?")
@@ -327,7 +339,7 @@ enum PlayerEvent: Sendable, Hashable, Equatable {
     /// Why this event exists: routes permanent vs transient errors through the same
     /// vocabulary used for success paths, enabling a single error surface for widgets,
     /// user-visible status, and recovery decisions.
-    case streamDidFail(DirectStreamingPlayer.StreamErrorType)
+    case streamDidFail(StreamErrorType)
 
     /// Program metadata (title/speaker parsed from ICY StreamTitle) changed.
     ///
@@ -407,20 +419,32 @@ enum PlayerEvent: Sendable, Hashable, Equatable {
 /// inside SharedPlayerManager together with this declaration. The computed
 /// convenience properties below exist solely to reduce boilerplate for common
 /// questions asked of a replay snapshot; they delegate to the authoritative types.
-struct PlayerCurrentState: Sendable, Equatable, Hashable {
+public struct PlayerCurrentState: Sendable, Equatable, Hashable {
     /// Current visual state (drives colors, glyphs, resurrection policy, and
     /// presentation derivations).
-    let visualState: PlayerVisualState
+    public let visualState: PlayerVisualState
 
     /// Authoritative playback intent (the SSOT answering "does the user want audio playing?").
-    let playbackIntent: PlaybackIntent
+    public let playbackIntent: PlaybackIntent
 
     /// Latest program metadata parsed from the stream, if present.
-    let streamMetadata: StreamProgramMetadata?
+    public let streamMetadata: StreamProgramMetadata?
 
     /// Whether the current state reflects a permanent error (security lock or
     /// persisted hasError flag).
-    let hasError: Bool
+    public let hasError: Bool
+
+    public init(
+        visualState: PlayerVisualState,
+        playbackIntent: PlaybackIntent,
+        streamMetadata: StreamProgramMetadata?,
+        hasError: Bool
+    ) {
+        self.visualState = visualState
+        self.playbackIntent = playbackIntent
+        self.streamMetadata = streamMetadata
+        self.hasError = hasError
+    }
 
     // MARK: - Convenience accessors (derived, zero-cost)
 
@@ -428,7 +452,7 @@ struct PlayerCurrentState: Sendable, Equatable, Hashable {
     ///
     /// Delegates to `PlayerVisualState.isActivelyPlaying` for semantic consistency
     /// with resurrection guards, LIVE indicators, and control glyph decisions.
-    var isActivelyPlaying: Bool {
+    public var isActivelyPlaying: Bool {
         visualState.isActivelyPlaying
     }
 
@@ -438,7 +462,7 @@ struct PlayerCurrentState: Sendable, Equatable, Hashable {
     /// Delegates to `PlaybackIntent.isStickyPauseOrLock`. Useful for late
     /// subscribers that need to decide whether to show blocked UI without
     /// re-reading the raw intent.
-    var isBlockedByStickyIntent: Bool {
+    public var isBlockedByStickyIntent: Bool {
         playbackIntent.isStickyPauseOrLock
     }
 
@@ -448,7 +472,7 @@ struct PlayerCurrentState: Sendable, Equatable, Hashable {
     /// Equivalent to `hasError`. Provided for naming symmetry with
     /// `DirectStreamingPlayer.StreamErrorType.isPermanent` and consumer code
     /// that talks about "permanent error" vs transient.
-    var isInPermanentError: Bool {
+    public var isInPermanentError: Bool {
         hasError
     }
 }
@@ -468,7 +492,7 @@ struct PlayerCurrentState: Sendable, Equatable, Hashable {
 /// - securityLocked: red
 ///
 /// This version makes .userPaused "sticky" after any manual interaction.
-enum PlayerVisualState: Codable, Equatable, Hashable, Sendable {
+@frozen public enum PlayerVisualState: Codable, Equatable, Hashable, Sendable {
     
     case prePlay            // Initial load / connecting / never played yet → yellow
     case cleared            // Post "Clear local state" (privacy reset) → blue "Cleared"; ready state + intent blocker
@@ -479,7 +503,7 @@ enum PlayerVisualState: Codable, Equatable, Hashable, Sendable {
     
     // MARK: - Visual properties
     
-    var backgroundColor: UIColor {
+    public var backgroundColor: UIColor {
         switch self {
         case .prePlay:        return .systemYellow
         case .cleared:        return .systemBlue
@@ -490,7 +514,7 @@ enum PlayerVisualState: Codable, Equatable, Hashable, Sendable {
         }
     }
     
-    var textColor: UIColor {
+    public var textColor: UIColor {
         switch self {
         case .prePlay, .userPaused, .playing, .thermalPaused:
             return .label
@@ -499,7 +523,7 @@ enum PlayerVisualState: Codable, Equatable, Hashable, Sendable {
         }
     }
     
-    var buttonTintColor: UIColor {
+    public var buttonTintColor: UIColor {
         switch self {
         case .prePlay:        return .systemYellow
         case .cleared:        return .systemBlue
@@ -533,7 +557,7 @@ enum PlayerVisualState: Codable, Equatable, Hashable, Sendable {
     ///
     /// - SeeAlso: ``makeControlPresentation()``, ``shouldAutoPlayOrResume``,
     ///   CODING_AGENT.md (isActivelyPlaying may remain for semantic decisions).
-    var isActivelyPlaying: Bool {
+    public var isActivelyPlaying: Bool {
         self == .playing
     }
     
@@ -541,7 +565,7 @@ enum PlayerVisualState: Codable, Equatable, Hashable, Sendable {
     /// Returns false for .userPaused and .error — this blocks ALL resurrection paths
     /// (viewDidAppear, completeStreamSwitch, widget callbacks, etc.)
     /// .cleared returns true (ready) because the blocker is carried exclusively by PlaybackIntent.cleared.
-    var shouldAutoPlayOrResume: Bool {
+    public var shouldAutoPlayOrResume: Bool {
         switch self {
         case .prePlay, .cleared, .playing:
             return true
@@ -550,11 +574,11 @@ enum PlayerVisualState: Codable, Equatable, Hashable, Sendable {
         }
     }
     
-    var shouldAutoResumeOnThermalRecovery: Bool {
+    public var shouldAutoResumeOnThermalRecovery: Bool {
         self == .thermalPaused
     }
     
-    var mustSuppressResurrection: Bool {
+    public var mustSuppressResurrection: Bool {
         self == .userPaused || self == .securityLocked
     }
 }
@@ -564,7 +588,7 @@ enum PlayerVisualState: Codable, Equatable, Hashable, Sendable {
 /// Why we are stopping playback.
 /// This lets us preserve user intent during stream switches
 /// instead of blindly setting `.userPaused`.
-enum StopReason {
+public enum StopReason: Sendable {
     case userAction          // explicit pause button → become sticky .userPaused
     case streamSwitch        // language change → keep playing intent
     case interruption        // background / call / AirPlay / sleep timer / etc.
@@ -572,7 +596,7 @@ enum StopReason {
 }
 
 /// How `DirectStreamingPlayer` should attach or resume the secured `AVPlayerItem`.
-enum PlaybackAttachContext: Sendable, Equatable {
+@frozen public enum PlaybackAttachContext: Sendable, Equatable {
     case coldLaunch
     case streamSwitch
     case resume
@@ -580,7 +604,7 @@ enum PlaybackAttachContext: Sendable, Equatable {
 
 // MARK: - State mapping
 
-extension PlayerVisualState {
+public extension PlayerVisualState {
     /// Maps PlayerStatus + flags → visual state with strict "userPaused is sticky" rule.
     ///
     /// Once the user has manually paused (or ever played), we lock into .userPaused

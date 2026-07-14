@@ -1,13 +1,10 @@
 //
 //  WidgetEventObserver.swift
-//  Lutheran Radio
+//  WidgetSurface
 //
 //  Created by Jari Lammi on 4.7.2026.
 //
-//  SHARED: Cross-target source (main app + LutheranRadioWidgetExtension)
-//
-//  Single physical file on disk, compiled into both targets via Xcode
-//  File System Synchronized Group + membershipExceptions (see project.pbxproj).
+//  WidgetSurface framework — shared observation helper for widget/LA managers.
 //
 //  Purpose:
 //  Internal lightweight helper that factors the common long-lived AsyncSequence
@@ -94,17 +91,17 @@ import Foundation
 /// error propagation, or structured cancellation) must be made here and the
 /// two manager sites updated together. Preserve the `task` seam for tests.
 @MainActor
-final class WidgetEventObserver<Element> where Element: Sendable {
+public final class WidgetEventObserver<Element> where Element: Sendable {
     /// The underlying observation task.
     ///
     /// Exposed as `internal` (via the managers' stored properties) so that
     /// white-box tests can cancel, assert presence, and observe lifetime
     /// without reflection. Production code outside the two managers must not
     /// read or assign this directly.
-    private(set) var task: Task<Void, Never>?
+    public private(set) var task: Task<Void, Never>?
 
     /// Creates a new observer. Observation does not start until `beginObserving`.
-    init() {}
+    public init() {}
 
     /// Begins observation of the provided sequence.
     ///
@@ -123,7 +120,7 @@ final class WidgetEventObserver<Element> where Element: Sendable {
     /// - Postcondition: `task` holds the live observation task (or nil after cancel).
     /// - Note: The handler should capture `[weak self]` when it needs to call
     ///   back into the owning manager.
-    func beginObserving<S: AsyncSequence & Sendable>(
+    public func beginObserving<S: AsyncSequence & Sendable>(
         _ sequence: S,
         onElement: @MainActor @escaping (Element) async -> Void,
         onTermination: (@MainActor () async -> Void)? = nil
@@ -162,7 +159,7 @@ final class WidgetEventObserver<Element> where Element: Sendable {
     ///   - onElement: Per-element handler (main actor).
     ///   - onTermination: Optional terminal handler (main actor).
     /// - SeeAlso: ``beginObserving(_:onElement:onTermination:)``
-    func beginObserving<S: AsyncSequence>(
+    public func beginObserving<S: AsyncSequence>(
         unsafeSequence sequence: S,
         onElement: @MainActor @escaping (Element) async -> Void,
         onTermination: (@MainActor () async -> Void)? = nil
@@ -196,7 +193,7 @@ final class WidgetEventObserver<Element> where Element: Sendable {
     ///
     /// Idempotent. Called from end paths, test sanitization, and termination
     /// handlers in the managers.
-    func cancel() {
+    public func cancel() {
         task?.cancel()
         task = nil
     }

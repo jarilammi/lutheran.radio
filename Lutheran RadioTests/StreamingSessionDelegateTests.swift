@@ -573,8 +573,13 @@ class MockLoadingRequest: LoadingRequestProtocol {
     }
 }
 
-/// Debug version with extensive logging
-final class TestableStreamingSessionDelegate: NSObject, URLSessionDataDelegate, SessionDelegateProtocol {
+/// Debug version with extensive logging.
+///
+/// - Important: Test-only delegate; `session` and `dataTask` are mutated only on the
+///   XCTest main thread during delegate callback simulation.
+// SAFETY: Test-only type; mutable `session`/`dataTask` are confined to the XCTest main thread.
+// `@unchecked Sendable` silences delegate-protocol isolation without crossing actor boundaries in production.
+final class TestableStreamingSessionDelegate: NSObject, URLSessionDataDelegate, SessionDelegateProtocol, @unchecked Sendable {
     var session: URLSession?
     var dataTask: URLSessionDataTask?
     var onError: ((Error) -> Void)?
@@ -678,7 +683,8 @@ final class TestableStreamingSessionDelegate: NSObject, URLSessionDataDelegate, 
                 SecTrustSetPolicies(serverTrust, [policy] as CFArray)
                 
                 var error: CFError?
-                if SecTrustEvaluateWithError(serverTrust, &error) {
+                // SAFETY: Test-only mirror of production trust evaluation; `serverTrust` is borrowed from the challenge.
+                if unsafe SecTrustEvaluateWithError(serverTrust, &error) {
                     let credential = URLCredential(trust: serverTrust)
                     completionHandler(.useCredential, credential)
                 } else {

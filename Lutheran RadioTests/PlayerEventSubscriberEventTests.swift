@@ -6,6 +6,7 @@
 //
 
 import XCTest
+import WidgetSurface
 @testable import Lutheran_Radio
 
 /// Unit tests for the Tier 2 ``PlayerEventSubscriber`` consumer in the main-app player UI layer.

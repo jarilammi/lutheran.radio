@@ -6,6 +6,7 @@
 //
 
 import UIKit
+import WidgetSurface
 
 /// - Article: Scene Lifecycle and Widget Integration
 ///

@@ -10,6 +10,7 @@
 
 import SwiftUI
 import XCTest
+import WidgetSurface
 @testable import Lutheran_Radio
 
 /// Protects the canonical status-pill and play/pause control mappings for every

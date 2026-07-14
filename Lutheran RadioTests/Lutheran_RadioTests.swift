@@ -6,6 +6,7 @@
 //
 
 import XCTest
+import WidgetSurface
 @testable import Lutheran_Radio
 
 /// Protocol that our mock will implement to match DirectStreamingPlayer interface
@@ -277,24 +278,24 @@ final class TestViewController: UIViewController {
     }
 }
 
+@MainActor
 final class Lutheran_RadioTests: XCTestCase {
     var testViewController: TestViewController!
     var mockPlayer: MockStreamingPlayer!
     
-    override func setUpWithError() throws {
-        try super.setUpWithError()
+    override func setUp() async throws {
+        try await super.setUp()
         mockPlayer = MockStreamingPlayer()
         testViewController = TestViewController(mockPlayer: mockPlayer)
         testViewController.loadViewIfNeeded()
     }
     
-    override func tearDownWithError() throws {
+    override func tearDown() async throws {
         testViewController = nil
         mockPlayer = nil
-        try super.tearDownWithError()
+        try await super.tearDown()
     }
     
-    @MainActor
     func testPlayPauseButtonTogglesPlaybackState() async {
         // Setup
         mockPlayer.reset()

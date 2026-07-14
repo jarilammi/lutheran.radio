@@ -6,6 +6,7 @@
 //
 
 import XCTest
+import WidgetSurface
 @testable import Lutheran_Radio
 
 /// White-box unit tests for the shared ``WidgetEventObserver`` observation helper.

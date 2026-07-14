@@ -1,14 +1,11 @@
 //
 //  LutheranRadioLiveActivityAttributes.swift
-//  Lutheran Radio
+//  WidgetSurface
 //
 //  Created by Jari Lammi on 13.6.2025.
 //
 
-// SHARED: Cross-target source (main app + LutheranRadioWidgetExtension)
-//
-// Single physical file on disk, compiled into both targets via Xcode
-// File System Synchronized Group + membershipExceptions (see project.pbxproj).
+// WidgetSurface framework — ActivityKit attribute types.
 //
 // Purpose:
 // `ActivityAttributes` + `ContentState` for `LutheranRadioLiveActivity`.
@@ -41,14 +38,24 @@
 import ActivityKit
 import Foundation
 
-struct LutheranRadioLiveActivityAttributes: ActivityAttributes {
+public struct LutheranRadioLiveActivityAttributes: ActivityAttributes {
     public struct ContentState: Codable, Hashable, Sendable {   // ← added Sendable for Swift 6
         // MARK: - Single Source of Truth (authoritative)
-        let visualState: PlayerVisualState
+        public let visualState: PlayerVisualState
         /// Current program / sermon metadata from the active ICY stream.
-        let streamMetadata: StreamProgramMetadata?
+        public let streamMetadata: StreamProgramMetadata?
+
+        public init(visualState: PlayerVisualState, streamMetadata: StreamProgramMetadata?) {
+            self.visualState = visualState
+            self.streamMetadata = streamMetadata
+        }
     }
-    
-    let appName: String
-    let startTime: Date
+
+    public let appName: String
+    public let startTime: Date
+
+    public init(appName: String, startTime: Date) {
+        self.appName = appName
+        self.startTime = startTime
+    }
 }

@@ -28,6 +28,7 @@
 //
 
 import SwiftUI
+import WidgetSurface
 
 /// Pure SwiftUI row for the main player controls.
 ///

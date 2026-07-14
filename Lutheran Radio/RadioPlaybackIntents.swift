@@ -16,6 +16,7 @@
 
 import AppIntents
 import Foundation
+import WidgetSurface
 
 // MARK: - Language Entity (for high-quality Siri disambiguation + suggestions)
 

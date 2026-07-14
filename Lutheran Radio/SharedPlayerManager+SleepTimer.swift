@@ -14,6 +14,7 @@
 
 #if LUTHERAN_MAIN_APP
 import Foundation
+import WidgetSurface
 
 /// In-process sleep-timer state broadcasts (main app only).
 /// ViewController owns countdown UI locally; these avoid polling the actor every second.

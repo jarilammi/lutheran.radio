@@ -67,6 +67,7 @@
 
 import Foundation
 import Core
+import WidgetSurface
 #if LUTHERAN_MAIN_APP
 import os
 import WidgetKit
@@ -2101,7 +2102,7 @@ actor SharedPlayerManager {
     ///
     /// AGENT NOTE: Single source of truth. Emission after mutation inside this existing method.
     /// No new Direct-called emission API. Classification logic never leaves DirectStreamingPlayer.
-    func markPlaybackStoppedByStreamFailure(_ errorType: DirectStreamingPlayer.StreamErrorType = .permanentFailure) async {
+    func markPlaybackStoppedByStreamFailure(_ errorType: StreamErrorType = .permanentFailure) async {
         ensureVisualStateLoaded()
 
         #if DEBUG
@@ -3869,32 +3870,5 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     @MainActor
     func deactivateAudioSessionAsync() async -> Bool { true }
 
-    /// Minimal stub to satisfy DirectStreamingPlayer.StreamErrorType references in shared
-    /// method signatures that are compiled for the widget target.
-    enum StreamErrorType {
-        case securityFailure
-        case permanentFailure
-        case transientFailure
-        case unknown
-    }
-
-    /// Stub of the low-level status used by the PlayerStatusPresentation mapper in
-    /// PlayerVisualState (which is cross-compiled). The real enum + delegate live in
-    /// DirectStreamingPlayer.swift (main target only).
-    enum PlayerStatus {
-        case playing
-        case paused
-        case stopped
-        case connecting
-        case security
-    }
-}
-
-enum PlayerStatus {
-    case playing
-    case paused
-    case stopped
-    case connecting
-    case security
 }
 #endif

@@ -6,6 +6,7 @@
 //
 
 import XCTest
+import WidgetSurface
 @testable import Lutheran_Radio
 
 /// White-box tests for the Tier 2 ``WidgetRefreshManager`` consumer path:

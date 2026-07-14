@@ -79,6 +79,7 @@ import ActivityKit
 import WidgetKit
 import SwiftUI
 import AppIntents
+import WidgetSurface
 
 // MARK: - Live Activity Helpers
 //

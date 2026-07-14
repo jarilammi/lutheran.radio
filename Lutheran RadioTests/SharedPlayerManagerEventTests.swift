@@ -7,6 +7,7 @@
 
 import MediaPlayer
 import XCTest
+import WidgetSurface
 @testable import Lutheran_Radio
 
 /// Unit tests for the event-driven surfaces of `SharedPlayerManager`:
@@ -746,7 +747,7 @@ final class SharedPlayerManagerEventTests: XCTestCase {
     /// - `playbackIntentChanged` via canonical ``stop()`` and ``setPlaying()`` paths
     /// - `streamDidStop` + `visualStateDidChange(.userPaused)` via the canonical `stop()`
     /// - `streamDidPause` via `setUserPaused()`
-    /// - `streamDidFail(_:)` carrying the exact `DirectStreamingPlayer.StreamErrorType` via
+    /// - `streamDidFail(_:)` carrying the exact `StreamErrorType` via
     ///   `markPlaybackStoppedByStreamFailure(_:)`
     /// - `streamDidStart` via ``setPlaying()`` on the recovery path (live-stream contract
     ///   also protected by ``testLiveEventsStreamDeliversStreamDidStartFromSetPlaying``)
@@ -1099,7 +1100,7 @@ final class SharedPlayerManagerEventTests: XCTestCase {
     ///
     /// Hard security failures (certificate pinning rejection, untrusted leaf, DNS security
     /// model mismatch surfaced as `URLError.secureConnectionFailed` / `serverCertificateUntrusted`)
-    /// are classified in `DirectStreamingPlayer.StreamErrorType.from(error:)` as
+    /// are classified in `StreamErrorType.from(error:)` as
     /// `.securityFailure`. That value is never auto-retried (`isPermanent == true`) and
     /// drives a distinct localized status string. Consumers must receive the precise
     /// discriminator — not a generic fail verb — to gate recovery UI and widget error state.
@@ -1113,8 +1114,8 @@ final class SharedPlayerManagerEventTests: XCTestCase {
     /// emission-order tests).
     ///
     /// - SeeAlso: ``markPlaybackStoppedByStreamFailure(_:)``, ``emit(_:)``,
-    ///   `PlayerEvent.streamDidFail`, `DirectStreamingPlayer.StreamErrorType`,
-    ///   `DirectStreamingPlayer.StreamErrorType.from(error:)`,
+    ///   `PlayerEvent.streamDidFail`, `StreamErrorType`,
+    ///   `StreamErrorType.from(error:)`,
     ///   ``testStreamFailureEmissionOrderPreservesIntentAndMutationSequence``,
     ///   docs/Event-Driven-Refactor-Roadmap.md (Tier 5),
     ///   CODING_AGENT.md (Test Execution Patience and Fast, Reliable Test Patterns).
@@ -1140,7 +1141,7 @@ final class SharedPlayerManagerEventTests: XCTestCase {
             "Security failure path should emit .persistedWidgetStateDidUpdate when the write path runs; got: \(liveEmissions)"
         )
 
-        let failPayloads = liveEmissions.compactMap { event -> DirectStreamingPlayer.StreamErrorType? in
+        let failPayloads = liveEmissions.compactMap { event -> StreamErrorType? in
             if case .streamDidFail(let errorType) = event { return errorType }
             return nil
         }
@@ -1183,7 +1184,7 @@ final class SharedPlayerManagerEventTests: XCTestCase {
     ///
     /// Hard post-DNS stream failures (resource gone, TCP connect after successful name
     /// resolution, resource unavailable) are classified in
-    /// `DirectStreamingPlayer.StreamErrorType.from(error:)` as `.permanentFailure`.
+    /// `StreamErrorType.from(error:)` as `.permanentFailure`.
     /// That value is never auto-retried (`isPermanent == true`) and drives the
     /// `status_failed` localized status string. Consumers must receive the precise
     /// discriminator — not a generic fail verb or a security/transient
@@ -1198,8 +1199,8 @@ final class SharedPlayerManagerEventTests: XCTestCase {
     /// emission-order tests).
     ///
     /// - SeeAlso: ``markPlaybackStoppedByStreamFailure(_:)``, ``emit(_:)``,
-    ///   `PlayerEvent.streamDidFail`, `DirectStreamingPlayer.StreamErrorType`,
-    ///   `DirectStreamingPlayer.StreamErrorType.from(error:)`,
+    ///   `PlayerEvent.streamDidFail`, `StreamErrorType`,
+    ///   `StreamErrorType.from(error:)`,
     ///   ``testSecurityFailureStreamDidFailPayloadIsFaithfullyEmitted``,
     ///   ``testStreamFailureEmissionOrderPreservesIntentAndMutationSequence``,
     ///   docs/Event-Driven-Refactor-Roadmap.md (Tier 5),
@@ -1226,7 +1227,7 @@ final class SharedPlayerManagerEventTests: XCTestCase {
             "Permanent failure path should emit .persistedWidgetStateDidUpdate when the write path runs; got: \(liveEmissions)"
         )
 
-        let failPayloads = liveEmissions.compactMap { event -> DirectStreamingPlayer.StreamErrorType? in
+        let failPayloads = liveEmissions.compactMap { event -> StreamErrorType? in
             if case .streamDidFail(let errorType) = event { return errorType }
             return nil
         }
@@ -1283,8 +1284,8 @@ final class SharedPlayerManagerEventTests: XCTestCase {
     /// emission-order tests).
     ///
     /// - SeeAlso: ``markPlaybackStoppedByStreamFailure(_:)``, ``emit(_:)``,
-    ///   `PlayerEvent.streamDidFail`, `DirectStreamingPlayer.StreamErrorType`,
-    ///   `DirectStreamingPlayer.StreamErrorType.from(error:)`,
+    ///   `PlayerEvent.streamDidFail`, `StreamErrorType`,
+    ///   `StreamErrorType.from(error:)`,
     ///   ``testSecurityFailureStreamDidFailPayloadIsFaithfullyEmitted``,
     ///   ``testPermanentFailureStreamDidFailPayloadIsFaithfullyEmitted``,
     ///   ``testStreamFailureEmissionOrderPreservesIntentAndMutationSequence``,
@@ -1312,7 +1313,7 @@ final class SharedPlayerManagerEventTests: XCTestCase {
             "Unknown failure path should emit .persistedWidgetStateDidUpdate when the write path runs; got: \(liveEmissions)"
         )
 
-        let failPayloads = liveEmissions.compactMap { event -> DirectStreamingPlayer.StreamErrorType? in
+        let failPayloads = liveEmissions.compactMap { event -> StreamErrorType? in
             if case .streamDidFail(let errorType) = event { return errorType }
             return nil
         }
@@ -2281,7 +2282,7 @@ final class SharedPlayerManagerEventTests: XCTestCase {
             "Permanent failure grey UI must not imply sticky pause intent"
         )
 
-        let permSharedState = await manager.loadSharedState()
+        let permSharedState = manager.loadSharedState()
         XCTAssertTrue(
             permSharedState.hasError,
             "Persisted widget snapshot must carry hasError for permanent stream failure"

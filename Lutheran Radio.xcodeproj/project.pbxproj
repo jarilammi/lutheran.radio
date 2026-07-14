@@ -8,6 +8,9 @@
 
 /* Begin PBXBuildFile section */
 		B7194FE72FD09507009C466D /* MediaPlayer.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B7194FE62FD09507009C466D /* MediaPlayer.framework */; };
+		B72A089E30067E5700560CD1 /* WidgetSurface.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B72A089330067E5600560CD1 /* WidgetSurface.framework */; };
+		B72A08A830067E5700560CD1 /* WidgetSurface.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B72A089330067E5600560CD1 /* WidgetSurface.framework */; };
+		B72A08A930067E5700560CD1 /* WidgetSurface.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = B72A089330067E5600560CD1 /* WidgetSurface.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		B72CC03C2F7489390090CBC0 /* Core.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B77E541D2F6E6A6700A055DA /* Core.framework */; };
 		B757A77E2DEF7B5C00FF90FC /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B757A77D2DEF7B5C00FF90FC /* WidgetKit.framework */; };
 		B757A7802DEF7B5C00FF90FC /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B757A77F2DEF7B5C00FF90FC /* SwiftUI.framework */; };
@@ -24,12 +27,34 @@
 		B77E544A2F6E6BBC00A055DA /* Core.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B77E541D2F6E6A6700A055DA /* Core.framework */; };
 		B785EBA22E673D2F0034C286 /* CoreHaptics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B785EBA12E673D2F0034C286 /* CoreHaptics.framework */; };
 		B7AFC6E22CCD7DD900BDDD83 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B7AFC6E12CCD7DD900BDDD83 /* AVFoundation.framework */; };
+		B7BF787430068AE6009332EE /* WidgetSurface.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B72A089330067E5600560CD1 /* WidgetSurface.framework */; };
 		B7D26EFC2F6E6EFF003568F0 /* Core.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7D26EF72F6E6EFF003568F0 /* Core.swift */; };
 		B7D5BF9C2FBE1BF00006D803 /* LutheranRadioWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = B757A77C2DEF7B5C00FF90FC /* LutheranRadioWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		B7E3FCED2F6FC2E0001A2BD9 /* Core.xctestplan in Resources */ = {isa = PBXBuildFile; fileRef = B7E3FCEC2F6FC2E0001A2BD9 /* Core.xctestplan */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		B72A089F30067E5700560CD1 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = B7AFC6A42CCD7D0A00BDDD83 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B72A089230067E5600560CD1;
+			remoteInfo = WidgetSurface;
+		};
+		B72A08A130067E5700560CD1 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = B7AFC6A42CCD7D0A00BDDD83 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B7AFC6AB2CCD7D0A00BDDD83;
+			remoteInfo = "Lutheran Radio";
+		};
+		B72A08A630067E5700560CD1 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = B7AFC6A42CCD7D0A00BDDD83 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B72A089230067E5600560CD1;
+			remoteInfo = WidgetSurface;
+		};
 		B72CC03E2F7489390090CBC0 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = B7AFC6A42CCD7D0A00BDDD83 /* Project object */;
@@ -72,6 +97,13 @@
 			remoteGlobalIDString = B7AFC6AB2CCD7D0A00BDDD83;
 			remoteInfo = "Lutheran Radio";
 		};
+		B7BF787630068AE6009332EE /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = B7AFC6A42CCD7D0A00BDDD83 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B72A089230067E5600560CD1;
+			remoteInfo = WidgetSurface;
+		};
 		B7D5BF9D2FBE1CA90006D803 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = B7AFC6A42CCD7D0A00BDDD83 /* Project object */;
@@ -88,6 +120,7 @@
 			dstPath = "";
 			dstSubfolderSpec = 10;
 			files = (
+				B72A08A930067E5700560CD1 /* WidgetSurface.framework in Embed Frameworks */,
 				B77E54332F6E6A6700A055DA /* Core.framework in Embed Frameworks */,
 			);
 			name = "Embed Frameworks";
@@ -108,6 +141,8 @@
 
 /* Begin PBXFileReference section */
 		B7194FE62FD09507009C466D /* MediaPlayer.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MediaPlayer.framework; path = System/Library/Frameworks/MediaPlayer.framework; sourceTree = SDKROOT; };
+		B72A089330067E5600560CD1 /* WidgetSurface.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = WidgetSurface.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		B72A089D30067E5600560CD1 /* WidgetSurfaceTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WidgetSurfaceTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B757A77C2DEF7B5C00FF90FC /* LutheranRadioWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LutheranRadioWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		B757A77D2DEF7B5C00FF90FC /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		B757A77F2DEF7B5C00FF90FC /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
@@ -141,12 +176,8 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Localizable.xcstrings,
-				LutheranRadioLiveActivityAttributes.swift,
-				PlayerVisualState.swift,
 				SharedPlayerManager.swift,
-				StreamProgramMetadata.swift,
 				WidgetDisplayModels.swift,
-				WidgetEventObserver.swift,
 				WidgetRefreshManager.swift,
 			);
 			target = B757A77B2DEF7B5C00FF90FC /* LutheranRadioWidgetExtension */;
@@ -173,6 +204,16 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		B72A089430067E5600560CD1 /* WidgetSurface */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = WidgetSurface;
+			sourceTree = "<group>";
+		};
+		B72A08A330067E5700560CD1 /* WidgetSurfaceTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = WidgetSurfaceTests;
+			sourceTree = "<group>";
+		};
 		B757A7812DEF7B5C00FF90FC /* LutheranRadioWidget */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
@@ -208,10 +249,26 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		B72A089030067E5600560CD1 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B72A089A30067E5600560CD1 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B72A089E30067E5700560CD1 /* WidgetSurface.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		B757A7792DEF7B5C00FF90FC /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B7BF787430068AE6009332EE /* WidgetSurface.framework in Frameworks */,
 				B757A7802DEF7B5C00FF90FC /* SwiftUI.framework in Frameworks */,
 				B72CC03C2F7489390090CBC0 /* Core.framework in Frameworks */,
 				B757A77E2DEF7B5C00FF90FC /* WidgetKit.framework in Frameworks */,
@@ -237,6 +294,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B72A08A830067E5700560CD1 /* WidgetSurface.framework in Frameworks */,
 				B77E544A2F6E6BBC00A055DA /* Core.framework in Frameworks */,
 				B7AFC6E22CCD7DD900BDDD83 /* AVFoundation.framework in Frameworks */,
 				B7194FE72FD09507009C466D /* MediaPlayer.framework in Frameworks */,
@@ -309,6 +367,8 @@
 				B7AFC6CF2CCD7D0C00BDDD83 /* Lutheran RadioUITests */,
 				B757A7812DEF7B5C00FF90FC /* LutheranRadioWidget */,
 				B77E542D2F6E6A6700A055DA /* CoreTests */,
+				B72A089430067E5600560CD1 /* WidgetSurface */,
+				B72A08A330067E5700560CD1 /* WidgetSurfaceTests */,
 				B7AFC6E02CCD7DD900BDDD83 /* Frameworks */,
 				B7AFC6AD2CCD7D0A00BDDD83 /* Products */,
 			);
@@ -323,6 +383,8 @@
 				B757A77C2DEF7B5C00FF90FC /* LutheranRadioWidgetExtension.appex */,
 				B77E541D2F6E6A6700A055DA /* Core.framework */,
 				B77E54272F6E6A6700A055DA /* CoreTests.xctest */,
+				B72A089330067E5600560CD1 /* WidgetSurface.framework */,
+				B72A089D30067E5600560CD1 /* WidgetSurfaceTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -343,6 +405,13 @@
 /* End PBXGroup section */
 
 /* Begin PBXHeadersBuildPhase section */
+		B72A088E30067E5600560CD1 /* Headers */ = {
+			isa = PBXHeadersBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		B77E54182F6E6A6700A055DA /* Headers */ = {
 			isa = PBXHeadersBuildPhase;
 			buildActionMask = 2147483647;
@@ -353,6 +422,53 @@
 /* End PBXHeadersBuildPhase section */
 
 /* Begin PBXNativeTarget section */
+		B72A089230067E5600560CD1 /* WidgetSurface */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B72A08AE30067E5700560CD1 /* Build configuration list for PBXNativeTarget "WidgetSurface" */;
+			buildPhases = (
+				B72A088E30067E5600560CD1 /* Headers */,
+				B72A088F30067E5600560CD1 /* Sources */,
+				B72A089030067E5600560CD1 /* Frameworks */,
+				B72A089130067E5600560CD1 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				B72A089430067E5600560CD1 /* WidgetSurface */,
+			);
+			name = WidgetSurface;
+			packageProductDependencies = (
+			);
+			productName = WidgetSurface;
+			productReference = B72A089330067E5600560CD1 /* WidgetSurface.framework */;
+			productType = "com.apple.product-type.framework";
+		};
+		B72A089C30067E5600560CD1 /* WidgetSurfaceTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B72A08AF30067E5700560CD1 /* Build configuration list for PBXNativeTarget "WidgetSurfaceTests" */;
+			buildPhases = (
+				B72A089930067E5600560CD1 /* Sources */,
+				B72A089A30067E5600560CD1 /* Frameworks */,
+				B72A089B30067E5600560CD1 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				B72A08A030067E5700560CD1 /* PBXTargetDependency */,
+				B72A08A230067E5700560CD1 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				B72A08A330067E5700560CD1 /* WidgetSurfaceTests */,
+			);
+			name = WidgetSurfaceTests;
+			packageProductDependencies = (
+			);
+			productName = WidgetSurfaceTests;
+			productReference = B72A089D30067E5600560CD1 /* WidgetSurfaceTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		B757A77B2DEF7B5C00FF90FC /* LutheranRadioWidgetExtension */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = B757A7952DEF7B5E00FF90FC /* Build configuration list for PBXNativeTarget "LutheranRadioWidgetExtension" */;
@@ -364,6 +480,7 @@
 			buildRules = (
 			);
 			dependencies = (
+				B7BF787730068AE6009332EE /* PBXTargetDependency */,
 				B72CC03F2F7489390090CBC0 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
@@ -435,6 +552,7 @@
 			dependencies = (
 				B7D5BF9E2FBE1CA90006D803 /* PBXTargetDependency */,
 				B77E544C2F6E6BDA00A055DA /* PBXTargetDependency */,
+				B72A08A730067E5700560CD1 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				B7AFC6AE2CCD7D0A00BDDD83 /* Lutheran Radio */,
@@ -499,9 +617,16 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 2630;
-				LastUpgradeCheck = 2650;
+				LastSwiftUpdateCheck = 2700;
+				LastUpgradeCheck = 2700;
 				TargetAttributes = {
+					B72A089230067E5600560CD1 = {
+						CreatedOnToolsVersion = 27.0;
+					};
+					B72A089C30067E5600560CD1 = {
+						CreatedOnToolsVersion = 27.0;
+						TestTargetID = B7AFC6AB2CCD7D0A00BDDD83;
+					};
 					B757A77B2DEF7B5C00FF90FC = {
 						CreatedOnToolsVersion = 16.4;
 					};
@@ -565,11 +690,27 @@
 				B757A77B2DEF7B5C00FF90FC /* LutheranRadioWidgetExtension */,
 				B77E541C2F6E6A6700A055DA /* Core */,
 				B77E54262F6E6A6700A055DA /* CoreTests */,
+				B72A089230067E5600560CD1 /* WidgetSurface */,
+				B72A089C30067E5600560CD1 /* WidgetSurfaceTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		B72A089130067E5600560CD1 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B72A089B30067E5600560CD1 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		B757A77A2DEF7B5C00FF90FC /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -616,6 +757,20 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		B72A088F30067E5600560CD1 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B72A089930067E5600560CD1 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		B757A7782DEF7B5C00FF90FC /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -670,6 +825,21 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		B72A08A030067E5700560CD1 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B72A089230067E5600560CD1 /* WidgetSurface */;
+			targetProxy = B72A089F30067E5700560CD1 /* PBXContainerItemProxy */;
+		};
+		B72A08A230067E5700560CD1 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B7AFC6AB2CCD7D0A00BDDD83 /* Lutheran Radio */;
+			targetProxy = B72A08A130067E5700560CD1 /* PBXContainerItemProxy */;
+		};
+		B72A08A730067E5700560CD1 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B72A089230067E5600560CD1 /* WidgetSurface */;
+			targetProxy = B72A08A630067E5700560CD1 /* PBXContainerItemProxy */;
+		};
 		B72CC03F2F7489390090CBC0 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = B77E541C2F6E6A6700A055DA /* Core */;
@@ -700,6 +870,11 @@
 			target = B7AFC6AB2CCD7D0A00BDDD83 /* Lutheran Radio */;
 			targetProxy = B7AFC6CD2CCD7D0C00BDDD83 /* PBXContainerItemProxy */;
 		};
+		B7BF787730068AE6009332EE /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B72A089230067E5600560CD1 /* WidgetSurface */;
+			targetProxy = B7BF787630068AE6009332EE /* PBXContainerItemProxy */;
+		};
 		B7D5BF9E2FBE1CA90006D803 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = B757A77B2DEF7B5C00FF90FC /* LutheranRadioWidgetExtension */;
@@ -708,6 +883,124 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		B72A08AA30067E5700560CD1 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUILD_LIBRARY_FOR_DISTRIBUTION = YES;
+				CODE_SIGN_IDENTITY = "";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				ENABLE_MODULE_VERIFIER = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				MODULE_VERIFIER_SUPPORTED_LANGUAGES = "objective-c objective-c++";
+				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu17 gnu++20";
+				PRODUCT_BUNDLE_IDENTIFIER = radio.lutheran.WidgetSurface;
+				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_INSTALL_MODULE = YES;
+				SWIFT_INSTALL_OBJC_HEADER = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VERSIONING_SYSTEM = "apple-generic";
+				VERSION_INFO_PREFIX = "";
+			};
+			name = Debug;
+		};
+		B72A08AB30067E5700560CD1 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUILD_LIBRARY_FOR_DISTRIBUTION = YES;
+				CODE_SIGN_IDENTITY = "";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				ENABLE_MODULE_VERIFIER = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				MODULE_VERIFIER_SUPPORTED_LANGUAGES = "objective-c objective-c++";
+				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu17 gnu++20";
+				PRODUCT_BUNDLE_IDENTIFIER = radio.lutheran.WidgetSurface;
+				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_INSTALL_MODULE = YES;
+				SWIFT_INSTALL_OBJC_HEADER = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VERSIONING_SYSTEM = "apple-generic";
+				VERSION_INFO_PREFIX = "";
+			};
+			name = Release;
+		};
+		B72A08AC30067E5700560CD1 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = radio.lutheran.WidgetSurfaceTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Lutheran Radio.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Lutheran Radio";
+			};
+			name = Debug;
+		};
+		B72A08AD30067E5700560CD1 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = radio.lutheran.WidgetSurfaceTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Lutheran Radio.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Lutheran Radio";
+			};
+			name = Release;
+		};
 		B757A7932DEF7B5E00FF90FC /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -1170,6 +1463,24 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		B72A08AE30067E5700560CD1 /* Build configuration list for PBXNativeTarget "WidgetSurface" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B72A08AA30067E5700560CD1 /* Debug */,
+				B72A08AB30067E5700560CD1 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		B72A08AF30067E5700560CD1 /* Build configuration list for PBXNativeTarget "WidgetSurfaceTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B72A08AC30067E5700560CD1 /* Debug */,
+				B72A08AD30067E5700560CD1 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		B757A7952DEF7B5E00FF90FC /* Build configuration list for PBXNativeTarget "LutheranRadioWidgetExtension" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

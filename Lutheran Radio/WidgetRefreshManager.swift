@@ -54,6 +54,7 @@
 
 import Foundation
 import WidgetKit
+import WidgetSurface
 
 /// WidgetRefreshManager prevents excessive WidgetKit reloads through debouncing,
 /// change detection, and adaptive intervals.
@@ -704,7 +705,12 @@ final class WidgetRefreshManager: @unchecked Sendable {
         switch event {
         case .visualStateDidChange(let carriedVisual):
             visualState = carriedVisual
-        default:
+        case .playbackIntentChanged, .streamDidStart, .streamDidPause, .streamDidStop,
+             .streamDidFail, .metadataDidUpdate, .persistedWidgetStateDidUpdate:
+            visualState = persisted?.visualState ?? .prePlay
+        @unknown default:
+            // `PlayerEvent` is `@frozen public` in `WidgetSurface`; future additive cases
+            // fall back to the persisted snapshot like other non-visual events.
             visualState = persisted?.visualState ?? .prePlay
         }
 
@@ -739,6 +745,8 @@ final class WidgetRefreshManager: @unchecked Sendable {
             return true
         case .playing:
             return false
+        @unknown default:
+            return true
         }
     }
 
@@ -1178,6 +1186,7 @@ struct WidgetState {
         case .userPaused: return ".userPaused"
         case .thermalPaused: return ".thermalPaused"
         case .securityLocked: return ".securityLocked"
+        @unknown default: return ".unknown"
         }
     }
     #endif

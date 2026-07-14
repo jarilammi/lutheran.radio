@@ -9,6 +9,7 @@
 //
 
 import XCTest
+import WidgetSurface
 @testable import Lutheran_Radio
 
 /// Protects the canonical title / speaker / emphasis mapping for every

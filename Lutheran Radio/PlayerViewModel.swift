@@ -587,6 +587,7 @@ extension PlayerViewModel {
 
 #if DEBUG
 import SwiftUI
+import WidgetSurface
 
 /// Lightweight SwiftUI preview surface that exercises the observable PlayerViewModel.
 ///
