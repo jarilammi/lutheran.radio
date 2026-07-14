@@ -8,8 +8,8 @@
 //  Extension `perform()` bodies delegate here for action/target mapping; cross-target
 //  execution lives in ``WidgetIntentExecution`` (WidgetDisplayModels.swift).
 //
-//  - SeeAlso: docs/WidgetSurface-OI-W3-Plan-and-Status.md (PR 2),
-//    docs/Widget-Functionality-Roadmap.md (OI-W3), CODING_AGENT.md.
+//  - SeeAlso: docs/Widget-Functionality-Roadmap.md (widget extension test coverage),
+//    docs/Widget-Presentation-Dataflow.md, CODING_AGENT.md.
 //
 
 import Foundation

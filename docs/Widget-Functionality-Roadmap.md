@@ -32,16 +32,16 @@ The finish line is a **hybrid, two-zone model** — not a migration from snapsho
 
 **What “done” means**
 
-- **Required:** Tier 1 presentation hygiene + Tier 2 snapshot/intent test contracts (OI-W3 strategy).
+- **Required:** Tier 1 presentation hygiene + Tier 2 snapshot/intent test contracts (main-app test host + `WidgetSurface` coordinators).
 - **Optional, late-stage:** Tier 3–4 main-app refresh dedup and media-surface coordination — observable widget/LA behavior unchanged; no architectural model change.
 
 **Core Principles (Never Violate)**
 
 - Progress must be **slow and piece-by-piece**. Every micro-step must be small, reviewable, and non-breaking.
 - **Nothing is forced**: Imperative snapshot reads, direct `refreshIfNeeded` calls, Darwin notification round-trips, and widget optimistic writes remain primary. Event-driven refresh and additive observation run in parallel (see Event-Driven Refactor Roadmap).
-- **Documentation voice & reference discipline** (applies to every touched file, including this roadmap):
-  - **Voice:** Comments and `///` documentation describe the system as it exists *now* — present tense, final architecture language. Source must not read like a plan in progress: no "phase", "step", "temporary", "will be", "TODO migrate", or migration scaffolding in production code.
-  - **Canonical references only:** `SeeAlso:`, file headers, and cross-links cite documents that are **committed and tracked** on the branch being edited. Staged-but-unmerged drafts, untracked scratch files, agent prompts, and one-off analysis notes are not authoritative until they ship — do not point future readers at them. When uncertain whether a path is canonical, confirm with `git ls-files <path>` (empty output means do not cite).
+- **Documentation standards & canonical references** (applies to every touched file, including this roadmap):
+  - **Describe what ships today:** Comments and `///` documentation describe the system as it exists *now* — present tense, final architecture language. Source must not read like a plan in progress: no "phase", "step", "temporary", "will be", "TODO migrate", or migration scaffolding in production code.
+  - **Link only to committed docs:** `SeeAlso:`, file headers, and cross-links cite documents that are **committed and tracked** on the branch being edited. Staged-but-unmerged drafts, untracked scratch files, agent prompts, and one-off analysis notes are not authoritative until they ship — do not point future readers at them. When uncertain whether a path is canonical, confirm with `git ls-files <path>` (empty output means do not cite).
 - **Security invariants come first.** No changes may touch `Core/`, certificate validation, DNS TXT validation, or `SecurityModelValidator`. Widget extension code must not duplicate security logic.
 - Every user-visible string uses `String(localized:)` / `NSLocalizedString` with table `"Localizable"` (all 21 languages).
 - Every change must follow `CODING_AGENT.md` (structured documentation, `SeeAlso`, AGENT NOTE where appropriate, build gates).
@@ -54,19 +54,20 @@ The finish line is a **hybrid, two-zone model** — not a migration from snapsho
 | [`docs/Widget-Presentation-Dataflow.md`](Widget-Presentation-Dataflow.md) | Permanent presentation contract (three narrow surfaces, pre-derivation, termination invariant) |
 | [`docs/Event-Driven-Refactor-Roadmap.md`](Event-Driven-Refactor-Roadmap.md) | Player `PlayerEvent` emission + `WidgetRefreshManager` as Tier 2 consumer |
 | [`docs/cold-launch-streamplay-regression-checklist.md`](cold-launch-streamplay-regression-checklist.md) | Regression guard for widget pause/play/switch SSOT (§6 stream switch, §7 widget persistence) |
+| `WidgetSurface/` | Presentation-only embedded framework: intent coordinators, timeline factory, liveness policy, narrow display models |
 | `SharedPlayerManager+NowPlaying.swift`, `StreamProgramMetadata.swift` | Now Playing metadata SSOT (`nowPlayingDisplayStrings`) shared with widget/LA formatters |
 | `README.md` (SSOT section) | Index + cross-links |
 | ``<doc:Architecture>`` (Core DocC) | Event-driven player architecture + cross-process widget reality |
 
 ---
 
-**Current State (as of 2026-07-10)**
+**Current State (as of 2026-07-14)**
 
 ## Completed
 
 ### Presentation & Display Model
 
-- **Three narrow presentation surfaces** established and documented: `PlayerStatusPresentation` (`makeStatusPresentation()`), `PlayerControlPresentation` (`makeControlPresentation()`), `WidgetNowPlayingDisplayModel` (`widgetNowPlayingDisplayModel(...)`). See `PlayerVisualState.swift`, `WidgetDisplayModels.swift`, [`docs/Widget-Presentation-Dataflow.md`](Widget-Presentation-Dataflow.md).
+- **Three narrow presentation surfaces** established and documented: `PlayerStatusPresentation` (`makeStatusPresentation()`), `PlayerControlPresentation` (`makeControlPresentation()`), `WidgetNowPlayingDisplayModel` (`widgetNowPlayingDisplayModel(...)`). Status/control mappers live in `WidgetSurface/PlayerVisualState.swift`; metadata/emphasis types and resolver live in `WidgetSurface/WidgetNowPlayingDisplay.swift`. Provider assembly remains in `WidgetDisplayModels.swift`. See [`docs/Widget-Presentation-Dataflow.md`](Widget-Presentation-Dataflow.md).
 - **P0 control migration complete (2026-06-27):** All play/pause glyph + tint sites in Small/Medium/Large widgets, Dynamic Island trailing/compactTrailing, Lock Screen, and Control widget consume `PlayerControlPresentation` exclusively. Remaining `isActivelyPlaying` / `buttonTintColor` reads are non-control (LIVE indicator, animation bars, decorative radio glyph) and are documented.
 - **Widget Provider pre-derivation complete:** `SimpleEntry` carries `statusPresentation`, `controlPresentation`, and `widgetNowPlayingDisplayModel`, each computed once in `Provider.placeholder`, `snapshot`, `timeline` / `createEntry`. Family views read narrow fields from the entry; `WidgetMetadataRegion` receives only `WidgetNowPlayingDisplayModel`.
 - **Live Activity outer-closure pre-derivation complete:** `dynamicIsland` closure hoists `statusPres`, `controlPres`, `metadataModel`, `isPlaying`, and `radioIconTint` once; expanded, compact, and minimal regions close over these values (no inline `makeStatusPresentation()` in region builders). `LockScreenLiveActivityView` derives status/metadata/control at the top of `body`.
@@ -81,7 +82,8 @@ The finish line is a **hybrid, two-zone model** — not a migration from snapsho
 - **App Group + Darwin round-trip** for widget/Control/LA intents: extension writes optimistic snapshot + `pendingAction` (+ `pendingActionId`); main app processes via `checkForPendingWidgetActions` / `handleWidgetAction` / coordinator SSOT paths. Widget pause uses `SharedPlayerManager.stop()` (no duplicated player logic). Widget switch mirrors `completeStreamSwitch` SSOT (**P5-1 shipped**).
 - **Optimistic instant feedback** (`isInstantFeedback`, `instantFeedbackTime`, `instantFeedbackLanguage`) for sub-round-trip UI; 15 s validity window.
 - **Legacy forcing shim** `forcePersistVisualState(_:language:)` documented and scoped to widget optimistic paths only; `emit(_:)` guard suppresses `PlayerEvent` yields in widget process.
-- **Liveness heuristic SSOT:** `SharedPlayerManager.isMainAppProcessRecentlyActive()` (60 s window + `lastUpdateTime = 0` termination sentinel). Passive "tap_to_open" branch in all widget family views when `!isAppRunning()`. Protected by `testForceStaleLivenessMakesIsRecentlyActiveFalse_AndBumpRestores`.
+- **Liveness heuristic SSOT:** `SharedPlayerManager.isMainAppProcessRecentlyActive()` (60 s window + `lastUpdateTime = 0` termination sentinel). Family views delegate the passive-branch decision to ``WidgetLivenessPresentation/shouldShowPassiveTapToOpen(isMainAppRecentlyActive:)`` (heartbeat remains in `SharedPlayerManager`). Protected by `testForceStaleLivenessMakesIsRecentlyActiveFalse_AndBumpRestores`.
+- **WidgetSurface intent + entry SSOT (2026-07-14):** ``WidgetIntentCoordinators`` (toggle plans), ``WidgetIntentExecution`` in `WidgetDisplayModels.swift` (cross-target side effects), ``WidgetTimelineEntryFactory`` (home/control blueprints). Extension `perform()` and Provider paths are thin delegates. Toggle-mapping tests in `WidgetIntentContractTests` call coordinators directly (no mirror helpers).
 - **WML-1 (2026-06-11):** Pause retains parsed metadata in snapshot for subdued widget display; resume rehydrates when needed (**P5-12**).
 
 ### Refresh, Teardown & Live Activity
@@ -157,7 +159,7 @@ Leaf views (`WidgetMetadataRegion`, play/pause buttons) must not re-derive canon
 
 **Status:** Documented, no code change planned
 
-After abrupt force-quit, `lastUpdateTime` may remain non-zero for up to **60 seconds**, so widgets can briefly show interactive chrome instead of "tap_to_open". Termination notification paths write sentinel `0` immediately; force-quit cannot. Documented in `LutheranRadioWidget.swift` (`isAppRunning()`), `Widget-Presentation-Dataflow.md`, and `SharedPlayerManager` resurrection tables.
+After abrupt force-quit, `lastUpdateTime` may remain non-zero for up to **60 seconds**, so widgets can briefly show interactive chrome instead of "tap_to_open". Termination notification paths write sentinel `0` immediately; force-quit cannot. Documented in `LutheranRadioWidget.swift` (via ``WidgetLivenessPresentation``), `Widget-Presentation-Dataflow.md`, and `SharedPlayerManager` resurrection tables.
 
 **SeeAlso:** `forceStaleLivenessTimestampForTermination()`, `isMainAppProcessRecentlyActive()`.
 
@@ -169,11 +171,15 @@ Emission is guarded to the main app (`isRunningInWidgetProcess`). Extension proc
 
 **SeeAlso:** Event-Driven Refactor Roadmap "Cross-process and extension reality".
 
-### OI-W3 — No widget extension unit test target
+### Widget extension unit test coverage
 
-**Status:** Open gap
+**Status:** Partially complete — coordinator SSOT ships in `WidgetSurface`; extension-profile target remains
 
-All widget contract tests run in `Lutheran RadioTests` (main-app host) via DEBUG seams and white-box helpers. There is no `LutheranRadioWidgetTests` target for `WidgetDisplayModels` resolver rules, `SimpleEntry` synthesis, or snapshot fixture tests. Resolver and Provider logic is protected only indirectly.
+Widget contract tests run in `Lutheran RadioTests` (main-app host) via DEBUG seams and white-box helpers. The `LutheranRadioWidgetTests` target does not exist yet, so extension `AppIntent` `perform()` bodies do not compile into CI under the extension profile.
+
+**Covered in main-app host (2026-07-14):** toggle plan mapping (``WidgetIntentCoordinators``), entry field blueprints (``WidgetTimelineEntryFactory``), liveness presentation policy (``WidgetLivenessPresentation``), and cross-target execution (``WidgetIntentExecution``). `WidgetIntentContractTests` calls coordinator SSOT for home/control toggle matrices.
+
+**Remaining:** `LutheranRadioWidgetTests` with extension compile profile (AppIntent bodies, factory/liveness suites), and optional `refreshIfNeeded(immediate:)` gate assertion under the extension profile.
 
 ### OI-W4 — Now Playing + Live Activity stacking (user education / strategy)
 
@@ -267,7 +273,7 @@ Ordered by increasing risk and decreasing isolation. Earlier items are safer.
 
 ### Tier 5 – Documentation & Tests
 
-**Goal:** Close OI-W3 and make widget contracts discoverable alongside the event-driven roadmap.
+**Goal:** Complete widget extension test coverage and make widget contracts discoverable alongside the event-driven roadmap.
 
 - [x] [`docs/Widget-Presentation-Dataflow.md`](Widget-Presentation-Dataflow.md) — canonical presentation reference.
 - [x] README SSOT widget presentation subsection + Architecture DocC event-driven section (cross-links widgets).
@@ -280,8 +286,9 @@ Ordered by increasing risk and decreasing isolation. Earlier items are safer.
 - [x] **Tier 2 play/pause drain test index (2026-07-14):** `WidgetIntentContractTests` — `testSignalWidgetPendingActionPlayWritesOptimisticSnapshotAndPending`, `testSignalWidgetPendingActionPauseWritesOptimisticSnapshotAndPending`, `testCheckForPendingWidgetActionsDrainsPlayPending`, `testCheckForPendingWidgetActionsDrainsPausePending`, `testCheckForPendingWidgetActionsIgnoresPauseWhenAlreadyUserPaused`, `testCheckForPendingWidgetActionsDebouncesRapidPlayTaps`, `testNotifyMainAppThenForegroundDrainExecutesPlayPending`, `testUITestModeWithoutBypassDrainsPendingWithoutExecuting`, `testHomeWidgetToggleActionMappingMatrix`, `testControlWidgetToggleActionMappingMatrix`, `testSignalWidgetPendingActionUsesHomeWidgetToggleMapping`, `testSignalWidgetPendingActionUsesControlWidgetToggleMapping`, `testHandleWidgetPauseActionSetsUserPaused`.
 - [x] **Provider synthesis test index (2026-07-14):** `WidgetDisplayModelsTests` — `resolveWithActorHygiene` hygiene + actor reload; ``WidgetProviderSnapshotResolver/assemblePresentationSlices(from:)`` for `SimpleEntry` / Control-widget `Value` field assembly (`testResolveWithActorHygieneMatchesResolveFromSnapshot`, `testResolveWithActorHygieneReloadsActorVisualStateFromSnapshot`, `testResolveWithActorHygieneDefaultsToPrePlayWhenSnapshotAbsent`, `testAssemblePresentationSlicesMatrixMapsEveryVisualState`, `testAssemblePresentationSlicesUsesConnectionErrorWhenHasError`, `testAssemblePresentationSlicesCarriesStreamMetadataIntoNowPlayingModel`, `testAssemblePresentationSlicesMatchesControlWidgetValueDerivation`, `testAssemblePresentationSlicesFromPersistedSnapshotMatchesProviderContract`). Shared assembly lives in `WidgetDisplayModels.swift`; home-widget and Control-widget Providers consume it.
 - [x] **Now Playing formatter + media-surface coordination test index (2026-07-14):** `StreamProgramMetadataTests` — `nowPlayingDisplayStrings` matrix (parsed title/speaker, raw fallback, station fallback, whitespace) + widget program-title alignment; `SharedPlayerManagerEventTests` — `testRefreshAllMediaSurfacesOrdersNowPlayingBeforeWidgetRefreshAndWritesDisplayStrings` (coordination order log + `MPNowPlayingInfoCenter` SSOT under DEBUG bypass; LA IPC skipped).
+- [x] **WidgetSurface coordinator SSOT (2026-07-14):** `WidgetIntentCoordinators`, `WidgetTimelineEntryFactory`, `WidgetLivenessPresentation`, `WidgetNowPlayingDisplay` in `WidgetSurface/`; `WidgetIntentExecution` in `WidgetDisplayModels.swift`; extension thin delegates; `WidgetIntentContractTests` toggle matrices use ``planHomeWidgetToggle(from:)`` / ``planControlWidgetToggle(isPlayingRequested:)``.
 
-**Tier 5 complete when:** Tier 2 checklist is green, OI-W3 has a documented test strategy (even if extension target remains deferred), and all touched files carry production `///` docs with `SeeAlso:` to this roadmap.
+**Tier 5 complete when:** Tier 2 checklist is green, `LutheranRadioWidgetTests` ships under the extension compile profile (coordinator SSOT in `WidgetSurface` is complete), and all touched files carry production `///` docs with `SeeAlso:` to this roadmap.
 
 ---
 
@@ -331,10 +338,11 @@ The next item is always the highest-priority unchecked entry in the backlog abov
 
 **Recommended starting order (2026-07-14):**
 
-1. Tier 1 optional `WidgetDisplayProjection` bundle (only if future call-site churn warrants it).
-2. Tier 5 remaining test-index maintenance as new contracts land.
+1. **`LutheranRadioWidgetTests` target** — extension-profile tests for coordinators, factory, liveness, and AppIntent bodies.
+2. Tier 1 optional `WidgetDisplayProjection` bundle (only if future call-site churn warrants it).
+3. Tier 5 remaining test-index maintenance as new contracts land.
 
-Each micro-step: read target files first, minimal diff, apply the documentation voice & reference discipline above, update this roadmap Completed + Update Log, run build + test gates per `CODING_AGENT.md`.
+Each micro-step: read target files first, minimal diff, apply the documentation standards above, update this roadmap Completed + Update Log, run build + test gates per `CODING_AGENT.md`.
 
 An item is marked complete only when wired, documented, and the project compiles with zero warnings.
 
@@ -346,8 +354,9 @@ This file is the **single source of truth for widget-specific backlog and archit
 
 Contributors consult it when touching:
 
+- `WidgetSurface/` (presentation types, intent coordinators, timeline factory, liveness policy)
 - `LutheranRadioWidget/` (home widgets, Control widget, LA views, intents)
-- `WidgetDisplayModels.swift`
+- `WidgetDisplayModels.swift` (provider resolver + `WidgetIntentExecution`)
 - `WidgetRefreshManager.swift`
 - Widget-related surfaces in `SharedPlayerManager.swift` (persistence, intents, liveness, `forcePersist*`)
 - Widget-adjacent tests
@@ -362,6 +371,8 @@ For presentation mapping rules and termination invariants, use [`docs/Widget-Pre
 
 ## Update Log
 
+- **2026-07-14:** Documentation standards — removed temporary handoff-doc cross-links; renamed widget extension test gap from internal tracking label to **Widget extension unit test coverage**; production `SeeAlso:` cites canonical roadmap and presentation dataflow only.
+- **2026-07-14:** WidgetSurface coordinator layer — `WidgetIntentCoordinators`, `WidgetTimelineEntryFactory`, `WidgetLivenessPresentation`, `WidgetNowPlayingDisplay`; `WidgetIntentExecution` in `WidgetDisplayModels.swift`; extension `perform()`/Provider thin delegates; toggle mirror helpers removed; widget extension test coverage partially complete (coordinator SSOT in main-app host).
 - **2026-07-14:** Now Playing formatter tests — `StreamProgramMetadataTests` adds `nowPlayingDisplayStrings` matrix + widget title alignment; `SharedPlayerManagerEventTests` adds `testRefreshAllMediaSurfacesOrdersNowPlayingBeforeWidgetRefreshAndWritesDisplayStrings` (DEBUG coordination-order log + NP bypass seam); Tier 2 play/pause drain method names indexed.
 - **2026-07-14:** Provider synthesis — ``WidgetProviderSnapshotResolver/assemblePresentationSlices(from:)`` + `WidgetProviderPresentationSlices`; home-widget `Provider` and Control-widget `Value` use shared assembly; `WidgetDisplayModelsTests` (26 total) adds `resolveWithActorHygiene` + entry/Value synthesis contracts.
 - **2026-07-14:** Presentation mapper matrices — `PlayerPresentationMapperTests.swift` (status + control SSOT for all six `PlayerVisualState` cases); Tier 5 test index closed; `WidgetRefreshManager` test count corrected to 20.
@@ -369,7 +380,7 @@ For presentation mapping rules and termination invariants, use [`docs/Widget-Pre
 - **2026-07-13:** Tier 3 complete — ``WidgetProviderSnapshotResolver`` + provider audit table; imperative ``refreshIfNeeded`` dedup in ``performActualSave``, ``didUpdateStreamMetadata``, ``updateUserDefaultsLanguage``; ``refreshUsesImmediateDelivery`` urgency parity on event path; removed `setupWidgetActionPolling`; Control widget Provider aligned with home-widget hygiene; tests in `WidgetRefreshManagerEventTests` + `WidgetDisplayModelsTests`.
 - **2026-07-13:** Tier 2 complete — `WidgetDisplayModelsTests.swift` (resolver matrix), `WidgetIntentContractTests.swift` (pending-action dedup, instant-feedback expiry, optimistic persist contract, widget switch SSOT); `forcePersistVisualState` renamed to `persistOptimisticWidgetSnapshot` with deprecated forwarding wrapper.
 - **2026-07-13:** Tier 1 — Control widget `Value` pre-derivation (`statusPresentation` + `controlPresentation` in Provider; toggle label consumes narrow fields; symmetric with `SimpleEntry`).
-- **2026-07-13:** Core Principles — added **Documentation voice & reference discipline** (production-grade source language; cross-links only to committed, tracked docs).
+- **2026-07-13:** Core Principles — added **Documentation standards & canonical references** (describe what ships today; link only to committed, tracked docs).
 - **2026-07-13:** Tier 1 complete — narrow family view inputs (`LutheranRadioWidgetEntryView` projection) and LA expanded-region `statusPres` dedup (outer `dynamicIsland` closure).
 - **2026-07-10:** Tier 2 backlog: rename `forcePersistVisualState` → `persistOptimisticWidgetSnapshot` (permanent widget infrastructure naming); consolidation inventory updated.
 - **2026-07-10:** Added **Target Architecture (Ultimate Goal)** section (two-zone hybrid model, permanent snapshot cross-process boundary, definition of “done”) and Tier 3 scope note clarifying consolidation is main-app refresh dedup only.

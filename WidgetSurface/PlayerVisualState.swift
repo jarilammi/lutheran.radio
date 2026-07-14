@@ -8,7 +8,7 @@
 // WidgetSurface framework — presentation-only (no security logic).
 //
 // Compiled into the `WidgetSurface` embedded framework; consumed by the main app,
-// widget extension, and (in PR 3) `LutheranRadioWidgetTests` via `import WidgetSurface`.
+// widget extension, and `LutheranRadioWidgetTests` via `import WidgetSurface`.
 //
 // Purpose:
 // Defines the core value types for visual playback state and user intent

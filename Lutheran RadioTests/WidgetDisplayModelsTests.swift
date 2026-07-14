@@ -13,7 +13,7 @@ import WidgetSurface
 @testable import Lutheran_Radio
 
 /// Protects the canonical title / speaker / emphasis mapping for every
-/// `PlayerVisualState` × metadata presence combination (OI-W3 strategy: main-app host).
+/// `PlayerVisualState` × metadata presence combination (main-app test host).
 ///
 /// Pure-function coverage — no WidgetCenter IPC or ActivityKit.
 ///

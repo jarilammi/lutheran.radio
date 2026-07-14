@@ -2,7 +2,7 @@
 
 This document is the concise, permanent reference for how Lutheran Radio derives and consumes presentation data for WidgetKit home-screen widgets and ActivityKit Live Activities (Dynamic Island + Lock Screen).
 
-It complements (and is cross-referenced by) the source headers in `LutheranRadioWidget.swift`, `LutheranRadioWidgetLiveActivity.swift`, `WidgetDisplayModels.swift`, and `PlayerVisualState.swift`, as well as `CODING_AGENT.md`.
+It complements (and is cross-referenced by) the source headers in `LutheranRadioWidget.swift`, `LutheranRadioWidgetLiveActivity.swift`, `WidgetSurface/` (`PlayerVisualState.swift`, `WidgetNowPlayingDisplay.swift`, `WidgetTimelineEntryFactory.swift`, `WidgetLivenessPresentation.swift`), cross-target `WidgetDisplayModels.swift`, and `CODING_AGENT.md`.
 
 ## Snapshot-Driven Model
 
@@ -17,16 +17,16 @@ There are no live `@Observable` objects inside the widget extension. All display
 
 All presentation is organized into three narrow, `Equatable` value types derived from the authoritative `PlayerVisualState` (plus optional `StreamProgramMetadata`):
 
-| Surface                        | Type                              | Mapper / Resolver                              | What it carries                          | Consumers |
+| Surface                        | Type                              | Mapper / Resolver (`WidgetSurface/`)           | What it carries                          | Consumers |
 |--------------------------------|-----------------------------------|------------------------------------------------|------------------------------------------|-----------|
-| Status indicator               | `PlayerStatusPresentation`        | `visualState.makeStatusPresentation()`         | `background`, `foreground`, `text`, `systemImage?` | Status text, pills, indicators in widgets + LA + Control widget |
-| Primary play/pause control     | `PlayerControlPresentation`       | `visualState.makeControlPresentation()`        | `systemImage` ("play.fill"/"pause.fill"), `tint: Color` | Play/pause buttons (Small/Medium/Large, DI trailing/compactTrailing, Lock Screen row, Control widget) |
-| Metadata / emphasis (title + speaker) | `WidgetNowPlayingDisplayModel` | `widgetNowPlayingDisplayModel(visualState:streamMetadata:languageName:)` | `programTitle`, `speakerLine`, `speakerVisible`, `emphasis: WidgetMetadataEmphasis` | `WidgetMetadataRegion`, DI center/compactLeading, Lock Screen metadata blocks |
+| Status indicator               | `PlayerStatusPresentation`        | `PlayerVisualState.makeStatusPresentation()` (`PlayerVisualState.swift`) | `background`, `foreground`, `text`, `systemImage?` | Status text, pills, indicators in widgets + LA + Control widget |
+| Primary play/pause control     | `PlayerControlPresentation`       | `PlayerVisualState.makeControlPresentation()` (`PlayerVisualState.swift`) | `systemImage` ("play.fill"/"pause.fill"), `tint: Color` | Play/pause buttons (Small/Medium/Large, DI trailing/compactTrailing, Lock Screen row, Control widget) |
+| Metadata / emphasis (title + speaker) | `WidgetNowPlayingDisplayModel` | `widgetNowPlayingDisplayModel(visualState:streamMetadata:languageName:)` (`WidgetNowPlayingDisplay.swift`) | `programTitle`, `speakerLine`, `speakerVisible`, `emphasis: WidgetMetadataEmphasis` | `WidgetMetadataRegion`, DI center/compactLeading, Lock Screen metadata blocks |
 
 **Derivation rule (snapshot-driven):**
 
-- **Home widgets**: All three are computed **once per entry** inside the `Provider` (`placeholder`, `snapshot`, `timeline` / `createEntry`) and stored directly on `SimpleEntry`. Family views read the narrow properties.
-- **Control Center widget**: Status and control surfaces are computed **once per value** inside `LutheranRadioWidgetControl.Provider` (`previewValue`, `currentValue`) and stored on `LutheranRadioWidgetControl.Value`. The toggle label closure reads `statusPresentation` and `controlPresentation` only (no inline mapper calls in the view body).
+- **Home widgets**: All three are computed **once per entry** inside the `Provider` (`placeholder`, `snapshot`, `timeline` / `createEntry`). Snapshot fields resolve via ``WidgetProviderSnapshotResolver`` (`WidgetDisplayModels.swift`); presentation slices assemble via ``WidgetProviderSnapshotResolver/assemblePresentationSlices(from:)``; entry blueprints map through ``WidgetTimelineEntryFactory`` (`WidgetSurface/WidgetTimelineEntryFactory.swift`). Family views read the narrow properties from `SimpleEntry`.
+- **Control Center widget**: Status and control surfaces are computed **once per value** inside `LutheranRadioWidgetControl.Provider` (`previewValue`, `currentValue`) using the same resolver + factory path, then stored on `LutheranRadioWidgetControl.Value`. The toggle label closure reads `statusPresentation` and `controlPresentation` only (no inline mapper calls in the view body).
 - **Live Activities**: The three are computed **once at the top of `LockScreenLiveActivityView.body`** and **once inside the outer `dynamicIsland` closure**, then closed over by the region builders and subviews. No repeated derivation inside individual `.leading`/`.center`/etc. blocks for the presentation concerns.
 
 `WidgetMetadataRegion` is deliberately narrow: it receives only a `WidgetNowPlayingDisplayModel`.
@@ -36,7 +36,7 @@ All presentation is organized into three narrow, `Equatable` value types derived
 - **Invalidation cost**: WidgetKit performs structural comparison on the `TimelineEntry`. A change to an unrelated field (e.g. `configuration` or full `availableStreams` ordering) should not force re-work in a leaf that only renders the play glyph. Carrying the already-derived narrow value shrinks the set of mutations that cause body re-evaluation for that leaf.
 - **Region work in ActivityKit**: Dynamic Island regions are independent. Re-deriving title/speaker or control glyph inside every region multiplies work on every push. One computation at the outer closure is bounded.
 - **View simplicity**: Leaf views and region closures become trivial — they render exactly the four (or two) fields they need. No `switch`, no fallback logic, no `Color(uiColor:)` bridging inside bodies.
-- **Consistency**: The same mapping rules apply to main-app UI (via `PlayerViewModel`), home widgets, Live Activities, and Control widgets because the mappers live on `PlayerVisualState` (or the dedicated resolver in WidgetDisplayModels).
+- **Consistency**: The same mapping rules apply to main-app UI (via `PlayerViewModel`), home widgets, Live Activities, and Control widgets because status/control mappers live on `PlayerVisualState` (`WidgetSurface/PlayerVisualState.swift`) and the metadata resolver lives in `WidgetSurface/WidgetNowPlayingDisplay.swift`.
 
 ## Semantic vs. Presentation Uses of PlayerVisualState
 
@@ -52,12 +52,12 @@ All presentation is organized into three narrow, `Equatable` value types derived
 
 Pure play/pause glyph choice and tint for **controls** must use `makeControlPresentation()`.
 
-See the header of `PlayerVisualState.swift` for the exact division and AGENT NOTE.
+See the header of `WidgetSurface/PlayerVisualState.swift` for the exact division and AGENT NOTE.
 
 ## Adding or Changing a Presentation Axis (Guidance for Contributors)
 
 1. Decide whether the concern belongs on one of the existing surfaces or needs a new narrow type (prefer adding a new `...Presentation` or `...DisplayModel` struct).
-2. Implement (or extend) the pure mapper on `PlayerVisualState` or as a free function in `WidgetDisplayModels.swift`.
+2. Implement (or extend) the pure mapper on `PlayerVisualState` (`WidgetSurface/PlayerVisualState.swift`) for status/control axes, or as a free function in `WidgetSurface/WidgetNowPlayingDisplay.swift` for metadata/emphasis. Provider assembly stays in `WidgetDisplayModels.swift` + `WidgetSurface/WidgetTimelineEntryFactory.swift`.
 3. Update derivation sites:
    - Add the new field to `SimpleEntry`.
    - Compute it once in `Provider.placeholder`, `createEntry`, and `timeline`.
@@ -65,7 +65,7 @@ See the header of `PlayerVisualState.swift` for the exact division and AGENT NOT
 4. Change consumers (family views, regions, LA region closures, Control widget) to read only the narrow value.
 5. Update `SimpleEntry` property documentation and the three main widget/LA files' headers.
 6. Add or update an entry in the table above.
-7. Update this document, the relevant `///` headers (with `- SeeAlso:`), and `PlayerVisualState.swift` header if the division of concerns changed.
+7. Update this document, the relevant `///` headers (with `- SeeAlso:`), and the `WidgetSurface/PlayerVisualState.swift` header if the division of concerns changed.
 8. Verify with the preview matrix in `LutheranRadioWidget.swift` and on-device widget/LA surfaces.
 
 Never derive presentation inside leaf view `body` for the three canonical surfaces. Never duplicate the mapping rules.
@@ -75,7 +75,7 @@ Never derive presentation inside leaf view `body` for the three canonical surfac
 **Core rule (Cleanup Invariant)**: Widget and Live Activity surfaces are **active / updating only while the main app process is running** (foreground or background audio). Once the main process has quit (normal termination or force-quit), they must transition to a stable passive or last-known state and must not receive further pings, timeline reloads driven from the dead process, or Activity updates.
 
 ### How Termination Achieves Passive State
-- **Liveness heuristic (SSOT)**: `SharedPlayerManager.isMainAppProcessRecentlyActive()` (backed by the `lastUpdateTime` key + explicit `0` sentinel). Widget family views branch on `!isAppRunning()` (delegates to the SSOT) to render either full interactive controls + status + metadata or the "tap_to_open" prompt.
+- **Liveness heuristic (SSOT)**: `SharedPlayerManager.isMainAppProcessRecentlyActive()` (backed by the `lastUpdateTime` key + explicit `0` sentinel). Widget family views delegate the passive-branch decision to ``WidgetLivenessPresentation/shouldShowPassiveTapToOpen(isMainAppRecentlyActive:)`` (`WidgetSurface/WidgetLivenessPresentation.swift`) to render either full interactive controls + status + metadata or the "tap_to_open" prompt.
 - **On observed termination** (AppDelegate `applicationWillTerminate`, SceneDelegate `sceneDidDisconnect`, `UIApplication.willTerminateNotification`):
   - `SharedPlayerManager.forceStaleLivenessTimestampForTermination()` writes the sentinel `0` (and clears instant-feedback transients). Any subsequent Provider run immediately sees the passive path.
   - `RadioLiveActivityManager.handleAppWillTerminate()` ends the activity with `.immediate` dismissal after a final `.userPaused` push.
@@ -151,7 +151,7 @@ to `WidgetEventObserver.beginObserving(unsafeSequence:onElement:onTermination:)`
 - Terminal states reported by ActivityKit cause immediate local cleanup of `currentActivity` and cancellation of the observer. This provides self-healing lifecycle independent of our explicit termination handlers.
 - Observation is strictly additive and non-forcing. All existing push call sites, the `lastPushedContent` dedup logic, privacy gates, and test short-circuits remain unchanged and primary. The net effect is stronger reactivity and fewer wasted `update(using:)` crossings of the ActivityKit boundary.
 
-See `RadioLiveActivityManager.swift` (``beginObservingActivityEvents(_:)``, ``activityObservationTask``, class header), `WidgetEventObserver.swift`, and the cross-references below. The Tier 2 Live Activity events item (plus the parallel PlayerEvent consumer in `WidgetRefreshManager`) is complete; the common observation pattern is now in one internal helper for future consumers.
+See `RadioLiveActivityManager.swift` (``beginObservingActivityEvents(_:)``, ``activityObservationTask``, class header), `WidgetSurface/WidgetEventObserver.swift`, and the cross-references below. The Tier 2 Live Activity events item (plus the parallel PlayerEvent consumer in `WidgetRefreshManager`) is complete; the common observation pattern is now in one internal helper for future consumers.
 
 ### Invariants (Must Hold After Any Edit)
 
@@ -183,7 +183,7 @@ See `RadioLiveActivityManager.swift` (class docs, ``updateCurrentActivity()``, `
 
 System Now Playing, Live Activities, and widgets are three independent iOS surfaces with intentional coexistence. When both Now Playing and a Live Activity are active, iOS stacks both cards on the Lock Screen — expected platform behavior, not a defect.
 
-- **Formatter parity:** `StreamProgramMetadata.nowPlayingDisplayStrings(...)` is shared with ``updateNowPlayingInfo()`` and widget/LA title resolution.
+- **Formatter parity:** `StreamProgramMetadata.nowPlayingDisplayStrings(...)` (`WidgetSurface/StreamProgramMetadata.swift`) is shared with ``updateNowPlayingInfo()`` and widget/LA title resolution.
 - **Coordinated refresh:** ``SharedPlayerManager/refreshAllMediaSurfaces(liveActivity:widgetRefresh:widgetRefreshImmediate:)`` (main app) aligns Now Playing + Live Activity after visual transitions; widget reloads remain on the Tier 2 ``PlayerEvent`` observer unless explicitly requested.
 - **LA start policy:** First `.playing` via ``setPlaying()`` (``.startOrUpdate``); background catch-up via ``RadioLiveActivityManager/handleAppWillEnterBackground()``; termination ends LA immediately.
 
@@ -191,18 +191,31 @@ Full stacking matrix, push-cost analysis, and QA scenarios: [`docs/Live-Activity
 
 ## Cross-References
 
-- `PlayerVisualState.swift` — authoritative source of `makeStatusPresentation()` / `makeControlPresentation()` + semantics of `isActivelyPlaying`.
-- `WidgetDisplayModels.swift` — SSOT + resolver for `WidgetNowPlayingDisplayModel` + language/flag helpers.
-- `LutheranRadioWidget.swift` — `SimpleEntry`, `Provider`, family views, `WidgetMetadataRegion`.
+### `WidgetSurface/` (presentation-only embedded framework)
+
+- `PlayerVisualState.swift` — `PlayerVisualState`, `PlaybackIntent`, `makeStatusPresentation()` / `makeControlPresentation()` + semantics of `isActivelyPlaying`.
+- `WidgetNowPlayingDisplay.swift` — `WidgetMetadataEmphasis`, `WidgetNowPlayingDisplayModel`, `widgetNowPlayingDisplayModel(...)`.
+- `WidgetTimelineEntryFactory.swift` — `WidgetProviderSnapshotFields`, `WidgetProviderPresentationSlices`, home/control entry blueprints.
+- `WidgetLivenessPresentation.swift` — passive `tap_to_open` vs interactive chrome policy.
+- `StreamProgramMetadata.swift` — parsed stream metadata + `nowPlayingDisplayStrings(...)` SSOT.
+- `WidgetEventObserver.swift` — shared `contentUpdates` / `PlayerEvent` observation helper.
+- `WidgetIntentCoordinators.swift` — toggle/stream-switch **plans** for App Intents (execution in `WidgetIntentExecution`).
+
+### Cross-target + extension shells
+
+- `WidgetDisplayModels.swift` — ``WidgetProviderSnapshotResolver``, ``WidgetIntentExecution``, language/flag helpers; calls `SharedPlayerManager` for snapshot hygiene and optimistic intent side effects.
+- `LutheranRadioWidget.swift` — `SimpleEntry`, `Provider`, family views, `WidgetMetadataRegion` (thin delegates to coordinators + factory).
 - `LutheranRadioWidgetLiveActivity.swift` — `LutheranRadioLiveActivityWidget`, `LockScreenLiveActivityView`, Dynamic Island regions, intents.
-- `LutheranRadioWidgetControl.swift` — Control widget usage of the same mappers.
+- `LutheranRadioWidgetControl.swift` — Control widget `Value` + toggle (same derivation path as home widgets).
 - `SharedPlayerManager.swift` — `PersistedWidgetState`, `isMainAppProcessRecentlyActive`, `forceStaleLivenessTimestampForTermination`, `bumpWidgetLivenessTimestamp`.
-- `RadioLiveActivityManager.swift`, `WidgetRefreshManager.swift`, `WidgetEventObserver.swift`, `AppDelegate.swift`, `SceneDelegate.swift`.
+- `RadioLiveActivityManager.swift`, `WidgetRefreshManager.swift`, `AppDelegate.swift`, `SceneDelegate.swift`.
 - `CODING_AGENT.md` — Documentation & Comment Standards, Single Source of Truth Principles, cross-target shared files.
+- [`docs/Widget-Functionality-Roadmap.md`](Widget-Functionality-Roadmap.md) — widget backlog, test coverage, `WidgetSurface` coordinator status.
 
 All user-visible strings use `String(localized: "...", table: "Localizable")`.
 
 ## See Also
 
 - `README.md` (Single Sources of Truth section)
+- [`docs/Widget-Functionality-Roadmap.md`](Widget-Functionality-Roadmap.md)
 - `<doc:Architecture>` (in the Core DocC catalog)

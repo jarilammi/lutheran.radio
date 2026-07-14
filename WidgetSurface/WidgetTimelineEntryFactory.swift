@@ -8,7 +8,7 @@
 //  Providers remain thin: resolve snapshot fields + slices, then map through this factory.
 //
 //  - SeeAlso: ``WidgetProviderSnapshotResolver`` (WidgetDisplayModels.swift),
-//    docs/Widget-Presentation-Dataflow.md, docs/WidgetSurface-OI-W3-Plan-and-Status.md (PR 2).
+//    docs/Widget-Presentation-Dataflow.md, docs/Widget-Functionality-Roadmap.md.
 //
 
 import Foundation

@@ -233,7 +233,7 @@ enum WidgetProviderSnapshotResolver {
 /// Extension `perform()` bodies delegate here so optimistic toggle and stream-switch
 /// side effects stay in one cross-target location.
 ///
-/// - SeeAlso: ``WidgetIntentCoordinators``, docs/WidgetSurface-OI-W3-Plan-and-Status.md (PR 2).
+/// - SeeAlso: ``WidgetIntentCoordinators``, docs/Widget-Functionality-Roadmap.md.
 enum WidgetIntentExecution {
 
     /// Optimistic snapshot + pending action + immediate widget refresh for play/pause toggles.
