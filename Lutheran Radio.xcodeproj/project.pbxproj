@@ -157,16 +157,6 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		B72A08BD30067F9200560CD1 /* Exceptions for "Lutheran Radio" folder in "WidgetSurface" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				LutheranRadioLiveActivityAttributes.swift,
-				PlayerVisualState.swift,
-				StreamProgramMetadata.swift,
-				WidgetEventObserver.swift,
-			);
-			target = B72A089230067E5600560CD1 /* WidgetSurface */;
-		};
 		B757A7962DEF7B5E00FF90FC /* Exceptions for "LutheranRadioWidget" folder in "LutheranRadioWidgetExtension" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -178,12 +168,8 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Localizable.xcstrings,
-				LutheranRadioLiveActivityAttributes.swift,
-				PlayerVisualState.swift,
 				SharedPlayerManager.swift,
-				StreamProgramMetadata.swift,
 				WidgetDisplayModels.swift,
-				WidgetEventObserver.swift,
 				WidgetRefreshManager.swift,
 			);
 			target = B757A77B2DEF7B5C00FF90FC /* LutheranRadioWidgetExtension */;
@@ -238,7 +224,6 @@
 			exceptions = (
 				B7AFC6D42CCD7D0C00BDDD83 /* Exceptions for "Lutheran Radio" folder in "Lutheran Radio" target */,
 				B777FE962DEF8307000007DA /* Exceptions for "Lutheran Radio" folder in "LutheranRadioWidgetExtension" target */,
-				B72A08BD30067F9200560CD1 /* Exceptions for "Lutheran Radio" folder in "WidgetSurface" target */,
 			);
 			path = "Lutheran Radio";
 			sourceTree = "<group>";
@@ -623,7 +608,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 2700;
-				LastUpgradeCheck = 2650;
+				LastUpgradeCheck = 2700;
 				TargetAttributes = {
 					B72A089230067E5600560CD1 = {
 						CreatedOnToolsVersion = 27.0;
@@ -887,6 +872,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUILD_LIBRARY_FOR_DISTRIBUTION = YES;
+				CODE_SIGN_IDENTITY = "";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DYLIB_COMPATIBILITY_VERSION = 1;
@@ -925,6 +911,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUILD_LIBRARY_FOR_DISTRIBUTION = YES;
+				CODE_SIGN_IDENTITY = "";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DYLIB_COMPATIBILITY_VERSION = 1;
