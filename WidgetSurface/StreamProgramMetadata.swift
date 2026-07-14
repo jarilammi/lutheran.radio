@@ -5,10 +5,7 @@
 //  Parsed ICY/Shoutcast program metadata for widgets and Live Activities.
 //
 
-// SHARED: Cross-target source (main app + LutheranRadioWidgetExtension)
-//
-// Single physical file on disk, compiled into both targets via Xcode
-// File System Synchronized Group + membershipExceptions (see project.pbxproj).
+// WidgetSurface framework — presentation-only (no security logic).
 //
 // Purpose:
 // Lightweight value type + parser for ICY `StreamTitle` metadata. Used by
@@ -36,13 +33,18 @@ import Foundation
 /// Owned by `SharedPlayerManager` and persisted in `PersistedWidgetState` for
 /// cross-process widget / Live Activity display. Also supplies `nowPlayingDisplayStrings(...)`
 /// for the system Now Playing surface. No history or PII.
-struct StreamProgramMetadata: Codable, Hashable, Sendable, Equatable {
+public struct StreamProgramMetadata: Codable, Hashable, Sendable, Equatable {
     /// Primary program / sermon / talk title.
-    let programTitle: String?
+    public let programTitle: String?
     /// Speaker or presenter when parsed from the stream title.
-    let speaker: String?
+    public let speaker: String?
 
-    var hasDisplayableContent: Bool {
+    public init(programTitle: String?, speaker: String?) {
+        self.programTitle = programTitle
+        self.speaker = speaker
+    }
+
+    public var hasDisplayableContent: Bool {
         let titlePresent = programTitle.map { !$0.isEmpty } ?? false
         let speakerPresent = speaker.map { !$0.isEmpty } ?? false
         return titlePresent || speakerPresent
@@ -54,7 +56,7 @@ struct StreamProgramMetadata: Codable, Hashable, Sendable, Equatable {
     /// - `"Sermon Title"`
     /// - `"Speaker Name - Sermon Title"`
     /// - `"Sermon Title by Speaker Name"`
-    static func from(rawICYMetadata: String?) -> StreamProgramMetadata? {
+    public static func from(rawICYMetadata: String?) -> StreamProgramMetadata? {
         guard let raw = rawICYMetadata?.trimmingCharacters(in: .whitespacesAndNewlines),
               !raw.isEmpty else {
             return nil
@@ -88,12 +90,12 @@ struct StreamProgramMetadata: Codable, Hashable, Sendable, Equatable {
 // Supporting value type for system media surface strings.
 // This is intentionally narrower than `WidgetNowPlayingDisplayModel`
 // (which carries emphasis + speaker visibility rules for WidgetKit/ActivityKit).
-internal struct NowPlayingDisplayStrings: Sendable, Equatable {
-    let title: String
-    let artist: String
+public struct NowPlayingDisplayStrings: Sendable, Equatable {
+    public let title: String
+    public let artist: String
 }
 
-extension StreamProgramMetadata {
+public extension StreamProgramMetadata {
     /// Returns the canonical title/artist pair for `MPNowPlayingInfoCenter`.
     ///
     /// Single source of truth for the program / speaker / fallback formatting
@@ -123,7 +125,7 @@ extension StreamProgramMetadata {
     /// construction. Changes to how program titles or speaker attribution appear on
     /// the system media surface must be implemented here (and the call site updated
     /// if the signature changes). Do not duplicate the if/else ladder elsewhere.
-    static func nowPlayingDisplayStrings(
+    public static func nowPlayingDisplayStrings(
         fromParsed parsed: StreamProgramMetadata?,
         rawFallback raw: String?,
         stationName: String,
