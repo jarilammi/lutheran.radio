@@ -12,6 +12,7 @@
 import Foundation
 import MediaPlayer
 import UIKit
+import WidgetSurface
 
 // MARK: - Media surface coordination (Now Playing + Live Activity + optional widgets)
 

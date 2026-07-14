@@ -10,6 +10,7 @@
 @unsafe @preconcurrency import ActivityKit
 import Foundation
 import UIKit   // For UIApplication.willTerminateNotification (termination observer) and related lifecycle.
+import WidgetSurface
 
 /// `RadioLiveActivityManager` owns the lifecycle and push surface for privacy-first
 /// local-only Live Activities (Dynamic Island + Lock Screen) using ActivityKit.

@@ -12,6 +12,7 @@ import CommonCrypto
 import dnssd
 import Network
 import Core
+import WidgetSurface
 
 // MARK: - Sendable Completion Helpers (Swift 6)
 typealias BoolCompletion   = @Sendable (Bool) -> Void
@@ -24,15 +25,6 @@ protocol StreamingPlayerDelegate: AnyObject {
     /// status = semantic state (playing / paused / etc.)
     /// reasonKey = the exact key from Localizable.xcstrings (e.g. "status_playing", "status_paused")
     func onStatusChange(_ status: PlayerStatus, reasonKey: String?)
-}
-
-/// Player status enum for callbacks
-enum PlayerStatus {
-    case playing
-    case paused
-    case stopped
-    case connecting
-    case security
 }
 
 /// - Article: Core Streaming and Privacy Architecture
@@ -2481,6 +2473,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         case .coldLaunch: return "cold launch"
         case .streamSwitch: return "stream switch"
         case .resume: return "resume"
+        @unknown default: return "attach"
         }
     }
     #endif
@@ -3165,7 +3158,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         pendingPlaybackWorkItem = nil
         
         // === Important: Set visual state based on reason + silent (respects recent commit semantics) ===
-        Task {
+        Task { @MainActor [weak self, reason, silent, completion] in
+            guard let self else { return }
             if reason == .userAction && !silent {
                 await self.markAsUserPaused()
                 #if DEBUG
@@ -3174,18 +3168,18 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             }
             // .streamSwitch / .interruption / .error intentionally skip markAsUserPaused()
             // → this replaces the markAsPlaying() workaround
-            
-            // Perform the actual stop on the main actor
-            await MainActor.run {
-                performActualStop(
-                    reason: reason,
-                    completion: completion,
-                    silent: silent
-                )
+
+            self.performActualStop(
+                reason: reason,
+                completion: completion,
+                silent: silent
+            )
+
+            // Silent stops (privacy clear, stream-switch teardown) must not re-persist a snapshot
+            // after ``SharedPlayerManager/clearAllLocalState()`` has removed it.
+            if !silent {
+                await SharedPlayerManager.shared.saveCurrentState()
             }
-            
-            // Persist after everything (unchanged)
-            await SharedPlayerManager.shared.saveCurrentState()
         }
     }
 
@@ -4051,126 +4045,70 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
     }
 }
 
-extension DirectStreamingPlayer {
-    /// Classification of errors reported by `AVPlayerItem` or the resource loader.
+// MARK: - StreamErrorType classification (main-app implementation)
+
+extension StreamErrorType {
+    /// Classifies the given error.
     ///
-    /// This is the authoritative model for **permanent vs transient** errors in the streaming engine.
-    /// It directly supports the contract that normal live ICY framing / decoder noise on a fresh
-    /// item (after `switchToStream` + `resetInitialPlaybackCountersForNewStream`) must be recovered
-    /// silently via `recreatePlayerItem` rather than surfacing `status_stream_unavailable`.
+    /// - Parameter error: The `item.error` or equivalent from AVFoundation / resource loading.
+    /// - Returns: The appropriate ``StreamErrorType``.
     ///
-    /// - Important: Many ICY pump, Fig, and AAC decoder errors (e.g. err=-12785, -16042,
-    ///   "Error deserializing SCE", AudioFormatDescription failures) arrive **outside**
-    ///   `NSURLErrorDomain`. These are expected transient noise on the first packets of a live
-    ///   HE-AAC stream and must be classified as `.transientFailure` (or handled as such) when
-    ///   `!hasStartedPlaying`.
-    ///
-    /// - SeeAlso: `handleItemStatusFailure(_:)`, `switchToStream(_:)`, `resetInitialPlaybackCountersForNewStream()`,
-    ///   `addObservers()`, `preparePlayerItem(for:)`, CODING_AGENT.md (explicit permanent/transient modeling)
-    enum StreamErrorType {
-        /// Hard security failure (certificate, model validation). Never auto-retried.
-        case securityFailure
-
-        /// Genuine permanent failure (resource gone, TCP connect after DNS success, etc.).
-        ///
-        /// DNS lookup failures are intentionally **not** included here; see ``from(error:)``.
-        case permanentFailure
-
-        /// Recoverable condition: network blip, temporary server response, or the normal
-        /// decoder / framing noise that occurs on fresh ICY items after a switch or cold launch.
-        case transientFailure
-
-        /// Unclassified. Treated conservatively as transient in early-window recovery paths.
-        case unknown
-
-        /// Classifies the given error.
-        ///
-        /// - Parameter error: The `item.error` or equivalent from AVFoundation / resource loading.
-        /// - Returns: The appropriate `StreamErrorType`.
-        ///
-        /// - Note: DNS lookup failures (cannotFindHost / dnsLookupFailed) are deliberately
-        ///   classified transient. This keeps streaming available on networks where
-        ///   ``SecurityConfiguration/requiresDNSSECValidationForStreaming`` cannot be satisfied
-        ///   by the local resolver (the requirement is therefore "opt-in safe").
-        ///   Any error that is not a clear security or hard post-DNS host/resource failure
-        ///   is treated as transient. This is the key change that lets the canonical recreate
-        ///   path handle the exact symptoms seen during language switches (see stream switch glitch analysis).
-        static func from(error: Error?) -> StreamErrorType {
-            guard let nsError = error as NSError? else {
-                return .unknown
-            }
-
-            if nsError.domain == NSURLErrorDomain {
-                switch nsError.code {
-                case URLError.Code.secureConnectionFailed.rawValue,
-                     URLError.Code.serverCertificateUntrusted.rawValue:
-                    return .securityFailure
-
-                case URLError.Code.fileDoesNotExist.rawValue,
-                     URLError.Code.cannotConnectToHost.rawValue,
-                     URLError.Code.resourceUnavailable.rawValue:
-                    // Hard resource or TCP-level failures after successful name resolution.
-                    return .permanentFailure
-
-                case URLError.Code.cannotFindHost.rawValue,
-                     URLError.Code.dnsLookupFailed.rawValue:
-                    // DNS-level lookup failures are treated as transient.
-                    //
-                    // Reasons this is intentional and safe:
-                    // - Mobile networks frequently produce transient DNS flakes.
-                    // - When ``SecurityConfiguration/requiresDNSSECValidationForStreaming`` is true,
-                    //   a resolver that cannot return a validated answer for a signed zone will
-                    //   cause the URLSession task to surface as a lookup failure. Treating it
-                    //   transient ensures we do not permanently brick streaming on networks where
-                    //   DNSSEC validation is "unavailable" from the client's perspective (the
-                    //   requirement is opt-in safe).
-                    // - Server selection / recreatePlayerItem paths provide fallback recovery.
-                    //
-                    // (cannotConnectToHost stays permanent: it means DNS succeeded but TCP failed.)
-                    return .transientFailure
-
-                case URLError.Code.badServerResponse.rawValue:
-                    // Temporary 5xx or similar — allow recreate / fallback.
-                    return .transientFailure
-
-                default:
-                    return .transientFailure
-                }
-            }
-
-            // AVFoundationErrorDomain, Fig* internals, OSStatus decoder issues, and other
-            // non-URL errors are the common manifestation of live ICY "first packets" noise.
-            // We deliberately classify them as transient so the early-window guard in
-            // `handleItemStatusFailure` (and the equivalent logic in addObservers) can
-            // trigger `recreatePlayerItem()` instead of a user-visible failure.
-            return .transientFailure
+    /// - SeeAlso: `handleItemStatusFailure(_:)`, `switchToStream(_:)`,
+    ///   `resetInitialPlaybackCountersForNewStream()`, CODING_AGENT.md.
+    static func from(error: Error?) -> StreamErrorType {
+        guard let nsError = error as NSError? else {
+            return .unknown
         }
 
-        /// The localized status reason key to emit for this classification.
-        var statusString: String {
-            switch self {
-            case .securityFailure:
-                return String(localized: "status_security_failed", table: "Localizable")
-            case .permanentFailure:
-                return String(localized: "status_failed", table: "Localizable")
-            case .transientFailure:
-                return String(localized: "status_buffering", table: "Localizable")
-            case .unknown:
-                return String(localized: "status_connecting", table: "Localizable")
-            }
-        }
+        if nsError.domain == NSURLErrorDomain {
+            switch nsError.code {
+            case URLError.Code.secureConnectionFailed.rawValue,
+                 URLError.Code.serverCertificateUntrusted.rawValue:
+                return .securityFailure
 
-        /// True only for errors that should never be auto-recovered.
-        ///
-        /// Transient and unknown errors remain eligible for the per-stream retry budget
-        /// and `recreatePlayerItem` when the item is still fresh (`!hasStartedPlaying`).
-        var isPermanent: Bool {
-            switch self {
-            case .securityFailure, .permanentFailure:
-                return true
+            case URLError.Code.fileDoesNotExist.rawValue,
+                 URLError.Code.cannotConnectToHost.rawValue,
+                 URLError.Code.resourceUnavailable.rawValue:
+                return .permanentFailure
+
+            case URLError.Code.cannotFindHost.rawValue,
+                 URLError.Code.dnsLookupFailed.rawValue:
+                return .transientFailure
+
+            case URLError.Code.badServerResponse.rawValue:
+                return .transientFailure
+
             default:
-                return false
+                return .transientFailure
             }
+        }
+
+        return .transientFailure
+    }
+
+    /// The localized status reason key to emit for this classification.
+    var statusString: String {
+        switch self {
+        case .securityFailure:
+            return String(localized: "status_security_failed", table: "Localizable")
+        case .permanentFailure:
+            return String(localized: "status_failed", table: "Localizable")
+        case .transientFailure:
+            return String(localized: "status_buffering", table: "Localizable")
+        case .unknown:
+            return String(localized: "status_connecting", table: "Localizable")
+        @unknown default:
+            return String(localized: "status_connecting", table: "Localizable")
+        }
+    }
+
+    /// True only for errors that should never be auto-recovered.
+    var isPermanent: Bool {
+        switch self {
+        case .securityFailure, .permanentFailure:
+            return true
+        @unknown default:
+            return false
         }
     }
 }

@@ -43,6 +43,7 @@ import AVKit
 import MediaPlayer
 import UIKit
 import Observation
+import WidgetSurface
 // Observation provides @Observable for the lightweight subscriber helper below.
 // Swift 6 strict concurrency + SWIFT_STRICT_MEMORY_SAFETY = YES are inherited from target settings.
 
@@ -292,6 +293,11 @@ final class PlayerEventSubscriber {
         case .visualStateDidChange, .persistedWidgetStateDidUpdate:
             // Visual and persisted-snapshot signals drive generic UI refresh sites via
             // `.onChange(of: eventCount)` without overwriting `lastObservedIntent`.
+            eventCount += 1
+
+        @unknown default:
+            // `PlayerEvent` is a `@frozen public` type in `WidgetSurface`; future SDK-linked
+            // cases must not trap the subscriber if the framework gains additive events.
             eventCount += 1
         }
     }

@@ -23,6 +23,7 @@
 //   CODING_AGENT.md.
 
 import Foundation
+import WidgetSurface
 
 // MARK: - Shared Widget / Live Activity Display Models
 //
@@ -210,6 +211,10 @@ internal func widgetNowPlayingDisplayModel(
             programTitle = noTrack
             emphasis = .placeholder
         }
+
+    @unknown default:
+        programTitle = noTrack
+        emphasis = .placeholder
     }
 
     let speakerVisible = speaker != nil && (state.isActivelyPlaying || state == .userPaused || state == .prePlay || state == .cleared)

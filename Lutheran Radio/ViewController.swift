@@ -45,6 +45,7 @@ import CoreImage
 import CoreHaptics
 import WidgetKit
 import Core
+import WidgetSurface
 
 /// The main view controller for the Lutheran Radio app.
 ///
@@ -616,6 +617,11 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
             case .userPaused, .thermalPaused, .securityLocked:
                 #if DEBUG
                 print("[ViewController] viewDidAppear → \(visualState) → SKIPPING auto-play (resurrection prevented)")
+                #endif
+
+            @unknown default:
+                #if DEBUG
+                print("[ViewController] viewDidAppear → unknown visualState → SKIPPING auto-play")
                 #endif
             }
 

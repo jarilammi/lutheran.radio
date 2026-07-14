@@ -18,6 +18,7 @@
 //
 
 import SwiftUI
+import WidgetSurface
 
 /// Pure SwiftUI representation of the now-playing text block + speaker/program photo.
 ///
