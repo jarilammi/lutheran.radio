@@ -7,12 +7,13 @@
 
 import XCTest
 
+@MainActor
 final class Lutheran_RadioUITests: XCTestCase {
 
     var app: XCUIApplication!
 
-    override func setUpWithError() throws {
-        try super.setUpWithError()
+    override func setUp() async throws {
+        try await super.setUp()
 
         // Stop immediately when a failure occurs
         continueAfterFailure = false
@@ -34,10 +35,10 @@ final class Lutheran_RadioUITests: XCTestCase {
         app.launch()
     }
 
-    override func tearDownWithError() throws {
+    override func tearDown() async throws {
         // Clean up resources after each test
         app = nil
-        try super.tearDownWithError()
+        try await super.tearDown()
     }
 
     func testPlayPauseButtonExistsAndTogglesState() {
@@ -65,13 +66,11 @@ final class Lutheran_RadioUITests: XCTestCase {
         XCTAssertTrue(volumeSlider.exists, "Volume slider should exist.")
     }
 
-    @MainActor
     func testExample() throws {
         // Example test case for demonstrating UI test usage
         XCTAssertTrue(app.state == .runningForeground, "App should be running in the foreground.")
     }
 
-    @MainActor
     func testLaunchPerformance() throws {
         if #available(macOS 10.15, iOS 13.0, tvOS 13.0, watchOS 7.0, *) {
             // Re-ensure the isolation arg on the re-launch performed by the metric.

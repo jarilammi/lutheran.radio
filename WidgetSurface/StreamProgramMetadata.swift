@@ -125,7 +125,7 @@ public extension StreamProgramMetadata {
     /// construction. Changes to how program titles or speaker attribution appear on
     /// the system media surface must be implemented here (and the call site updated
     /// if the signature changes). Do not duplicate the if/else ladder elsewhere.
-    public static func nowPlayingDisplayStrings(
+    static func nowPlayingDisplayStrings(
         fromParsed parsed: StreamProgramMetadata?,
         rawFallback raw: String?,
         stationName: String,

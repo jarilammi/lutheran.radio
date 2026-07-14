@@ -10550,7 +10550,8 @@
             "value" : "Enheten het"
           }
         }
-      }
+      },
+      "extractionState" : "stale"
     },
     "stream_unavailable_message" : {
       "localizations" : {

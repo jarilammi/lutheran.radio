@@ -4107,6 +4107,8 @@ extension StreamErrorType {
         switch self {
         case .securityFailure, .permanentFailure:
             return true
+        case .transientFailure, .unknown:
+            return false
         @unknown default:
             return false
         }

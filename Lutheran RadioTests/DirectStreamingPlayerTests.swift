@@ -191,9 +191,9 @@ class DirectStreamingPlayerTests: XCTestCase {
         var mockLatencies: [String: TimeInterval] = [:]
         var serverSelectionCallCount = 0
         
-        // Callbacks
-        var onStatusChange: (@Sendable (Bool, String) -> Void)?
-        var onMetadataChange: (@Sendable (String?) -> Void)?
+        // Callbacks (test-only; not @Sendable so MainActor-isolated test state can be captured safely)
+        var onStatusChange: ((Bool, String) -> Void)?
+        var onMetadataChange: ((String?) -> Void)?
         private weak var delegate: AnyObject?
         
         // Mock data
@@ -320,13 +320,13 @@ class DirectStreamingPlayerTests: XCTestCase {
     
     // MARK: - Setup & Teardown
     
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
+        try await super.setUp()
         mockAudioSession = MockAudioSession()
         mockNetworkMonitor = MockNetworkPathMonitor()
         player = MockDirectStreamingPlayer()
         
-        // Set up callbacks (still works perfectly with @MainActor + @Sendable)
+        // Set up callbacks on the main actor; mock invokes them from main-queue dispatches.
         player.onStatusChange = { [weak self] isPlaying, statusText in
             self?.lastStatusPlaying = isPlaying
             self?.lastStatusText = statusText
@@ -339,14 +339,14 @@ class DirectStreamingPlayerTests: XCTestCase {
         }
     }
     
-    override func tearDown() {
+    override func tearDown() async throws {
         player?.clearCallbacks()
         player = nil
         mockAudioSession = nil
         mockNetworkMonitor = nil
         statusChangeExpectation = nil
         metadataChangeExpectation = nil
-        super.tearDown()
+        try await super.tearDown()
     }
     
     // MARK: - Initialization Tests
@@ -686,9 +686,8 @@ class DirectStreamingPlayerTests: XCTestCase {
     // MARK: - Memory Management Tests
     
     func testPlayerDeallocation() {
-        weak var weakPlayer = player
-        
         player.clearCallbacks()
+        weak let weakPlayer = player
         player = nil
         
         XCTAssertNil(weakPlayer)

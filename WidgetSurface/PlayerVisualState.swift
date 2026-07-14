@@ -612,7 +612,7 @@ public extension PlayerVisualState {
     /// Note: .cleared is set explicitly by privacy reset (never returned from this mapper);
     /// status callbacks after clear are forced to preserve the .cleared visual by caller logic
     /// that also inspects PlaybackIntent.
-    public static func from(
+    static func from(
         status: PlayerStatus,
         isManualPause: Bool,
         hasEverPlayed: Bool,
@@ -667,7 +667,7 @@ public extension PlayerVisualState {
     ///   ``PlayerControlPresentation``, ``PlayerViewModel/statusPresentation``,
     ///   `SimpleEntry.statusPresentation`, CODING_AGENT.md (cache derived values on @Observable,
     ///   narrow inputs for leaves, WidgetKit/ActivityKit snapshot constraints).
-    public func makeStatusPresentation() -> PlayerStatusPresentation {
+    func makeStatusPresentation() -> PlayerStatusPresentation {
         switch self {
         case .playing:
             return PlayerStatusPresentation(
@@ -745,7 +745,7 @@ public extension PlayerVisualState {
     /// Do not duplicate the mapping logic in view bodies, region builders, or WidgetDisplayModels.
     /// All play/pause `Image(systemName:)` + tint decisions for widgets, Live Activities,
     /// and the Control widget must flow through `makeControlPresentation()`.
-    public func makeControlPresentation() -> PlayerControlPresentation {
+    func makeControlPresentation() -> PlayerControlPresentation {
         let imageName = isActivelyPlaying ? "pause.fill" : "play.fill"
         // Use explicit UIColor initializer so the conversion is visible and consistent
         // with the UIColor-based policy properties on PlayerVisualState. The resulting

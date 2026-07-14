@@ -2282,7 +2282,7 @@ final class SharedPlayerManagerEventTests: XCTestCase {
             "Permanent failure grey UI must not imply sticky pause intent"
         )
 
-        let permSharedState = await manager.loadSharedState()
+        let permSharedState = manager.loadSharedState()
         XCTAssertTrue(
             permSharedState.hasError,
             "Persisted widget snapshot must carry hasError for permanent stream failure"

@@ -705,7 +705,12 @@ final class WidgetRefreshManager: @unchecked Sendable {
         switch event {
         case .visualStateDidChange(let carriedVisual):
             visualState = carriedVisual
+        case .playbackIntentChanged, .streamDidStart, .streamDidPause, .streamDidStop,
+             .streamDidFail, .metadataDidUpdate, .persistedWidgetStateDidUpdate:
+            visualState = persisted?.visualState ?? .prePlay
         @unknown default:
+            // `PlayerEvent` is `@frozen public` in `WidgetSurface`; future additive cases
+            // fall back to the persisted snapshot like other non-visual events.
             visualState = persisted?.visualState ?? .prePlay
         }
 
