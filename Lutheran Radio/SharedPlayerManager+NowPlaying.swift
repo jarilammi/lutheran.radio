@@ -267,14 +267,29 @@ extension SharedPlayerManager {
         // Now Playing + Live Activity IPC are skipped under UITestMode (matches ``setPlaying()``
         // isolation). Optional imperative widget refresh remains available for tests that enable
         // the WidgetRefreshManager gate-observation bypass seam.
-        if !Self.isRunningInUITestMode {
-            await updateNowPlayingInfo()
+        #if DEBUG
+        let bypassNowPlayingUnderUITest = unsafe Self._test_bypassUITestModeForNowPlayingUpdates
+        let allowsNowPlaying = !Self.isRunningInUITestMode || bypassNowPlayingUnderUITest
+        #else
+        let allowsNowPlaying = !Self.isRunningInUITestMode
+        #endif
 
+        if allowsNowPlaying {
+            await updateNowPlayingInfo()
+            #if DEBUG
+            Self._test_recordMediaSurfaceCoordinationStep(.nowPlayingUpdate)
+            #endif
+        }
+
+        if !Self.isRunningInUITestMode {
             switch liveActivity {
             case .none:
                 break
             case .updateIfActive:
                 await RadioLiveActivityManager.shared.updateCurrentActivity()
+                #if DEBUG
+                Self._test_recordMediaSurfaceCoordinationStep(.liveActivityUpdate)
+                #endif
             case .startOrUpdate:
                 // SAFETY: `currentActivity` is MainActor-isolated; read it on the main actor
                 // before choosing start vs. update from the SharedPlayerManager actor.
@@ -283,10 +298,20 @@ extension SharedPlayerManager {
                 }
                 if needsStart {
                     await RadioLiveActivityManager.shared.startActivity()
+                    #if DEBUG
+                    Self._test_recordMediaSurfaceCoordinationStep(.liveActivityStart)
+                    #endif
                 } else {
                     await RadioLiveActivityManager.shared.updateCurrentActivity()
+                    #if DEBUG
+                    Self._test_recordMediaSurfaceCoordinationStep(.liveActivityUpdate)
+                    #endif
                 }
             }
+        } else if liveActivity != .none {
+            #if DEBUG
+            Self._test_recordMediaSurfaceCoordinationStep(.liveActivitySkippedUnderTest)
+            #endif
         }
 
         if widgetRefresh {
@@ -297,8 +322,56 @@ extension SharedPlayerManager {
                 hasError: shared.hasError,
                 immediate: widgetRefreshImmediate
             )
+            #if DEBUG
+            Self._test_recordMediaSurfaceCoordinationStep(.widgetRefresh)
+            #endif
         }
     }
+
+    #if DEBUG
+    /// Recorded coordination steps from ``refreshAllMediaSurfaces(liveActivity:widgetRefresh:widgetRefreshImmediate:)``.
+    ///
+    /// Used by unit tests to assert Now Playing → Live Activity → widget refresh ordering
+    /// without ActivityKit IPC under the XCTest host.
+    enum MediaSurfaceCoordinationStep: Sendable, Equatable {
+        case nowPlayingUpdate
+        case liveActivitySkippedUnderTest
+        case liveActivityUpdate
+        case liveActivityStart
+        case widgetRefresh
+    }
+
+    /// When `true`, ``refreshAllMediaSurfaces(liveActivity:widgetRefresh:widgetRefreshImmediate:)``
+    /// writes to `MPNowPlayingInfoCenter` even under ``isRunningInUITestMode``.
+    nonisolated(unsafe) private static var _test_bypassUITestModeForNowPlayingUpdates = false
+
+    nonisolated(unsafe) private static var _test_recordMediaSurfaceCoordinationOrder = false
+
+    nonisolated(unsafe) private static var _test_mediaSurfaceCoordinationStepLog: [MediaSurfaceCoordinationStep] = []
+
+    /// Enables Now Playing updates during XCTest runs (no Live Activity IPC).
+    nonisolated static func _test_setBypassUITestModeForNowPlayingUpdates(_ bypass: Bool) {
+        unsafe _test_bypassUITestModeForNowPlayingUpdates = bypass
+    }
+
+    /// Enables append-only recording of media-surface coordination steps.
+    nonisolated static func _test_setRecordMediaSurfaceCoordinationOrder(_ record: Bool) {
+        unsafe _test_recordMediaSurfaceCoordinationOrder = record
+    }
+
+    nonisolated static func _test_clearMediaSurfaceCoordinationOrderLog() {
+        unsafe _test_mediaSurfaceCoordinationStepLog = []
+    }
+
+    nonisolated static func _test_mediaSurfaceCoordinationOrderLog() -> [MediaSurfaceCoordinationStep] {
+        unsafe _test_mediaSurfaceCoordinationStepLog
+    }
+
+    private static func _test_recordMediaSurfaceCoordinationStep(_ step: MediaSurfaceCoordinationStep) {
+        guard unsafe _test_recordMediaSurfaceCoordinationOrder else { return }
+        unsafe _test_mediaSurfaceCoordinationStepLog.append(step)
+    }
+    #endif
 
     /// Clears the system Now Playing session (Lock Screen, Control Center, Dynamic Island
     /// media card) and detaches the secured AVPlayer item without blocking cold launch.

@@ -24,7 +24,7 @@ final class WidgetDisplayModelsTests: XCTestCase {
 
     private let languageName = "TestLang"
     private let programTitle = "Sunday Sermon"
-    private let speaker = "Pastor Smith"
+    private let speaker = "Guest Speaker"
 
     private var liveFallback: String {
         widgetLiveStreamFallback(languageName: languageName)

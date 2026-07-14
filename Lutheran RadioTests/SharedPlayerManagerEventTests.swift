@@ -134,6 +134,9 @@ final class SharedPlayerManagerEventTests: XCTestCase {
             WidgetRefreshManager._test_setRecordRefreshIfNeededGateOutcomes(false)
             WidgetRefreshManager._test_setSuppressPlayerEventObservation(false)
             SharedPlayerManager._test_setSimulateWidgetProcessContext(false)
+            SharedPlayerManager._test_setBypassUITestModeForNowPlayingUpdates(false)
+            SharedPlayerManager._test_setRecordMediaSurfaceCoordinationOrder(false)
+            SharedPlayerManager._test_clearMediaSurfaceCoordinationOrderLog()
         }
         try await super.tearDown()
     }
@@ -2590,6 +2593,68 @@ final class SharedPlayerManagerEventTests: XCTestCase {
             XCTAssertTrue(
                 WidgetRefreshManager._test_refreshIfNeededGateOutcomeLog().contains(.passedGuards),
                 "Optional widget refresh must pass gates when widgetRefresh is true"
+            )
+        }
+    }
+
+    /// Protects Tier 4 ``refreshAllMediaSurfaces(liveActivity:widgetRefresh:widgetRefreshImmediate:)``
+    /// coordination ordering: Now Playing update precedes widget refresh; Live Activity IPC is
+    /// skipped under UITestMode without blocking the NP path.
+    ///
+    /// Also verifies ``updateNowPlayingInfo()`` writes the ``StreamProgramMetadata/nowPlayingDisplayStrings(fromParsed:rawFallback:stationName:languageName:)``
+    /// SSOT into `MPNowPlayingInfoCenter` when the DEBUG bypass seam is enabled.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/_test_setBypassUITestModeForNowPlayingUpdates(_:)``,
+    ///   ``SharedPlayerManager/_test_mediaSurfaceCoordinationOrderLog()``,
+    ///   StreamProgramMetadataTests, docs/Widget-Functionality-Roadmap.md (Tier 4).
+    func testRefreshAllMediaSurfacesOrdersNowPlayingBeforeWidgetRefreshAndWritesDisplayStrings() async {
+        let icyTitle = "Guest Speaker - The Good Shepherd"
+        let stationName = String(localized: "lutheran_radio_title", table: "Localizable")
+        let languageCode = SharedPlayerManager.preferredWidgetLanguage()
+        let languageName = SharedPlayerManager.streamForLanguageCode(languageCode).language
+
+        await manager.setPlaying()
+        await manager.didUpdateStreamMetadata(icyTitle)
+
+        let expectedDisplay = StreamProgramMetadata.nowPlayingDisplayStrings(
+            fromParsed: StreamProgramMetadata.from(rawICYMetadata: icyTitle),
+            rawFallback: icyTitle,
+            stationName: stationName,
+            languageName: languageName
+        )
+
+        SharedPlayerManager._test_setBypassUITestModeForNowPlayingUpdates(true)
+        SharedPlayerManager._test_setRecordMediaSurfaceCoordinationOrder(true)
+        SharedPlayerManager._test_clearMediaSurfaceCoordinationOrderLog()
+
+        await MainActor.run {
+            WidgetRefreshManager._test_setBypassUITestModeForRefreshGateObservation(true)
+            WidgetRefreshManager._test_setRecordRefreshIfNeededGateOutcomes(true)
+            WidgetRefreshManager._test_clearRefreshIfNeededGateOutcomeLog()
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+        }
+
+        await manager.refreshAllMediaSurfaces(
+            liveActivity: .updateIfActive,
+            widgetRefresh: true,
+            widgetRefreshImmediate: true
+        )
+
+        let order = SharedPlayerManager._test_mediaSurfaceCoordinationOrderLog()
+        XCTAssertEqual(
+            order,
+            [.nowPlayingUpdate, .liveActivitySkippedUnderTest, .widgetRefresh],
+            "Now Playing must run before widget refresh; LA IPC must be skipped under XCTest"
+        )
+
+        await MainActor.run {
+            let info = MPNowPlayingInfoCenter.default().nowPlayingInfo
+            XCTAssertEqual(info?[MPMediaItemPropertyTitle] as? String, expectedDisplay.title)
+            XCTAssertEqual(info?[MPMediaItemPropertyArtist] as? String, expectedDisplay.artist)
+            XCTAssertEqual(info?[MPNowPlayingInfoPropertyPlaybackRate] as? Double, 1.0)
+            XCTAssertTrue(
+                WidgetRefreshManager._test_refreshIfNeededGateOutcomeLog().contains(.passedGuards),
+                "Widget refresh must still pass gates after Now Playing update"
             )
         }
     }
