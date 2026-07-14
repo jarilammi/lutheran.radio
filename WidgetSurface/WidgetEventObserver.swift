@@ -1,6 +1,6 @@
 //
 //  WidgetEventObserver.swift
-//  Lutheran Radio
+//  WidgetSurface
 //
 //  Created by Jari Lammi on 4.7.2026.
 //
