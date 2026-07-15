@@ -7,7 +7,7 @@
 //  Extension-profile unit tests for ``WidgetLivenessPresentation`` passive vs interactive chrome.
 //
 //  - SeeAlso: ``WidgetLivenessPresentation``, ``SharedPlayerManager/isMainAppProcessRecentlyActive()``,
-//    docs/Widget-Functionality-Roadmap.md (OI-W1), docs/Widget-Presentation-Dataflow.md.
+//    docs/Widget-Functionality-Roadmap.md (force-quit liveness window), docs/Widget-Presentation-Dataflow.md.
 //
 
 import XCTest

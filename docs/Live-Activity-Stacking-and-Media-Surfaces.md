@@ -114,7 +114,7 @@ await refreshAllMediaSurfaces(
 
 ---
 
-## Formatter Parity (OI-W4 Resolution)
+## Formatter Parity
 
 Program title and speaker attribution use a single SSOT:
 

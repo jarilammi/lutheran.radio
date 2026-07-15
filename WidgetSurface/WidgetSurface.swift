@@ -5,10 +5,14 @@
 //  Created by Jari Lammi on 14.7.2026.
 //
 //  Embedded framework for cross-process widget and Live Activity presentation types.
-//  Presentation-only — no security logic (see Core/).
+//  Presentation-only — no security logic (see Core/). Linked by the main app (embed),
+//  LutheranRadioWidgetExtension (link only), LutheranRadioWidgetTests, and WidgetSurfaceTests.
+//
+//  Membership-exception execution SSOT remains under Lutheran Radio/ (SharedPlayerManager,
+//  WidgetDisplayModels, WidgetRefreshManager) — see CODING_AGENT.md cross-target section.
 //
 //  - SeeAlso: docs/Widget-Presentation-Dataflow.md, docs/Widget-Functionality-Roadmap.md,
-//    CODING_AGENT.md (WidgetSurface framework surface).
+//    CODING_AGENT.md (Cross-target widget sources and WidgetSurface), README.md SSOT.
 //
 
 import Foundation

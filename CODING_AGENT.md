@@ -179,40 +179,61 @@ The architecture has converged on a small number of authoritative paths. New cod
 
 Bypassing these for new logic creates drift and is discouraged.
 
-**Cross-target shared source files (non-Core)**
+**Cross-target widget sources and `WidgetSurface` (non-Core)**
 
-The following source files (physically under `Lutheran Radio/`) are intentionally
-compiled into *both* the main "Lutheran Radio" app target and
-`LutheranRadioWidgetExtension`:
+Widget / Live Activity presentation and state use **two layers**. Security stays
+exclusively in `Core/` — never duplicate DNS, certificate, or security-model
+logic in either layer.
+
+### 1. `WidgetSurface` embedded framework (presentation-only)
+
+`WidgetSurface/` holds pure presentation types, intent **planning**, timeline
+blueprints, and liveness policy. The main app **embeds** the framework; the
+widget extension and widget unit tests **link** it (`import WidgetSurface`).
+
+Includes (non-exhaustive): `PlayerVisualState.swift` (`PlayerVisualState`,
+`PlaybackIntent`, `PlayerEvent`, presentation mappers), `StreamProgramMetadata.swift`,
+`LutheranRadioLiveActivityAttributes.swift`, `WidgetEventObserver.swift`,
+`WidgetIntentCoordinators.swift`, `WidgetTimelineEntryFactory.swift`,
+`WidgetLivenessPresentation.swift`, `WidgetNowPlayingDisplay.swift`,
+`PlayerStatus.swift`, `StreamErrorType.swift`.
+
+**Rule**: No security logic in `WidgetSurface`. Prefer this framework for new
+presentation-only shared code rather than membership exceptions.
+
+### 2. Membership-exception sources under `Lutheran Radio/`
+
+These files stay under `Lutheran Radio/` and are compiled into the main app,
+`LutheranRadioWidgetExtension`, and `LutheranRadioWidgetTests` via File System
+Synchronized Group `membershipExceptions` (they depend on `SharedPlayerManager`
+and cannot live in `WidgetSurface` without a circular dependency):
 
 - `SharedPlayerManager.swift` (actor + nested `PersistedWidgetState` + static
   facades for persistence and signaling)
-- `PlayerVisualState.swift` (`PlayerVisualState`, `PlaybackIntent`, related enums)
+- `WidgetDisplayModels.swift` (`WidgetIntentExecution`, provider snapshot
+  resolver / assembly)
 - `WidgetRefreshManager.swift` (debouncing + active-widgets privacy gate)
-- `StreamProgramMetadata.swift`
-- `LutheranRadioLiveActivityAttributes.swift`
-- `WidgetEventObserver.swift` (lightweight common observer for `PlayerEvent`
-  streams and Live Activity attribute events)
+- `Localizable.xcstrings` (extension + extension-profile tests)
 
-Mechanism: Xcode File System Synchronized Group with `membershipExceptions`
-in the project file (no separate `Shared/` directory or second framework target
-is required today).
+These implement the cross-process widget state and intent **execution** SSOTs.
+Providers, intents, and Live Activities obtain state via the documented snapshot
+paths above. Files carry "SHARED" headers with invariants where applicable.
 
-These files implement the widget/Live Activity state SSOTs. All widget providers,
-intents, and Live Activities must obtain state via the documented paths above.
-The files carry prominent "SHARED" file headers with invariants.
+**Rule**: Do not add new files to this membership-exception set without also:
+- Adding the identical header block (when applicable).
+- Updating this section, `README.md`, and the file headers.
+- Verifying the code remains appropriate outside `Core/` (no security).
 
-**Rule**: Do not add new files to this cross-target set without also:
-- Adding the identical header block.
-- Updating this section and the file headers.
-- Verifying that the code remains appropriate outside `Core/`.
+### Widget unit-test targets (default `Lutheran Radio.xctestplan`)
 
-Security-related code, certificate handling, or DNS validation is **never**
-allowed here — it belongs exclusively in `Core/Configuration/`, `Core/Actors/`,
-or `Core/Security/`.
+| Target | Compile profile | Role |
+|--------|-----------------|------|
+| `Lutheran RadioTests` | Main app (`LUTHERAN_MAIN_APP`) | Player events, SPM seams, main-host widget contracts |
+| `LutheranRadioWidgetTests` | Extension (**no** `LUTHERAN_MAIN_APP`); same SPM membership set as the extension | Intent `perform*` SSOT, coordinators, factory, liveness under extension profile |
+| `WidgetSurfaceTests` | Pure `WidgetSurface` | Swift Testing for framework-only symbols |
+| `CoreTests` | `Core` | Security module |
 
-See the file headers and `README.md` "Single Sources of Truth — Key Files" for
-more.
+See `docs/Widget-Functionality-Roadmap.md` and `README.md` "Single Sources of Truth".
 
 ### Error Handling
 - Prefer explicit modeling of permanent vs transient errors (see the existing `hasPermanentError` + `StreamErrorType` pattern) over boolean flags or implicit assumptions.
@@ -356,9 +377,10 @@ These guidelines exist because the cost of a force-unwrap or a data race in a ba
 | `Core/Actors/SecurityModelValidator.swift`        | Actor-isolated DNS TXT security model validation                               | `Span<UInt8>` / `UTF8Span` TXT parser; zero-copy `rdata` borrow (no `Data` copy, no per-label `subdata`); `dns_sd.h` + 1-hour success cache |
 | `Core/Security/`                                  | `CertificateFingerprint` + `CertificateValidator` (Core framework)             | Security-sensitive; compiled into main app + widget extension                  |
 | `Info.plist`                                      | ATS pinning (SPKI + domain)                                                    | Never edit without updating `SecurityConfiguration` and validator              |
-| `LutheranRadioWidget/`                            | Home-screen widget                                                             | Must respect same security rules via shared `Core` module                      |
+| `LutheranRadioWidget/`                            | Home-screen / Control / LA SwiftUI shells + AppIntents                         | Thin delegates; presentation via `import WidgetSurface`; same `Core` security rules |
+| `WidgetSurface/`                                  | Presentation-only embedded framework (visual state, coordinators, timeline factory, liveness, metadata display) | App embeds; extension + widget tests link. **No** security logic. See cross-target section. |
 | `docs/`                                           | All architecture & security decision records                                   | Read before any major change                                                   |
-| `SharedPlayerManager.swift` + `PlayerVisualState.swift` (and 4 siblings) | Cross-target non-security state for widgets / Live Activities (via synchronized group membership) | Single physical copy. See "Cross-target shared source files (non-Core)" above and the SHARED header in each file. Never duplicate widget state logic. Includes `WidgetEventObserver` for consolidated event/attribute observation. |
+| `SharedPlayerManager.swift` + `WidgetDisplayModels.swift` + `WidgetRefreshManager.swift` | Membership-exception SSOT: actor state, intent execution, widget refresh | Compiled into app + extension + `LutheranRadioWidgetTests`. Presentation types live in `WidgetSurface/`. Never duplicate widget state logic. |
 
 ### Core Framework Surface Area (Mandatory Knowledge)
 

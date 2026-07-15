@@ -13,7 +13,7 @@ The finish line is a **hybrid, two-zone model** — not a migration from snapsho
 | Zone | Mechanism | Ultimate state |
 |------|-----------|----------------|
 | Main app | `SharedPlayerManager` actor + imperative snapshot saves + `PlayerEvent` | Hybrid: events are an **additive** in-process consumer path; authoritative mutations and snapshot writes remain primary |
-| Extension + LA presentation | `PersistedWidgetState` → `SimpleEntry` / `ContentState` + `reloadTimelines` / LA push | **Snapshot-driven permanently**; extension never observes `PlayerEvent` (OI-W2) |
+| Extension + LA presentation | `PersistedWidgetState` → `SimpleEntry` / `ContentState` + `reloadTimelines` / LA push | **Snapshot-driven permanently**; extension never observes `PlayerEvent` |
 
 **Cross-process (widgets, Control Center, Live Activity UI)**
 
@@ -61,7 +61,7 @@ The finish line is a **hybrid, two-zone model** — not a migration from snapsho
 
 ---
 
-**Current State (as of 2026-07-14)**
+**Current State (as of 2026-07-15)**
 
 ## Completed
 
@@ -84,6 +84,7 @@ The finish line is a **hybrid, two-zone model** — not a migration from snapsho
 - **Legacy forcing shim** `forcePersistVisualState(_:language:)` documented and scoped to widget optimistic paths only; `emit(_:)` guard suppresses `PlayerEvent` yields in widget process.
 - **Liveness heuristic SSOT:** `SharedPlayerManager.isMainAppProcessRecentlyActive()` (60 s window + `lastUpdateTime = 0` termination sentinel). Family views delegate the passive-branch decision to ``WidgetLivenessPresentation/shouldShowPassiveTapToOpen(isMainAppRecentlyActive:)`` (heartbeat remains in `SharedPlayerManager`). Protected by `testForceStaleLivenessMakesIsRecentlyActiveFalse_AndBumpRestores`.
 - **WidgetSurface intent + entry SSOT (2026-07-14):** ``WidgetIntentCoordinators`` (toggle plans), ``WidgetIntentExecution`` in `WidgetDisplayModels.swift` (cross-target side effects), ``WidgetTimelineEntryFactory`` (home/control blueprints). Extension `perform()` and Provider paths are thin delegates. Toggle-mapping tests in `WidgetIntentContractTests` call coordinators directly (no mirror helpers).
+- **WidgetSurface + extension-profile tests permanent-doc closeout (2026-07-15):** `CODING_AGENT.md` / `Agents.md` and `README.md` document the two-layer model (`WidgetSurface` + membership-exception SPM sources), default test-plan membership of `LutheranRadioWidgetTests` / `WidgetSurfaceTests`, and widget-only verification commands.
 - **WML-1 (2026-06-11):** Pause retains parsed metadata in snapshot for subdued widget display; resume rehydrates when needed (**P5-12**).
 
 ### Refresh, Teardown & Live Activity
@@ -155,7 +156,7 @@ Leaf views (`WidgetMetadataRegion`, play/pause buttons) must not re-derive canon
 
 ## Open Issues (Tracked Outside Tier Backlog)
 
-### OI-W1 — Force-quit liveness window (accepted)
+### Force-quit liveness window (accepted)
 
 **Status:** Documented, no code change planned
 
@@ -163,30 +164,30 @@ After abrupt force-quit, `lastUpdateTime` may remain non-zero for up to **60 sec
 
 **SeeAlso:** `forceStaleLivenessTimestampForTermination()`, `isMainAppProcessRecentlyActive()`.
 
-### OI-W2 — Widget extension cannot observe `PlayerEvent` (permanent)
+### Widget extension cannot observe `PlayerEvent` (permanent)
 
 **Status:** By design
 
-Emission is guarded to the main app (`isRunningInWidgetProcess`). Extension processes rely on snapshot reads + `refreshVisualStateFromPersistence()` hygiene. Any future "consolidation" must preserve optimistic `forcePersistVisualState` and provider read-refresh.
+Emission is guarded to the main app (`isRunningInWidgetProcess`). Extension processes rely on snapshot reads + `refreshVisualStateFromPersistence()` hygiene. Any future "consolidation" must preserve optimistic `persistOptimisticWidgetSnapshot` and provider read-refresh.
 
 **SeeAlso:** Event-Driven Refactor Roadmap "Cross-process and extension reality".
 
 ### Widget extension unit test coverage
 
-**Status:** **Closed (PR 3, 2026-07-15)** — extension-profile target ships
+**Status:** **Closed (2026-07-15)** — `WidgetSurface` framework, extension-profile tests, and permanent-doc closeout ship
 
 Widget contract tests still run in `Lutheran RadioTests` (main-app host) via DEBUG seams. In addition:
 
 | Target | Compile profile | Coverage |
 |--------|-----------------|----------|
-| `LutheranRadioWidgetTests` | **No** `LUTHERAN_MAIN_APP` (same SPM set as extension) | 49 tests — coordinators (incl. LA multi-source resolve), factory, liveness, presentation mappers, metadata resolver, Provider assembly, optimistic intent / ``WidgetIntentExecution/perform*``, durable LA toggle mirror, refresh subset |
-| `WidgetSurfaceTests` | Pure `WidgetSurface` framework | 9 Swift Testing cases — coordinators (incl. LA resolve priority), liveness, factory, mappers |
+| `LutheranRadioWidgetTests` | **No** `LUTHERAN_MAIN_APP` (same SPM set as extension) | Coordinators (incl. LA multi-source resolve), factory, liveness, presentation mappers, metadata resolver, Provider assembly, optimistic intent / ``WidgetIntentExecution/perform*``, durable LA toggle mirror, refresh subset |
+| `WidgetSurfaceTests` | Pure `WidgetSurface` framework | Swift Testing — coordinators (incl. LA resolve priority), liveness, factory, mappers |
 
-AppIntent `perform()` bodies are thin delegates to ``WidgetIntentExecution/perform*``; those entry points compile and run under the extension profile in `LutheranRadioWidgetTests`.
+AppIntent `perform()` bodies are thin delegates to ``WidgetIntentExecution/perform*``; those entry points compile and run under the extension profile in `LutheranRadioWidgetTests`. Both targets are in the default `Lutheran Radio.xctestplan`. Permanent agent docs (`CODING_AGENT.md` / `Agents.md`, `README.md`) describe the two-layer model (`WidgetSurface` + membership exceptions).
 
-**SeeAlso:** ``WidgetIntentExecution``, ``WidgetIntentCoordinators``, `LutheranRadioWidgetTests/`, `WidgetSurfaceTests/`, docs/Widget-Presentation-Dataflow.md.
+**SeeAlso:** ``WidgetIntentExecution``, ``WidgetIntentCoordinators``, `LutheranRadioWidgetTests/`, `WidgetSurfaceTests/`, docs/Widget-Presentation-Dataflow.md, CODING_AGENT.md (cross-target widget sources).
 
-### OI-W4 — Now Playing + Live Activity stacking (user education / strategy)
+### Now Playing + Live Activity stacking (user education / strategy)
 
 **Status:** Documented (2026-07-14); dual-card UX accepted
 
@@ -357,10 +358,11 @@ The next item is always the highest-priority unchecked entry in the backlog abov
 
 **Recommended starting order (2026-07-15):**
 
-1. ~~**`LutheranRadioWidgetTests` target**~~ — **Done**: extension-profile target + 49 tests; pure `WidgetSurfaceTests` (9).
-2. Doc closeout — reflect extension-profile test targets in README + `CODING_AGENT.md` cross-target section.
+1. ~~**`LutheranRadioWidgetTests` target**~~ — **Done**: extension-profile target + pure `WidgetSurfaceTests`.
+2. ~~**Permanent-doc closeout for WidgetSurface + extension-profile tests**~~ — **Done**: `CODING_AGENT.md` / `Agents.md` two-layer cross-target section; README SSOT + verification for widget unit targets.
 3. Tier 1 optional `WidgetDisplayProjection` bundle (only if future call-site churn warrants it).
 4. Tier 5 remaining test-index maintenance as new contracts land.
+5. Optional later: move `WidgetDisplayModels.swift` / `WidgetRefreshManager.swift` into `WidgetSurface/` when coupling allows.
 
 Each micro-step: read target files first, minimal diff, apply the documentation standards above, update this roadmap Completed + Update Log, run build + test gates per `CODING_AGENT.md`.
 
@@ -391,6 +393,7 @@ For presentation mapping rules and termination invariants, use [`docs/Widget-Pre
 
 ## Update Log
 
+- **2026-07-15:** Permanent-doc closeout for `WidgetSurface` + extension-profile tests — `CODING_AGENT.md` / `Agents.md` cross-target section rewritten for `WidgetSurface` + membership-exception SSOT; README SSOT, widget functionality table, and Agent Verification Commands document `LutheranRadioWidgetTests` / `WidgetSurfaceTests` (default test plan); `WidgetSurface` target sets `SWIFT_STRICT_MEMORY_SAFETY = YES` parity with `Core`.
 - **2026-07-15:** LA toggle power-on hygiene — factory reset clears durable mirror + records boot identity; ``shouldDistrustDurableMirrorPlayPlanning()`` (termination sentinel or reboot) blocks durable-mirror-alone **play**; ContentState still trusted; coordinator + extension + factory-reset tests.
 - **2026-07-15:** Lock-screen LA toggle multi-source planning — ContentState + durable App Group mirror before extension actor defaults; ``resolveLiveActivityToggleVisualState``; mirror write on every LA push; regression tests for empty-session pause plan.
 - **2026-07-15:** `LutheranRadioWidgetTests` extension-profile target (no `LUTHERAN_MAIN_APP`; links WidgetSurface + Core; SPM membershipExceptions); ``WidgetIntentExecution/perform*`` AppIntent SSOT; 43 + 8 WidgetSurfaceTests green; widget extension unit test coverage closed. Canonical references only (no temporary handoff docs).
@@ -399,7 +402,7 @@ For presentation mapping rules and termination invariants, use [`docs/Widget-Pre
 - **2026-07-14:** Now Playing formatter tests — `StreamProgramMetadataTests` adds `nowPlayingDisplayStrings` matrix + widget title alignment; `SharedPlayerManagerEventTests` adds `testRefreshAllMediaSurfacesOrdersNowPlayingBeforeWidgetRefreshAndWritesDisplayStrings` (DEBUG coordination-order log + NP bypass seam); Tier 2 play/pause drain method names indexed.
 - **2026-07-14:** Provider synthesis — ``WidgetProviderSnapshotResolver/assemblePresentationSlices(from:)`` + `WidgetProviderPresentationSlices`; home-widget `Provider` and Control-widget `Value` use shared assembly; `WidgetDisplayModelsTests` (26 total) adds `resolveWithActorHygiene` + entry/Value synthesis contracts.
 - **2026-07-14:** Presentation mapper matrices — `PlayerPresentationMapperTests.swift` (status + control SSOT for all six `PlayerVisualState` cases); Tier 5 test index closed; `WidgetRefreshManager` test count corrected to 20.
-- **2026-07-14:** Tier 4 complete — [`docs/Live-Activity-Stacking-and-Media-Surfaces.md`](Live-Activity-Stacking-and-Media-Surfaces.md) (stacking matrix, LA start policy, push-cost validation); ``refreshAllMediaSurfaces`` wrapper + call-site consolidation; OI-W4 closed; README functionality table; `testRefreshAllMediaSurfacesCompletesAndOptionalWidgetRefreshPassesGates`.
+- **2026-07-14:** Tier 4 complete — [`docs/Live-Activity-Stacking-and-Media-Surfaces.md`](Live-Activity-Stacking-and-Media-Surfaces.md) (stacking matrix, LA start policy, push-cost validation); ``refreshAllMediaSurfaces`` wrapper + call-site consolidation; dual-card stacking documented as accepted; README functionality table; `testRefreshAllMediaSurfacesCompletesAndOptionalWidgetRefreshPassesGates`.
 - **2026-07-13:** Tier 3 complete — ``WidgetProviderSnapshotResolver`` + provider audit table; imperative ``refreshIfNeeded`` dedup in ``performActualSave``, ``didUpdateStreamMetadata``, ``updateUserDefaultsLanguage``; ``refreshUsesImmediateDelivery`` urgency parity on event path; removed `setupWidgetActionPolling`; Control widget Provider aligned with home-widget hygiene; tests in `WidgetRefreshManagerEventTests` + `WidgetDisplayModelsTests`.
 - **2026-07-13:** Tier 2 complete — `WidgetDisplayModelsTests.swift` (resolver matrix), `WidgetIntentContractTests.swift` (pending-action dedup, instant-feedback expiry, optimistic persist contract, widget switch SSOT); `forcePersistVisualState` renamed to `persistOptimisticWidgetSnapshot` with deprecated forwarding wrapper.
 - **2026-07-13:** Tier 1 — Control widget `Value` pre-derivation (`statusPresentation` + `controlPresentation` in Provider; toggle label consumes narrow fields; symmetric with `SimpleEntry`).
@@ -407,7 +410,7 @@ For presentation mapping rules and termination invariants, use [`docs/Widget-Pre
 - **2026-07-13:** Tier 1 complete — narrow family view inputs (`LutheranRadioWidgetEntryView` projection) and LA expanded-region `statusPres` dedup (outer `dynamicIsland` closure).
 - **2026-07-10:** Tier 2 backlog: rename `forcePersistVisualState` → `persistOptimisticWidgetSnapshot` (permanent widget infrastructure naming); consolidation inventory updated.
 - **2026-07-10:** Added **Target Architecture (Ultimate Goal)** section (two-zone hybrid model, permanent snapshot cross-process boundary, definition of “done”) and Tier 3 scope note clarifying consolidation is main-app refresh dedup only.
-- **2026-07-10:** Initial roadmap drafted from codebase inventory + canonical docs (`Widget-Presentation-Dataflow.md`, `Event-Driven-Refactor-Roadmap.md`, `cold-launch-streamplay-regression-checklist.md`, `SharedPlayerManager+NowPlaying.swift`, `StreamProgramMetadata.swift`). Completed section consolidates control presentation migration, Provider/LA pre-derivation, memory-only snapshot policy, refresh/teardown/event-consumer tests, and cross-process intent SSOT. Open issues OI-W1–W4 recorded. Backlog Tiers 1–5 populated; Tier 2 tests and Tier 1 presentation hygiene are highest priority.
+- **2026-07-10:** Initial roadmap drafted from codebase inventory + canonical docs (`Widget-Presentation-Dataflow.md`, `Event-Driven-Refactor-Roadmap.md`, `cold-launch-streamplay-regression-checklist.md`, `SharedPlayerManager+NowPlaying.swift`, `StreamProgramMetadata.swift`). Completed section consolidates control presentation migration, Provider/LA pre-derivation, memory-only snapshot policy, refresh/teardown/event-consumer tests, and cross-process intent SSOT. Open issues (force-quit liveness, extension event isolation, test coverage, media stacking) recorded. Backlog Tiers 1–5 populated; Tier 2 tests and Tier 1 presentation hygiene are highest priority.
 
 ---
 

@@ -10,7 +10,7 @@
 //
 //  - SeeAlso: ``SharedPlayerManager/isMainAppProcessRecentlyActive()``,
 //    ``SharedPlayerManager/forceStaleLivenessTimestampForTermination()``,
-//    docs/Widget-Functionality-Roadmap.md (OI-W1), CODING_AGENT.md.
+//    docs/Widget-Functionality-Roadmap.md (force-quit liveness window), CODING_AGENT.md.
 //
 
 import Foundation
@@ -34,7 +34,7 @@ public enum WidgetLivenessPresentation {
     /// Whether family views should render the passive `tap_to_open` launch surface.
     ///
     /// Post-termination sentinel (`lastUpdateTime == 0`) yields `true` immediately via the SSOT check.
-    /// Force-quit may leave a sub-60 s window where interactive chrome still appears (OI-W1, accepted).
+    /// Force-quit may leave a sub-60 s window where interactive chrome still appears (accepted; no code change planned).
     ///
     /// - Parameter isMainAppRecentlyActive: Result of ``SharedPlayerManager/isMainAppProcessRecentlyActive()``.
     /// - Returns: `true` when only the passive branch should render.

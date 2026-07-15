@@ -11,7 +11,7 @@
 //  links correctly into the extension-profile test host.
 //
 //  - SeeAlso: ``WidgetIntentCoordinators``, docs/Widget-Functionality-Roadmap.md,
-//    docs/WidgetSurface-OI-W3-Plan-and-Status.md (PR 3).
+//    CODING_AGENT.md (cross-target widget sources and WidgetSurface).
 //
 
 import XCTest
