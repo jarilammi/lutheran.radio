@@ -7,86 +7,66 @@
 
 // SHARED: Cross-target source (main app + LutheranRadioWidgetExtension)
 //
-// Single physical file compiled into both targets.
+// Single physical file compiled into both targets via membershipExceptions.
 //
-// Purpose:
-// Owns the metadata/emphasis presentation axis for widgets and Live Activities
-// (`WidgetMetadataEmphasis`, `WidgetNowPlayingDisplayModel`, resolver) and
-// language/flag helpers. Complements the status and control presentation mappers
-// that live on `PlayerVisualState`.
+// Purpose (this file only):
+// - Language/flag display helpers (`displayLanguageName`, `displayFlag`) that consult
+//   ``SharedPlayerManager`` stream lists.
+// - ``WidgetProviderSnapshotResolver`` — Provider hygiene + assembly of narrow presentation
+//   slices from snapshot fields (calls into WidgetSurface mappers/resolvers).
+// - ``WidgetIntentExecution`` — AppIntent perform SSOT and side effects via
+//   ``SharedPlayerManager`` + ``WidgetRefreshManager``.
 //
-// Presentation helpers plus cross-target ``WidgetIntentExecution`` (AppIntent perform
-// SSOT). No security logic and no AVPlayer/streaming ownership.
+// AGENT NOTE: Presentation types and pure mapping live in **WidgetSurface**, not here:
+// - Status/control: ``PlayerVisualState/makeStatusPresentation()``,
+//   ``PlayerVisualState/makeControlPresentation()`` (`WidgetSurface/PlayerVisualState.swift`)
+// - Metadata/emphasis SSOT: ``WidgetMetadataEmphasis``, ``WidgetNowPlayingDisplayModel``,
+//   ``widgetNowPlayingDisplayModel(visualState:streamMetadata:languageName:)``
+//   (`WidgetSurface/WidgetNowPlayingDisplay.swift`)
+// - Intent *plans*: ``WidgetIntentCoordinators``; *blueprints*: ``WidgetTimelineEntryFactory``
+// This file stays cross-target because it must call ``SharedPlayerManager`` (cannot move
+// into WidgetSurface without a circular dependency).
 //
-// - SeeAlso: docs/Widget-Presentation-Dataflow.md (primary reference for the
-//   three-surface snapshot-driven contract), `LutheranRadioWidget.swift`,
-//   `LutheranRadioWidgetLiveActivity.swift`, `PlayerVisualState.swift`,
-//   ``WidgetIntentCoordinators``, CODING_AGENT.md.
+// No security logic and no AVPlayer/streaming ownership.
+//
+// - SeeAlso: docs/Widget-Presentation-Dataflow.md, docs/Widget-Functionality-Roadmap.md,
+//   `WidgetSurface/WidgetNowPlayingDisplay.swift`, ``WidgetIntentCoordinators``,
+//   ``WidgetTimelineEntryFactory``, CODING_AGENT.md (cross-target shared sources).
 
 import ActivityKit
 import Foundation
 import WidgetSurface
 
-// MARK: - Shared Widget / Live Activity Display Models
+// MARK: - Provider assembly & intent execution (cross-target)
 //
-// Three narrow presentation surfaces are consistently derived once at the snapshot /
-// provider level and consumed as value types by WidgetKit and ActivityKit surfaces:
+// Three narrow presentation surfaces are pre-derived once at the snapshot / Provider
+// level and consumed as value types by WidgetKit and ActivityKit:
 //
-// - `statusPresentation: PlayerStatusPresentation` (via `makeStatusPresentation()`)
-// - `controlPresentation: PlayerControlPresentation` (via `makeControlPresentation()`)
-// - `widgetNowPlayingDisplayModel: WidgetNowPlayingDisplayModel` (via `widgetNowPlayingDisplayModel(...)`)
+// - `statusPresentation` — ``PlayerVisualState/makeStatusPresentation()`` (WidgetSurface)
+// - `controlPresentation` — ``PlayerVisualState/makeControlPresentation()`` (WidgetSurface)
+// - `widgetNowPlayingDisplayModel` — ``widgetNowPlayingDisplayModel(...)`` (WidgetSurface)
 //
-// `WidgetMetadataEmphasis` + `WidgetNowPlayingDisplayModel` + the resolver function
-// are the Single Source of Truth for the program-title / speaker-line / emphasis axis
-// (the metadata/emphasis counterpart to the two presentation types on PlayerVisualState).
+// This file does **not** define those types or mapping rules. ``WidgetProviderSnapshotResolver``
+// assembles them after reading ``SharedPlayerManager`` snapshots; leaf views never re-derive.
 //
 // ## Snapshot-Driven Derivation Pattern
 //
-// All three are **pre-derived** at the Provider / top-of-view level:
-//
-// - In home widgets: `SimpleEntry` is populated inside the `Provider`
-//   (`placeholder(in:)`, `snapshot(for:in:)`, `timeline(for:in:)` via `createEntry`).
-//   `LutheranRadioWidgetEntryView` projects the pre-derived values into
-//   `SmallWidgetView`, `MediumWidgetView`, `LargeWidgetView`, and `WidgetMetadataRegion`;
-//   family views receive narrow slices only; no derivation inside `body`.
-// - In Live Activities: `LockScreenLiveActivityView.body` and the outer `dynamicIsland`
-//   closure each compute the three narrow models once near the top, then close over them
-//   for the various regions and sub-layouts.
+// - Home widgets: `SimpleEntry` is populated in `Provider` (`placeholder` / `snapshot` /
+//   `timeline` via `createEntry`). Family views receive narrow slices only.
+// - Live Activities: outer `dynamicIsland` / `LockScreenLiveActivityView` hoist the three
+//   models once per push, then close over them for regions.
 //
 // Why pre-derivation matters for WidgetKit / ActivityKit:
-// - WidgetKit performs field-wise comparison on `TimelineEntry` values to decide
-//   whether a view needs re-evaluation / invalidation. A narrow derived value means
-//   only changes that affect the concrete status text, play glyph/tint, or title/speaker
-//   cause body work for the consumers of that slice.
-// - ActivityKit Dynamic Island region builders run independently. Hoisting derivation
-//   to the outer closure bounds CPU and allocation work to once per push.
-// - Leaf views and region closures receive the smallest possible input (e.g. four fields
-//   for metadata), making them simpler, cheaper to diff, and easier to reason about.
+// - Narrow `Equatable` fields bound WidgetKit invalidation and ActivityKit region work.
+// - Leaf views stay cheap to diff (e.g. four metadata fields only).
 //
-// The resolvers (`makeStatusPresentation`, `makeControlPresentation`, and
-// `widgetNowPlayingDisplayModel`) remain the single places that encode the mapping rules
-// over `PlayerVisualState` + metadata fallbacks.
+// ## Ownership map
+// - WidgetSurface — pure presentation types + intent *plans* + timeline *blueprints*
+// - This file — snapshot *reads*, presentation *assembly* that needs SPM, intent *execution*
+// - Extension SwiftUI — thin `perform()` / Provider shells
 //
-// ## Terminology (exact project names)
-// - `PlayerStatusPresentation` + `makeStatusPresentation()` — status indicator axis.
-// - `PlayerControlPresentation` + `makeControlPresentation()` — primary control axis.
-// - `widgetNowPlayingDisplayModel(...)` — the core metadata/emphasis resolver.
-// - `WidgetNowPlayingDisplayModel` — narrow value type for title/speaker/emphasis.
-// - `SimpleEntry` — the `TimelineEntry` snapshot carrying all three for home widgets.
-// - `WidgetMetadataRegion` — fixed-height title + speaker slots (medium/large).
-// - `Provider` — the `AppIntentTimelineProvider`.
-// - `LutheranRadioLiveActivityWidget` / Dynamic Island regions / `LockScreenLiveActivityView`.
-//
-// - SeeAlso: `PlayerVisualState` (the source; hosts the status/control mappers),
-//   ``PlayerVisualState/makeStatusPresentation()``, ``PlayerVisualState/makeControlPresentation()``,
-//   `LutheranRadioWidget.swift` (SimpleEntry + Provider + family views),
-//   `LutheranRadioWidgetLiveActivity.swift` (top-level derivation + regions),
-//   `LutheranRadioLiveActivityAttributes.ContentState`,
-//   `WidgetDisplayModels.swift` (this file),
-//   CODING_AGENT.md (Documentation & Comment Standards, Single Source of Truth Principles,
-//   narrow inputs for WidgetKit/ActivityKit, Cross-target shared source files (non-Core)),
-//   docs/Widget-Presentation-Dataflow.md (concise permanent guidance),
-//   <doc:Architecture>, README.md (Single Sources of Truth).
+// - SeeAlso: ``WidgetProviderSnapshotResolver``, ``WidgetIntentExecution``,
+//   `WidgetSurface/WidgetNowPlayingDisplay.swift`, docs/Widget-Presentation-Dataflow.md.
 //
 // All user-visible strings use `String(localized: "key", table: "Localizable")` with explicit table.
 

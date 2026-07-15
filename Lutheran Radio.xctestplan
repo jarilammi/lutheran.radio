@@ -38,6 +38,20 @@
         "identifier" : "B77E54262F6E6A6700A055DA",
         "name" : "CoreTests"
       }
+    },
+    {
+      "target" : {
+        "containerPath" : "container:Lutheran Radio.xcodeproj",
+        "identifier" : "B72A089C30067E5600560CD1",
+        "name" : "WidgetSurfaceTests"
+      }
+    },
+    {
+      "target" : {
+        "containerPath" : "container:Lutheran Radio.xcodeproj",
+        "identifier" : "B77E58E7300748E500A070E9",
+        "name" : "LutheranRadioWidgetTests"
+      }
     }
   ],
   "version" : 1
