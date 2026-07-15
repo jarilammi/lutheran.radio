@@ -173,13 +173,18 @@ Emission is guarded to the main app (`isRunningInWidgetProcess`). Extension proc
 
 ### Widget extension unit test coverage
 
-**Status:** Partially complete — coordinator SSOT ships in `WidgetSurface`; extension-profile target remains
+**Status:** **Closed (PR 3, 2026-07-15)** — extension-profile target ships
 
-Widget contract tests run in `Lutheran RadioTests` (main-app host) via DEBUG seams and white-box helpers. The `LutheranRadioWidgetTests` target does not exist yet, so extension `AppIntent` `perform()` bodies do not compile into CI under the extension profile.
+Widget contract tests still run in `Lutheran RadioTests` (main-app host) via DEBUG seams. In addition:
 
-**Covered in main-app host (2026-07-14):** toggle plan mapping (``WidgetIntentCoordinators``), entry field blueprints (``WidgetTimelineEntryFactory``), liveness presentation policy (``WidgetLivenessPresentation``), and cross-target execution (``WidgetIntentExecution``). `WidgetIntentContractTests` calls coordinator SSOT for home/control toggle matrices.
+| Target | Compile profile | Coverage |
+|--------|-----------------|----------|
+| `LutheranRadioWidgetTests` | **No** `LUTHERAN_MAIN_APP` (same SPM set as extension) | 43 tests — coordinators, factory, liveness, presentation mappers, metadata resolver, Provider assembly, optimistic intent / ``WidgetIntentExecution/perform*``, refresh subset |
+| `WidgetSurfaceTests` | Pure `WidgetSurface` framework | 8 Swift Testing cases — coordinators, liveness, factory, mappers |
 
-**Remaining:** `LutheranRadioWidgetTests` with extension compile profile (AppIntent bodies, factory/liveness suites), and optional `refreshIfNeeded(immediate:)` gate assertion under the extension profile.
+AppIntent `perform()` bodies are thin delegates to ``WidgetIntentExecution/perform*``; those entry points compile and run under the extension profile in `LutheranRadioWidgetTests`.
+
+**SeeAlso:** ``WidgetIntentExecution``, ``WidgetIntentCoordinators``, `LutheranRadioWidgetTests/`, `WidgetSurfaceTests/`, docs/Widget-Presentation-Dataflow.md.
 
 ### OI-W4 — Now Playing + Live Activity stacking (user education / strategy)
 
@@ -288,7 +293,7 @@ Ordered by increasing risk and decreasing isolation. Earlier items are safer.
 - [x] **Now Playing formatter + media-surface coordination test index (2026-07-14):** `StreamProgramMetadataTests` — `nowPlayingDisplayStrings` matrix (parsed title/speaker, raw fallback, station fallback, whitespace) + widget program-title alignment; `SharedPlayerManagerEventTests` — `testRefreshAllMediaSurfacesOrdersNowPlayingBeforeWidgetRefreshAndWritesDisplayStrings` (coordination order log + `MPNowPlayingInfoCenter` SSOT under DEBUG bypass; LA IPC skipped).
 - [x] **WidgetSurface coordinator SSOT (2026-07-14):** `WidgetIntentCoordinators`, `WidgetTimelineEntryFactory`, `WidgetLivenessPresentation`, `WidgetNowPlayingDisplay` in `WidgetSurface/`; `WidgetIntentExecution` in `WidgetDisplayModels.swift`; extension thin delegates; `WidgetIntentContractTests` toggle matrices use ``planHomeWidgetToggle(from:)`` / ``planControlWidgetToggle(isPlayingRequested:)``.
 
-**Tier 5 complete when:** Tier 2 checklist is green, `LutheranRadioWidgetTests` ships under the extension compile profile (coordinator SSOT in `WidgetSurface` is complete), and all touched files carry production `///` docs with `SeeAlso:` to this roadmap.
+**Tier 5 complete when:** Tier 2 checklist is green, `LutheranRadioWidgetTests` ships under the extension compile profile (**done 2026-07-15** — coordinator SSOT + perform SSOT + 43 extension-profile tests), and all touched files carry production `///` docs with `SeeAlso:` to this roadmap.
 
 ---
 
@@ -336,11 +341,12 @@ Present in `LutheranRadioWidget.swift:getPendingOrCurrentState` and `LutheranRad
 
 The next item is always the highest-priority unchecked entry in the backlog above.
 
-**Recommended starting order (2026-07-14):**
+**Recommended starting order (2026-07-15):**
 
-1. **`LutheranRadioWidgetTests` target** — extension-profile tests for coordinators, factory, liveness, and AppIntent bodies.
-2. Tier 1 optional `WidgetDisplayProjection` bundle (only if future call-site churn warrants it).
-3. Tier 5 remaining test-index maintenance as new contracts land.
+1. ~~**`LutheranRadioWidgetTests` target**~~ — **Done**: extension-profile target + 43 tests; pure `WidgetSurfaceTests` (8).
+2. Doc closeout — reflect extension-profile test targets in README + `CODING_AGENT.md` cross-target section.
+3. Tier 1 optional `WidgetDisplayProjection` bundle (only if future call-site churn warrants it).
+4. Tier 5 remaining test-index maintenance as new contracts land.
 
 Each micro-step: read target files first, minimal diff, apply the documentation standards above, update this roadmap Completed + Update Log, run build + test gates per `CODING_AGENT.md`.
 
@@ -371,6 +377,7 @@ For presentation mapping rules and termination invariants, use [`docs/Widget-Pre
 
 ## Update Log
 
+- **2026-07-15:** `LutheranRadioWidgetTests` extension-profile target (no `LUTHERAN_MAIN_APP`; links WidgetSurface + Core; SPM membershipExceptions); ``WidgetIntentExecution/perform*`` AppIntent SSOT; 43 + 8 WidgetSurfaceTests green; widget extension unit test coverage closed. Canonical references only (no temporary handoff docs).
 - **2026-07-14:** Documentation standards — removed temporary handoff-doc cross-links; renamed widget extension test gap from internal tracking label to **Widget extension unit test coverage**; production `SeeAlso:` cites canonical roadmap and presentation dataflow only.
 - **2026-07-14:** WidgetSurface coordinator layer — `WidgetIntentCoordinators`, `WidgetTimelineEntryFactory`, `WidgetLivenessPresentation`, `WidgetNowPlayingDisplay`; `WidgetIntentExecution` in `WidgetDisplayModels.swift`; extension `perform()`/Provider thin delegates; toggle mirror helpers removed; widget extension test coverage partially complete (coordinator SSOT in main-app host).
 - **2026-07-14:** Now Playing formatter tests — `StreamProgramMetadataTests` adds `nowPlayingDisplayStrings` matrix + widget title alignment; `SharedPlayerManagerEventTests` adds `testRefreshAllMediaSurfacesOrdersNowPlayingBeforeWidgetRefreshAndWritesDisplayStrings` (DEBUG coordination-order log + NP bypass seam); Tier 2 play/pause drain method names indexed.
