@@ -715,21 +715,12 @@ struct WidgetToggleRadioIntent: AppIntent {
         print("[LutheranRadioWidget] WidgetToggleRadioIntent.perform called")
         #endif
 
-        let visualState = SharedPlayerManager.loadPersistedVisualStateDirect()
-        let plan = WidgetIntentCoordinators.planHomeWidgetToggle(from: visualState)
-        let language = WidgetIntentCoordinators.languageForOptimisticUpdate(
-            persistedLanguage: SharedPlayerManager.loadPersistedWidgetState()?.currentLanguage,
-            preferredLanguage: SharedPlayerManager.preferredWidgetLanguage()
-        )
+        // AGENT NOTE: Full path is ``WidgetIntentExecution/performHomeWidgetToggle()`` so
+        // extension-profile unit tests exercise the same body as this AppIntent.
+        await WidgetIntentExecution.performHomeWidgetToggle()
 
         #if DEBUG
-        print("[LutheranRadioWidget] Widget wants to \(plan.action) → target state: \(plan.targetVisualState)")
-        #endif
-
-        await WidgetIntentExecution.executeOptimisticToggle(plan: plan, language: language)
-
-        #if DEBUG
-        print("[LutheranRadioWidget] WidgetToggleRadioIntent completed. Signaled \(plan.action), refreshed widget to \(plan.targetVisualState)")
+        print("[LutheranRadioWidget] WidgetToggleRadioIntent completed")
         #endif
 
         return .result()
@@ -755,7 +746,8 @@ public struct SwitchStreamIntent: AppIntent {
         print("[LutheranRadioWidget] SwitchStreamIntent.perform called for language: \(streamLanguageCode)")
         #endif
 
-        await WidgetIntentExecution.executeHomeWidgetStreamSwitch(languageCode: streamLanguageCode)
+        // AGENT NOTE: Full path is ``WidgetIntentExecution/performHomeWidgetStreamSwitch(languageCode:)``.
+        await WidgetIntentExecution.performHomeWidgetStreamSwitch(languageCode: streamLanguageCode)
 
         #if DEBUG
         print("[LutheranRadioWidget] SwitchStreamIntent completed for \(streamLanguageCode)")

@@ -230,11 +230,74 @@ enum WidgetProviderSnapshotResolver {
 /// Executes widget intent plans that require ``SharedPlayerManager`` and ``WidgetRefreshManager``.
 ///
 /// Planning (pure mapping) lives in ``WidgetIntentCoordinators`` (WidgetSurface).
-/// Extension `perform()` bodies delegate here so optimistic toggle and stream-switch
-/// side effects stay in one cross-target location.
+/// Extension `perform()` bodies and extension-profile unit tests both call the
+/// ``perform*`` entry points so AppIntent side effects have a single compile-time SSOT
+/// under the extension compile profile (no `LUTHERAN_MAIN_APP`).
 ///
-/// - SeeAlso: ``WidgetIntentCoordinators``, docs/Widget-Functionality-Roadmap.md.
+/// - SeeAlso: ``WidgetIntentCoordinators``, docs/Widget-Functionality-Roadmap.md,
+///   docs/Widget-Presentation-Dataflow.md.
 enum WidgetIntentExecution {
+
+    // MARK: - AppIntent perform entry points (extension `perform()` + tests)
+
+    /// Full home-widget toggle path used by ``WidgetToggleRadioIntent/perform()``.
+    ///
+    /// Resolves the optimistic plan from the persisted visual snapshot, picks language
+    /// for the optimistic write, then runs ``executeOptimisticToggle(plan:language:)``.
+    ///
+    /// - SeeAlso: ``WidgetIntentCoordinators/planHomeWidgetToggle(from:)``,
+    ///   ``WidgetIntentCoordinators/languageForOptimisticUpdate(persistedLanguage:preferredLanguage:)``.
+    static func performHomeWidgetToggle() async {
+        let visualState = SharedPlayerManager.loadPersistedVisualStateDirect()
+        let plan = WidgetIntentCoordinators.planHomeWidgetToggle(from: visualState)
+        let language = WidgetIntentCoordinators.languageForOptimisticUpdate(
+            persistedLanguage: SharedPlayerManager.loadPersistedWidgetState()?.currentLanguage,
+            preferredLanguage: SharedPlayerManager.preferredWidgetLanguage()
+        )
+        await executeOptimisticToggle(plan: plan, language: language)
+    }
+
+    /// Full Control Center toggle path used by ``ToggleRadioIntent/perform()``.
+    ///
+    /// - Parameter isPlayingRequested: `true` = play, `false` = pause (ControlWidgetToggle value).
+    /// - SeeAlso: ``WidgetIntentCoordinators/planControlWidgetToggle(isPlayingRequested:)``.
+    static func performControlWidgetToggle(isPlayingRequested: Bool) async {
+        Task { @MainActor in WidgetRefreshManager.setHasActiveLutheranWidgets(true) }
+
+        let plan = WidgetIntentCoordinators.planControlWidgetToggle(isPlayingRequested: isPlayingRequested)
+        let language = WidgetIntentCoordinators.languageForOptimisticUpdate(
+            persistedLanguage: SharedPlayerManager.loadPersistedWidgetState()?.currentLanguage,
+            preferredLanguage: SharedPlayerManager.preferredWidgetLanguage()
+        )
+        await executeOptimisticToggle(plan: plan, language: language)
+    }
+
+    /// Full home-widget stream switch path used by ``SwitchStreamIntent/perform()``.
+    ///
+    /// - Parameter languageCode: Target stream BCP-47-style code.
+    static func performHomeWidgetStreamSwitch(languageCode: String) async {
+        await executeHomeWidgetStreamSwitch(languageCode: languageCode)
+    }
+
+    /// Full Live Activity toggle path used by ``LiveActivityTogglePlaybackIntent/perform()``.
+    ///
+    /// Reads actor-isolated visual state, plans pause/play, then executes.
+    static func performLiveActivityToggle() async {
+        let visualState = await SharedPlayerManager.shared.currentVisualState
+        let plan = WidgetIntentCoordinators.planLiveActivityToggle(from: visualState)
+        await executeLiveActivityToggle(plan: plan)
+    }
+
+    /// Full Live Activity stream switch path used by ``LiveActivitySwitchStreamIntent/perform()``.
+    ///
+    /// - Parameter languageCode: Target stream code.
+    /// - Returns: `true` when a matching stream was found and the switch was invoked.
+    @discardableResult
+    static func performLiveActivityStreamSwitch(languageCode: String) async -> Bool {
+        await executeLiveActivityStreamSwitch(languageCode: languageCode)
+    }
+
+    // MARK: - Primitive side effects
 
     /// Optimistic snapshot + pending action + immediate widget refresh for play/pause toggles.
     ///
