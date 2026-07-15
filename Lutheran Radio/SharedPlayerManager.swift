@@ -241,7 +241,8 @@ import WidgetKit
 /// | pendingActionId         | String (UUID)         | Same writers as pendingAction                                | `getPendingAction()`, `clearPendingAction()`                         | Deduplication token to handle rapid repeated taps            | Prevents double-processing on race conditions |
 /// | pendingActionTime       | Double (epoch)        | Same writers as pendingAction                                | Widget providers (staleness checks)                                  | Freshness timestamp for pending actions                      | Used to ignore very old pending actions |
 /// | pendingLanguage         | String                | `scheduleWidgetAction` (only for "switch")                   | `getPendingAction()`, widget providers                               | Parameter for stream switch actions                          | Only meaningful when `pendingAction == "switch"` |
-/// | liveActivityToggleVisualState | String (case name) | `RadioLiveActivityManager` on every ContentState push; optimistic LA toggle | ``loadLiveActivityToggleVisualStateMirror()`` + ``WidgetIntentExecution/performLiveActivityToggle()`` | Durable cross-process LA play/pause plan signal when extension memory snapshot is empty | Cleared on LA end, termination, privacy clear; **not** gated by home-widget `hasActiveWidgets` |
+/// | liveActivityToggleVisualState | String (case name) | `RadioLiveActivityManager` on every ContentState push; optimistic LA toggle | ``loadLiveActivityToggleVisualStateMirror()`` + ``WidgetIntentExecution/performLiveActivityToggle()`` | Durable cross-process LA play/pause plan signal when extension memory snapshot is empty | Cleared on LA end, termination, **factory reset**, privacy clear; **not** gated by home-widget `hasActiveWidgets` |
+/// | recordedSystemBootTime  | Double (epoch of boot) | ``recordCurrentSystemBootTime()`` on LA mirror write + factory reset | ``hasDeviceRebootedSinceLastRecordedBoot()`` / ``shouldDistrustDurableMirrorPlayPlanning()`` | Boot identity for post-reboot LA toggle hygiene | Lets lock-screen planning refuse durable-mirror-alone **play** after hard power-off |
 ///
 /// **Key invariants**:
 /// - The main app is always the source of truth. Widgets write optimistic visual state +
@@ -253,6 +254,8 @@ import WidgetKit
 /// - Live Activity lock-screen toggle plans prefer ActivityKit `ContentState` then
 ///   ``loadLiveActivityToggleVisualStateMirror()`` over extension-local actor defaults
 ///   (see ``WidgetIntentCoordinators/resolveLiveActivityToggleVisualState(liveActivityContent:durableMirror:actorVisualState:sessionSnapshot:)``).
+/// - After termination sentinel or device reboot, durable mirror alone must not plan **play**
+///   (``shouldDistrustDurableMirrorPlayPlanning()`` + ``WidgetIntentCoordinators/planLiveActivityToggle(resolution:distrustDurableMirrorPlay:)``).
 
 #if LUTHERAN_MAIN_APP
 /// Suppresses Darwin notify echoes when the main app posts a pause notification to itself
@@ -924,11 +927,12 @@ actor SharedPlayerManager {
     ///
     /// - Precondition: Safe to call from main-app launch (`ViewController` cold-launch Task) and tests.
     /// - Postcondition: `loadPersistedWidgetState()` returns `nil`; widgets show safe defaults;
-    ///   system Now Playing metadata cleared (main app).
+    ///   system Now Playing metadata cleared (main app); durable LA toggle mirror cleared;
+    ///   recorded boot identity aligned to this boot.
     ///
     /// - SeeAlso: ``ensureVisualStateLoaded()``, ``loadPersistedWidgetState()``,
-    ///   ``clearPersistedVisualStateKeysFromDisk()``, ViewController.viewDidLoad,
-    ///   docs/Event-Driven-Refactor-Roadmap.md, CODING_AGENT.md (SSOT principles).
+    ///   ``clearPersistedVisualStateKeysFromDisk()``, ``clearLiveActivityToggleVisualStateMirror()``,
+    ///   ViewController.viewDidLoad, docs/Event-Driven-Refactor-Roadmap.md, CODING_AGENT.md (SSOT principles).
     ///
     /// AGENT NOTE: Any new launch path that could observe stale App Group visual keys must call
     /// this (or rely on `init()` + this explicit await) before `refreshVisualStateFromPersistence`.
@@ -944,6 +948,9 @@ actor SharedPlayerManager {
         #else
         Self.clearPersistedVisualStateKeysFromDisk()
         Self.clearInMemorySessionSnapshot()
+        // Explicit LA toggle mirror clear (factory reset hygiene; not only LA-end paths).
+        Self.clearLiveActivityToggleVisualStateMirror()
+        Self.recordCurrentSystemBootTime()
         currentVisualState = .prePlay
         currentStreamMetadata = nil
         hasLoadedVisualStateFromPersistence = false
@@ -976,7 +983,8 @@ actor SharedPlayerManager {
     ///
     /// - Parameters:
     ///   - includeFactoryReset: When `true`, purges on-disk visual keys, drops the in-memory session
-    ///     snapshot, and resets visual state to `.prePlay` (preserving `.securityLocked` intent).
+    ///     snapshot, resets visual state to `.prePlay` (preserving `.securityLocked` intent), clears
+    ///     the durable LA toggle mirror, and records current boot identity.
     ///   - liveActivityTeardown: Whether to end Live Activities gracefully or immediately.
     ///   - refreshWidgets: When `true`, calls `WidgetCenter.reloadAllTimelines()` and
     ///     `WidgetRefreshManager.refreshIfNeeded(..., immediate: true)`.
@@ -986,9 +994,11 @@ actor SharedPlayerManager {
     /// - Precondition: Main-app target only. Do not call while intentionally backgrounding live playback
     ///   unless `refreshWidgets` is `false` and factory reset is `false`.
     /// - Postcondition: System Now Playing cleared; optional LA ended; widgets reloaded when requested.
+    ///   Factory reset also clears ``liveActivityToggleVisualStateAppGroupKey``.
     ///
     /// - SeeAlso: ``teardownNowPlayingSession()``, ``resetToFactoryDefaultsOnLaunch()``,
     ///   ``clearAllLocalState()``, ``performPostStopWidgetHygiene()``,
+    ///   ``clearLiveActivityToggleVisualStateMirror()``,
     ///   ``performSessionTeardownSynchronouslyForTermination()``,
     ///   `WidgetRefreshManager.refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)`,
     ///   docs/Event-Driven-Refactor-Roadmap.md, CODING_AGENT.md.
@@ -1012,6 +1022,13 @@ actor SharedPlayerManager {
         if includeFactoryReset {
             Self.clearPersistedVisualStateKeysFromDisk()
             Self.clearInMemorySessionSnapshot()
+            // Explicit factory-reset hygiene: drop durable LA toggle plan signal even when
+            // Live Activity teardown is `.none` (callers may vary). Stops cold extensions
+            // from planning play/pause against a pre-reset mirror.
+            Self.clearLiveActivityToggleVisualStateMirror()
+            // Align boot identity after reset so same-boot post-reset planning does not
+            // treat the process as "rebooted" solely because mirror was cleared.
+            Self.recordCurrentSystemBootTime()
             currentVisualState = .prePlay
             currentStreamMetadata = nil
             hasLoadedVisualStateFromPersistence = false
@@ -2668,12 +2685,21 @@ actor SharedPlayerManager {
     /// - Parameter visualState: Last pushed (or optimistically planned) LA visual state.
     /// - Important: Always writes when the App Group is available — not gated by
     ///   ``hasActiveWidgets``. Home-widget privacy suppression must not invert LA pause.
+    /// - Postcondition: Also records current system boot identity so post-reboot planning can
+    ///   detect a dirty power cycle when `willTerminate` never ran.
     /// - SeeAlso: ``loadLiveActivityToggleVisualStateMirror()``, ``clearLiveActivityToggleVisualStateMirror()``,
+    ///   ``recordCurrentSystemBootTime()``, ``shouldDistrustDurableMirrorPlayPlanning()``,
     ///   ``WidgetIntentCoordinators/resolveLiveActivityToggleVisualState(liveActivityContent:durableMirror:actorVisualState:sessionSnapshot:)``,
     ///   `RadioLiveActivityManager.updateCurrentActivity`.
     nonisolated static func persistLiveActivityToggleVisualStateMirror(_ visualState: PlayerVisualState) {
         guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return }
         defaults.set(liveActivityToggleMirrorToken(for: visualState), forKey: liveActivityToggleVisualStateAppGroupKey)
+        #if LUTHERAN_MAIN_APP
+        // Warm boot identity only from the main app. Extension optimistic mirror writes must
+        // not clear post-reboot distrust (otherwise a forced-pause first tap would re-enable
+        // durable-mirror-alone play on the second tap before the main process is live).
+        recordCurrentSystemBootTime()
+        #endif
     }
 
     /// Reads the durable Live Activity visual-state mirror, if present and well-formed.
@@ -2689,10 +2715,70 @@ actor SharedPlayerManager {
         return playerVisualState(fromLiveActivityToggleMirrorToken: token)
     }
 
-    /// Clears the durable Live Activity toggle mirror (LA end, termination, privacy clear).
+    /// Clears the durable Live Activity toggle mirror (LA end, termination, factory reset, privacy clear).
     nonisolated static func clearLiveActivityToggleVisualStateMirror() {
         guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return }
         defaults.removeObject(forKey: liveActivityToggleVisualStateAppGroupKey)
+    }
+
+    // MARK: - Boot identity + durable-mirror play distrust (LA toggle hygiene)
+
+    /// App Group key for the wall-clock epoch of the system boot last observed while the app
+    /// was healthy enough to write LA toggle state (or complete factory reset).
+    ///
+    /// - SeeAlso: ``recordCurrentSystemBootTime()``, ``hasDeviceRebootedSinceLastRecordedBoot()``.
+    nonisolated static let recordedSystemBootTimeAppGroupKey = "recordedSystemBootTime"
+
+    /// Wall-clock epoch of the current device boot (`now - systemUptime`).
+    ///
+    /// - Returns: Seconds since 1970 for this boot. Stable for the lifetime of the boot;
+    ///   changes after reboot / power cycle.
+    nonisolated static func currentSystemBootTimeIntervalSince1970() -> TimeInterval {
+        Date(timeIntervalSinceNow: -ProcessInfo.processInfo.systemUptime).timeIntervalSince1970
+    }
+
+    /// Persists the current boot identity into the App Group.
+    ///
+    /// Called when the process is known to be live on this boot (LA mirror write, factory reset).
+    /// Enables ``hasDeviceRebootedSinceLastRecordedBoot()`` after a hard power-off that skipped
+    /// `willTerminate`.
+    ///
+    /// - SeeAlso: ``shouldDistrustDurableMirrorPlayPlanning()``.
+    nonisolated static func recordCurrentSystemBootTime() {
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return }
+        defaults.set(currentSystemBootTimeIntervalSince1970(), forKey: recordedSystemBootTimeAppGroupKey)
+    }
+
+    /// Whether the device has rebooted since the last recorded healthy boot identity.
+    ///
+    /// - Returns: `true` when a prior boot epoch exists and differs from the current boot by more
+    ///   than a small epsilon. Missing key → `false` (first install / never recorded).
+    /// - Note: Does not start or stop audio; only feeds LA toggle planning distrust.
+    /// - SeeAlso: ``shouldDistrustDurableMirrorPlayPlanning()``, ``recordCurrentSystemBootTime()``.
+    nonisolated static func hasDeviceRebootedSinceLastRecordedBoot() -> Bool {
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared"),
+              let recorded = defaults.object(forKey: recordedSystemBootTimeAppGroupKey) as? Double
+        else {
+            return false
+        }
+        let current = currentSystemBootTimeIntervalSince1970()
+        // Boot epochs are stable per boot; allow a few seconds of float / clock skew noise.
+        return abs(current - recorded) > 2.0
+    }
+
+    /// Whether Live Activity toggle planning must refuse **play** from the durable App Group
+    /// mirror alone (post-termination sentinel or device reboot since last recorded boot).
+    ///
+    /// ActivityKit `ContentState` remains trusted: a real lock-screen glyph is an explicit
+    /// user-facing signal. Stale mirror after dirty power-off must not call
+    /// ``userRequestedPlay()`` without that content signal.
+    ///
+    /// - Returns: `true` when ``hasExplicitTerminationSentinel()`` or
+    ///   ``hasDeviceRebootedSinceLastRecordedBoot()``.
+    /// - SeeAlso: ``WidgetIntentCoordinators/planLiveActivityToggle(resolution:distrustDurableMirrorPlay:)``,
+    ///   ``WidgetIntentExecution/performLiveActivityToggle()``.
+    nonisolated static func shouldDistrustDurableMirrorPlayPlanning() -> Bool {
+        hasExplicitTerminationSentinel() || hasDeviceRebootedSinceLastRecordedBoot()
     }
 
     /// Stable App Group token for ``PlayerVisualState`` (plain cases, no associated values).
@@ -3723,6 +3809,8 @@ extension SharedPlayerManager {
 
         // Live Activity toggle mirror (cross-process plan signal; privacy clear ends LA too).
         defaults.removeObject(forKey: liveActivityToggleVisualStateAppGroupKey)
+        // Boot identity used only for post-reboot LA plan distrust; drop on privacy clear.
+        defaults.removeObject(forKey: recordedSystemBootTimeAppGroupKey)
 
         // Explicit synchronize() removed — unnecessary (removals are visible cross-process
         // via subsequent loads and notifications; privacy clear is not performance-critical).

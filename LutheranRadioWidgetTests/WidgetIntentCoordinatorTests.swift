@@ -137,6 +137,70 @@ final class WidgetIntentCoordinatorTests: XCTestCase {
         )
     }
 
+    /// Post-term / reboot: durable mirror alone must not plan play (stale App Group hygiene).
+    ///
+    /// In-session empty-extension pause (mirror `.playing` → pause) remains intact with
+    /// `distrustDurableMirrorPlay: false` (default).
+    func testPlanLiveActivityToggleDistrustBlocksPlayFromDurableMirrorAlone() {
+        let pausedMirror = WidgetIntentCoordinators.resolveLiveActivityToggleVisualState(
+            liveActivityContent: nil,
+            durableMirror: .userPaused,
+            actorVisualState: .prePlay,
+            sessionSnapshot: nil
+        )
+        XCTAssertEqual(pausedMirror.source, .durableCrossProcessMirror)
+        XCTAssertEqual(
+            WidgetIntentCoordinators.planLiveActivityToggle(
+                resolution: pausedMirror,
+                distrustDurableMirrorPlay: false
+            ),
+            .play,
+            "Without distrust, non-playing mirror still plans play (normal toggle)"
+        )
+        XCTAssertEqual(
+            WidgetIntentCoordinators.planLiveActivityToggle(
+                resolution: pausedMirror,
+                distrustDurableMirrorPlay: true
+            ),
+            .pause,
+            "With distrust, durable mirror alone must not synthesize play after term/reboot"
+        )
+
+        let playingMirror = WidgetIntentCoordinators.resolveLiveActivityToggleVisualState(
+            liveActivityContent: nil,
+            durableMirror: .playing,
+            actorVisualState: .prePlay,
+            sessionSnapshot: nil
+        )
+        XCTAssertEqual(
+            WidgetIntentCoordinators.planLiveActivityToggle(
+                resolution: playingMirror,
+                distrustDurableMirrorPlay: true
+            ),
+            .pause,
+            "Distrust must not invert playing-mirror → pause (lock-screen pause still works)"
+        )
+    }
+
+    /// ActivityKit ContentState remains trusted under distrust (explicit lock-screen glyph).
+    func testPlanLiveActivityToggleDistrustStillAllowsPlayFromLiveActivityContent() {
+        let resolution = WidgetIntentCoordinators.resolveLiveActivityToggleVisualState(
+            liveActivityContent: .userPaused,
+            durableMirror: .playing,
+            actorVisualState: .prePlay,
+            sessionSnapshot: nil
+        )
+        XCTAssertEqual(resolution.source, .liveActivityContent)
+        XCTAssertEqual(
+            WidgetIntentCoordinators.planLiveActivityToggle(
+                resolution: resolution,
+                distrustDurableMirrorPlay: true
+            ),
+            .play,
+            "Real ContentState pause glyph may plan play even under term/reboot distrust"
+        )
+    }
+
     // MARK: - Language resolution
 
     /// Prefers persisted snapshot language over preferred fallback.

@@ -293,6 +293,52 @@ final class WidgetIntentContractExtensionTests: XCTestCase {
         XCTAssertNil(SharedPlayerManager.loadLiveActivityToggleVisualStateMirror())
     }
 
+    /// Simulated reboot (stale recorded boot) distrusts durable-mirror-alone play planning.
+    ///
+    /// Boot identity is warmed by the main app (LA push / factory reset), not by extension
+    /// optimistic mirror writes — so this test records boot explicitly then ages it.
+    func testShouldDistrustDurableMirrorPlayPlanningWhenBootIdentityStale() {
+        SharedPlayerManager.removeAllLocalPlaybackKeys()
+        SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(.userPaused)
+        // Simulate main-app LA push having recorded a healthy boot for this session.
+        SharedPlayerManager.recordCurrentSystemBootTime()
+        XCTAssertFalse(
+            SharedPlayerManager.hasDeviceRebootedSinceLastRecordedBoot(),
+            "Current boot identity must not report reboot"
+        )
+
+        let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared")
+        // Simulate a prior boot epoch left in the App Group across hard power-off.
+        defaults?.set(1.0, forKey: SharedPlayerManager.recordedSystemBootTimeAppGroupKey)
+
+        XCTAssertTrue(SharedPlayerManager.hasDeviceRebootedSinceLastRecordedBoot())
+        XCTAssertTrue(SharedPlayerManager.shouldDistrustDurableMirrorPlayPlanning())
+
+        let resolution = WidgetIntentCoordinators.resolveLiveActivityToggleVisualState(
+            liveActivityContent: nil,
+            durableMirror: .userPaused,
+            actorVisualState: .prePlay,
+            sessionSnapshot: nil
+        )
+        XCTAssertEqual(
+            WidgetIntentCoordinators.planLiveActivityToggle(
+                resolution: resolution,
+                distrustDurableMirrorPlay: SharedPlayerManager.shouldDistrustDurableMirrorPlayPlanning()
+            ),
+            .pause
+        )
+    }
+
+    /// Termination sentinel alone distrusts durable-mirror-alone play.
+    func testShouldDistrustDurableMirrorPlayPlanningWhenTerminationSentinel() {
+        SharedPlayerManager.removeAllLocalPlaybackKeys()
+        SharedPlayerManager.recordCurrentSystemBootTime()
+        SharedPlayerManager.forceStaleLivenessTimestampForTermination()
+
+        XCTAssertTrue(SharedPlayerManager.hasExplicitTerminationSentinel())
+        XCTAssertTrue(SharedPlayerManager.shouldDistrustDurableMirrorPlayPlanning())
+    }
+
     /// Live Activity stream switch returns false for unknown language codes.
     func testPerformLiveActivityStreamSwitchRejectsUnknownLanguage() async {
         let switched = await WidgetIntentExecution.performLiveActivityStreamSwitch(languageCode: "xx-unknown")

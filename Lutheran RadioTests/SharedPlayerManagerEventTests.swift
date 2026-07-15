@@ -2784,6 +2784,9 @@ final class SharedPlayerManagerEventTests: XCTestCase {
         let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared")
         defaults?.set(data, forKey: "persistedWidgetState")
         defaults?.set(data, forKey: "playerVisualState")
+        // Stale durable LA toggle mirror must not survive factory reset (lock-screen plan hygiene).
+        SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(.playing)
+        XCTAssertEqual(SharedPlayerManager.loadLiveActivityToggleVisualStateMirror(), .playing)
 
         await manager.resetToFactoryDefaultsOnLaunch()
 
@@ -2794,6 +2797,12 @@ final class SharedPlayerManagerEventTests: XCTestCase {
         XCTAssertEqual(SharedPlayerManager.loadPersistedVisualStateDirect(), .prePlay)
         XCTAssertNil(defaults?.data(forKey: "persistedWidgetState"))
         XCTAssertNil(defaults?.data(forKey: "playerVisualState"))
+        XCTAssertNil(
+            SharedPlayerManager.loadLiveActivityToggleVisualStateMirror(),
+            "Factory reset must explicitly clear liveActivityToggleVisualState"
+        )
+        // Boot identity realigned so same-boot post-reset planning is not false-reboot.
+        XCTAssertFalse(SharedPlayerManager.hasDeviceRebootedSinceLastRecordedBoot())
     }
 
     /// Picks a stream guaranteed to differ from the engine's current selection so

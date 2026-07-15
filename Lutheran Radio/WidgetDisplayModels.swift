@@ -273,13 +273,20 @@ enum WidgetIntentExecution {
     /// default actor `.prePlay`; planning from actor alone inverted the first pause while
     /// audio was already playing (see lockscreen regression).
     ///
+    /// **Post-term / reboot:** when ``SharedPlayerManager/shouldDistrustDurableMirrorPlayPlanning()``
+    /// is true, durable mirror alone must not plan `.play` (stale App Group after dirty
+    /// power-off). ContentState remains trusted for explicit lock-screen glyphs.
+    ///
     /// - SeeAlso: ``WidgetIntentCoordinators/resolveLiveActivityToggleVisualState(liveActivityContent:durableMirror:actorVisualState:sessionSnapshot:)``,
-    ///   ``SharedPlayerManager/persistLiveActivityToggleVisualStateMirror(_:)``.
+    ///   ``WidgetIntentCoordinators/planLiveActivityToggle(resolution:distrustDurableMirrorPlay:)``,
+    ///   ``SharedPlayerManager/persistLiveActivityToggleVisualStateMirror(_:)``,
+    ///   ``SharedPlayerManager/shouldDistrustDurableMirrorPlayPlanning()``.
     static func performLiveActivityToggle() async {
         let liveActivityContent = currentLiveActivityContentVisualState()
         let durableMirror = SharedPlayerManager.loadLiveActivityToggleVisualStateMirror()
         let actorVisualState = await SharedPlayerManager.shared.currentVisualState
         let sessionSnapshot = SharedPlayerManager.loadPersistedWidgetState()?.visualState
+        let distrustDurableMirrorPlay = SharedPlayerManager.shouldDistrustDurableMirrorPlayPlanning()
 
         let resolution = WidgetIntentCoordinators.resolveLiveActivityToggleVisualState(
             liveActivityContent: liveActivityContent,
@@ -287,16 +294,21 @@ enum WidgetIntentExecution {
             actorVisualState: actorVisualState,
             sessionSnapshot: sessionSnapshot
         )
-        let plan = WidgetIntentCoordinators.planLiveActivityToggle(resolution: resolution)
+        let plan = WidgetIntentCoordinators.planLiveActivityToggle(
+            resolution: resolution,
+            distrustDurableMirrorPlay: distrustDurableMirrorPlay
+        )
 
         #if DEBUG
         print(
-            "[WidgetIntentExecution] LA toggle plan=\(plan) source=\(resolution.source.rawValue) state=\(resolution.visualState)"
+            "[WidgetIntentExecution] LA toggle plan=\(plan) source=\(resolution.source.rawValue) state=\(resolution.visualState) distrustMirrorPlay=\(distrustDurableMirrorPlay)"
         )
         #endif
 
         // Optimistic mirror write so a second rapid tap in a cold extension process
         // plans against the intended post-toggle visual before main-app LA push lands.
+        // Under distrust, forced-pause plans also pin the mirror to `.userPaused` (never
+        // re-warm a play-biased token from a stale non-playing mirror alone).
         let optimisticTarget: PlayerVisualState = (plan == .pause) ? .userPaused : .playing
         SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(optimisticTarget)
 

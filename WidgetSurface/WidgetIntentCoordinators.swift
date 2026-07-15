@@ -43,6 +43,11 @@ public enum WidgetLiveActivityTogglePlan: Sendable, Equatable {
 /// Priority (highest first): live ActivityKit content → durable App Group mirror
 /// → actor (when actively playing) → session snapshot → actor → default `.prePlay`.
 ///
+/// **Post-term / reboot play distrust:** when ``planLiveActivityToggle(resolution:distrustDurableMirrorPlay:)``
+/// is called with `distrustDurableMirrorPlay: true`, a resolution whose sole winning source is
+/// ``LiveActivityToggleStateSource/durableCrossProcessMirror`` must not produce `.play`
+/// (stale App Group after dirty power-off). ActivityKit content remains trusted.
+///
 /// - SeeAlso: ``WidgetIntentCoordinators/resolveLiveActivityToggleVisualState(liveActivityContent:durableMirror:actorVisualState:sessionSnapshot:)``,
 ///   docs/Widget-Functionality-Roadmap.md.
 public enum LiveActivityToggleStateSource: String, Sendable, Equatable {
@@ -162,19 +167,39 @@ public enum WidgetIntentCoordinators {
 
     /// Plans Live Activity play/pause from a fully resolved multi-source visual state.
     ///
-    /// - Parameter resolution: Output of ``resolveLiveActivityToggleVisualState(liveActivityContent:durableMirror:actorVisualState:sessionSnapshot:)``.
+    /// - Parameters:
+    ///   - resolution: Output of ``resolveLiveActivityToggleVisualState(liveActivityContent:durableMirror:actorVisualState:sessionSnapshot:)``.
+    ///   - distrustDurableMirrorPlay: When `true` (post-termination sentinel or device reboot),
+    ///     refuse `.play` if the winning source is only the durable App Group mirror. Maps to
+    ///     `.pause` so execution never calls `userRequestedPlay()` from a stale mirror alone.
+    ///     ActivityKit content and actor/session sources are unchanged.
     /// - Returns: Whether the intent path should pause or play.
+    /// - Important: Wire `distrustDurableMirrorPlay` from
+    ///   ``SharedPlayerManager/shouldDistrustDurableMirrorPlayPlanning()`` at
+    ///   ``WidgetIntentExecution/performLiveActivityToggle()``. Default `false` preserves
+    ///   in-session empty-extension pause planning (mirror `.playing` → pause).
+    /// - SeeAlso: docs/Widget-Functionality-Roadmap.md (lock-screen LA toggle planning).
     public static func planLiveActivityToggle(
-        resolution: LiveActivityToggleVisualResolution
+        resolution: LiveActivityToggleVisualResolution,
+        distrustDurableMirrorPlay: Bool = false
     ) -> WidgetLiveActivityTogglePlan {
-        planLiveActivityToggle(from: resolution.visualState)
+        let plan = planLiveActivityToggle(from: resolution.visualState)
+        if distrustDurableMirrorPlay,
+           resolution.source == .durableCrossProcessMirror,
+           plan == .play {
+            // SECURITY/RESURRECTION: durable mirror after term/reboot is a stale App Group
+            // signal, not a live glyph. Never synthesize play from it alone.
+            return .pause
+        }
+        return plan
     }
 
     /// Plans Live Activity play/pause toggle from a single visual state.
     ///
-    /// Prefer ``planLiveActivityToggle(resolution:)`` or multi-source resolution at
-    /// ``WidgetIntentExecution/performLiveActivityToggle()`` so lock-screen intents
-    /// do not invert when extension-local memory is empty.
+    /// Prefer ``planLiveActivityToggle(resolution:distrustDurableMirrorPlay:)`` or multi-source
+    /// resolution at ``WidgetIntentExecution/performLiveActivityToggle()`` so lock-screen intents
+    /// do not invert when extension-local memory is empty, and do not resurrect play from a
+    /// durable mirror alone after termination or reboot.
     ///
     /// - Parameter visualState: Effective visual state (from LA content, durable mirror, or actor).
     /// - Returns: Whether the extension should call `stop()` or `userRequestedPlay()`.
