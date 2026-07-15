@@ -231,6 +231,68 @@ final class WidgetIntentContractExtensionTests: XCTestCase {
         XCTAssertEqual(snapshot?.currentLanguage, target.languageCode)
     }
 
+    /// Durable LA toggle mirror + empty session: first lock-screen-style toggle plans pause.
+    ///
+    /// Reproduces the lockscreen regression: extension actor defaults to `.prePlay` and the
+    /// memory-only session snapshot is nil under home-widget write suppression, while audio
+    /// (and the LA glyph) are still playing. The durable App Group mirror must drive `.pause`.
+    func testPerformLiveActivityToggleUsesDurableMirrorWhenSessionEmpty() async {
+        // Ensure no leftover in-process snapshot from prior tests in this process.
+        SharedPlayerManager.removeAllLocalPlaybackKeys()
+        await MainActor.run {
+            WidgetRefreshManager.setHasActiveLutheranWidgets(false)
+        }
+
+        // Authoritative LA surface says playing (what the lock screen showed).
+        SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(.playing)
+
+        XCTAssertNil(
+            SharedPlayerManager.loadPersistedWidgetState(),
+            "Session snapshot must be empty to model cold extension + write suppression"
+        )
+        XCTAssertEqual(SharedPlayerManager.loadLiveActivityToggleVisualStateMirror(), .playing)
+
+        // Plan-only check (same inputs performLiveActivityToggle resolves) — avoid relying on
+        // DirectStreamingPlayer soft-pause side effects under the widget stub.
+        let resolution = WidgetIntentCoordinators.resolveLiveActivityToggleVisualState(
+            liveActivityContent: nil,
+            durableMirror: SharedPlayerManager.loadLiveActivityToggleVisualStateMirror(),
+            actorVisualState: .prePlay,
+            sessionSnapshot: SharedPlayerManager.loadPersistedWidgetState()?.visualState
+        )
+        XCTAssertEqual(resolution.source, .durableCrossProcessMirror)
+        XCTAssertEqual(resolution.visualState, .playing)
+        XCTAssertEqual(
+            WidgetIntentCoordinators.planLiveActivityToggle(resolution: resolution),
+            .pause,
+            "Empty extension memory must not invert lock-screen pause to play"
+        )
+
+        await WidgetIntentExecution.performLiveActivityToggle()
+
+        // Optimistic mirror advances to paused for the next rapid tap.
+        XCTAssertEqual(
+            SharedPlayerManager.loadLiveActivityToggleVisualStateMirror(),
+            .userPaused,
+            "After planned pause, durable mirror should optimistically flip to userPaused"
+        )
+    }
+
+    /// Durable mirror alone: persist/load/clear contract (no ActivityKit IPC).
+    func testLiveActivityToggleVisualStateMirrorRoundTrip() {
+        SharedPlayerManager.removeAllLocalPlaybackKeys()
+        XCTAssertNil(SharedPlayerManager.loadLiveActivityToggleVisualStateMirror())
+
+        SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(.playing)
+        XCTAssertEqual(SharedPlayerManager.loadLiveActivityToggleVisualStateMirror(), .playing)
+
+        SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(.userPaused)
+        XCTAssertEqual(SharedPlayerManager.loadLiveActivityToggleVisualStateMirror(), .userPaused)
+
+        SharedPlayerManager.clearLiveActivityToggleVisualStateMirror()
+        XCTAssertNil(SharedPlayerManager.loadLiveActivityToggleVisualStateMirror())
+    }
+
     /// Live Activity stream switch returns false for unknown language codes.
     func testPerformLiveActivityStreamSwitchRejectsUnknownLanguage() async {
         let switched = await WidgetIntentExecution.performLiveActivityStreamSwitch(languageCode: "xx-unknown")

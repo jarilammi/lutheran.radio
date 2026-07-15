@@ -179,8 +179,8 @@ Widget contract tests still run in `Lutheran RadioTests` (main-app host) via DEB
 
 | Target | Compile profile | Coverage |
 |--------|-----------------|----------|
-| `LutheranRadioWidgetTests` | **No** `LUTHERAN_MAIN_APP` (same SPM set as extension) | 43 tests — coordinators, factory, liveness, presentation mappers, metadata resolver, Provider assembly, optimistic intent / ``WidgetIntentExecution/perform*``, refresh subset |
-| `WidgetSurfaceTests` | Pure `WidgetSurface` framework | 8 Swift Testing cases — coordinators, liveness, factory, mappers |
+| `LutheranRadioWidgetTests` | **No** `LUTHERAN_MAIN_APP` (same SPM set as extension) | 49 tests — coordinators (incl. LA multi-source resolve), factory, liveness, presentation mappers, metadata resolver, Provider assembly, optimistic intent / ``WidgetIntentExecution/perform*``, durable LA toggle mirror, refresh subset |
+| `WidgetSurfaceTests` | Pure `WidgetSurface` framework | 9 Swift Testing cases — coordinators (incl. LA resolve priority), liveness, factory, mappers |
 
 AppIntent `perform()` bodies are thin delegates to ``WidgetIntentExecution/perform*``; those entry points compile and run under the extension profile in `LutheranRadioWidgetTests`.
 
@@ -193,6 +193,18 @@ AppIntent `perform()` bodies are thin delegates to ``WidgetIntentExecution/perfo
 iOS renders **both** system Now Playing and Live Activity when both are active — expected behavior, not a bug. Program metadata is aligned via `StreamProgramMetadata.nowPlayingDisplayStrings(...)`. Stacking scenarios, LA start policy, metadata push cost, and QA screenshot matrix are canonical in [`docs/Live-Activity-Stacking-and-Media-Surfaces.md`](Live-Activity-Stacking-and-Media-Surfaces.md). Coordinated refresh uses ``SharedPlayerManager/refreshAllMediaSurfaces(liveActivity:widgetRefresh:widgetRefreshImmediate:)``.
 
 **SeeAlso:** `SharedPlayerManager+NowPlaying.swift`, `RadioLiveActivityManager.swift`, `StreamProgramMetadata.swift`.
+
+### Lock-screen Live Activity toggle planning (fixed 2026-07-15)
+
+**Status:** Fixed
+
+``LiveActivityTogglePlaybackIntent`` must not plan solely from extension-local ``SharedPlayerManager/currentVisualState``. With home-widget write suppression and a memory-only session snapshot, a cold extension defaults to `.prePlay` and inverted the first lock-screen pause into a redundant **play** (audio kept playing). Planning now prefers:
+
+1. ActivityKit ``ContentState/visualState`` (same SSOT as the LA glyph)
+2. Durable App Group key ``liveActivityToggleVisualState`` (written on every LA content push; **not** gated by `hasActiveWidgets`)
+3. Actor / session-snapshot fallbacks
+
+**SeeAlso:** ``WidgetIntentCoordinators/resolveLiveActivityToggleVisualState(liveActivityContent:durableMirror:actorVisualState:sessionSnapshot:)``, ``WidgetIntentExecution/performLiveActivityToggle()``, ``SharedPlayerManager/persistLiveActivityToggleVisualStateMirror(_:)``.
 
 ---
 
@@ -343,7 +355,7 @@ The next item is always the highest-priority unchecked entry in the backlog abov
 
 **Recommended starting order (2026-07-15):**
 
-1. ~~**`LutheranRadioWidgetTests` target**~~ — **Done**: extension-profile target + 43 tests; pure `WidgetSurfaceTests` (8).
+1. ~~**`LutheranRadioWidgetTests` target**~~ — **Done**: extension-profile target + 49 tests; pure `WidgetSurfaceTests` (9).
 2. Doc closeout — reflect extension-profile test targets in README + `CODING_AGENT.md` cross-target section.
 3. Tier 1 optional `WidgetDisplayProjection` bundle (only if future call-site churn warrants it).
 4. Tier 5 remaining test-index maintenance as new contracts land.
@@ -377,6 +389,7 @@ For presentation mapping rules and termination invariants, use [`docs/Widget-Pre
 
 ## Update Log
 
+- **2026-07-15:** Lock-screen LA toggle multi-source planning — ContentState + durable App Group mirror before extension actor defaults; ``resolveLiveActivityToggleVisualState``; mirror write on every LA push; regression tests for empty-session pause plan.
 - **2026-07-15:** `LutheranRadioWidgetTests` extension-profile target (no `LUTHERAN_MAIN_APP`; links WidgetSurface + Core; SPM membershipExceptions); ``WidgetIntentExecution/perform*`` AppIntent SSOT; 43 + 8 WidgetSurfaceTests green; widget extension unit test coverage closed. Canonical references only (no temporary handoff docs).
 - **2026-07-14:** Documentation standards — removed temporary handoff-doc cross-links; renamed widget extension test gap from internal tracking label to **Widget extension unit test coverage**; production `SeeAlso:` cites canonical roadmap and presentation dataflow only.
 - **2026-07-14:** WidgetSurface coordinator layer — `WidgetIntentCoordinators`, `WidgetTimelineEntryFactory`, `WidgetLivenessPresentation`, `WidgetNowPlayingDisplay`; `WidgetIntentExecution` in `WidgetDisplayModels.swift`; extension `perform()`/Provider thin delegates; toggle mirror helpers removed; widget extension test coverage partially complete (coordinator SSOT in main-app host).

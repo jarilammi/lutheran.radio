@@ -45,6 +45,26 @@ struct WidgetSurfaceTests {
         #expect(WidgetIntentCoordinators.planLiveActivityToggle(from: .prePlay) == .play)
     }
 
+    @Test func resolveLiveActivityTogglePrefersContentThenMirror() {
+        let fromContent = WidgetIntentCoordinators.resolveLiveActivityToggleVisualState(
+            liveActivityContent: .playing,
+            durableMirror: .userPaused,
+            actorVisualState: .prePlay,
+            sessionSnapshot: nil
+        )
+        #expect(fromContent.source == .liveActivityContent)
+        #expect(WidgetIntentCoordinators.planLiveActivityToggle(resolution: fromContent) == .pause)
+
+        let fromMirror = WidgetIntentCoordinators.resolveLiveActivityToggleVisualState(
+            liveActivityContent: nil,
+            durableMirror: .playing,
+            actorVisualState: .prePlay,
+            sessionSnapshot: nil
+        )
+        #expect(fromMirror.source == .durableCrossProcessMirror)
+        #expect(WidgetIntentCoordinators.planLiveActivityToggle(resolution: fromMirror) == .pause)
+    }
+
     // MARK: - Liveness presentation
 
     @Test func livenessBranchesAreInverses() {

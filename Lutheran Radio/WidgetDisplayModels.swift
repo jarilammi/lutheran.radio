@@ -15,13 +15,15 @@
 // language/flag helpers. Complements the status and control presentation mappers
 // that live on `PlayerVisualState`.
 //
-// This file is presentation-only. No security logic, no streaming, no intent handling.
+// Presentation helpers plus cross-target ``WidgetIntentExecution`` (AppIntent perform
+// SSOT). No security logic and no AVPlayer/streaming ownership.
 //
 // - SeeAlso: docs/Widget-Presentation-Dataflow.md (primary reference for the
 //   three-surface snapshot-driven contract), `LutheranRadioWidget.swift`,
 //   `LutheranRadioWidgetLiveActivity.swift`, `PlayerVisualState.swift`,
-//   CODING_AGENT.md.
+//   ``WidgetIntentCoordinators``, CODING_AGENT.md.
 
+import ActivityKit
 import Foundation
 import WidgetSurface
 
@@ -281,11 +283,64 @@ enum WidgetIntentExecution {
 
     /// Full Live Activity toggle path used by ``LiveActivityTogglePlaybackIntent/perform()``.
     ///
-    /// Reads actor-isolated visual state, plans pause/play, then executes.
+    /// Resolves visual state with multi-source priority so lock-screen pause matches the
+    /// control glyph the user saw:
+    /// 1. Active ActivityKit ``ContentState/visualState`` (same SSOT as the LA UI)
+    /// 2. Durable App Group mirror (last LA push; not gated by home-widget write suppression)
+    /// 3. Actor / in-process session snapshot fallbacks
+    ///
+    /// Extension processes often start with an empty memory-only session snapshot and
+    /// default actor `.prePlay`; planning from actor alone inverted the first pause while
+    /// audio was already playing (see lockscreen regression).
+    ///
+    /// - SeeAlso: ``WidgetIntentCoordinators/resolveLiveActivityToggleVisualState(liveActivityContent:durableMirror:actorVisualState:sessionSnapshot:)``,
+    ///   ``SharedPlayerManager/persistLiveActivityToggleVisualStateMirror(_:)``.
     static func performLiveActivityToggle() async {
-        let visualState = await SharedPlayerManager.shared.currentVisualState
-        let plan = WidgetIntentCoordinators.planLiveActivityToggle(from: visualState)
+        let liveActivityContent = currentLiveActivityContentVisualState()
+        let durableMirror = SharedPlayerManager.loadLiveActivityToggleVisualStateMirror()
+        let actorVisualState = await SharedPlayerManager.shared.currentVisualState
+        let sessionSnapshot = SharedPlayerManager.loadPersistedWidgetState()?.visualState
+
+        let resolution = WidgetIntentCoordinators.resolveLiveActivityToggleVisualState(
+            liveActivityContent: liveActivityContent,
+            durableMirror: durableMirror,
+            actorVisualState: actorVisualState,
+            sessionSnapshot: sessionSnapshot
+        )
+        let plan = WidgetIntentCoordinators.planLiveActivityToggle(resolution: resolution)
+
+        #if DEBUG
+        print(
+            "[WidgetIntentExecution] LA toggle plan=\(plan) source=\(resolution.source.rawValue) state=\(resolution.visualState)"
+        )
+        #endif
+
+        // Optimistic mirror write so a second rapid tap in a cold extension process
+        // plans against the intended post-toggle visual before main-app LA push lands.
+        let optimisticTarget: PlayerVisualState = (plan == .pause) ? .userPaused : .playing
+        SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(optimisticTarget)
+
         await executeLiveActivityToggle(plan: plan)
+    }
+
+    /// Reads `ContentState.visualState` from the first active/stale Lutheran Radio Live Activity.
+    ///
+    /// - Returns: Visual state when ActivityKit exposes a live activity in this process; otherwise `nil`.
+    /// - Note: App Intent hosts sometimes report an empty activities list; the durable App Group
+    ///   mirror is the required fallback in that case.
+    nonisolated static func currentLiveActivityContentVisualState() -> PlayerVisualState? {
+        let activities = Activity<LutheranRadioLiveActivityAttributes>.activities
+        guard let activity = activities.first(where: {
+            switch $0.activityState {
+            case .active, .stale:
+                return true
+            default:
+                return false
+            }
+        }) else {
+            return nil
+        }
+        return activity.content.state.visualState
     }
 
     /// Full Live Activity stream switch path used by ``LiveActivitySwitchStreamIntent/perform()``.

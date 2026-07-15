@@ -241,6 +241,7 @@ import WidgetKit
 /// | pendingActionId         | String (UUID)         | Same writers as pendingAction                                | `getPendingAction()`, `clearPendingAction()`                         | Deduplication token to handle rapid repeated taps            | Prevents double-processing on race conditions |
 /// | pendingActionTime       | Double (epoch)        | Same writers as pendingAction                                | Widget providers (staleness checks)                                  | Freshness timestamp for pending actions                      | Used to ignore very old pending actions |
 /// | pendingLanguage         | String                | `scheduleWidgetAction` (only for "switch")                   | `getPendingAction()`, widget providers                               | Parameter for stream switch actions                          | Only meaningful when `pendingAction == "switch"` |
+/// | liveActivityToggleVisualState | String (case name) | `RadioLiveActivityManager` on every ContentState push; optimistic LA toggle | ``loadLiveActivityToggleVisualStateMirror()`` + ``WidgetIntentExecution/performLiveActivityToggle()`` | Durable cross-process LA play/pause plan signal when extension memory snapshot is empty | Cleared on LA end, termination, privacy clear; **not** gated by home-widget `hasActiveWidgets` |
 ///
 /// **Key invariants**:
 /// - The main app is always the source of truth. Widgets write optimistic visual state +
@@ -249,6 +250,9 @@ import WidgetKit
 /// - Widget / extension code should prefer `loadPersistedVisualStateDirect()` or call
 ///   `syncVisualStateFromPersistence()` / `refreshVisualStateFromPersistence()` before
 ///   trusting in-memory `currentVisualState`.
+/// - Live Activity lock-screen toggle plans prefer ActivityKit `ContentState` then
+///   ``loadLiveActivityToggleVisualStateMirror()`` over extension-local actor defaults
+///   (see ``WidgetIntentCoordinators/resolveLiveActivityToggleVisualState(liveActivityContent:durableMirror:actorVisualState:sessionSnapshot:)``).
 
 #if LUTHERAN_MAIN_APP
 /// Suppresses Darwin notify echoes when the main app posts a pause notification to itself
@@ -2641,9 +2645,80 @@ actor SharedPlayerManager {
         defaults.removeObject(forKey: "instantFeedbackTime")
         defaults.removeObject(forKey: "instantFeedbackLanguage")
         // Visual state is memory-only; no on-disk snapshot to preserve across termination.
+        // LA ends on termination — drop the durable toggle mirror so a cold extension cannot
+        // plan pause/play from a dead surface.
+        clearLiveActivityToggleVisualStateMirror()
         #if DEBUG
         print("[SharedPlayerManager] Forced stale lastUpdateTime (0) + cleared instant feedback for post-termination passive widget state")
         #endif
+    }
+
+    // MARK: - Live Activity toggle durable mirror (cross-process)
+
+    /// App Group key for the last Live Activity `ContentState.visualState` used by toggle planning.
+    ///
+    /// Distinct from the memory-only widget session snapshot and **not** subject to home-widget
+    /// `hasActiveWidgets` write suppression. Lock Screen / Dynamic Island already surface this
+    /// visual; the mirror exists so extension-hosted App Intents can match the glyph when
+    /// `Activity.activities` is briefly empty and extension memory has no session snapshot.
+    nonisolated static let liveActivityToggleVisualStateAppGroupKey = "liveActivityToggleVisualState"
+
+    /// Writes the durable Live Activity visual-state mirror for cross-process toggle planning.
+    ///
+    /// - Parameter visualState: Last pushed (or optimistically planned) LA visual state.
+    /// - Important: Always writes when the App Group is available — not gated by
+    ///   ``hasActiveWidgets``. Home-widget privacy suppression must not invert LA pause.
+    /// - SeeAlso: ``loadLiveActivityToggleVisualStateMirror()``, ``clearLiveActivityToggleVisualStateMirror()``,
+    ///   ``WidgetIntentCoordinators/resolveLiveActivityToggleVisualState(liveActivityContent:durableMirror:actorVisualState:sessionSnapshot:)``,
+    ///   `RadioLiveActivityManager.updateCurrentActivity`.
+    nonisolated static func persistLiveActivityToggleVisualStateMirror(_ visualState: PlayerVisualState) {
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return }
+        defaults.set(liveActivityToggleMirrorToken(for: visualState), forKey: liveActivityToggleVisualStateAppGroupKey)
+    }
+
+    /// Reads the durable Live Activity visual-state mirror, if present and well-formed.
+    ///
+    /// - Returns: Mirrored ``PlayerVisualState``, or `nil` when missing/unknown (treat as no signal).
+    /// - SeeAlso: ``persistLiveActivityToggleVisualStateMirror(_:)``.
+    nonisolated static func loadLiveActivityToggleVisualStateMirror() -> PlayerVisualState? {
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared"),
+              let token = defaults.string(forKey: liveActivityToggleVisualStateAppGroupKey)
+        else {
+            return nil
+        }
+        return playerVisualState(fromLiveActivityToggleMirrorToken: token)
+    }
+
+    /// Clears the durable Live Activity toggle mirror (LA end, termination, privacy clear).
+    nonisolated static func clearLiveActivityToggleVisualStateMirror() {
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return }
+        defaults.removeObject(forKey: liveActivityToggleVisualStateAppGroupKey)
+    }
+
+    /// Stable App Group token for ``PlayerVisualState`` (plain cases, no associated values).
+    nonisolated private static func liveActivityToggleMirrorToken(for state: PlayerVisualState) -> String {
+        switch state {
+        case .prePlay: return "prePlay"
+        case .cleared: return "cleared"
+        case .playing: return "playing"
+        case .userPaused: return "userPaused"
+        case .thermalPaused: return "thermalPaused"
+        case .securityLocked: return "securityLocked"
+        }
+    }
+
+    nonisolated private static func playerVisualState(
+        fromLiveActivityToggleMirrorToken token: String
+    ) -> PlayerVisualState? {
+        switch token {
+        case "prePlay": return .prePlay
+        case "cleared": return .cleared
+        case "playing": return .playing
+        case "userPaused": return .userPaused
+        case "thermalPaused": return .thermalPaused
+        case "securityLocked": return .securityLocked
+        default: return nil
+        }
     }
 
     /// Optimistic play/pause widget path: persist visual state, schedule pending action, notify main app.
@@ -3645,6 +3720,9 @@ extension SharedPlayerManager {
         defaults.removeObject(forKey: "pendingActionId")
         defaults.removeObject(forKey: "pendingActionTime")
         defaults.removeObject(forKey: "pendingLanguage")
+
+        // Live Activity toggle mirror (cross-process plan signal; privacy clear ends LA too).
+        defaults.removeObject(forKey: liveActivityToggleVisualStateAppGroupKey)
 
         // Explicit synchronize() removed — unnecessary (removals are visible cross-process
         // via subsequent loads and notifications; privacy clear is not performance-critical).

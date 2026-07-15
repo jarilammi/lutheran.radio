@@ -193,12 +193,13 @@ private func getAlternativeStreams(current: String) -> [String] {
 ///   `LiveActivitySwitchStreamIntent`, <doc:Architecture>,
 ///   CODING_AGENT.md (Single Source of Truth Principles + Cross-target shared sources).
 ///
-/// AGENT NOTE: Because Live Activity intents execute in the widget extension
-/// process, they obtain a fresh view of actor state via the static facades.
-/// Treat this surface exactly like other explicit user action surfaces:
+/// AGENT NOTE: Live Activity intents often run in a short-lived extension process
+/// whose memory-only session snapshot is empty. Direction is planned by
+/// ``WidgetIntentExecution/performLiveActivityToggle()`` from ActivityKit
+/// ContentState / durable App Group mirror first, then actor/snapshot fallbacks —
+/// never from bare default `.prePlay` alone. Treat play as an explicit user surface:
 /// always go through `userRequestedPlay()` for the "start playing" direction.
-/// Direct `play()` calls here would bypass the intent-setting guard and are
-/// forbidden.
+/// Direct `play()` calls here would bypass the intent-setting guard and are forbidden.
 struct LiveActivityTogglePlaybackIntent: AppIntent {
     nonisolated static var title: LocalizedStringResource { "Toggle Lutheran Radio Playback" }
     nonisolated static var description: IntentDescription {
@@ -211,6 +212,9 @@ struct LiveActivityTogglePlaybackIntent: AppIntent {
         #endif
 
         // AGENT NOTE: Full path is ``WidgetIntentExecution/performLiveActivityToggle()``.
+        // Plans from Live Activity ContentState / durable App Group mirror first — not only
+        // extension-local currentVisualState (empty session under home-widget write suppression
+        // used to invert the first lock-screen pause into play).
         await WidgetIntentExecution.performLiveActivityToggle()
 
         #if DEBUG

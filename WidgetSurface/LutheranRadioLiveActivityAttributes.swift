@@ -28,6 +28,13 @@
 // (computed once per view or outer DynamicIsland closure, then passed inward).
 // See LutheranRadioWidgetLiveActivity.swift and PlayerVisualState.swift.
 //
+// Toggle planning contract:
+// `ContentState.visualState` is the preferred input for lock-screen play/pause
+// planning (matches the glyph). When ActivityKit does not expose activities in the
+// intent host, a durable App Group mirror of the same visual is used — see
+// ``WidgetIntentCoordinators/resolveLiveActivityToggleVisualState`` and
+// ``SharedPlayerManager/persistLiveActivityToggleVisualStateMirror``.
+//
 // - SeeAlso: `SharedPlayerManager` (source of the snapshot), `PlayerVisualState`
 //   (makeStatusPresentation, makeControlPresentation, PlayerStatusPresentation,
 //   PlayerControlPresentation), `StreamProgramMetadata`,

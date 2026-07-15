@@ -70,6 +70,73 @@ final class WidgetIntentCoordinatorTests: XCTestCase {
         }
     }
 
+    /// Multi-source resolution: LA ContentState wins over empty extension actor/snapshot.
+    ///
+    /// Protects lock-screen pause when home-widget write suppression leaves the extension
+    /// memory-only session empty (default actor `.prePlay` would otherwise invert to play).
+    func testResolveLiveActivityTogglePrefersContentOverEmptyActor() {
+        let resolution = WidgetIntentCoordinators.resolveLiveActivityToggleVisualState(
+            liveActivityContent: .playing,
+            durableMirror: nil,
+            actorVisualState: .prePlay,
+            sessionSnapshot: nil
+        )
+        XCTAssertEqual(resolution.visualState, .playing)
+        XCTAssertEqual(resolution.source, .liveActivityContent)
+        XCTAssertEqual(
+            WidgetIntentCoordinators.planLiveActivityToggle(resolution: resolution),
+            .pause
+        )
+    }
+
+    /// When ActivityKit activities are empty, durable App Group mirror still plans pause.
+    func testResolveLiveActivityToggleUsesDurableMirrorWhenContentMissing() {
+        let resolution = WidgetIntentCoordinators.resolveLiveActivityToggleVisualState(
+            liveActivityContent: nil,
+            durableMirror: .playing,
+            actorVisualState: .prePlay,
+            sessionSnapshot: nil
+        )
+        XCTAssertEqual(resolution.visualState, .playing)
+        XCTAssertEqual(resolution.source, .durableCrossProcessMirror)
+        XCTAssertEqual(
+            WidgetIntentCoordinators.planLiveActivityToggle(resolution: resolution),
+            .pause
+        )
+    }
+
+    /// Actor actively playing is preferred over a stale paused session snapshot when content/mirror are absent.
+    func testResolveLiveActivityTogglePrefersActivelyPlayingActorOverSnapshot() {
+        let resolution = WidgetIntentCoordinators.resolveLiveActivityToggleVisualState(
+            liveActivityContent: nil,
+            durableMirror: nil,
+            actorVisualState: .playing,
+            sessionSnapshot: .userPaused
+        )
+        XCTAssertEqual(resolution.visualState, .playing)
+        XCTAssertEqual(resolution.source, .actorVisualState)
+        XCTAssertEqual(
+            WidgetIntentCoordinators.planLiveActivityToggle(resolution: resolution),
+            .pause
+        )
+    }
+
+    /// Empty signals default to `.prePlay` → play (factory / cold extension).
+    func testResolveLiveActivityToggleDefaultsToPrePlayWhenNoSignals() {
+        let resolution = WidgetIntentCoordinators.resolveLiveActivityToggleVisualState(
+            liveActivityContent: nil,
+            durableMirror: nil,
+            actorVisualState: nil,
+            sessionSnapshot: nil
+        )
+        XCTAssertEqual(resolution.visualState, .prePlay)
+        XCTAssertEqual(resolution.source, .defaultPrePlay)
+        XCTAssertEqual(
+            WidgetIntentCoordinators.planLiveActivityToggle(resolution: resolution),
+            .play
+        )
+    }
+
     // MARK: - Language resolution
 
     /// Prefers persisted snapshot language over preferred fallback.

@@ -386,6 +386,11 @@ class RadioLiveActivityManager: ObservableObject {
             visualState: visualState,
             streamMetadata: streamMetadata
         )
+
+        // Durable App Group mirror for extension-hosted LA toggle planning. Always keep warm —
+        // even when ActivityKit IPC is suppressed — so lock-screen pause is not inverted when
+        // home-widget write suppression leaves the extension session snapshot empty.
+        SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(visualState)
         
         // Event-driven deduplication (core of the responsiveness improvement).
         // We only cross the ActivityKit IPC boundary when the user-visible LA content
@@ -462,6 +467,7 @@ class RadioLiveActivityManager: ObservableObject {
         if SharedPlayerManager.isRunningInUITestMode {
             currentActivity = nil
             lastPushedContent = nil
+            SharedPlayerManager.clearLiveActivityToggleVisualStateMirror()
             return
         }
 
@@ -469,17 +475,20 @@ class RadioLiveActivityManager: ObservableObject {
         if isRunningUnderTest {
             currentActivity = nil
             lastPushedContent = nil
+            SharedPlayerManager.clearLiveActivityToggleVisualStateMirror()
             return
         }
         #endif
         
         guard let activity = currentActivity else {
             lastPushedContent = nil
+            SharedPlayerManager.clearLiveActivityToggleVisualStateMirror()
             return
         }
         
         currentActivity = nil   // clear immediately while still on the calling context
         lastPushedContent = nil // Lifecycle: next startActivity begins with a clean last-pushed record
+        SharedPlayerManager.clearLiveActivityToggleVisualStateMirror()
         
         // Capture safely once (standard Live Activity pattern under Swift 6)
         nonisolated(unsafe) let safeActivityToEnd = activity
@@ -604,6 +613,9 @@ class RadioLiveActivityManager: ObservableObject {
             // event (or explicit foreground correction). Starting the timer here would
             // re-introduce the old polling-driven behavior.
             beginObservingActivityEvents(activity)
+            // Warm the durable toggle mirror from the system-held ContentState so the first
+            // lock-screen pause after process resume does not invert when extension memory is empty.
+            SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(activity.content.state.visualState)
             #if DEBUG
             print("🔴 Found existing Live Activity: \(activity.id) — timer not auto-started (event-driven)")
             #endif
@@ -621,6 +633,7 @@ class RadioLiveActivityManager: ObservableObject {
         _ content: ActivityContent<LutheranRadioLiveActivityAttributes.ContentState>
     ) {
         lastPushedContent = content.state
+        SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(content.state.visualState)
     }
 
     /// Clears local activity tracking when attribute-events observation ends.
@@ -633,12 +646,14 @@ class RadioLiveActivityManager: ObservableObject {
             _test_harnessSimulatesActiveActivity = false
             currentActivity = nil
             lastPushedContent = nil
+            SharedPlayerManager.clearLiveActivityToggleVisualStateMirror()
             return
         }
         #endif
         guard currentActivity != nil else { return }
         currentActivity = nil
         lastPushedContent = nil
+        SharedPlayerManager.clearLiveActivityToggleVisualStateMirror()
     }
 
     /// Publishes the consolidated observer task into ``activityObservationTask``.
