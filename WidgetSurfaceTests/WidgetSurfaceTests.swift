@@ -2,18 +2,104 @@
 //  WidgetSurfaceTests.swift
 //  WidgetSurfaceTests
 //
-//  Created by Jari Lammi on 14.7.2026.
+//  Pure WidgetSurface framework tests (no SharedPlayerManager / extension SPM).
+//  Complements LutheranRadioWidgetTests, which exercise the extension compile profile.
+//
+//  - SeeAlso: ``WidgetIntentCoordinators``, ``WidgetLivenessPresentation``,
+//    ``WidgetTimelineEntryFactory``, docs/Widget-Functionality-Roadmap.md.
 //
 
+import Foundation
 import Testing
-@testable import WidgetSurface
+import WidgetSurface
 
 struct WidgetSurfaceTests {
 
-    @Test func example() async throws {
-        // Write your test here and use APIs like `#expect(...)` to check expected conditions.
-        // Swift Testing Documentation
-        // https://developer.apple.com/documentation/testing
+    // MARK: - Intent coordinators
+
+    @Test func planHomeWidgetTogglePlayingIsPause() {
+        let plan = WidgetIntentCoordinators.planHomeWidgetToggle(from: .playing)
+        #expect(plan.action == "pause")
+        #expect(plan.targetVisualState == .userPaused)
     }
 
+    @Test func planHomeWidgetTogglePausedIsPlay() {
+        let plan = WidgetIntentCoordinators.planHomeWidgetToggle(from: .userPaused)
+        #expect(plan.action == "play")
+        #expect(plan.targetVisualState == .playing)
+    }
+
+    @Test func planControlWidgetToggleBoolMatrix() {
+        let play = WidgetIntentCoordinators.planControlWidgetToggle(isPlayingRequested: true)
+        #expect(play.action == "play")
+        #expect(play.targetVisualState == .playing)
+
+        let pause = WidgetIntentCoordinators.planControlWidgetToggle(isPlayingRequested: false)
+        #expect(pause.action == "pause")
+        #expect(pause.targetVisualState == .userPaused)
+    }
+
+    @Test func planLiveActivityToggleMatrix() {
+        #expect(WidgetIntentCoordinators.planLiveActivityToggle(from: .playing) == .pause)
+        #expect(WidgetIntentCoordinators.planLiveActivityToggle(from: .userPaused) == .play)
+        #expect(WidgetIntentCoordinators.planLiveActivityToggle(from: .prePlay) == .play)
+    }
+
+    // MARK: - Liveness presentation
+
+    @Test func livenessBranchesAreInverses() {
+        #expect(WidgetLivenessPresentation.shouldShowInteractiveChrome(isMainAppRecentlyActive: true))
+        #expect(WidgetLivenessPresentation.shouldShowPassiveTapToOpen(isMainAppRecentlyActive: false))
+        #expect(WidgetLivenessPresentation.mainAppRecentActivityWindowSeconds == 60)
+    }
+
+    // MARK: - Timeline factory
+
+    @Test func homeBlueprintCarriesPresentationSlices() {
+        let fields = WidgetProviderSnapshotFields(
+            currentLanguage: "fi",
+            hasError: false,
+            visualState: .playing,
+            streamMetadata: nil
+        )
+        let status = PlayerVisualState.playing.makeStatusPresentation()
+        let control = PlayerVisualState.playing.makeControlPresentation()
+        let model = widgetNowPlayingDisplayModel(
+            visualState: .playing,
+            streamMetadata: nil,
+            languageName: "Finnish"
+        )
+        let slices = WidgetProviderPresentationSlices(
+            currentLanguageCode: "fi",
+            currentStation: "🇫🇮 Finnish",
+            statusPresentation: status,
+            controlPresentation: control,
+            statusMessage: status.text,
+            widgetNowPlayingDisplayModel: model
+        )
+        let date = Date(timeIntervalSince1970: 0)
+        let blueprint = WidgetTimelineEntryFactory.makeHomeWidgetBlueprint(
+            date: date,
+            fields: fields,
+            slices: slices
+        )
+        #expect(blueprint.visualState == .playing)
+        #expect(blueprint.currentLanguageCode == "fi")
+        #expect(blueprint.statusPresentation == status)
+        #expect(blueprint.controlPresentation == control)
+        #expect(blueprint.date == date)
+    }
+
+    // MARK: - Presentation mappers
+
+    @Test func statusPresentationPlayingUsesPlayGlyph() {
+        let presentation = PlayerVisualState.playing.makeStatusPresentation()
+        #expect(presentation.systemImage == "play.fill")
+        #expect(!presentation.text.isEmpty)
+    }
+
+    @Test func controlPresentationPlayingUsesPauseGlyph() {
+        let presentation = PlayerVisualState.playing.makeControlPresentation()
+        #expect(presentation.systemImage == "pause.fill")
+    }
 }

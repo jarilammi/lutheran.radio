@@ -57,18 +57,12 @@ struct ToggleRadioIntent: SetValueIntent {
         print("[LutheranRadioWidgetControl] ToggleRadioIntent.perform called with desired value: \(value)")
         #endif
 
-        Task { @MainActor in WidgetRefreshManager.setHasActiveLutheranWidgets(true) }
-
-        let plan = WidgetIntentCoordinators.planControlWidgetToggle(isPlayingRequested: value)
-        let language = WidgetIntentCoordinators.languageForOptimisticUpdate(
-            persistedLanguage: SharedPlayerManager.loadPersistedWidgetState()?.currentLanguage,
-            preferredLanguage: SharedPlayerManager.preferredWidgetLanguage()
-        )
-
-        await WidgetIntentExecution.executeOptimisticToggle(plan: plan, language: language)
+        // AGENT NOTE: Full path is ``WidgetIntentExecution/performControlWidgetToggle(isPlayingRequested:)``
+        // so extension-profile unit tests exercise the same body as this AppIntent.
+        await WidgetIntentExecution.performControlWidgetToggle(isPlayingRequested: value)
 
         #if DEBUG
-        print("[LutheranRadioWidgetControl] ToggleRadioIntent completed successfully (signaled \(plan.action) via pendingAction + Darwin)")
+        print("[LutheranRadioWidgetControl] ToggleRadioIntent completed successfully")
         #endif
 
         return .result()

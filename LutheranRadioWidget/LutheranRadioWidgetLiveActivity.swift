@@ -210,12 +210,11 @@ struct LiveActivityTogglePlaybackIntent: AppIntent {
         print("[LutheranRadioWidgetLiveActivity] LiveActivityTogglePlaybackIntent.perform called")
         #endif
 
-        let visualState = await SharedPlayerManager.shared.currentVisualState
-        let plan = WidgetIntentCoordinators.planLiveActivityToggle(from: visualState)
-        await WidgetIntentExecution.executeLiveActivityToggle(plan: plan)
+        // AGENT NOTE: Full path is ``WidgetIntentExecution/performLiveActivityToggle()``.
+        await WidgetIntentExecution.performLiveActivityToggle()
 
         #if DEBUG
-        print("[LutheranRadioWidgetLiveActivity] LiveActivityTogglePlaybackIntent completed – visualState was \(visualState)")
+        print("[LutheranRadioWidgetLiveActivity] LiveActivityTogglePlaybackIntent completed")
         #endif
 
         return .result()
@@ -254,7 +253,8 @@ struct LiveActivitySwitchStreamIntent: AppIntent {
         print("[LutheranRadioWidgetLiveActivity] LiveActivitySwitchStreamIntent.perform called for language: \(languageCode)")
         #endif
 
-        let switched = await WidgetIntentExecution.executeLiveActivityStreamSwitch(languageCode: languageCode)
+        // AGENT NOTE: Full path is ``WidgetIntentExecution/performLiveActivityStreamSwitch(languageCode:)``.
+        let switched = await WidgetIntentExecution.performLiveActivityStreamSwitch(languageCode: languageCode)
 
         #if DEBUG
         if !switched {

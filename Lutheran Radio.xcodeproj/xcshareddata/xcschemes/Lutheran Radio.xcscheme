@@ -48,6 +48,16 @@
                ReferencedContainer = "container:Lutheran Radio.xcodeproj">
             </BuildableReference>
          </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "YES">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "B77E58E7300748E500A070E9"
+               BuildableName = "LutheranRadioWidgetTests.xctest"
+               ReferencedContainer = "container:Lutheran Radio.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
    </TestAction>
    <LaunchAction
