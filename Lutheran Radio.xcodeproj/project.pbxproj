@@ -193,6 +193,15 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		B73ADB913007667000E8255C /* Exceptions for "Lutheran Radio" folder in "LutheranRadioWidgetTests" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				SharedPlayerManager.swift,
+				WidgetDisplayModels.swift,
+				WidgetRefreshManager.swift,
+			);
+			target = B77E58E7300748E500A070E9 /* LutheranRadioWidgetTests */;
+		};
 		B757A7962DEF7B5E00FF90FC /* Exceptions for "LutheranRadioWidget" folder in "LutheranRadioWidgetExtension" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -231,6 +240,16 @@
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
+/* Begin PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
+		B73ADB953007669A00E8255C /* Exceptions for "Lutheran Radio" folder in "Compile Sources" phase from "LutheranRadioWidgetTests" target */ = {
+			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
+			buildPhase = B77E58E4300748E500A070E9 /* Sources */;
+			membershipExceptions = (
+				Localizable.xcstrings,
+			);
+		};
+/* End PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		B72A089430067E5600560CD1 /* WidgetSurface */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
@@ -265,6 +284,8 @@
 			exceptions = (
 				B7AFC6D42CCD7D0C00BDDD83 /* Exceptions for "Lutheran Radio" folder in "Lutheran Radio" target */,
 				B777FE962DEF8307000007DA /* Exceptions for "Lutheran Radio" folder in "LutheranRadioWidgetExtension" target */,
+				B73ADB913007667000E8255C /* Exceptions for "Lutheran Radio" folder in "LutheranRadioWidgetTests" target */,
+				B73ADB953007669A00E8255C /* Exceptions for "Lutheran Radio" folder in "Compile Sources" phase from "LutheranRadioWidgetTests" target */,
 			);
 			path = "Lutheran Radio";
 			sourceTree = "<group>";
