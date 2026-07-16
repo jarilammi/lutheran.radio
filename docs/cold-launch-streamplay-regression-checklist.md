@@ -6,7 +6,7 @@ Regression guard for Lutheran Radio playback startup, resume, stream switching, 
 
 **Canonical agent rules:** [`CODING_AGENT.md`](../CODING_AGENT.md) — read first.
 
-**Last updated:** 2026-06-09
+**Last updated:** 2026-07-16
 
 ---
 
@@ -52,10 +52,11 @@ End with security impact, build status, localization needed.
 
 **Observer layout (recreate / teardown)**
 
-1. `setupPlaybackObservers()` — `timeControlStatus` KVO on `AVPlayer`; early `.paused` on fresh ICY item schedules debounced recreate (150 ms); skipped while `isPlaybackTeardownActive`.
-2. `recreatePlayerItem()` — single-flight via `recreateInFlight` on MainActor; bails during teardown.
-3. `addObservers()` — item `status` / buffer KVO on `audioQueue`; transient `.failed` may call `recreatePlayerItem()` (teardown-guarded).
-4. `stop()` / `performActualStop` — `activatePlaybackTeardownGuardFromStop()` runs synchronously on main thread before async cleanup; item observers invalidated and `playerItem = nil`; guard cleared when new secured item attaches.
+1. `setupPlaybackObservers()` — `timeControlStatus` KVO on `AVPlayer`; early `.paused` on fresh ICY item schedules debounced recreate (150 ms) via `attemptEarlyWindowTransientRecovery`; skipped while `isPlaybackTeardownActive`.
+2. `recreatePlayerItem()` — single-flight via `recreateInFlight` on MainActor; always rebuilds via `makeSecuredPlayerItem` (resource loader + DNSSEC/cert path); rebinds `setupPlaybackObservers` + `addObservers`; bails during teardown.
+3. `addObservers()` — item `status` / buffer KVO; buffer-empty with `AVFoundationErrorDomain` and early-window stalls call secured recreate under intent + budget guards (short early-window stall delay; longer post-stable stall delay).
+4. `attemptEarlyWindowTransientRecovery` — single gate for pre-stable-play silent recovery (budget, intent, teardown).
+5. `stop()` / `performActualStop` — `activatePlaybackTeardownGuardFromStop()` runs synchronously on main thread before async cleanup; item observers invalidated and `playerItem = nil`; guard cleared when new secured item attaches.
 
 ---
 
@@ -64,7 +65,7 @@ End with security impact, build status, localization needed.
 1. **DNS TXT validation** — `SecurityModelValidator` queries `securitymodels.lutheran.radio`; playback blocked on failure. One `validateSecurityModel() started` per session. No duplicate validation outside `Core/Actors/`.
 2. **Certificate pinning** — Full DER SHA-256 digest pinning in `CertificateValidator`; SPKI pinning in `Info.plist`. Runtime never compares colon-hex strings.
 3. **Time skew** — Device vs server skew > 5 minutes denies transition-window leniency.
-4. **Security model** — `expectedSecurityModel` is `"brenham"` in `SecurityConfiguration.swift`; stream URLs include the security model query parameter.
+4. **Security model** — `expectedSecurityModel` is `"dallas"` in `SecurityConfiguration.swift`; stream URLs include the security model query parameter.
 5. **MIE/EMTE** — Hardened runtime entitlements present; minimum deployment target iOS 26.2+.
 6. **Core isolation** — No security logic duplicated in app or widget; cert/DNS/policy flow through `Core/` only.
 
@@ -161,13 +162,16 @@ End with security impact, build status, localization needed.
 ## 8. Player item, ICY, and KVO observers
 
 1. **Single-flight recreate** — `recreatePlayerItem()` coalesces concurrent callers.
-2. **Early-ICY debounce** — 150 ms on early `.paused` KVO; cancelled on `.playing`, stop, counter reset.
-3. **Teardown guard** — `isPlaybackTeardownActive` at `stop()` start; suppresses recreate and early-ICY until new item attached.
-4. **Guard cleared on attach** — `clearPlaybackTeardownGuard()` in `preparePlayerItem`, `createAndStartPlayer`, `startPlayback`, successful recreate.
-5. **No recreate during switch stop** — Zero `Cannot recreate` and zero duplicate `Player item recreated` during switch teardown.
-6. **Transient status_stopped** — `transient status_stopped while visualState .playing → suppress pipeline` during ICY bursts.
-7. **Item failure handling** — `status_stream_unavailable` / `status_failed` → `markPlaybackStoppedByStreamFailure()`, not `setUserPaused()`; intent stays `.shouldBePlaying` unless user explicitly paused.
-8. **Observer invalidation** — Stop invalidates item observers and sets `playerItem = nil`.
+2. **Secured recreate** — Every recreate uses `makeSecuredPlayerItem` (resource loader delegate); never a bare `AVURLAsset` without the streaming security path.
+3. **Early-window recovery gate** — `attemptEarlyWindowTransientRecovery` is the single pre-stable-play gate (budget + intent + teardown) for timeControl, buffer-empty, item `.failed`, resource-loader, and loading-error paths.
+4. **Early-ICY debounce** — 150 ms on early `.paused` KVO; cancelled on `.playing`, stop, counter reset.
+5. **Early stall delay** — Pre-stable stall recovery uses a short delay (~0.75–1.5 s); post-stable stalls keep the longer debounce.
+6. **Teardown guard** — `isPlaybackTeardownActive` at `stop()` start; suppresses recreate and early-ICY until new item attached.
+7. **Guard cleared on attach** — `clearPlaybackTeardownGuard()` in `preparePlayerItem`, `createAndStartPlayer`, `startPlayback`, successful recreate.
+8. **No recreate during switch stop** — Zero `Cannot recreate` and zero duplicate secured-item recreate during switch teardown.
+9. **Transient status_stopped** — `transient status_stopped while visualState .playing → suppress pipeline` during ICY bursts.
+10. **Item failure handling** — `status_stream_unavailable` / `status_failed` → `markPlaybackStoppedByStreamFailure()`, not `setUserPaused()`; intent stays `.shouldBePlaying` (or `.sleepTimer`) unless user explicitly paused.
+11. **Observer invalidation** — Stop invalidates item observers and sets `playerItem = nil`.
 
 ---
 
@@ -188,6 +192,7 @@ End with security impact, build status, localization needed.
 1. **MainActor notification** — `SleepTimerNotification.postStateChange` is `@MainActor`; cancel/elapse paths `await` it.
 2. **No lldb trap on pause** — Pause with active sleep timer: zero `EXC_BREAKPOINT` at notification post.
 3. **SSOT stop path** — Sleep-timer cancel routes through `SharedPlayerManager.stop()`.
+4. **Preserve across switch** — Active-intent stream switches (`completeStreamSwitch`, `switchToStreamFromWidget`, external/Siri switch helpers) pass `preserveActiveSleepTimer: true` when intent is `.sleepTimer`.
 
 ---
 

@@ -342,7 +342,10 @@ final class RadioPlayerCoordinator {
             // SwiftUI selector observes viewModel.selectedStreamIndex (matchedGeometryEffect animates)
 
             if await SharedPlayerManager.shared.canProceedWithPlayback() {
-                await SharedPlayerManager.shared.resetToPrePlayForNewStream()
+                let intent = await SharedPlayerManager.shared.currentPlaybackIntent
+                await SharedPlayerManager.shared.resetToPrePlayForNewStream(
+                    preserveActiveSleepTimer: intent == .sleepTimer
+                )
                 updateUI(for: .prePlay)
             }
 
@@ -449,8 +452,10 @@ final class RadioPlayerCoordinator {
     /// 3. Mirror selection + chrome (index, background, UserDefaults language, selector view).
     /// 4. If `!shouldResumeAfterSwitch`: clear soft-pause stash, force `.userPaused` visual,
     ///    announce, clear the `actionId`, and return (no playback started).
-    /// 5. If resuming: `resetToPrePlayForNewStream()` (defensive clear + `.prePlay` + hold +
-    ///    one-shot reset), update UI to `.prePlay`, then `SharedPlayerManager.play()`.
+    /// 5. If resuming: `resetToPrePlayForNewStream(preserveActiveSleepTimer:)` when intent is
+    ///    `.sleepTimer` (symmetric with `completeStreamSwitch`), update UI to `.prePlay`, then
+    ///    `SharedPlayerManager.play()`. Stream failure leaves intent active
+    ///    (`.shouldBePlaying` / `.sleepTimer`), so this path auto-resumes without an extra play tap.
     /// 6. Announce + clear pending `actionId`.
     ///
     /// **Direct `play()` rule (authoritative):** The call to `play()` in the resume branch is
@@ -490,8 +495,9 @@ final class RadioPlayerCoordinator {
     ///   ``SharedPlayerManager/play()``,
     ///   ``SharedPlayerManager/userRequestedPlay()``,
     ///   ``SharedPlayerManager/resetToPrePlayForNewStream(preserveActiveSleepTimer:)``,
+    ///   ``SharedPlayerManager/markPlaybackStoppedByStreamFailure(_:)``,
     ///   ``SharedPlayerManager/currentPlaybackIntent``,
-    ///   `announceSwitchedToLanguage(_:)`,
+    ///   docs/cold-launch-streamplay-regression-checklist.md (§6.12, §10),
     ///   CODING_AGENT.md (Single Source of Truth Principles),
     ///   <doc:Architecture>.
     ///
@@ -530,7 +536,12 @@ final class RadioPlayerCoordinator {
             return
         }
 
-        await SharedPlayerManager.shared.resetToPrePlayForNewStream()
+        // Preserve an active sleep timer across failure→switch and normal playing switches
+        // (symmetric with completeStreamSwitch). Stream failure leaves intent as
+        // `.shouldBePlaying` or `.sleepTimer`; sticky `.userPaused` never reaches here.
+        await SharedPlayerManager.shared.resetToPrePlayForNewStream(
+            preserveActiveSleepTimer: playbackIntent == .sleepTimer
+        )
         viewModel?.selectedStreamIndex = index // migrated from // languageSelectorView (SwiftUI uses VM) .setSelectedIndex(index, caller: "widgetSwitch-prePlay")
         updateUI(for: .prePlay)
 
@@ -1824,29 +1835,25 @@ final class RadioPlayerCoordinator {
                 self.updateUIForNoInternet()
 
             } else if reasonKey == "status_stream_unavailable" || reasonKey == "status_failed" {
-                // Early-window guard (modest architectural consolidation).
-                //
                 // After `switchToStream` + `resetInitialPlaybackCountersForNewStream`, the player
-                // gives the new item a fresh retry budget. Normal live ICY HE-AAC framing/decoder
-                // noise on the very first packets is expected and is recovered silently by
-                // `recreatePlayerItem()` (see `handleItemStatusFailure` and the two observer sites).
+                // gives the new item a fresh retry budget. Live ICY framing/decoder noise on the
+                // first packets is recovered silently by secured `recreatePlayerItem()`
+                // (`handleItemStatusFailure`, buffer/timeControl observers, resource loader).
                 //
-                // If the player reports we are still in that window, suppress the mark-to-.userPaused
-                // and the "Lähetys ei saatavilla" alert. The next successful readyToPlay / playing
-                // status will drive the UI forward without the grey pause flash.
+                // While `isInInitialRecoveryWindow` is true, suppress grey-pause mutation and the
+                // stream-unavailable alert. A later `status_playing` advances the UI without a flash.
                 //
-                // This guard is defensive: the centralized player logic already avoids emitting
-                // the bad keys for transients, but other safety-net or fallback paths could still
-                // emit them. The window check ensures the documented contract holds at the UI layer.
+                // Defensive: engine paths already avoid severe keys for early transients; the
+                // window check keeps the contract at the UI layer if a fallback still emits them.
                 if streamingPlayer.isInInitialRecoveryWindow {
                     #if DEBUG
                     print("[RadioPlayerCoordinator] Suppressing unavailable/failed reaction — streamingPlayer.isInInitialRecoveryWindow (transient ICY noise on fresh post-switch/cold item)")
                     #endif
-                    // Leave visual in whatever prePlay/playing/connecting state the effective logic chose.
-                    // Recovery will produce a subsequent status_playing.
                 } else {
                     let vsForCheck = await SharedPlayerManager.shared.currentVisualState
                     if vsForCheck.isActivelyPlaying || vsForCheck == .prePlay {
+                        // Preserves playback intent (`.shouldBePlaying` / `.sleepTimer`) so a
+                        // subsequent language switch auto-resumes without an extra play tap.
                         await SharedPlayerManager.shared.markPlaybackStoppedByStreamFailure()
                     }
                     let correctedVisualState = await SharedPlayerManager.shared.currentVisualState

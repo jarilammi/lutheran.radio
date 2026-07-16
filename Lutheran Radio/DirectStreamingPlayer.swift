@@ -794,13 +794,16 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// Used by `RadioPlayerCoordinator` (and internal recovery paths) as a cheap predicate
     /// to suppress user-visible transient failure surfaces ("unavailable", grey pause, alert)
     /// for normal ICY/Fig/AAC decoder noise on fresh items. This is the defensive complement
-    /// to the centralized `handleItemStatusFailure` logic.
+    /// to ``attemptEarlyWindowTransientRecovery(reason:allowWhileDeferringFirstPlayKick:)`` and
+    /// ``handleItemStatusFailure(_:)``.
     ///
     /// - Important: This is **not** a general "is playing" flag. It specifically protects the
     ///   early window documented in `switchToStream` and `resetInitialPlaybackCountersForNewStream`.
     ///
     /// - SeeAlso: `switchToStream(_:)`, `resetInitialPlaybackCountersForNewStream()`,
-    ///   `handleItemStatusFailure(_:)`, `RadioPlayerCoordinator.handleStatusChange`,
+    ///   `handleItemStatusFailure(_:)`, `recreatePlayerItem()`,
+    ///   `RadioPlayerCoordinator.handleStatusChange`,
+    ///   docs/cold-launch-streamplay-regression-checklist.md (§6 stream failure switch, §8 observers),
     ///   CODING_AGENT.md (Single Source of Truth + explicit transient modeling)
     var isInInitialRecoveryWindow: Bool {
         !hasStartedPlaying && initialPlaybackRetryCount < maxInitialRetries
@@ -819,6 +822,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     @MainActor private var attachedItemLanguageCode: String?
     /// Cancellable startup safety-net work (cold launch / stream-switch first attach only).
     private var startupSafetyNetWorkItem: DispatchWorkItem?
+    /// Preferred forward buffer for secured live items (cold attach, switch, and recreate).
+    private let preferredLiveForwardBufferDuration: TimeInterval = 15.0
     
     var isPlaying: Bool {
         return (player?.rate ?? 0) > 0 && player?.currentItem?.status == .readyToPlay
@@ -1940,10 +1945,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             return
         }
         
-        let asset = AVURLAsset(url: url)
-        asset.resourceLoader.setDelegate(self, queue: .main)
-        
-        let playerItem = AVPlayerItem(asset: asset)
+        let playerItem = makeSecuredPlayerItem(for: url)
         self.playerItem = playerItem
         bindAttachedItemToSelectedStream()
         clearPlaybackTeardownGuard()
@@ -1972,14 +1974,34 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
 
         // Do NOT call notifyMainApp here — let SharedPlayerManager do it
     }
+
+    /// Builds a secured live `AVPlayerItem` for lutheran.radio HTTPS streaming.
+    ///
+    /// Every attach path (cold launch, stream switch, and silent transient recovery) must
+    /// create items through this helper so media bytes always load via
+    /// `AVAssetResourceLoaderDelegate` → `StreamingSessionDelegate` →
+    /// ``SecurityConfiguration/makeSecureEphemeralConfiguration()`` (DNSSEC + runtime
+    /// certificate digest validation). A bare `AVURLAsset(url:)` without the resource-loader
+    /// delegate would bypass that pipeline.
+    ///
+    /// - Parameter url: Absolute HTTPS stream URL from ``urlWithOptimalServer(for:)`` (or the
+    ///   current item’s URL during in-place recovery).
+    /// - Returns: An `AVPlayerItem` with the resource loader wired and live buffer preference set.
+    /// - SeeAlso: `preparePlayerItem(for:)`, `recreatePlayerItem()`,
+    ///   `resourceLoader(_:shouldWaitForLoadingOfRequestedResource:)`,
+    ///   `Core/Configuration/SecurityConfiguration.swift`, CODING_AGENT.md (Core surface area).
+    @MainActor
+    private func makeSecuredPlayerItem(for url: URL) -> AVPlayerItem {
+        let asset = AVURLAsset(url: url)
+        asset.resourceLoader.setDelegate(self, queue: .main)
+        let item = AVPlayerItem(asset: asset)
+        item.preferredForwardBufferDuration = preferredLiveForwardBufferDuration
+        return item
+    }
     
     @MainActor
     private func preparePlayerItem(for url: URL) async {
-        let asset = AVURLAsset(url: url)
-        asset.resourceLoader.setDelegate(self, queue: .main)
-        
-        let playerItem = AVPlayerItem(asset: asset)
-        playerItem.preferredForwardBufferDuration = 15.0
+        let playerItem = makeSecuredPlayerItem(for: url)
         
         if self.player == nil {
             self.player = AVPlayer(playerItem: playerItem)
@@ -2042,11 +2064,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                         return
                     }
 
-                    // 2. Asset + Resource Loader
-                    let asset = AVURLAsset(url: streamURL)
-                    asset.resourceLoader.setDelegate(self, queue: .main)
-
-                    let playerItem = AVPlayerItem(asset: asset)
+                    // 2. Secured asset + resource loader (DNSSEC + cert validation path)
+                    let playerItem = self.makeSecuredPlayerItem(for: streamURL)
 
                     if self.player == nil {
                         self.player = AVPlayer()
@@ -2108,8 +2127,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 switch newTC {
                 case .playing:
                     self.cancelEarlyICYDropRecreate()
-                    // Important : KVO resurrection protection now driven by
-                    // authoritative playback intent.
+                    // KVO resurrection protection is driven by authoritative playback intent.
                     guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
                         #if DEBUG
                         print("[DirectStreamingPlayer] [KVO] timeControlStatus.playing: resurrection suppressed by playbackIntent — enforcing pause")
@@ -2126,23 +2144,19 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                         #endif
                         return
                     }
-                    self.safeOnStatusChange(isPlaying: true, reasonKey: "status_playing")   // ← fixed
+                    self.safeOnStatusChange(isPlaying: true, reasonKey: "status_playing")
                     self.hasStartedPlaying = true
                     self.stopBufferingTimer()
                     
                 case .paused:
                     if !self.isPlaybackTeardownActive && observedPlayer.rate == 0.0 {
-                        self.safeOnStatusChange(isPlaying: false, reasonKey: "status_stopped")   // ← fixed
+                        self.safeOnStatusChange(isPlaying: false, reasonKey: "status_stopped")
                     }
                     
-                    // observer hardening (event-driven, no new timers):
-                    // React to early timeControlStatus drops on a fresh ICY item *before* any
-                    // stable playing period has been achieved. This catches the exact transient
-                    // ICY PUMP / FigStreamPlayer noise clusters (-12640, -12785, -12860, -12783,
-                    // -15514 etc.) from manual-testing-works.txt that rarely set playerItem.error
-                    // and therefore bypassed the existing bufferEmpty + stalled recreate paths.
-                    // Reuses the same initialPlaybackRetryCount bound + canProceedWithPlayback()
-                    // guard as the (now minimal) safety net. Purely reactive to the KVO symptom.
+                    // Early `timeControlStatus` drops on a fresh ICY attach (before stable play)
+                    // often arrive without `playerItem.error`. Route them through the same
+                    // early-window budget and intent guard as buffer-empty / item-failure recovery
+                    // so the 5 s startup safety net is a last resort rather than the primary path.
                     if !self.isPlaybackTeardownActive
                         && !self.hasStartedPlaying
                         && !self.isDeferringFirstPlayKick
@@ -2151,7 +2165,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                     }
                     
                 case .waitingToPlayAtSpecifiedRate:
-                    self.safeOnStatusChange(isPlaying: false, reasonKey: "status_buffering")   // ← fixed
+                    self.safeOnStatusChange(isPlaying: false, reasonKey: "status_buffering")
                     
                 @unknown default:
                     break
@@ -2184,16 +2198,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                     break
 
                 case .failed:
-                    // Route through the canonical decision point.
-                    //
-                    // This is the first concrete step in the modest architectural consolidation.
-                    // Previously this path unconditionally emitted "status_stream_unavailable"
-                    // (bypassing the retry budget established by resetInitialPlaybackCountersForNewStream).
-                    //
-                    // The new handler applies the same early-window transient logic used by
-                    // addObservers + the improved StreamErrorType classification.
-                    // Real permanent failures still surface; normal fresh-item ICY noise
-                    // triggers recreatePlayerItem() silently.
+                    // Route through the canonical decision point: early-window transients
+                    // recover via secured `recreatePlayerItem()`; permanent failures surface.
                     await self.handleItemStatusFailure(item)
                 default:
                     break
@@ -2549,11 +2555,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 print("[DirectStreamingPlayer] \(debugAttachContextLabel(context)): no currentItem after AVPlayer init → attaching fresh item")
                 #endif
                 
-                let url = coldLaunchURL
-                let asset = AVURLAsset(url: url)
-                asset.resourceLoader.setDelegate(self, queue: .main)
-                let newItem = AVPlayerItem(asset: asset)
-                newItem.preferredForwardBufferDuration = 15.0
+                let newItem = self.makeSecuredPlayerItem(for: coldLaunchURL)
                 player.replaceCurrentItem(with: newItem)
                 self.playerItem = newItem
                 self.bindAttachedItemToSelectedStream()
@@ -2786,20 +2788,34 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             print("[DirectStreamingPlayer] Added robust status observer")
             #endif
             
-            // Keep the existing buffer observers (they are still useful)
+            // Buffer observers: early-window AVFoundation errors recover immediately via the
+            // secured recreate path; post-stable stalls use a longer debounce.
             let bufferEmptyObs = playerItem.observe(\.isPlaybackBufferEmpty, options: [.new]) { [weak self] item, change in
                 guard let self = self, let newValue = change.newValue, newValue else { return }
-                DispatchQueue.main.async {
-                    if let error = item.error as NSError?, error.domain == "AVFoundationErrorDomain" {
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    guard !self.isPlaybackTeardownActive else { return }
+                    if let error = item.error as NSError?, error.domain == AVFoundationErrorDomain {
                         #if DEBUG
-                        print("[DirectStreamingPlayer] Buffer empty with error — attempting recovery")
+                        print("[DirectStreamingPlayer] Buffer empty with AVFoundation error — early-window recovery path")
                         #endif
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        // Short debounce coalesces bursty decoder noise into one recreate.
+                        try? await Task.sleep(for: .milliseconds(150))
+                        guard !self.isPlaybackTeardownActive else { return }
+                        guard self.playerItem === item else { return }
+                        let recovered = await self.attemptEarlyWindowTransientRecovery(
+                            reason: "bufferEmpty+AVFoundationError",
+                            allowWhileDeferringFirstPlayKick: true
+                        )
+                        if !recovered && !StreamErrorType.from(error: error).isPermanent {
+                            // Post-stable or budget-exhausted transient: still try one secured recreate
+                            // when intent allows (does not mark sticky user pause).
+                            guard await SharedPlayerManager.shared.canProceedWithPlayback() else { return }
                             self.recreatePlayerItem()
                         }
                         return
                     }
-                    self.safeOnStatusChange(isPlaying: false, reasonKey: "status_buffering")   // ← fixed
+                    self.safeOnStatusChange(isPlaying: false, reasonKey: "status_buffering")
                     self.startBufferingTimer()
                 }
             }
@@ -2816,22 +2832,44 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                             self.player?.play()
                         }
                         if self.hasStartedPlaying {
-                            self.safeOnStatusChange(isPlaying: true, reasonKey: "status_playing")   // ← fixed
+                            self.safeOnStatusChange(isPlaying: true, reasonKey: "status_playing")
                             self.stopBufferingTimer()
                         }
                     }
                 } else if !newValue && (self.player?.rate ?? 0) == 0 {
-                    let stalledDelay: TimeInterval = self.isLowEfficiencyMode ? 20.0 : 10.0
-                    DispatchQueue.main.asyncAfter(deadline: .now() + stalledDelay) { [weak self] in
-                        guard let self = self,
-                              let currentItem = self.playerItem,
-                              currentItem == item,
+                    // Early attach stalls should not wait the long post-stable timeout;
+                    // the startup safety net remains a final fallback only.
+                    let inEarlyWindow = !self.hasStartedPlaying
+                        && self.initialPlaybackRetryCount < self.maxInitialRetries
+                    let stalledDelay: TimeInterval = {
+                        if inEarlyWindow {
+                            return self.isLowEfficiencyMode ? 1.5 : 0.75
+                        }
+                        return self.isLowEfficiencyMode ? 20.0 : 10.0
+                    }()
+                    Task { @MainActor [weak self] in
+                        try? await Task.sleep(for: .seconds(stalledDelay))
+                        guard let self else { return }
+                        guard !self.isPlaybackTeardownActive else { return }
+                        guard let currentItem = self.playerItem,
+                              currentItem === item,
                               !currentItem.isPlaybackLikelyToKeepUp,
                               (self.player?.rate ?? 0) == 0 else { return }
-                        #if DEBUG
-                        print("[DirectStreamingPlayer] Stalled — attempting recovery")
-                        #endif
-                        self.recreatePlayerItem()
+                        guard await SharedPlayerManager.shared.canProceedWithPlayback() else { return }
+                        if !self.hasStartedPlaying && self.initialPlaybackRetryCount < self.maxInitialRetries {
+                            #if DEBUG
+                            print("[DirectStreamingPlayer] Early-window stall — secured recreatePlayerItem")
+                            #endif
+                            _ = await self.attemptEarlyWindowTransientRecovery(
+                                reason: "stalled-early",
+                                allowWhileDeferringFirstPlayKick: true
+                            )
+                        } else {
+                            #if DEBUG
+                            print("[DirectStreamingPlayer] Stalled — secured recreatePlayerItem")
+                            #endif
+                            self.recreatePlayerItem()
+                        }
                     }
                 }
             }
@@ -2843,7 +2881,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                     guard let self else { return }
                     guard await SharedPlayerManager.shared.canProceedWithPlayback() else { return }
                     self.player?.play()
-                    self.safeOnStatusChange(isPlaying: true, reasonKey: "status_playing")   // ← fixed
+                    self.safeOnStatusChange(isPlaying: true, reasonKey: "status_playing")
                     self.stopBufferingTimer()
                 }
             }
@@ -2983,28 +3021,13 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 return
             }
             guard let self else { return }
-            guard !self.isPlaybackTeardownActive else { return }
-            guard !self.hasStartedPlaying else { return }
-            guard !self.isDeferringFirstPlayKick else {
-                #if DEBUG
-                print("[DirectStreamingPlayer] [KVO] early ICY drop: skipped — awaiting readyToPlay first-play kick")
-                #endif
-                return
-            }
-            guard self.initialPlaybackRetryCount < self.maxInitialRetries else { return }
-            guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
-                #if DEBUG
-                print("[DirectStreamingPlayer] [KVO] early ICY drop: suppressed by playbackIntent")
-                #endif
-                return
-            }
-            if self.initialPlaybackRetryCount == 0 {
-                self.initialPlaybackRetryCount = 1
-            }
             #if DEBUG
-            print("[DirectStreamingPlayer] [Playback] Early timeControl drop on fresh ICY item — proactive recreatePlayerItem | hasStartedPlaying=\(self.hasStartedPlaying) | retryCount now=\(self.initialPlaybackRetryCount) | rate=\(rate)")
+            print("[DirectStreamingPlayer] [Playback] Early timeControl drop on fresh ICY item (rate=\(rate)) — early-window recovery")
             #endif
-            self.recreatePlayerItem()
+            _ = await self.attemptEarlyWindowTransientRecovery(
+                reason: "timeControlPaused-early",
+                allowWhileDeferringFirstPlayKick: false
+            )
         }
     }
     
@@ -3013,7 +3036,72 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         earlyICYDropRecreateTask?.cancel()
         earlyICYDropRecreateTask = nil
     }
+
+    /// Silent recovery for transient ICY / Fig / decoder noise on a fresh attach.
+    ///
+    /// This is the single decision gate for early-window recovery. Callers (KVO, buffer
+    /// observers, item `.failed`, resource-loader errors, loading errors) pass a diagnostic
+    /// `reason` only. The gate enforces:
+    /// - teardown suppression
+    /// - pre-stable-play window (`!hasStartedPlaying`)
+    /// - per-stream retry budget (`initialPlaybackRetryCount` / `maxInitialRetries`)
+    /// - ``SharedPlayerManager/canProceedWithPlayback()`` (sticky pause / security / clear)
+    ///
+    /// On success it schedules ``recreatePlayerItem()``, which always rebuilds a **secured**
+    /// item (resource loader + DNSSEC/cert path). Permanent failures never enter here.
+    ///
+    /// - Parameters:
+    ///   - reason: DEBUG diagnostic label for the recovery trigger.
+    ///   - allowWhileDeferringFirstPlayKick: When `false`, skips while the first audible kick
+    ///     is still waiting on `.readyToPlay` (used for pure timeControl pauses that often
+    ///     resolve without recreate). When `true`, recovers even if the first kick is deferred
+    ///     (item failure / resource-loader errors cannot wait for ready).
+    /// - Returns: `true` if ``recreatePlayerItem()`` was invoked.
+    /// - SeeAlso: `recreatePlayerItem()`, `handleItemStatusFailure(_:)`,
+    ///   `isInInitialRecoveryWindow`, docs/cold-launch-streamplay-regression-checklist.md (§8).
+    @MainActor
+    @discardableResult
+    private func attemptEarlyWindowTransientRecovery(
+        reason: String,
+        allowWhileDeferringFirstPlayKick: Bool
+    ) async -> Bool {
+        guard !isPlaybackTeardownActive else { return false }
+        guard !hasStartedPlaying else { return false }
+        if !allowWhileDeferringFirstPlayKick && isDeferringFirstPlayKick {
+            #if DEBUG
+            print("[DirectStreamingPlayer] early-window recovery skipped (\(reason)) — awaiting readyToPlay first-play kick")
+            #endif
+            return false
+        }
+        guard initialPlaybackRetryCount < maxInitialRetries else { return false }
+        guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
+            #if DEBUG
+            print("[DirectStreamingPlayer] early-window recovery suppressed by playbackIntent (\(reason))")
+            #endif
+            return false
+        }
+        if initialPlaybackRetryCount == 0 {
+            initialPlaybackRetryCount = 1
+        }
+        #if DEBUG
+        print("[DirectStreamingPlayer] early-window recovery → recreatePlayerItem | reason=\(reason) | retryCount=\(initialPlaybackRetryCount)/\(maxInitialRetries)")
+        #endif
+        recreatePlayerItem()
+        return true
+    }
     
+    /// Rebuilds the current live `AVPlayerItem` on the secured resource-loader path.
+    ///
+    /// Canonical recovery tool for transient ICY/Fig/decoder noise and mid-session stalls.
+    /// Always creates the replacement item via ``makeSecuredPlayerItem(for:)`` so DNSSEC and
+    /// runtime certificate validation remain in force. Single-flight (`recreateInFlight`);
+    /// suppressed while `isPlaybackTeardownActive`. Rebinds player-level and item-level
+    /// observers, then restarts only when ``SharedPlayerManager/canProceedWithPlayback()``
+    /// still allows audio.
+    ///
+    /// - SeeAlso: `attemptEarlyWindowTransientRecovery(reason:allowWhileDeferringFirstPlayKick:)`,
+    ///   `makeSecuredPlayerItem(for:)`, `setupPlaybackObservers()`,
+    ///   docs/cold-launch-streamplay-regression-checklist.md (§8).
     private func recreatePlayerItem() {
         Task { @MainActor [weak self] in
             guard let self else { return }
@@ -3033,7 +3121,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             defer { self.recreateInFlight = false }
             
             #if DEBUG
-            print("[DirectStreamingPlayer] Recreating player item due to decoder error")
+            print("[DirectStreamingPlayer] Recreating secured player item (transient recovery)")
             #endif
             
             guard let urlAsset = self.playerItem?.asset as? AVURLAsset else {
@@ -3044,28 +3132,25 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             }
             
             let currentURL = urlAsset.url
+            self.cancelEarlyICYDropRecreate()
             
-            // Clear observations
+            // Clear item-level observations before replacing the item.
             self.playerItemObservations.forEach { $0.invalidate() }
             self.playerItemObservations.removeAll()
             
-            // Create new asset and player item
-            let newAsset = AVURLAsset(url: currentURL)
-            let newItem = AVPlayerItem(asset: newAsset)
+            // Security invariant: replacement items must use the resource-loader path
+            // (never a bare AVURLAsset without the streaming delegate).
+            let newItem = self.makeSecuredPlayerItem(for: currentURL)
             
-            // Replace the item
             self.player?.replaceCurrentItem(with: newItem)
-            
-            // Update playerItem reference to the new item
             self.playerItem = newItem
             self.bindAttachedItemToSelectedStream()
             self.clearPlaybackTeardownGuard()
             
-            // Re-add observers to the new item
+            // Rebind player-level KVO + ICY, then item-level buffer/status observers.
+            self.setupPlaybackObservers()
             self.addObservers()
             
-            // Intent guard — actor state is kept trustworthy by the centralized pause timestamp
-            // and intent wiring.
             guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
                 #if DEBUG
                 print("[DirectStreamingPlayer] recreatePlayerItem: resurrection suppressed by playbackIntent")
@@ -3073,7 +3158,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 return
             }
             
-            // Restart playback only if still allowed — defer audible kick when item not ready.
+            // Restart only when still allowed — defer audible kick until item is ready.
             if newItem.status == .readyToPlay {
                 self.isDeferringFirstPlayKick = false
                 self.player?.playImmediately(atRate: 1.0)
@@ -3082,11 +3167,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             }
             
             #if DEBUG
-            print("[DirectStreamingPlayer] Player item recreated and playback resumed (item.status: \(newItem.status.rawValue))")
+            print("[DirectStreamingPlayer] Secured player item recreated (item.status: \(newItem.status.rawValue))")
             #endif
-            
-            // NEW (per minimal ICY resume fix): ensure delegate wired on the fresh item created by recreate
-            self.ensureICYAttached()
         }
     }
     
@@ -3485,58 +3567,55 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 #if DEBUG
                 print("[DirectStreamingPlayer] [Loading Error] SSL/Certificate error detected")
                 #endif
-                safeOnStatusChange(isPlaying: false, reasonKey: "status_security_failed")   // ← fixed
+                safeOnStatusChange(isPlaying: false, reasonKey: "status_security_failed")
                 
-            case .fileDoesNotExist, .badServerResponse:
+            case .fileDoesNotExist:
                 #if DEBUG
-                print("[DirectStreamingPlayer] [Loading Error] Hard server error (resource / response)")
+                print("[DirectStreamingPlayer] [Loading Error] Hard server error (resource missing)")
                 #endif
-                // Permanent non-security failure → emit status_failed (now the canonical
-                // key for hard connection errors that trigger red banner + popup).
                 safeOnStatusChange(isPlaying: false, reasonKey: "status_failed")
                 
             case .cannotFindHost, .dnsLookupFailed:
                 #if DEBUG
                 print("[DirectStreamingPlayer] [Loading Error] DNS lookup error (may be DNSSEC-unvalidated when policy active) — treating as transient")
                 #endif
-                // DNS lookup (including potential DNSSEC validation failure when
-                // requiresDNSSECValidationForStreaming is active) → recoverable path.
+                // DNS lookup (including DNSSEC validation failure when
+                // requiresDNSSECValidation is active) is recoverable in the early window.
                 fallthrough
                 
             default:
                 #if DEBUG
                 print("[DirectStreamingPlayer] [Loading Error] Transient error detected")
                 #endif
-                safeOnStatusChange(isPlaying: false, reasonKey: "status_buffering")   // ← fixed
+                safeOnStatusChange(isPlaying: false, reasonKey: "status_buffering")
                 
-                // : Make recreatePlayerItem the canonical "reset this live ICY item
-                // after startup noise" for transient cases in the early window (before stable play).
-                // This is the primary path from resource loader onError for ICY pump/Fig transients.
-                if !hasStartedPlaying && initialPlaybackRetryCount < maxInitialRetries {
-                    guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
-                        #if DEBUG
-                        print("[DirectStreamingPlayer] [Loading Error] transient early: suppressed by playbackIntent")
-                        #endif
-                        return
-                    }
-                    if initialPlaybackRetryCount == 0 { initialPlaybackRetryCount = 1 }
-                    #if DEBUG
-                    print("[DirectStreamingPlayer] Transient loading error on fresh ICY item — canonical recreatePlayerItem")
-                    #endif
-                    recreatePlayerItem()
-                    return   // do not fall through to stop()
+                if await attemptEarlyWindowTransientRecovery(
+                    reason: "loadingError-url-\(urlError.code.rawValue)",
+                    allowWhileDeferringFirstPlayKick: true
+                ) {
+                    return
                 }
+            }
+        } else if !errorType.isPermanent {
+            #if DEBUG
+            print("[DirectStreamingPlayer] [Loading Error] Non-URL transient — early-window recovery path")
+            #endif
+            safeOnStatusChange(isPlaying: false, reasonKey: "status_buffering")
+            if await attemptEarlyWindowTransientRecovery(
+                reason: "loadingError-nonURL",
+                allowWhileDeferringFirstPlayKick: true
+            ) {
+                return
             }
         } else {
             #if DEBUG
-            print("[DirectStreamingPlayer] [Loading Error] Non-URLError detected")
+            print("[DirectStreamingPlayer] [Loading Error] Permanent non-URL error")
             #endif
-            safeOnStatusChange(isPlaying: false, reasonKey: "status_buffering")   // ← fixed
+            safeOnStatusChange(isPlaying: false, reasonKey: errorType.statusString)
         }
         
-        // Pass classified errorType (owned here) to the *existing* Shared method.
-        // `streamDidFail` emission happens inside markPlaybackStoppedByStreamFailure
-        // after its state mutation. No emission code or Task-await-Shared lives in Direct.
+        // Terminal path: classified failure reaches SharedPlayerManager (intent preserved for
+        // auto-resume on stream switch). `streamDidFail` is emitted inside mark… after mutation.
         await SharedPlayerManager.shared.markPlaybackStoppedByStreamFailure(errorType)
         stop()
     }
@@ -3649,86 +3728,63 @@ extension DirectStreamingPlayer {
     }
     
     private func handlePlaybackError(_ error: Error?) {
-        guard let avError = error as? AVError else { return }
         #if DEBUG
-        print("[DirectStreamingPlayer] Playback error: code=\(avError.code.rawValue), desc=\(avError.localizedDescription)")
+        if let avError = error as? AVError {
+            print("[DirectStreamingPlayer] Playback error: code=\(avError.code.rawValue), desc=\(avError.localizedDescription)")
+        }
         #endif
-
-        // Historical behavior: any AVError set the permanent flag.
-        // Under the modest architectural consolidation we are moving toward a single
-        // decision point (`handleItemStatusFailure`) that respects the early-window
-        // transient budget. Direct callers of handlePlaybackError (currently only the
-        // unconditional statusObserver path) will be routed through the canonical
-        // handler in a follow-up slice.
-        self.hasPermanentError = true
-        self.stop(completion: nil, silent: true)
-
-        if avError.localizedDescription.contains("unmatched audio object type") || avError.localizedDescription.contains("SBR decoder") {
-            #if DEBUG
-            print("[DirectStreamingPlayer] HE-AAC/SBR format issue detected—recommend server-side LC-AAC fallback")
-            #endif
+        // Route every AV/item failure through the same classification + early-window gate.
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            if let item = self.playerItem {
+                await self.handleItemStatusFailure(item)
+            } else if let error {
+                await self.handleLoadingError(error)
+            }
         }
     }
 
     /// Central decision point for `.failed` status on an `AVPlayerItem`.
     ///
-    /// This method is the emerging **single source of truth** for the question:
-    /// "Is this a self-healing transient (normal ICY/Fig/AAC framing noise on a fresh item)
-    /// that should be recovered with `recreatePlayerItem`, or a real permanent failure?"
+    /// Answers: is this self-healing transient noise on a fresh ICY attach (recover with
+    /// secured ``recreatePlayerItem()``), or a real permanent failure that should surface
+    /// via ``SharedPlayerManager/markPlaybackStoppedByStreamFailure(_:)``?
     ///
-    /// It combines:
-    /// - Improved `StreamErrorType` classification (non-URL decoder errors → transient)
+    /// Combines:
+    /// - ``StreamErrorType/from(error:)`` classification (decoder / Fig noise → transient)
     /// - The fresh-item budget (`!hasStartedPlaying` + `initialPlaybackRetryCount`)
-    /// - Intent check via `SharedPlayerManager.canProceedWithPlayback()`
+    /// - Intent check via ``SharedPlayerManager/canProceedWithPlayback()``
     ///
-    /// - Important: After a user stream switch, `switchToStream` + `resetInitialPlaybackCountersForNewStream`
-    ///   must have been called so that the new item starts with a clean budget. This is what
-    ///   prevents prior-stream noise from poisoning the new stream's first attempt.
+    /// After a user stream switch, `switchToStream` + `resetInitialPlaybackCountersForNewStream`
+    /// give the new item a clean budget so prior-stream noise cannot poison the first attempt.
+    /// Terminal failure preserves playback intent (typically `.shouldBePlaying`) so a language
+    /// switch can auto-resume without an extra play tap.
     ///
     /// - Precondition: Called on a `.failed` KVO delivery for the current `playerItem`.
-    /// - Postcondition: Either `recreatePlayerItem()` was scheduled (transient case) or a
-    ///   terminal status was emitted and the player was stopped (permanent case).
+    /// - Postcondition: Either ``recreatePlayerItem()`` was scheduled (transient) or a terminal
+    ///   status was emitted and the player was stopped (permanent / budget exhausted).
     ///
-    /// - SeeAlso: `StreamErrorType.from(error:)`, `switchToStream(_:)`, `resetInitialPlaybackCountersForNewStream()`,
-    ///   `setupPlaybackObservers()`, `addObservers()`, `recreatePlayerItem()`,
-    ///   RadioPlayerCoordinator.handleStatusChange, CODING_AGENT.md
+    /// - SeeAlso: `StreamErrorType.from(error:)`, `attemptEarlyWindowTransientRecovery`,
+    ///   `switchToStream(_:)`, `resetInitialPlaybackCountersForNewStream()`,
+    ///   `recreatePlayerItem()`, `RadioPlayerCoordinator.handleStatusChange`,
+    ///   docs/cold-launch-streamplay-regression-checklist.md (§6.12, §8.7), CODING_AGENT.md
     @MainActor
     private func handleItemStatusFailure(_ item: AVPlayerItem) async {
         let error = item.error
         let errorType = StreamErrorType.from(error: error)
 
-        // Always record the classification for observers and UI.
         hasPermanentError = errorType.isPermanent
 
-        // Early window on a fresh (or post-switch) item with remaining retry budget
-        // and a non-permanent error → canonical silent recovery via recreate.
-        // This is the behavior the unconditional observer path was missing.
-        if !hasStartedPlaying
-            && initialPlaybackRetryCount < maxInitialRetries
-            && !errorType.isPermanent {
-
-            guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
-                #if DEBUG
-                print("[DirectStreamingPlayer] [Item status failure] early transient suppressed by intent")
-                #endif
+        if !errorType.isPermanent {
+            if await attemptEarlyWindowTransientRecovery(
+                reason: "itemStatusFailed",
+                allowWhileDeferringFirstPlayKick: true
+            ) {
                 return
             }
-
-            if initialPlaybackRetryCount == 0 {
-                initialPlaybackRetryCount = 1
-            }
-
-            #if DEBUG
-            print("[DirectStreamingPlayer] Item status .failed on fresh ICY item (post-pause/switch) — canonical recreatePlayerItem")
-            #endif
-            recreatePlayerItem()
-            return
         }
 
-        // Real permanent (or late) failure path.
-        // Pass the player-owned classified errorType to the existing Shared surface.
-        // .streamDidFail emission (and visual) happens inside mark... after mutation.
-        // No emission logic, no new APIs, no Task { await record... } in Direct.
+        // Permanent, or late/exhausted transient — surface failure without sticky user pause.
         safeOnStatusChange(isPlaying: false, reasonKey: errorType.statusString)
         await SharedPlayerManager.shared.markPlaybackStoppedByStreamFailure(errorType)
         stop()
@@ -3987,21 +4043,19 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
                     self.currentLoadingDelegate = nil
                 }
                 
-                // : For transient ICY startup noise on fresh items, go straight to
-                // recreatePlayerItem (now the canonical reset tool) instead of the full
-                // handleLoadingError + stop path. handleLoadingError is still called for
-                // permanent cases and late transients.
+                // Early-window transients recover via secured recreate without full stop.
+                // Permanent and post-window failures go through handleLoadingError.
                 let errType = StreamErrorType.from(error: error)
-                if !self.hasStartedPlaying && self.initialPlaybackRetryCount < self.maxInitialRetries
-                    && !errType.isPermanent {
+                if !errType.isPermanent {
                     Task { @MainActor [weak self] in
                         guard let self else { return }
-                        guard await SharedPlayerManager.shared.canProceedWithPlayback() else { return }
-                        if self.initialPlaybackRetryCount == 0 { self.initialPlaybackRetryCount = 1 }
-                        #if DEBUG
-                        print("[DirectStreamingPlayer] Resource loader transient error on fresh ICY item — canonical recreatePlayerItem")
-                        #endif
-                        self.recreatePlayerItem()
+                        if await self.attemptEarlyWindowTransientRecovery(
+                            reason: "resourceLoader-transient",
+                            allowWhileDeferringFirstPlayKick: true
+                        ) {
+                            return
+                        }
+                        await self.handleLoadingError(error)
                     }
                     return
                 }
@@ -4053,8 +4107,17 @@ extension StreamErrorType {
     /// - Parameter error: The `item.error` or equivalent from AVFoundation / resource loading.
     /// - Returns: The appropriate ``StreamErrorType``.
     ///
-    /// - SeeAlso: `handleItemStatusFailure(_:)`, `switchToStream(_:)`,
-    ///   `resetInitialPlaybackCountersForNewStream()`, CODING_AGENT.md.
+    /// Classifies networking and AVFoundation failures for recovery vs terminal UI.
+    ///
+    /// Permanent classifications never auto-recreate. Transient and unknown classifications
+    /// may enter the early-window secured ``DirectStreamingPlayer`` recreate path.
+    ///
+    /// - Parameter error: `AVPlayerItem.error`, resource-loader failure, or equivalent.
+    /// - Returns: The appropriate ``StreamErrorType``.
+    /// - SeeAlso: `handleItemStatusFailure(_:)`, `attemptEarlyWindowTransientRecovery`,
+    ///   `recreatePlayerItem()`, `switchToStream(_:)`,
+    ///   `resetInitialPlaybackCountersForNewStream()`,
+    ///   CODING_AGENT.md (explicit permanent vs transient modeling).
     static func from(error: Error?) -> StreamErrorType {
         guard let nsError = error as NSError? else {
             return .unknown
@@ -4072,12 +4135,34 @@ extension StreamErrorType {
                 return .permanentFailure
 
             case URLError.Code.cannotFindHost.rawValue,
-                 URLError.Code.dnsLookupFailed.rawValue:
+                 URLError.Code.dnsLookupFailed.rawValue,
+                 URLError.Code.badServerResponse.rawValue,
+                 URLError.Code.timedOut.rawValue,
+                 URLError.Code.networkConnectionLost.rawValue,
+                 URLError.Code.notConnectedToInternet.rawValue:
                 return .transientFailure
 
-            case URLError.Code.badServerResponse.rawValue:
+            default:
                 return .transientFailure
+            }
+        }
 
+        if nsError.domain == AVFoundationErrorDomain {
+            // Live ICY/Fig decoder noise is almost always recoverable. Only mark clearly
+            // terminal AV codes permanent so early-window recreate remains available for
+            // the common decoder / media-services paths.
+            switch nsError.code {
+            case AVError.Code.contentIsUnavailable.rawValue,
+                 AVError.Code.noLongerPlayable.rawValue,
+                 AVError.Code.formatUnsupported.rawValue:
+                return .permanentFailure
+            case AVError.Code.mediaServicesWereReset.rawValue,
+                 AVError.Code.decodeFailed.rawValue,
+                 AVError.Code.undecodableMediaData.rawValue,
+                 AVError.Code.failedToParse.rawValue,
+                 AVError.Code.decoderNotFound.rawValue,
+                 AVError.Code.fileFormatNotRecognized.rawValue:
+                return .transientFailure
             default:
                 return .transientFailure
             }

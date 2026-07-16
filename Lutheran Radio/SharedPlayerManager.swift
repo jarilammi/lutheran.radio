@@ -2116,13 +2116,15 @@ actor SharedPlayerManager {
     ///
     /// - SeeAlso: ``emit(_:)``, ``events``, `PlayerEvent.streamDidFail`,
     ///   ``setPlaying()``, ``stop()``, ``setUserPaused()``, ``markAsUserPaused()``,
-    ///   `DirectStreamingPlayer.StreamErrorType`, `DirectStreamingPlayer.handleItemStatusFailure(_:)`,
-    ///   `DirectStreamingPlayer.handleLoadingError(_:)`,
-    ///   CODING_AGENT.md (Tier 1: "enhance the signature of the existing markPlaybackStoppedByStreamFailure" and "update its existing call sites in DirectStreamingPlayer"),
-    ///   docs/Event-Driven-Refactor-Roadmap.md.
+    ///   `StreamErrorType`, `DirectStreamingPlayer` (early-window recovery + `recreatePlayerItem`),
+    ///   `RadioPlayerCoordinator.completeStreamSwitch` / `switchToStreamFromWidget` (auto-resume
+    ///   when intent remains active),
+    ///   docs/cold-launch-streamplay-regression-checklist.md (§6.12),
+    ///   docs/Event-Driven-Refactor-Roadmap.md, CODING_AGENT.md.
     ///
-    /// AGENT NOTE: Single source of truth. Emission after mutation inside this existing method.
-    /// No new Direct-called emission API. Classification logic never leaves DirectStreamingPlayer.
+    /// AGENT NOTE: Single source of truth for stream-failure visual mutation. Emission after
+    /// mutation. Classification stays in DirectStreamingPlayer. Intent is intentionally left
+    /// unchanged so language switches can auto-resume after a recoverable failure.
     func markPlaybackStoppedByStreamFailure(_ errorType: StreamErrorType = .permanentFailure) async {
         ensureVisualStateLoaded()
 

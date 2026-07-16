@@ -127,7 +127,10 @@ struct PlayRadioIntent: AppIntent {
             // RadioPlayerCoordinator / widget switch paths. Then use userRequestedPlay()
             // (the single designated entry) to guarantee setUserIntentToPlay + play for
             // clearing sticky states and driving the guarded engine.
-            await manager.resetToPrePlayForNewStream()
+            let intent = await manager.currentPlaybackIntent
+            await manager.resetToPrePlayForNewStream(
+                preserveActiveSleepTimer: intent == .sleepTimer
+            )
             await manager.switchToStream(targetStream)
         }
 
@@ -215,7 +218,11 @@ struct SwitchToLanguageIntent: AppIntent {
         // userRequestedPlay() entry (set + play). This ensures the prePlay visual, sticky
         // clear, and guarded execution (see resurrection table).
         // External/Siri paths intentionally bypass main-app tuning/needle UX.
-        await manager.resetToPrePlayForNewStream()
+        // Preserve an active sleep timer across the switch (symmetric with completeStreamSwitch).
+        let intent = await manager.currentPlaybackIntent
+        await manager.resetToPrePlayForNewStream(
+            preserveActiveSleepTimer: intent == .sleepTimer
+        )
         await manager.switchToStream(targetStream)
         await manager.userRequestedPlay()
 

@@ -811,6 +811,40 @@ class DirectStreamingPlayerTests: XCTestCase {
         let dnsLookupType = StreamErrorType.from(error: dnsLookupError)
         XCTAssertEqual(dnsLookupType, .transientFailure)
         XCTAssertFalse(dnsLookupType.isPermanent)
+
+        // Live ICY / media-services noise must remain recoverable (early-window recreate).
+        let mediaServicesReset = NSError(
+            domain: AVFoundationErrorDomain,
+            code: AVError.Code.mediaServicesWereReset.rawValue,
+            userInfo: nil
+        )
+        let mediaServicesType = StreamErrorType.from(error: mediaServicesReset)
+        XCTAssertEqual(mediaServicesType, .transientFailure)
+        XCTAssertFalse(mediaServicesType.isPermanent)
+
+        let decodeFailed = NSError(
+            domain: AVFoundationErrorDomain,
+            code: AVError.Code.decodeFailed.rawValue,
+            userInfo: nil
+        )
+        let decodeType = StreamErrorType.from(error: decodeFailed)
+        XCTAssertEqual(decodeType, .transientFailure)
+        XCTAssertFalse(decodeType.isPermanent)
+
+        // Terminal AV content failures must not auto-recreate forever.
+        let contentUnavailable = NSError(
+            domain: AVFoundationErrorDomain,
+            code: AVError.Code.contentIsUnavailable.rawValue,
+            userInfo: nil
+        )
+        let contentType = StreamErrorType.from(error: contentUnavailable)
+        XCTAssertEqual(contentType, .permanentFailure)
+        XCTAssertTrue(contentType.isPermanent)
+
+        let timedOut = URLError(.timedOut)
+        XCTAssertEqual(StreamErrorType.from(error: timedOut), .transientFailure)
+        let connectionLost = URLError(.networkConnectionLost)
+        XCTAssertEqual(StreamErrorType.from(error: connectionLost), .transientFailure)
     }
 
     func testSecureNetworkingConfigurationFactory() {
