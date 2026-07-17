@@ -78,7 +78,19 @@ import WidgetSurface
 // the app's static list) and fall back to the established mapping for the common codes.
 // This is the general form so we never hard-code "Lutheran Radio - English" or
 // "🇺🇸 English" in preview data.
+//
+// Contracts: `WidgetDisplayModelsExtensionTests` (flag matrix, globe fallback,
+// stream-list name preference, unknown capitalize, stream.flag parity).
+// - SeeAlso: docs/Widget-Functionality-Roadmap.md (Tier 5 display helper index).
 
+/// Localized display name for a stream language code (LA alt buttons + previews).
+///
+/// Prefers ``SharedPlayerManager/availableStreams``; falls back to curated localized
+/// strings for en/de/fi/sv/et, then `code.capitalized`.
+///
+/// - Parameter code: BCP-47-style language code (e.g. `"fi"`).
+/// - Returns: Non-empty display name suitable for UI.
+/// - SeeAlso: ``displayFlag(for:)``, docs/Widget-Functionality-Roadmap.md.
 internal func displayLanguageName(for code: String) -> String {
     // Prefer the authoritative streams (best, locale-correct names from the main app)
     if let s = SharedPlayerManager.shared.availableStreams.first(where: { $0.languageCode == code }) {
@@ -96,6 +108,14 @@ internal func displayLanguageName(for code: String) -> String {
     }
 }
 
+/// Emoji flag for a stream language code (LA alt buttons + previews).
+///
+/// Curated codes match ``DirectStreamingPlayer/Stream/flag`` for the shared stub/production
+/// stream lists; unknown codes use 🌍.
+///
+/// - Parameter code: BCP-47-style language code (e.g. `"de"`).
+/// - Returns: Single-cluster flag emoji (or globe fallback).
+/// - SeeAlso: ``displayLanguageName(for:)``, docs/Widget-Functionality-Roadmap.md.
 internal func displayFlag(for code: String) -> String {
     switch code {
     case "en": return "🇺🇸"
@@ -337,8 +357,16 @@ enum WidgetIntentExecution {
 
     /// Full Live Activity stream switch path used by ``LiveActivitySwitchStreamIntent/perform()``.
     ///
+    /// Extension-profile contracts (``WidgetIntentContractExtensionTests``): unknown codes
+    /// return `false` without mutating the optimistic snapshot; known codes invoke
+    /// ``SharedPlayerManager/switchToStream(_:)`` and preserve paused/playing visual while
+    /// updating language (home-widget switch SSOT parity). Does not re-plan play/pause —
+    /// multi-source visual resolution is exclusive to ``performLiveActivityToggle()``.
+    ///
     /// - Parameter languageCode: Target stream code.
     /// - Returns: `true` when a matching stream was found and the switch was invoked.
+    /// - SeeAlso: ``executeLiveActivityStreamSwitch(languageCode:)``,
+    ///   ``performHomeWidgetStreamSwitch(languageCode:)``, docs/Widget-Functionality-Roadmap.md.
     @discardableResult
     static func performLiveActivityStreamSwitch(languageCode: String) async -> Bool {
         await executeLiveActivityStreamSwitch(languageCode: languageCode)

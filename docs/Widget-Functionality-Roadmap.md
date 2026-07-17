@@ -61,7 +61,7 @@ The finish line is a **hybrid, two-zone model** — not a migration from snapsho
 
 ---
 
-**Current State (as of 2026-07-15)**
+**Current State (as of 2026-07-17)**
 
 ## Completed
 
@@ -180,7 +180,7 @@ Widget contract tests still run in `Lutheran RadioTests` (main-app host) via DEB
 
 | Target | Compile profile | Coverage |
 |--------|-----------------|----------|
-| `LutheranRadioWidgetTests` | **No** `LUTHERAN_MAIN_APP` (same SPM set as extension) | Coordinators (incl. LA multi-source resolve), factory, liveness, presentation mappers, metadata resolver, Provider assembly, optimistic intent / ``WidgetIntentExecution/perform*``, durable LA toggle mirror, refresh subset |
+| `LutheranRadioWidgetTests` | **No** `LUTHERAN_MAIN_APP` (same SPM set as extension) | Coordinators (incl. LA multi-source resolve), factory, liveness, presentation mappers, metadata resolver, Provider assembly, optimistic intent / ``WidgetIntentExecution/perform*`` (home/Control/LA toggle + **LA stream switch**), durable LA toggle mirror, ``displayFlag`` / ``displayLanguageName``, refresh subset |
 | `WidgetSurfaceTests` | Pure `WidgetSurface` framework | Swift Testing — coordinators (incl. LA resolve priority), liveness, factory, mappers |
 
 AppIntent `perform()` bodies are thin delegates to ``WidgetIntentExecution/perform*``; those entry points compile and run under the extension profile in `LutheranRadioWidgetTests`. Both targets are in the default `Lutheran Radio.xctestplan`. Permanent agent docs (`CODING_AGENT.md` / `Agents.md`, `README.md`) describe the two-layer model (`WidgetSurface` + membership exceptions).
@@ -307,8 +307,10 @@ Ordered by increasing risk and decreasing isolation. Earlier items are safer.
 - [x] **Provider synthesis test index (2026-07-14):** `WidgetDisplayModelsTests` — `resolveWithActorHygiene` hygiene + actor reload; ``WidgetProviderSnapshotResolver/assemblePresentationSlices(from:)`` for `SimpleEntry` / Control-widget `Value` field assembly (`testResolveWithActorHygieneMatchesResolveFromSnapshot`, `testResolveWithActorHygieneReloadsActorVisualStateFromSnapshot`, `testResolveWithActorHygieneDefaultsToPrePlayWhenSnapshotAbsent`, `testAssemblePresentationSlicesMatrixMapsEveryVisualState`, `testAssemblePresentationSlicesUsesConnectionErrorWhenHasError`, `testAssemblePresentationSlicesCarriesStreamMetadataIntoNowPlayingModel`, `testAssemblePresentationSlicesMatchesControlWidgetValueDerivation`, `testAssemblePresentationSlicesFromPersistedSnapshotMatchesProviderContract`). Shared assembly lives in `WidgetDisplayModels.swift`; home-widget and Control-widget Providers consume it.
 - [x] **Now Playing formatter + media-surface coordination test index (2026-07-14):** `StreamProgramMetadataTests` — `nowPlayingDisplayStrings` matrix (parsed title/speaker, raw fallback, station fallback, whitespace) + widget program-title alignment; `SharedPlayerManagerEventTests` — `testRefreshAllMediaSurfacesOrdersNowPlayingBeforeWidgetRefreshAndWritesDisplayStrings` (coordination order log + `MPNowPlayingInfoCenter` SSOT under DEBUG bypass; LA IPC skipped).
 - [x] **WidgetSurface coordinator SSOT (2026-07-14):** `WidgetIntentCoordinators`, `WidgetTimelineEntryFactory`, `WidgetLivenessPresentation`, `WidgetNowPlayingDisplay` in `WidgetSurface/`; `WidgetIntentExecution` in `WidgetDisplayModels.swift`; extension thin delegates; `WidgetIntentContractTests` toggle matrices use ``planHomeWidgetToggle(from:)`` / ``planControlWidgetToggle(isPlayingRequested:)``.
+- [x] **LiveActivitySwitchStreamIntent contract (2026-07-17):** `WidgetIntentContractExtensionTests` — reject unknown (snapshot unchanged), accept known, preserve `.userPaused` / `.playing` + language update, empty-session success (symmetric to home-widget switch SSOT and LA toggle empty-session path). Methods: `testPerformLiveActivityStreamSwitchRejectsUnknownLanguage`, `testPerformLiveActivityStreamSwitchAcceptsKnownLanguage`, `testPerformLiveActivityStreamSwitchPreservesUserPausedAndUpdatesLanguage`, `testPerformLiveActivityStreamSwitchFromPlayingUpdatesLanguageOnly`, `testPerformLiveActivityStreamSwitchSucceedsWithEmptySessionSnapshot`.
+- [x] **displayFlag / displayLanguageName pure helpers (2026-07-17):** `WidgetDisplayModelsExtensionTests` — curated flag matrix, globe fallback, stream-list name preference, unknown capitalize, stream.flag parity. Methods: `testDisplayFlagMatrixForCuratedLanguageCodes`, `testDisplayFlagUnknownCodeUsesGlobeFallback`, `testDisplayLanguageNamePrefersAvailableStreams`, `testDisplayLanguageNameUnknownCodeCapitalizes`, `testDisplayFlagMatchesStreamListFlagsWhenAvailable`.
 
-**Tier 5 complete when:** Tier 2 checklist is green, `LutheranRadioWidgetTests` ships under the extension compile profile (**done 2026-07-15** — coordinator SSOT + perform SSOT + 43 extension-profile tests), and all touched files carry production `///` docs with `SeeAlso:` to this roadmap.
+**Tier 5 complete when:** Tier 2 checklist is green, `LutheranRadioWidgetTests` ships under the extension compile profile (**done 2026-07-15** — coordinator SSOT + perform SSOT; LA switch + display helpers closed 2026-07-17; **61** extension-profile tests green as of 2026-07-17), and all touched files carry production `///` docs with `SeeAlso:` to this roadmap.
 
 ---
 
@@ -356,13 +358,14 @@ Present in `LutheranRadioWidget.swift:getPendingOrCurrentState` and `LutheranRad
 
 The next item is always the highest-priority unchecked entry in the backlog above.
 
-**Recommended starting order (2026-07-15):**
+**Recommended starting order (2026-07-17):**
 
 1. ~~**`LutheranRadioWidgetTests` target**~~ — **Done**: extension-profile target + pure `WidgetSurfaceTests`.
 2. ~~**Permanent-doc closeout for WidgetSurface + extension-profile tests**~~ — **Done**: `CODING_AGENT.md` / `Agents.md` two-layer cross-target section; README SSOT + verification for widget unit targets.
-3. Tier 1 optional `WidgetDisplayProjection` bundle (only if future call-site churn warrants it).
-4. Tier 5 remaining test-index maintenance as new contracts land.
-5. Optional later: move `WidgetDisplayModels.swift` / `WidgetRefreshManager.swift` into `WidgetSurface/` when coupling allows.
+3. ~~**LA switch + display helper contracts**~~ — **Done (2026-07-17):** ``LiveActivitySwitchStreamIntent`` perform SSOT + ``displayFlag`` / ``displayLanguageName`` pure tests; gap analysis retired for those items.
+4. Tier 1 optional `WidgetDisplayProjection` bundle (only if future call-site churn warrants it).
+5. Optional later: XCUITest widget intents / manual QA matrix (high device cost).
+6. Optional later: move `WidgetDisplayModels.swift` / `WidgetRefreshManager.swift` into `WidgetSurface/` when coupling allows.
 
 Each micro-step: read target files first, minimal diff, apply the documentation standards above, update this roadmap Completed + Update Log, run build + test gates per `CODING_AGENT.md`.
 
@@ -393,10 +396,11 @@ For presentation mapping rules and termination invariants, use [`docs/Widget-Pre
 
 ## Update Log
 
+- **2026-07-17:** Close last widget contract holes — ``LiveActivitySwitchStreamIntent`` extension-profile contracts (reject/accept, pause/play language update, empty-session success) symmetric to home switch + LA toggle; pure ``displayFlag`` / ``displayLanguageName`` matrix in `WidgetDisplayModelsExtensionTests`; `docs/widget-test-gaps-analysis.md` aligned (extension target + LA perform + display helpers no longer listed open).
 - **2026-07-15:** Permanent-doc closeout for `WidgetSurface` + extension-profile tests — `CODING_AGENT.md` / `Agents.md` cross-target section rewritten for `WidgetSurface` + membership-exception SSOT; README SSOT, widget functionality table, and Agent Verification Commands document `LutheranRadioWidgetTests` / `WidgetSurfaceTests` (default test plan); `WidgetSurface` target sets `SWIFT_STRICT_MEMORY_SAFETY = YES` parity with `Core`.
 - **2026-07-15:** LA toggle power-on hygiene — factory reset clears durable mirror + records boot identity; ``shouldDistrustDurableMirrorPlayPlanning()`` (termination sentinel or reboot) blocks durable-mirror-alone **play**; ContentState still trusted; coordinator + extension + factory-reset tests.
 - **2026-07-15:** Lock-screen LA toggle multi-source planning — ContentState + durable App Group mirror before extension actor defaults; ``resolveLiveActivityToggleVisualState``; mirror write on every LA push; regression tests for empty-session pause plan.
-- **2026-07-15:** `LutheranRadioWidgetTests` extension-profile target (no `LUTHERAN_MAIN_APP`; links WidgetSurface + Core; SPM membershipExceptions); ``WidgetIntentExecution/perform*`` AppIntent SSOT; 43 + 8 WidgetSurfaceTests green; widget extension unit test coverage closed. Canonical references only (no temporary handoff docs).
+- **2026-07-15:** `LutheranRadioWidgetTests` extension-profile target (no `LUTHERAN_MAIN_APP`; links WidgetSurface + Core; SPM membershipExceptions); ``WidgetIntentExecution/perform*`` AppIntent SSOT; extension-profile suite + WidgetSurfaceTests green; widget extension unit test coverage closed. Canonical references only (no temporary handoff docs). (Suite size grew with LA toggle/switch + display helpers; see 2026-07-17 log.)
 - **2026-07-14:** Documentation standards — removed temporary handoff-doc cross-links; renamed widget extension test gap from internal tracking label to **Widget extension unit test coverage**; production `SeeAlso:` cites canonical roadmap and presentation dataflow only.
 - **2026-07-14:** WidgetSurface coordinator layer — `WidgetIntentCoordinators`, `WidgetTimelineEntryFactory`, `WidgetLivenessPresentation`, `WidgetNowPlayingDisplay`; `WidgetIntentExecution` in `WidgetDisplayModels.swift`; extension `perform()`/Provider thin delegates; toggle mirror helpers removed; widget extension test coverage partially complete (coordinator SSOT in main-app host).
 - **2026-07-14:** Now Playing formatter tests — `StreamProgramMetadataTests` adds `nowPlayingDisplayStrings` matrix + widget title alignment; `SharedPlayerManagerEventTests` adds `testRefreshAllMediaSurfacesOrdersNowPlayingBeforeWidgetRefreshAndWritesDisplayStrings` (DEBUG coordination-order log + NP bypass seam); Tier 2 play/pause drain method names indexed.

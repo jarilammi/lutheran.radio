@@ -339,13 +339,30 @@ final class WidgetIntentContractExtensionTests: XCTestCase {
         XCTAssertTrue(SharedPlayerManager.shouldDistrustDurableMirrorPlayPlanning())
     }
 
-    /// Live Activity stream switch returns false for unknown language codes.
+    // MARK: - LiveActivitySwitchStreamIntent contract (symmetric to home switch + LA toggle)
+
+    /// Unknown language codes must not invoke ``switchToStream`` (Bool false).
+    ///
+    /// Mirrors the thin AppIntent guard in ``LiveActivitySwitchStreamIntent/perform()`` via
+    /// ``WidgetIntentExecution/performLiveActivityStreamSwitch(languageCode:)``.
     func testPerformLiveActivityStreamSwitchRejectsUnknownLanguage() async {
+        let streams = manager.availableStreams
+        guard let source = streams.first else {
+            XCTFail("Expected stub streams")
+            return
+        }
+        SharedPlayerManager.persistWidgetSnapshot(visualState: .userPaused, language: source.languageCode)
+
         let switched = await WidgetIntentExecution.performLiveActivityStreamSwitch(languageCode: "xx-unknown")
         XCTAssertFalse(switched)
+
+        // Reject path must leave optimistic snapshot untouched.
+        let snapshot = SharedPlayerManager.loadPersistedWidgetState()
+        XCTAssertEqual(snapshot?.visualState, .userPaused)
+        XCTAssertEqual(snapshot?.currentLanguage, source.languageCode)
     }
 
-    /// Live Activity stream switch succeeds for a known stub stream.
+    /// Known language codes return true (stream list match + ``switchToStream`` invoked).
     func testPerformLiveActivityStreamSwitchAcceptsKnownLanguage() async {
         let streams = manager.availableStreams
         guard let target = streams.last else {
@@ -356,6 +373,78 @@ final class WidgetIntentContractExtensionTests: XCTestCase {
             languageCode: target.languageCode
         )
         XCTAssertTrue(switched)
+    }
+
+    /// LA stream switch preserves explicit pause and updates language (checklist §6 parity
+    /// with ``performHomeWidgetStreamSwitch`` / home-widget optimistic switch SSOT).
+    ///
+    /// Extension profile: ``switchToStream`` is the shared optimistic path; LA does not
+    /// re-plan play/pause (unlike ``performLiveActivityToggle`` multi-source resolution).
+    func testPerformLiveActivityStreamSwitchPreservesUserPausedAndUpdatesLanguage() async {
+        let streams = manager.availableStreams
+        guard streams.count >= 2 else {
+            XCTFail("Stub stream list must include ≥2 languages")
+            return
+        }
+        let source = streams[0]
+        let target = streams[1]
+
+        SharedPlayerManager.persistWidgetSnapshot(visualState: .userPaused, language: source.languageCode)
+
+        let switched = await WidgetIntentExecution.performLiveActivityStreamSwitch(
+            languageCode: target.languageCode
+        )
+        XCTAssertTrue(switched)
+
+        let snapshot = SharedPlayerManager.loadPersistedWidgetState()
+        XCTAssertEqual(snapshot?.visualState, .userPaused, "Paused visual must survive LA optimistic switch")
+        XCTAssertEqual(snapshot?.currentLanguage, target.languageCode)
+    }
+
+    /// Playing snapshot: LA switch updates language without flipping to pause/prePlay.
+    func testPerformLiveActivityStreamSwitchFromPlayingUpdatesLanguageOnly() async {
+        let streams = manager.availableStreams
+        guard streams.count >= 2 else {
+            XCTFail("Stub stream list must include ≥2 languages")
+            return
+        }
+        let source = streams[0]
+        let target = streams[1]
+
+        SharedPlayerManager.persistWidgetSnapshot(visualState: .playing, language: source.languageCode)
+
+        let switched = await WidgetIntentExecution.performLiveActivityStreamSwitch(
+            languageCode: target.languageCode
+        )
+        XCTAssertTrue(switched)
+
+        let snapshot = SharedPlayerManager.loadPersistedWidgetState()
+        XCTAssertEqual(snapshot?.visualState, .playing, "Playing visual must survive LA optimistic switch")
+        XCTAssertEqual(snapshot?.currentLanguage, target.languageCode)
+    }
+
+    /// Cold extension (empty session): known-language LA switch still succeeds.
+    ///
+    /// Symmetric to LA toggle’s empty-session planning path — switch does not require a
+    /// pre-existing session snapshot or durable toggle mirror.
+    func testPerformLiveActivityStreamSwitchSucceedsWithEmptySessionSnapshot() async {
+        SharedPlayerManager.removeAllLocalPlaybackKeys()
+        XCTAssertNil(SharedPlayerManager.loadPersistedWidgetState())
+
+        let streams = manager.availableStreams
+        guard let target = streams.first else {
+            XCTFail("Expected stub streams")
+            return
+        }
+
+        let switched = await WidgetIntentExecution.performLiveActivityStreamSwitch(
+            languageCode: target.languageCode
+        )
+        XCTAssertTrue(switched)
+
+        // Widget switch path writes optimistic language even from an empty session.
+        let snapshot = SharedPlayerManager.loadPersistedWidgetState()
+        XCTAssertEqual(snapshot?.currentLanguage, target.languageCode)
     }
 
     // MARK: - Immediate refresh gate (extension optimistic path)

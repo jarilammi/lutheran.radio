@@ -4,11 +4,13 @@
 //
 //  Created by Jari Lammi on 15.7.2026.
 //
-//  Extension-profile port of metadata resolver + Provider synthesis contracts.
+//  Extension-profile port of metadata resolver + Provider synthesis contracts, plus
+//  pure ``displayFlag`` / ``displayLanguageName`` helpers from ``WidgetDisplayModels``.
 //  Compiles ``WidgetDisplayModels.swift`` without `LUTHERAN_MAIN_APP` (same as extension).
 //
 //  - SeeAlso: ``widgetNowPlayingDisplayModel(visualState:streamMetadata:languageName:)``,
-//    ``WidgetProviderSnapshotResolver``, docs/Widget-Functionality-Roadmap.md.
+//    ``WidgetProviderSnapshotResolver``, ``displayFlag(for:)``, ``displayLanguageName(for:)``,
+//    docs/Widget-Functionality-Roadmap.md.
 //
 
 import XCTest
@@ -213,5 +215,58 @@ final class WidgetDisplayModelsExtensionTests: XCTestCase {
         XCTAssertEqual(blueprint.statusPresentation, slices.statusPresentation)
         XCTAssertEqual(blueprint.controlPresentation, slices.controlPresentation)
         XCTAssertEqual(blueprint.currentStation, slices.currentStation)
+    }
+
+    // MARK: - displayFlag / displayLanguageName (pure helpers)
+
+    /// Flag mapping for curated LA alt-stream + preview codes (no stream dependency).
+    func testDisplayFlagMatrixForCuratedLanguageCodes() {
+        XCTAssertEqual(displayFlag(for: "en"), "🇺🇸")
+        XCTAssertEqual(displayFlag(for: "de"), "🇩🇪")
+        XCTAssertEqual(displayFlag(for: "fi"), "🇫🇮")
+        XCTAssertEqual(displayFlag(for: "sv"), "🇸🇪")
+        XCTAssertEqual(displayFlag(for: "et"), "🇪🇪")
+    }
+
+    /// Unknown codes use the globe fallback (never empty).
+    func testDisplayFlagUnknownCodeUsesGlobeFallback() {
+        XCTAssertEqual(displayFlag(for: "xx"), "🌍")
+        XCTAssertEqual(displayFlag(for: ""), "🌍")
+        XCTAssertEqual(displayFlag(for: "nb"), "🌍")
+    }
+
+    /// Known codes prefer ``SharedPlayerManager/availableStreams`` language names.
+    func testDisplayLanguageNamePrefersAvailableStreams() {
+        let streams = manager.availableStreams
+        guard let en = streams.first(where: { $0.languageCode == "en" }),
+              let fi = streams.first(where: { $0.languageCode == "fi" }) else {
+            XCTFail("Stub streams must include en and fi")
+            return
+        }
+        XCTAssertEqual(displayLanguageName(for: "en"), en.language)
+        XCTAssertEqual(displayLanguageName(for: "fi"), fi.language)
+        // Cross-check: stream list language is non-empty and not the raw code.
+        XCTAssertFalse(en.language.isEmpty)
+        XCTAssertNotEqual(displayLanguageName(for: "en"), "en")
+    }
+
+    /// Codes absent from the stream list use localized fallback or capitalized code.
+    ///
+    /// Stub ``availableStreams`` only covers en/de/fi/sv/et; fallback switch still covers
+    /// those same codes when streams are empty, but for a truly unknown code we capitalize.
+    func testDisplayLanguageNameUnknownCodeCapitalizes() {
+        XCTAssertEqual(displayLanguageName(for: "xx"), "Xx")
+        XCTAssertEqual(displayLanguageName(for: "zz"), "Zz")
+    }
+
+    /// Curated codes match stream-list flags when present (LA button consistency).
+    func testDisplayFlagMatchesStreamListFlagsWhenAvailable() {
+        for stream in manager.availableStreams {
+            XCTAssertEqual(
+                displayFlag(for: stream.languageCode),
+                stream.flag,
+                "displayFlag must match stream.flag for \(stream.languageCode)"
+            )
+        }
     }
 }
