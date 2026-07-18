@@ -31,6 +31,29 @@ enum MediaSurfaceLiveActivityMode: Sendable {
     case startOrUpdate
 }
 
+// MARK: - Media transport command mailbox (Now Playing + Live Activity engine path)
+
+/// Transport verbs that share ``SharedPlayerManager``'s serial media-transport mailbox.
+///
+/// System Now Playing / Control Center / headset remotes and main-process Live Activity
+/// toggle execution enqueue through this type so rapid clicks cannot invert direction by
+/// sampling `isActivelyPlaying` before a prior verb commits sticky intent / visual state.
+///
+/// - SeeAlso: ``SharedPlayerManager/submitMediaTransportCommand(_:)``,
+///   ``SharedPlayerManager/submitMediaTransportCommandAndWait(_:)``,
+///   ``WidgetIntentExecution/executeLiveActivityToggle(plan:)``,
+///   docs/Live-Activity-Stacking-and-Media-Surfaces.md
+enum MediaTransportCommand: Sendable, Equatable {
+    /// Explicit play / resume (``SharedPlayerManager/userRequestedPlay()``).
+    case play
+    /// User pause (``SharedPlayerManager/stop()`` sticky `.userPaused` + soft silence).
+    case pause
+    /// System stop command (same engine path as pause for this live stream).
+    case stop
+    /// Headset / lock-screen toggle: pause when actively playing, otherwise play.
+    case togglePlayPause
+}
+
 // MARK: - MainActor-only MediaPlayer wiring (MPRemoteCommandCenter requires main thread)
 
 @MainActor
@@ -45,12 +68,14 @@ private enum NowPlayingRemoteCommands {
     /// seek, skip, rating, or other affordances that have no engine implementation.
     ///
     /// - Postcondition: Supported commands are enabled with targets that route to
-    ///   ``SharedPlayerManager/userRequestedPlay()`` / ``SharedPlayerManager/stop()``.
-    ///   Unsupported commands are disabled (no dead affordances).
-    /// - Note: Handlers return `.success` immediately and dispatch work on unstructured
-    ///   `Task`s so the remote-command callback thread is never blocked on network or
-    ///   engine work. Command serialization is a separate concern.
+    ///   ``SharedPlayerManager/submitMediaTransportCommand(_:)`` (serial mailbox →
+    ///   ``userRequestedPlay()`` / ``stop()``). Unsupported commands are disabled.
+    /// - Note: Handlers return `.success` immediately and only hop onto the actor to
+    ///   enqueue work — they never block the remote-command callback thread on network
+    ///   or engine completion. Ordering and toggle direction decisions run inside the
+    ///   media-transport mailbox.
     /// - SeeAlso: ``SharedPlayerManager/configureNowPlayingControlsIfNeeded()``,
+    ///   ``SharedPlayerManager/submitMediaTransportCommand(_:)``,
     ///   ``SharedPlayerManager/updateNowPlayingInfo()``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md
     static func installIfNeeded() {
@@ -65,34 +90,28 @@ private enum NowPlayingRemoteCommands {
 
         center.playCommand.isEnabled = true
         center.playCommand.addTarget { _ in
-            // Explicit hardware/software remote play must go through designated entry.
-            Task { await SharedPlayerManager.shared.userRequestedPlay() }
+            // Enqueue only — mailbox serializes with pause/toggle/LA engine execution.
+            Task { await SharedPlayerManager.shared.submitMediaTransportCommand(.play) }
             return .success
         }
 
         center.pauseCommand.isEnabled = true
         center.pauseCommand.addTarget { _ in
-            Task { await SharedPlayerManager.shared.stop() }
+            Task { await SharedPlayerManager.shared.submitMediaTransportCommand(.pause) }
             return .success
         }
 
         center.togglePlayPauseCommand.isEnabled = true
         center.togglePlayPauseCommand.addTarget { _ in
-            Task {
-                let isActivelyPlaying = await SharedPlayerManager.shared.currentVisualState.isActivelyPlaying
-                if isActivelyPlaying {
-                    await SharedPlayerManager.shared.stop()
-                } else {
-                    // Toggle play branch from remote also uses designated entry.
-                    await SharedPlayerManager.shared.userRequestedPlay()
-                }
-            }
+            // Direction is decided inside the mailbox after prior verbs commit state —
+            // never sample `isActivelyPlaying` in this handler (split read/action race).
+            Task { await SharedPlayerManager.shared.submitMediaTransportCommand(.togglePlayPause) }
             return .success
         }
 
         center.stopCommand.isEnabled = true
         center.stopCommand.addTarget { _ in
-            Task { await SharedPlayerManager.shared.stop() }
+            Task { await SharedPlayerManager.shared.submitMediaTransportCommand(.stop) }
             return .success
         }
 
@@ -151,10 +170,14 @@ extension SharedPlayerManager {
     /// remote command (next/previous, seek, skip, rating, language options, etc.) so
     /// system chrome never offers dead transport affordances for a live stream.
     ///
+    /// Handlers enqueue ``MediaTransportCommand`` values on the serial media-transport
+    /// mailbox rather than spawning unordered play/stop tasks.
+    ///
     /// - Precondition: Main-app ``SharedPlayerManager``; no-op in the widget extension.
     /// - Postcondition: Supported commands enabled; unsupported commands disabled.
     ///   Idempotent after the first successful install for this process.
-    /// - SeeAlso: ``updateNowPlayingInfo()``, ``userRequestedPlay()``, ``stop()``,
+    /// - SeeAlso: ``submitMediaTransportCommand(_:)``, ``updateNowPlayingInfo()``,
+    ///   ``userRequestedPlay()``, ``stop()``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md
     func configureNowPlayingControlsIfNeeded() async {
         guard !isRunningInWidget() else { return }
@@ -164,6 +187,141 @@ extension SharedPlayerManager {
             NowPlayingRemoteCommands.installIfNeeded()
         }
     }
+
+    /// Enqueues a media transport verb on the serial mailbox and returns after scheduling.
+    ///
+    /// Now Playing remotes, headset clicks, and main-process Live Activity toggle execution
+    /// share this mailbox so interleaved taps cannot invert play/pause direction.
+    ///
+    /// **Ordering rules**
+    /// - **Play / toggle:** wait for the previous enqueued verb to finish, then run only if
+    ///   this submission’s epoch is still current (not superseded by a newer submit).
+    /// - **Pause / stop:** preempt — cancel the previous chain task and run ``stop()``
+    ///   without waiting for an in-flight play to complete. Records
+    ///   ``mediaTransportPauseEpoch`` so a play already inside `userRequestedPlay` re-asserts
+    ///   sticky pause after it returns (cooperative `Task` cancel alone is not enough).
+    /// - **Toggle direction** is sampled only inside ``performMediaTransportCommand(_:generation:)``
+    ///   after prior verbs have committed visual/intent (no split read/action across tasks).
+    ///
+    /// - Parameter command: The transport verb to schedule.
+    /// - Important: Does **not** await engine completion — safe for `MPRemoteCommandCenter`
+    ///   callbacks that must return `.success` immediately. Use
+    ///   ``submitMediaTransportCommandAndWait(_:)`` when the caller must observe completion
+    ///   (Live Activity intent execution on the main app).
+    /// - SeeAlso: ``MediaTransportCommand``, ``performMediaTransportCommand(_:generation:)``,
+    ///   ``WidgetIntentExecution/executeLiveActivityToggle(plan:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md
+    ///
+    /// AGENT NOTE: Keep remote handlers and LA engine execution on this mailbox. Do not
+    /// re-introduce unstructured `Task { isActivelyPlaying; stop/play }` in remote targets.
+    func submitMediaTransportCommand(_ command: MediaTransportCommand) {
+        mediaTransportEpoch &+= 1
+        let epoch = mediaTransportEpoch
+        let previous = mediaTransportChain
+
+        if command == .pause || command == .stop {
+            mediaTransportPauseEpoch = epoch
+        }
+
+        let task: Task<Void, Never>
+        switch command {
+        case .pause, .stop:
+            // Preempt in-flight play/toggle so user pause is not stuck behind security
+            // validation or attach. Cancellation is cooperative; pause-epoch repair after
+            // a late userRequestedPlay is the hard guarantee that sticky pause wins.
+            // After stop, drain the cancelled predecessor so repair (and any late play)
+            // finish before this chain task reports idle.
+            task = Task {
+                previous?.cancel()
+                await self.performMediaTransportCommand(command, generation: epoch)
+                await previous?.value
+            }
+        case .play, .togglePlayPause:
+            task = Task {
+                await previous?.value
+                guard epoch == self.mediaTransportEpoch else { return }
+                guard !Task.isCancelled else { return }
+                await self.performMediaTransportCommand(command, generation: epoch)
+            }
+        }
+        mediaTransportChain = task
+    }
+
+    /// Enqueues a media transport verb and awaits mailbox drain through that verb.
+    ///
+    /// Used by main-app Live Activity toggle execution so App Intent `perform()` still
+    /// observes engine-complete stop / play while sharing remote-command ordering.
+    ///
+    /// - Parameter command: The transport verb to run.
+    /// - SeeAlso: ``submitMediaTransportCommand(_:)``,
+    ///   ``WidgetIntentExecution/executeLiveActivityToggle(plan:)``
+    func submitMediaTransportCommandAndWait(_ command: MediaTransportCommand) async {
+        submitMediaTransportCommand(command)
+        await mediaTransportChain?.value
+    }
+
+    /// Awaits the current media-transport chain until idle (unit tests and diagnostics).
+    ///
+    /// - Note: Orphaned play tasks cancelled by pause preemption may still be finishing
+    ///   engine work; call sites that need sticky-pause repair should allow a short yield
+    ///   or re-read visual state after this returns when testing preemption.
+    /// - SeeAlso: ``submitMediaTransportCommand(_:)``
+    func waitForMediaTransportIdle() async {
+        await mediaTransportChain?.value
+    }
+
+    /// Executes one transport verb after mailbox ordering has been applied.
+    ///
+    /// Toggle samples ``currentVisualState.isActivelyPlaying`` only here, on the actor,
+    /// so a rapid second remote click cannot pair with a stale pre-mutation read.
+    ///
+    /// - Parameters:
+    ///   - command: Verb to apply to the engine / sticky intent path.
+    ///   - generation: Submission epoch captured at enqueue time.
+    /// - SeeAlso: ``userRequestedPlay()``, ``stop()``, ``MediaTransportCommand``
+    func performMediaTransportCommand(
+        _ command: MediaTransportCommand,
+        generation: UInt64
+    ) async {
+        switch command {
+        case .play:
+            await userRequestedPlay()
+            await reassertStickyPauseIfSupersededByPause(generation: generation)
+        case .pause, .stop:
+            await stop()
+        case .togglePlayPause:
+            if currentVisualState.isActivelyPlaying {
+                await stop()
+            } else {
+                await userRequestedPlay()
+                await reassertStickyPauseIfSupersededByPause(generation: generation)
+            }
+        }
+    }
+
+    /// If a pause/stop was submitted after `generation` and remains the latest transport
+    /// verb, re-run ``stop()`` so a late `userRequestedPlay` cannot clear sticky pause.
+    ///
+    /// - Parameter generation: Epoch of the play/toggle submission that just finished play.
+    /// - Note: Does nothing when a newer play/toggle already advanced ``mediaTransportEpoch``
+    ///   past ``mediaTransportPauseEpoch`` (pause was not the latest user intent).
+    private func reassertStickyPauseIfSupersededByPause(generation: UInt64) async {
+        guard mediaTransportPauseEpoch > generation else { return }
+        guard mediaTransportEpoch == mediaTransportPauseEpoch else { return }
+        await stop()
+    }
+
+    #if DEBUG
+    /// Current media-transport submission epoch (unit tests).
+    func _test_mediaTransportEpoch() -> UInt64 {
+        mediaTransportEpoch
+    }
+
+    /// Epoch of the last pause/stop submit (unit tests).
+    func _test_mediaTransportPauseEpoch() -> UInt64 {
+        mediaTransportPauseEpoch
+    }
+    #endif
     
     /// Restores parsed widget metadata from the raw ICY stash after soft-pause resume.
     /// ICY servers typically do not resend StreamTitle when the same secured item resumes.

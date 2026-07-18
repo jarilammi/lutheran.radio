@@ -90,6 +90,8 @@ Apple documents coalescing of frequent updates; Lutheran Radio does not implemen
 
 ``configureNowPlayingControlsIfNeeded()`` installs play / pause / toggle play-pause / stop on ``MPRemoteCommandCenter`` and **disables** unsupported commands (next/previous track, seek, skip, change position/rate, repeat/shuffle, rating/like/dislike/bookmark, language-option enable/disable). Continuous live radio has no track list or seekable timeline; leaving those commands enabled would surface dead affordances on lock screen, Control Center, and hardware remotes.
 
+**Serial media-transport mailbox:** Remote handlers return `.success` immediately and enqueue ``MediaTransportCommand`` values via ``SharedPlayerManager/submitMediaTransportCommand(_:)``. Play and toggle wait for the prior verb; pause/stop preempt (cancel + ``stop()`` without waiting for an in-flight play) and record a pause epoch so a late `userRequestedPlay` re-asserts sticky `.userPaused`. Toggle direction is decided only inside ``performMediaTransportCommand(_:generation:)`` after prior verbs commit state — never as a split `isActivelyPlaying` read in the remote-command callback. Main-app ``WidgetIntentExecution/executeLiveActivityToggle(plan:)`` uses ``submitMediaTransportCommandAndWait(_:)`` so Live Activity engine execution shares the same ordering as headset / Control Center. Extension-hosted toggles keep direct ``stop()`` / ``userRequestedPlay()`` (pending action + Darwin drain).
+
 ### Widgets
 
 Mutation-path timeline reloads are driven by the Tier 2 ``PlayerEvent`` observer in ``WidgetRefreshManager`` (debounce + coalesce). Imperative ``refreshIfNeeded`` remains for lifecycle, teardown, extension optimistic intents, and optional ``refreshAllMediaSurfaces(widgetRefresh: true)`` call sites.
@@ -167,4 +169,4 @@ Required convergence: paused chrome and silent engine — never durable “pause
 - [`docs/Widget-Functionality-Roadmap.md`](Widget-Functionality-Roadmap.md) — Tier 4 completion status
 - [`docs/Event-Driven-Refactor-Roadmap.md`](Event-Driven-Refactor-Roadmap.md) — `PlayerEvent` consumer paths
 - `Lutheran RadioTests/RadioLiveActivityManagerTests.swift` — LA diff suppression
-- `Lutheran RadioTests/SharedPlayerManagerEventTests.swift` — `refreshAllMediaSurfaces` contract; Now Playing rate/`playbackState` alignment; unsupported remote-command disable
+- `Lutheran RadioTests/SharedPlayerManagerEventTests.swift` — `refreshAllMediaSurfaces` contract; Now Playing rate/`playbackState` alignment; unsupported remote-command disable; media-transport mailbox (double-toggle, pause preemption, LA + remote interleave)

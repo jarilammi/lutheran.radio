@@ -2806,6 +2806,114 @@ final class SharedPlayerManagerEventTests: XCTestCase {
         }
     }
 
+    /// Protects media-transport mailbox ordering for rapid headset / Now Playing toggles.
+    ///
+    /// Two ``MediaTransportCommand/togglePlayPause`` submits while actively playing must
+    /// serialize as pause-then-play (end playing), not double-pause from two concurrent
+    /// tasks both sampling `isActivelyPlaying == true` before either mutates state.
+    ///
+    /// Why: Remote handlers used to spawn unstructured tasks that split the visual read
+    /// from `stop()` / `userRequestedPlay()`, so a double-click inverted or stuck paused.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/submitMediaTransportCommand(_:)``,
+    ///   ``SharedPlayerManager/performMediaTransportCommand(_:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md
+    func testMediaTransportDoubleToggleWhilePlayingEndsPlaying() async {
+        await manager.setPlaying()
+        let playing = await manager.currentVisualState
+        XCTAssertEqual(playing, .playing, "Precondition: start from actively playing visual")
+        XCTAssertTrue(playing.isActivelyPlaying)
+
+        // Fire-and-forget style: two enqueues without awaiting between them (headset double-click).
+        await manager.submitMediaTransportCommand(.togglePlayPause)
+        await manager.submitMediaTransportCommand(.togglePlayPause)
+        await manager.waitForMediaTransportIdle()
+
+        let visual = await manager.currentVisualState
+        let intent = await manager.currentPlaybackIntent
+        XCTAssertEqual(
+            visual,
+            .playing,
+            "Double toggle from playing must end playing (pause then play), not stuck .userPaused"
+        )
+        XCTAssertEqual(
+            intent,
+            .shouldBePlaying,
+            "Second toggle must restore active playback intent after the serialized pause"
+        )
+    }
+
+    /// Protects media-transport mailbox ordering for rapid toggles from a paused surface.
+    ///
+    /// Two toggles from sticky pause must serialize as play-then-pause (end paused).
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/submitMediaTransportCommand(_:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md
+    func testMediaTransportDoubleToggleWhilePausedEndsPaused() async {
+        await manager.setPlaying()
+        await manager.stop()
+        let paused = await manager.currentVisualState
+        XCTAssertEqual(paused, .userPaused, "Precondition: sticky user pause")
+
+        await manager.submitMediaTransportCommand(.togglePlayPause)
+        await manager.submitMediaTransportCommand(.togglePlayPause)
+        await manager.waitForMediaTransportIdle()
+
+        let visual = await manager.currentVisualState
+        let intent = await manager.currentPlaybackIntent
+        XCTAssertEqual(
+            visual,
+            .userPaused,
+            "Double toggle from pause must end paused (play then pause), not stuck playing"
+        )
+        XCTAssertEqual(intent, .userPaused)
+    }
+
+    /// Protects pause preemption: an enqueued pause must not remain stuck behind a prior
+    /// play on the mailbox; sticky `.userPaused` must win after drain.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/submitMediaTransportCommand(_:)``,
+    ///   ``SharedPlayerManager/stop()``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md
+    func testMediaTransportPausePreemptsInFlightPlayOnMailbox() async {
+        await manager.submitMediaTransportCommand(.play)
+        await manager.submitMediaTransportCommand(.pause)
+        await manager.waitForMediaTransportIdle()
+
+        let visual = await manager.currentVisualState
+        let intent = await manager.currentPlaybackIntent
+        XCTAssertEqual(
+            visual,
+            .userPaused,
+            "Pause submitted after play must leave sticky .userPaused after mailbox drain"
+        )
+        XCTAssertEqual(intent, .userPaused)
+    }
+
+    /// Protects main-app Live Activity engine execution sharing the media-transport mailbox
+    /// with remote commands: interleaved pause (LA) + toggle (remote-style) remains ordered.
+    ///
+    /// - SeeAlso: ``WidgetIntentExecution/executeLiveActivityToggle(plan:)``,
+    ///   ``SharedPlayerManager/submitMediaTransportCommand(_:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md
+    func testMediaTransportInterleavesLiveActivityPauseWithRemoteToggle() async {
+        await manager.setPlaying()
+
+        // LA pause plan shares the mailbox with a subsequent remote toggle (resume).
+        await WidgetIntentExecution.executeLiveActivityToggle(plan: .pause)
+        await manager.submitMediaTransportCommand(.togglePlayPause)
+        await manager.waitForMediaTransportIdle()
+
+        let visual = await manager.currentVisualState
+        XCTAssertEqual(
+            visual,
+            .playing,
+            "LA pause then remote toggle must resume (ordered mailbox), not invert to a second pause"
+        )
+        let intent = await manager.currentPlaybackIntent
+        XCTAssertEqual(intent, .shouldBePlaying)
+    }
+
     /// Verifies the orchestration contract of ``SharedPlayerManager/performSessionAndWidgetTeardown(includeFactoryReset:liveActivityTeardown:refreshWidgets:widgetVisualState:staleLiveness:)``.
     ///
     /// The test drives the full awaited path with factory reset, termination liveness sentinel,

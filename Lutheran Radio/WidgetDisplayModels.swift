@@ -430,9 +430,27 @@ enum WidgetIntentExecution {
 
     /// Live Activity play/pause toggle via actor-isolated manager APIs.
     ///
+    /// On the main app, engine work is enqueued on the same serial media-transport mailbox
+    /// as system Now Playing / headset remotes (``SharedPlayerManager/submitMediaTransportCommandAndWait(_:)``)
+    /// so interleaved lock-screen taps cannot invert direction. The extension process keeps
+    /// direct ``stop()`` / ``userRequestedPlay()`` so pending-action + Darwin drain remains
+    /// the cross-process path (no main-app mailbox in the extension binary).
+    ///
     /// - Parameter plan: Direction from ``WidgetIntentCoordinators/planLiveActivityToggle(from:)``.
+    /// - SeeAlso: ``MediaTransportCommand``, ``SharedPlayerManager/submitMediaTransportCommandAndWait(_:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md
     static func executeLiveActivityToggle(plan: WidgetLiveActivityTogglePlan) async {
         let manager = SharedPlayerManager.shared
+        #if LUTHERAN_MAIN_APP
+        switch plan {
+        case .pause:
+            await manager.submitMediaTransportCommandAndWait(.pause)
+        case .play:
+            await manager.submitMediaTransportCommandAndWait(.play)
+        @unknown default:
+            break
+        }
+        #else
         switch plan {
         case .pause:
             await manager.stop()
@@ -441,5 +459,6 @@ enum WidgetIntentExecution {
         @unknown default:
             break
         }
+        #endif
     }
 }

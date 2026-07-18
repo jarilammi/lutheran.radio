@@ -469,6 +469,26 @@ actor SharedPlayerManager {
     var currentStreamMetadata: StreamProgramMetadata?
     var remoteCommandsConfigured = false
 
+    #if LUTHERAN_MAIN_APP
+    /// Serial mailbox chain for Now Playing / headset / Live Activity transport verbs.
+    ///
+    /// Each ``submitMediaTransportCommand(_:)`` schedules work that either waits for this
+    /// tail (play / toggle) or preempts it (pause / stop). See ``MediaTransportCommand``.
+    ///
+    /// - SeeAlso: ``submitMediaTransportCommand(_:)``, ``submitMediaTransportCommandAndWait(_:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md
+    var mediaTransportChain: Task<Void, Never>?
+
+    /// Monotonic epoch for media-transport submission. Every submit advances the value so
+    /// a superseded play/toggle can exit before engine work or repair after preemption.
+    var mediaTransportEpoch: UInt64 = 0
+
+    /// Epoch of the most recent pause/stop submit. An in-flight play whose generation is
+    /// older than this re-asserts ``stop()`` after `userRequestedPlay` so sticky pause wins
+    /// when pause preempted the mailbox without cooperatively cancelling engine work.
+    var mediaTransportPauseEpoch: UInt64 = 0
+    #endif
+
     /// Re-entrancy guard for ``teardownNowPlayingSession()`` (main app only).
     ///
     /// Prevents stacked AVPlayer / audio-session work when cold-launch factory reset,
