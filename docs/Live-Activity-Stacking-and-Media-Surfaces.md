@@ -49,7 +49,7 @@ Live Activities are **not** requested at cold launch. They start when playback b
 
 | Trigger | Entry point | Mode | Rationale |
 |---------|-------------|------|-----------|
-| First successful `.playing` | ``setPlaying()`` → ``refreshAllMediaSurfaces(liveActivity: .startOrUpdate)`` | Start if `currentActivity == nil`, else update | User has confirmed live audio; LA controls are meaningful |
+| First successful `.playing` | Engine audible start → ``setPlaying()`` → ``refreshAllMediaSurfaces(liveActivity: .startOrUpdate)`` | Start if `currentActivity == nil`, else update | User has confirmed live audio (soft-resume rate kick or readyToPlay first-play kick); LA controls are meaningful. Connecting (``.prePlay``) does **not** start LA via optimistic ``play()`` chrome. |
 | Background while playing | ``RadioLiveActivityManager/handleAppWillEnterBackground()`` | ``startActivity()`` when `loadSharedState().isPlaying && currentActivity == nil` | Lock-screen / DI controls while audio continues |
 | Foreground correction | ``handleAppDidEnterForeground()`` | ``updateCurrentActivity()`` only | Catch-up after long background without polling |
 | User pause / stop | ``stop()``, ``setUserPaused()``, etc. | Update only (LA **not** ended) | Paused LA with working play intent is intentional while process lives |
@@ -166,6 +166,26 @@ When the user pauses (system Now Playing, Live Activity, headset, or in-app) whi
 Required convergence: paused chrome and silent engine — never durable “paused UI + audible stream” from this race. Single ownership for “user pause complete”: SPM sticky lock + one surface refresh after soft silence.
 
 **SeeAlso:** `DirectStreamingPlayer` in-flight attach helpers and `stopAndWait`, `SharedPlayerManager.play()` post-validation sticky re-checks, `Lutheran RadioTests` attach-generation and soft-silence completion coverage.
+
+---
+
+## Connecting Chrome vs Audible Start
+
+``SharedPlayerManager/play()`` must **not** call ``setPlaying()`` before soft-resume or secured attach completes. Claiming `.playing` (Now Playing rate 1, Live Activity pause glyph, `streamDidStart`) while the engine is still validating, tuning, or waiting on `.readyToPlay` made lock-screen chrome lie about audio.
+
+| Phase | Visual / intent | Surfaces |
+|-------|-----------------|----------|
+| Explicit play intent (pause → play) | ``setUserIntentToPlay()`` → `.prePlay` + `.shouldBePlaying` | Connecting chrome; `isActivelyPlaying == false` (play affordance, rate 0) |
+| Soft-resume success | Rate kick then ``publishAuthoritativePlayingIfNeeded()`` → ``setPlaying()`` | Rate 1, pause glyph, LA start/update |
+| Full attach | `startPlayback` stays on `status_connecting` / stream-switch prePlay hold | Same connecting chrome until readyToPlay |
+| readyToPlay first-play kick | `playImmediately` then ``publishAuthoritativePlayingIfNeeded()`` | Authoritative `.playing` |
+| User pause during connect | Sticky `.userPaused` + generation discard (see above) | Paused chrome + silent engine |
+
+**Authoritative publish helper:** ``DirectStreamingPlayer`` `publishAuthoritativePlayingIfNeeded()` calls ``setPlaying()`` only when intent still allows play and visual is not already `.playing` (readyToPlay + timeControl KVO cannot double-emit).
+
+**Extension optimistic paths** (widget `handleWidgetPlay`, Live Activity toggle ContentState) may still flip control chrome immediately for cross-process latency; main-app engine chrome follows the table above.
+
+**SeeAlso:** ``SharedPlayerManager/play()``, ``SharedPlayerManager/setPlaying()``, `resumeFromSoftPauseIfAvailable`, readyToPlay kick in `addObservers`, `Lutheran RadioTests` connecting-chrome and publish-idempotency gates.
 
 ---
 

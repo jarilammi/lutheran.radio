@@ -988,6 +988,47 @@ class DirectStreamingPlayerTests: XCTestCase {
             "shouldAllowAudiblePlaybackKick must be false under sticky .userPaused (readyToPlay / head-start / recreate)"
         )
     }
+
+    /// Engine publish helper is the sole readyToPlay / soft-resume bridge to ``setPlaying()``.
+    /// First call from Connecting (``.prePlay``) must flip chrome; a second call must no-op so
+    /// readyToPlay + timeControl KVO cannot double-emit ``streamDidStart``.
+    ///
+    /// - SeeAlso: `DirectStreamingPlayer.publishAuthoritativePlayingIfNeeded`,
+    ///   ``SharedPlayerManager/setPlaying()``, docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    func testPublishAuthoritativePlayingIfNeededIsIdempotent() async {
+        let engine = DirectStreamingPlayer.shared
+        let manager = SharedPlayerManager.shared
+
+        await manager.stop()
+        await manager.setUserIntentToPlay()
+        var visual = await manager.currentVisualState
+        XCTAssertEqual(visual, .prePlay, "Arrange: Connecting chrome before engine publish")
+
+        await engine.test_publishAuthoritativePlayingIfNeeded()
+        visual = await manager.currentVisualState
+        XCTAssertEqual(
+            visual,
+            .playing,
+            "First publish after audible-start contract must call setPlaying"
+        )
+
+        await engine.test_publishAuthoritativePlayingIfNeeded()
+        visual = await manager.currentVisualState
+        XCTAssertEqual(
+            visual,
+            .playing,
+            "Second publish must leave .playing (no-op when already authoritative)"
+        )
+
+        await manager.stop()
+        await engine.test_publishAuthoritativePlayingIfNeeded()
+        visual = await manager.currentVisualState
+        XCTAssertEqual(
+            visual,
+            .userPaused,
+            "Publish must not override sticky user pause after stop"
+        )
+    }
     
     // MARK: - Performance Tests
     

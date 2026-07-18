@@ -2567,6 +2567,42 @@ final class SharedPlayerManagerEventTests: XCTestCase {
         }
     }
 
+    /// Protects connecting-chrome honesty: explicit play intent must not claim `.playing`
+    /// (rate 1 / pause glyph) until the engine publishes after soft-resume or readyToPlay kick.
+    ///
+    /// ``setUserIntentToPlay()`` moves sticky pause → `.prePlay` + `.shouldBePlaying`.
+    /// Authoritative ``setPlaying()`` (or engine ``publishAuthoritativePlayingIfNeeded``) is the
+    /// only production transition to `.playing` chrome. Under UITestMode, ``play()`` still sets
+    /// `.playing` for assertions without real attach — that isolation path is intentional.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/setUserIntentToPlay()``, ``SharedPlayerManager/setPlaying()``,
+    ///   ``SharedPlayerManager/play()``, docs/Live-Activity-Stacking-and-Media-Surfaces.md
+    ///   (connecting chrome vs audible start).
+    func testSetUserIntentToPlayLeavesConnectingChromeUntilSetPlaying() async {
+        await manager.stop()
+        var visual = await manager.currentVisualState
+        XCTAssertEqual(visual, .userPaused, "stop must sticky-lock userPaused visual")
+
+        await manager.setUserIntentToPlay()
+        visual = await manager.currentVisualState
+        let intent = await manager.currentPlaybackIntent
+        XCTAssertEqual(
+            visual,
+            .prePlay,
+            "Explicit play intent must show Connecting (.prePlay), not optimistic .playing"
+        )
+        XCTAssertEqual(intent, .shouldBePlaying)
+        XCTAssertFalse(
+            visual.isActivelyPlaying,
+            "isActivelyPlaying must stay false until engine-complete setPlaying"
+        )
+
+        await manager.setPlaying()
+        visual = await manager.currentVisualState
+        XCTAssertEqual(visual, .playing, "setPlaying is the authoritative audible-start chrome flip")
+        XCTAssertTrue(visual.isActivelyPlaying)
+    }
+
     /// Protects the user-pause engine-complete contract: ``stop()`` returns only after soft
     /// silence (`isSoftPaused`, rate 0 when a player exists), and media-surface coordination
     /// runs after that barrier — never while soft pause is still in flight.

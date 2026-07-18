@@ -192,13 +192,12 @@ import WidgetKit
 ///
 /// | From State      | Trigger / Event                                   | Guard / Condition                                              | To State        | Resurrection Behavior / Notes |
 /// |-----------------|---------------------------------------------------|-----------------------------------------------------------------|-----------------|-------------------------------|
-/// | .prePlay        | Cold launch first play                            | Security valid + inside 25s window (or first time)              | .playing        | Sets `initialPlaybackHasRun = true` |
-/// | .prePlay        | Explicit user play (button, widget, Siri, etc.)   | `userRequestedPlay()` → `setUserIntentToPlay()` first           | .playing        | Clears any prior .userPaused lock |
+/// | .prePlay        | Cold launch first play                            | Security valid + inside 25s window (or first time)              | .prePlay (Connecting) → .playing | `.playing` only after engine soft-resume / readyToPlay kick (`setPlaying`); sets `initialPlaybackHasRun = true` when prePlay path proceeds |
+/// | .userPaused     | Explicit user play (button, widget, Siri, etc.)   | `userRequestedPlay()` → `setUserIntentToPlay()` first           | .prePlay (Connecting) → .playing | Intent `.shouldBePlaying` immediately; chrome stays Connecting until engine `setPlaying` |
 /// | .playing        | User taps pause/stop (any surface)                | `stop()` or `markAsUserPaused()` at top of method               | .userPaused     | Immediate sticky lock + early `saveVisualState()` |
-/// | .playing        | User-initiated stream/language switch             | `resetToPrePlayForNewStream()` then `play()`                    | .prePlay → .playing | Special bypass of the ".playing guard" in play() |
+/// | .playing        | User-initiated stream/language switch             | `resetToPrePlayForNewStream()` then `play()`                    | .prePlay → .playing | Hold prePlay through attach; engine `setPlaying` after readyToPlay |
 /// | .playing        | AV interruption, stall, or thermal event          | `attemptResurrectionIfAllowed()` or player recovery nudges      | .playing        | Only proceeds if `shouldAutoPlayOrResume` |
 /// | any             | Security validation failure (DNS/403/cert)        | Inside `play()` guard or StreamingSessionDelegate 403 handler   | .securityLocked | Permanent until explicit successful play |
-/// | .userPaused     | User explicitly taps play (any surface)           | `userRequestedPlay()` (all explicit surfaces: button, widget-pending+check, LA, Siri, remote, URL) | .prePlay        | Resume via `.shouldBePlaying` in `play()` (widget signals reach here via Darwin → checkForPendingWidgetActions → userRequestedPlay) |
 /// | .thermalPaused  | Device cools sufficiently                         | DirectStreamingPlayer thermal recovery logic                    | .playing        | Only via `shouldAutoResumeOnThermalRecovery` |
 /// | any             | App foreground, interruption.ended(.shouldResume) | `restoreVisualStateRespectingUserIntent()`                      | (unchanged or forced .userPaused) | Applies inline resurrection suppression (if mustSuppressResurrection → .userPaused). Sentinel also blocks. |
 /// | any (post-term) | Device wake / power-up with Lock Screen LA visible | All auto paths (play/restore/attemptResurrection) | (no playback) | `hasExplicitTerminationSentinel()` + !explicit-this-launch is hard blocker (even for prior .playing snapshot) |
@@ -542,8 +541,9 @@ actor SharedPlayerManager {
     var currentVisualState: PlayerVisualState = .prePlay
     
     /// When true, `resetToPrePlayForNewStream()` has enabled a stream-switch hold: UI stays `.prePlay`
-    /// until `play()` runs. `play()` then calls `setPlaying()` when intent is `.shouldBePlaying`
-    /// (same as cold launch) so KVO does not leave yellow/prePlay after attach.
+    /// (Connecting) through validation and secured attach until the engine publishes authoritative
+    /// `.playing` via ``setPlaying()`` (soft-resume or readyToPlay first-play kick). Cleared only
+    /// inside ``setPlaying()`` / privacy reset / UITest short-circuit — not at the start of ``play()``.
     private var holdPrePlayVisualUntilPlayback = false
     
     /// True when a stream-switch tap already reset to `.prePlay` and enabled the hold
@@ -1357,9 +1357,12 @@ actor SharedPlayerManager {
     /// - Early returns for stickyPauseOrLock, already-playing (outside relaxed), duplicate prePlay
     /// - Security validation (DNS TXT + cert) → on fail: securityLocked + return
     /// - **Re-check sticky pause after validation** (user may pause during the `await`)
-    /// - setPlaying() (optimistic visual)
-    /// - Widget branch (optimistic) or main: soft-pause resume, alignment, setStreamAndPlay
+    /// - **Keep Connecting chrome** (``.prePlay`` / stream-switch hold) — do **not** call
+    ///   ``setPlaying()`` here; rate 1 / pause glyph before audio is a transport lie
+    /// - Widget branch (optimistic extension visual) or main: soft-pause resume, alignment, setStreamAndPlay
     /// - **Re-check sticky pause after tuning wait / soft-resume / immediately before attach**
+    /// - Authoritative ``setPlaying()`` only from engine: soft-resume after rate kick, or readyToPlay
+    ///   first-play kick (``DirectStreamingPlayer``)
     ///
     /// UITestMode special case: when `isRunningInUITestMode` is true (via "-UITestMode" launch arg),
     /// we short-circuit *before* the SecurityModelValidator call and never reach setStreamAndPlay.
@@ -1598,24 +1601,27 @@ actor SharedPlayerManager {
             return
         }
         
-        // Set `.playing` before stream attach so KVO/status callbacks match UI intent.
-        // Stream switches enable `holdPrePlayVisualUntilPlayback` during tuning/teardown (yellow only
-        // until `play()`). Once `play()` runs with explicit `.shouldBePlaying`, apply the same
-        // optimistic `.playing` as cold launch — do not defer to late `startPlayback()` only.
-        let hadStreamSwitchHold = holdPrePlayVisualUntilPlayback
-        if hadStreamSwitchHold {
-            holdPrePlayVisualUntilPlayback = false
-        }
-        if !hadStreamSwitchHold || currentPlaybackIntent.isActivePlaybackIntent {
-            await setPlaying()
+        // Connecting chrome only until the engine has soft-resumed or kicked audible output.
+        // Claiming `.playing` here (rate 1, pause glyph, streamDidStart) while security attach or
+        // soft-resume is still in flight made lock-screen / Live Activity chrome lie about audio.
+        // Stream-switch hold stays true so yellow `.prePlay` persists until ``setPlaying()``.
+        // Authoritative sites: `resumeFromSoftPauseIfAvailable`, readyToPlay first-play kick
+        // (`publishAuthoritativePlayingIfNeeded`), interruption resume markAsPlaying.
+        if currentVisualState != .prePlay
+            && currentVisualState != .playing
+            && currentPlaybackIntent.isActivePlaybackIntent {
+            applyVisualState(.prePlay)
             #if DEBUG
-            if hadStreamSwitchHold {
-                print("[SharedPlayerManager] Visual state set to .playing before setStreamAndPlay (stream switch)")
-            } else {
-                print("[SharedPlayerManager] Visual state set to .playing before setStreamAndPlay")
-            }
+            print("[SharedPlayerManager] play() — connecting chrome (.prePlay) before soft-resume / attach")
             #endif
         }
+        #if DEBUG
+        if holdPrePlayVisualUntilPlayback {
+            print("[SharedPlayerManager] play() — stream-switch prePlay hold retained until engine setPlaying")
+        } else {
+            print("[SharedPlayerManager] play() — deferring setPlaying until soft-resume or readyToPlay kick")
+        }
+        #endif
         
         if isRunningInWidget() {
             handleWidgetPlay()
@@ -1809,7 +1815,8 @@ actor SharedPlayerManager {
     /// 2. `setUserIntentToPlay()` — forces `.prePlay` on sticky pause/clear, does
     ///    `updatePlaybackIntent(to: .shouldBePlaying)`, double-saves.
     /// 3. `play()` — the execution engine (defensive clear, classify cold/stream-switch/resume,
-    ///    sticky/one-shot/security guards, setPlaying, engine drive).
+    ///    sticky/one-shot/security guards, connecting chrome, engine drive; ``setPlaying()`` only
+    ///    after soft-resume or readyToPlay audible kick).
     ///
     /// - Precondition: Must be used for every *explicit user* "start playing" surface.
     ///   Raw `play()` is reserved for cold-launch initial, internal continuation when
@@ -2267,12 +2274,18 @@ actor SharedPlayerManager {
     /// Sets the visual state to `.playing` (and the intent to `.shouldBePlaying`
     /// unless a sleep timer is active) and persists the authoritative snapshot.
     ///
-    /// Call after successful playback start or resume from the engine
-    /// (`DirectStreamingPlayer.startPlayback` / `resumeFromSoftPauseIfAvailable`).
+    /// Call only when the engine has started or resumed **audible** output (or UITestMode
+    /// asserts that transition without real audio). Production call sites:
+    /// soft-pause resume after rate kick, readyToPlay first-play kick / KVO playing via
+    /// ``DirectStreamingPlayer`` `publishAuthoritativePlayingIfNeeded`, interruption resume.
+    ///
+    /// - Important: Do **not** call from the start of ``play()`` or from `startPlayback` while
+    ///   still awaiting `.readyToPlay`. Connecting chrome must stay `.prePlay` (rate 0, play
+    ///   affordance) until this method runs.
     ///
     /// - Postcondition: `currentVisualState == .playing`, intent updated if appropriate,
-    ///   snapshot saved (when the privacy gate allows), Now Playing / Live Activity
-    ///   surfaces notified via ``refreshAllMediaSurfaces(liveActivity: .startOrUpdate)``
+    ///   stream-switch hold cleared, snapshot saved (when the privacy gate allows), Now Playing /
+    ///   Live Activity surfaces notified via ``refreshAllMediaSurfaces(liveActivity: .startOrUpdate)``
     ///   (main app, skipped in UITestMode), and `streamDidStart` emitted after the visual + intent mutations.
     ///
     /// - SeeAlso: ``emit(_:)``, ``refreshAllMediaSurfaces(liveActivity:widgetRefresh:widgetRefreshImmediate:)``,
@@ -2281,9 +2294,9 @@ actor SharedPlayerManager {
     ///   CODING_AGENT.md (SSOT for visual/intent, additive event emission).
     ///
     /// AGENT NOTE: Emission of `.streamDidStart` occurs here (after visual + intent
-    /// mutation) because `setPlaying` is the canonical surface called by the player
-    /// on successful streaming state transition to active. Do not duplicate in callers.
-    /// Existing LA/NowPlaying/save paths are untouched.
+    /// mutation) because `setPlaying` is the canonical surface for "underlying streaming
+    /// became active." Engine helpers must call it only after audible start (or soft-resume
+    /// rate kick). Do not re-introduce optimistic setPlaying in ``play()``.
     func setPlaying() async {
         // UI Test isolation (SSOT): perform the canonical visual + intent + event mutations
         // and persist the snapshot (when the privacy gate allows) so unit tests can assert

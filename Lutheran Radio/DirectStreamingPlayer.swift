@@ -2202,6 +2202,9 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                     self.safeOnStatusChange(isPlaying: true, reasonKey: "status_playing")
                     self.hasStartedPlaying = true
                     self.stopBufferingTimer()
+                    // Defense-in-depth: if readyToPlay kick already published chrome, this no-ops;
+                    // if KVO observed audible play first, surfaces catch up here.
+                    await self.publishAuthoritativePlayingIfNeeded()
                     
                 case .paused:
                     if !self.isPlaybackTeardownActive && observedPlayer.rate == 0.0 {
@@ -2542,7 +2545,9 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         player.playImmediately(atRate: 1.0)
         safeOnStatusChange(isPlaying: true, reasonKey: "status_playing")
         hasStartedPlaying = true
-        await SharedPlayerManager.shared.setPlaying()
+        // Authoritative chrome only after the rate kick — never from SharedPlayerManager.play()
+        // before soft-resume returns (Connecting must not claim rate 1 / pause glyph while silent).
+        await publishAuthoritativePlayingIfNeeded()
 
         #if DEBUG
         print("[DirectStreamingPlayer] Resumed from soft pause — skipped item recreation")
@@ -2713,6 +2718,10 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 }
                 
                 player.playImmediately(atRate: 1.0)
+                self.isDeferringFirstPlayKick = false
+                self.hasStartedPlaying = true
+                self.safeOnStatusChange(isPlaying: true, reasonKey: "status_playing")
+                await self.publishAuthoritativePlayingIfNeeded()
                 #if DEBUG
                 print("[DirectStreamingPlayer] post-head-start playImmediately called (ready fallback, item.status: \(player.currentItem?.status.rawValue ?? -1))")
                 #endif
@@ -2732,11 +2741,11 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             }
         }
         
-        // Persist the playing state
-        await SharedPlayerManager.shared.setPlaying()
-        
+        // Do not publish `.playing` here. Item is still loading (`isDeferringFirstPlayKick`);
+        // status is `status_connecting`. Authoritative chrome is published from the readyToPlay
+        // first-play kick (or soft-resume) via ``publishAuthoritativePlayingIfNeeded()``.
         #if DEBUG
-        print("[DirectStreamingPlayer] Requested playing state update via SharedPlayerManager (initial auto-play)")
+        print("[DirectStreamingPlayer] startPlayback: deferred setPlaying until readyToPlay audible kick")
         #endif
     }
     
@@ -2839,6 +2848,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                         // playImmediately from startPlayback until the secured item is ready.
                         // Must re-check sticky pause / soft-pause / teardown — user may have paused
                         // during connect while this item was still loading.
+                        // Authoritative `.playing` chrome is published only after the kick so
+                        // Now Playing rate / Live Activity glyph never lead audible audio.
                         Task { @MainActor [weak self] in
                             guard let self else { return }
                             guard item === self.playerItem else { return }
@@ -2868,6 +2879,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                             self.safeOnStatusChange(isPlaying: true, reasonKey: "status_playing")   // ← fixed
                             self.stopBufferingTimer()
                             self.hasStartedPlaying = true
+                            await self.publishAuthoritativePlayingIfNeeded()
                         }
                         
                     case .failed:
@@ -3146,6 +3158,37 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         return true
     }
 
+    /// Publishes authoritative `.playing` chrome after the engine has started or resumed audible output.
+    ///
+    /// Call only after a rate kick / soft-resume `playImmediately` (or equivalent KVO observation of
+    /// live play). Skips when sticky pause/lock already won or visual is already `.playing` so
+    /// readyToPlay + timeControl KVO cannot double-emit `streamDidStart` or thrash surfaces.
+    ///
+    /// - Important: Never call from the start of ``SharedPlayerManager/play()`` or from
+    ///   ``startPlayback(context:attachGeneration:)`` while still awaiting `.readyToPlay`.
+    /// - SeeAlso: ``SharedPlayerManager/setPlaying()``, ``shouldAllowAudiblePlaybackKick()``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (connecting chrome vs audible start).
+    @MainActor
+    private func publishAuthoritativePlayingIfNeeded() async {
+        guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
+            #if DEBUG
+            print("[DirectStreamingPlayer] publishAuthoritativePlayingIfNeeded skipped — sticky pause/lock")
+            #endif
+            return
+        }
+        let visual = await SharedPlayerManager.shared.currentVisualState
+        guard visual != .playing else {
+            #if DEBUG
+            print("[DirectStreamingPlayer] publishAuthoritativePlayingIfNeeded no-op — already .playing")
+            #endif
+            return
+        }
+        await SharedPlayerManager.shared.setPlaying()
+        #if DEBUG
+        print("[DirectStreamingPlayer] publishAuthoritativePlayingIfNeeded → setPlaying after audible start")
+        #endif
+    }
+
     #if DEBUG
     /// Test seam: begin an in-flight attach and return the generation snapshot.
     @MainActor
@@ -3174,6 +3217,12 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     @MainActor
     func test_shouldAllowAudiblePlaybackKick() async -> Bool {
         await shouldAllowAudiblePlaybackKick()
+    }
+
+    /// Test seam: publish `.playing` only when not already playing (readyToPlay / soft-resume contract).
+    @MainActor
+    func test_publishAuthoritativePlayingIfNeeded() async {
+        await publishAuthoritativePlayingIfNeeded()
     }
 
     /// Test seam: await soft-pause / hard-stop completion (production ``stopAndWait``).
@@ -4893,11 +4942,14 @@ extension DirectStreamingPlayer {
 
     /// Marks the current intent as actively playing.
     /// Call this after a successful manual play or auto-resume (e.g. after AVPlayer starts with rate == 1.0).
+    ///
+    /// Prefers the same deduped path as readyToPlay / soft-resume so interruption resume cannot
+    /// double-emit `streamDidStart` when chrome is already `.playing`.
     func markAsPlaying() async {
-        await SharedPlayerManager.shared.setPlaying()
+        await publishAuthoritativePlayingIfNeeded()
         
         #if DEBUG
-        print("[DirectStreamingPlayer] ▶ markAsPlaying() called – currentVisualState = .playing")
+        print("[DirectStreamingPlayer] ▶ markAsPlaying() called – currentVisualState = .playing (or already was)")
         #endif
     }
 }
