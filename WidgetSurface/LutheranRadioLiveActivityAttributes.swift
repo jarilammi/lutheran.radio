@@ -30,7 +30,9 @@
 //
 // Toggle planning contract:
 // `ContentState.visualState` is the preferred input for lock-screen play/pause
-// planning (matches the glyph). When ActivityKit does not expose activities in the
+// planning (matches the glyph). Intent paths publish optimistic content via
+// ``ContentState/replacingVisualState(_:)`` so a rapid second tap does not re-plan
+// from stale pre-tap content. When ActivityKit does not expose activities in the
 // intent host, a durable App Group mirror of the same visual is used — see
 // ``WidgetIntentCoordinators/resolveLiveActivityToggleVisualState`` and
 // ``SharedPlayerManager/persistLiveActivityToggleVisualStateMirror``.
@@ -39,6 +41,7 @@
 //   (makeStatusPresentation, makeControlPresentation, PlayerStatusPresentation,
 //   PlayerControlPresentation), `StreamProgramMetadata`,
 //   `LutheranRadioWidgetLiveActivity.swift`, WidgetDisplayModels.swift,
+//   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
 //   CODING_AGENT.md (Single Source of Truth Principles + "Cross-target shared
 //   source files (non-Core)"), README.md.
 
@@ -55,6 +58,23 @@ public struct LutheranRadioLiveActivityAttributes: ActivityAttributes {
         public init(visualState: PlayerVisualState, streamMetadata: StreamProgramMetadata?) {
             self.visualState = visualState
             self.streamMetadata = streamMetadata
+        }
+
+        /// Builds content with a new control visual while keeping program metadata unchanged.
+        ///
+        /// Lock-screen play/pause intents publish this optimistically so ActivityKit
+        /// `ContentState.visualState` (the preferred resolve input for the next tap) and
+        /// the control glyph advance before the main process finishes soft silence or soft
+        /// resume. Metadata policy stays authoritative: titles and speakers are never
+        /// invented or cleared on toggle — only the play/pause presentation flips.
+        ///
+        /// - Parameter visualState: Target control visual (typically `.userPaused` or `.playing`).
+        /// - Returns: A new ``ContentState`` sharing this instance's ``streamMetadata``.
+        /// - SeeAlso: ``WidgetIntentCoordinators/resolveLiveActivityToggleVisualState(liveActivityContent:durableMirror:actorVisualState:sessionSnapshot:)``,
+        ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
+        ///   docs/Widget-Presentation-Dataflow.md.
+        public func replacingVisualState(_ visualState: PlayerVisualState) -> ContentState {
+            ContentState(visualState: visualState, streamMetadata: streamMetadata)
         }
     }
 

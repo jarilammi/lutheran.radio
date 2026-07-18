@@ -69,7 +69,9 @@ Live Activities are **not** requested at cold launch. They start when playback b
 
 The attribute-events observer (``contentUpdates`` via ``WidgetEventObserver``) keeps ``lastPushedContent`` aligned with the system-accepted state, strengthening suppression of redundant ``Activity.update`` calls.
 
-Protected by ``RadioLiveActivityManagerTests`` (`_test_wouldSuppressLiveActivityUpdate`).
+**Lock-screen toggle optimistic ContentState:** ``WidgetIntentExecution/performLiveActivityToggle()`` publishes the post-toggle control visual via ``pushOptimisticLiveActivityToggleContent(visualState:)`` (ActivityKit `Activity.update` on interactive activities, preserving ``streamMetadata`` through ``ContentState/replacingVisualState(_:)``) and writes the durable App Group toggle mirror. On the main app it also calls ``RadioLiveActivityManager/recordOptimisticToggleContent(visualState:)`` so ``lastPushedContent`` matches the optimistic glyph; when sticky lock / soft silence later produces the same visual, ``updateCurrentActivity()`` suppresses as a no-op. A rapid second tap therefore resolves from post-toggle content (preferred over a lagging mirror or actor), not stale pre-tap content.
+
+Protected by ``RadioLiveActivityManagerTests`` (`_test_wouldSuppressLiveActivityUpdate`, optimistic alignment), ``WidgetIntentContractExtensionTests``, ``WidgetSurfaceTests`` (content replace + second-tap plan).
 
 ### System Now Playing
 

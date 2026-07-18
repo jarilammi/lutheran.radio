@@ -46,8 +46,10 @@ import WidgetSurface
 ///
 /// ## Update Invariant
 /// `Activity.update(...)` occurs **iff** candidate differs from `lastPushedContent`
-/// (or force/initial). This is the mechanism that keeps DI / Lock Screen fresh
-/// without polling in the common case.
+/// (or force/initial). Intent-path optimistic toggles publish ContentState and align
+/// ``lastPushedContent`` first so a rapid second tap resolves from the post-toggle
+/// glyph; the sequential sticky lock / soft-silence path then converges actor state
+/// without requiring a special suppress rule that would block legitimate visual changes.
 ///
 /// ## Test Isolation
 /// All real Activity creation/update/timer paths are short-circuited under
@@ -395,6 +397,9 @@ class RadioLiveActivityManager: ObservableObject {
         // Event-driven deduplication (core of the responsiveness improvement).
         // We only cross the ActivityKit IPC boundary when the user-visible LA content
         // (status pill, control glyph/tint, program title/speaker) would actually differ.
+        // Intent-path optimistic toggles pre-align ``lastPushedContent`` to the same visual
+        // the actor will reach after sticky lock / setPlaying, so the engine-complete
+        // refresh commonly hits this suppress path (no thrash, no double IPC).
         if let last = lastPushedContent, last == candidate {
             #if DEBUG
             print("🔴 Live Activity update suppressed (content unchanged)")
@@ -409,6 +414,38 @@ class RadioLiveActivityManager: ObservableObject {
         
         #if DEBUG
         print("🔴 Live Activity updated locally: visualState=\(visualState)")
+        #endif
+    }
+
+    /// Aligns in-memory ``lastPushedContent`` with an intent-path optimistic Live Activity visual.
+    ///
+    /// Called from ``WidgetIntentExecution`` after ActivityKit content is published (or when
+    /// no activity is visible in this process). Matching the optimistic visual here means
+    /// the subsequent engine-complete ``updateCurrentActivity()`` typically sees an equal
+    /// candidate and suppresses redundant IPC once the actor sticky-locks or setPlaying.
+    /// Program metadata is preserved from the last push, the owned activity content, or
+    /// persisted stream metadata — never cleared solely because the control flipped.
+    ///
+    /// - Parameter visualState: Optimistic control visual (`.userPaused` or `.playing`).
+    /// - Postcondition: ``lastPushedContent`` reflects `visualState` with preserved metadata
+    ///   when any metadata source is available; durable toggle mirror stays the caller's job
+    ///   (already written before this alignment).
+    /// - Note: Does not call `Activity.update` — the intent path owns that IPC via
+    ///   `Activity.activities` so extension-hosted and main-hosted toggles share one push site.
+    /// - SeeAlso: ``updateCurrentActivity()``, ``WidgetIntentExecution/performLiveActivityToggle()``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    @MainActor
+    func recordOptimisticToggleContent(visualState: PlayerVisualState) {
+        let metadata =
+            lastPushedContent?.streamMetadata
+            ?? currentActivity?.content.state.streamMetadata
+            ?? SharedPlayerManager.loadPersistedStreamMetadata()
+        lastPushedContent = LutheranRadioLiveActivityAttributes.ContentState(
+            visualState: visualState,
+            streamMetadata: metadata
+        )
+        #if DEBUG
+        print("🔴 Live Activity lastPushedContent aligned to optimistic visual=\(visualState)")
         #endif
     }
 

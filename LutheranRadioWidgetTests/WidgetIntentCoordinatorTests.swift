@@ -182,6 +182,34 @@ final class WidgetIntentCoordinatorTests: XCTestCase {
         )
     }
 
+    /// Rapid second tap after optimistic ContentState must invert plan direction.
+    func testRapidSecondTapPlansFromOptimisticLiveActivityContent() {
+        let afterPause = WidgetIntentCoordinators.resolveLiveActivityToggleVisualState(
+            liveActivityContent: .userPaused,
+            durableMirror: .playing,
+            actorVisualState: .playing,
+            sessionSnapshot: nil
+        )
+        XCTAssertEqual(afterPause.source, .liveActivityContent)
+        XCTAssertEqual(
+            WidgetIntentCoordinators.planLiveActivityToggle(resolution: afterPause),
+            .play,
+            "Optimistic pause content must drive second-tap play"
+        )
+
+        let afterPlay = WidgetIntentCoordinators.resolveLiveActivityToggleVisualState(
+            liveActivityContent: .playing,
+            durableMirror: .userPaused,
+            actorVisualState: .userPaused,
+            sessionSnapshot: nil
+        )
+        XCTAssertEqual(
+            WidgetIntentCoordinators.planLiveActivityToggle(resolution: afterPlay),
+            .pause,
+            "Optimistic play content must drive second-tap pause"
+        )
+    }
+
     /// ActivityKit ContentState remains trusted under distrust (explicit lock-screen glyph).
     func testPlanLiveActivityToggleDistrustStillAllowsPlayFromLiveActivityContent() {
         let resolution = WidgetIntentCoordinators.resolveLiveActivityToggleVisualState(

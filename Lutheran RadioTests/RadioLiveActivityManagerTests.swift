@@ -288,6 +288,41 @@ class RadioLiveActivityManagerTests: XCTestCase {
         )
     }
 
+    /// Seeds last-pushed via synthetic content, then optimistic pause alignment preserves
+    /// metadata and suppresses a matching post-sticky candidate.
+    ///
+    /// Protects lock-screen toggle latency: intent-path optimistic content must record
+    /// ``lastPushedContent`` without ActivityKit IPC under test isolation so engine-complete
+    /// ``updateCurrentActivity`` can suppress when actor visual matches the glyph.
+    func testOptimisticToggleAlignmentPreservesMetadataAndSuppressesMatchingCandidate() async {
+        let metadata = StreamProgramMetadata(programTitle: "Morning Prayer", speaker: "Reader")
+        let playing = makeActivityContent(visualState: .playing, metadata: metadata)
+        let stream = AsyncStream<ActivityContent<LutheranRadioLiveActivityAttributes.ContentState>> { continuation in
+            continuation.yield(playing)
+            continuation.finish()
+        }
+        manager._test_beginObservingSyntheticContentUpdates(stream)
+        let seeded = await waitUntil({ self.manager.lastPushedContent == playing.state })
+        XCTAssertTrue(seeded, "Precondition: lastPushedContent must carry playing + metadata")
+
+        manager.recordOptimisticToggleContent(visualState: .userPaused)
+
+        XCTAssertEqual(manager.lastPushedContent?.visualState, .userPaused)
+        XCTAssertEqual(
+            manager.lastPushedContent?.streamMetadata,
+            metadata,
+            "Optimistic control flip must not clear program title/speaker"
+        )
+        XCTAssertTrue(
+            manager._test_wouldSuppressLiveActivityUpdate(visualState: .userPaused, streamMetadata: metadata),
+            "Engine-complete pause candidate matching optimistic content must suppress"
+        )
+        XCTAssertFalse(
+            manager._test_wouldSuppressLiveActivityUpdate(visualState: .playing, streamMetadata: metadata),
+            "Divergent actor visual must still be eligible to push"
+        )
+    }
+
     /// Verifies termination self-healing clears stale tracking when observation ends
     /// while an activity reference is still considered active.
     func testAttributeObservationTerminationClearsStaleTrackingWhenActivityPresent() async {

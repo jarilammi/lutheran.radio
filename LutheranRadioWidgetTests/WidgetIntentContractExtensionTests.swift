@@ -276,6 +276,36 @@ final class WidgetIntentContractExtensionTests: XCTestCase {
             .userPaused,
             "After planned pause, durable mirror should optimistically flip to userPaused"
         )
+
+        // Rapid second-tap contract without ActivityKit: durable mirror alone (content nil)
+        // must plan play after the optimistic pause write — same direction as ContentState
+        // once the optimistic Activity.update lands on device.
+        let secondTap = WidgetIntentCoordinators.resolveLiveActivityToggleVisualState(
+            liveActivityContent: nil,
+            durableMirror: SharedPlayerManager.loadLiveActivityToggleVisualStateMirror(),
+            actorVisualState: .prePlay,
+            sessionSnapshot: nil
+        )
+        XCTAssertEqual(secondTap.source, .durableCrossProcessMirror)
+        XCTAssertEqual(
+            WidgetIntentCoordinators.planLiveActivityToggle(resolution: secondTap),
+            .play,
+            "Second rapid tap after optimistic pause mirror must plan play"
+        )
+    }
+
+    /// Optimistic ContentState builder preserves stream metadata when flipping control visual.
+    ///
+    /// Lock-screen toggle must not clear program title/speaker while flipping play/pause.
+    func testOptimisticLiveActivityContentPreservesStreamMetadata() {
+        let metadata = StreamProgramMetadata(programTitle: "Vesper", speaker: "Cantor")
+        let before = LutheranRadioLiveActivityAttributes.ContentState(
+            visualState: .playing,
+            streamMetadata: metadata
+        )
+        let after = before.replacingVisualState(.userPaused)
+        XCTAssertEqual(after.visualState, .userPaused)
+        XCTAssertEqual(after.streamMetadata, metadata)
     }
 
     /// Durable mirror alone: persist/load/clear contract (no ActivityKit IPC).

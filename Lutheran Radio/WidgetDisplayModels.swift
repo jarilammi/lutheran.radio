@@ -40,7 +40,11 @@
 //   ``WidgetProviderPresentationAssembly``, ``WidgetIntentCoordinators``,
 //   ``WidgetTimelineEntryFactory``, CODING_AGENT.md (cross-target widget sources).
 
-import ActivityKit
+// SAFETY: ActivityKit's `Activity` is not Sendable; optimistic ContentState pushes from
+// lock-screen intents use `nonisolated(unsafe)` + `unsafe await activity.update` with a
+// local strong capture (same boundary as RadioLiveActivityManager). Prefer
+// `@unsafe @preconcurrency` over bare `@preconcurrency` under SWIFT_STRICT_MEMORY_SAFETY.
+@unsafe @preconcurrency import ActivityKit
 import Foundation
 import WidgetSurface
 
@@ -226,14 +230,22 @@ enum WidgetIntentExecution {
     /// default actor `.prePlay`; planning from actor alone inverted the first pause while
     /// audio was already playing.
     ///
+    /// **Optimistic ContentState:** after planning, the path publishes the target visual into
+    /// ActivityKit content (preserving program metadata) and the durable mirror so a rapid
+    /// second tap resolves from the post-toggle glyph rather than stale pre-tap content.
+    /// Main-app ``RadioLiveActivityManager/lastPushedContent`` is aligned so actor-driven
+    /// pushes do not thrash the optimistic glyph before sticky lock / soft silence converge.
+    ///
     /// **Post-term / reboot:** when ``SharedPlayerManager/shouldDistrustDurableMirrorPlayPlanning()``
     /// is true, durable mirror alone must not plan `.play` (stale App Group after dirty
     /// power-off). ContentState remains trusted for explicit lock-screen glyphs.
     ///
     /// - SeeAlso: ``WidgetIntentCoordinators/resolveLiveActivityToggleVisualState(liveActivityContent:durableMirror:actorVisualState:sessionSnapshot:)``,
     ///   ``WidgetIntentCoordinators/planLiveActivityToggle(resolution:distrustDurableMirrorPlay:)``,
+    ///   ``pushOptimisticLiveActivityToggleContent(visualState:)``,
     ///   ``SharedPlayerManager/persistLiveActivityToggleVisualStateMirror(_:)``,
-    ///   ``SharedPlayerManager/shouldDistrustDurableMirrorPlayPlanning()``.
+    ///   ``SharedPlayerManager/shouldDistrustDurableMirrorPlayPlanning()``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     static func performLiveActivityToggle() async {
         let liveActivityContent = currentLiveActivityContentVisualState()
         let durableMirror = SharedPlayerManager.loadLiveActivityToggleVisualStateMirror()
@@ -258,12 +270,13 @@ enum WidgetIntentExecution {
         )
         #endif
 
-        // Optimistic mirror write so a second rapid tap in a cold extension process
-        // plans against the intended post-toggle visual before main-app LA push lands.
+        // Optimistic mirror + ActivityKit ContentState so a second rapid tap plans against
+        // the intended post-toggle visual (content wins resolve when activities are visible).
         // Under distrust, forced-pause plans also pin the mirror to `.userPaused` (never
         // re-warm a play-biased token from a stale non-playing mirror alone).
         let optimisticTarget: PlayerVisualState = (plan == .pause) ? .userPaused : .playing
         SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(optimisticTarget)
+        await pushOptimisticLiveActivityToggleContent(visualState: optimisticTarget)
 
         await executeLiveActivityToggle(plan: plan)
     }
@@ -274,18 +287,68 @@ enum WidgetIntentExecution {
     /// - Note: App Intent hosts sometimes report an empty activities list; the durable App Group
     ///   mirror is the required fallback in that case.
     nonisolated static func currentLiveActivityContentVisualState() -> PlayerVisualState? {
-        let activities = Activity<LutheranRadioLiveActivityAttributes>.activities
-        guard let activity = activities.first(where: {
+        firstInteractiveLiveActivity()?.content.state.visualState
+    }
+
+    /// Publishes an optimistic Live Activity control visual for lock-screen toggle intents.
+    ///
+    /// Updates every active/stale `Activity` whose content visual differs from `visualState`,
+    /// preserving each activity's existing ``streamMetadata`` (no title/speaker invent or clear).
+    /// On the main app, aligns ``RadioLiveActivityManager/lastPushedContent`` so subsequent
+    /// ``updateCurrentActivity()`` calls do not regress the glyph while the actor catches up.
+    ///
+    /// - Parameter visualState: Target control visual (`.userPaused` after pause plan, `.playing` after play).
+    /// - Note: Skips ActivityKit IPC under ``SharedPlayerManager/isRunningInUITestMode`` so
+    ///   unit tests stay free of system-service round-trips; main-app last-pushed alignment
+    ///   still runs so white-box suppression tests can exercise the thrash guard.
+    /// - SeeAlso: ``performLiveActivityToggle()``,
+    ///   ``LutheranRadioLiveActivityAttributes/ContentState/replacingVisualState(_:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    static func pushOptimisticLiveActivityToggleContent(visualState: PlayerVisualState) async {
+        let skipActivityKitIPC = SharedPlayerManager.isRunningInUITestMode
+
+        if !skipActivityKitIPC {
+            for activity in interactiveLiveActivities() {
+                let current = activity.content.state
+                let candidate = current.replacingVisualState(visualState)
+                guard candidate != current else { continue }
+
+                nonisolated(unsafe) let safeActivity = activity
+                // SAFETY: Activity.update is not Sendable in the current SDK; capture is a
+                // local strong reference from Activity.activities (same pattern as
+                // RadioLiveActivityManager.updateCurrentActivity).
+                unsafe await safeActivity.update(.init(state: candidate, staleDate: nil))
+            }
+        }
+
+        #if LUTHERAN_MAIN_APP
+        await MainActor.run {
+            RadioLiveActivityManager.shared.recordOptimisticToggleContent(visualState: visualState)
+        }
+        #endif
+    }
+
+    /// Active or stale Lutheran Radio Live Activities visible to this process.
+    ///
+    /// - Returns: Activities whose content may drive lock-screen toggle resolve and optimistic push.
+    nonisolated private static func interactiveLiveActivities()
+        -> [Activity<LutheranRadioLiveActivityAttributes>]
+    {
+        Activity<LutheranRadioLiveActivityAttributes>.activities.filter {
             switch $0.activityState {
             case .active, .stale:
                 return true
             default:
                 return false
             }
-        }) else {
-            return nil
         }
-        return activity.content.state.visualState
+    }
+
+    /// First interactive Live Activity, if any.
+    nonisolated private static func firstInteractiveLiveActivity()
+        -> Activity<LutheranRadioLiveActivityAttributes>?
+    {
+        interactiveLiveActivities().first
     }
 
     /// Full Live Activity stream switch path used by ``LiveActivitySwitchStreamIntent/perform()``.

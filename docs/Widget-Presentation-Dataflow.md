@@ -123,7 +123,13 @@ Never derive presentation inside leaf view `body` for the three canonical surfac
    - Only when different (or first push) does it call `Activity.update` and record the candidate.
    - This is the "Update Invariant": pushes happen **iff** the rendered content would change.
 
-3. **Timer demotion**:
+3. **Lock-screen toggle optimistic ContentState** (intent path, main or extension host):
+   - ``WidgetIntentExecution/performLiveActivityToggle()`` plans from multi-source resolve, then writes the durable toggle mirror and calls ``pushOptimisticLiveActivityToggleContent(visualState:)``.
+   - That helper updates interactive `Activity` instances with ``ContentState/replacingVisualState(_:)`` (program metadata preserved) and, on the main app, ``RadioLiveActivityManager/recordOptimisticToggleContent(visualState:)`` so ``lastPushedContent`` matches the optimistic glyph before engine-complete refresh.
+   - Resolve still prefers ActivityKit content over the durable mirror; the optimistic content publish is what makes a rapid second tap plan the opposite direction instead of re-reading stale pre-tap content.
+   - UITestMode skips ActivityKit IPC; main-app last-pushed alignment still runs for white-box tests.
+
+4. **Timer demotion**:
    - `startLocalUpdateTimer()` / the `updateTimer` are kept as an `internal` testing seam.
    - They are **not** started from `startActivity()`, `observeExistingActivities()`, or normal lifecycle.
    - The timer (now 30 s interval when explicitly started) is only a rare fallback. All user-visible freshness is event-driven.

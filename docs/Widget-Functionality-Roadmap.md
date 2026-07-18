@@ -198,7 +198,7 @@ iOS renders **both** system Now Playing and Live Activity when both are active â
 
 **SeeAlso:** `SharedPlayerManager+NowPlaying.swift`, `RadioLiveActivityManager.swift`, `StreamProgramMetadata.swift`.
 
-### Lock-screen Live Activity toggle planning (fixed 2026-07-15)
+### Lock-screen Live Activity toggle planning (fixed 2026-07-15; optimistic content 2026-07-18)
 
 **Status:** Fixed
 
@@ -208,9 +208,11 @@ iOS renders **both** system Now Playing and Live Activity when both are active â
 2. Durable App Group key ``liveActivityToggleVisualState`` (written on every LA content push; **not** gated by `hasActiveWidgets`)
 3. Actor / session-snapshot fallbacks
 
-**SeeAlso:** ``WidgetIntentCoordinators/resolveLiveActivityToggleVisualState(liveActivityContent:durableMirror:actorVisualState:sessionSnapshot:)``, ``WidgetIntentCoordinators/planLiveActivityToggle(resolution:distrustDurableMirrorPlay:)``, ``WidgetIntentExecution/performLiveActivityToggle()``, ``SharedPlayerManager/persistLiveActivityToggleVisualStateMirror(_:)``, ``SharedPlayerManager/shouldDistrustDurableMirrorPlayPlanning()``.
+**SeeAlso:** ``WidgetIntentCoordinators/resolveLiveActivityToggleVisualState(liveActivityContent:durableMirror:actorVisualState:sessionSnapshot:)``, ``WidgetIntentCoordinators/planLiveActivityToggle(resolution:distrustDurableMirrorPlay:)``, ``WidgetIntentExecution/performLiveActivityToggle()``, ``WidgetIntentExecution/pushOptimisticLiveActivityToggleContent(visualState:)``, ``ContentState/replacingVisualState(_:)``, ``RadioLiveActivityManager/recordOptimisticToggleContent(visualState:)``, ``SharedPlayerManager/persistLiveActivityToggleVisualStateMirror(_:)``, ``SharedPlayerManager/shouldDistrustDurableMirrorPlayPlanning()``.
 
 **Hardening (2026-07-15):** Factory reset explicitly clears the durable LA toggle mirror (not only LA-end / termination). After termination sentinel or device reboot (recorded boot identity mismatch), durable mirror alone must not plan **play** â€” ActivityKit `ContentState` remains trusted for real lock-screen glyphs.
+
+**Optimistic ContentState (2026-07-18):** Toggle intents publish the post-toggle control visual into ActivityKit content (program metadata preserved) and align main-app ``lastPushedContent`` so a rapid second tap resolves from the post-toggle glyph rather than stale pre-tap content. The durable mirror remains the empty-activities fallback.
 
 ### Live Activity language chrome SSOT (open â€” same class as LA toggle visual fix)
 

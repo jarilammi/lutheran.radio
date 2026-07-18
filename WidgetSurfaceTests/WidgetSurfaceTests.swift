@@ -101,6 +101,52 @@ struct WidgetSurfaceTests {
         )
     }
 
+    /// Optimistic ContentState visual flip preserves program metadata (lock-screen toggle).
+    @Test func contentStateReplacingVisualStatePreservesStreamMetadata() {
+        let metadata = StreamProgramMetadata(programTitle: "Sunday Sermon", speaker: "Pastor")
+        let playing = LutheranRadioLiveActivityAttributes.ContentState(
+            visualState: .playing,
+            streamMetadata: metadata
+        )
+        let paused = playing.replacingVisualState(.userPaused)
+        #expect(paused.visualState == .userPaused)
+        #expect(paused.streamMetadata == metadata)
+
+        let resumed = paused.replacingVisualState(.playing)
+        #expect(resumed.visualState == .playing)
+        #expect(resumed.streamMetadata == metadata)
+    }
+
+    /// Rapid second tap must plan from optimistic ContentState, not stale pre-tap content.
+    ///
+    /// Protects the lock-screen double-tap contract: after an optimistic pause content
+    /// publish, resolve prefers ActivityKit content over a lagging durable mirror or actor.
+    @Test func rapidSecondTapPlansFromOptimisticLiveActivityContent() {
+        let afterOptimisticPause = WidgetIntentCoordinators.resolveLiveActivityToggleVisualState(
+            liveActivityContent: .userPaused,
+            durableMirror: .playing,
+            actorVisualState: .playing,
+            sessionSnapshot: nil
+        )
+        #expect(afterOptimisticPause.source == .liveActivityContent)
+        #expect(afterOptimisticPause.visualState == .userPaused)
+        #expect(
+            WidgetIntentCoordinators.planLiveActivityToggle(resolution: afterOptimisticPause) == .play,
+            "Second tap after optimistic pause content must plan play, not a second pause"
+        )
+
+        let afterOptimisticPlay = WidgetIntentCoordinators.resolveLiveActivityToggleVisualState(
+            liveActivityContent: .playing,
+            durableMirror: .userPaused,
+            actorVisualState: .userPaused,
+            sessionSnapshot: nil
+        )
+        #expect(
+            WidgetIntentCoordinators.planLiveActivityToggle(resolution: afterOptimisticPlay) == .pause,
+            "Second tap after optimistic play content must plan pause"
+        )
+    }
+
     // MARK: - Liveness presentation
 
     @Test func livenessBranchesAreInverses() {
