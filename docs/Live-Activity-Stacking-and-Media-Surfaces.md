@@ -134,14 +134,15 @@ The **dual-card layout** remains; **metadata mismatch** between cards is a bug. 
 
 When the user pauses (system Now Playing, Live Activity, headset, or in-app) while security validation or secured item attach is still in flight:
 
-1. **``SharedPlayerManager/stop()``** locks sticky `.userPaused` and intent **before** calling the engine.
-2. **``DirectStreamingPlayer/stop(reason:completion:silent:)``** advances a monotonic attach generation and runs soft pause (rate 0, secured item retained when present). There is no early return that leaves attach free to start audio.
-3. **Start paths** (`play()`, `setStreamAndPlay`, `createAndStartPlayer`, `startPlayback`) re-check generation + ``canProceedWithPlayback()`` after every significant `await` and discard without audible start.
-4. **Audible kicks** (readyToPlay `playImmediately`, ICY head-start, recreate restart) go through a shared gate that also blocks soft-paused and teardown-active state.
+1. **``SharedPlayerManager/stop()``** locks sticky `.userPaused` and intent **before** calling the engine, and emits `streamDidStop`.
+2. **``DirectStreamingPlayer/stopAndWait(reason:silent:applyUserPauseVisualLock:)``** advances a monotonic attach generation and runs soft pause (rate 0, secured item retained when present). There is no early return that leaves attach free to start audio. SPM passes `applyUserPauseVisualLock: false` so the engine does not re-enter sticky visual lock / surface refresh.
+3. **Engine-complete barrier:** Soft pause applies `player.pause()` + `rate == 0` and sets soft-pause **before** `stopAndWait` returns. Only then does SPM run the single ``refreshAllMediaSurfaces`` (Now Playing rate / Live Activity glyph). Chrome must not lead audible audio.
+4. **Start paths** (`play()`, `setStreamAndPlay`, `createAndStartPlayer`, `startPlayback`) re-check generation + ``canProceedWithPlayback()`` after every significant `await` and discard without audible start.
+5. **Audible kicks** (readyToPlay `playImmediately`, ICY head-start, recreate restart) go through a shared gate that also blocks soft-paused and teardown-active state.
 
-Required convergence: paused chrome and silent engine — never durable “paused UI + audible stream” from this race.
+Required convergence: paused chrome and silent engine — never durable “paused UI + audible stream” from this race. Single ownership for “user pause complete”: SPM sticky lock + one surface refresh after soft silence.
 
-**SeeAlso:** `DirectStreamingPlayer` in-flight attach helpers, `SharedPlayerManager.play()` post-validation sticky re-checks, `Lutheran RadioTests` attach-generation coverage.
+**SeeAlso:** `DirectStreamingPlayer` in-flight attach helpers and `stopAndWait`, `SharedPlayerManager.play()` post-validation sticky re-checks, `Lutheran RadioTests` attach-generation and soft-silence completion coverage.
 
 ---
 

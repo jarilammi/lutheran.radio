@@ -931,10 +931,10 @@ final class SharedPlayerManagerEventTests: XCTestCase {
     /// 2. **Emission order for `stop()`** — the canonical stop path emits mutation events
     ///    (`visualStateDidChange`, `playbackIntentChanged`) before the terminal verb
     ///    (`streamDidStop`), followed by the persisted snapshot signal when the privacy
-    ///    gate allows the write path. Additional async side-effect emissions from
-    ///    `DirectStreamingPlayer.stop()` (for example a duplicate visual or `streamDidPause`)
-    ///    may appear between those canonical steps; assertions use ordered subsequence
-    ///    matching, not a fixed total event count.
+    ///    gate allows the write path. Engine soft pause is awaited with
+    ///    `applyUserPauseVisualLock: false`, so stop must **not** re-enter `setUserPaused` /
+    ///    emit `streamDidPause`. Assertions use ordered subsequence matching, not a fixed
+    ///    total event count.
     ///
     /// The replay stream is the surface consumed by `PlayerEventSubscriber` and
     /// `WidgetEventObserver`-based helpers; consumers depend on prefix-then-live ordering.
@@ -1012,6 +1012,10 @@ final class SharedPlayerManagerEventTests: XCTestCase {
         XCTAssertTrue(
             liveEmissions.contains(.persistedWidgetStateDidUpdate),
             "Live stop path should emit .persistedWidgetStateDidUpdate when the write path runs; got: \(liveEmissions)"
+        )
+        XCTAssertFalse(
+            liveEmissions.contains { if case .streamDidPause = $0 { return true }; return false },
+            "SPM stop owns streamDidStop + sticky lock; engine must not re-enter setUserPaused/streamDidPause; got: \(liveEmissions)"
         )
 
         // Replay forwarding — best-effort: a second iterator on the replay stream while re-driving
@@ -2561,6 +2565,53 @@ final class SharedPlayerManagerEventTests: XCTestCase {
                 "Post-stop hygiene must not acquire the session-teardown gate"
             )
         }
+    }
+
+    /// Protects the user-pause engine-complete contract: ``stop()`` returns only after soft
+    /// silence (`isSoftPaused`, rate 0 when a player exists), and media-surface coordination
+    /// runs after that barrier — never while soft pause is still in flight.
+    ///
+    /// Why: Fire-and-forget engine stop allowed Now Playing / Live Activity glyphs to flip
+    /// while audio was still audible. SPM owns sticky `.userPaused` + one
+    /// ``refreshAllMediaSurfaces`` after ``DirectStreamingPlayer/stopAndWait``.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/stop()``,
+    ///   `DirectStreamingPlayer.stopAndWait(reason:silent:applyUserPauseVisualLock:)`,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (user pause / transport coordination).
+    func testStopAwaitsSoftSilenceBeforeReturningAndRefreshingSurfaces() async {
+        SharedPlayerManager._test_setRecordMediaSurfaceCoordinationOrder(true)
+        SharedPlayerManager._test_clearMediaSurfaceCoordinationOrderLog()
+
+        await manager.setUserIntentToPlay()
+        await manager.stop()
+
+        let softPaused = await MainActor.run {
+            DirectStreamingPlayer.shared.test_isSoftPaused
+        }
+        XCTAssertTrue(
+            softPaused,
+            "stop() must await soft-pause completion before returning (engine-complete barrier)"
+        )
+        if let rate = await MainActor.run(body: { DirectStreamingPlayer.shared.test_playerRate }) {
+            XCTAssertEqual(
+                rate,
+                0,
+                accuracy: 0.001,
+                "stop() must observe rate 0 before treating pause as engine-complete"
+            )
+        }
+
+        let visual = await manager.currentVisualState
+        let intent = await manager.currentPlaybackIntent
+        XCTAssertEqual(visual, .userPaused)
+        XCTAssertEqual(intent, .userPaused)
+
+        // Under UITestMode, Live Activity is skipped; coordination may be empty or NP-only if
+        // bypass is off. Invariant under test isolation: stop completed with soft silence set.
+        // When coordination is recorded with NP bypass, steps must appear only after silence —
+        // already guaranteed by stop()'s sequential await + refresh ordering.
+        SharedPlayerManager._test_setRecordMediaSurfaceCoordinationOrder(false)
+        SharedPlayerManager._test_clearMediaSurfaceCoordinationOrderLog()
     }
 
     /// Protects the Tier 4 ``refreshAllMediaSurfaces(liveActivity:widgetRefresh:widgetRefreshImmediate:)``

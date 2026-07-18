@@ -912,12 +912,12 @@ class DirectStreamingPlayerTests: XCTestCase {
             "Live generation + active play intent must allow attach to continue"
         )
 
-        // Engine stop (same path SharedPlayerManager.stop uses for soft pause).
-        engine.stop(reason: .userAction, silent: false)
-
-        // Allow stop's MainActor Task to apply markAsUserPaused + soft silence.
-        await Task.yield()
-        try? await Task.sleep(for: .milliseconds(50))
+        // Await soft silence — same completion contract SharedPlayerManager.stop uses.
+        await engine.test_stopAndWait(
+            reason: .userAction,
+            silent: false,
+            applyUserPauseVisualLock: false
+        )
 
         XCTAssertNotEqual(
             engine.test_playbackAttachGeneration,
@@ -929,9 +929,51 @@ class DirectStreamingPlayerTests: XCTestCase {
             mayContinueAfterStop,
             "Stale generation must fail shouldContinueInFlightAttach after stop"
         )
+        XCTAssertTrue(
+            engine.test_isSoftPaused,
+            "stopAndWait must leave soft-pause engaged before returning (engine-complete contract)"
+        )
+        if let rate = engine.test_playerRate {
+            XCTAssertEqual(rate, 0, accuracy: 0.001, "soft silence must zero player rate before stopAndWait returns")
+        }
 
         engine.test_endInFlightPlaybackAttach()
         XCTAssertFalse(engine.test_isCurrentlyAttemptingPlayback)
+    }
+
+    /// Soft-pause completion is the engine-complete barrier for user pause: callers that refresh
+    /// Now Playing / Live Activity must not observe return until rate is 0 and soft-pause is set.
+    ///
+    /// Protects: media surfaces cannot claim "paused" while soft silence is still in flight.
+    ///
+    /// - SeeAlso: `DirectStreamingPlayer.stopAndWait`, `SharedPlayerManager.stop`,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (user pause / transport coordination).
+    func testStopAndWaitCompletesOnlyAfterSoftSilence() async {
+        let engine = DirectStreamingPlayer.shared
+
+        await engine.test_stopAndWait(
+            reason: .userAction,
+            silent: false,
+            applyUserPauseVisualLock: false
+        )
+
+        XCTAssertTrue(
+            engine.test_isSoftPaused,
+            "stopAndWait must set isSoftPaused before resuming the caller"
+        )
+        if let rate = engine.test_playerRate {
+            XCTAssertEqual(
+                rate,
+                0,
+                accuracy: 0.001,
+                "stopAndWait must apply rate 0 before resuming the caller"
+            )
+        }
+        let canKick = await engine.test_shouldAllowAudiblePlaybackKick()
+        XCTAssertFalse(
+            canKick,
+            "Audible kick must remain blocked after soft-pause completion"
+        )
     }
 
     /// Sticky `.userPaused` alone (intent lock without generation bump) must still block audible kick.

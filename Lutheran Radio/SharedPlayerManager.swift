@@ -1890,7 +1890,7 @@ actor SharedPlayerManager {
     /// Public async entry point for stopping playback.
     ///
     /// Immediately locks visual state to `.userPaused` (sticky resurrection protection) and persists it,
-    /// then stops the real player (main app path) or schedules the widget stop action.
+    /// then awaits engine soft silence (main app path) or schedules the widget stop action.
     ///
     /// - Important: Sticky intent is locked **before** the engine stop so that any in-flight
     ///   attach still suspended on security validation / server selection / session activation
@@ -1898,18 +1898,27 @@ actor SharedPlayerManager {
     ///   `DirectStreamingPlayer.stop` also advances its attach generation so post-await start
     ///   paths cannot complete against a paused chrome surface.
     ///
+    /// - Important: Media surfaces (Now Playing rate, Live Activity glyph) are refreshed only
+    ///   **after** soft-pause completion (`player.pause` + `rate == 0` + `isSoftPaused`). This is
+    ///   the single ownership path for “user pause complete”: SPM owns sticky visual lock +
+    ///   `streamDidStop` + one ``refreshAllMediaSurfaces``; the engine is told
+    ///   `applyUserPauseVisualLock: false` so it does not re-enter ``setUserPaused()`` /
+    ///   ``markAsUserPaused()`` (no second surface storm, no `streamDidPause` after `streamDidStop`).
+    ///
     /// - Postcondition: visual + intent forced to `.userPaused`, timestamp recorded,
-    ///   early visual save for widgets/LA, `DirectStreamingPlayer.stop()` invoked (main),
-    ///   authoritative save performed, surfaces notified, and `streamDidStop` emitted.
+    ///   early visual save for widgets/Darwin, engine soft silence awaited (main),
+    ///   authoritative save performed, surfaces notified once after silence, and
+    ///   `streamDidStop` emitted.
     ///
     /// - SeeAlso: ``setUserPaused()``, ``markAsUserPaused()``, ``emit(_:)``,
-    ///   `PlayerEvent.streamDidStop`, `DirectStreamingPlayer.stop(reason:completion:silent:)`,
+    ///   `PlayerEvent.streamDidStop`,
+    ///   `DirectStreamingPlayer.stopAndWait(reason:silent:applyUserPauseVisualLock:)`,
     ///   ``canProceedWithPlayback()``, CODING_AGENT.md (resurrection protection, SSOT stop path),
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     ///
     /// AGENT NOTE: `.streamDidStop` is emitted here after the immediate mutation
     /// because `stop()` is the public authoritative stop entry. Widget vs main paths
-    /// preserved exactly; no removal of Direct.stop() or notify/save calls.
+    /// preserved; engine stop is awaited so chrome cannot lead audio.
     public func stop() async {
         ensureVisualStateLoaded()
 
@@ -1945,25 +1954,32 @@ actor SharedPlayerManager {
             return
         }
 
-        // Main app path — soft pause keeps the secured item for gapless same-stream resume.
-        DirectStreamingPlayer.shared.stop()
+        // Main app path — await soft pause so rate is 0 before Now Playing / Live Activity flip.
+        // applyUserPauseVisualLock: false — sticky lock + streamDidStop already applied above;
+        // a nested setUserPaused would double-refresh surfaces and emit streamDidPause after stop.
+        await DirectStreamingPlayer.shared.stopAndWait(
+            reason: .userAction,
+            silent: false,
+            applyUserPauseVisualLock: false
+        )
 
         // Keep parsed metadata in the snapshot so widgets can show a subdued last-known
         // program line while paused. Raw ICY in nowPlayingStreamMetadata is unchanged
         // for same-stream soft-pause resume re-hydrate.
 
-        // Always save after stop
+        // Always save after engine silence
         await saveCurrentState()
         
         notifyMainApp(action: "pause")
         
         #if LUTHERAN_MAIN_APP
+        // Single media-surface refresh after soft silence — engine-complete ownership path.
         await refreshAllMediaSurfaces(liveActivity: .updateIfActive)
         await performPostStopWidgetHygiene()
         #endif
         
         #if DEBUG
-        print("[SharedPlayerManager] stop() completed – visualState locked to .userPaused")
+        print("[SharedPlayerManager] stop() completed – visualState locked to .userPaused, engine soft-silenced, surfaces refreshed")
         #endif
     }
     
@@ -3883,9 +3899,13 @@ extension SharedPlayerManager {
         // Shared.stop() would force .userPaused visual + intent + early saves, which we must avoid
         // so that post-clear in-process UI and any status callbacks during clear do not mix sticky
         // paused semantics. The .cleared intent (set in the subsequent reset) is the blocker.
-        // Direct player stop performs the actual AVPlayer teardown / session cleanup.
+        // Await soft/hard silence so subsequent privacy clears do not race a still-audible engine.
         #if LUTHERAN_MAIN_APP
-        DirectStreamingPlayer.shared.stop(reason: .userAction, silent: true)
+        await DirectStreamingPlayer.shared.stopAndWait(
+            reason: .userAction,
+            silent: true,
+            applyUserPauseVisualLock: false
+        )
         #endif
 
         // 2. Cancel sleep (also clears internal task + posts its own notification)
@@ -4053,7 +4073,27 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
 
     func stop() {}
 
-    func stop(reason: StopReason = .userAction, completion: (@MainActor @Sendable () -> Void)? = nil, silent: Bool = false) {}
+    func stop(
+        reason: StopReason = .userAction,
+        completion: (@MainActor @Sendable () -> Void)? = nil,
+        silent: Bool = false,
+        applyUserPauseVisualLock: Bool = true
+    ) {
+        // Widget stub: no engine work. Resume completion on MainActor to match the real
+        // DirectStreamingPlayer contract (completion is MainActor-isolated).
+        guard let completion else { return }
+        Task { @MainActor in
+            completion()
+        }
+    }
+
+    func stopAndWait(
+        reason: StopReason = .userAction,
+        silent: Bool = false,
+        applyUserPauseVisualLock: Bool = true
+    ) async {
+        // Widget stub: no soft-pause engine; return immediately.
+    }
 
     func isActuallyPlaying() -> Bool { false }
 

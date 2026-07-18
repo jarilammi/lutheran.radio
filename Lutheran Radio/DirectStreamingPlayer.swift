@@ -242,19 +242,21 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// (security validation, server selection, audio-session activation, secured item attach).
     ///
     /// - Important: User pause during this window must **not** leave a late `playImmediately` audible.
-    ///   ``stop(reason:completion:silent:)`` always advances ``playbackAttachGeneration`` and soft-silences
-    ///   the engine; in-flight work re-checks generation + ``SharedPlayerManager/canProceedWithPlayback()``
-    ///   after every significant `await` and discards when either fails.
+    ///   ``stop(reason:completion:silent:applyUserPauseVisualLock:)`` always advances
+    ///   ``playbackAttachGeneration`` and soft-silences the engine; in-flight work re-checks generation
+    ///   + ``SharedPlayerManager/canProceedWithPlayback()`` after every significant `await` and discards
+    ///   when either fails.
     /// - SeeAlso: ``beginInFlightPlaybackAttach()``, ``shouldContinueInFlightAttach(startedAt:)``,
-    ///   ``invalidateInFlightPlaybackAttach()``, `SharedPlayerManager.stop()`,
-    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (transport coordination).
+    ///   ``invalidateInFlightPlaybackAttach()``, ``stopAndWait(reason:silent:applyUserPauseVisualLock:)``,
+    ///   `SharedPlayerManager.stop()`, docs/Live-Activity-Stacking-and-Media-Surfaces.md (transport coordination).
     private var isCurrentlyAttemptingPlayback = false
 
     /// Monotonic generation for attach/start work.
     ///
-    /// Advanced on every ``stop(reason:completion:silent:)`` so await-crossing start paths discard
-    /// stale attach work after sticky `.userPaused` (or any other stop). Captured at attach start via
-    /// ``beginInFlightPlaybackAttach()`` and compared in ``shouldContinueInFlightAttach(startedAt:)``.
+    /// Advanced on every ``stop(reason:completion:silent:applyUserPauseVisualLock:)`` so await-crossing
+    /// start paths discard stale attach work after sticky `.userPaused` (or any other stop). Captured at
+    /// attach start via ``beginInFlightPlaybackAttach()`` and compared in
+    /// ``shouldContinueInFlightAttach(startedAt:)``.
     ///
     /// AGENT NOTE: Single source of truth for "this attach attempt is still valid". Do not reset to 0;
     /// only advance. Pair every post-`await` continue with a generation + intent re-check.
@@ -3174,11 +3176,33 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         await shouldAllowAudiblePlaybackKick()
     }
 
+    /// Test seam: await soft-pause / hard-stop completion (production ``stopAndWait``).
+    @MainActor
+    func test_stopAndWait(
+        reason: StopReason = .userAction,
+        silent: Bool = false,
+        applyUserPauseVisualLock: Bool = true
+    ) async {
+        await stopAndWait(
+            reason: reason,
+            silent: silent,
+            applyUserPauseVisualLock: applyUserPauseVisualLock
+        )
+    }
+
     @MainActor
     var test_playbackAttachGeneration: UInt64 { playbackAttachGeneration }
 
     @MainActor
     var test_isCurrentlyAttemptingPlayback: Bool { isCurrentlyAttemptingPlayback }
+
+    /// Test seam: soft-pause flag set when user pause retains a secured item path.
+    @MainActor
+    var test_isSoftPaused: Bool { isSoftPaused }
+
+    /// Test seam: AVPlayer rate after soft silence (nil when no player is attached).
+    @MainActor
+    var test_playerRate: Float? { player?.rate }
     #endif
 
     // MARK: - Startup Safety Net (cold launch / stream-switch first attach)
@@ -3464,22 +3488,40 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// silences any partially attached player. There is **no** early return that leaves attach free
     /// to call `playImmediately` after paused chrome is shown.
     ///
+    /// **Engine-complete ordering:** Soft pause applies `player.pause()` + `rate = 0` (and sets
+    /// ``isSoftPaused``) on the MainActor **before** invoking `completion`. Callers that refresh
+    /// Now Playing / Live Activity must await that completion (prefer ``stopAndWait(reason:silent:applyUserPauseVisualLock:)``)
+    /// so glyphs and system rate cannot flip while audio is still audible.
+    ///
+    /// **Visual-lock ownership:** When ``SharedPlayerManager/stop()`` already locked sticky
+    /// `.userPaused`, pass `applyUserPauseVisualLock: false` so this path does not re-enter
+    /// ``markAsUserPaused()`` / ``setUserPaused()`` (avoids a second `refreshAllMediaSurfaces`
+    /// storm and a spurious `streamDidPause` after `streamDidStop`). Direct engine stops that do
+    /// not go through SPM still use the default `true` and apply the visual lock **after** silence.
+    ///
     /// - Parameters:
     ///   - reason: Why we are stopping. This is now the single source of truth for user intent.
-    ///             `.userAction` → sticky `.userPaused`
+    ///             `.userAction` → sticky `.userPaused` when `applyUserPauseVisualLock` is true
     ///             `.streamSwitch`, `.interruption`, `.error` → preserve play intent
-    ///   - completion: Optional completion handler called after stopping.
+    ///   - completion: Optional MainActor handler invoked after soft silence (or hard-teardown
+    ///                 scheduling reaches its documented completion points). Always called once.
     ///   - silent: If `true`, skips status updates / UI flicker (exactly as it behaved in recent commits).
-    /// - SeeAlso: ``invalidateInFlightPlaybackAttach()``, ``shouldContinueInFlightAttach(startedAt:)``,
-    ///   ``shouldAllowAudiblePlaybackKick()``, ``SharedPlayerManager/stop()``.
+    ///   - applyUserPauseVisualLock: When `true` (default) and `reason == .userAction && !silent`,
+    ///     applies sticky pause via ``markAsUserPaused()`` **after** engine silence. Pass `false`
+    ///     when the caller already owns the sticky lock and will refresh media surfaces once.
+    /// - SeeAlso: ``stopAndWait(reason:silent:applyUserPauseVisualLock:)``,
+    ///   ``invalidateInFlightPlaybackAttach()``, ``shouldContinueInFlightAttach(startedAt:)``,
+    ///   ``shouldAllowAudiblePlaybackKick()``, ``SharedPlayerManager/stop()``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (user pause / transport coordination).
     func stop(
         reason: StopReason = .userAction,
         completion: (@MainActor @Sendable () -> Void)? = nil,
-        silent: Bool = false
+        silent: Bool = false,
+        applyUserPauseVisualLock: Bool = true
     ) {
         
         #if DEBUG
-        print("[DirectStreamingPlayer] FORCE STOPPING ALL PLAYBACK - reason: \(reason), silent: \(silent), attemptingPlayback: \(isCurrentlyAttemptingPlayback)")
+        print("[DirectStreamingPlayer] FORCE STOPPING ALL PLAYBACK - reason: \(reason), silent: \(silent), applyUserPauseVisualLock: \(applyUserPauseVisualLock), attemptingPlayback: \(isCurrentlyAttemptingPlayback)")
         #endif
 
         // Always invalidate in-flight attach first. User pause (or any stop) that races security
@@ -3494,12 +3536,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         }
 
         let usesSoftPause = reason == .userAction && !silent
-        if usesSoftPause {
-            Task { @MainActor [weak self] in
-                self?.cancelStartupSafetyNet()
-                self?.cancelEarlyICYDropRecreate()
-            }
-        } else {
+        if !usesSoftPause {
             // Activate before any async work so stale KVO / debounced recreate cannot race teardown.
             activatePlaybackTeardownGuardFromStop()
         }
@@ -3516,43 +3553,80 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         pendingPlaybackWorkItem?.cancel()
         pendingPlaybackWorkItem = nil
         
-        // === Important: Set visual state based on reason + silent (respects recent commit semantics) ===
-        Task { @MainActor [weak self, reason, silent, completion] in
-            guard let self else { return }
-            if reason == .userAction && !silent {
+        // Soft silence first, then optional sticky visual lock. Outer `completion` fires only after
+        // engine silence so SPM can refresh media surfaces without "paused chrome + audible stream".
+        // Soft silence is applied on this MainActor task (no nested CheckedContinuation resume on the
+        // same stack). Hard teardown still uses a continuation bridged from audioQueue → main.
+        Task { @MainActor [weak self, reason, silent, applyUserPauseVisualLock, completion] in
+            guard let self else {
+                completion?()
+                return
+            }
+
+            await self.performActualStop(reason: reason, silent: silent)
+
+            // .streamSwitch / .interruption / .error intentionally skip markAsUserPaused().
+            // SharedPlayerManager.stop already owns sticky lock + single surface refresh — skip here.
+            if applyUserPauseVisualLock && reason == .userAction && !silent {
                 await self.markAsUserPaused()
                 #if DEBUG
-                print("[DirectStreamingPlayer] markAsUserPaused() called – visualState set to .userPaused")
+                print("[DirectStreamingPlayer] markAsUserPaused() after soft silence – visualState set to .userPaused")
                 #endif
             }
-            // .streamSwitch / .interruption / .error intentionally skip markAsUserPaused()
-            // → this replaces the markAsPlaying() workaround
-
-            self.performActualStop(
-                reason: reason,
-                completion: completion,
-                silent: silent
-            )
 
             // Silent stops (privacy clear, stream-switch teardown) must not re-persist a snapshot
             // after ``SharedPlayerManager/clearAllLocalState()`` has removed it.
             if !silent {
                 await SharedPlayerManager.shared.saveCurrentState()
             }
+
+            completion?()
         }
     }
 
-    /// Performs the actual stop operation.
+    /// Awaits engine stop completion (soft silence or hard-teardown completion).
+    ///
+    /// Prefer this over fire-and-forget ``stop(reason:completion:silent:applyUserPauseVisualLock:)``
+    /// whenever the caller will update Now Playing / Live Activity or treat the stop as
+    /// engine-complete. Soft pause guarantees `player.rate == 0` and ``isSoftPaused`` before return.
+    ///
     /// - Parameters:
-    ///   - completion: Optional completion handler called after stopping.
+    ///   - reason: Stop reason (see ``stop(reason:completion:silent:applyUserPauseVisualLock:)``).
+    ///   - silent: Skips status flicker when `true`.
+    ///   - applyUserPauseVisualLock: Pass `false` when ``SharedPlayerManager/stop()`` already
+    ///     locked sticky `.userPaused` and will perform the single media-surface refresh.
+    /// - SeeAlso: ``stop(reason:completion:silent:applyUserPauseVisualLock:)``,
+    ///   ``SharedPlayerManager/stop()``, docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    func stopAndWait(
+        reason: StopReason = .userAction,
+        silent: Bool = false,
+        applyUserPauseVisualLock: Bool = true
+    ) async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            stop(
+                reason: reason,
+                completion: { continuation.resume() },
+                silent: silent,
+                applyUserPauseVisualLock: applyUserPauseVisualLock
+            )
+        }
+    }
+
+    /// Performs the actual stop operation (MainActor entry from ``stop``’s isolation task).
+    ///
+    /// Soft pause (user action, non-silent) applies silence on the MainActor **before** return —
+    /// no intermediate `audioQueue` hop — so awaiters observe a silent engine.
+    /// Hard teardown schedules cleanup on `audioQueue` and resumes only after rate is zeroed /
+    /// status emitted on the MainActor.
+    ///
+    /// - Parameters:
     ///   - silent: If `true`, skips all status updates to avoid UI flicker.
-    ///   - effectiveSwitching: If `true`, suppresses "status_stopped" updates during stream switches.
-    /// - Note: Combines `silent` and `effectiveSwitching` into `effectiveSilent`. All main-thread work is now explicitly isolated.
+    /// - Note: Combines `silent` and non-user reasons into `effectiveSilent`.
+    @MainActor
     private func performActualStop(
         reason: StopReason,
-        completion: (@MainActor () -> Void)? = nil,
         silent: Bool = false
-    ) {
+    ) async {
         // Derive effectiveSilent exactly as before, but now driven by reason
         // (preserves all recent-commit behaviour for silent + stream switches)
         let effectiveSilent = silent || (reason != .userAction)
@@ -3568,126 +3642,125 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         
         if isDeallocating {
             stopSynchronously()
-            if let completion = completion {
-                MainActor.assumeIsolated { completion() }
-            }
             return
         }
-        
-        audioQueue.async { [weak self] in
-            guard let self, !self.isDeallocating else {
-                if let completion = completion {
-                    DispatchQueue.main.async {
-                        MainActor.assumeIsolated { completion() }
-                    }
-                }
-                return
-            }
-            
-            #if DEBUG
-            print("[DirectStreamingPlayer] Stopping playback (reason: \(reason), effectiveSilent: \(effectiveSilent))")
-            #endif
 
-            if usesSoftPause {
+        // Soft pause: silence on MainActor immediately (no audioQueue hop). Return only after
+        // rate == 0 and isSoftPaused so surface refresh cannot race audible audio.
+        if usesSoftPause {
+            cancelStartupSafetyNet()
+            cancelEarlyICYDropRecreate()
+            player?.pause()
+            player?.rate = 0.0
+            isSoftPaused = true
+            lastEmittedStatus = nil
+            lastObservedTimeControl = nil
+            lastObservedItemStatus = nil
+            safeOnStatusChange(isPlaying: false, reasonKey: "status_stopped")
+            #if DEBUG
+            print("[DirectStreamingPlayer] Soft pause complete — rate 0, secured AVPlayerItem retained for same-stream resume")
+            #endif
+            return
+        }
+
+        // Hard teardown: bridge audioQueue work with a single continuation resume on MainActor.
+        // Resume is always scheduled via main.async so it never runs on the same stack as
+        // withCheckedContinuation’s body.
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            audioQueue.async { [weak self] in
+                guard let self, !self.isDeallocating else {
+                    DispatchQueue.main.async {
+                        continuation.resume()
+                    }
+                    return
+                }
+
+                #if DEBUG
+                print("[DirectStreamingPlayer] Stopping playback (reason: \(reason), effectiveSilent: \(effectiveSilent))")
+                #endif
+
                 DispatchQueue.main.async {
                     MainActor.assumeIsolated {
-                        self.player?.pause()
-                        self.player?.rate = 0.0
-                        self.isSoftPaused = true
-                        self.lastEmittedStatus = nil
-                        self.lastObservedTimeControl = nil
-                        self.lastObservedItemStatus = nil
-                        self.safeOnStatusChange(isPlaying: false, reasonKey: "status_stopped")
-                        completion?()
+                        self.isSoftPaused = false
                     }
                 }
-                #if DEBUG
-                print("[DirectStreamingPlayer] Soft pause — kept secured AVPlayerItem for same-stream resume")
-                #endif
-                return
-            }
 
-            DispatchQueue.main.async {
-                MainActor.assumeIsolated {
-                    self.isSoftPaused = false
-                }
-            }
-            
-            guard self.player != nil || self.playerItem != nil else {
-                if !effectiveSilent {
-                    DispatchQueue.main.async {
-                        MainActor.assumeIsolated {
-                            self.safeOnStatusChange(isPlaying: false, reasonKey: "status_stopped")  // ← fixed
-                            completion?()
+                guard self.player != nil || self.playerItem != nil else {
+                    if !effectiveSilent {
+                        DispatchQueue.main.async {
+                            MainActor.assumeIsolated {
+                                self.safeOnStatusChange(isPlaying: false, reasonKey: "status_stopped")
+                            }
+                            continuation.resume()
+                        }
+                    } else {
+                        DispatchQueue.main.async {
+                            continuation.resume()
                         }
                     }
-                } else if let completion = completion {
-                    DispatchQueue.main.async {
-                        MainActor.assumeIsolated { completion() }
+                    #if DEBUG
+                    print("[DirectStreamingPlayer] Playback already stopped, skipping cleanup (reason: \(reason))")
+                    #endif
+                    return
+                }
+
+                // Pause + cleanup
+                self.executeAudioOperation({
+                    self.player?.pause()
+                    self.player?.rate = 0.0
+                    return ""
+                }, completion: { _ in })
+
+                self.activeResourceLoaders.forEach { (_, delegate) in
+                    delegate.cancel()
+                }
+                self.activeResourceLoaders.removeAll()
+
+                if let metadataOutput = self.metadataOutput, let playerItem = self.playerItem {
+                    if playerItem.outputs.contains(metadataOutput) {
+                        playerItem.remove(metadataOutput)
+                        #if DEBUG
+                        print("[DirectStreamingPlayer] Removed metadata output from playerItem in stop")
+                        #endif
                     }
                 }
-                #if DEBUG
-                print("[DirectStreamingPlayer] Playback already stopped, skipping cleanup (reason: \(reason))")
-                #endif
-                return
-            }
-            
-            // Pause + cleanup
-            self.executeAudioOperation({
-                self.player?.pause()
-                self.player?.rate = 0.0
-                return ""
-            }, completion: { _ in })
-            
-            self.activeResourceLoaders.forEach { (_, delegate) in
-                delegate.cancel()
-            }
-            self.activeResourceLoaders.removeAll()
-            
-            if let metadataOutput = self.metadataOutput, let playerItem = self.playerItem {
-                if playerItem.outputs.contains(metadataOutput) {
-                    playerItem.remove(metadataOutput)
-                    #if DEBUG
-                    print("[DirectStreamingPlayer] Removed metadata output from playerItem in stop")
-                    #endif
-                }
-            }
-            self.metadataOutput = nil
-            
-            self.playerItemObservations.forEach { $0.invalidate() }
-            self.playerItemObservations.removeAll()
-            self.removeObserversImplementation()
-            self.playerItem = nil
-            DispatchQueue.main.async {
-                MainActor.assumeIsolated {
-                    self.clearAttachedItemBinding()
-                }
-            }
-            
-            if !effectiveSilent {
-                // A real terminal stop is a context change — clear dedup so the
-                // "status_stopped" we are about to emit (and any subsequent play) is not suppressed.
-                lastEmittedStatus = nil
-                lastObservedTimeControl = nil
-                lastObservedItemStatus = nil
-                
+                self.metadataOutput = nil
+
+                self.playerItemObservations.forEach { $0.invalidate() }
+                self.playerItemObservations.removeAll()
+                self.removeObserversImplementation()
+                self.playerItem = nil
                 DispatchQueue.main.async {
                     MainActor.assumeIsolated {
-                        self.safeOnStatusChange(isPlaying: false, reasonKey: "status_stopped")  // ← fixed
-                        completion?()
+                        self.clearAttachedItemBinding()
                     }
                 }
-            } else if let completion = completion {
-                DispatchQueue.main.async {
-                    MainActor.assumeIsolated { completion() }
+
+                if !effectiveSilent {
+                    // A real terminal stop is a context change — clear dedup so the
+                    // "status_stopped" we are about to emit (and any subsequent play) is not suppressed.
+                    lastEmittedStatus = nil
+                    lastObservedTimeControl = nil
+                    lastObservedItemStatus = nil
+
+                    DispatchQueue.main.async {
+                        MainActor.assumeIsolated {
+                            self.safeOnStatusChange(isPlaying: false, reasonKey: "status_stopped")
+                        }
+                        continuation.resume()
+                    }
+                } else {
+                    DispatchQueue.main.async {
+                        continuation.resume()
+                    }
                 }
+
+                self.stopBufferingTimer()
+
+                #if DEBUG
+                print("[DirectStreamingPlayer] Playback stopped, playerItem and resource loaders cleared (reason: \(reason))")
+                #endif
             }
-            
-            self.stopBufferingTimer()
-            
-            #if DEBUG
-            print("[DirectStreamingPlayer] Playback stopped, playerItem and resource loaders cleared (reason: \(reason))")
-            #endif
         }
     }
     
