@@ -90,7 +90,7 @@ Apple documents coalescing of frequent updates; Lutheran Radio does not implemen
 
 ``configureNowPlayingControlsIfNeeded()`` installs play / pause / toggle play-pause / stop on ``MPRemoteCommandCenter`` and **disables** unsupported commands (next/previous track, seek, skip, change position/rate, repeat/shuffle, rating/like/dislike/bookmark, language-option enable/disable). Continuous live radio has no track list or seekable timeline; leaving those commands enabled would surface dead affordances on lock screen, Control Center, and hardware remotes.
 
-**Serial media-transport mailbox:** Remote handlers return `.success` immediately and enqueue ``MediaTransportCommand`` values via ``SharedPlayerManager/submitMediaTransportCommand(_:)``. Play and toggle wait for the prior verb; pause/stop preempt (cancel + ``stop()`` without waiting for an in-flight play) and record a pause epoch so a late `userRequestedPlay` re-asserts sticky `.userPaused`. Toggle direction is decided only inside ``performMediaTransportCommand(_:generation:)`` after prior verbs commit state — never as a split `isActivelyPlaying` read in the remote-command callback. Main-app ``WidgetIntentExecution/executeLiveActivityToggle(plan:)`` uses ``submitMediaTransportCommandAndWait(_:)`` so Live Activity engine execution shares the same ordering as headset / Control Center.
+**Serial media-transport mailbox:** Remote handlers return `.success` immediately and enqueue ``MediaTransportCommand`` values via ``SharedPlayerManager/submitMediaTransportCommand(_:)``. Play and toggle wait for the prior verb; pause/stop preempt (cancel + ``stop()`` without waiting for an in-flight play) and record a pause epoch so a late `userRequestedPlay` re-asserts sticky `.userPaused`. Toggle direction is decided only inside ``performMediaTransportCommand(_:generation:)`` after prior verbs commit state — never as a split visual read in the remote-command callback. Toggle pause when ``isActivelyPlaying`` **or** ``isConnectingPlayback`` (cancel connect); thermal refuse while ``blocksPlannedPlay`` and the device is still stressed. Main-app ``WidgetIntentExecution/executeLiveActivityToggle(plan:)`` uses ``submitMediaTransportCommandAndWait(_:)`` so Live Activity engine execution shares the same ordering as headset / Control Center.
 
 **Extension-hosted Live Activity / home-widget play-pause:** The extension process still uses direct ``stop()`` / ``userRequestedPlay()`` (optimistic snapshot + `pendingAction*` + Darwin `notifyMainApp`). Real audio changes only after the main app drains via ``ViewController/checkForPendingWidgetActions()``. Drain rules that keep chrome trustworthy:
 
@@ -183,9 +183,29 @@ Required convergence: paused chrome and silent engine — never durable “pause
 
 **Authoritative publish helper:** ``DirectStreamingPlayer`` `publishAuthoritativePlayingIfNeeded()` calls ``setPlaying()`` only when intent still allows play and visual is not already `.playing` (readyToPlay + timeControl KVO cannot double-emit).
 
-**Extension optimistic paths** (widget `handleWidgetPlay`, Live Activity toggle ContentState) may still flip control chrome immediately for cross-process latency; main-app engine chrome follows the table above.
+**Extension optimistic paths** (widget `handleWidgetPlay`, Live Activity toggle ContentState) may still flip control chrome immediately for cross-process latency; main-app engine chrome follows the table above. Security recovery optimistic play uses Connecting (``.prePlay``), not green `.playing`, until validation + audible start succeed.
 
 **SeeAlso:** ``SharedPlayerManager/play()``, ``SharedPlayerManager/setPlaying()``, `resumeFromSoftPauseIfAvailable`, readyToPlay kick in `addObservers`, `Lutheran RadioTests` connecting-chrome and publish-idempotency gates.
+
+---
+
+## Media Toggle Planning (Connecting / Thermal / Security)
+
+``PlayerVisualState/isActivelyPlaying`` remains **audio is flowing** (``.playing`` only). Media-transport and Live Activity **toggle planning** use a richer matrix so intermediate and policy states do not behave like “idle pause → play”:
+
+| Authoritative condition | Toggle plan | Rationale |
+|-------------------------|-------------|-----------|
+| ``isActivelyPlaying`` | pause | Silence audio |
+| ``SharedPlayerManager/isConnectingPlayback`` (start pipeline active, not yet playing) | pause | Cancel connect; do not re-enter validation/attach |
+| ``thermalPaused`` (``blocksPlannedPlay``) | refuse | Hardware gate; cool-down auto-resume; keep thermal chrome |
+| ``securityLocked`` | play (recovery) | Explicit re-validation; optimistic chrome = Connecting (``.prePlay``) |
+| ``userPaused`` / idle ``prePlay`` / ``cleared`` | play | Normal resume / first play |
+
+**Idempotent play:** ``userRequestedPlay()`` is a no-op while ``isConnectingPlayback`` is true. Remote play while connecting does not stack a second pipeline.
+
+**Start pipeline:** ``play()`` sets an in-actor start-pipeline flag after sticky/early guards and clears it in ``setPlaying()``, ``stop()``, security lock, or sticky abort. Live Activity planning reads ``isConnectingPlayback`` on the main app (extension host may still only see ContentState; main-app drain remains idempotent).
+
+**SeeAlso:** ``PlayerVisualState/plansMediaToggleAsPause``, ``PlayerVisualState/blocksPlannedPlay``, ``PlayerVisualState/optimisticVisualAfterPlayPlan``, ``WidgetIntentCoordinators/planLiveActivityToggle(resolution:distrustDurableMirrorPlay:isConnectingPlayback:)``, ``SharedPlayerManager/performMediaTransportCommand(_:generation:)``.
 
 ---
 

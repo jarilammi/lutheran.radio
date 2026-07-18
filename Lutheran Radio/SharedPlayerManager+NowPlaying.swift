@@ -272,26 +272,36 @@ extension SharedPlayerManager {
 
     /// Executes one transport verb after mailbox ordering has been applied.
     ///
-    /// Toggle samples ``currentVisualState.isActivelyPlaying`` only here, on the actor,
-    /// so a rapid second remote click cannot pair with a stale pre-mutation read.
+    /// Toggle samples authoritative actor state only here so a rapid second remote click
+    /// cannot pair with a stale pre-mutation read:
+    /// - ``isActivelyPlaying`` or ``isConnectingPlayback`` → ``stop()`` (silence or cancel connect)
+    /// - ``blocksPlannedPlay`` while thermally stressed → no-op (keep thermal chrome)
+    /// - otherwise → ``userRequestedPlay()``
     ///
     /// - Parameters:
     ///   - command: Verb to apply to the engine / sticky intent path.
     ///   - generation: Submission epoch captured at enqueue time.
-    /// - SeeAlso: ``userRequestedPlay()``, ``stop()``, ``MediaTransportCommand``
+    /// - SeeAlso: ``userRequestedPlay()``, ``stop()``, ``isConnectingPlayback``,
+    ///   ``MediaTransportCommand``, ``PlayerVisualState/blocksPlannedPlay``
     func performMediaTransportCommand(
         _ command: MediaTransportCommand,
         generation: UInt64
     ) async {
         switch command {
         case .play:
+            // Idempotent while Connecting; thermal refuse lives inside userRequestedPlay.
             await userRequestedPlay()
             await reassertStickyPauseIfSupersededByPause(generation: generation)
         case .pause, .stop:
             await stop()
         case .togglePlayPause:
-            if currentVisualState.isActivelyPlaying {
+            if currentVisualState.isActivelyPlaying || isConnectingPlayback {
                 await stop()
+            } else if currentVisualState.blocksPlannedPlay && Self.isDeviceThermallyStressed() {
+                #if DEBUG
+                print("[SharedPlayerManager] media-transport toggle refused — thermal gate still active")
+                #endif
+                return
             } else {
                 await userRequestedPlay()
                 await reassertStickyPauseIfSupersededByPause(generation: generation)

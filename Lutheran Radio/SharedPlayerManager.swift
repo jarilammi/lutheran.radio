@@ -545,6 +545,33 @@ actor SharedPlayerManager {
     /// `.playing` via ``setPlaying()`` (soft-resume or readyToPlay first-play kick). Cleared only
     /// inside ``setPlaying()`` / privacy reset / UITest short-circuit — not at the start of ``play()``.
     private var holdPrePlayVisualUntilPlayback = false
+
+    /// True while ``play()`` has passed sticky/early guards and has not yet reached authoritative
+    /// ``setPlaying()`` or an abort that clears the pipeline (security lock, sticky pause, stop).
+    ///
+    /// Used so media-transport / Live Activity toggles can **cancel connect** (plan pause) instead
+    /// of re-entering play during Connecting chrome, and so a second ``userRequestedPlay()`` is
+    /// idempotent while validation/attach is already in flight.
+    ///
+    /// - SeeAlso: ``isConnectingPlayback``, ``clearPlaybackStartPipeline()``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md
+    private var isPlaybackStartPipelineActive = false
+
+    /// Whether a user-visible start is in progress (Connecting) without audible ``isActivelyPlaying``.
+    ///
+    /// - Returns: `true` when the play start pipeline is active and visual is not yet `.playing`.
+    /// - Important: Pure ``PlayerVisualState/prePlay`` without this flag is idle/cold chrome —
+    ///   first play still plans play. Only an active pipeline means "cancel with pause."
+    /// - SeeAlso: ``WidgetIntentCoordinators/planLiveActivityToggle(resolution:distrustDurableMirrorPlay:isConnectingPlayback:)``,
+    ///   ``PlayerVisualState/isActivelyPlaying``
+    var isConnectingPlayback: Bool {
+        isPlaybackStartPipelineActive && !currentVisualState.isActivelyPlaying
+    }
+
+    /// Clears the in-flight play start pipeline (connect cancel, audible start, security fail, stop).
+    private func clearPlaybackStartPipeline() {
+        isPlaybackStartPipelineActive = false
+    }
     
     /// True when a stream-switch tap already reset to `.prePlay` and enabled the hold
     /// (`didSelectItemAt` optimistic yellow). `completeStreamSwitch` skips a second reset.
@@ -1465,6 +1492,15 @@ actor SharedPlayerManager {
             #if DEBUG
             print("[SharedPlayerManager] play() blocked — explicit \(currentPlaybackIntent) (resurrection bypass ignored)")
             #endif
+            clearPlaybackStartPipeline()
+            return
+        }
+
+        // Duplicate play while Connecting: keep the in-flight pipeline; do not re-enter.
+        if isPlaybackStartPipelineActive {
+            #if DEBUG
+            print("[SharedPlayerManager] play() — start pipeline already active, skipping duplicate entry")
+            #endif
             return
         }
 
@@ -1530,6 +1566,10 @@ actor SharedPlayerManager {
             }
         }
 
+        // Mark start pipeline after sticky / one-shot / already-playing guards so toggles can
+        // cancel Connecting and a second play is idempotent through validation + attach.
+        isPlaybackStartPipelineActive = true
+
         // UI Test isolation (launch arg driven):
         // Skip security validation (DNS TXT against securitymodels.lutheran.radio + time skew + model check)
         // and the entire real streaming attach path. This is safe because:
@@ -1556,6 +1596,7 @@ actor SharedPlayerManager {
             if currentPlaybackIntent.isActivePlaybackIntent {
                 currentVisualState = .playing
             }
+            clearPlaybackStartPipeline()
             return
         }
         
@@ -1576,6 +1617,7 @@ actor SharedPlayerManager {
             #if DEBUG
             print("[SharedPlayerManager] play() aborted after security validation — sticky \(currentPlaybackIntent)")
             #endif
+            clearPlaybackStartPipeline()
             return
         }
         
@@ -1592,6 +1634,7 @@ actor SharedPlayerManager {
             applyVisualState(.securityLocked)
             
             updatePlaybackIntent(to: .securityLocked)
+            clearPlaybackStartPipeline()
             
             await self.saveCurrentState()
             
@@ -1625,6 +1668,8 @@ actor SharedPlayerManager {
         
         if isRunningInWidget() {
             handleWidgetPlay()
+            // Extension does not own engine attach; main-app pipeline state is authoritative there.
+            clearPlaybackStartPipeline()
             return
         }
         
@@ -1635,6 +1680,7 @@ actor SharedPlayerManager {
             #if DEBUG
             print("[SharedPlayerManager] play() aborted after tuning wait — sticky \(currentPlaybackIntent)")
             #endif
+            clearPlaybackStartPipeline()
             return
         }
         #endif
@@ -1648,6 +1694,7 @@ actor SharedPlayerManager {
                 #if DEBUG
                 print("[SharedPlayerManager] Resumed from soft pause — skipped setStreamAndPlay")
                 #endif
+                // Soft-resume publishes authoritative playing (clears pipeline in setPlaying).
                 return
             }
             // Soft-resume may await; re-check sticky pause before full reattach.
@@ -1655,6 +1702,7 @@ actor SharedPlayerManager {
                 #if DEBUG
                 print("[SharedPlayerManager] play() aborted after soft-pause resume attempt — sticky \(currentPlaybackIntent)")
                 #endif
+                clearPlaybackStartPipeline()
                 return
             }
             declinedSoftPauseForLanguageChange = await DirectStreamingPlayer.shared.softPauseResumeRequiresStreamReattach()
@@ -1724,6 +1772,7 @@ actor SharedPlayerManager {
             #if DEBUG
             print("[SharedPlayerManager] play() aborted before setStreamAndPlay — sticky \(currentPlaybackIntent)")
             #endif
+            clearPlaybackStartPipeline()
             return
         }
 
@@ -1734,7 +1783,8 @@ actor SharedPlayerManager {
         
         await DirectStreamingPlayer.shared.setStreamAndPlay(to: stream, context: attachContext)
         
-        // No saveCurrentState() here — observer will handle it
+        // Pipeline stays active until engine ``setPlaying()`` or user ``stop()`` so Connecting
+        // toggles can still cancel attach. No saveCurrentState() here — observer will handle it.
     }
     
     /// Forces the visual state to `.securityLocked` (permanent failure) and persists it.
@@ -1845,6 +1895,25 @@ actor SharedPlayerManager {
         #if DEBUG
         print("SharedPlayerManager.userRequestedPlay() — setUserIntentToPlay + play() for explicit user intent")
         #endif
+
+        // Thermal gate: while the device is still stressed, keep thermal chrome and do not
+        // re-enter validation/attach. Cool-down auto-resume uses `shouldAutoResumeOnThermalRecovery`.
+        // When cooled but visual still `.thermalPaused`, allow explicit play (sanitizes via intent path).
+        if currentVisualState.blocksPlannedPlay && Self.isDeviceThermallyStressed() {
+            #if DEBUG
+            print("[SharedPlayerManager] userRequestedPlay() refused — thermal gate still active")
+            #endif
+            return
+        }
+
+        // Idempotent while Connecting: a second play plan must not re-run security validation
+        // or stack another attach on an already-active start pipeline.
+        if isConnectingPlayback {
+            #if DEBUG
+            print("[SharedPlayerManager] userRequestedPlay() no-op — playback start pipeline already active (Connecting)")
+            #endif
+            return
+        }
         
         hasProcessedExplicitUserPlayRequest = true
         #if LUTHERAN_MAIN_APP
@@ -1956,6 +2025,9 @@ actor SharedPlayerManager {
         #if DEBUG
         print("[SharedPlayerManager] SharedPlayerManager.stop() ENTERED – currentVisualState = \(currentVisualState)")
         #endif
+
+        // Cancel Connecting as well as audible play — pipeline must not outlive sticky pause.
+        clearPlaybackStartPipeline()
 
         // Note: Lock .userPaused IMMEDIATELY at the very top
         // This closes the race window that causes resurrection after pause
@@ -2134,6 +2206,8 @@ actor SharedPlayerManager {
     /// Called only when the user taps the play button (or widget play action).
     /// Clears the .userPaused lock so resume is allowed.
     /// Clears `.userPaused` so `play()` can proceed via explicit `.shouldBePlaying` intent.
+    /// Also moves thermal / security recovery chrome to Connecting (``.prePlay``) before
+    /// validation so control surfaces do not keep policy-error glyphs while a recovery play runs.
     func setUserIntentToPlay() async {
         ensureVisualStateLoaded()
 
@@ -2144,14 +2218,18 @@ actor SharedPlayerManager {
         #endif
         
         #if DEBUG
-        print("[SharedPlayerManager] setUserIntentToPlay() called – clearing .userPaused / .cleared lock")
+        print("[SharedPlayerManager] setUserIntentToPlay() called – clearing sticky / policy chrome for explicit play")
         #endif
         
-        if currentVisualState == .userPaused || currentPlaybackIntent == .cleared || currentVisualState == .cleared {
+        if currentVisualState == .userPaused
+            || currentPlaybackIntent == .cleared
+            || currentVisualState == .cleared
+            || currentVisualState == .thermalPaused
+            || currentVisualState == .securityLocked {
             applyVisualState(.prePlay)
             
             #if DEBUG
-            print("[SharedPlayerManager] setUserIntentToPlay() → .prePlay with .shouldBePlaying (resume/clear path)")
+            print("[SharedPlayerManager] setUserIntentToPlay() → .prePlay with .shouldBePlaying (resume/clear/recovery path)")
             #endif
         }
         
@@ -2305,6 +2383,7 @@ actor SharedPlayerManager {
         if Self.isRunningInUITestMode {
             ensureVisualStateLoaded()
             holdPrePlayVisualUntilPlayback = false
+            clearPlaybackStartPipeline()
             applyVisualState(.playing)
 
             if playbackIntent != .sleepTimer {
@@ -2320,6 +2399,7 @@ actor SharedPlayerManager {
 
         ensureVisualStateLoaded()
         holdPrePlayVisualUntilPlayback = false
+        clearPlaybackStartPipeline()
         applyVisualState(.playing)
         
         if playbackIntent != .sleepTimer {
@@ -3833,6 +3913,16 @@ extension SharedPlayerManager {
     ///   docs/Event-Driven-Refactor-Roadmap.md.
     nonisolated static func _test_setSimulateWidgetProcessContext(_ simulate: Bool) {
         unsafe _test_simulateWidgetProcessContext = simulate
+    }
+
+    /// Unit-test seam: force or clear the play start pipeline for Connecting-cancel / idempotent-play gates.
+    ///
+    /// - Parameter active: When `true`, ``isConnectingPlayback`` is true until visual is `.playing`
+    ///   or ``stop()`` / ``setPlaying()`` clears the pipeline.
+    /// - SeeAlso: ``isConnectingPlayback``,
+    ///   ``WidgetIntentCoordinators/planLiveActivityToggle(resolution:distrustDurableMirrorPlay:isConnectingPlayback:)``
+    func _test_setPlaybackStartPipelineActive(_ active: Bool) {
+        isPlaybackStartPipelineActive = active
     }
 
     /// Recreates the authoritative ``events`` ``AsyncStream`` for XCTest isolation.

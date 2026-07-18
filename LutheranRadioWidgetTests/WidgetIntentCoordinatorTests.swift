@@ -29,16 +29,22 @@ final class WidgetIntentCoordinatorTests: XCTestCase {
 
     // MARK: - Home widget toggle
 
-    /// Home-widget toggle: only `.playing` maps to pause; every other state maps to play.
+    /// Home-widget toggle matrix: pause while playing; refuse thermal; play otherwise
+    /// (security recovery optimistically targets Connecting, not green playing).
     func testPlanHomeWidgetToggleMatrix() {
         for state in allVisualStates {
             let plan = WidgetIntentCoordinators.planHomeWidgetToggle(from: state)
-            if state.isActivelyPlaying {
+            if state.plansMediaToggleAsPause {
                 XCTAssertEqual(plan.action, "pause", "Playing must plan pause for \(state)")
                 XCTAssertEqual(plan.targetVisualState, .userPaused)
+            } else if state.blocksPlannedPlay {
+                XCTAssertEqual(plan.action, "none", "Thermal must refuse pending action for \(state)")
+                XCTAssertEqual(plan.targetVisualState, state)
+                XCTAssertFalse(plan.shouldExecutePendingAction)
             } else {
-                XCTAssertEqual(plan.action, "play", "Non-playing must plan play for \(state)")
-                XCTAssertEqual(plan.targetVisualState, .playing)
+                XCTAssertEqual(plan.action, "play", "Non-playing non-thermal must plan play for \(state)")
+                XCTAssertEqual(plan.targetVisualState, state.optimisticVisualAfterPlayPlan)
+                XCTAssertTrue(plan.shouldExecutePendingAction)
             }
         }
     }
@@ -58,16 +64,36 @@ final class WidgetIntentCoordinatorTests: XCTestCase {
 
     // MARK: - Live Activity toggle
 
-    /// Live Activity: actively playing → `.pause`; otherwise → `.play`.
+    /// Live Activity pure-visual matrix: playing → pause; thermal → refuse; else play.
     func testPlanLiveActivityToggleMatrix() {
         for state in allVisualStates {
             let plan = WidgetIntentCoordinators.planLiveActivityToggle(from: state)
-            if state.isActivelyPlaying {
+            if state.plansMediaToggleAsPause {
                 XCTAssertEqual(plan, .pause, "Playing must plan LA pause for \(state)")
+            } else if state.blocksPlannedPlay {
+                XCTAssertEqual(plan, .refuse, "Thermal must refuse LA play for \(state)")
             } else {
-                XCTAssertEqual(plan, .play, "Non-playing must plan LA play for \(state)")
+                XCTAssertEqual(plan, .play, "Non-playing non-thermal must plan LA play for \(state)")
             }
         }
+    }
+
+    /// Active start pipeline cancels connect (pause) even when ContentState is Connecting.
+    func testPlanLiveActivityToggleConnectingPlaybackCancelsAsPause() {
+        let resolution = WidgetIntentCoordinators.resolveLiveActivityToggleVisualState(
+            liveActivityContent: .prePlay,
+            durableMirror: nil,
+            actorVisualState: .prePlay,
+            sessionSnapshot: nil
+        )
+        XCTAssertEqual(
+            WidgetIntentCoordinators.planLiveActivityToggle(
+                resolution: resolution,
+                isConnectingPlayback: true
+            ),
+            .pause,
+            "Connecting pipeline must plan pause to cancel, not duplicate play"
+        )
     }
 
     /// Multi-source resolution: LA ContentState wins over empty extension actor/snapshot.

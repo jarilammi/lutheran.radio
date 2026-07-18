@@ -45,6 +45,53 @@ struct WidgetSurfaceTests {
         #expect(WidgetIntentCoordinators.planLiveActivityToggle(from: .playing) == .pause)
         #expect(WidgetIntentCoordinators.planLiveActivityToggle(from: .userPaused) == .play)
         #expect(WidgetIntentCoordinators.planLiveActivityToggle(from: .prePlay) == .play)
+        #expect(WidgetIntentCoordinators.planLiveActivityToggle(from: .cleared) == .play)
+        #expect(WidgetIntentCoordinators.planLiveActivityToggle(from: .securityLocked) == .play)
+        #expect(WidgetIntentCoordinators.planLiveActivityToggle(from: .thermalPaused) == .refuse)
+    }
+
+    @Test func planHomeWidgetToggleThermalRefusesAndSecurityConnects() {
+        let thermal = WidgetIntentCoordinators.planHomeWidgetToggle(from: .thermalPaused)
+        #expect(thermal.action == "none")
+        #expect(thermal.targetVisualState == .thermalPaused)
+        #expect(!thermal.shouldExecutePendingAction)
+
+        let security = WidgetIntentCoordinators.planHomeWidgetToggle(from: .securityLocked)
+        #expect(security.action == "play")
+        #expect(security.targetVisualState == .prePlay)
+        #expect(security.shouldExecutePendingAction)
+    }
+
+    @Test func planLiveActivityToggleConnectingCancelsAsPause() {
+        let resolution = WidgetIntentCoordinators.resolveLiveActivityToggleVisualState(
+            liveActivityContent: .prePlay,
+            durableMirror: .prePlay,
+            actorVisualState: .prePlay,
+            sessionSnapshot: nil
+        )
+        #expect(
+            WidgetIntentCoordinators.planLiveActivityToggle(
+                resolution: resolution,
+                isConnectingPlayback: true
+            ) == .pause,
+            "Active start pipeline must plan pause to cancel connect, not duplicate play"
+        )
+        #expect(
+            WidgetIntentCoordinators.planLiveActivityToggle(
+                resolution: resolution,
+                isConnectingPlayback: false
+            ) == .play,
+            "Idle Connecting chrome without pipeline still plans first play"
+        )
+    }
+
+    @Test func playerVisualStateMediaToggleSemanticsHelpers() {
+        #expect(PlayerVisualState.playing.plansMediaToggleAsPause)
+        #expect(!PlayerVisualState.prePlay.plansMediaToggleAsPause)
+        #expect(PlayerVisualState.thermalPaused.blocksPlannedPlay)
+        #expect(!PlayerVisualState.securityLocked.blocksPlannedPlay)
+        #expect(PlayerVisualState.securityLocked.optimisticVisualAfterPlayPlan == .prePlay)
+        #expect(PlayerVisualState.userPaused.optimisticVisualAfterPlayPlan == .playing)
     }
 
     @Test func resolveLiveActivityTogglePrefersContentThenMirror() {

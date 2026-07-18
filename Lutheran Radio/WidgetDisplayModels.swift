@@ -189,6 +189,8 @@ enum WidgetIntentExecution {
     static func performHomeWidgetToggle() async {
         let visualState = SharedPlayerManager.loadPersistedVisualStateDirect()
         let plan = WidgetIntentCoordinators.planHomeWidgetToggle(from: visualState)
+        // Thermal refuse keeps chrome authoritative — no optimistic flip, no pending drain.
+        guard plan.shouldExecutePendingAction else { return }
         let language = WidgetIntentCoordinators.languageForOptimisticUpdate(
             persistedLanguage: SharedPlayerManager.loadPersistedWidgetState()?.currentLanguage,
             preferredLanguage: SharedPlayerManager.preferredWidgetLanguage()
@@ -240,11 +242,17 @@ enum WidgetIntentExecution {
     /// is true, durable mirror alone must not plan `.play` (stale App Group after dirty
     /// power-off). ContentState remains trusted for explicit lock-screen glyphs.
     ///
+    /// **Connecting / thermal / security:** when the main-app start pipeline is active
+    /// (``SharedPlayerManager/isConnectingPlayback``), plan pause to cancel connect.
+    /// Thermal refuses play while the hardware gate is authoritative. Security recovery
+    /// may plan play but optimistic chrome uses connecting (``.prePlay``), not `.playing`.
+    ///
     /// - SeeAlso: ``WidgetIntentCoordinators/resolveLiveActivityToggleVisualState(liveActivityContent:durableMirror:actorVisualState:sessionSnapshot:)``,
-    ///   ``WidgetIntentCoordinators/planLiveActivityToggle(resolution:distrustDurableMirrorPlay:)``,
+    ///   ``WidgetIntentCoordinators/planLiveActivityToggle(resolution:distrustDurableMirrorPlay:isConnectingPlayback:)``,
     ///   ``pushOptimisticLiveActivityToggleContent(visualState:)``,
     ///   ``SharedPlayerManager/persistLiveActivityToggleVisualStateMirror(_:)``,
     ///   ``SharedPlayerManager/shouldDistrustDurableMirrorPlayPlanning()``,
+    ///   ``SharedPlayerManager/isConnectingPlayback``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     static func performLiveActivityToggle() async {
         let liveActivityContent = currentLiveActivityContentVisualState()
@@ -252,6 +260,7 @@ enum WidgetIntentExecution {
         let actorVisualState = await SharedPlayerManager.shared.currentVisualState
         let sessionSnapshot = SharedPlayerManager.loadPersistedWidgetState()?.visualState
         let distrustDurableMirrorPlay = SharedPlayerManager.shouldDistrustDurableMirrorPlayPlanning()
+        let isConnectingPlayback = await SharedPlayerManager.shared.isConnectingPlayback
 
         let resolution = WidgetIntentCoordinators.resolveLiveActivityToggleVisualState(
             liveActivityContent: liveActivityContent,
@@ -261,20 +270,35 @@ enum WidgetIntentExecution {
         )
         let plan = WidgetIntentCoordinators.planLiveActivityToggle(
             resolution: resolution,
-            distrustDurableMirrorPlay: distrustDurableMirrorPlay
+            distrustDurableMirrorPlay: distrustDurableMirrorPlay,
+            isConnectingPlayback: isConnectingPlayback
         )
 
         #if DEBUG
         print(
-            "[WidgetIntentExecution] LA toggle plan=\(plan) source=\(resolution.source.rawValue) state=\(resolution.visualState) distrustMirrorPlay=\(distrustDurableMirrorPlay)"
+            "[WidgetIntentExecution] LA toggle plan=\(plan) source=\(resolution.source.rawValue) state=\(resolution.visualState) distrustMirrorPlay=\(distrustDurableMirrorPlay) connecting=\(isConnectingPlayback)"
         )
         #endif
+
+        // Thermal refuse: keep policy chrome; do not optimistic-flip or drain engine work.
+        guard plan != .refuse else { return }
 
         // Optimistic mirror + ActivityKit ContentState so a second rapid tap plans against
         // the intended post-toggle visual (content wins resolve when activities are visible).
         // Under distrust, forced-pause plans also pin the mirror to `.userPaused` (never
         // re-warm a play-biased token from a stale non-playing mirror alone).
-        let optimisticTarget: PlayerVisualState = (plan == .pause) ? .userPaused : .playing
+        // Security recovery play plans use connecting chrome (not green/playing) until engine-complete.
+        let optimisticTarget: PlayerVisualState
+        switch plan {
+        case .pause:
+            optimisticTarget = .userPaused
+        case .play:
+            optimisticTarget = resolution.visualState.optimisticVisualAfterPlayPlan
+        case .refuse:
+            return
+        @unknown default:
+            return
+        }
         SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(optimisticTarget)
         await pushOptimisticLiveActivityToggleContent(visualState: optimisticTarget)
 
@@ -376,6 +400,7 @@ enum WidgetIntentExecution {
     ///   - plan: Home-widget or Control-widget toggle plan.
     ///   - language: Language code from ``WidgetIntentCoordinators/languageForOptimisticUpdate(persistedLanguage:preferredLanguage:)``.
     static func executeOptimisticToggle(plan: WidgetToggleActionPlan, language: String) async {
+        guard plan.shouldExecutePendingAction else { return }
         let manager = SharedPlayerManager.shared
         _ = manager.signalWidgetPendingAction(
             visualState: plan.targetVisualState,
@@ -454,6 +479,8 @@ enum WidgetIntentExecution {
             await manager.submitMediaTransportCommandAndWait(.pause)
         case .play:
             await manager.submitMediaTransportCommandAndWait(.play)
+        case .refuse:
+            break
         @unknown default:
             break
         }
@@ -463,6 +490,8 @@ enum WidgetIntentExecution {
             await manager.stop()
         case .play:
             await manager.userRequestedPlay()
+        case .refuse:
+            break
         @unknown default:
             break
         }

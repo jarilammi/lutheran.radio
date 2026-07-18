@@ -17,21 +17,38 @@ import Foundation
 
 /// Optimistic play/pause plan for home-widget and Control-widget toggle intents.
 public struct WidgetToggleActionPlan: Sendable, Equatable {
-    /// Pending-action verb written to App Group (`"play"` or `"pause"`).
+    /// Pending-action verb written to App Group (`"play"` or `"pause"`), or `"none"` when
+    /// the plan is a policy refuse (no Darwin drain / no engine mutation).
     public let action: String
     /// Optimistic visual state persisted before the main app drains the pending action.
+    /// For refuse plans, equals the current visual (thermal chrome stays authoritative).
     public let targetVisualState: PlayerVisualState
 
     public init(action: String, targetVisualState: PlayerVisualState) {
         self.action = action
         self.targetVisualState = targetVisualState
     }
+
+    /// Whether a pending App Group action should be scheduled and drained.
+    ///
+    /// - Returns: `true` for `"play"` / `"pause"`; `false` for `"none"` (thermal refuse).
+    public var shouldExecutePendingAction: Bool {
+        action == "play" || action == "pause"
+    }
 }
 
 /// Playback direction for Live Activity toggle intents (main-app execution via actor).
+///
+/// - `pause` / `play`: engine mutation via ``WidgetIntentExecution/executeLiveActivityToggle(plan:)``.
+/// - `refuse`: keep policy chrome (e.g. thermal while still hot); no optimistic flip, no engine work.
+///
+/// - SeeAlso: ``PlayerVisualState/blocksPlannedPlay``, ``PlayerVisualState/plansMediaToggleAsPause``,
+///   ``WidgetIntentCoordinators/planLiveActivityToggle(from:)``
 public enum WidgetLiveActivityTogglePlan: Sendable, Equatable {
     case pause
     case play
+    /// No engine mutation and no optimistic chrome change (policy gate still authoritative).
+    case refuse
 }
 
 /// Which signal produced the visual state used to plan a Live Activity toggle.
@@ -83,13 +100,24 @@ public enum WidgetIntentCoordinators {
 
     /// Plans home-widget toggle from the persisted visual state SSOT read.
     ///
+    /// Matrix (pure visual; connecting cancel uses actor pipeline on lock-screen / remotes):
+    /// - ``PlayerVisualState/plansMediaToggleAsPause`` (``.playing``) → pause / `.userPaused`
+    /// - ``PlayerVisualState/blocksPlannedPlay`` (``.thermalPaused``) → `"none"` / keep thermal
+    /// - otherwise → play / ``PlayerVisualState/optimisticVisualAfterPlayPlan``
+    ///
     /// - Parameter visualState: ``SharedPlayerManager/loadPersistedVisualStateDirect()`` in production.
     /// - Returns: Pending action + optimistic target visual state.
+    /// - SeeAlso: ``planLiveActivityToggle(from:)``, ``PlayerVisualState/blocksPlannedPlay``
     public static func planHomeWidgetToggle(from visualState: PlayerVisualState) -> WidgetToggleActionPlan {
-        let shouldPlay = !visualState.isActivelyPlaying
+        if visualState.plansMediaToggleAsPause {
+            return WidgetToggleActionPlan(action: "pause", targetVisualState: .userPaused)
+        }
+        if visualState.blocksPlannedPlay {
+            return WidgetToggleActionPlan(action: "none", targetVisualState: visualState)
+        }
         return WidgetToggleActionPlan(
-            action: shouldPlay ? "play" : "pause",
-            targetVisualState: shouldPlay ? .playing : .userPaused
+            action: "play",
+            targetVisualState: visualState.optimisticVisualAfterPlayPlan
         )
     }
 
@@ -174,16 +202,27 @@ public enum WidgetIntentCoordinators {
     ///     refuse `.play` if the winning source is only the durable App Group mirror. Maps to
     ///     `.pause` so execution never calls `userRequestedPlay()` from a stale mirror alone.
     ///     ActivityKit content and actor/session sources are unchanged.
-    /// - Returns: Whether the intent path should pause or play.
+    ///   - isConnectingPlayback: When `true` (main-app start pipeline active, not yet
+    ///     ``PlayerVisualState/isActivelyPlaying``), plan **pause** to cancel connect instead of
+    ///     re-entering ``userRequestedPlay()`` (duplicate validation / attach). Wire from
+    ///     ``SharedPlayerManager/isConnectingPlayback``.
+    /// - Returns: Whether the intent path should pause, play, or refuse.
     /// - Important: Wire `distrustDurableMirrorPlay` from
     ///   ``SharedPlayerManager/shouldDistrustDurableMirrorPlayPlanning()`` at
     ///   ``WidgetIntentExecution/performLiveActivityToggle()``. Default `false` preserves
     ///   in-session empty-extension pause planning (mirror `.playing` → pause).
-    /// - SeeAlso: docs/Widget-Functionality-Roadmap.md (lock-screen LA toggle planning).
+    /// - SeeAlso: docs/Widget-Functionality-Roadmap.md (lock-screen LA toggle planning),
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md
     public static func planLiveActivityToggle(
         resolution: LiveActivityToggleVisualResolution,
-        distrustDurableMirrorPlay: Bool = false
+        distrustDurableMirrorPlay: Bool = false,
+        isConnectingPlayback: Bool = false
     ) -> WidgetLiveActivityTogglePlan {
+        // In-flight connect wins over pure visual: second lock-screen / remote toggle cancels
+        // attach rather than stacking another play pipeline on Connecting chrome.
+        if isConnectingPlayback {
+            return .pause
+        }
         let plan = planLiveActivityToggle(from: resolution.visualState)
         if distrustDurableMirrorPlay,
            resolution.source == .durableCrossProcessMirror,
@@ -197,15 +236,23 @@ public enum WidgetIntentCoordinators {
 
     /// Plans Live Activity play/pause toggle from a single visual state.
     ///
-    /// Prefer ``planLiveActivityToggle(resolution:distrustDurableMirrorPlay:)`` or multi-source
-    /// resolution at ``WidgetIntentExecution/performLiveActivityToggle()`` so lock-screen intents
-    /// do not invert when extension-local memory is empty, and do not resurrect play from a
-    /// durable mirror alone after termination or reboot.
+    /// Prefer ``planLiveActivityToggle(resolution:distrustDurableMirrorPlay:isConnectingPlayback:)``
+    /// or multi-source resolution at ``WidgetIntentExecution/performLiveActivityToggle()`` so
+    /// lock-screen intents do not invert when extension-local memory is empty, do not resurrect
+    /// play from a durable mirror alone after termination or reboot, cancel in-flight connect,
+    /// and refuse thermal play while the hardware gate is authoritative.
     ///
     /// - Parameter visualState: Effective visual state (from LA content, durable mirror, or actor).
-    /// - Returns: Whether the extension should call `stop()` or `userRequestedPlay()`.
+    /// - Returns: Pause when audio is flowing; refuse when ``blocksPlannedPlay``; otherwise play.
+    /// - SeeAlso: ``PlayerVisualState/plansMediaToggleAsPause``, ``PlayerVisualState/blocksPlannedPlay``
     public static func planLiveActivityToggle(from visualState: PlayerVisualState) -> WidgetLiveActivityTogglePlan {
-        visualState.isActivelyPlaying ? .pause : .play
+        if visualState.plansMediaToggleAsPause {
+            return .pause
+        }
+        if visualState.blocksPlannedPlay {
+            return .refuse
+        }
+        return .play
     }
 
     /// Resolves the language code for optimistic snapshot writes.

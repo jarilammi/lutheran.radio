@@ -543,22 +543,74 @@ public struct PlayerCurrentState: Sendable, Equatable, Hashable {
     
     // MARK: - Semantic properties
     
-    /// True only when audio is actively playing.
+    /// True only when audio is actively playing (``.playing``).
     ///
     /// This is a *semantic* / policy property, not a presentation helper.
     /// It is intentionally retained on `PlayerVisualState` for:
     /// - Resurrection and auto-play guards
     /// - LIVE indicator visibility and animation presence in widgets / Live Activities
-    /// - Intent decisions inside AppIntent handlers (WidgetToggleRadioIntent, etc.)
+    /// - Now Playing rate / `playbackState` alignment (audio flowing vs not)
     ///
-    /// Pure glyph choice ("play.fill" vs "pause.fill") and tint application for the
-    /// control *button itself* should use `makeControlPresentation()` instead.
-    /// See the widget and Live Activity migration for the narrow pattern.
+    /// **Not** a complete media-toggle planner: connecting (``.prePlay`` while a start
+    /// pipeline is active), thermal, and security need the companion helpers below and
+    /// actor/engine context (``SharedPlayerManager/isConnectingPlayback``). Pure glyph
+    /// choice for the control button uses ``makeControlPresentation()`` (still driven by
+    /// this flag so connecting keeps a play affordance until audible ``setPlaying()``).
     ///
-    /// - SeeAlso: ``makeControlPresentation()``, ``shouldAutoPlayOrResume``,
+    /// - SeeAlso: ``plansMediaToggleAsPause``, ``blocksPlannedPlay``,
+    ///   ``optimisticVisualAfterPlayPlan``, ``makeControlPresentation()``,
+    ///   ``shouldAutoPlayOrResume``, docs/Live-Activity-Stacking-and-Media-Surfaces.md,
     ///   CODING_AGENT.md (isActivelyPlaying may remain for semantic decisions).
     public var isActivelyPlaying: Bool {
         self == .playing
+    }
+
+    /// Whether a pure-visual media-transport / widget / Live Activity **toggle** should plan pause.
+    ///
+    /// True only while audio is flowing (``.playing``). Canceling an in-flight connect
+    /// (``.prePlay`` + active start pipeline) requires actor context and is applied by
+    /// ``WidgetIntentCoordinators/planLiveActivityToggle(resolution:distrustDurableMirrorPlay:isConnectingPlayback:)``
+    /// and ``SharedPlayerManager`` media-transport toggle — not by this flag alone.
+    ///
+    /// - SeeAlso: ``isActivelyPlaying``, ``blocksPlannedPlay``,
+    ///   ``WidgetIntentCoordinators/planLiveActivityToggle(from:)``
+    public var plansMediaToggleAsPause: Bool {
+        isActivelyPlaying
+    }
+
+    /// Whether planned **play** must be refused while this visual is authoritative.
+    ///
+    /// - ``thermalPaused``: hardware thermal gate with automatic resume on cool-down
+    ///   (`shouldAutoResumeOnThermalRecovery`). Scheduling play while still hot fights
+    ///   that policy and can thrash attach without clear thermal chrome.
+    /// - ``securityLocked`` is **not** blocked here: explicit play is the recovery path
+    ///   (re-validation); optimistic chrome uses ``optimisticVisualAfterPlayPlan`` so the
+    ///   control does not claim `.playing` before validation succeeds.
+    ///
+    /// - SeeAlso: ``shouldAutoResumeOnThermalRecovery``, ``optimisticVisualAfterPlayPlan``,
+    ///   ``SharedPlayerManager/isDeviceThermallyStressed()``
+    public var blocksPlannedPlay: Bool {
+        self == .thermalPaused
+    }
+
+    /// Optimistic control visual after a **play** plan, before engine-complete ``setPlaying()``.
+    ///
+    /// - ``securityLocked`` → ``prePlay`` (connecting chrome) so recovery re-validation does
+    ///   not flash green / pause-glyph while DNS/cert work is still in flight.
+    /// - All other play-eligible states → ``playing`` so a rapid second lock-screen tap can
+    ///   re-plan pause from optimistic ContentState (existing dual-tap contract).
+    ///
+    /// - Returns: Target visual for durable LA mirror / optimistic ContentState / home-widget
+    ///   optimistic snapshot after a play plan.
+    /// - SeeAlso: ``blocksPlannedPlay``, ``WidgetIntentExecution/performLiveActivityToggle()``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md
+    public var optimisticVisualAfterPlayPlan: PlayerVisualState {
+        switch self {
+        case .securityLocked:
+            return .prePlay
+        default:
+            return .playing
+        }
     }
     
     /// Single source of truth.

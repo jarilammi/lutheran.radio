@@ -41,16 +41,18 @@ All presentation is organized into three narrow, `Equatable` value types derived
 ## Semantic vs. Presentation Uses of PlayerVisualState
 
 `PlayerVisualState` still exposes:
-- `isActivelyPlaying` (purely `self == .playing`)
+- `isActivelyPlaying` (purely `self == .playing` — **audio is flowing**)
+- `plansMediaToggleAsPause` / `blocksPlannedPlay` / `optimisticVisualAfterPlayPlan` — media-toggle planning (Connecting cancel, thermal refuse, security recovery chrome)
 - `buttonTintColor` (and legacy `backgroundColor` / `textColor`)
 
 **Policy**: These remain the source of truth for **semantic** decisions:
-- Presence of the red LIVE indicator and animation bars
+- Presence of the red LIVE indicator and animation bars (`isActivelyPlaying`)
 - "Local Only" label vs. bars
 - Resurrection / intent logic
 - Decorative radio glyph tint in certain LA regions (non-control)
+- Widget / Live Activity / remote **toggle planning** (not the same as `isActivelyPlaying` alone — see Live Activity stacking doc)
 
-Pure play/pause glyph choice and tint for **controls** must use `makeControlPresentation()`.
+Pure play/pause glyph choice and tint for **controls** must use `makeControlPresentation()` (glyph still follows `isActivelyPlaying` so Connecting keeps a play affordance until audible start).
 
 See the header of `WidgetSurface/PlayerVisualState.swift` for the exact division and AGENT NOTE.
 

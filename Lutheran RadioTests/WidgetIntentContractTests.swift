@@ -930,16 +930,25 @@ final class WidgetIntentContractTests: XCTestCase {
         )
     }
 
-    /// Home widget toggle maps every non-playing visual to "play" and `.playing` to "pause".
+    /// Home widget toggle: playing → pause; thermal → refuse; else play (security → Connecting).
     func testHomeWidgetToggleActionMappingMatrix() {
-        let nonPlayingStates: [PlayerVisualState] = [
-            .prePlay, .userPaused, .cleared, .thermalPaused, .securityLocked
+        let playEligible: [PlayerVisualState] = [
+            .prePlay, .userPaused, .cleared, .securityLocked
         ]
-        for state in nonPlayingStates {
+        for state in playEligible {
             let mapped = WidgetIntentCoordinators.planHomeWidgetToggle(from: state)
-            XCTAssertEqual(mapped.action, "play", "Non-playing \(state) must schedule play")
-            XCTAssertEqual(mapped.targetVisualState, .playing)
+            XCTAssertEqual(mapped.action, "play", "Play-eligible \(state) must schedule play")
+            XCTAssertEqual(
+                mapped.targetVisualState,
+                state.optimisticVisualAfterPlayPlan,
+                "Optimistic target for \(state) must follow security/connecting policy"
+            )
         }
+
+        let thermalMapped = WidgetIntentCoordinators.planHomeWidgetToggle(from: .thermalPaused)
+        XCTAssertEqual(thermalMapped.action, "none")
+        XCTAssertEqual(thermalMapped.targetVisualState, .thermalPaused)
+        XCTAssertFalse(thermalMapped.shouldExecutePendingAction)
 
         let playingMapped = WidgetIntentCoordinators.planHomeWidgetToggle(from: .playing)
         XCTAssertEqual(playingMapped.action, "pause")

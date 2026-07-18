@@ -2603,6 +2603,63 @@ final class SharedPlayerManagerEventTests: XCTestCase {
         XCTAssertTrue(visual.isActivelyPlaying)
     }
 
+    /// Protects media-toggle semantics: in-flight start pipeline means Connecting cancel,
+    /// not a second play, on remote / Live Activity transport toggle.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/isConnectingPlayback``,
+    ///   ``SharedPlayerManager/performMediaTransportCommand(_:generation:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md
+    func testMediaTransportToggleWhileConnectingCancelsToUserPaused() async {
+        await manager.stop()
+        await manager.setUserIntentToPlay()
+        await manager._test_setPlaybackStartPipelineActive(true)
+
+        let connecting = await manager.isConnectingPlayback
+        XCTAssertTrue(connecting, "Precondition: start pipeline active without audible playing")
+
+        await manager.submitMediaTransportCommandAndWait(.togglePlayPause)
+
+        let visual = await manager.currentVisualState
+        let intent = await manager.currentPlaybackIntent
+        let stillConnecting = await manager.isConnectingPlayback
+        XCTAssertEqual(visual, .userPaused, "Toggle during Connecting must sticky-pause (cancel connect)")
+        XCTAssertEqual(intent, .userPaused)
+        XCTAssertFalse(stillConnecting, "stop must clear the start pipeline")
+    }
+
+    /// Second explicit play while the start pipeline is active is a no-op (no intent thrash).
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/userRequestedPlay()``, ``SharedPlayerManager/isConnectingPlayback``
+    func testUserRequestedPlayWhileConnectingIsIdempotent() async {
+        await manager.stop()
+        await manager.setUserIntentToPlay()
+        await manager._test_setPlaybackStartPipelineActive(true)
+
+        await manager.userRequestedPlay()
+
+        let visual = await manager.currentVisualState
+        let intent = await manager.currentPlaybackIntent
+        let connecting = await manager.isConnectingPlayback
+        XCTAssertEqual(visual, .prePlay, "Idempotent play must not leave Connecting chrome")
+        XCTAssertEqual(intent, .shouldBePlaying)
+        XCTAssertTrue(connecting, "Pipeline must remain active until stop or setPlaying")
+    }
+
+    /// Security recovery explicit play moves chrome to Connecting before validation / attach.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/setUserIntentToPlay()``,
+    ///   ``PlayerVisualState/optimisticVisualAfterPlayPlan``
+    func testSetUserIntentToPlayFromSecurityLockedUsesConnectingChrome() async {
+        await manager.setVisualState(.securityLocked)
+        await manager.setUserIntentToPlay()
+
+        let visual = await manager.currentVisualState
+        let intent = await manager.currentPlaybackIntent
+        XCTAssertEqual(visual, .prePlay, "Security recovery must use Connecting chrome, not green playing")
+        XCTAssertEqual(intent, .shouldBePlaying)
+        XCTAssertFalse(visual.isActivelyPlaying)
+    }
+
     /// Protects the user-pause engine-complete contract: ``stop()`` returns only after soft
     /// silence (`isSoftPaused`, rate 0 when a player exists), and media-surface coordination
     /// runs after that barrier — never while soft pause is still in flight.
