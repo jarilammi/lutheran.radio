@@ -13,11 +13,15 @@ import WidgetSurface
 @testable import Lutheran_Radio
 
 /// Protects the canonical title / speaker / emphasis mapping for every
-/// `PlayerVisualState` × metadata presence combination (main-app test host).
+/// `PlayerVisualState` × metadata presence combination (main-app test host),
+/// plus Provider snapshot hygiene and stream-catalog assembly wrappers.
 ///
-/// Pure-function coverage — no WidgetCenter IPC or ActivityKit.
+/// Pure presentation assembly without the stream catalog is covered in
+/// `WidgetSurfaceTests`. This suite exercises membership-exception paths that
+/// read ``SharedPlayerManager``. No WidgetCenter IPC or ActivityKit.
 ///
-/// - SeeAlso: `WidgetDisplayModels.swift`, docs/Widget-Presentation-Dataflow.md,
+/// - SeeAlso: ``WidgetProviderSnapshotResolver``, ``WidgetProviderPresentationAssembly``,
+///   docs/Widget-Presentation-Dataflow.md,
 ///   docs/Widget-Functionality-Roadmap.md (Tier 2 + Tier 5 provider synthesis).
 final class WidgetDisplayModelsTests: XCTestCase {
 

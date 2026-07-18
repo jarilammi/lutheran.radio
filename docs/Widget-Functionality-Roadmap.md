@@ -54,7 +54,8 @@ The finish line is a **hybrid, two-zone model** — not a migration from snapsho
 | [`docs/Widget-Presentation-Dataflow.md`](Widget-Presentation-Dataflow.md) | Permanent presentation contract (three narrow surfaces, pre-derivation, termination invariant) |
 | [`docs/Event-Driven-Refactor-Roadmap.md`](Event-Driven-Refactor-Roadmap.md) | Player `PlayerEvent` emission + `WidgetRefreshManager` as Tier 2 consumer |
 | [`docs/cold-launch-streamplay-regression-checklist.md`](cold-launch-streamplay-regression-checklist.md) | Regression guard for widget pause/play/switch SSOT (§6 stream switch, §7 widget persistence) |
-| `WidgetSurface/` | Presentation-only embedded framework: intent coordinators, timeline factory, liveness policy, narrow display models |
+| `WidgetSurface/` | Presentation-only embedded framework: intent coordinators, timeline factory, liveness policy, narrow display models, language chrome, pure Provider presentation assembly |
+| Membership-exception `WidgetDisplayModels.swift` | ``WidgetIntentExecution`` + ``WidgetProviderSnapshotResolver`` (SPM-coupled hygiene / catalog labels) |
 | `SharedPlayerManager+NowPlaying.swift`, `StreamProgramMetadata.swift` | Now Playing metadata SSOT (`nowPlayingDisplayStrings`) shared with widget/LA formatters |
 | `README.md` (SSOT section) | Index + cross-links |
 | ``<doc:Architecture>`` (Core DocC) | Event-driven player architecture + cross-process widget reality |
@@ -83,7 +84,8 @@ The finish line is a **hybrid, two-zone model** — not a migration from snapsho
 - **Optimistic instant feedback** (`isInstantFeedback`, `instantFeedbackTime`, `instantFeedbackLanguage`) for sub-round-trip UI; 15 s validity window.
 - **Legacy forcing shim** `forcePersistVisualState(_:language:)` documented and scoped to widget optimistic paths only; `emit(_:)` guard suppresses `PlayerEvent` yields in widget process.
 - **Liveness heuristic SSOT:** `SharedPlayerManager.isMainAppProcessRecentlyActive()` (60 s window + `lastUpdateTime = 0` termination sentinel). Family views delegate the passive-branch decision to ``WidgetLivenessPresentation/shouldShowPassiveTapToOpen(isMainAppRecentlyActive:)`` (heartbeat remains in `SharedPlayerManager`). Protected by `testForceStaleLivenessMakesIsRecentlyActiveFalse_AndBumpRestores`.
-- **WidgetSurface intent + entry SSOT (2026-07-14):** ``WidgetIntentCoordinators`` (toggle plans), ``WidgetIntentExecution`` in `WidgetDisplayModels.swift` (cross-target side effects), ``WidgetTimelineEntryFactory`` (home/control blueprints). Extension `perform()` and Provider paths are thin delegates. Toggle-mapping tests in `WidgetIntentContractTests` call coordinators directly (no mirror helpers).
+- **WidgetSurface intent + entry SSOT (2026-07-14):** ``WidgetIntentCoordinators`` (toggle plans), ``WidgetIntentExecution`` in membership-exception `WidgetDisplayModels.swift` (cross-target side effects), ``WidgetTimelineEntryFactory`` (home/control blueprints). Extension `perform()` and Provider paths are thin delegates. Toggle-mapping tests in `WidgetIntentContractTests` call coordinators directly (no mirror helpers).
+- **Pure presentation extraction into WidgetSurface (2026-07-18):** ``displayFlag(for:)`` and pure ``displayLanguageName(for:preferredStreamLanguage:)`` in `WidgetLanguageDisplay.swift`; ``WidgetProviderPresentationAssembly`` owns pure Provider slice assembly. Membership-exception ``WidgetProviderSnapshotResolver`` retains snapshot reads, actor hygiene, stream-catalog station labels, and a thin catalog-aware assemble wrapper. ``WidgetIntentExecution`` remains membership-exception (requires ``SharedPlayerManager`` + ``WidgetRefreshManager``).
 - **WidgetSurface + extension-profile tests permanent-doc closeout (2026-07-15):** `CODING_AGENT.md` / `Agents.md` and `README.md` document the two-layer model (`WidgetSurface` + membership-exception SPM sources), default test-plan membership of `LutheranRadioWidgetTests` / `WidgetSurfaceTests`, and widget-only verification commands.
 - **WML-1 (2026-06-11):** Pause retains parsed metadata in snapshot for subdued widget display; resume rehydrates when needed (**P5-12**).
 
@@ -310,7 +312,7 @@ Ordered by increasing risk and decreasing isolation. Earlier items are safer.
 - [x] **Now Playing formatter + media-surface coordination test index (2026-07-14):** `StreamProgramMetadataTests` — `nowPlayingDisplayStrings` matrix (parsed title/speaker, raw fallback, station fallback, whitespace) + widget program-title alignment; `SharedPlayerManagerEventTests` — `testRefreshAllMediaSurfacesOrdersNowPlayingBeforeWidgetRefreshAndWritesDisplayStrings` (coordination order log + `MPNowPlayingInfoCenter` SSOT under DEBUG bypass; LA IPC skipped).
 - [x] **WidgetSurface coordinator SSOT (2026-07-14):** `WidgetIntentCoordinators`, `WidgetTimelineEntryFactory`, `WidgetLivenessPresentation`, `WidgetNowPlayingDisplay` in `WidgetSurface/`; `WidgetIntentExecution` in `WidgetDisplayModels.swift`; extension thin delegates; `WidgetIntentContractTests` toggle matrices use ``planHomeWidgetToggle(from:)`` / ``planControlWidgetToggle(isPlayingRequested:)``.
 - [x] **LiveActivitySwitchStreamIntent contract (2026-07-17):** `WidgetIntentContractExtensionTests` — reject unknown (snapshot unchanged), accept known, preserve `.userPaused` / `.playing` + language update, empty-session success (symmetric to home-widget switch SSOT and LA toggle empty-session path). Methods: `testPerformLiveActivityStreamSwitchRejectsUnknownLanguage`, `testPerformLiveActivityStreamSwitchAcceptsKnownLanguage`, `testPerformLiveActivityStreamSwitchPreservesUserPausedAndUpdatesLanguage`, `testPerformLiveActivityStreamSwitchFromPlayingUpdatesLanguageOnly`, `testPerformLiveActivityStreamSwitchSucceedsWithEmptySessionSnapshot`.
-- [x] **displayFlag / displayLanguageName pure helpers (2026-07-17):** `WidgetDisplayModelsExtensionTests` — curated flag matrix, globe fallback, stream-list name preference, unknown capitalize, stream.flag parity. Methods: `testDisplayFlagMatrixForCuratedLanguageCodes`, `testDisplayFlagUnknownCodeUsesGlobeFallback`, `testDisplayLanguageNamePrefersAvailableStreams`, `testDisplayLanguageNameUnknownCodeCapitalizes`, `testDisplayFlagMatchesStreamListFlagsWhenAvailable`.
+- [x] **displayFlag / displayLanguageName pure helpers (2026-07-17; WidgetSurface home 2026-07-18):** Pure ``displayFlag(for:)`` and ``displayLanguageName(for:preferredStreamLanguage:)`` live in `WidgetSurface/WidgetLanguageDisplay.swift` (`WidgetSurfaceTests` matrix). Stream-catalog preference for ``displayLanguageName(for:)`` remains the membership-exception wrapper (extension-profile `WidgetDisplayModelsExtensionTests`: `testDisplayLanguageNamePrefersAvailableStreams`, stream.flag parity).
 
 **Tier 5 complete when:** Tier 2 checklist is green, `LutheranRadioWidgetTests` ships under the extension compile profile (**done 2026-07-15** — coordinator SSOT + perform SSOT; LA switch + display helpers closed 2026-07-17; **61** extension-profile tests green as of 2026-07-17), and all touched files carry production `///` docs with `SeeAlso:` to this roadmap.
 
@@ -360,14 +362,15 @@ Present in `LutheranRadioWidget.swift:getPendingOrCurrentState` and `LutheranRad
 
 The next item is always the highest-priority unchecked entry in the backlog above.
 
-**Recommended starting order (2026-07-17):**
+**Recommended starting order (2026-07-18):**
 
 1. ~~**`LutheranRadioWidgetTests` target**~~ — **Done**: extension-profile target + pure `WidgetSurfaceTests`.
 2. ~~**Permanent-doc closeout for WidgetSurface + extension-profile tests**~~ — **Done**: `CODING_AGENT.md` / `Agents.md` two-layer cross-target section; README SSOT + verification for widget unit targets.
-3. ~~**LA switch + display helper contracts**~~ — **Done (2026-07-17):** ``LiveActivitySwitchStreamIntent`` perform SSOT + ``displayFlag`` / ``displayLanguageName`` pure tests; gap analysis retired for those items.
-4. Tier 1 optional `WidgetDisplayProjection` bundle (only if future call-site churn warrants it).
-5. Optional later: XCUITest widget intents / manual QA matrix (high device cost).
-6. Optional later: move `WidgetDisplayModels.swift` / `WidgetRefreshManager.swift` into `WidgetSurface/` when coupling allows.
+3. ~~**LA switch + display helper contracts**~~ — **Done (2026-07-17):** ``LiveActivitySwitchStreamIntent`` perform SSOT + ``displayFlag`` / ``displayLanguageName`` pure tests.
+4. ~~**Pure presentation extraction into WidgetSurface**~~ — **Done (2026-07-18):** ``displayFlag(for:)``, pure ``displayLanguageName(for:preferredStreamLanguage:)``, and ``WidgetProviderPresentationAssembly`` live in WidgetSurface; membership-exception ``WidgetDisplayModels.swift`` retains only ``SharedPlayerManager`` / ``WidgetRefreshManager``-coupled snapshot hygiene and ``WidgetIntentExecution``.
+5. Tier 1 optional `WidgetDisplayProjection` bundle (only if future call-site churn warrants it).
+6. Optional later: XCUITest widget intents / manual QA matrix (high device cost).
+7. Optional later: further membership-exception reduction for ``WidgetRefreshManager`` only if coupling can be broken without a circular WidgetSurface ↔ SharedPlayerManager dependency.
 
 Each micro-step: read target files first, minimal diff, apply the documentation standards above, update this roadmap Completed + Update Log, run build + test gates per `CODING_AGENT.md`.
 
@@ -398,6 +401,7 @@ For presentation mapping rules and termination invariants, use [`docs/Widget-Pre
 
 ## Update Log
 
+- **2026-07-18:** Pure presentation extraction into WidgetSurface — `WidgetLanguageDisplay.swift` (`displayFlag`, pure `displayLanguageName(for:preferredStreamLanguage:)`), `WidgetProviderPresentationAssembly.swift` (pure Provider slice assembly); membership-exception `WidgetDisplayModels.swift` slimmed to stream-catalog wrappers, ``WidgetProviderSnapshotResolver`` hygiene, and ``WidgetIntentExecution``. Canonical agent docs (`CODING_AGENT.md` / `Agents.md`, `README.md`) document the refined boundary. Pure assembly + language chrome covered in `WidgetSurfaceTests`; stream-catalog contracts remain in main-app / extension-profile suites. `WidgetRefreshManager` stays membership-exception (event observation + WidgetKit).
 - **2026-07-17:** Joined optimistic-signal → main-app-drain → authoritative-state contracts indexed — two-phase play/pause round-trips, post-drain `WidgetRefreshManager` refresh gate observation without WidgetCenter IPC, and UITestMode no-bypass safety after the full optimistic signal shape; methods in `WidgetIntentContractTests` (Tier 2 checklist + Tier 5 joined-round-trip index). Complements isolated drain and optimistic-only joints already listed under play/pause drain.
 - **2026-07-17:** Close last widget contract holes — ``LiveActivitySwitchStreamIntent`` extension-profile contracts (reject/accept, pause/play language update, empty-session success) symmetric to home switch + LA toggle; pure ``displayFlag`` / ``displayLanguageName`` matrix in `WidgetDisplayModelsExtensionTests`; `docs/widget-test-gaps-analysis.md` aligned (extension target + LA perform + display helpers no longer listed open).
 - **2026-07-15:** Permanent-doc closeout for `WidgetSurface` + extension-profile tests — `CODING_AGENT.md` / `Agents.md` cross-target section rewritten for `WidgetSurface` + membership-exception SSOT; README SSOT, widget functionality table, and Agent Verification Commands document `LutheranRadioWidgetTests` / `WidgetSurfaceTests` (default test plan); `WidgetSurface` target sets `SWIFT_STRICT_MEMORY_SAFETY = YES` parity with `Core`.

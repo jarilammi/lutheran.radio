@@ -22,9 +22,9 @@
 //   `Core/` (see CODING_AGENT.md "Core Framework Surface Area").
 //
 // - SeeAlso: `SharedPlayerManager`, `PlayerVisualState`, `PersistedWidgetState`
-//   (contains this), `WidgetDisplayModels.swift` (widget/LA counterpart),
+//   (contains this), ``widgetNowPlayingDisplayModel(visualState:streamMetadata:languageName:)``,
 //   SharedPlayerManager+NowPlaying.swift,
-//   CODING_AGENT.md (Single Source of Truth Principles + "Cross-target shared source files (non-Core)"), README.md.
+//   CODING_AGENT.md (Single Source of Truth Principles + cross-target widget sources), README.md.
 
 import Foundation
 

@@ -498,12 +498,12 @@ See also: the "Current Security Snapshot" table above, [`CODING_AGENT.md`](CODIN
 
 Two layers keep app, widget extension, and Live Activity presentation aligned. **Security stays in `Core/` only.**
 
-**1. `WidgetSurface` embedded framework (presentation-only)** — linked by the main app (Embed & Sign), `LutheranRadioWidgetExtension` (link only), `LutheranRadioWidgetTests`, and `WidgetSurfaceTests`. Holds visual-state vocabulary, presentation mappers, intent **planning**, timeline blueprints, liveness policy, and metadata display models (e.g. `PlayerVisualState.swift`, `StreamProgramMetadata.swift`, `LutheranRadioLiveActivityAttributes.swift`, `WidgetEventObserver.swift`, `WidgetIntentCoordinators.swift`, `WidgetTimelineEntryFactory.swift`, `WidgetLivenessPresentation.swift`, `WidgetNowPlayingDisplay.swift`). Prefer this framework for new presentation-only shared code.
+**1. `WidgetSurface` embedded framework (presentation-only)** — linked by the main app (Embed & Sign), `LutheranRadioWidgetExtension` (link only), `LutheranRadioWidgetTests`, and `WidgetSurfaceTests`. Holds visual-state vocabulary, presentation mappers, intent **planning**, timeline blueprints, liveness policy, metadata display models, pure language chrome, and pure Provider presentation assembly (e.g. `PlayerVisualState.swift`, `StreamProgramMetadata.swift`, `LutheranRadioLiveActivityAttributes.swift`, `WidgetEventObserver.swift`, `WidgetIntentCoordinators.swift`, `WidgetTimelineEntryFactory.swift`, `WidgetLivenessPresentation.swift`, `WidgetNowPlayingDisplay.swift`, `WidgetLanguageDisplay.swift`, `WidgetProviderPresentationAssembly.swift`). Prefer this framework for new presentation-only shared code. Do not import `SharedPlayerManager` into WidgetSurface (circular: the actor already imports WidgetSurface).
 
 **2. Membership-exception sources under `Lutheran Radio/`** — compiled into the main app, extension, and `LutheranRadioWidgetTests` via File System Synchronized Group `membershipExceptions` (cannot move into `WidgetSurface` without a circular dependency on `SharedPlayerManager`):
 
 - `SharedPlayerManager.swift` (actor + `PersistedWidgetState` + authoritative `PlayerEvent` emission)
-- `WidgetDisplayModels.swift` (`WidgetIntentExecution`, provider snapshot resolver / assembly)
+- `WidgetDisplayModels.swift` (`WidgetIntentExecution`; `WidgetProviderSnapshotResolver` snapshot reads / actor hygiene / stream-catalog labels; catalog-aware `displayLanguageName(for:)` wrapper that forwards pure assembly to `WidgetProviderPresentationAssembly`)
 - `WidgetRefreshManager.swift` (debouncing + active-widgets privacy gate)
 - `Localizable.xcstrings` (extension + extension-profile tests)
 
@@ -556,8 +556,10 @@ See [docs/Widget-Presentation-Dataflow.md](docs/Widget-Presentation-Dataflow.md)
 |-------|-------------------|
 | Presentation contract (three narrow surfaces) | [docs/Widget-Presentation-Dataflow.md](docs/Widget-Presentation-Dataflow.md) |
 | Backlog + architecture status | [docs/Widget-Functionality-Roadmap.md](docs/Widget-Functionality-Roadmap.md) |
-| Presentation framework | `WidgetSurface/` (coordinators, timeline factory, liveness, display models) |
-| Intent execution (cross-target) | `WidgetIntentExecution` in `WidgetDisplayModels.swift` |
+| Presentation framework | `WidgetSurface/` (coordinators, timeline factory, liveness, display models, language chrome, pure Provider assembly) |
+| Intent execution (cross-target) | `WidgetIntentExecution` in membership-exception `WidgetDisplayModels.swift` |
+| Provider presentation assembly (pure) | `WidgetProviderPresentationAssembly` in `WidgetSurface/` |
+| Provider snapshot hygiene (SPM-coupled) | `WidgetProviderSnapshotResolver` in membership-exception `WidgetDisplayModels.swift` |
 | Now Playing + LA stacking, start policy, metadata push cost | [docs/Live-Activity-Stacking-and-Media-Surfaces.md](docs/Live-Activity-Stacking-and-Media-Surfaces.md) |
 | Media surface refresh wrapper | `SharedPlayerManager.refreshAllMediaSurfaces(liveActivity:widgetRefresh:widgetRefreshImmediate:)` |
 | Intent + snapshot contract tests (main-app host) | `WidgetIntentContractTests.swift`, `WidgetDisplayModelsTests.swift` |

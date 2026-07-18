@@ -5,11 +5,13 @@
 //  Created by Jari Lammi on 15.7.2026.
 //
 //  Extension-profile port of metadata resolver + Provider synthesis contracts, plus
-//  pure ``displayFlag`` / ``displayLanguageName`` helpers from ``WidgetDisplayModels``.
-//  Compiles ``WidgetDisplayModels.swift`` without `LUTHERAN_MAIN_APP` (same as extension).
+//  stream-catalog ``displayLanguageName(for:)`` and pure ``displayFlag(for:)`` (WidgetSurface).
+//  Compiles membership-exception ``WidgetDisplayModels.swift`` without `LUTHERAN_MAIN_APP`
+//  (same as the widget extension).
 //
 //  - SeeAlso: ``widgetNowPlayingDisplayModel(visualState:streamMetadata:languageName:)``,
-//    ``WidgetProviderSnapshotResolver``, ``displayFlag(for:)``, ``displayLanguageName(for:)``,
+//    ``WidgetProviderSnapshotResolver``, ``WidgetProviderPresentationAssembly``,
+//    ``displayFlag(for:)``, ``displayLanguageName(for:)``,
 //    docs/Widget-Functionality-Roadmap.md.
 //
 

@@ -188,18 +188,24 @@ logic in either layer.
 ### 1. `WidgetSurface` embedded framework (presentation-only)
 
 `WidgetSurface/` holds pure presentation types, intent **planning**, timeline
-blueprints, and liveness policy. The main app **embeds** the framework; the
-widget extension and widget unit tests **link** it (`import WidgetSurface`).
+blueprints, liveness policy, pure language chrome, and pure Provider presentation
+assembly. The main app **embeds** the framework; the widget extension and widget
+unit tests **link** it (`import WidgetSurface`).
 
 Includes (non-exhaustive): `PlayerVisualState.swift` (`PlayerVisualState`,
 `PlaybackIntent`, `PlayerEvent`, presentation mappers), `StreamProgramMetadata.swift`,
 `LutheranRadioLiveActivityAttributes.swift`, `WidgetEventObserver.swift`,
 `WidgetIntentCoordinators.swift`, `WidgetTimelineEntryFactory.swift`,
 `WidgetLivenessPresentation.swift`, `WidgetNowPlayingDisplay.swift`,
-`PlayerStatus.swift`, `StreamErrorType.swift`.
+`WidgetLanguageDisplay.swift` (`displayFlag(for:)`, pure
+`displayLanguageName(for:preferredStreamLanguage:)`),
+`WidgetProviderPresentationAssembly.swift` (pure slice assembly from snapshot
+fields + explicit language labels), `PlayerStatus.swift`, `StreamErrorType.swift`.
 
 **Rule**: No security logic in `WidgetSurface`. Prefer this framework for new
-presentation-only shared code rather than membership exceptions.
+presentation-only shared code rather than membership exceptions. Do not import
+`SharedPlayerManager` into WidgetSurface (circular: the actor already imports
+WidgetSurface).
 
 ### 2. Membership-exception sources under `Lutheran Radio/`
 
@@ -210,8 +216,10 @@ and cannot live in `WidgetSurface` without a circular dependency):
 
 - `SharedPlayerManager.swift` (actor + nested `PersistedWidgetState` + static
   facades for persistence and signaling)
-- `WidgetDisplayModels.swift` (`WidgetIntentExecution`, provider snapshot
-  resolver / assembly)
+- `WidgetDisplayModels.swift` (`WidgetIntentExecution`; ``WidgetProviderSnapshotResolver``
+  snapshot reads / actor hygiene / stream-catalog station labels and
+  catalog-aware ``displayLanguageName(for:)`` wrapper that forwards pure assembly
+  to ``WidgetProviderPresentationAssembly``)
 - `WidgetRefreshManager.swift` (debouncing + active-widgets privacy gate)
 - `Localizable.xcstrings` (extension + extension-profile tests)
 
@@ -378,9 +386,9 @@ These guidelines exist because the cost of a force-unwrap or a data race in a ba
 | `Core/Security/`                                  | `CertificateFingerprint` + `CertificateValidator` (Core framework)             | Security-sensitive; compiled into main app + widget extension                  |
 | `Info.plist`                                      | ATS pinning (SPKI + domain)                                                    | Never edit without updating `SecurityConfiguration` and validator              |
 | `LutheranRadioWidget/`                            | Home-screen / Control / LA SwiftUI shells + AppIntents                         | Thin delegates; presentation via `import WidgetSurface`; same `Core` security rules |
-| `WidgetSurface/`                                  | Presentation-only embedded framework (visual state, coordinators, timeline factory, liveness, metadata display) | App embeds; extension + widget tests link. **No** security logic. See cross-target section. |
+| `WidgetSurface/`                                  | Presentation-only embedded framework (visual state, coordinators, timeline factory, liveness, metadata display, language chrome, pure Provider assembly) | App embeds; extension + widget tests link. **No** security logic. See cross-target section. |
 | `docs/`                                           | All architecture & security decision records                                   | Read before any major change                                                   |
-| `SharedPlayerManager.swift` + `WidgetDisplayModels.swift` + `WidgetRefreshManager.swift` | Membership-exception SSOT: actor state, intent execution, widget refresh | Compiled into app + extension + `LutheranRadioWidgetTests`. Presentation types live in `WidgetSurface/`. Never duplicate widget state logic. |
+| `SharedPlayerManager.swift` + `WidgetDisplayModels.swift` + `WidgetRefreshManager.swift` | Membership-exception SSOT: actor state, intent execution + snapshot hygiene, widget refresh | Compiled into app + extension + `LutheranRadioWidgetTests`. Pure presentation lives in `WidgetSurface/`. Never duplicate widget state logic. |
 
 ### Core Framework Surface Area (Mandatory Knowledge)
 

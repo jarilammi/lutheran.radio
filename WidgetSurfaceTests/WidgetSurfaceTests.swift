@@ -6,7 +6,9 @@
 //  Complements LutheranRadioWidgetTests, which exercise the extension compile profile.
 //
 //  - SeeAlso: ``WidgetIntentCoordinators``, ``WidgetLivenessPresentation``,
-//    ``WidgetTimelineEntryFactory``, docs/Widget-Functionality-Roadmap.md.
+//    ``WidgetTimelineEntryFactory``, ``WidgetProviderPresentationAssembly``,
+//    ``displayFlag(for:)``, ``displayLanguageName(for:preferredStreamLanguage:)``,
+//    docs/Widget-Functionality-Roadmap.md.
 //
 
 import Foundation
@@ -155,5 +157,113 @@ struct WidgetSurfaceTests {
     @Test func controlPresentationPlayingUsesPauseGlyph() {
         let presentation = PlayerVisualState.playing.makeControlPresentation()
         #expect(presentation.systemImage == "pause.fill")
+    }
+
+    // MARK: - Language display (pure)
+
+    @Test func displayFlagMatrixForCuratedLanguageCodes() {
+        #expect(displayFlag(for: "en") == "🇺🇸")
+        #expect(displayFlag(for: "de") == "🇩🇪")
+        #expect(displayFlag(for: "fi") == "🇫🇮")
+        #expect(displayFlag(for: "sv") == "🇸🇪")
+        #expect(displayFlag(for: "et") == "🇪🇪")
+    }
+
+    @Test func displayFlagUnknownCodeUsesGlobeFallback() {
+        #expect(displayFlag(for: "xx") == "🌍")
+        #expect(displayFlag(for: "") == "🌍")
+        #expect(displayFlag(for: "nb") == "🌍")
+    }
+
+    @Test func displayLanguageNamePrefersStreamCatalogWhenProvided() {
+        #expect(
+            displayLanguageName(for: "fi", preferredStreamLanguage: "Suomi") == "Suomi"
+        )
+        #expect(
+            displayLanguageName(for: "xx", preferredStreamLanguage: "Catalog Name") == "Catalog Name"
+        )
+    }
+
+    @Test func displayLanguageNameUnknownCodeCapitalizesWithoutCatalog() {
+        #expect(displayLanguageName(for: "xx") == "Xx")
+        #expect(displayLanguageName(for: "zz") == "Zz")
+    }
+
+    // MARK: - Provider presentation assembly (pure)
+
+    @Test func assemblePresentationSlicesMapsEveryVisualState() {
+        let states: [PlayerVisualState] = [
+            .prePlay, .cleared, .playing, .userPaused, .thermalPaused, .securityLocked
+        ]
+        for state in states {
+            let fields = WidgetProviderSnapshotFields(
+                currentLanguage: "en",
+                hasError: false,
+                visualState: state,
+                streamMetadata: nil
+            )
+            let slices = WidgetProviderPresentationAssembly.assemblePresentationSlices(
+                from: fields,
+                languageName: "English",
+                stationLabel: "🇺🇸 English"
+            )
+            #expect(slices.currentLanguageCode == "en")
+            #expect(slices.currentStation == "🇺🇸 English")
+            #expect(slices.statusPresentation == state.makeStatusPresentation())
+            #expect(slices.controlPresentation == state.makeControlPresentation())
+            #expect(slices.statusMessage == slices.statusPresentation.text)
+            #expect(
+                slices.widgetNowPlayingDisplayModel == widgetNowPlayingDisplayModel(
+                    visualState: state,
+                    streamMetadata: nil,
+                    languageName: "English"
+                )
+            )
+        }
+    }
+
+    @Test func assemblePresentationSlicesUsesConnectionErrorWhenHasError() {
+        let fields = WidgetProviderSnapshotFields(
+            currentLanguage: "fi",
+            hasError: true,
+            visualState: .playing,
+            streamMetadata: nil
+        )
+        let slices = WidgetProviderPresentationAssembly.assemblePresentationSlices(
+            from: fields,
+            languageName: "Suomi",
+            stationLabel: "🇫🇮 Suomi"
+        )
+        let expectedError = String(
+            localized: "Connection error",
+            defaultValue: "Connection error",
+            table: "Localizable"
+        )
+        #expect(slices.statusMessage == expectedError)
+        #expect(slices.statusPresentation == PlayerVisualState.playing.makeStatusPresentation())
+        #expect(slices.controlPresentation == PlayerVisualState.playing.makeControlPresentation())
+    }
+
+    @Test func assemblePresentationSlicesCarriesStreamMetadataIntoNowPlayingModel() {
+        let meta = StreamProgramMetadata(programTitle: "Sunday Sermon", speaker: "Guest")
+        let fields = WidgetProviderSnapshotFields(
+            currentLanguage: "fi",
+            hasError: false,
+            visualState: .playing,
+            streamMetadata: meta
+        )
+        let slices = WidgetProviderPresentationAssembly.assemblePresentationSlices(
+            from: fields,
+            languageName: "Suomi",
+            stationLabel: "🇫🇮 Suomi"
+        )
+        let expected = widgetNowPlayingDisplayModel(
+            visualState: .playing,
+            streamMetadata: meta,
+            languageName: "Suomi"
+        )
+        #expect(slices.widgetNowPlayingDisplayModel == expected)
+        #expect(slices.widgetNowPlayingDisplayModel.programTitle == "Sunday Sermon")
+        #expect(slices.widgetNowPlayingDisplayModel.speakerVisible)
     }
 }

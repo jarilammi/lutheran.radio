@@ -9,125 +9,67 @@
 //
 // Single physical file compiled into both targets via membershipExceptions.
 //
-// Purpose (this file only):
-// - Language/flag display helpers (`displayLanguageName`, `displayFlag`) that consult
-//   ``SharedPlayerManager`` stream lists.
-// - ``WidgetProviderSnapshotResolver`` — Provider hygiene + assembly of narrow presentation
-//   slices from snapshot fields (calls into WidgetSurface mappers/resolvers).
+// Purpose (this file only — execution and snapshot hygiene that require
+// ``SharedPlayerManager`` / ``WidgetRefreshManager``):
+// - Stream-catalog-aware ``displayLanguageName(for:)`` (wraps pure WidgetSurface helpers).
+// - ``WidgetProviderSnapshotResolver`` — Provider snapshot reads, actor hygiene, and
+//   stream-catalog station labels; pure presentation assembly is delegated to
+//   ``WidgetProviderPresentationAssembly`` in WidgetSurface.
 // - ``WidgetIntentExecution`` — AppIntent perform SSOT and side effects via
 //   ``SharedPlayerManager`` + ``WidgetRefreshManager``.
 //
-// AGENT NOTE: Presentation types and pure mapping live in **WidgetSurface**, not here:
+// AGENT NOTE: Pure presentation types and mapping live in **WidgetSurface**, not here:
 // - Status/control: ``PlayerVisualState/makeStatusPresentation()``,
 //   ``PlayerVisualState/makeControlPresentation()`` (`WidgetSurface/PlayerVisualState.swift`)
 // - Metadata/emphasis SSOT: ``WidgetMetadataEmphasis``, ``WidgetNowPlayingDisplayModel``,
 //   ``widgetNowPlayingDisplayModel(visualState:streamMetadata:languageName:)``
 //   (`WidgetSurface/WidgetNowPlayingDisplay.swift`)
+// - Language chrome: ``displayFlag(for:)``, pure
+//   ``displayLanguageName(for:preferredStreamLanguage:)`` (`WidgetSurface/WidgetLanguageDisplay.swift`)
+// - Pure Provider slice assembly: ``WidgetProviderPresentationAssembly``
 // - Intent *plans*: ``WidgetIntentCoordinators``; *blueprints*: ``WidgetTimelineEntryFactory``
-// This file stays cross-target because it must call ``SharedPlayerManager`` (cannot move
-// into WidgetSurface without a circular dependency).
+//
+// This file stays cross-target because snapshot hygiene and intent execution must call
+// ``SharedPlayerManager`` (and refresh coordination must call ``WidgetRefreshManager``).
+// Moving those call sites into WidgetSurface would create a circular module dependency
+// (`SharedPlayerManager` already imports WidgetSurface).
 //
 // No security logic and no AVPlayer/streaming ownership.
 //
 // - SeeAlso: docs/Widget-Presentation-Dataflow.md, docs/Widget-Functionality-Roadmap.md,
-//   `WidgetSurface/WidgetNowPlayingDisplay.swift`, ``WidgetIntentCoordinators``,
-//   ``WidgetTimelineEntryFactory``, CODING_AGENT.md (cross-target shared sources).
+//   ``WidgetProviderPresentationAssembly``, ``WidgetIntentCoordinators``,
+//   ``WidgetTimelineEntryFactory``, CODING_AGENT.md (cross-target widget sources).
 
 import ActivityKit
 import Foundation
 import WidgetSurface
 
-// MARK: - Provider assembly & intent execution (cross-target)
+// MARK: - Stream-catalog language name (membership-exception wrapper)
 //
-// Three narrow presentation surfaces are pre-derived once at the snapshot / Provider
-// level and consumed as value types by WidgetKit and ActivityKit:
+// ``displayFlag(for:)`` and pure ``displayLanguageName(for:preferredStreamLanguage:)``
+// live in WidgetSurface. This wrapper prefers ``SharedPlayerManager/availableStreams``
+// so Live Activity alt buttons and previews match the app stream catalog.
 //
-// - `statusPresentation` — ``PlayerVisualState/makeStatusPresentation()`` (WidgetSurface)
-// - `controlPresentation` — ``PlayerVisualState/makeControlPresentation()`` (WidgetSurface)
-// - `widgetNowPlayingDisplayModel` — ``widgetNowPlayingDisplayModel(...)`` (WidgetSurface)
-//
-// This file does **not** define those types or mapping rules. ``WidgetProviderSnapshotResolver``
-// assembles them after reading ``SharedPlayerManager`` snapshots; leaf views never re-derive.
-//
-// ## Snapshot-Driven Derivation Pattern
-//
-// - Home widgets: `SimpleEntry` is populated in `Provider` (`placeholder` / `snapshot` /
-//   `timeline` via `createEntry`). Family views receive narrow slices only.
-// - Live Activities: outer `dynamicIsland` / `LockScreenLiveActivityView` hoist the three
-//   models once per push, then close over them for regions.
-//
-// Why pre-derivation matters for WidgetKit / ActivityKit:
-// - Narrow `Equatable` fields bound WidgetKit invalidation and ActivityKit region work.
-// - Leaf views stay cheap to diff (e.g. four metadata fields only).
-//
-// ## Ownership map
-// - WidgetSurface — pure presentation types + intent *plans* + timeline *blueprints*
-// - This file — snapshot *reads*, presentation *assembly* that needs SPM, intent *execution*
-// - Extension SwiftUI — thin `perform()` / Provider shells
-//
-// - SeeAlso: ``WidgetProviderSnapshotResolver``, ``WidgetIntentExecution``,
-//   `WidgetSurface/WidgetNowPlayingDisplay.swift`, docs/Widget-Presentation-Dataflow.md.
-//
-// All user-visible strings use `String(localized: "key", table: "Localizable")` with explicit table.
-
-// MARK: - Display name / flag helpers (module-internal)
-//
-// Used by the SwiftUI preview matrix and (via the existing thin get* wrappers)
-// by Live Activity for its curated alt-stream buttons.
-// Prefer the real availableStreams (full 21 languages + correct localized names from
-// the app's static list) and fall back to the established mapping for the common codes.
-// This is the general form so we never hard-code "Lutheran Radio - English" or
-// "🇺🇸 English" in preview data.
-//
-// Contracts: `WidgetDisplayModelsExtensionTests` (flag matrix, globe fallback,
-// stream-list name preference, unknown capitalize, stream.flag parity).
+// Contracts: `WidgetDisplayModelsExtensionTests` (stream-list preference, unknown capitalize).
 // - SeeAlso: docs/Widget-Functionality-Roadmap.md (Tier 5 display helper index).
 
 /// Localized display name for a stream language code (LA alt buttons + previews).
 ///
-/// Prefers ``SharedPlayerManager/availableStreams``; falls back to curated localized
-/// strings for en/de/fi/sv/et, then `code.capitalized`.
+/// Prefers ``SharedPlayerManager/availableStreams``; otherwise uses pure WidgetSurface
+/// curated `Localizable` keys for en/de/fi/sv/et, then `code.capitalized`.
 ///
 /// - Parameter code: BCP-47-style language code (e.g. `"fi"`).
 /// - Returns: Non-empty display name suitable for UI.
-/// - SeeAlso: ``displayFlag(for:)``, docs/Widget-Functionality-Roadmap.md.
+/// - SeeAlso: ``displayFlag(for:)``, ``displayLanguageName(for:preferredStreamLanguage:)``,
+///   docs/Widget-Functionality-Roadmap.md.
 internal func displayLanguageName(for code: String) -> String {
-    // Prefer the authoritative streams (best, locale-correct names from the main app)
-    if let s = SharedPlayerManager.shared.availableStreams.first(where: { $0.languageCode == code }) {
-        return s.language
-    }
-    // Fallback mapping (covers the languages used in LA alt buttons + common preview cases).
-    // Uses the same keys as the previous private getLanguageName in the Live Activity file.
-    switch code {
-    case "en": return String(localized: "language_english", table: "Localizable")
-    case "de": return String(localized: "language_german", table: "Localizable")
-    case "fi": return String(localized: "language_finnish", table: "Localizable")
-    case "sv": return String(localized: "language_swedish", table: "Localizable")
-    case "et": return String(localized: "language_estonian", table: "Localizable")
-    default: return code.capitalized
-    }
+    let preferred = SharedPlayerManager.shared.availableStreams
+        .first(where: { $0.languageCode == code })?
+        .language
+    return displayLanguageName(for: code, preferredStreamLanguage: preferred)
 }
 
-/// Emoji flag for a stream language code (LA alt buttons + previews).
-///
-/// Curated codes match ``DirectStreamingPlayer/Stream/flag`` for the shared stub/production
-/// stream lists; unknown codes use 🌍.
-///
-/// - Parameter code: BCP-47-style language code (e.g. `"de"`).
-/// - Returns: Single-cluster flag emoji (or globe fallback).
-/// - SeeAlso: ``displayLanguageName(for:)``, docs/Widget-Functionality-Roadmap.md.
-internal func displayFlag(for code: String) -> String {
-    switch code {
-    case "en": return "🇺🇸"
-    case "de": return "🇩🇪"
-    case "fi": return "🇫🇮"
-    case "sv": return "🇸🇪"
-    case "et": return "🇪🇪"
-    default: return "🌍"
-    }
-}
-
-// MARK: - Provider snapshot resolution (Tier 3 hygiene)
+// MARK: - Provider snapshot resolution (hygiene + catalog labels)
 
 /// Canonical resolver for home-widget and Control-widget Provider entry points.
 ///
@@ -135,8 +77,12 @@ internal func displayFlag(for code: String) -> String {
 /// Cross-process freshness still depends on main-app ``WidgetRefreshManager`` timeline reloads;
 /// the resolver only governs in-process read hygiene inside the extension.
 ///
+/// Pure presentation assembly is ``WidgetProviderPresentationAssembly``; this type owns
+/// ``SharedPlayerManager`` snapshot reads, actor hygiene, and stream-catalog labels.
+///
 /// - SeeAlso: ``SharedPlayerManager/refreshVisualStateFromPersistence()``,
-///   ``SharedPlayerManager/loadPersistedWidgetState()``, docs/Widget-Functionality-Roadmap.md.
+///   ``SharedPlayerManager/loadPersistedWidgetState()``,
+///   ``WidgetProviderPresentationAssembly``, docs/Widget-Functionality-Roadmap.md.
 enum WidgetProviderSnapshotResolver {
 
     /// Resolves snapshot fields without an actor hop.
@@ -191,38 +137,25 @@ enum WidgetProviderSnapshotResolver {
 
     /// Assembles the three narrow presentation surfaces plus station label from snapshot fields.
     ///
-    /// Single source of truth for Provider entry synthesis after snapshot resolution.
-    /// Home-widget ``SimpleEntry`` and Control-widget ``Value`` must consume these slices
-    /// rather than re-invoking ``PlayerVisualState/makeStatusPresentation()``,
-    /// ``PlayerVisualState/makeControlPresentation()``, or ``widgetNowPlayingDisplayModel(visualState:streamMetadata:languageName:)``
-    /// in timeline or value-provider paths.
+    /// Resolves stream-catalog language labels, then delegates pure presentation synthesis to
+    /// ``WidgetProviderPresentationAssembly``. Home-widget ``SimpleEntry`` and Control-widget
+    /// ``Value`` must consume these slices rather than re-invoking presentation mappers in
+    /// timeline or value-provider paths.
     ///
     /// - Parameter fields: Authoritative snapshot fields from ``resolveFromSnapshot()`` or
     ///   ``resolveWithActorHygiene(manager:)``.
     /// - Returns: Pre-derived slices ready to populate ``SimpleEntry`` / Control-widget ``Value``.
-    /// - SeeAlso: ``WidgetProviderPresentationSlices``, ``WidgetProviderSnapshotFields``,
+    /// - SeeAlso: ``WidgetProviderPresentationAssembly/assemblePresentationSlices(from:languageName:stationLabel:)``,
+    ///   ``WidgetProviderPresentationSlices``, ``WidgetProviderSnapshotFields``,
     ///   docs/Widget-Presentation-Dataflow.md, docs/Widget-Functionality-Roadmap.md.
     nonisolated static func assemblePresentationSlices(
         from fields: WidgetProviderSnapshotFields
     ) -> WidgetProviderPresentationSlices {
-        let currentStream = SharedPlayerManager.streamForLanguageCode(fields.currentLanguage)
-        let statusPresentation = fields.visualState.makeStatusPresentation()
-        let controlPresentation = fields.visualState.makeControlPresentation()
-        let statusMessage: String = fields.hasError
-            ? String(localized: "Connection error", defaultValue: "Connection error", table: "Localizable")
-            : statusPresentation.text
-        let metadataModel = widgetNowPlayingDisplayModel(
-            visualState: fields.visualState,
-            streamMetadata: fields.streamMetadata,
-            languageName: currentStream.language
-        )
-        return WidgetProviderPresentationSlices(
-            currentLanguageCode: fields.currentLanguage,
-            currentStation: stationLabel(for: fields.currentLanguage),
-            statusPresentation: statusPresentation,
-            controlPresentation: controlPresentation,
-            statusMessage: statusMessage,
-            widgetNowPlayingDisplayModel: metadataModel
+        let stream = SharedPlayerManager.streamForLanguageCode(fields.currentLanguage)
+        return WidgetProviderPresentationAssembly.assemblePresentationSlices(
+            from: fields,
+            languageName: stream.language,
+            stationLabel: stationLabel(for: fields.currentLanguage)
         )
     }
 }
@@ -291,7 +224,7 @@ enum WidgetIntentExecution {
     ///
     /// Extension processes often start with an empty memory-only session snapshot and
     /// default actor `.prePlay`; planning from actor alone inverted the first pause while
-    /// audio was already playing (see lockscreen regression).
+    /// audio was already playing.
     ///
     /// **Post-term / reboot:** when ``SharedPlayerManager/shouldDistrustDurableMirrorPlayPlanning()``
     /// is true, durable mirror alone must not plan `.play` (stale App Group after dirty
@@ -357,7 +290,7 @@ enum WidgetIntentExecution {
 
     /// Full Live Activity stream switch path used by ``LiveActivitySwitchStreamIntent/perform()``.
     ///
-    /// Extension-profile contracts (``WidgetIntentContractExtensionTests``): unknown codes
+    /// Extension-profile contracts (`WidgetIntentContractExtensionTests`): unknown codes
     /// return `false` without mutating the optimistic snapshot; known codes invoke
     /// ``SharedPlayerManager/switchToStream(_:)`` and preserve paused/playing visual while
     /// updating language (home-widget switch SSOT parity). Does not re-plan play/pause —

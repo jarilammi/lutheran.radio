@@ -6,10 +6,11 @@
 //
 //  Pure intent planning SSOT for home widgets, Control Center, and Live Activity toggles.
 //  Extension `perform()` bodies delegate here for action/target mapping; cross-target
-//  execution lives in ``WidgetIntentExecution`` (WidgetDisplayModels.swift).
+//  execution lives in ``WidgetIntentExecution`` (membership-exception source under
+//  `Lutheran Radio/WidgetDisplayModels.swift`).
 //
-//  - SeeAlso: docs/Widget-Functionality-Roadmap.md (widget extension test coverage),
-//    docs/Widget-Presentation-Dataflow.md, CODING_AGENT.md.
+//  - SeeAlso: docs/Widget-Functionality-Roadmap.md, docs/Widget-Presentation-Dataflow.md,
+//    CODING_AGENT.md (cross-target widget sources).
 //
 
 import Foundation

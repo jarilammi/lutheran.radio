@@ -99,23 +99,26 @@ import WidgetSurface
 // See the file header for the exact division and
 // docs/Widget-Presentation-Dataflow.md for the full snapshot-driven contract.
 //
-// Language, flag, and alternative-stream helpers delegate to WidgetDisplayModels.
+// Language and flag helpers: pure ``displayFlag(for:)`` in WidgetSurface; stream-catalog
+// ``displayLanguageName(for:)`` wrapper in the membership-exception display models source.
 
 /// Returns the localized display name for a language code (e.g. "English").
 ///
-/// Forwards to the shared implementation in `WidgetDisplayModels.displayLanguageName(for:)`,
-/// which prefers `SharedPlayerManager.availableStreams` (the 21-language source of truth)
-/// and falls back to established localized keys. This keeps names consistent between
-/// widgets, Live Activity, and previews.
+/// Forwards to the stream-catalog-aware ``displayLanguageName(for:)`` wrapper, which prefers
+/// ``SharedPlayerManager/availableStreams`` and falls back to pure WidgetSurface curated keys.
+/// Keeps names consistent between widgets, Live Activity, and previews.
 ///
-/// - SeeAlso: `displayLanguageName(for:)`, `SharedPlayerManager.streamForLanguageCode`.
+/// - SeeAlso: ``displayLanguageName(for:)``, ``displayLanguageName(for:preferredStreamLanguage:)``,
+///   ``SharedPlayerManager/streamForLanguageCode``.
 private func getLanguageName(_ code: String) -> String {
     displayLanguageName(for: code)
 }
 
 /// Returns the flag emoji for a language code.
 ///
-/// Forwards to `WidgetDisplayModels.displayFlag(for:)`.
+/// Forwards to pure ``displayFlag(for:)`` in WidgetSurface.
+///
+/// - SeeAlso: ``displayFlag(for:)``.
 private func getStreamFlag(_ code: String) -> String {
     displayFlag(for: code)
 }

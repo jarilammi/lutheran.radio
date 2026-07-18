@@ -7,7 +7,11 @@
 //  Testable assembly for WidgetKit ``SimpleEntry`` and Control-widget ``Value`` field sets.
 //  Providers remain thin: resolve snapshot fields + slices, then map through this factory.
 //
-//  - SeeAlso: ``WidgetProviderSnapshotResolver`` (WidgetDisplayModels.swift),
+//  Pure presentation slice assembly lives in ``WidgetProviderPresentationAssembly``.
+//  Snapshot reads and stream-catalog labels live on ``WidgetProviderSnapshotResolver``
+//  (membership-exception source under `Lutheran Radio/`).
+//
+//  - SeeAlso: ``WidgetProviderPresentationAssembly``, ``WidgetProviderSnapshotResolver``,
 //    docs/Widget-Presentation-Dataflow.md, docs/Widget-Functionality-Roadmap.md.
 //
 
@@ -122,7 +126,9 @@ public enum WidgetTimelineEntryFactory {
     /// - Parameters:
     ///   - date: Timeline entry date (typically `Date()`).
     ///   - fields: Authoritative snapshot fields.
-    ///   - slices: Pre-derived presentation slices from ``WidgetProviderSnapshotResolver/assemblePresentationSlices(from:)``.
+    ///   - slices: Pre-derived presentation slices from
+    ///     ``WidgetProviderPresentationAssembly/assemblePresentationSlices(from:languageName:stationLabel:)``
+    ///     (or the stream-catalog wrapper ``WidgetProviderSnapshotResolver/assemblePresentationSlices(from:)``).
     /// - Returns: Blueprint ready for ``SimpleEntry`` population (plus `availableStreams` and `configuration`).
     public static func makeHomeWidgetBlueprint(
         date: Date,

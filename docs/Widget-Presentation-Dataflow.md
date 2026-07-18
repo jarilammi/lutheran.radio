@@ -2,7 +2,7 @@
 
 This document is the concise, permanent reference for how Lutheran Radio derives and consumes presentation data for WidgetKit home-screen widgets and ActivityKit Live Activities (Dynamic Island + Lock Screen).
 
-It complements (and is cross-referenced by) the source headers in `LutheranRadioWidget.swift`, `LutheranRadioWidgetLiveActivity.swift`, `WidgetSurface/` (`PlayerVisualState.swift`, `WidgetNowPlayingDisplay.swift`, `WidgetTimelineEntryFactory.swift`, `WidgetLivenessPresentation.swift`), cross-target `WidgetDisplayModels.swift`, and `CODING_AGENT.md`.
+It complements (and is cross-referenced by) the source headers in `LutheranRadioWidget.swift`, `LutheranRadioWidgetLiveActivity.swift`, `WidgetSurface/` (`PlayerVisualState.swift`, `WidgetNowPlayingDisplay.swift`, `WidgetTimelineEntryFactory.swift`, `WidgetProviderPresentationAssembly.swift`, `WidgetLanguageDisplay.swift`, `WidgetLivenessPresentation.swift`), membership-exception `WidgetDisplayModels.swift`, and `CODING_AGENT.md`.
 
 ## Snapshot-Driven Model
 
@@ -25,7 +25,7 @@ All presentation is organized into three narrow, `Equatable` value types derived
 
 **Derivation rule (snapshot-driven):**
 
-- **Home widgets**: All three are computed **once per entry** inside the `Provider` (`placeholder`, `snapshot`, `timeline` / `createEntry`). Snapshot fields resolve via ``WidgetProviderSnapshotResolver`` (`WidgetDisplayModels.swift`); presentation slices assemble via ``WidgetProviderSnapshotResolver/assemblePresentationSlices(from:)``; entry blueprints map through ``WidgetTimelineEntryFactory`` (`WidgetSurface/WidgetTimelineEntryFactory.swift`). Family views read the narrow properties from `SimpleEntry`.
+- **Home widgets**: All three are computed **once per entry** inside the `Provider` (`placeholder`, `snapshot`, `timeline` / `createEntry`). Snapshot fields resolve via ``WidgetProviderSnapshotResolver`` (membership-exception `WidgetDisplayModels.swift`); presentation slices assemble via pure ``WidgetProviderPresentationAssembly`` (stream-catalog wrapper ``WidgetProviderSnapshotResolver/assemblePresentationSlices(from:)``); entry blueprints map through ``WidgetTimelineEntryFactory`` (`WidgetSurface/WidgetTimelineEntryFactory.swift`). Family views read the narrow properties from `SimpleEntry`.
 - **Control Center widget**: Status and control surfaces are computed **once per value** inside `LutheranRadioWidgetControl.Provider` (`previewValue`, `currentValue`) using the same resolver + factory path, then stored on `LutheranRadioWidgetControl.Value`. The toggle label closure reads `statusPresentation` and `controlPresentation` only (no inline mapper calls in the view body).
 - **Live Activities**: The three are computed **once at the top of `LockScreenLiveActivityView.body`** and **once inside the outer `dynamicIsland` closure**, then closed over by the region builders and subviews. No repeated derivation inside individual `.leading`/`.center`/etc. blocks for the presentation concerns.
 
@@ -57,7 +57,7 @@ See the header of `WidgetSurface/PlayerVisualState.swift` for the exact division
 ## Adding or Changing a Presentation Axis (Guidance for Contributors)
 
 1. Decide whether the concern belongs on one of the existing surfaces or needs a new narrow type (prefer adding a new `...Presentation` or `...DisplayModel` struct).
-2. Implement (or extend) the pure mapper on `PlayerVisualState` (`WidgetSurface/PlayerVisualState.swift`) for status/control axes, or as a free function in `WidgetSurface/WidgetNowPlayingDisplay.swift` for metadata/emphasis. Provider assembly stays in `WidgetDisplayModels.swift` + `WidgetSurface/WidgetTimelineEntryFactory.swift`.
+2. Implement (or extend) the pure mapper on `PlayerVisualState` (`WidgetSurface/PlayerVisualState.swift`) for status/control axes, or as a free function in `WidgetSurface/WidgetNowPlayingDisplay.swift` for metadata/emphasis. Pure Provider slice assembly stays in ``WidgetProviderPresentationAssembly``; snapshot hygiene wrappers stay in membership-exception `WidgetDisplayModels.swift`; blueprints stay in `WidgetSurface/WidgetTimelineEntryFactory.swift`.
 3. Update derivation sites:
    - Add the new field to `SimpleEntry`.
    - Compute it once in `Provider.placeholder`, `createEntry`, and `timeline`.
@@ -203,7 +203,9 @@ Full stacking matrix, push-cost analysis, and QA scenarios: [`docs/Live-Activity
 
 ### Cross-target + extension shells
 
-- `WidgetDisplayModels.swift` — ``WidgetProviderSnapshotResolver``, ``WidgetIntentExecution``, language/flag helpers; calls `SharedPlayerManager` for snapshot hygiene and optimistic intent side effects.
+- `WidgetSurface/WidgetLanguageDisplay.swift` — pure ``displayFlag(for:)``, ``displayLanguageName(for:preferredStreamLanguage:)``.
+- `WidgetSurface/WidgetProviderPresentationAssembly.swift` — pure Provider presentation slice assembly.
+- Membership-exception `WidgetDisplayModels.swift` — ``WidgetProviderSnapshotResolver`` (snapshot reads, actor hygiene, stream-catalog labels), catalog-aware ``displayLanguageName(for:)`` wrapper, ``WidgetIntentExecution``; calls `SharedPlayerManager` / `WidgetRefreshManager` for hygiene and optimistic intent side effects.
 - `LutheranRadioWidget.swift` — `SimpleEntry`, `Provider`, family views, `WidgetMetadataRegion` (thin delegates to coordinators + factory).
 - `LutheranRadioWidgetLiveActivity.swift` — `LutheranRadioLiveActivityWidget`, `LockScreenLiveActivityView`, Dynamic Island regions, intents.
 - `LutheranRadioWidgetControl.swift` — Control widget `Value` + toggle (same derivation path as home widgets).
