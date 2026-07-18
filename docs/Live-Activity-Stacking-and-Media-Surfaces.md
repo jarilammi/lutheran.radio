@@ -35,7 +35,7 @@ This stacking is **platform behavior**. Many streaming apps show both when they 
 |----------|-------------|---------------|------------------------|-------------|--------|
 | Playing, LA started | Visible | Visible (stacked) | None | Two cards + DI | **Accept** — primary surfaces |
 | Playing + user lock widget | Visible | Visible | Lutheran home widget on lock screen | Up to three glanceable regions | **Accept** — user chose to add widget |
-| Paused (main app alive) | Visible (rate 0) | Visible (subdued program retained) | Any | LA play button remains tappable | **Intentional** — quick resume |
+| Paused (main app alive) | Visible (rate 0, `playbackState` `.paused`) | Visible (subdued program retained) | Any | LA play button remains tappable | **Intentional** — quick resume |
 | After termination / force-quit | Cleared (phase 1 teardown) | Ended `.immediate` | Passive `tap_to_open` after liveness window | No interactive LA | **Cleanup Invariant** |
 | Background audio, no LA yet | Visible | Started on `setPlaying` or `handleAppWillEnterBackground` | N/A | LA appears when playing | See start policy below |
 
@@ -73,7 +73,20 @@ Protected by ``RadioLiveActivityManagerTests`` (`_test_wouldSuppressLiveActivity
 
 ### System Now Playing
 
-``updateNowPlayingInfo()`` writes to ``MPNowPlayingInfoCenter``. Apple documents coalescing of frequent updates; Lutheran Radio does not implement an additional app-side dedup layer.
+``updateNowPlayingInfo()`` writes to ``MPNowPlayingInfoCenter``. On every live update it sets:
+
+| Field | Source | Values |
+|-------|--------|--------|
+| Dictionary `MPNowPlayingInfoPropertyPlaybackRate` | ``currentVisualState.isActivelyPlaying`` | `1.0` playing / `0.0` otherwise |
+| Center `playbackState` | Same visual | `.playing` / `.paused` while the session is live |
+
+Session teardown and privacy clear (``teardownNowPlayingSession()``, ``clearSystemNowPlayingMetadataSynchronously()``) set `nowPlayingInfo = nil` and `playbackState = .stopped` — not the live-update path.
+
+Apple documents coalescing of frequent updates; Lutheran Radio does not implement an additional app-side dedup layer.
+
+### Remote command surface
+
+``configureNowPlayingControlsIfNeeded()`` installs play / pause / toggle play-pause / stop on ``MPRemoteCommandCenter`` and **disables** unsupported commands (next/previous track, seek, skip, change position/rate, repeat/shuffle, rating/like/dislike/bookmark, language-option enable/disable). Continuous live radio has no track list or seekable timeline; leaving those commands enabled would surface dead affordances on lock screen, Control Center, and hardware remotes.
 
 ### Widgets
 
@@ -136,7 +149,7 @@ When the user pauses (system Now Playing, Live Activity, headset, or in-app) whi
 
 1. **``SharedPlayerManager/stop()``** locks sticky `.userPaused` and intent **before** calling the engine, and emits `streamDidStop`.
 2. **``DirectStreamingPlayer/stopAndWait(reason:silent:applyUserPauseVisualLock:)``** advances a monotonic attach generation and runs soft pause (rate 0, secured item retained when present). There is no early return that leaves attach free to start audio. SPM passes `applyUserPauseVisualLock: false` so the engine does not re-enter sticky visual lock / surface refresh.
-3. **Engine-complete barrier:** Soft pause applies `player.pause()` + `rate == 0` and sets soft-pause **before** `stopAndWait` returns. Only then does SPM run the single ``refreshAllMediaSurfaces`` (Now Playing rate / Live Activity glyph). Chrome must not lead audible audio.
+3. **Engine-complete barrier:** Soft pause applies `player.pause()` + `rate == 0` and sets soft-pause **before** `stopAndWait` returns. Only then does SPM run the single ``refreshAllMediaSurfaces`` (Now Playing rate + `playbackState` / Live Activity glyph). Chrome must not lead audible audio.
 4. **Start paths** (`play()`, `setStreamAndPlay`, `createAndStartPlayer`, `startPlayback`) re-check generation + ``canProceedWithPlayback()`` after every significant `await` and discard without audible start.
 5. **Audible kicks** (readyToPlay `playImmediately`, ICY head-start, recreate restart) go through a shared gate that also blocks soft-paused and teardown-active state.
 
@@ -152,4 +165,4 @@ Required convergence: paused chrome and silent engine — never durable “pause
 - [`docs/Widget-Functionality-Roadmap.md`](Widget-Functionality-Roadmap.md) — Tier 4 completion status
 - [`docs/Event-Driven-Refactor-Roadmap.md`](Event-Driven-Refactor-Roadmap.md) — `PlayerEvent` consumer paths
 - `Lutheran RadioTests/RadioLiveActivityManagerTests.swift` — LA diff suppression
-- `Lutheran RadioTests/SharedPlayerManagerEventTests.swift` — `refreshAllMediaSurfaces` contract
+- `Lutheran RadioTests/SharedPlayerManagerEventTests.swift` — `refreshAllMediaSurfaces` contract; Now Playing rate/`playbackState` alignment; unsupported remote-command disable

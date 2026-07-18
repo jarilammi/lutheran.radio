@@ -36,29 +36,46 @@ enum MediaSurfaceLiveActivityMode: Sendable {
 @MainActor
 private enum NowPlayingRemoteCommands {
     static var installed = false
-    
-    /// One-time MPRemoteCommandCenter wiring. Must run on the main actor.
+
+    /// One-time ``MPRemoteCommandCenter`` wiring. Must run on the main actor.
+    ///
+    /// Enables only the transport verbs this live stream supports (play, pause,
+    /// toggle play/pause, stop). All other system remote commands are disabled so
+    /// Control Center / lock screen / headset chrome does not offer next/previous,
+    /// seek, skip, rating, or other affordances that have no engine implementation.
+    ///
+    /// - Postcondition: Supported commands are enabled with targets that route to
+    ///   ``SharedPlayerManager/userRequestedPlay()`` / ``SharedPlayerManager/stop()``.
+    ///   Unsupported commands are disabled (no dead affordances).
+    /// - Note: Handlers return `.success` immediately and dispatch work on unstructured
+    ///   `Task`s so the remote-command callback thread is never blocked on network or
+    ///   engine work. Command serialization is a separate concern.
+    /// - SeeAlso: ``SharedPlayerManager/configureNowPlayingControlsIfNeeded()``,
+    ///   ``SharedPlayerManager/updateNowPlayingInfo()``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md
     static func installIfNeeded() {
         guard !installed else { return }
         installed = true
-        
+
         let center = MPRemoteCommandCenter.shared()
+
+        // Detach any prior targets on the verbs we own, then re-bind.
         [center.playCommand, center.pauseCommand, center.togglePlayPauseCommand, center.stopCommand]
             .forEach { $0.removeTarget(nil) }
-        
+
         center.playCommand.isEnabled = true
         center.playCommand.addTarget { _ in
             // Explicit hardware/software remote play must go through designated entry.
             Task { await SharedPlayerManager.shared.userRequestedPlay() }
             return .success
         }
-        
+
         center.pauseCommand.isEnabled = true
         center.pauseCommand.addTarget { _ in
             Task { await SharedPlayerManager.shared.stop() }
             return .success
         }
-        
+
         center.togglePlayPauseCommand.isEnabled = true
         center.togglePlayPauseCommand.addTarget { _ in
             Task {
@@ -72,11 +89,48 @@ private enum NowPlayingRemoteCommands {
             }
             return .success
         }
-        
+
         center.stopCommand.isEnabled = true
         center.stopCommand.addTarget { _ in
             Task { await SharedPlayerManager.shared.stop() }
             return .success
+        }
+
+        // Live radio has no track list, seekable timeline, ratings, or language-option
+        // remote surface. Disable every unsupported command so system chrome does not
+        // present dead next/previous/seek/skip/like controls on lock screen, Control
+        // Center, or hardware remotes.
+        disableUnsupportedRemoteCommands(on: center)
+    }
+
+    /// Disables every ``MPRemoteCommandCenter`` command that Lutheran Radio does not
+    /// implement for a continuous live stream.
+    ///
+    /// - Parameter center: The shared remote-command center (main actor only).
+    /// - Postcondition: Supported transport remains enabled; all other listed commands
+    ///   have `isEnabled == false`.
+    private static func disableUnsupportedRemoteCommands(on center: MPRemoteCommandCenter) {
+        let unsupported: [MPRemoteCommand] = [
+            center.nextTrackCommand,
+            center.previousTrackCommand,
+            center.skipForwardCommand,
+            center.skipBackwardCommand,
+            center.seekForwardCommand,
+            center.seekBackwardCommand,
+            center.changePlaybackPositionCommand,
+            center.changePlaybackRateCommand,
+            center.changeRepeatModeCommand,
+            center.changeShuffleModeCommand,
+            center.ratingCommand,
+            center.likeCommand,
+            center.dislikeCommand,
+            center.bookmarkCommand,
+            center.enableLanguageOptionCommand,
+            center.disableLanguageOptionCommand
+        ]
+        for command in unsupported {
+            command.removeTarget(nil)
+            command.isEnabled = false
         }
     }
 }
@@ -90,7 +144,18 @@ private enum NowPlayingArtwork {
 }
 
 extension SharedPlayerManager {
-    /// One-time MPRemoteCommandCenter wiring (main app only).
+    /// One-time ``MPRemoteCommandCenter`` wiring for Lock Screen, Control Center, and
+    /// hardware remotes (main app only).
+    ///
+    /// Installs play / pause / toggle / stop handlers and disables every unsupported
+    /// remote command (next/previous, seek, skip, rating, language options, etc.) so
+    /// system chrome never offers dead transport affordances for a live stream.
+    ///
+    /// - Precondition: Main-app ``SharedPlayerManager``; no-op in the widget extension.
+    /// - Postcondition: Supported commands enabled; unsupported commands disabled.
+    ///   Idempotent after the first successful install for this process.
+    /// - SeeAlso: ``updateNowPlayingInfo()``, ``userRequestedPlay()``, ``stop()``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md
     func configureNowPlayingControlsIfNeeded() async {
         guard !isRunningInWidget() else { return }
         guard !remoteCommandsConfigured else { return }
@@ -174,20 +239,32 @@ extension SharedPlayerManager {
     /// (the single source of truth for this formatting) to guarantee parity of program
     /// titles and speaker attribution with Live Activities and widgets.
     ///
+    /// Playback rate and ``MPNowPlayingInfoCenter/playbackState`` are derived from the same
+    /// authoritative visual (`currentVisualState.isActivelyPlaying`) so Control Center /
+    /// lock transport chrome cannot disagree with Live Activity or dictionary rate while a
+    /// session is live. Session teardown and privacy clear set `.stopped` separately via
+    /// ``teardownNowPlayingSession()`` / ``clearSystemNowPlayingMetadataSynchronously()``.
+    ///
     /// - Precondition: Called only on the main-app `SharedPlayerManager` actor instance.
     /// - Postcondition: `MPNowPlayingInfoCenter.default().nowPlayingInfo` reflects the latest
-    ///   title/artist + live rate derived from actor state.
+    ///   title/artist + live rate derived from actor state; `playbackState` is `.playing`
+    ///   when actively playing and `.paused` otherwise (not `.stopped` — that is reserved
+    ///   for session teardown / privacy clear).
     /// - Note: `MPNowPlayingInfoCenter` coalesces frequent updates.
     /// - SeeAlso: ``didUpdateStreamMetadata(_:)``, ``clearSoftPauseMetadataStashForLanguageChange()``,
+    ///   ``teardownNowPlayingSession()``, ``refreshAllMediaSurfaces(liveActivity:widgetRefresh:widgetRefreshImmediate:)``,
     ///   `StreamProgramMetadata.nowPlayingDisplayStrings(fromParsed:rawFallback:stationName:languageName:)`,
     ///   `StreamProgramMetadata.from(rawICYMetadata:)`, `RadioLiveActivityManager`,
     ///   `WidgetDisplayModels.widgetNowPlayingDisplayModel`,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
     ///   CODING_AGENT.md (Single Source of Truth Principles).
     ///
     /// AGENT NOTE: The construction of displayTitle / displayArtist was extracted in previous commit
     /// (see StreamProgramMetadata.swift). This method now only supplies context (station, language,
-    /// visual playback rate) and writes to the Center. Do not re-introduce inline if/else ladders
-    /// for program vs. raw vs. station here. Update the SSOT in StreamProgramMetadata when rules change.
+    /// visual playback rate / playbackState) and writes to the Center. Do not re-introduce inline
+    /// if/else ladders for program vs. raw vs. station here. Update the SSOT in StreamProgramMetadata
+    /// when rules change. Keep `MPNowPlayingInfoPropertyPlaybackRate` and `playbackState` aligned
+    /// on every live write; do not leave `playbackState` only on teardown paths.
     func updateNowPlayingInfo() async {
         guard !isRunningInWidget() else { return }
         guard !WidgetRefreshManager.isSessionTeardownInProgress else { return }
@@ -195,6 +272,10 @@ extension SharedPlayerManager {
         let stationName = String(localized: "lutheran_radio_title", table: "Localizable")
         let isActivelyPlaying = currentVisualState.isActivelyPlaying
         let playbackRate = isActivelyPlaying ? 1.0 : 0.0
+        // Align MediaRemote transport state with dictionary rate: `.playing` only when
+        // visual is actively playing; otherwise `.paused` while the session remains live.
+        // Teardown/privacy clear set `.stopped` + nil info (separate ownership).
+        let playbackState: MPNowPlayingPlaybackState = isActivelyPlaying ? .playing : .paused
 
         let languageCode = Self.preferredWidgetLanguage()
         let languageName = Self.streamForLanguageCode(languageCode).language
@@ -221,7 +302,9 @@ extension SharedPlayerManager {
                 info[MPMediaItemPropertyArtwork] = artwork
             }
 
-            MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+            let center = MPNowPlayingInfoCenter.default()
+            center.nowPlayingInfo = info
+            center.playbackState = playbackState
         }
     }
 

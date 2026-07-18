@@ -2654,11 +2654,13 @@ final class SharedPlayerManagerEventTests: XCTestCase {
     /// skipped under UITestMode without blocking the NP path.
     ///
     /// Also verifies ``updateNowPlayingInfo()`` writes the ``StreamProgramMetadata/nowPlayingDisplayStrings(fromParsed:rawFallback:stationName:languageName:)``
-    /// SSOT into `MPNowPlayingInfoCenter` when the DEBUG bypass seam is enabled.
+    /// SSOT into `MPNowPlayingInfoCenter` when the DEBUG bypass seam is enabled, and keeps
+    /// dictionary rate and `playbackState` aligned (`.playing` while actively playing).
     ///
     /// - SeeAlso: ``SharedPlayerManager/_test_setBypassUITestModeForNowPlayingUpdates(_:)``,
     ///   ``SharedPlayerManager/_test_mediaSurfaceCoordinationOrderLog()``,
-    ///   StreamProgramMetadataTests, docs/Widget-Functionality-Roadmap.md (Tier 4).
+    ///   StreamProgramMetadataTests, docs/Live-Activity-Stacking-and-Media-Surfaces.md,
+    ///   docs/Widget-Functionality-Roadmap.md (Tier 4).
     func testRefreshAllMediaSurfacesOrdersNowPlayingBeforeWidgetRefreshAndWritesDisplayStrings() async {
         let icyTitle = "Guest Speaker - The Good Shepherd"
         let stationName = String(localized: "lutheran_radio_title", table: "Localizable")
@@ -2684,6 +2686,7 @@ final class SharedPlayerManagerEventTests: XCTestCase {
             WidgetRefreshManager._test_setRecordRefreshIfNeededGateOutcomes(true)
             WidgetRefreshManager._test_clearRefreshIfNeededGateOutcomeLog()
             MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+            MPNowPlayingInfoCenter.default().playbackState = .stopped
         }
 
         await manager.refreshAllMediaSurfaces(
@@ -2700,14 +2703,106 @@ final class SharedPlayerManagerEventTests: XCTestCase {
         )
 
         await MainActor.run {
-            let info = MPNowPlayingInfoCenter.default().nowPlayingInfo
+            let center = MPNowPlayingInfoCenter.default()
+            let info = center.nowPlayingInfo
             XCTAssertEqual(info?[MPMediaItemPropertyTitle] as? String, expectedDisplay.title)
             XCTAssertEqual(info?[MPMediaItemPropertyArtist] as? String, expectedDisplay.artist)
             XCTAssertEqual(info?[MPNowPlayingInfoPropertyPlaybackRate] as? Double, 1.0)
+            XCTAssertEqual(
+                center.playbackState,
+                .playing,
+                "Live Now Playing write must set playbackState to .playing with rate 1 while actively playing"
+            )
             XCTAssertTrue(
                 WidgetRefreshManager._test_refreshIfNeededGateOutcomeLog().contains(.passedGuards),
                 "Widget refresh must still pass gates after Now Playing update"
             )
+        }
+    }
+
+    /// Protects live ``updateNowPlayingInfo()`` alignment of dictionary rate and
+    /// `MPNowPlayingInfoCenter.playbackState` on user pause.
+    ///
+    /// While a session remains live (not torn down), pause must write rate 0 and
+    /// `.paused` — not leave a stale `.playing` transport state from a prior play write,
+    /// and not use teardown's `.stopped` (reserved for privacy clear / session end).
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/updateNowPlayingInfo()``,
+    ///   ``SharedPlayerManager/markAsUserPaused()``,
+    ///   ``SharedPlayerManager/teardownNowPlayingSession()``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md
+    func testUpdateNowPlayingInfoSetsPausedPlaybackStateWhenNotActivelyPlaying() async {
+        SharedPlayerManager._test_setBypassUITestModeForNowPlayingUpdates(true)
+
+        await manager.setPlaying()
+        await manager.refreshAllMediaSurfaces(liveActivity: .none)
+
+        await MainActor.run {
+            XCTAssertEqual(
+                MPNowPlayingInfoCenter.default().playbackState,
+                .playing,
+                "Precondition: actively playing must publish .playing"
+            )
+        }
+
+        await manager.markAsUserPaused()
+        await manager.refreshAllMediaSurfaces(liveActivity: .none)
+
+        await MainActor.run {
+            let center = MPNowPlayingInfoCenter.default()
+            XCTAssertEqual(
+                center.nowPlayingInfo?[MPNowPlayingInfoPropertyPlaybackRate] as? Double,
+                0.0,
+                "User pause must publish rate 0 in the Now Playing dictionary"
+            )
+            XCTAssertEqual(
+                center.playbackState,
+                .paused,
+                "User pause must set playbackState to .paused (not .stopped) while the session is live"
+            )
+        }
+    }
+
+    /// Protects install-time remote-command hygiene: only play / pause / toggle / stop are
+    /// enabled; track/seek/skip/rating and related commands must remain disabled so system
+    /// chrome does not present dead affordances for a continuous live stream.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/configureNowPlayingControlsIfNeeded()``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md
+    func testConfigureNowPlayingControlsDisablesUnsupportedRemoteCommands() async {
+        await manager.configureNowPlayingControlsIfNeeded()
+
+        await MainActor.run {
+            let center = MPRemoteCommandCenter.shared()
+            XCTAssertTrue(center.playCommand.isEnabled)
+            XCTAssertTrue(center.pauseCommand.isEnabled)
+            XCTAssertTrue(center.togglePlayPauseCommand.isEnabled)
+            XCTAssertTrue(center.stopCommand.isEnabled)
+
+            let unsupported: [MPRemoteCommand] = [
+                center.nextTrackCommand,
+                center.previousTrackCommand,
+                center.skipForwardCommand,
+                center.skipBackwardCommand,
+                center.seekForwardCommand,
+                center.seekBackwardCommand,
+                center.changePlaybackPositionCommand,
+                center.changePlaybackRateCommand,
+                center.changeRepeatModeCommand,
+                center.changeShuffleModeCommand,
+                center.ratingCommand,
+                center.likeCommand,
+                center.dislikeCommand,
+                center.bookmarkCommand,
+                center.enableLanguageOptionCommand,
+                center.disableLanguageOptionCommand
+            ]
+            for command in unsupported {
+                XCTAssertFalse(
+                    command.isEnabled,
+                    "Unsupported remote command must be disabled at install time"
+                )
+            }
         }
     }
 
