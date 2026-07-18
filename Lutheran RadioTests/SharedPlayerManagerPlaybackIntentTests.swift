@@ -45,6 +45,50 @@ final class SharedPlayerManagerPlaybackIntentTests: XCTestCase {
         XCTAssertTrue(recentlyPaused)
     }
 
+    /// Sticky `.userPaused` after stop must block the engine attach gate so an in-flight
+    /// connect/first-play path cannot continue to audible output after paused chrome is shown.
+    ///
+    /// Protects: user pause during security validation / attach window — surfaces and
+    /// ``canProceedWithPlayback()`` converge on pause; no "paused chrome + play proceeds".
+    ///
+    /// - SeeAlso: `DirectStreamingPlayer.stop`, attach generation re-checks after `await`,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (user pause during connect).
+    func testStopDuringActivePlayIntentBlocksCanProceedWithPlayback() async {
+        await manager.setUserIntentToPlay()
+        await manager.setPlaying()
+
+        var canProceed = await manager.canProceedWithPlayback()
+        XCTAssertTrue(canProceed, "Active play intent must allow attach before pause")
+
+        await manager.stop()
+
+        canProceed = await manager.canProceedWithPlayback()
+        let intent = await manager.currentPlaybackIntent
+        let visual = await manager.currentVisualState
+
+        XCTAssertEqual(intent, .userPaused)
+        XCTAssertEqual(visual, .userPaused)
+        XCTAssertFalse(
+            canProceed,
+            "After stop, canProceedWithPlayback must be false so in-flight attach re-checks discard audible start"
+        )
+    }
+
+    /// Explicit play after sticky pause clears the lock so a subsequent attach may proceed.
+    /// Complements the in-flight discard invariant (pause wins mid-attach; play is required to resume).
+    func testUserRequestedPlayAfterStopRestoresCanProceed() async {
+        await manager.stop()
+        let blocked = await manager.canProceedWithPlayback()
+        XCTAssertFalse(blocked)
+
+        await manager.setUserIntentToPlay()
+
+        let intent = await manager.currentPlaybackIntent
+        let canProceed = await manager.canProceedWithPlayback()
+        XCTAssertEqual(intent, .shouldBePlaying)
+        XCTAssertTrue(canProceed)
+    }
+
     func testPrivacyClearSetsClearedIntentBlocksProceedAndExplicitPlayClearsIt() async {
         await manager.setPlaying()
 

@@ -130,6 +130,21 @@ The **dual-card layout** remains; **metadata mismatch** between cards is a bug. 
 
 ---
 
+## User Pause During Connect / First-Play Attach
+
+When the user pauses (system Now Playing, Live Activity, headset, or in-app) while security validation or secured item attach is still in flight:
+
+1. **``SharedPlayerManager/stop()``** locks sticky `.userPaused` and intent **before** calling the engine.
+2. **``DirectStreamingPlayer/stop(reason:completion:silent:)``** advances a monotonic attach generation and runs soft pause (rate 0, secured item retained when present). There is no early return that leaves attach free to start audio.
+3. **Start paths** (`play()`, `setStreamAndPlay`, `createAndStartPlayer`, `startPlayback`) re-check generation + ``canProceedWithPlayback()`` after every significant `await` and discard without audible start.
+4. **Audible kicks** (readyToPlay `playImmediately`, ICY head-start, recreate restart) go through a shared gate that also blocks soft-paused and teardown-active state.
+
+Required convergence: paused chrome and silent engine — never durable “paused UI + audible stream” from this race.
+
+**SeeAlso:** `DirectStreamingPlayer` in-flight attach helpers, `SharedPlayerManager.play()` post-validation sticky re-checks, `Lutheran RadioTests` attach-generation coverage.
+
+---
+
 ## Cross-References
 
 - [`docs/Widget-Presentation-Dataflow.md`](Widget-Presentation-Dataflow.md) — presentation surfaces, LA event-driven model, termination invariant

@@ -1336,8 +1336,10 @@ actor SharedPlayerManager {
     /// - Classify context (cold / streamSwitch / resume) + resurrectionProtectionRelaxed
     /// - Early returns for stickyPauseOrLock, already-playing (outside relaxed), duplicate prePlay
     /// - Security validation (DNS TXT + cert) → on fail: securityLocked + return
+    /// - **Re-check sticky pause after validation** (user may pause during the `await`)
     /// - setPlaying() (optimistic visual)
     /// - Widget branch (optimistic) or main: soft-pause resume, alignment, setStreamAndPlay
+    /// - **Re-check sticky pause after tuning wait / soft-resume / immediately before attach**
     ///
     /// UITestMode special case: when `isRunningInUITestMode` is true (via "-UITestMode" launch arg),
     /// we short-circuit *before* the SecurityModelValidator call and never reach setStreamAndPlay.
@@ -1350,9 +1352,10 @@ actor SharedPlayerManager {
     ///
     /// - SeeAlso: ``userRequestedPlay()``, ``setUserIntentToPlay()``,
     ///   ``clearUserPausedLockIfNeeded()``, ``canProceedWithPlayback()``,
-    ///   ``attemptResurrectionIfAllowed()``,
+    ///   ``attemptResurrectionIfAllowed()``, ``stop()``,
     ///   RadioPlayerCoordinator (canonical switch methods + shims),
     ///   ``isRunningInUITestMode``, ViewController.viewDidLoad,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (user pause during connect),
     ///   CODING_AGENT.md (test isolation requirements), <doc:Architecture>, <doc:Security-Invariants>.
     ///
     /// AGENT NOTE (SSOT): After any edit to guards, classification, or early returns here,
@@ -1360,6 +1363,7 @@ actor SharedPlayerManager {
     ///   1. widget resume after .userPaused reaches the engine when signaled
     ///   2. cold launch still allowed exactly once via the one-shot + relaxed window
     ///   3. explicit .userPaused remains sticky even inside 25s window
+    ///   4. pause during validation / attach never leaves play proceeding to audible start
     /// Cross-update the resurrection table below, userRequestedPlay doc, and
     /// coordinator architecture comment.
     func play() async {
@@ -1542,6 +1546,15 @@ actor SharedPlayerManager {
             print("[SharedPlayerManager] Validation passed → proceeding with playback")
         }
         #endif
+
+        // User may have paused (lock screen / Live Activity / Now Playing / headset) during
+        // security validation. Sticky intent wins — do not optimistic-setPlaying or attach.
+        if currentPlaybackIntent.isStickyPauseOrLock {
+            #if DEBUG
+            print("[SharedPlayerManager] play() aborted after security validation — sticky \(currentPlaybackIntent)")
+            #endif
+            return
+        }
         
         guard isValid else {
             #if DEBUG
@@ -1591,6 +1604,13 @@ actor SharedPlayerManager {
         
         #if LUTHERAN_MAIN_APP
         await waitForTuningSoundIfActive()
+        // Pause during tuning sound must not reach setStreamAndPlay / first-play kick.
+        if currentPlaybackIntent.isStickyPauseOrLock {
+            #if DEBUG
+            print("[SharedPlayerManager] play() aborted after tuning wait — sticky \(currentPlaybackIntent)")
+            #endif
+            return
+        }
         #endif
         
         #if LUTHERAN_MAIN_APP
@@ -1601,6 +1621,13 @@ actor SharedPlayerManager {
                 await rehydrateStreamMetadataFromStashIfNeeded()
                 #if DEBUG
                 print("[SharedPlayerManager] Resumed from soft pause — skipped setStreamAndPlay")
+                #endif
+                return
+            }
+            // Soft-resume may await; re-check sticky pause before full reattach.
+            if currentPlaybackIntent.isStickyPauseOrLock {
+                #if DEBUG
+                print("[SharedPlayerManager] play() aborted after soft-pause resume attempt — sticky \(currentPlaybackIntent)")
                 #endif
                 return
             }
@@ -1663,6 +1690,15 @@ actor SharedPlayerManager {
                     }
                 }
             }
+        }
+
+        // Final sticky re-check immediately before engine attach (last await may have been
+        // setSelectedStreamModelOnly or soft-pause helpers above).
+        if currentPlaybackIntent.isStickyPauseOrLock {
+            #if DEBUG
+            print("[SharedPlayerManager] play() aborted before setStreamAndPlay — sticky \(currentPlaybackIntent)")
+            #endif
+            return
         }
 
         let stream = DirectStreamingPlayer.shared.selectedStream
@@ -1856,13 +1892,20 @@ actor SharedPlayerManager {
     /// Immediately locks visual state to `.userPaused` (sticky resurrection protection) and persists it,
     /// then stops the real player (main app path) or schedules the widget stop action.
     ///
+    /// - Important: Sticky intent is locked **before** the engine stop so that any in-flight
+    ///   attach still suspended on security validation / server selection / session activation
+    ///   re-checks ``canProceedWithPlayback()`` and discards without audible start.
+    ///   `DirectStreamingPlayer.stop` also advances its attach generation so post-await start
+    ///   paths cannot complete against a paused chrome surface.
+    ///
     /// - Postcondition: visual + intent forced to `.userPaused`, timestamp recorded,
     ///   early visual save for widgets/LA, `DirectStreamingPlayer.stop()` invoked (main),
     ///   authoritative save performed, surfaces notified, and `streamDidStop` emitted.
     ///
     /// - SeeAlso: ``setUserPaused()``, ``markAsUserPaused()``, ``emit(_:)``,
     ///   `PlayerEvent.streamDidStop`, `DirectStreamingPlayer.stop(reason:completion:silent:)`,
-    ///   CODING_AGENT.md (resurrection protection, SSOT stop path).
+    ///   ``canProceedWithPlayback()``, CODING_AGENT.md (resurrection protection, SSOT stop path),
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     ///
     /// AGENT NOTE: `.streamDidStop` is emitted here after the immediate mutation
     /// because `stop()` is the public authoritative stop entry. Widget vs main paths

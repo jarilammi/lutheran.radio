@@ -238,9 +238,27 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     private var lastObservedTimeControl: AVPlayer.TimeControlStatus?
     private var lastObservedItemStatus: AVPlayerItem.Status?
     
-    /// Protects the playback startup path from aggressive `stop()` calls during async validation + server selection.
-    /// Set to `true` at the beginning of `play()` and reset in `defer`.
+    /// True while ``play()`` or ``setStreamAndPlay(to:context:)`` is crossing async attach boundaries
+    /// (security validation, server selection, audio-session activation, secured item attach).
+    ///
+    /// - Important: User pause during this window must **not** leave a late `playImmediately` audible.
+    ///   ``stop(reason:completion:silent:)`` always advances ``playbackAttachGeneration`` and soft-silences
+    ///   the engine; in-flight work re-checks generation + ``SharedPlayerManager/canProceedWithPlayback()``
+    ///   after every significant `await` and discards when either fails.
+    /// - SeeAlso: ``beginInFlightPlaybackAttach()``, ``shouldContinueInFlightAttach(startedAt:)``,
+    ///   ``invalidateInFlightPlaybackAttach()``, `SharedPlayerManager.stop()`,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (transport coordination).
     private var isCurrentlyAttemptingPlayback = false
+
+    /// Monotonic generation for attach/start work.
+    ///
+    /// Advanced on every ``stop(reason:completion:silent:)`` so await-crossing start paths discard
+    /// stale attach work after sticky `.userPaused` (or any other stop). Captured at attach start via
+    /// ``beginInFlightPlaybackAttach()`` and compared in ``shouldContinueInFlightAttach(startedAt:)``.
+    ///
+    /// AGENT NOTE: Single source of truth for "this attach attempt is still valid". Do not reset to 0;
+    /// only advance. Pair every post-`await` continue with a generation + intent re-check.
+    private var playbackAttachGeneration: UInt64 = 0
     
     // MARK: - Energy Efficiency (Battery Optimization)
     /// Detects if the device is in Low Power Mode to throttle non-essential tasks (e.g., retry intervals) and extend battery life during streaming.
@@ -1855,9 +1873,16 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     // MARK: - Playback Control Methods
 
     /// Starts or resumes playback after validation and server selection.
+    ///
+    /// User pause during this method (security validation, server selection, or attach) advances
+    /// ``playbackAttachGeneration`` via ``stop(reason:completion:silent:)``. This method re-checks
+    /// generation + intent after every significant `await` and discards without audible start.
+    ///
     /// - Returns: `true` if playback was successfully *initiated* (item replaced + play() called).
     ///            Note: Actual audio may start slightly later when the item becomes readyToPlay.
     /// - Throws: Only critical unrecoverable errors (rare).
+    /// - SeeAlso: ``shouldContinueInFlightAttach(startedAt:)``, ``setStreamAndPlay(to:context:)``,
+    ///   ``SharedPlayerManager/canProceedWithPlayback()``.
     @MainActor
     func play() async -> Bool {
         // UI Test isolation (defense-in-depth).
@@ -1893,15 +1918,24 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             return false
         }
         
-        isCurrentlyAttemptingPlayback = true
-        defer { isCurrentlyAttemptingPlayback = false }
+        let attachGeneration = beginInFlightPlaybackAttach()
+        defer { endInFlightPlaybackAttach() }
         
         safeOnStatusChange(isPlaying: true, reasonKey: "status_connecting")   // ← changed
         SharedPlayerManager.shared.saveFireAndForget()
         
         let isValid = await SecurityModelValidator.shared.isCurrentlyValid()
+        // User may have paused (lock screen / Live Activity / Now Playing) during validation.
+        guard await shouldContinueInFlightAttach(startedAt: attachGeneration) else {
+            enforceSilenceAfterDiscardedAttach()
+            return false
+        }
         guard isValid else {
             let isPermanent = await SecurityModelValidator.shared.isPermanentlyInvalid
+            guard await shouldContinueInFlightAttach(startedAt: attachGeneration) else {
+                enforceSilenceAfterDiscardedAttach()
+                return false
+            }
             let statusKey = isPermanent ? "status_security_failed" : "status_no_internet"
             safeOnStatusChange(isPlaying: false, reasonKey: statusKey)       // ← changed
             SharedPlayerManager.shared.saveFireAndForget()
@@ -1913,7 +1947,15 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         #endif
         
         let streamURL = await urlWithOptimalServer(for: selectedStream)
-        await createAndStartPlayer(for: streamURL)
+        guard await shouldContinueInFlightAttach(startedAt: attachGeneration) else {
+            enforceSilenceAfterDiscardedAttach()
+            return false
+        }
+        await createAndStartPlayer(for: streamURL, attachGeneration: attachGeneration)
+        guard await shouldContinueInFlightAttach(startedAt: attachGeneration) else {
+            enforceSilenceAfterDiscardedAttach()
+            return false
+        }
 
         await SharedPlayerManager.shared.saveCurrentState()
         return true
@@ -1921,8 +1963,15 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     
     // MARK: - Main-Actor-Bound Player Creation (Swift 6 safe)
 
+    /// Creates the secured player item and starts AVPlayer when the attach generation is still live.
+    ///
+    /// - Parameters:
+    ///   - url: Stream URL from ``urlWithOptimalServer(for:)``.
+    ///   - attachGeneration: Snapshot from ``beginInFlightPlaybackAttach()`` for post-await discard.
+    /// - Important: Re-checks generation + intent after audio-session activation so user pause
+    ///   during that `await` cannot leave a late `player.play()` audible.
     @MainActor
-    private func createAndStartPlayer(for url: URL) async {
+    private func createAndStartPlayer(for url: URL, attachGeneration: UInt64) async {
         // UI Test isolation (defense-in-depth). play() already guards, but this protects
         // any future direct caller of the private helper.
         guard !isTesting else {
@@ -1932,16 +1981,15 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             return
         }
 
-        // === Playback intent guard : Driven by authoritative playback intent ===
-        // This catches all internal/resume paths that bypass the public play() method
-        // (stream switches, tuning sound completion, audio session reactivation, etc.).
-        // Now uses the intent helper (second execution-engine site wired to currentPlaybackIntent).
+        // === Playback intent + generation guard ===
+        // Catches internal/resume paths and races where stop advanced generation while this
+        // attach was suspended (security validation, server selection).
         // Sticky .userPaused / .securityLocked / .cleared (privacy clear) behavior preserved exactly.
-        guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
+        guard await shouldContinueInFlightAttach(startedAt: attachGeneration) else {
             #if DEBUG
-            print("🚫 [Deep Play Guard] Blocked by playbackIntent = \(await SharedPlayerManager.shared.currentPlaybackIntent)")
+            print("🚫 [Deep Play Guard] Blocked — in-flight attach discarded before item create")
             #endif
-            safeOnStatusChange(isPlaying: false, reasonKey: "status_paused")  // ← fixed
+            enforceSilenceAfterDiscardedAttach()
             return
         }
         
@@ -1964,6 +2012,11 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             print("[DirectStreamingPlayer] [MainActor] Failed to activate AVAudioSession")
         }
         #endif
+        // User pause during session activation must not reach player.play().
+        guard await shouldContinueInFlightAttach(startedAt: attachGeneration) else {
+            enforceSilenceAfterDiscardedAttach()
+            return
+        }
         // ========================================================
         
         self.player?.play()
@@ -2397,7 +2450,20 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         #endif
     }
 
-    /// Full atomic "switch stream + start playing" — this is what SharedPlayerManager should call
+    /// Full atomic "switch stream + start playing" — primary attach entry for ``SharedPlayerManager/play()``.
+    ///
+    /// Prepares `stream` and starts attach under the same in-flight generation as ``play()``.
+    /// User pause while this method is suspended advances ``playbackAttachGeneration``; post-await
+    /// re-checks discard the attach so sticky `.userPaused` cannot race a late first-play kick.
+    ///
+    /// - Parameters:
+    ///   - stream: Target stream model (language / URL template).
+    ///   - context: Cold launch, stream switch, or same-stream resume attach semantics.
+    /// - SeeAlso: ``startPlayback(context:attachGeneration:)``, ``shouldContinueInFlightAttach(startedAt:)``,
+    ///   ``SharedPlayerManager/play()``.
+    ///
+    /// - Note: MainActor-isolated with ``play()`` so attach generation begin/end and silence
+    ///   enforcement are same-isolation (no redundant `await` on synchronous MainActor helpers).
     @MainActor
     func setStreamAndPlay(to stream: Stream, context: PlaybackAttachContext = .coldLaunch) async {
         // UI Test isolation: never attach real items or start playback from the engine.
@@ -2410,10 +2476,19 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             return
         }
 
+        // Cover the primary attach path (not only recovery `play()`) so stop during
+        // connect/first-play can invalidate generation and soft-silence consistently.
+        let attachGeneration = beginInFlightPlaybackAttach()
         await setStream(to: stream)
 
-        // Now safely start playback
-        await startPlayback(context: context)
+        guard await shouldContinueInFlightAttach(startedAt: attachGeneration) else {
+            enforceSilenceAfterDiscardedAttach()
+            endInFlightPlaybackAttach()
+            return
+        }
+
+        await startPlayback(context: context, attachGeneration: attachGeneration)
+        endInFlightPlaybackAttach()
     }
 
     /// Cancels any pending startup safety-net recreate (e.g. before sleep-timer scheduling).
@@ -2499,8 +2574,14 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         }
     }
 
-    /// Private: Actually starts the player + handles session
-    private func startPlayback(context: PlaybackAttachContext = .coldLaunch) async {
+    /// Private: Actually starts the player + handles session under a live attach generation.
+    ///
+    /// - Parameters:
+    ///   - context: Cold launch, stream switch, or resume attach semantics.
+    ///   - attachGeneration: Snapshot from ``beginInFlightPlaybackAttach()``; discarded after
+    ///     user pause via ``invalidateInFlightPlaybackAttach()``.
+    /// - SeeAlso: ``shouldContinueInFlightAttach(startedAt:)``, ``shouldAllowAudiblePlaybackKick()``.
+    private func startPlayback(context: PlaybackAttachContext = .coldLaunch, attachGeneration: UInt64) async {
         // UI Test isolation (defense-in-depth).
         guard !isTesting else {
             #if DEBUG
@@ -2510,15 +2591,13 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         }
 
         // ──────────────────────────────────────────────────────────────
-        // Important : Top-level resurrection protection now driven by
-        // authoritative playback intent via canProceedWithPlayback().
-        // (Previously visualState.shouldAutoPlayOrResume; now consistent with public play()
-        // and deep createAndStartPlayer paths.)
+        // Generation + intent: user pause during setStream / prior await must discard attach.
         // Sticky .userPaused / .securityLocked / .cleared (privacy clear) behavior preserved exactly.
-        guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
+        guard await shouldContinueInFlightAttach(startedAt: attachGeneration) else {
             #if DEBUG
-            print("[DirectStreamingPlayer] startPlayback: resurrection suppressed by playbackIntent = \(await SharedPlayerManager.shared.currentPlaybackIntent)")
+            print("[DirectStreamingPlayer] startPlayback: discarded — generation or playbackIntent")
             #endif
+            await enforceSilenceAfterDiscardedAttach()
             return
         }
         // ──────────────────────────────────────────────────────────────
@@ -2534,10 +2613,18 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         // matching every other MainActor.run site in the file and avoiding overload resolution
         // issues under the widget extension's compilation context.
         let coldLaunchURL = await urlWithOptimalServer(for: selectedStream)
+        guard await shouldContinueInFlightAttach(startedAt: attachGeneration) else {
+            await enforceSilenceAfterDiscardedAttach()
+            return
+        }
 
         // Configure session using the reusable async helper (SSOT) before AVPlayer work.
         // (Eliminates prior direct top-level synchronous setActive calls from hot paths.)
         _ = await configureAudioSessionAsync()
+        guard await shouldContinueInFlightAttach(startedAt: attachGeneration) else {
+            await enforceSilenceAfterDiscardedAttach()
+            return
+        }
 
         await MainActor.run {
             ensurePlayerExists()
@@ -2578,6 +2665,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             // Defer the first audible kick until AVPlayerItem.status == .readyToPlay.
             // Do not call play() here — AVPlayer begins loading the attached item automatically;
             // playImmediately in addObservers' readyToPlay handler is the single audible kick.
+            // That kick re-checks shouldAllowAudiblePlaybackKick() so user pause during connect wins.
             self.isDeferringFirstPlayKick = true
             self.hasReceivedLiveStreamMetadata = false
             self.cancelEarlyICYDropRecreate()
@@ -2592,15 +2680,19 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         if context != .resume {
             try? await Task.sleep(for: .milliseconds(400))
             
+            let headStartGeneration = attachGeneration
             Task { @MainActor in
                 guard let player = self.player else { return }
                 
-                guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
+                // Generation must still match (stop during the 400 ms sleep invalidates attach).
+                guard await self.shouldContinueInFlightAttach(startedAt: headStartGeneration) else {
                     #if DEBUG
-                    print("[DirectStreamingPlayer] post-head-start: resurrection suppressed by playbackIntent")
+                    print("[DirectStreamingPlayer] post-head-start: discarded — generation or playbackIntent")
                     #endif
+                    self.enforceSilenceAfterDiscardedAttach()
                     return
                 }
+                guard await self.shouldAllowAudiblePlaybackKick() else { return }
 
                 let itemReady = player.currentItem?.status == .readyToPlay
                 let alreadyPlaying = self.hasStartedPlaying || player.rate > 0.1
@@ -2743,23 +2835,38 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                     case .readyToPlay:
                         // Canonical first-play kick: cold launch and stream-switch attach defer
                         // playImmediately from startPlayback until the secured item is ready.
-                        #if DEBUG
-                        print("[DirectStreamingPlayer] Item readyToPlay → starting playback")
-                        #endif
-                        
-                        self.initialPlaybackRetryCount = 0
-                        
-                        self.isDeferringFirstPlayKick = false
-                        self.cancelEarlyICYDropRecreate()
-                        if (self.player?.rate ?? 0) < 0.1 {
-                            self.player?.playImmediately(atRate: 1.0)
+                        // Must re-check sticky pause / soft-pause / teardown — user may have paused
+                        // during connect while this item was still loading.
+                        Task { @MainActor [weak self] in
+                            guard let self else { return }
+                            guard item === self.playerItem else { return }
+                            guard await self.shouldAllowAudiblePlaybackKick() else {
+                                self.isDeferringFirstPlayKick = false
+                                self.player?.pause()
+                                self.player?.rate = 0.0
+                                #if DEBUG
+                                print("[DirectStreamingPlayer] readyToPlay kick suppressed — user pause / soft-pause / teardown")
+                                #endif
+                                return
+                            }
                             #if DEBUG
-                            print("[DirectStreamingPlayer] playImmediately called — timeControlStatus: \(self.player?.timeControlStatus.rawValue ?? -1), rate: \(self.player?.rate ?? -1), item.status: \(item.status.rawValue)")
+                            print("[DirectStreamingPlayer] Item readyToPlay → starting playback")
                             #endif
+                            
+                            self.initialPlaybackRetryCount = 0
+                            
+                            self.isDeferringFirstPlayKick = false
+                            self.cancelEarlyICYDropRecreate()
+                            if (self.player?.rate ?? 0) < 0.1 {
+                                self.player?.playImmediately(atRate: 1.0)
+                                #if DEBUG
+                                print("[DirectStreamingPlayer] playImmediately called — timeControlStatus: \(self.player?.timeControlStatus.rawValue ?? -1), rate: \(self.player?.rate ?? -1), item.status: \(item.status.rawValue)")
+                                #endif
+                            }
+                            self.safeOnStatusChange(isPlaying: true, reasonKey: "status_playing")   // ← fixed
+                            self.stopBufferingTimer()
+                            self.hasStartedPlaying = true
                         }
-                        self.safeOnStatusChange(isPlaying: true, reasonKey: "status_playing")   // ← fixed
-                        self.stopBufferingTimer()
-                        self.hasStartedPlaying = true
                         
                     case .failed:
                         break
@@ -2913,6 +3020,166 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         startupSafetyNetWorkItem?.cancel()
         startupSafetyNetWorkItem = nil
     }
+
+    // MARK: - In-flight attach generation (user pause completeness)
+
+    /// Marks the start of an attach attempt and returns the generation to re-check after each `await`.
+    ///
+    /// - Returns: The current ``playbackAttachGeneration`` snapshot for this attempt.
+    /// - Postcondition: ``isCurrentlyAttemptingPlayback`` is `true` until ``endInFlightPlaybackAttach()``.
+    /// - SeeAlso: ``shouldContinueInFlightAttach(startedAt:)``, ``invalidateInFlightPlaybackAttach()``.
+    @MainActor
+    private func beginInFlightPlaybackAttach() -> UInt64 {
+        isCurrentlyAttemptingPlayback = true
+        return playbackAttachGeneration
+    }
+
+    /// Clears the in-flight attach flag. Call from `defer` at the end of ``play()`` / ``setStreamAndPlay``.
+    @MainActor
+    private func endInFlightPlaybackAttach() {
+        isCurrentlyAttemptingPlayback = false
+    }
+
+    /// Advances ``playbackAttachGeneration`` so any in-flight attach discards after its next re-check.
+    ///
+    /// Called from every ``stop(reason:completion:silent:)`` entry — including soft pause — so sticky
+    /// `.userPaused` cannot race a late `play()` / `playImmediately` after security validation or
+    /// item attach. Safe from any thread (hops to MainActor when needed).
+    ///
+    /// - SeeAlso: ``shouldContinueInFlightAttach(startedAt:)``, ``enforceSilenceAfterDiscardedAttach()``.
+    private func invalidateInFlightPlaybackAttach() {
+        let bump: @MainActor () -> Void = { [weak self] in
+            guard let self else { return }
+            self.playbackAttachGeneration &+= 1
+            #if DEBUG
+            print("[DirectStreamingPlayer] playbackAttachGeneration advanced → \(self.playbackAttachGeneration) (in-flight attach invalidated)")
+            #endif
+        }
+        if Thread.isMainThread {
+            MainActor.assumeIsolated(bump)
+        } else {
+            DispatchQueue.main.sync { MainActor.assumeIsolated(bump) }
+        }
+    }
+
+    /// Returns whether an attach attempt started at `generation` may still proceed to audible output.
+    ///
+    /// - Parameters:
+    ///   - generation: Snapshot from ``beginInFlightPlaybackAttach()`` (or an equivalent capture).
+    /// - Returns: `true` only when the generation is still current **and**
+    ///   ``SharedPlayerManager/canProceedWithPlayback()`` allows audio (not sticky pause/lock).
+    /// - Important: Call after every significant `await` on the start path (security validation,
+    ///   server selection, audio-session activation, stream model mutation). Fail closed: pause
+    ///   chrome + silent engine is correct; "paused chrome + audible stream" is not.
+    /// - SeeAlso: ``canProceedWithPlayback()``, ``invalidateInFlightPlaybackAttach()``.
+    @MainActor
+    private func shouldContinueInFlightAttach(startedAt generation: UInt64) async -> Bool {
+        guard generation == playbackAttachGeneration else {
+            #if DEBUG
+            print("[DirectStreamingPlayer] in-flight attach discarded — generation advanced (stop/user pause raced attach)")
+            #endif
+            return false
+        }
+        guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
+            #if DEBUG
+            print("[DirectStreamingPlayer] in-flight attach discarded — playbackIntent blocks (sticky pause/lock)")
+            #endif
+            return false
+        }
+        return true
+    }
+
+    /// Soft-silences the engine after an attach attempt is discarded mid-flight.
+    ///
+    /// Keeps a secured item when present (``isSoftPaused``) so same-stream resume remains available,
+    /// clears deferred first-play kick and startup recovery, and never starts audio.
+    ///
+    /// - Postcondition: `player.rate == 0`, deferred kick cleared, soft-pause flag set when an item exists.
+    /// - SeeAlso: ``performActualStop(reason:completion:silent:)``, soft-pause resume path.
+    @MainActor
+    private func enforceSilenceAfterDiscardedAttach() {
+        cancelStartupSafetyNet()
+        cancelEarlyICYDropRecreate()
+        isDeferringFirstPlayKick = false
+        hasStartedPlaying = false
+        player?.pause()
+        player?.rate = 0.0
+        if playerItem != nil {
+            isSoftPaused = true
+        }
+        lastEmittedStatus = nil
+        lastObservedTimeControl = nil
+        lastObservedItemStatus = nil
+        safeOnStatusChange(isPlaying: false, reasonKey: "status_stopped")
+        #if DEBUG
+        print("[DirectStreamingPlayer] enforceSilenceAfterDiscardedAttach — rate 0, soft-paused=\(isSoftPaused)")
+        #endif
+    }
+
+    /// Shared gate for any path that would make the stream audible (readyToPlay kick, head-start,
+    /// recreate restart). Blocks when soft-paused, teardown is active, or sticky intent forbids play.
+    ///
+    /// - Returns: `true` when an audible kick is allowed.
+    /// - SeeAlso: ``shouldContinueInFlightAttach(startedAt:)``, ``canProceedWithPlayback()``.
+    @MainActor
+    private func shouldAllowAudiblePlaybackKick() async -> Bool {
+        guard !isSoftPaused else {
+            #if DEBUG
+            print("[DirectStreamingPlayer] audible kick suppressed — soft-paused")
+            #endif
+            return false
+        }
+        guard !isPlaybackTeardownActive else {
+            #if DEBUG
+            print("[DirectStreamingPlayer] audible kick suppressed — playback teardown active")
+            #endif
+            return false
+        }
+        guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
+            #if DEBUG
+            print("[DirectStreamingPlayer] audible kick suppressed — playbackIntent blocks")
+            #endif
+            return false
+        }
+        return true
+    }
+
+    #if DEBUG
+    /// Test seam: begin an in-flight attach and return the generation snapshot.
+    @MainActor
+    func test_beginInFlightPlaybackAttach() -> UInt64 {
+        beginInFlightPlaybackAttach()
+    }
+
+    /// Test seam: clear the in-flight attach flag.
+    @MainActor
+    func test_endInFlightPlaybackAttach() {
+        endInFlightPlaybackAttach()
+    }
+
+    /// Test seam: invalidate in-flight attach (same as stop entry).
+    func test_invalidateInFlightPlaybackAttach() {
+        invalidateInFlightPlaybackAttach()
+    }
+
+    /// Test seam: generation + intent re-check used after awaits on the start path.
+    @MainActor
+    func test_shouldContinueInFlightAttach(startedAt generation: UInt64) async -> Bool {
+        await shouldContinueInFlightAttach(startedAt: generation)
+    }
+
+    /// Test seam: audible kick gate (readyToPlay / head-start / recreate).
+    @MainActor
+    func test_shouldAllowAudiblePlaybackKick() async -> Bool {
+        await shouldAllowAudiblePlaybackKick()
+    }
+
+    @MainActor
+    var test_playbackAttachGeneration: UInt64 { playbackAttachGeneration }
+
+    @MainActor
+    var test_isCurrentlyAttemptingPlayback: Bool { isCurrentlyAttemptingPlayback }
+    #endif
 
     // MARK: - Startup Safety Net (cold launch / stream-switch first attach)
     @MainActor
@@ -3151,10 +3418,13 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             self.setupPlaybackObservers()
             self.addObservers()
             
-            guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
+            guard await self.shouldAllowAudiblePlaybackKick() else {
                 #if DEBUG
-                print("[DirectStreamingPlayer] recreatePlayerItem: resurrection suppressed by playbackIntent")
+                print("[DirectStreamingPlayer] recreatePlayerItem: audible restart suppressed (intent / soft-pause / teardown)")
                 #endif
+                self.isDeferringFirstPlayKick = false
+                self.player?.pause()
+                self.player?.rate = 0.0
                 return
             }
             
@@ -3188,12 +3458,20 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     
     /// Stops playback and cleans up resources.
     ///
+    /// User pause during connect / first-play / reattach **must** complete: sticky `.userPaused` is
+    /// already locked by ``SharedPlayerManager/stop()`` (when that is the entry), generation is advanced
+    /// here so in-flight attach discards after its next `await`, and soft pause (or hard teardown)
+    /// silences any partially attached player. There is **no** early return that leaves attach free
+    /// to call `playImmediately` after paused chrome is shown.
+    ///
     /// - Parameters:
     ///   - reason: Why we are stopping. This is now the single source of truth for user intent.
     ///             `.userAction` → sticky `.userPaused`
     ///             `.streamSwitch`, `.interruption`, `.error` → preserve play intent
     ///   - completion: Optional completion handler called after stopping.
     ///   - silent: If `true`, skips status updates / UI flicker (exactly as it behaved in recent commits).
+    /// - SeeAlso: ``invalidateInFlightPlaybackAttach()``, ``shouldContinueInFlightAttach(startedAt:)``,
+    ///   ``shouldAllowAudiblePlaybackKick()``, ``SharedPlayerManager/stop()``.
     func stop(
         reason: StopReason = .userAction,
         completion: (@MainActor @Sendable () -> Void)? = nil,
@@ -3204,16 +3482,15 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         print("[DirectStreamingPlayer] FORCE STOPPING ALL PLAYBACK - reason: \(reason), silent: \(silent), attemptingPlayback: \(isCurrentlyAttemptingPlayback)")
         #endif
 
-        // === EXISTING GUARDS - DO NOT REMOVE OR MERGE THESE ===
+        // Always invalidate in-flight attach first. User pause (or any stop) that races security
+        // validation / server selection / session activation must win: post-await start paths
+        // re-check generation + canProceedWithPlayback and discard without audible output.
+        invalidateInFlightPlaybackAttach()
+
         if isCurrentlyAttemptingPlayback {
             #if DEBUG
-            print("[DirectStreamingPlayer] [Stop Guard] Skipping aggressive stop during playback startup attempt")
+            print("[DirectStreamingPlayer] [Stop] User/engine stop during in-flight attach — generation invalidated; soft-silence will run (no early skip)")
             #endif
-            loadingTimeoutWorkItem?.cancel()
-            fallbackWorkItem?.cancel()
-            pendingPlaybackWorkItem?.cancel()
-            retryWorkItem?.cancel()
-            return
         }
 
         let usesSoftPause = reason == .userAction && !silent

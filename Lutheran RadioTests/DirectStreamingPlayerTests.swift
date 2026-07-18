@@ -892,6 +892,60 @@ class DirectStreamingPlayerTests: XCTestCase {
         XCTAssertTrue(streams.contains { $0.languageCode == "sv" })
         XCTAssertTrue(streams.contains { $0.languageCode == "et" })
     }
+
+    // MARK: - In-flight attach discard (user pause during connect)
+
+    /// User pause must advance attach generation so post-`await` start paths discard without
+    /// audible output. Protects the engine half of "pause during connect / first play".
+    ///
+    /// - SeeAlso: `DirectStreamingPlayer.invalidateInFlightPlaybackAttach`,
+    ///   `shouldContinueInFlightAttach(startedAt:)`, SharedPlayerManager sticky `.userPaused`.
+    func testStopInvalidatesInFlightAttachGeneration() async {
+        let engine = DirectStreamingPlayer.shared
+        await SharedPlayerManager.shared.setUserIntentToPlay()
+
+        let generation = engine.test_beginInFlightPlaybackAttach()
+        XCTAssertTrue(engine.test_isCurrentlyAttemptingPlayback)
+        let mayContinueBeforeStop = await engine.test_shouldContinueInFlightAttach(startedAt: generation)
+        XCTAssertTrue(
+            mayContinueBeforeStop,
+            "Live generation + active play intent must allow attach to continue"
+        )
+
+        // Engine stop (same path SharedPlayerManager.stop uses for soft pause).
+        engine.stop(reason: .userAction, silent: false)
+
+        // Allow stop's MainActor Task to apply markAsUserPaused + soft silence.
+        await Task.yield()
+        try? await Task.sleep(for: .milliseconds(50))
+
+        XCTAssertNotEqual(
+            engine.test_playbackAttachGeneration,
+            generation,
+            "stop must advance playbackAttachGeneration so in-flight attach discards"
+        )
+        let mayContinueAfterStop = await engine.test_shouldContinueInFlightAttach(startedAt: generation)
+        XCTAssertFalse(
+            mayContinueAfterStop,
+            "Stale generation must fail shouldContinueInFlightAttach after stop"
+        )
+
+        engine.test_endInFlightPlaybackAttach()
+        XCTAssertFalse(engine.test_isCurrentlyAttemptingPlayback)
+    }
+
+    /// Sticky `.userPaused` alone (intent lock without generation bump) must still block audible kick.
+    /// Generation and intent are complementary; readyToPlay uses the intent/soft-pause gate.
+    func testAudibleKickBlockedWhenStickyUserPaused() async {
+        let engine = DirectStreamingPlayer.shared
+        await SharedPlayerManager.shared.stop()
+
+        let canKick = await engine.test_shouldAllowAudiblePlaybackKick()
+        XCTAssertFalse(
+            canKick,
+            "shouldAllowAudiblePlaybackKick must be false under sticky .userPaused (readyToPlay / head-start / recreate)"
+        )
+    }
     
     // MARK: - Performance Tests
     
