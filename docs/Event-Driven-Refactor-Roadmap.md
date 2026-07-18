@@ -92,6 +92,25 @@ These items are architectural defects or policy gaps exposed by production-like 
 
 **SeeAlso:** ``SharedPlayerManager/resetToFactoryDefaultsOnLaunch()``, ``ensureVisualStateLoaded()``, ViewController.viewDidLoad cold-launch Task, resurrection tables in `SharedPlayerManager.swift`, CODING_AGENT.md (Single Source of Truth Principles).
 
+### OI-2 — Live Activity language chrome is not on the ActivityKit payload (cross-process SSOT)
+
+**Status:** Open — implementation owned by [`docs/Widget-Functionality-Roadmap.md`](Widget-Functionality-Roadmap.md) (Open Issues + Tier 1)
+
+**Why this is recorded here**
+
+Memory-only `PersistedWidgetState` (OI-1) and main-app-only `PlayerEvent` emission correctly keep security and player events out of the extension. Cross-process **visual** policy for Live Activity already rides `ContentState.visualState` (plus a durable toggle mirror). **Language** for Lock Screen / Dynamic Island chrome does not: views call ``preferredWidgetLanguage()`` at render time, which hard-defaults to `"en"` when the extension has no session snapshot and ``hasActiveWidgets`` is false (Live Activity still active; home-widget writes suppressed). This is a presentation / ActivityKit payload gap, not a missing `PlayerEvent` case and not Tier 4 consolidation of imperative refresh paths.
+
+**Invariant for any fix**
+
+- Do **not** solve by streaming `PlayerEvent` into the widget extension.
+- Do **not** re-enable full widget App Group snapshot writes when ``hasActiveWidgets`` is false.
+- **Do** put the active stream language code on ``LutheranRadioLiveActivityAttributes.ContentState`` and render language chrome exclusively from `context.state` (same push path as visual + metadata in ``RadioLiveActivityManager``).
+- Optional durable App Group language mirror may follow the existing ``liveActivityToggleVisualState`` lifecycle if intent hosts need language without a live activity list.
+
+**Full contract, micro-steps, file list, and tests:** Widget Functionality Roadmap — Open Issue “Live Activity language chrome SSOT”.
+
+**SeeAlso:** ``RadioLiveActivityManager/updateCurrentActivity()``, ``SharedPlayerManager/preferredWidgetLanguage()``, ``SharedPlayerManager/loadPersistedWidgetState()``, OI-1 (memory-only policy that makes extension re-derivation insufficient), docs/Widget-Presentation-Dataflow.md.
+
 ---
 
 ## Remaining Backlog (Prioritized for Slow, Safe Progress)
@@ -214,6 +233,10 @@ Late-stage direction: Selected orchestration paths inside the coordinator could 
 
 Widget extension processes (home widget, Control Center widget, Live Activity UI) cannot observe `SharedPlayerManager.events` because emission is guarded to the main app process. The architecture therefore keeps snapshot reads (`loadPersistedWidgetState`) + main-app-driven `reloadTimelines` / attribute updates as the cross-process mechanism. Any future consolidation must preserve instant optimistic writes from widget intents and the read-refresh hygiene for long-lived extension processes.
 
+**Live Activity attribute payload completeness (language)**
+
+`ContentState` already projects visual state and stream metadata for Lock Screen / Dynamic Island. Language chrome that is still resolved via ``preferredWidgetLanguage()`` in the extension is **not** an event-consumer problem and is not fixed by more `PlayerEvent` coverage. Under OI-1 memory-only session snapshots, extension-local ``loadPersistedWidgetState()`` does not reflect main-app language; with ``hasActiveWidgets == false``, privacy write suppression further removes App Group language durability while Live Activity remains active. The correct cross-process surface is the ActivityKit `ContentState` field set (and, if needed, a durable LA language mirror parallel to the toggle visual mirror). Tracked as **OI-2** and fully specified in the Widget Functionality Roadmap.
+
 **Selection criteria for actual replacements (when Tier 4 work begins)**
 
 - Only after the event path has multiple independent, long-lived consumers that have been exercised on device for weeks.
@@ -255,7 +278,9 @@ Goal: Document the event-driven architecture and protect emitter/consumer contra
 
 ## Selecting and Implementing Micro-Steps
 
-The next item is always the highest-priority remaining entry in the backlog. Tier 1–3 emission, replay, and consumer wiring are complete; Tier 5 (tests + documentation) is complete (2026-07-09). Remaining work is Tier 4 consolidation, deferred until the event path is device-proven.
+The next item is always the highest-priority remaining entry in the backlog. Tier 1–3 emission, replay, and consumer wiring are complete; Tier 5 (tests + documentation) is complete (2026-07-09). Remaining event-path work is Tier 4 consolidation, deferred until the event path is device-proven.
+
+**Adjacent (not Tier 4):** Open Issue **OI-2** (Live Activity language on `ContentState`) is presentation / cross-process payload work owned by the Widget Functionality Roadmap. Do not fold it into event-emission or refresh-call-site consolidation.
 
 Each micro-step is a tiny, isolated, additive change (for example, adding a single emission site or a small non-forcing consumer) that follows every rule in `CODING_AGENT.md`, including reading target files first, using production-level comments, updating cross-references, and passing build gates.
 
@@ -323,6 +348,7 @@ Keep a short chronological log of major milestones:
 - Tier 5 documentation complete (2026-07-09): `README.md` SSOT section extended with "Event-driven player state (outside `Core/`)" — authoritative emitter surfaces, consumer table, non-forcing rule, cross-process reality, and cross-links. Tier 5 backlog closed; only Tier 4 consolidation remains (device-proven gate).
 - Widget Tier 3 refresh dedup (2026-07-13): mutation-path imperative ``refreshIfNeeded`` removed from ``performActualSave``, ``didUpdateStreamMetadata``, ``updateUserDefaultsLanguage``; event-path urgency extended. Cross-link: [`docs/Widget-Functionality-Roadmap.md`](Widget-Functionality-Roadmap.md).
 - Joined optimistic→drain refresh observation (2026-07-17): `testOptimisticPlayDrainRequestsWidgetRefreshPassingGuards` indexes the post-drain Tier 2 observer path (gate-outcome recording, no WidgetCenter IPC). Cross-link: [`docs/Widget-Functionality-Roadmap.md`](Widget-Functionality-Roadmap.md) Tier 5 joined-round-trip index. Docs-only; no production behavior change.
+- Open Issue **OI-2** recorded (2026-07-18): Live Activity language chrome is not on `ContentState`; extension re-derivation via ``preferredWidgetLanguage()`` defaults to English under memory-only session + no home widgets while LA remains active. Not an event-emission gap; full implementation contract lives in Widget Functionality Roadmap. Cross-process section and micro-step guidance updated so agents do not mis-route this into Tier 4 consolidation or `PlayerEvent` streaming.
 
 ---
 
