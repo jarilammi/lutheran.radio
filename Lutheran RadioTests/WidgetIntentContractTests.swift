@@ -464,7 +464,7 @@ final class WidgetIntentContractTests: XCTestCase {
         XCTAssertEqual(visual, .playing, "UITestMode play() sets .playing when intent is active")
     }
 
-    /// Main-app drain: pending "pause" → coordinator ``handleWidgetPauseAction()`` → ``stop()``.
+    /// Main-app drain: pending "pause" → coordinator ``handleWidgetPauseAction()`` → media-transport mailbox pause.
     @MainActor
     func testCheckForPendingWidgetActionsDrainsPausePending() async {
         await manager.setPlaying()
@@ -505,7 +505,11 @@ final class WidgetIntentContractTests: XCTestCase {
         XCTAssertEqual(intent, .userPaused)
     }
 
-    /// Rapid widget play taps within the debounce window must not thrash AVFoundation.
+    /// Rapid same-direction widget play taps within the debounce window must not thrash AVFoundation.
+    ///
+    /// Protects: same-verb debounce still drops a second `"play"` while allowing the first
+    /// to establish `.shouldBePlaying`. Opposite verbs are covered by
+    /// ``testCheckForPendingWidgetActionsAllowsOppositePlayPauseWithinDebounceWindow``.
     @MainActor
     func testCheckForPendingWidgetActionsDebouncesRapidPlayTaps() async {
         await manager.setUserPaused()
@@ -525,6 +529,77 @@ final class WidgetIntentContractTests: XCTestCase {
             return intent == .shouldBePlaying
         }
         XCTAssertTrue(drained, "Only the first play tap within debounce should execute")
+    }
+
+    /// Opposite play→pause within the same-direction debounce window must still reach the engine.
+    ///
+    /// Extension-hosted Live Activity / home-widget toggles publish optimistic chrome before
+    /// Darwin drain. Dropping an opposite pending left chrome paused while audio continued
+    /// (or the reverse). Debounce applies only to same-direction repeats.
+    ///
+    /// - SeeAlso: ``ViewController/checkForPendingWidgetActions()``,
+    ///   ``SharedPlayerManager/submitMediaTransportCommandAndWait(_:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md
+    @MainActor
+    func testCheckForPendingWidgetActionsAllowsOppositePlayPauseWithinDebounceWindow() async {
+        await manager.setUserPaused()
+
+        let host = Self.makePendingActionDrainHost()
+        SharedPlayerManager.shared.scheduleWidgetAction(action: "play")
+        host.checkForPendingWidgetActions()
+
+        let playStarted = await Self.waitUntil {
+            let intent = await SharedPlayerManager.shared.currentPlaybackIntent
+            return intent == .shouldBePlaying
+        }
+        XCTAssertTrue(playStarted, "First play pending must execute")
+
+        SharedPlayerManager.shared.scheduleWidgetAction(action: "pause")
+        host.checkForPendingWidgetActions()
+        _ = host
+
+        XCTAssertNil(manager.getPendingAction(), "Opposite pause pending must be cleared (not stuck)")
+
+        let paused = await Self.waitUntil {
+            let visual = await SharedPlayerManager.shared.currentVisualState
+            let intent = await SharedPlayerManager.shared.currentPlaybackIntent
+            return visual == .userPaused && intent == .userPaused
+        }
+        XCTAssertTrue(
+            paused,
+            "Opposite pause within debounce window must execute (same-direction-only debounce)"
+        )
+    }
+
+    /// Opposite pause→play within the debounce window must resume (not leave sticky pause).
+    @MainActor
+    func testCheckForPendingWidgetActionsAllowsOppositePausePlayWithinDebounceWindow() async {
+        await manager.setPlaying()
+
+        let host = Self.makePendingActionDrainHost()
+        SharedPlayerManager.shared.scheduleWidgetAction(action: "pause")
+        host.checkForPendingWidgetActions()
+
+        let paused = await Self.waitUntil {
+            let intent = await SharedPlayerManager.shared.currentPlaybackIntent
+            return intent == .userPaused
+        }
+        XCTAssertTrue(paused, "First pause pending must execute")
+
+        SharedPlayerManager.shared.scheduleWidgetAction(action: "play")
+        host.checkForPendingWidgetActions()
+        _ = host
+
+        XCTAssertNil(manager.getPendingAction())
+
+        let resumed = await Self.waitUntil {
+            let intent = await SharedPlayerManager.shared.currentPlaybackIntent
+            return intent == .shouldBePlaying
+        }
+        XCTAssertTrue(
+            resumed,
+            "Opposite play within debounce window must execute after pause"
+        )
     }
 
     /// Darwin notify + foreground drain (SceneDelegate defense-in-depth path).
@@ -951,14 +1026,11 @@ final class WidgetIntentContractTests: XCTestCase {
             backgroundImageController: BackgroundImageController(),
             streamingPlayer: DirectStreamingPlayer.shared
         )
-        coordinator.handleWidgetPauseAction()
+        await coordinator.handleWidgetPauseAction()
 
-        let drained = await Self.waitUntil {
-            let visual = await SharedPlayerManager.shared.currentVisualState
-            return visual == .userPaused
-        }
-        XCTAssertTrue(drained)
+        let visual = await manager.currentVisualState
         let intent = await manager.currentPlaybackIntent
+        XCTAssertEqual(visual, .userPaused)
         XCTAssertEqual(intent, .userPaused)
     }
 }

@@ -593,7 +593,20 @@ final class RadioPlayerCoordinator {
         }
     }
 
-    func handleWidgetPauseAction() {
+    /// Executes a widget/extension-originated pause after main-app pending drain.
+    ///
+    /// Clears a stale opposite `"play"` pending (if any still remain), records pause
+    /// timestamps, then runs ``SharedPlayerManager/submitMediaTransportCommandAndWait(_:)``
+    /// with `.pause` so engine silence shares the serial media-transport mailbox with
+    /// system Now Playing, headset remotes, and main-hosted Live Activity toggles
+    /// (pause preempts an in-flight play). Call sites that already hop to MainActor
+    /// should `await` this method directly — no nested Task — so Darwin → silence
+    /// does not pay an extra scheduling hop.
+    ///
+    /// - SeeAlso: ``ViewController/checkForPendingWidgetActions()``,
+    ///   ``SharedPlayerManager/submitMediaTransportCommandAndWait(_:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md
+    func handleWidgetPauseAction() async {
         if let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared") {
             if sharedDefaults.string(forKey: "pendingAction") == "play" {
                 sharedDefaults.removeObject(forKey: "pendingAction")
@@ -604,18 +617,13 @@ final class RadioPlayerCoordinator {
 
             sharedDefaults.set(Date().timeIntervalSince1970, forKey: "lastUserPauseTime")
             sharedDefaults.synchronize()
-
-            Task {
-                await SharedPlayerManager.shared.recordUserPauseTimestamp()
-            }
         }
 
-        Task { @MainActor in
-            await SharedPlayerManager.shared.stop()
-            // Note: isPlaying flag lives in VC for a few legacy paths; coordinator does not duplicate the flag.
-            let newState = await SharedPlayerManager.shared.currentVisualState
-            self.updateUI(for: newState)
-        }
+        await SharedPlayerManager.shared.recordUserPauseTimestamp()
+        await SharedPlayerManager.shared.submitMediaTransportCommandAndWait(.pause)
+        // Note: isPlaying flag lives in VC for a few legacy paths; coordinator does not duplicate the flag.
+        let newState = await SharedPlayerManager.shared.currentVisualState
+        updateUI(for: newState)
     }
 
     // The processedActionIds set is kept on VC for cross-cutting dedup; the coordinator receives the guard decision from caller.

@@ -87,8 +87,13 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     private var pendingWidgetSwitchWorkItem: DispatchWorkItem?
     private var processedActionIds: Set<String> = []
     
-    // Widget play/pause action debouncing (prevents rapid taps from widget causing AVFoundation thrashing)
+    // Widget / extension-hosted play/pause drain debouncing.
+    // Same-direction repeats within the interval are dropped (AVFoundation thrash guard).
+    // Opposite verbs always execute so a rapid play→pause (or pause→play) flip is not lost
+    // after optimistic Live Activity / home-widget chrome already acknowledged the second tap.
     private var lastWidgetActionTime: Date = .distantPast
+    /// Last executed pending verb for play/pause drain (`"play"` or `"pause"`).
+    private var lastWidgetPlayPauseAction: String?
     private let widgetActionDebounceInterval: TimeInterval = 0.65
     
     // MARK: - UI Elements
@@ -1394,8 +1399,58 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     }
     
     // MARK: - Widget and URL Scheme Handling
-    /// Handles widget and URL scheme actions for playback control and stream switching.
-    /// - Note: Relies on `DirectStreamingPlayer.isSwitchingStream` (set to `internal`) to coordinate stream switches and suppress unnecessary "stopped" status updates during transitions. Ensures smooth UI updates for widget and URL scheme interactions.
+
+    /// Whether a widget/extension play or pause pending should execute under the same-direction debounce.
+    ///
+    /// - Parameter action: `"play"` or `"pause"`.
+    /// - Returns: `false` only when the same verb ran within ``widgetActionDebounceInterval``;
+    ///   opposite verbs and the first verb after the window always return `true`.
+    /// - Note: Pending is already cleared before this check so a dropped same-direction
+    ///   repeat cannot stick in the App Group. Opposite taps must not be dropped: extension
+    ///   hosts publish optimistic chrome before Darwin drain, and a dropped opposite leaves
+    ///   chrome and engine permanently skewed until the next user action.
+    /// - SeeAlso: ``checkForPendingWidgetActions()``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md
+    private func shouldExecuteWidgetPlayPauseAction(_ action: String) -> Bool {
+        let elapsed = Date().timeIntervalSince(lastWidgetActionTime)
+        if elapsed > widgetActionDebounceInterval {
+            return true
+        }
+        if let last = lastWidgetPlayPauseAction, last == action {
+            return false
+        }
+        return true
+    }
+
+    /// Records the wall-clock and verb of a play/pause pending that will execute.
+    private func recordWidgetPlayPauseAction(_ action: String) {
+        lastWidgetActionTime = Date()
+        lastWidgetPlayPauseAction = action
+    }
+
+    /// Drains one App Group pending action written by the widget extension / Control widget /
+    /// extension-hosted Live Activity intent (play, pause, or switch).
+    ///
+    /// **Cross-process latency path (extension host):**
+    /// 1. Extension writes optimistic snapshot / LA ContentState + `pendingAction*` and posts
+    ///    Darwin `radio.lutheran.widget.action` (`notifyMainApp`).
+    /// 2. Main app receives Darwin (or SceneDelegate become-active / launch burst) and calls
+    ///    this method.
+    /// 3. Play and pause execute on the serial ``MediaTransportCommand`` mailbox so a rapid
+    ///    opposite drain can preempt an in-flight play the same way headset remotes do.
+    ///
+    /// **Debounce:** same-direction play/pause only (``shouldExecuteWidgetPlayPauseAction``);
+    /// opposite verbs always run. UITestMode still drains without executing unless the DEBUG
+    /// pending-action bypass is set.
+    ///
+    /// - Note: Relies on `DirectStreamingPlayer.isSwitchingStream` (set to `internal`) to
+    ///   coordinate stream switches and suppress unnecessary "stopped" status updates during
+    ///   transitions.
+    /// - SeeAlso: ``SharedPlayerManager/submitMediaTransportCommandAndWait(_:)``,
+    ///   ``SharedPlayerManager/signalWidgetPendingAction(visualState:action:language:)``,
+    ///   ``RadioPlayerCoordinator/handleWidgetPauseAction()``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
+    ///   docs/Widget-Functionality-Roadmap.md
     public func checkForPendingWidgetActions() {
         // UITestMode defense-in-depth.
         // Even if a prior killed test session (or manual run) left a "play"/"pause" pendingAction
@@ -1454,26 +1509,26 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
             #if DEBUG
             print("[ViewController] Executing widget play action")
             #endif
-            
-            // === WIDGET PLAY/PAUSE DEBOUNCE GUARD ===
-            guard Date().timeIntervalSince(lastWidgetActionTime) > widgetActionDebounceInterval else {
+
+            // Same-direction debounce only — opposite pause after a rapid flip must run.
+            guard shouldExecuteWidgetPlayPauseAction("play") else {
                 #if DEBUG
-                print("[ViewController] Widget action debounced (too soon after previous tap)")
+                print("[ViewController] Widget play debounced (same-direction within \(widgetActionDebounceInterval)s)")
                 #endif
                 return
             }
-            lastWidgetActionTime = Date()
-            // === END OF GUARD ===
-            
+            recordWidgetPlayPauseAction("play")
+
             // Widget play: clear any user pause lock then play. Do NOT reset to prePlay here
             // (resetToPrePlayForNewStream is only for language stream switches).
-            // Hoisted weak-self form (proven pattern elsewhere in this file) — avoids implicit self capture / compiler error.
-            // Route widget play through the documented designated entry point.
-            // `userRequestedPlay()` properly clears .userPaused, resets guards,
-            // configures NowPlaying, and calls play(). This is the required path for
-            // external explicit triggers (widgets via pending+Darwin, Control Center,
-            // lockscreen, CarPlay, LA, Siri). See the userRequestedPlay AGENT NOTE + Precondition.
+            // Engine work goes through the media-transport mailbox so a following pause
+            // pending (or headset pause) can preempt an in-flight attach — same ordering as
+            // system Now Playing and main-hosted Live Activity toggles.
             Task { @MainActor [weak self] in
+                #if DEBUG
+                // ContinuousClock is pure Swift (no CFAbsoluteTime / strict-memory-safety unsafe).
+                let drainStarted = ContinuousClock.now
+                #endif
                 // If a widget switch was recently scheduled (to select a lang while paused) and a play
                 // tap followed immediately, cancel the deferred switch workItem. Its selection effect
                 // is now covered by the alignment inside play() + the sync below; letting the workItem
@@ -1481,7 +1536,7 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
                 self?.pendingWidgetSwitchWorkItem?.cancel()
                 self?.pendingWidgetSwitchWorkItem = nil
 
-                await SharedPlayerManager.shared.userRequestedPlay()
+                await SharedPlayerManager.shared.submitMediaTransportCommandAndWait(.play)
 
                 // After play (which now defensively aligns the model to the persisted language from
                 // any preceding widget switch signal), sync the in-app language selector + needle
@@ -1498,6 +1553,11 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
                 await SharedPlayerManager.shared.recordWidgetLiveness()
                 await SharedPlayerManager.shared.saveCurrentState()
 
+                #if DEBUG
+                let playDrainElapsed = ContinuousClock.now - drainStarted
+                print("[ViewController] Widget play drain engine-complete in \(playDrainElapsed)")
+                #endif
+
                 guard let self else { return }
                 let playingLang = DirectStreamingPlayer.shared.selectedStream.languageCode
                 if let targetIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.languageCode == playingLang }) {
@@ -1512,23 +1572,24 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
             #if DEBUG
             print("[ViewController] Executing widget pause action")
             #endif
-            
-            // === WIDGET PLAY/PAUSE DEBOUNCE GUARD ===
-            guard Date().timeIntervalSince(lastWidgetActionTime) > widgetActionDebounceInterval else {
+
+            // Same-direction debounce only — opposite play after a rapid flip must run.
+            guard shouldExecuteWidgetPlayPauseAction("pause") else {
                 #if DEBUG
-                print("[ViewController] Widget action debounced (too soon after previous tap)")
+                print("[ViewController] Widget pause debounced (same-direction within \(widgetActionDebounceInterval)s)")
                 #endif
                 return
             }
-            lastWidgetActionTime = Date()
-            // === END OF GUARD ===
-            
-            // Rapid-pause guard (must hop because checkForPendingWidgetActions is synchronous).
-            // If we are already .userPaused, ignore the tap to avoid queuing a second Darwin roundtrip
-            // that could race with recovery timers or a stale "play" pendingAction.
-            // Hoisted weak-self + guard form (await-safe, matches every other Task site in this file).
+            recordWidgetPlayPauseAction("pause")
+
+            // Single MainActor Task: already-.userPaused ignore + coordinator pause (mailbox).
+            // Avoids a nested Task hop that previously delayed engine silence after Darwin.
             Task { @MainActor [weak self] in
                 guard let self else { return }
+                #if DEBUG
+                // ContinuousClock is pure Swift (no CFAbsoluteTime / strict-memory-safety unsafe).
+                let drainStarted = ContinuousClock.now
+                #endif
                 let vs = await SharedPlayerManager.shared.currentVisualState
                 if vs == .userPaused {
                     #if DEBUG
@@ -1536,8 +1597,11 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
                     #endif
                     return
                 }
-                // Delegate to coordinator (single orchestration for widget pause glue).
-                radioPlayerCoordinator?.handleWidgetPauseAction()
+                await radioPlayerCoordinator?.handleWidgetPauseAction()
+                #if DEBUG
+                let pauseDrainElapsed = ContinuousClock.now - drainStarted
+                print("[ViewController] Widget pause drain engine-complete in \(pauseDrainElapsed)")
+                #endif
             }
         default:
             #if DEBUG
@@ -1808,6 +1872,7 @@ extension ViewController {
     /// Resets widget play/pause debounce so back-to-back contract tests do not interfere.
     func _test_resetWidgetActionDebounceForTests() {
         lastWidgetActionTime = .distantPast
+        lastWidgetPlayPauseAction = nil
     }
 }
 #endif
