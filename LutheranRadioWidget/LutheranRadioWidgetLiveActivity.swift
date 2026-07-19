@@ -13,14 +13,17 @@
 // Purpose:
 // Live Activity (Dynamic Island + Lock Screen) view implementation and its
 // AppIntent handlers. Renders `LutheranRadioLiveActivityAttributes.ContentState`
-// (visualState + streamMetadata) provided by `RadioLiveActivityManager` using
-// the `PersistedWidgetState` snapshot as the source.
+// (visualState + streamMetadata + currentLanguage) provided by
+// `RadioLiveActivityManager`.
 //
 // Key invariants:
-// - All display data (visual state, language, metadata, hasError) flows exclusively
-//   through the `PersistedWidgetState` snapshot / attributes ContentState.
-//   `preferredWidgetLanguage()`, `streamForLanguageCode()`, `loadSharedState()`,
-//   and `loadPersistedWidgetState()` are the readers.
+// - Language chrome (flag, name, alt-stream “current”) reads **only**
+//   `context.state.currentLanguage` (hoisted once per view / outer DI closure).
+//   Never call `preferredWidgetLanguage()` for LA display — that path hard-defaults
+//   to `"en"` under memory-only session + no home widgets while LA remains active.
+// - Visual state and program metadata flow through `ContentState` the same way.
+//   `streamForLanguageCode()` is used only to resolve display names from the code
+//   already on ContentState.
 // - Explicit user actions (play/pause toggle, language switch) must route through
 //   `SharedPlayerManager.userRequestedPlay()` / `switchToStream(...)` (see
 //   LiveActivityTogglePlaybackIntent for the explicit-play contract).
@@ -57,7 +60,7 @@
 // must use the narrow `PlayerControlPresentation`. See PlayerVisualState.swift header.
 //
 // - SeeAlso: `LutheranRadioLiveActivityAttributes`, `SharedPlayerManager`
-//   (PersistedWidgetState, load*/persist*, userRequestedPlay, preferredWidgetLanguage),
+//   (PersistedWidgetState, load*/persist*, userRequestedPlay, mainAppLiveActivityLanguageCode),
 //   `PlayerVisualState` (the three mappers + `isActivelyPlaying` semantics),
 //   `PlayerStatusPresentation`, `PlayerControlPresentation`, `WidgetNowPlayingDisplayModel`,
 //   `widgetNowPlayingDisplayModel(...)`, `WidgetDisplayModels.swift`,
@@ -68,6 +71,7 @@
 //   narrow inputs for WidgetKit/ActivityKit, Documentation & Comment Standards),
 //   docs/Widget-Presentation-Dataflow.md (primary reference for derivation sites,
 //   why hoisting matters for region invalidation, semantic vs presentation division),
+//   docs/Widget-Functionality-Roadmap.md (Live Activity language chrome SSOT),
 //   <doc:Architecture>, README.md.
 //
 // AGENT NOTE: This is presentation + intent surface only. State mutations belong
@@ -131,7 +135,7 @@ private func getStreamFlag(_ code: String) -> String {
 ///
 /// - Important: The count is capped at 4 for layout reasons in both the DI center region
 ///   (horizontal ScrollView) and the Lock Screen row (fixed HStack).
-/// - SeeAlso: ``SharedPlayerManager/availableStreams``, `preferredWidgetLanguage()`.
+/// - SeeAlso: ``SharedPlayerManager/availableStreams``.
 private func getAlternativeStreams(current: String) -> [String] {
     let streams = SharedPlayerManager.shared.availableStreams
     let codes = streams.map { $0.languageCode }
@@ -305,6 +309,8 @@ struct LutheranRadioLiveActivityWidget: Widget {
             //   (via makeControlPresentation). Used by trailing and compactTrailing buttons.
             // - metadataModel: narrow WidgetNowPlayingDisplayModel for program title + speaker.
             //   Used by center and compactLeading.
+            // - currentLanguage: ContentState language-chrome SSOT (flag, name, alt-stream
+            //   exclusion, metadata language name). Never re-derived via preferredWidgetLanguage.
             // - isPlaying + radioIconTint: small derived values for pure visual decisions
             //   (LIVE indicator presence, animation bars, radio glyph background/tint in
             //   non-control decorative positions). These reduce repeated direct reads of
@@ -320,8 +326,8 @@ struct LutheranRadioLiveActivityWidget: Widget {
             let statusPres = context.state.visualState.makeStatusPresentation()
             let controlPres = context.state.visualState.makeControlPresentation()
 
-            let currentLanguageForMetadata = SharedPlayerManager.preferredWidgetLanguage()
-            let languageNameForMetadata = SharedPlayerManager.streamForLanguageCode(currentLanguageForMetadata).language
+            let currentLanguage = context.state.currentLanguage
+            let languageNameForMetadata = SharedPlayerManager.streamForLanguageCode(currentLanguage).language
             let metadataModel = widgetNowPlayingDisplayModel(
                 visualState: context.state.visualState,
                 streamMetadata: context.state.streamMetadata,
@@ -360,9 +366,9 @@ struct LutheranRadioLiveActivityWidget: Widget {
                                 .foregroundColor(.primary)
                             
                             HStack(spacing: 4) {
-                                Text(getStreamFlag(SharedPlayerManager.preferredWidgetLanguage()))
+                                Text(getStreamFlag(currentLanguage))
                                     .font(.caption2)
-                                Text(getLanguageName(SharedPlayerManager.preferredWidgetLanguage()))
+                                Text(getLanguageName(currentLanguage))
                                     .font(.caption2)
                                     .fontWeight(.medium)
                                     .foregroundColor(.secondary)
@@ -451,7 +457,7 @@ struct LutheranRadioLiveActivityWidget: Widget {
                         
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 12) {
-                                ForEach(getAlternativeStreams(current: SharedPlayerManager.preferredWidgetLanguage()), id: \.self) { langCode in
+                                ForEach(getAlternativeStreams(current: currentLanguage), id: \.self) { langCode in
                                     Button(intent: LiveActivitySwitchStreamIntent(languageCode: langCode)) {
                                         VStack(spacing: 2) {
                                             Text(getStreamFlag(langCode))
@@ -620,13 +626,14 @@ struct LutheranRadioLiveActivityWidget: Widget {
 /// Snapshot-driven derivation (performed once at the top of `body` — the Live Activity
 /// counterpart to pre-deriving onto `SimpleEntry` in the WidgetKit Provider):
 /// - `statusPres = makeStatusPresentation()`
-/// - `metadataModel = widgetNowPlayingDisplayModel(...)`
+/// - `metadataModel = widgetNowPlayingDisplayModel(...)` (language name from ContentState)
 /// - `controlPres = makeControlPresentation()` (circle variants chosen locally for weight)
+/// - `currentLanguage = context.state.currentLanguage` (language-chrome SSOT)
 /// - `isPlaying` (small derived Boolean): used only for the label copy decision next to
 ///   the control button ("Paused" vs "Play"). This label decision is intentionally kept
 ///   on the semantic flag per the documented division of concerns.
 ///
-/// These narrow values (plus primitives such as `currentLanguage`) are the only data
+/// These narrow values (plus `currentLanguage` from ContentState) are the only data
 /// the layout below reads. Direct visualState reads inside the view body are eliminated
 /// for presentation concerns.
 ///
@@ -648,11 +655,14 @@ struct LockScreenLiveActivityView: View {
     let context: ActivityViewContext<LutheranRadioLiveActivityAttributes>
     
     var body: some View {
-        // Narrow presentations (status + control + metadata) + small derived `isPlaying`
-        // are computed once at the top of `body` (Live Activity equivalent of Provider-level
-        // pre-derivation for SimpleEntry). Only narrow values + the hoisted flag are used below.
-        // This mirrors the hoisting performed inside the outer `dynamicIsland` closure.
-        let currentLanguage = SharedPlayerManager.preferredWidgetLanguage()
+        // Narrow presentations (status + control + metadata) + ContentState language +
+        // small derived `isPlaying` are computed once at the top of `body` (Live Activity
+        // equivalent of Provider-level pre-derivation for SimpleEntry). Only narrow values
+        // + the hoisted language code are used below. This mirrors the hoisting performed
+        // inside the outer `dynamicIsland` closure.
+        // Language chrome SSOT: ContentState.currentLanguage (main-app stream attach code),
+        // never preferredWidgetLanguage() which hard-defaults to "en" under no home widgets.
+        let currentLanguage = context.state.currentLanguage
         let languageName = SharedPlayerManager.streamForLanguageCode(currentLanguage).language
         let metadataModel = widgetNowPlayingDisplayModel(
             visualState: context.state.visualState,

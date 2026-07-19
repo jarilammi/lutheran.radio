@@ -300,6 +300,11 @@ enum WidgetIntentExecution {
             return
         }
         SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(optimisticTarget)
+        // Keep language mirror warm from ContentState (or existing durable code) so extension
+        // play/pause instant-feedback does not fall through to privacy-gated "en".
+        if let contentLanguage = currentLiveActivityContentLanguage(), !contentLanguage.isEmpty {
+            SharedPlayerManager.persistLiveActivityLanguageMirror(contentLanguage)
+        }
         await pushOptimisticLiveActivityToggleContent(visualState: optimisticTarget)
 
         await executeLiveActivityToggle(plan: plan)
@@ -314,12 +319,25 @@ enum WidgetIntentExecution {
         firstInteractiveLiveActivity()?.content.state.visualState
     }
 
+    /// Reads `ContentState.currentLanguage` from the first interactive Live Activity.
+    ///
+    /// - Returns: Stream language code when ActivityKit exposes content; otherwise `nil`.
+    /// - SeeAlso: ``currentLiveActivityContentVisualState()``,
+    ///   ``SharedPlayerManager/languageForLiveActivityOrWidgetOptimistic()``.
+    nonisolated static func currentLiveActivityContentLanguage() -> String? {
+        guard let code = firstInteractiveLiveActivity()?.content.state.currentLanguage, !code.isEmpty else {
+            return nil
+        }
+        return code
+    }
+
     /// Publishes an optimistic Live Activity control visual for lock-screen toggle intents.
     ///
     /// Updates every active/stale `Activity` whose content visual differs from `visualState`,
-    /// preserving each activity's existing ``streamMetadata`` (no title/speaker invent or clear).
-    /// On the main app, aligns ``RadioLiveActivityManager/lastPushedContent`` so subsequent
-    /// ``updateCurrentActivity()`` calls do not regress the glyph while the actor catches up.
+    /// preserving each activity's existing ``streamMetadata`` and ``currentLanguage`` (no
+    /// title/speaker/language invent or clear). On the main app, aligns
+    /// ``RadioLiveActivityManager/lastPushedContent`` so subsequent ``updateCurrentActivity()``
+    /// calls do not regress the glyph while the actor catches up.
     ///
     /// - Parameter visualState: Target control visual (`.userPaused` after pause plan, `.playing` after play).
     /// - Note: Skips ActivityKit IPC under ``SharedPlayerManager/isRunningInUITestMode`` so

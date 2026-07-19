@@ -148,20 +148,61 @@ struct WidgetSurfaceTests {
         )
     }
 
-    /// Optimistic ContentState visual flip preserves program metadata (lock-screen toggle).
+    /// Optimistic ContentState visual flip preserves program metadata and language.
     @Test func contentStateReplacingVisualStatePreservesStreamMetadata() {
         let metadata = StreamProgramMetadata(programTitle: "Sunday Sermon", speaker: "Pastor")
         let playing = LutheranRadioLiveActivityAttributes.ContentState(
             visualState: .playing,
-            streamMetadata: metadata
+            streamMetadata: metadata,
+            currentLanguage: "fi"
         )
         let paused = playing.replacingVisualState(.userPaused)
         #expect(paused.visualState == .userPaused)
         #expect(paused.streamMetadata == metadata)
+        #expect(paused.currentLanguage == "fi")
 
         let resumed = paused.replacingVisualState(.playing)
         #expect(resumed.visualState == .playing)
         #expect(resumed.streamMetadata == metadata)
+        #expect(resumed.currentLanguage == "fi")
+    }
+
+    /// Older ActivityKit payloads without `currentLanguage` decode to `"en"` (stable default).
+    @Test func contentStateDecodeDefaultsMissingLanguageToEnglish() throws {
+        let metadata = StreamProgramMetadata(programTitle: "Vesper", speaker: "Cantor")
+        // Encode only visual + metadata (pre-language-chrome shape).
+        struct LegacyPayload: Encodable {
+            let visualState: PlayerVisualState
+            let streamMetadata: StreamProgramMetadata?
+        }
+        let data = try JSONEncoder().encode(
+            LegacyPayload(visualState: .playing, streamMetadata: metadata)
+        )
+        let decoded = try JSONDecoder().decode(
+            LutheranRadioLiveActivityAttributes.ContentState.self,
+            from: data
+        )
+        #expect(decoded.visualState == .playing)
+        #expect(decoded.streamMetadata == metadata)
+        #expect(decoded.currentLanguage == "en")
+    }
+
+    /// Language-only ContentState inequality forces ActivityKit update eligibility.
+    @Test func contentStateLanguageChangeBreaksEquality() {
+        let metadata = StreamProgramMetadata(programTitle: "Matins", speaker: nil)
+        let finnish = LutheranRadioLiveActivityAttributes.ContentState(
+            visualState: .playing,
+            streamMetadata: metadata,
+            currentLanguage: "fi"
+        )
+        let estonian = LutheranRadioLiveActivityAttributes.ContentState(
+            visualState: .playing,
+            streamMetadata: metadata,
+            currentLanguage: "et"
+        )
+        #expect(finnish != estonian)
+        #expect(finnish.visualState == estonian.visualState)
+        #expect(finnish.streamMetadata == estonian.streamMetadata)
     }
 
     /// Rapid second tap must plan from optimistic ContentState, not stale pre-tap content.

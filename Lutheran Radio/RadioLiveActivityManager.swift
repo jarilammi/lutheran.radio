@@ -25,7 +25,12 @@ import WidgetSurface
 /// - Widget and relaunch presentation use `PersistedWidgetState` exclusively
 ///   (see `loadPersistedWidgetState`, `savePersistedWidgetState`).
 /// - Live Activity transient UI is derived from in-memory `SharedPlayerManager`
-///   (`currentVisualState` + `currentStreamMetadata`) for zero-disk hot path.
+///   (`currentVisualState` + `currentStreamMetadata`) plus main-app stream language
+///   (``SharedPlayerManager/mainAppLiveActivityLanguageCode()``) for zero-disk hot path.
+/// - `ContentState.currentLanguage` is the language-chrome SSOT on Lock Screen / Dynamic
+///   Island; views must not re-derive via privacy-gated ``preferredWidgetLanguage()``.
+/// - Durable App Group mirrors (visual + language) warm extension-hosted intent paths
+///   and are **not** gated by home-widget ``hasActiveWidgets``.
 /// - `PersistedWidgetState` is never bypassed for widgets.
 ///
 /// ## Event-Driven Model (Primary) + Live Activity Attribute Events
@@ -96,8 +101,10 @@ class RadioLiveActivityManager: ObservableObject {
     /// - Lifecycle: Cleared in `endActivity` and on termination paths.
     /// - Update Invariant: Compared with the freshly derived candidate before
     ///   every `Activity.update`. Equality uses `ContentState`'s `Hashable`/`Equatable`
-    ///   (visualState + streamMetadata).
-    /// - Never persisted. Widgets continue to use `PersistedWidgetState`.
+    ///   (visualState + streamMetadata + currentLanguage). Language-only stream
+    ///   switches therefore force an ActivityKit push.
+    /// - Never persisted as a snapshot. Widgets continue to use `PersistedWidgetState`.
+    ///   Durable LA visual/language App Group mirrors are separate cross-process signals.
     ///
     /// Exposed as `internal private(set)` for white-box testing of the change-detection
     /// behavior (parallel to `updateTimer`).
@@ -293,10 +300,12 @@ class RadioLiveActivityManager: ObservableObject {
         let visualState = await manager.currentVisualState
         let streamMetadata = await manager.currentStreamMetadata
             ?? SharedPlayerManager.loadPersistedStreamMetadata()
+        let currentLanguage = SharedPlayerManager.mainAppLiveActivityLanguageCode()
         
         let initialContentState = LutheranRadioLiveActivityAttributes.ContentState(
             visualState: visualState,
-            streamMetadata: streamMetadata
+            streamMetadata: streamMetadata,
+            currentLanguage: currentLanguage
         )
         
         do {
@@ -327,27 +336,30 @@ class RadioLiveActivityManager: ObservableObject {
         }
     }
 
-    /// Pushes the latest `PlayerVisualState` + metadata into the active Live Activity,
-    /// **but only when the rendered content would actually change**.
+    /// Pushes the latest `PlayerVisualState` + metadata + stream language into the active
+    /// Live Activity, **but only when the rendered content would actually change**.
     ///
     /// This is the central implementation of the event-driven Live Activity model.
     /// Callers (SPM visual transitions, `didUpdateStreamMetadata`, coordinator, lifecycle,
     /// and the old `performActualSave` bridge) invoke this on meaningful change.
     ///
     /// Derivation uses the **in-memory** actor state (`currentVisualState` +
-    /// `currentStreamMetadata`) when the main app is running. The persisted snapshot
-    /// is used only as a safe fallback (e.g. very early after start before the first
-    /// mutation). This decouples transient LA presentation from the durable
-    /// `PersistedWidgetState` writes that widgets and relaunch require.
+    /// `currentStreamMetadata`) and main-app stream language
+    /// (``SharedPlayerManager/mainAppLiveActivityLanguageCode()``) when the main app is
+    /// running. The persisted snapshot is used only as a safe fallback for metadata
+    /// (e.g. very early after start before the first mutation). This decouples transient
+    /// LA presentation from the durable `PersistedWidgetState` writes that widgets and
+    /// relaunch require — language chrome must not depend on privacy-gated home-widget writes.
     ///
     /// - Precondition: Must be called on the main actor (the method is `@MainActor`).
     /// - Postcondition: If an update is sent, `lastPushedContent` holds the exact
-    ///   `ContentState` that was pushed.
+    ///   `ContentState` that was pushed. Durable visual + language App Group mirrors are
+    ///   warmed even when ActivityKit IPC is suppressed.
     /// - Note: Silently no-ops if no activity is active. Duplicate content (visual +
-    ///   metadata) is suppressed by the `lastPushedContent` comparison.
+    ///   metadata + language) is suppressed by the `lastPushedContent` comparison.
     /// - Update Invariant: `Activity.update` occurs **iff** the candidate differs from
-    ///   `lastPushedContent` (or the call is treated as initial). This is what makes
-    ///   Lock Screen / Dynamic Island feel immediate without timer polling.
+    ///   `lastPushedContent` (or the call is treated as initial). Language-only stream
+    ///   switches must not be suppressed.
     /// - Important: Uses `nonisolated(unsafe)` + `unsafe` because `Activity.update` is
     ///   not Sendable in the current SDK; the capture of the Activity is done only after
     ///   we hold a strong local reference on the main actor.
@@ -358,6 +370,7 @@ class RadioLiveActivityManager: ObservableObject {
     ///   ``beginObservingActivityEvents(_:)`` (the Live Activity events surface that
     ///   keeps `lastPushedContent` aligned), ``isRunningUnderTest``,
     ///   docs/Widget-Presentation-Dataflow.md,
+    ///   docs/Widget-Functionality-Roadmap.md (Live Activity language chrome SSOT),
     ///   RadioLiveActivityManagerTests
     @MainActor
     func updateCurrentActivity() async {
@@ -383,23 +396,27 @@ class RadioLiveActivityManager: ObservableObject {
         let visualState = await manager.currentVisualState
         let streamMetadata = await manager.currentStreamMetadata
             ?? SharedPlayerManager.loadPersistedStreamMetadata()
+        let currentLanguage = SharedPlayerManager.mainAppLiveActivityLanguageCode()
         
         let candidate = LutheranRadioLiveActivityAttributes.ContentState(
             visualState: visualState,
-            streamMetadata: streamMetadata
+            streamMetadata: streamMetadata,
+            currentLanguage: currentLanguage
         )
 
-        // Durable App Group mirror for extension-hosted LA toggle planning. Always keep warm —
-        // even when ActivityKit IPC is suppressed — so lock-screen pause is not inverted when
-        // home-widget write suppression leaves the extension session snapshot empty.
+        // Durable App Group mirrors for extension-hosted LA planning / optimistic language.
+        // Always keep warm — even when ActivityKit IPC is suppressed — so lock-screen pause
+        // and language chrome are not inverted when home-widget write suppression leaves the
+        // extension session snapshot empty.
         SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(visualState)
+        SharedPlayerManager.persistLiveActivityLanguageMirror(currentLanguage)
         
         // Event-driven deduplication (core of the responsiveness improvement).
         // We only cross the ActivityKit IPC boundary when the user-visible LA content
-        // (status pill, control glyph/tint, program title/speaker) would actually differ.
-        // Intent-path optimistic toggles pre-align ``lastPushedContent`` to the same visual
-        // the actor will reach after sticky lock / setPlaying, so the engine-complete
-        // refresh commonly hits this suppress path (no thrash, no double IPC).
+        // (status pill, control glyph/tint, program title/speaker, language chrome)
+        // would actually differ. Intent-path optimistic toggles pre-align ``lastPushedContent``
+        // to the same visual the actor will reach after sticky lock / setPlaying, so the
+        // engine-complete refresh commonly hits this suppress path (no thrash, no double IPC).
         if let last = lastPushedContent, last == candidate {
             #if DEBUG
             print("🔴 Live Activity update suppressed (content unchanged)")
@@ -413,7 +430,7 @@ class RadioLiveActivityManager: ObservableObject {
         unsafe await safeActivity.update(.init(state: candidate, staleDate: nil))
         
         #if DEBUG
-        print("🔴 Live Activity updated locally: visualState=\(visualState)")
+        print("🔴 Live Activity updated locally: visualState=\(visualState) language=\(currentLanguage)")
         #endif
     }
 
@@ -423,13 +440,14 @@ class RadioLiveActivityManager: ObservableObject {
     /// no activity is visible in this process). Matching the optimistic visual here means
     /// the subsequent engine-complete ``updateCurrentActivity()`` typically sees an equal
     /// candidate and suppresses redundant IPC once the actor sticky-locks or setPlaying.
-    /// Program metadata is preserved from the last push, the owned activity content, or
-    /// persisted stream metadata — never cleared solely because the control flipped.
+    /// Program metadata and stream language are preserved from the last push, the owned
+    /// activity content, or main-app language resolution — never cleared solely because the
+    /// control flipped.
     ///
     /// - Parameter visualState: Optimistic control visual (`.userPaused` or `.playing`).
     /// - Postcondition: ``lastPushedContent`` reflects `visualState` with preserved metadata
-    ///   when any metadata source is available; durable toggle mirror stays the caller's job
-    ///   (already written before this alignment).
+    ///   and language when any source is available; durable toggle mirrors stay the caller's
+    ///   job (already written before this alignment).
     /// - Note: Does not call `Activity.update` — the intent path owns that IPC via
     ///   `Activity.activities` so extension-hosted and main-hosted toggles share one push site.
     /// - SeeAlso: ``updateCurrentActivity()``, ``WidgetIntentExecution/performLiveActivityToggle()``,
@@ -440,12 +458,17 @@ class RadioLiveActivityManager: ObservableObject {
             lastPushedContent?.streamMetadata
             ?? currentActivity?.content.state.streamMetadata
             ?? SharedPlayerManager.loadPersistedStreamMetadata()
+        let language =
+            lastPushedContent?.currentLanguage
+            ?? currentActivity?.content.state.currentLanguage
+            ?? SharedPlayerManager.mainAppLiveActivityLanguageCode()
         lastPushedContent = LutheranRadioLiveActivityAttributes.ContentState(
             visualState: visualState,
-            streamMetadata: metadata
+            streamMetadata: metadata,
+            currentLanguage: language
         )
         #if DEBUG
-        print("🔴 Live Activity lastPushedContent aligned to optimistic visual=\(visualState)")
+        print("🔴 Live Activity lastPushedContent aligned to optimistic visual=\(visualState) language=\(language)")
         #endif
     }
 
@@ -505,6 +528,7 @@ class RadioLiveActivityManager: ObservableObject {
             currentActivity = nil
             lastPushedContent = nil
             SharedPlayerManager.clearLiveActivityToggleVisualStateMirror()
+            SharedPlayerManager.clearLiveActivityLanguageMirror()
             return
         }
 
@@ -513,6 +537,7 @@ class RadioLiveActivityManager: ObservableObject {
             currentActivity = nil
             lastPushedContent = nil
             SharedPlayerManager.clearLiveActivityToggleVisualStateMirror()
+            SharedPlayerManager.clearLiveActivityLanguageMirror()
             return
         }
         #endif
@@ -520,12 +545,14 @@ class RadioLiveActivityManager: ObservableObject {
         guard let activity = currentActivity else {
             lastPushedContent = nil
             SharedPlayerManager.clearLiveActivityToggleVisualStateMirror()
+            SharedPlayerManager.clearLiveActivityLanguageMirror()
             return
         }
         
         currentActivity = nil   // clear immediately while still on the calling context
         lastPushedContent = nil // Lifecycle: next startActivity begins with a clean last-pushed record
         SharedPlayerManager.clearLiveActivityToggleVisualStateMirror()
+        SharedPlayerManager.clearLiveActivityLanguageMirror()
         
         // Capture safely once (standard Live Activity pattern under Swift 6)
         nonisolated(unsafe) let safeActivityToEnd = activity
@@ -533,7 +560,8 @@ class RadioLiveActivityManager: ObservableObject {
         Task {
             let finalContentState = LutheranRadioLiveActivityAttributes.ContentState(
                 visualState: .userPaused,
-                streamMetadata: nil
+                streamMetadata: nil,
+                currentLanguage: SharedPlayerManager.mainAppLiveActivityLanguageCode()
             )
             
             // All async Live Activity work in one async context – modern SSOT pattern
@@ -650,9 +678,12 @@ class RadioLiveActivityManager: ObservableObject {
             // event (or explicit foreground correction). Starting the timer here would
             // re-introduce the old polling-driven behavior.
             beginObservingActivityEvents(activity)
-            // Warm the durable toggle mirror from the system-held ContentState so the first
-            // lock-screen pause after process resume does not invert when extension memory is empty.
-            SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(activity.content.state.visualState)
+            // Warm durable toggle visual + language mirrors from the system-held ContentState so
+            // the first lock-screen pause / language-sensitive optimistic path after process
+            // resume does not invert when extension memory is empty.
+            let state = activity.content.state
+            SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(state.visualState)
+            SharedPlayerManager.persistLiveActivityLanguageMirror(state.currentLanguage)
             #if DEBUG
             print("🔴 Found existing Live Activity: \(activity.id) — timer not auto-started (event-driven)")
             #endif
@@ -671,6 +702,7 @@ class RadioLiveActivityManager: ObservableObject {
     ) {
         lastPushedContent = content.state
         SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(content.state.visualState)
+        SharedPlayerManager.persistLiveActivityLanguageMirror(content.state.currentLanguage)
     }
 
     /// Clears local activity tracking when attribute-events observation ends.
@@ -684,6 +716,7 @@ class RadioLiveActivityManager: ObservableObject {
             currentActivity = nil
             lastPushedContent = nil
             SharedPlayerManager.clearLiveActivityToggleVisualStateMirror()
+            SharedPlayerManager.clearLiveActivityLanguageMirror()
             return
         }
         #endif
@@ -691,6 +724,7 @@ class RadioLiveActivityManager: ObservableObject {
         currentActivity = nil
         lastPushedContent = nil
         SharedPlayerManager.clearLiveActivityToggleVisualStateMirror()
+        SharedPlayerManager.clearLiveActivityLanguageMirror()
     }
 
     /// Publishes the consolidated observer task into ``activityObservationTask``.
@@ -729,14 +763,21 @@ class RadioLiveActivityManager: ObservableObject {
     /// - Parameters:
     ///   - visualState: Candidate visual state from the player SSOT.
     ///   - streamMetadata: Candidate ICY metadata (nil when absent).
+    ///   - currentLanguage: Candidate stream language code (defaults to last-pushed language,
+    ///     or ``SharedPlayerManager/mainAppLiveActivityLanguageCode()`` when unset).
     /// - Returns: `true` when the candidate equals ``lastPushedContent``.
     func _test_wouldSuppressLiveActivityUpdate(
         visualState: PlayerVisualState,
-        streamMetadata: StreamProgramMetadata?
+        streamMetadata: StreamProgramMetadata?,
+        currentLanguage: String? = nil
     ) -> Bool {
+        let language = currentLanguage
+            ?? lastPushedContent?.currentLanguage
+            ?? SharedPlayerManager.mainAppLiveActivityLanguageCode()
         let candidate = LutheranRadioLiveActivityAttributes.ContentState(
             visualState: visualState,
-            streamMetadata: streamMetadata
+            streamMetadata: streamMetadata,
+            currentLanguage: language
         )
         if let last = lastPushedContent, last == candidate {
             return true

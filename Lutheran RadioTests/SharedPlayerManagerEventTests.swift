@@ -3131,9 +3131,11 @@ final class SharedPlayerManagerEventTests: XCTestCase {
         let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared")
         defaults?.set(data, forKey: "persistedWidgetState")
         defaults?.set(data, forKey: "playerVisualState")
-        // Stale durable LA toggle mirror must not survive factory reset (lock-screen plan hygiene).
+        // Stale durable LA toggle visual + language mirrors must not survive factory reset.
         SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(.playing)
+        SharedPlayerManager.persistLiveActivityLanguageMirror("fi")
         XCTAssertEqual(SharedPlayerManager.loadLiveActivityToggleVisualStateMirror(), .playing)
+        XCTAssertEqual(SharedPlayerManager.loadLiveActivityLanguageMirror(), "fi")
 
         await manager.resetToFactoryDefaultsOnLaunch()
 
@@ -3148,8 +3150,36 @@ final class SharedPlayerManagerEventTests: XCTestCase {
             SharedPlayerManager.loadLiveActivityToggleVisualStateMirror(),
             "Factory reset must explicitly clear liveActivityToggleVisualState"
         )
+        XCTAssertNil(
+            SharedPlayerManager.loadLiveActivityLanguageMirror(),
+            "Factory reset must explicitly clear liveActivityCurrentLanguage"
+        )
         // Boot identity realigned so same-boot post-reset planning is not false-reboot.
         XCTAssertFalse(SharedPlayerManager.hasDeviceRebootedSinceLastRecordedBoot())
+    }
+
+    /// Main-app LA language SSOT tracks engine ``selectedStream``, not privacy-gated preferred widget language.
+    ///
+    /// When home widgets are absent, ``preferredWidgetLanguage()`` hard-defaults to `"en"`.
+    /// Live Activity ContentState must still carry the stream attach language so Lock Screen
+    /// flag/name chrome match the playing stream.
+    func testMainAppLiveActivityLanguageCodeTracksSelectedStream() async {
+        let streams = await manager.availableStreams
+        guard let finnish = streams.first(where: { $0.languageCode == "fi" }) else {
+            XCTFail("Expected Finnish stream in catalog")
+            return
+        }
+        await manager.switchToStream(finnish)
+
+        let selected = await MainActor.run {
+            DirectStreamingPlayer.shared.selectedStream.languageCode
+        }
+        XCTAssertEqual(selected, "fi")
+        XCTAssertEqual(
+            SharedPlayerManager.mainAppLiveActivityLanguageCode(),
+            "fi",
+            "LA ContentState language source must follow stream attach language"
+        )
     }
 
     /// Picks a stream guaranteed to differ from the engine's current selection so

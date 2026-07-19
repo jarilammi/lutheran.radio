@@ -65,11 +65,11 @@ Live Activities are **not** requested at cold launch. They start when playback b
 
 ### Live Activity
 
-``RadioLiveActivityManager/updateCurrentActivity()`` builds a candidate ``ContentState(visualState:streamMetadata:)`` and compares it to in-memory ``lastPushedContent``. **ActivityKit IPC occurs only when the tuple differs** (or on first push). ICY title churn therefore costs one crossing per actual title/speaker/visual change, not per timer tick.
+``RadioLiveActivityManager/updateCurrentActivity()`` builds a candidate ``ContentState(visualState:streamMetadata:currentLanguage:)`` and compares it to in-memory ``lastPushedContent``. **ActivityKit IPC occurs only when the tuple differs** (or on first push). ICY title churn and language-only stream switches therefore cost one crossing per actual title/speaker/visual/**language** change, not per timer tick. Language chrome rides `currentLanguage` from main-app stream attach (``mainAppLiveActivityLanguageCode()``); durable ``liveActivityCurrentLanguage`` warms extension optimistic paths without reopening home-widget write suppression.
 
 The attribute-events observer (``contentUpdates`` via ``WidgetEventObserver``) keeps ``lastPushedContent`` aligned with the system-accepted state, strengthening suppression of redundant ``Activity.update`` calls.
 
-**Lock-screen toggle optimistic ContentState:** ``WidgetIntentExecution/performLiveActivityToggle()`` publishes the post-toggle control visual via ``pushOptimisticLiveActivityToggleContent(visualState:)`` (ActivityKit `Activity.update` on interactive activities, preserving ``streamMetadata`` through ``ContentState/replacingVisualState(_:)``) and writes the durable App Group toggle mirror. On the main app it also calls ``RadioLiveActivityManager/recordOptimisticToggleContent(visualState:)`` so ``lastPushedContent`` matches the optimistic glyph; when sticky lock / soft silence later produces the same visual, ``updateCurrentActivity()`` suppresses as a no-op. A rapid second tap therefore resolves from post-toggle content (preferred over a lagging mirror or actor), not stale pre-tap content.
+**Lock-screen toggle optimistic ContentState:** ``WidgetIntentExecution/performLiveActivityToggle()`` publishes the post-toggle control visual via ``pushOptimisticLiveActivityToggleContent(visualState:)`` (ActivityKit `Activity.update` on interactive activities, preserving ``streamMetadata`` and ``currentLanguage`` through ``ContentState/replacingVisualState(_:)``) and writes the durable App Group toggle visual + language mirrors. On the main app it also calls ``RadioLiveActivityManager/recordOptimisticToggleContent(visualState:)`` so ``lastPushedContent`` matches the optimistic glyph; when sticky lock / soft silence later produces the same visual, ``updateCurrentActivity()`` suppresses as a no-op. A rapid second tap therefore resolves from post-toggle content (preferred over a lagging mirror or actor), not stale pre-tap content.
 
 Protected by ``RadioLiveActivityManagerTests`` (`_test_wouldSuppressLiveActivityUpdate`, optimistic alignment), ``WidgetIntentContractExtensionTests``, ``WidgetSurfaceTests`` (content replace + second-tap plan).
 
@@ -147,7 +147,7 @@ Consumed by:
 
 - ``updateNowPlayingInfo()`` (Now Playing title + artist)
 - ``WidgetDisplayModels.widgetNowPlayingDisplayModel(...)`` (widgets)
-- Live Activity views (via ``ContentState.streamMetadata`` + presentation pre-derivation)
+- Live Activity views (via ``ContentState.streamMetadata`` + ``ContentState.currentLanguage`` + presentation pre-derivation)
 
 The **dual-card layout** remains; **metadata mismatch** between cards is a bug. Stacking itself is not.
 

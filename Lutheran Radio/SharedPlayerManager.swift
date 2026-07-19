@@ -241,6 +241,7 @@ import WidgetKit
 /// | pendingActionTime       | Double (epoch)        | Same writers as pendingAction                                | Widget providers (staleness checks)                                  | Freshness timestamp for pending actions                      | Used to ignore very old pending actions |
 /// | pendingLanguage         | String                | `scheduleWidgetAction` (only for "switch")                   | `getPendingAction()`, widget providers                               | Parameter for stream switch actions                          | Only meaningful when `pendingAction == "switch"` |
 /// | liveActivityToggleVisualState | String (case name) | `RadioLiveActivityManager` on every ContentState push; optimistic LA toggle | ``loadLiveActivityToggleVisualStateMirror()`` + ``WidgetIntentExecution/performLiveActivityToggle()`` | Durable cross-process LA play/pause plan signal when extension memory snapshot is empty | Cleared on LA end, termination, **factory reset**, privacy clear; **not** gated by home-widget `hasActiveWidgets` |
+/// | liveActivityCurrentLanguage | String (languageCode) | `RadioLiveActivityManager` on every ContentState push; optimistic LA paths | ``loadLiveActivityLanguageMirror()`` + ``languageForLiveActivityOrWidgetOptimistic()`` | Durable LA language chrome / optimistic intent language when extension has no session snapshot and home-widget writes are suppressed | Same lifecycle as visual mirror; **not** gated by `hasActiveWidgets` |
 /// | recordedSystemBootTime  | Double (epoch of boot) | ``recordCurrentSystemBootTime()`` on LA mirror write + factory reset | ``hasDeviceRebootedSinceLastRecordedBoot()`` / ``shouldDistrustDurableMirrorPlayPlanning()`` | Boot identity for post-reboot LA toggle hygiene | Lets lock-screen planning refuse durable-mirror-alone **play** after hard power-off |
 ///
 /// **Key invariants**:
@@ -253,6 +254,9 @@ import WidgetKit
 /// - Live Activity lock-screen toggle plans prefer ActivityKit `ContentState` then
 ///   ``loadLiveActivityToggleVisualStateMirror()`` over extension-local actor defaults
 ///   (see ``WidgetIntentCoordinators/resolveLiveActivityToggleVisualState(liveActivityContent:durableMirror:actorVisualState:sessionSnapshot:)``).
+/// - Live Activity language chrome rides ``ContentState.currentLanguage`` (main-app stream
+///   attach language). Durable ``liveActivityCurrentLanguage`` mirrors that code for
+///   extension-hosted optimistic paths when ActivityKit activities are briefly empty.
 /// - After termination sentinel or device reboot, durable mirror alone must not plan **play**
 ///   (``shouldDistrustDurableMirrorPlayPlanning()`` + ``WidgetIntentCoordinators/planLiveActivityToggle(resolution:distrustDurableMirrorPlay:)``).
 
@@ -974,11 +978,12 @@ actor SharedPlayerManager {
     ///
     /// - Precondition: Safe to call from main-app launch (`ViewController` cold-launch Task) and tests.
     /// - Postcondition: `loadPersistedWidgetState()` returns `nil`; widgets show safe defaults;
-    ///   system Now Playing metadata cleared (main app); durable LA toggle mirror cleared;
-    ///   recorded boot identity aligned to this boot.
+    ///   system Now Playing metadata cleared (main app); durable LA toggle visual + language
+    ///   mirrors cleared; recorded boot identity aligned to this boot.
     ///
     /// - SeeAlso: ``ensureVisualStateLoaded()``, ``loadPersistedWidgetState()``,
     ///   ``clearPersistedVisualStateKeysFromDisk()``, ``clearLiveActivityToggleVisualStateMirror()``,
+    ///   ``clearLiveActivityLanguageMirror()``,
     ///   ViewController.viewDidLoad, docs/Event-Driven-Refactor-Roadmap.md, CODING_AGENT.md (SSOT principles).
     ///
     /// AGENT NOTE: Any new launch path that could observe stale App Group visual keys must call
@@ -995,8 +1000,9 @@ actor SharedPlayerManager {
         #else
         Self.clearPersistedVisualStateKeysFromDisk()
         Self.clearInMemorySessionSnapshot()
-        // Explicit LA toggle mirror clear (factory reset hygiene; not only LA-end paths).
+        // Explicit LA toggle visual + language mirror clear (factory reset hygiene; not only LA-end paths).
         Self.clearLiveActivityToggleVisualStateMirror()
+        Self.clearLiveActivityLanguageMirror()
         Self.recordCurrentSystemBootTime()
         currentVisualState = .prePlay
         currentStreamMetadata = nil
@@ -1031,7 +1037,7 @@ actor SharedPlayerManager {
     /// - Parameters:
     ///   - includeFactoryReset: When `true`, purges on-disk visual keys, drops the in-memory session
     ///     snapshot, resets visual state to `.prePlay` (preserving `.securityLocked` intent), clears
-    ///     the durable LA toggle mirror, and records current boot identity.
+    ///     durable LA toggle visual + language mirrors, and records current boot identity.
     ///   - liveActivityTeardown: Whether to end Live Activities gracefully or immediately.
     ///   - refreshWidgets: When `true`, calls `WidgetCenter.reloadAllTimelines()` and
     ///     `WidgetRefreshManager.refreshIfNeeded(..., immediate: true)`.
@@ -1041,11 +1047,12 @@ actor SharedPlayerManager {
     /// - Precondition: Main-app target only. Do not call while intentionally backgrounding live playback
     ///   unless `refreshWidgets` is `false` and factory reset is `false`.
     /// - Postcondition: System Now Playing cleared; optional LA ended; widgets reloaded when requested.
-    ///   Factory reset also clears ``liveActivityToggleVisualStateAppGroupKey``.
+    ///   Factory reset also clears ``liveActivityToggleVisualStateAppGroupKey`` and
+    ///   ``liveActivityCurrentLanguageAppGroupKey``.
     ///
     /// - SeeAlso: ``teardownNowPlayingSession()``, ``resetToFactoryDefaultsOnLaunch()``,
     ///   ``clearAllLocalState()``, ``performPostStopWidgetHygiene()``,
-    ///   ``clearLiveActivityToggleVisualStateMirror()``,
+    ///   ``clearLiveActivityToggleVisualStateMirror()``, ``clearLiveActivityLanguageMirror()``,
     ///   ``performSessionTeardownSynchronouslyForTermination()``,
     ///   `WidgetRefreshManager.refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)`,
     ///   docs/Event-Driven-Refactor-Roadmap.md, CODING_AGENT.md.
@@ -1069,10 +1076,12 @@ actor SharedPlayerManager {
         if includeFactoryReset {
             Self.clearPersistedVisualStateKeysFromDisk()
             Self.clearInMemorySessionSnapshot()
-            // Explicit factory-reset hygiene: drop durable LA toggle plan signal even when
-            // Live Activity teardown is `.none` (callers may vary). Stops cold extensions
-            // from planning play/pause against a pre-reset mirror.
+            // Explicit factory-reset hygiene: drop durable LA toggle visual + language
+            // plan signals even when Live Activity teardown is `.none` (callers may vary).
+            // Stops cold extensions from planning play/pause or stamping language chrome
+            // against pre-reset mirrors.
             Self.clearLiveActivityToggleVisualStateMirror()
+            Self.clearLiveActivityLanguageMirror()
             // Align boot identity after reset so same-boot post-reset planning does not
             // treat the process as "rebooted" solely because mirror was cleared.
             Self.recordCurrentSystemBootTime()
@@ -2556,8 +2565,11 @@ actor SharedPlayerManager {
     private func handleWidgetPlay() {
         ensureVisualStateLoadedForWidget()
         
-        // Instant visual feedback for widget
-        Self.writeInstantFeedback(language: Self.preferredWidgetLanguage())
+        // Instant visual feedback: prefer session / LA language mirror over bare
+        // preferredWidgetLanguage() so LA-only (no home widgets) play does not stamp "en"
+        // when the engine stream is non-English.
+        let optimisticLanguage = Self.languageForLiveActivityOrWidgetOptimistic()
+        Self.writeInstantFeedback(language: optimisticLanguage)
         
         // Important: Optimistic SSOT update (same pattern we already use in stop)
         applyVisualState(.playing)
@@ -2572,8 +2584,7 @@ actor SharedPlayerManager {
         // Small delay + optimistic widget refresh using the modern API
         Task {
             try? await Task.sleep(for: .seconds(0.5))
-            // Architectural shift: Prefer combined snapshot for optimistic language (no direct old key)
-            let language = Self.preferredWidgetLanguage()
+            let language = Self.languageForLiveActivityOrWidgetOptimistic()
             
             await WidgetRefreshManager.shared.refreshIfNeeded(
                 visualState: .playing,           // ← modern path
@@ -2589,8 +2600,10 @@ actor SharedPlayerManager {
     private func handleWidgetStop() {
         ensureVisualStateLoadedForWidget()
         
-        // Instant visual feedback for widget using the new authoritative state
-        Self.writeInstantFeedback(language: Self.preferredWidgetLanguage())
+        // Instant visual feedback: prefer session / LA language mirror over bare
+        // preferredWidgetLanguage() so LA-only pause does not stamp "en".
+        let optimisticLanguage = Self.languageForLiveActivityOrWidgetOptimistic()
+        Self.writeInstantFeedback(language: optimisticLanguage)
         
         // Important: Set the paused state synchronously for widget path
         applyVisualState(.userPaused)
@@ -2608,8 +2621,7 @@ actor SharedPlayerManager {
         // Small delay + optimistic widget refresh using the modern API
         Task {
             try? await Task.sleep(for: .seconds(0.5))
-            // Architectural shift: Prefer combined snapshot for optimistic language (no direct old key)
-            let language = Self.preferredWidgetLanguage()
+            let language = Self.languageForLiveActivityOrWidgetOptimistic()
             
             await WidgetRefreshManager.shared.refreshIfNeeded(
                 visualState: currentVisualState,   // already .userPaused
@@ -2836,9 +2848,10 @@ actor SharedPlayerManager {
         defaults.removeObject(forKey: "instantFeedbackTime")
         defaults.removeObject(forKey: "instantFeedbackLanguage")
         // Visual state is memory-only; no on-disk snapshot to preserve across termination.
-        // LA ends on termination — drop the durable toggle mirror so a cold extension cannot
-        // plan pause/play from a dead surface.
+        // LA ends on termination — drop durable toggle visual + language mirrors so a cold
+        // extension cannot plan pause/play or stamp language chrome from a dead surface.
         clearLiveActivityToggleVisualStateMirror()
+        clearLiveActivityLanguageMirror()
         #if DEBUG
         print("[SharedPlayerManager] Forced stale lastUpdateTime (0) + cleared instant feedback for post-termination passive widget state")
         #endif
@@ -2893,6 +2906,103 @@ actor SharedPlayerManager {
     nonisolated static func clearLiveActivityToggleVisualStateMirror() {
         guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return }
         defaults.removeObject(forKey: liveActivityToggleVisualStateAppGroupKey)
+    }
+
+    // MARK: - Live Activity language durable mirror (cross-process)
+
+    /// App Group key for the last Live Activity `ContentState.currentLanguage`.
+    ///
+    /// Parallel to ``liveActivityToggleVisualStateAppGroupKey``: not gated by home-widget
+    /// ``hasActiveWidgets``. Language chrome on Lock Screen / Dynamic Island rides ActivityKit
+    /// ``ContentState.currentLanguage``; this mirror feeds extension-hosted optimistic play/pause
+    /// language (instant feedback / pending language) when `Activity.activities` is empty and
+    /// the memory-only session snapshot is absent.
+    ///
+    /// - SeeAlso: ``persistLiveActivityLanguageMirror(_:)``, ``loadLiveActivityLanguageMirror()``,
+    ///   ``clearLiveActivityLanguageMirror()``, ``languageForLiveActivityOrWidgetOptimistic()``,
+    ///   ``mainAppLiveActivityLanguageCode()``.
+    nonisolated static let liveActivityCurrentLanguageAppGroupKey = "liveActivityCurrentLanguage"
+
+    /// Writes the durable Live Activity language mirror for cross-process optimistic language.
+    ///
+    /// - Parameter languageCode: Last pushed (or ContentState-aligned) stream language code.
+    /// - Important: Always writes when the App Group is available — not gated by
+    ///   ``hasActiveWidgets``. Home-widget privacy suppression must not force English on LA-only
+    ///   sessions when the engine stream is non-English.
+    /// - SeeAlso: ``loadLiveActivityLanguageMirror()``, ``clearLiveActivityLanguageMirror()``,
+    ///   `RadioLiveActivityManager.updateCurrentActivity`.
+    nonisolated static func persistLiveActivityLanguageMirror(_ languageCode: String) {
+        guard !languageCode.isEmpty else { return }
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return }
+        defaults.set(languageCode, forKey: liveActivityCurrentLanguageAppGroupKey)
+    }
+
+    /// Reads the durable Live Activity language mirror, if present and non-empty.
+    ///
+    /// - Returns: Mirrored language code, or `nil` when missing/empty (treat as no signal).
+    /// - SeeAlso: ``persistLiveActivityLanguageMirror(_:)``.
+    nonisolated static func loadLiveActivityLanguageMirror() -> String? {
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared"),
+              let code = defaults.string(forKey: liveActivityCurrentLanguageAppGroupKey),
+              !code.isEmpty
+        else {
+            return nil
+        }
+        return code
+    }
+
+    /// Clears the durable Live Activity language mirror (LA end, termination, factory reset, privacy clear).
+    nonisolated static func clearLiveActivityLanguageMirror() {
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return }
+        defaults.removeObject(forKey: liveActivityCurrentLanguageAppGroupKey)
+    }
+
+    /// Main-app stream language for Live Activity `ContentState.currentLanguage` pushes.
+    ///
+    /// Prefer ``DirectStreamingPlayer/selectedStream`` (stream attach SSOT) so language chrome
+    /// tracks the engine even when home-widget write suppression leaves the session snapshot
+    /// empty and ``preferredWidgetLanguage()`` would hard-default to `"en"`. Falls back to the
+    /// in-process session snapshot language, then ``preferredMainAppInitialLanguageCode()``.
+    ///
+    /// - Returns: Non-empty language code suitable for ActivityKit content and the durable language mirror.
+    /// - Important: Main-app only semantics. Extension hosts must not use this for chrome; they
+    ///   render ``ContentState.currentLanguage`` and may read the durable language mirror for
+    ///   optimistic intent language only.
+    /// - SeeAlso: ``persistLiveActivityLanguageMirror(_:)``, ``languageForLiveActivityOrWidgetOptimistic()``,
+    ///   docs/Widget-Functionality-Roadmap.md (Live Activity language chrome SSOT).
+    nonisolated static func mainAppLiveActivityLanguageCode() -> String {
+        let selected = DirectStreamingPlayer.shared.selectedStream.languageCode
+        if !selected.isEmpty {
+            return selected
+        }
+        if let snapshotLanguage = loadPersistedWidgetState()?.currentLanguage, !snapshotLanguage.isEmpty {
+            return snapshotLanguage
+        }
+        return preferredMainAppInitialLanguageCode()
+    }
+
+    /// Language code for extension/main optimistic play/pause paths that still write instant
+    /// feedback or pending language (not for Live Activity view chrome).
+    ///
+    /// Resolve order (first non-empty wins):
+    /// 1. In-process session snapshot (`PersistedWidgetState.currentLanguage`)
+    /// 2. Durable Live Activity language mirror (``loadLiveActivityLanguageMirror()``)
+    /// 3. ``preferredWidgetLanguage()`` (may hard-default `"en"` under no-widgets)
+    ///
+    /// Live Activity **views** must not call this — they use `context.state.currentLanguage` only.
+    /// This helper exists so LA-hosted play/pause does not stamp English into instant-feedback
+    /// keys when ContentState / the language mirror already hold the active stream code.
+    ///
+    /// - SeeAlso: ``writeInstantFeedback(language:)``, ``persistLiveActivityLanguageMirror(_:)``,
+    ///   ``WidgetIntentExecution/performLiveActivityToggle()``.
+    nonisolated static func languageForLiveActivityOrWidgetOptimistic() -> String {
+        if let snapshotLanguage = loadPersistedWidgetState()?.currentLanguage, !snapshotLanguage.isEmpty {
+            return snapshotLanguage
+        }
+        if let mirrorLanguage = loadLiveActivityLanguageMirror(), !mirrorLanguage.isEmpty {
+            return mirrorLanguage
+        }
+        return preferredWidgetLanguage()
     }
 
     // MARK: - Boot identity + durable-mirror play distrust (LA toggle hygiene)
@@ -3991,8 +4101,9 @@ extension SharedPlayerManager {
         defaults.removeObject(forKey: "pendingActionTime")
         defaults.removeObject(forKey: "pendingLanguage")
 
-        // Live Activity toggle mirror (cross-process plan signal; privacy clear ends LA too).
+        // Live Activity toggle visual + language mirrors (cross-process signals; privacy clear ends LA).
         defaults.removeObject(forKey: liveActivityToggleVisualStateAppGroupKey)
+        defaults.removeObject(forKey: liveActivityCurrentLanguageAppGroupKey)
         // Boot identity used only for post-reboot LA plan distrust; drop on privacy clear.
         defaults.removeObject(forKey: recordedSystemBootTimeAppGroupKey)
 

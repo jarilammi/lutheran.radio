@@ -182,20 +182,27 @@ class RadioLiveActivityManagerTests: XCTestCase {
 
     private func makeContentState(
         visualState: PlayerVisualState,
-        metadata: StreamProgramMetadata? = nil
+        metadata: StreamProgramMetadata? = nil,
+        currentLanguage: String = "en"
     ) -> LutheranRadioLiveActivityAttributes.ContentState {
         LutheranRadioLiveActivityAttributes.ContentState(
             visualState: visualState,
-            streamMetadata: metadata
+            streamMetadata: metadata,
+            currentLanguage: currentLanguage
         )
     }
 
     private func makeActivityContent(
         visualState: PlayerVisualState,
-        metadata: StreamProgramMetadata? = nil
+        metadata: StreamProgramMetadata? = nil,
+        currentLanguage: String = "en"
     ) -> ActivityContent<LutheranRadioLiveActivityAttributes.ContentState> {
         ActivityContent(
-            state: makeContentState(visualState: visualState, metadata: metadata),
+            state: makeContentState(
+                visualState: visualState,
+                metadata: metadata,
+                currentLanguage: currentLanguage
+            ),
             staleDate: nil
         )
     }
@@ -260,7 +267,7 @@ class RadioLiveActivityManagerTests: XCTestCase {
     /// the candidate matches the attribute-events-aligned record.
     func testUpdateCurrentActivitySuppressesWhenLastPushedContentMatchesCandidate() async {
         let metadata = StreamProgramMetadata(programTitle: "Live Program", speaker: "Host")
-        let aligned = makeActivityContent(visualState: .playing, metadata: metadata)
+        let aligned = makeActivityContent(visualState: .playing, metadata: metadata, currentLanguage: "fi")
 
         let stream = AsyncStream<ActivityContent<LutheranRadioLiveActivityAttributes.ContentState>> { continuation in
             continuation.yield(aligned)
@@ -272,38 +279,55 @@ class RadioLiveActivityManagerTests: XCTestCase {
         XCTAssertTrue(alignedReady, "Precondition: attribute-events alignment must populate lastPushedContent")
 
         XCTAssertTrue(
-            manager._test_wouldSuppressLiveActivityUpdate(visualState: .playing, streamMetadata: metadata),
+            manager._test_wouldSuppressLiveActivityUpdate(
+                visualState: .playing,
+                streamMetadata: metadata,
+                currentLanguage: "fi"
+            ),
             "Matching candidate must suppress Activity.update IPC"
         )
         XCTAssertFalse(
-            manager._test_wouldSuppressLiveActivityUpdate(visualState: .userPaused, streamMetadata: metadata),
+            manager._test_wouldSuppressLiveActivityUpdate(
+                visualState: .userPaused,
+                streamMetadata: metadata,
+                currentLanguage: "fi"
+            ),
             "Visual change must not suppress"
         )
         XCTAssertFalse(
             manager._test_wouldSuppressLiveActivityUpdate(
                 visualState: .playing,
-                streamMetadata: StreamProgramMetadata(programTitle: "Different", speaker: nil)
+                streamMetadata: StreamProgramMetadata(programTitle: "Different", speaker: nil),
+                currentLanguage: "fi"
             ),
             "Metadata change must not suppress"
+        )
+        XCTAssertFalse(
+            manager._test_wouldSuppressLiveActivityUpdate(
+                visualState: .playing,
+                streamMetadata: metadata,
+                currentLanguage: "et"
+            ),
+            "Language-only change must not suppress (LA language chrome SSOT)"
         )
     }
 
     /// Seeds last-pushed via synthetic content, then optimistic pause alignment preserves
-    /// metadata and suppresses a matching post-sticky candidate.
+    /// metadata + language and suppresses a matching post-sticky candidate.
     ///
     /// Protects lock-screen toggle latency: intent-path optimistic content must record
     /// ``lastPushedContent`` without ActivityKit IPC under test isolation so engine-complete
     /// ``updateCurrentActivity`` can suppress when actor visual matches the glyph.
     func testOptimisticToggleAlignmentPreservesMetadataAndSuppressesMatchingCandidate() async {
         let metadata = StreamProgramMetadata(programTitle: "Morning Prayer", speaker: "Reader")
-        let playing = makeActivityContent(visualState: .playing, metadata: metadata)
+        let playing = makeActivityContent(visualState: .playing, metadata: metadata, currentLanguage: "sv")
         let stream = AsyncStream<ActivityContent<LutheranRadioLiveActivityAttributes.ContentState>> { continuation in
             continuation.yield(playing)
             continuation.finish()
         }
         manager._test_beginObservingSyntheticContentUpdates(stream)
         let seeded = await waitUntil({ self.manager.lastPushedContent == playing.state })
-        XCTAssertTrue(seeded, "Precondition: lastPushedContent must carry playing + metadata")
+        XCTAssertTrue(seeded, "Precondition: lastPushedContent must carry playing + metadata + language")
 
         manager.recordOptimisticToggleContent(visualState: .userPaused)
 
@@ -313,14 +337,50 @@ class RadioLiveActivityManagerTests: XCTestCase {
             metadata,
             "Optimistic control flip must not clear program title/speaker"
         )
+        XCTAssertEqual(
+            manager.lastPushedContent?.currentLanguage,
+            "sv",
+            "Optimistic control flip must not clear stream language chrome"
+        )
         XCTAssertTrue(
-            manager._test_wouldSuppressLiveActivityUpdate(visualState: .userPaused, streamMetadata: metadata),
+            manager._test_wouldSuppressLiveActivityUpdate(
+                visualState: .userPaused,
+                streamMetadata: metadata,
+                currentLanguage: "sv"
+            ),
             "Engine-complete pause candidate matching optimistic content must suppress"
         )
         XCTAssertFalse(
-            manager._test_wouldSuppressLiveActivityUpdate(visualState: .playing, streamMetadata: metadata),
+            manager._test_wouldSuppressLiveActivityUpdate(
+                visualState: .playing,
+                streamMetadata: metadata,
+                currentLanguage: "sv"
+            ),
             "Divergent actor visual must still be eligible to push"
         )
+    }
+
+    /// Attribute-events yield warms the durable LA language mirror from ContentState.
+    func testContentUpdatesObservationWarmsLanguageMirror() async {
+        SharedPlayerManager.clearLiveActivityLanguageMirror()
+        XCTAssertNil(SharedPlayerManager.loadLiveActivityLanguageMirror())
+
+        let content = makeActivityContent(
+            visualState: .playing,
+            metadata: StreamProgramMetadata(programTitle: "Sermon", speaker: nil),
+            currentLanguage: "de"
+        )
+        let stream = AsyncStream<ActivityContent<LutheranRadioLiveActivityAttributes.ContentState>> { continuation in
+            continuation.yield(content)
+            continuation.finish()
+        }
+        manager._test_beginObservingSyntheticContentUpdates(stream)
+
+        let warmed = await waitUntil({
+            SharedPlayerManager.loadLiveActivityLanguageMirror() == "de"
+        })
+        XCTAssertTrue(warmed, "ContentState language must warm the durable LA language mirror")
+        XCTAssertEqual(manager.lastPushedContent?.currentLanguage, "de")
     }
 
     /// Verifies termination self-healing clears stale tracking when observation ends

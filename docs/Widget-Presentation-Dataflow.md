@@ -9,7 +9,7 @@ It complements (and is cross-referenced by) the source headers in `LutheranRadio
 WidgetKit and ActivityKit deliver **frozen value-type snapshots** across process boundaries:
 
 - **Home widgets**: `Provider` (conforming to `AppIntentTimelineProvider`) produces `SimpleEntry` values. The system compares `TimelineEntry` fields to decide re-evaluation.
-- **Live Activities**: `RadioLiveActivityManager` pushes `LutheranRadioLiveActivityAttributes.ContentState` (containing `visualState` + `streamMetadata`). The system renders via `ActivityConfiguration` closures and `LockScreenLiveActivityView`.
+- **Live Activities**: `RadioLiveActivityManager` pushes `LutheranRadioLiveActivityAttributes.ContentState` (containing `visualState` + `streamMetadata` + `currentLanguage`). The system renders via `ActivityConfiguration` closures and `LockScreenLiveActivityView`. Language chrome (flag, name, alt-stream “current”) reads **only** `context.state.currentLanguage` (hoisted once), never privacy-gated ``preferredWidgetLanguage()``.
 
 There are no live `@Observable` objects inside the widget extension. All display decisions are computed from the snapshot at derivation time or consumption time.
 
@@ -109,7 +109,7 @@ Never derive presentation inside leaf view `body` for the three canonical surfac
 |--------------------------------|-----------------------------------------|-------------------------------------------------|-----------------------------------------|-----------------------|
 | Widgets + Control widgets      | `PersistedWidgetState` (snapshot)       | `persistWidgetSnapshot`, `performActualSave`, `saveCombinedWidgetState`, widget intents via `forcePersistVisualState` | `loadPersistedWidgetState()` (providers) | Yes (required) |
 | App relaunch / resurrection    | `PersistedWidgetState` + liveness (`lastUpdateTime` + sentinel 0) | Same as above + `bumpWidgetLivenessTimestamp`   | Same + `isMainAppProcessRecentlyActive` | Yes (required) |
-| Live Activity (transient UI)   | In-memory `currentVisualState` + `currentStreamMetadata` on `SharedPlayerManager` | None for LA itself. Visual/metadata mutations + direct notify | `await manager.currentVisualState` / `currentStreamMetadata` (fallback to persisted only for safety) | **No** (in-memory compare + conditional `Activity.update`) |
+| Live Activity (transient UI)   | In-memory `currentVisualState` + `currentStreamMetadata` + stream language (`mainAppLiveActivityLanguageCode` / `selectedStream`) | None for LA itself. Visual/metadata/language mutations + direct notify; durable LA language App Group mirror warmed on push | `await manager.currentVisualState` / `currentStreamMetadata` + language for `ContentState.currentLanguage` | **No** (in-memory compare + conditional `Activity.update`) |
 
 ### How Event-Driven Updates Work
 
@@ -120,14 +120,14 @@ Never derive presentation inside leaf view `body` for the three canonical surfac
    - Lifecycle: `handleAppDidEnterForeground` (correction), `handleAppWillEnterBackground` (auto-start when playing).
 
 2. **Inside `RadioLiveActivityManager`**:
-   - `updateCurrentActivity()` computes a candidate `ContentState(visualState:streamMetadata)`.
+   - `updateCurrentActivity()` computes a candidate `ContentState(visualState:streamMetadata:currentLanguage:)`.
    - It compares against private `lastPushedContent` (purely in-memory, cleared on `endActivity`).
    - Only when different (or first push) does it call `Activity.update` and record the candidate.
    - This is the "Update Invariant": pushes happen **iff** the rendered content would change.
 
 3. **Lock-screen toggle optimistic ContentState** (intent path, main or extension host):
    - ``WidgetIntentExecution/performLiveActivityToggle()`` plans from multi-source resolve, then writes the durable toggle mirror and calls ``pushOptimisticLiveActivityToggleContent(visualState:)``.
-   - That helper updates interactive `Activity` instances with ``ContentState/replacingVisualState(_:)`` (program metadata preserved) and, on the main app, ``RadioLiveActivityManager/recordOptimisticToggleContent(visualState:)`` so ``lastPushedContent`` matches the optimistic glyph before engine-complete refresh.
+   - That helper updates interactive `Activity` instances with ``ContentState/replacingVisualState(_:)`` (program metadata **and** `currentLanguage` preserved) and, on the main app, ``RadioLiveActivityManager/recordOptimisticToggleContent(visualState:)`` so ``lastPushedContent`` matches the optimistic glyph before engine-complete refresh.
    - Resolve still prefers ActivityKit content over the durable mirror; the optimistic content publish is what makes a rapid second tap plan the opposite direction instead of re-reading stale pre-tap content.
    - UITestMode skips ActivityKit IPC; main-app last-pushed alignment still runs for white-box tests.
 

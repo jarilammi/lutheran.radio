@@ -294,18 +294,20 @@ final class WidgetIntentContractExtensionTests: XCTestCase {
         )
     }
 
-    /// Optimistic ContentState builder preserves stream metadata when flipping control visual.
+    /// Optimistic ContentState builder preserves stream metadata and language when flipping control visual.
     ///
-    /// Lock-screen toggle must not clear program title/speaker while flipping play/pause.
+    /// Lock-screen toggle must not clear program title/speaker/language while flipping play/pause.
     func testOptimisticLiveActivityContentPreservesStreamMetadata() {
         let metadata = StreamProgramMetadata(programTitle: "Vesper", speaker: "Cantor")
         let before = LutheranRadioLiveActivityAttributes.ContentState(
             visualState: .playing,
-            streamMetadata: metadata
+            streamMetadata: metadata,
+            currentLanguage: "et"
         )
         let after = before.replacingVisualState(.userPaused)
         XCTAssertEqual(after.visualState, .userPaused)
         XCTAssertEqual(after.streamMetadata, metadata)
+        XCTAssertEqual(after.currentLanguage, "et")
     }
 
     /// Durable mirror alone: persist/load/clear contract (no ActivityKit IPC).
@@ -321,6 +323,49 @@ final class WidgetIntentContractExtensionTests: XCTestCase {
 
         SharedPlayerManager.clearLiveActivityToggleVisualStateMirror()
         XCTAssertNil(SharedPlayerManager.loadLiveActivityToggleVisualStateMirror())
+    }
+
+    /// Durable LA language mirror: persist/load/clear; optimistic language prefers mirror over
+    /// session-less preferredWidgetLanguage fallback.
+    ///
+    /// Protects LA-only sessions (no home widgets / empty session snapshot) so play/pause
+    /// instant-feedback language is not stamped from the privacy-gated default when
+    /// ContentState already held a non-English stream code on the durable mirror.
+    func testLiveActivityLanguageMirrorRoundTripAndOptimisticLanguageResolve() {
+        SharedPlayerManager.removeAllLocalPlaybackKeys()
+        XCTAssertNil(SharedPlayerManager.loadLiveActivityLanguageMirror())
+        XCTAssertNil(SharedPlayerManager.loadPersistedWidgetState())
+
+        let fallbackWithoutMirror = SharedPlayerManager.languageForLiveActivityOrWidgetOptimistic()
+        // Without session or mirror, optimistic language falls through to preferredWidgetLanguage.
+        XCTAssertEqual(fallbackWithoutMirror, SharedPlayerManager.preferredWidgetLanguage())
+
+        SharedPlayerManager.persistLiveActivityLanguageMirror("fi")
+        XCTAssertEqual(SharedPlayerManager.loadLiveActivityLanguageMirror(), "fi")
+        XCTAssertEqual(
+            SharedPlayerManager.languageForLiveActivityOrWidgetOptimistic(),
+            "fi",
+            "Optimistic LA language must prefer durable language mirror over privacy-gated preferredWidgetLanguage"
+        )
+
+        SharedPlayerManager.clearLiveActivityLanguageMirror()
+        XCTAssertNil(SharedPlayerManager.loadLiveActivityLanguageMirror())
+        XCTAssertEqual(
+            SharedPlayerManager.languageForLiveActivityOrWidgetOptimistic(),
+            SharedPlayerManager.preferredWidgetLanguage()
+        )
+    }
+
+    /// Privacy clear removes both durable LA visual and language mirrors.
+    func testRemoveAllLocalPlaybackKeysClearsLiveActivityLanguageMirror() {
+        SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(.playing)
+        SharedPlayerManager.persistLiveActivityLanguageMirror("de")
+        XCTAssertEqual(SharedPlayerManager.loadLiveActivityLanguageMirror(), "de")
+
+        SharedPlayerManager.removeAllLocalPlaybackKeys()
+
+        XCTAssertNil(SharedPlayerManager.loadLiveActivityToggleVisualStateMirror())
+        XCTAssertNil(SharedPlayerManager.loadLiveActivityLanguageMirror())
     }
 
     /// Simulated reboot (stale recorded boot) distrusts durable-mirror-alone play planning.
