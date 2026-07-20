@@ -243,12 +243,20 @@ enum MediaTransportLatencyTimeline: Sendable {
     }
 
     /// Formats a ``Duration`` as milliseconds with one fractional digit (device-QA friendly).
+    ///
+    /// Uses ``FloatingPointFormatStyle`` rather than `String(format:)` so the path stays free of
+    /// C-varargs `unsafe` under `SWIFT_STRICT_MEMORY_SAFETY=YES` (DEBUG console only).
     private static func milliseconds(_ duration: Duration) -> String {
         let components = duration.components
         let ms =
             Double(components.seconds) * 1000.0
             + Double(components.attoseconds) / 1_000_000_000_000_000.0
-        return String(format: "%.1f", ms)
+        // POSIX locale keeps a stable `.` decimal for greppable console lines across device locales.
+        return ms.formatted(
+            .number
+                .precision(.fractionLength(1))
+                .locale(Locale(identifier: "en_US_POSIX"))
+        )
     }
 }
 
