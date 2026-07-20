@@ -1449,6 +1449,7 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     /// - SeeAlso: ``SharedPlayerManager/submitMediaTransportCommandAndWait(_:)``,
     ///   ``SharedPlayerManager/signalWidgetPendingAction(visualState:action:language:)``,
     ///   ``RadioPlayerCoordinator/handleWidgetPauseAction()``,
+    ///   ``MediaTransportLatencyTimeline`` (DEBUG drain milestones),
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
     ///   docs/Widget-Functionality-Roadmap.md
     public func checkForPendingWidgetActions() {
@@ -1488,6 +1489,10 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         #if DEBUG
         print("[ViewController] Found pending action: \(pendingAction), ID: \(actionId)")
         print("[ViewController] Pending language: \(pendingLanguage ?? "nil")")
+        MediaTransportLatencyTimeline.mark(
+            .pendingActionDrainEntered,
+            detail: "action=\(pendingAction) id=\(actionId)"
+        )
         #endif
 
         // Clear action immediately to prevent re-processing
@@ -1514,6 +1519,10 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
             guard shouldExecuteWidgetPlayPauseAction("play") else {
                 #if DEBUG
                 print("[ViewController] Widget play debounced (same-direction within \(widgetActionDebounceInterval)s)")
+                MediaTransportLatencyTimeline.mark(
+                    .pendingActionDrainDebounced,
+                    detail: "action=play"
+                )
                 #endif
                 return
             }
@@ -1526,8 +1535,7 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
             // system Now Playing and main-hosted Live Activity toggles.
             Task { @MainActor [weak self] in
                 #if DEBUG
-                // ContinuousClock is pure Swift (no CFAbsoluteTime / strict-memory-safety unsafe).
-                let drainStarted = ContinuousClock.now
+                MediaTransportLatencyTimeline.mark(.pendingActionDrainPlayStarted)
                 #endif
                 // If a widget switch was recently scheduled (to select a lang while paused) and a play
                 // tap followed immediately, cancel the deferred switch workItem. Its selection effect
@@ -1554,8 +1562,7 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
                 await SharedPlayerManager.shared.saveCurrentState()
 
                 #if DEBUG
-                let playDrainElapsed = ContinuousClock.now - drainStarted
-                print("[ViewController] Widget play drain engine-complete in \(playDrainElapsed)")
+                MediaTransportLatencyTimeline.mark(.pendingActionDrainPlayFinished)
                 #endif
 
                 guard let self else { return }
@@ -1577,6 +1584,10 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
             guard shouldExecuteWidgetPlayPauseAction("pause") else {
                 #if DEBUG
                 print("[ViewController] Widget pause debounced (same-direction within \(widgetActionDebounceInterval)s)")
+                MediaTransportLatencyTimeline.mark(
+                    .pendingActionDrainDebounced,
+                    detail: "action=pause"
+                )
                 #endif
                 return
             }
@@ -1587,20 +1598,22 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 #if DEBUG
-                // ContinuousClock is pure Swift (no CFAbsoluteTime / strict-memory-safety unsafe).
-                let drainStarted = ContinuousClock.now
+                MediaTransportLatencyTimeline.mark(.pendingActionDrainPauseStarted)
                 #endif
                 let vs = await SharedPlayerManager.shared.currentVisualState
                 if vs == .userPaused {
                     #if DEBUG
                     print("[ViewController] Widget pause ignored — already .userPaused (prevents double-pause resurrection races)")
+                    MediaTransportLatencyTimeline.mark(
+                        .pendingActionDrainPauseFinished,
+                        detail: "result=alreadyUserPaused"
+                    )
                     #endif
                     return
                 }
                 await radioPlayerCoordinator?.handleWidgetPauseAction()
                 #if DEBUG
-                let pauseDrainElapsed = ContinuousClock.now - drainStarted
-                print("[ViewController] Widget pause drain engine-complete in \(pauseDrainElapsed)")
+                MediaTransportLatencyTimeline.mark(.pendingActionDrainPauseFinished)
                 #endif
             }
         default:

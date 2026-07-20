@@ -214,6 +214,9 @@ extension SharedPlayerManager {
     ///
     /// AGENT NOTE: Keep remote handlers and LA engine execution on this mailbox. Do not
     /// re-introduce unstructured `Task { isActivelyPlaying; stop/play }` in remote targets.
+    ///
+    /// DEBUG: ``MediaTransportLatencyTimeline`` marks enqueue + execute start/finish so
+    /// device QA can measure remote / LA mailbox latency without changing policy.
     func submitMediaTransportCommand(_ command: MediaTransportCommand) {
         mediaTransportEpoch &+= 1
         let epoch = mediaTransportEpoch
@@ -222,6 +225,13 @@ extension SharedPlayerManager {
         if command == .pause || command == .stop {
             mediaTransportPauseEpoch = epoch
         }
+
+        #if DEBUG
+        MediaTransportLatencyTimeline.mark(
+            .mediaTransportEnqueued,
+            detail: "command=\(command) epoch=\(epoch)"
+        )
+        #endif
 
         let task: Task<Void, Never>
         switch command {
@@ -282,11 +292,19 @@ extension SharedPlayerManager {
     ///   - command: Verb to apply to the engine / sticky intent path.
     ///   - generation: Submission epoch captured at enqueue time.
     /// - SeeAlso: ``userRequestedPlay()``, ``stop()``, ``isConnectingPlayback``,
-    ///   ``MediaTransportCommand``, ``PlayerVisualState/blocksPlannedPlay``
+    ///   ``MediaTransportCommand``, ``PlayerVisualState/blocksPlannedPlay``,
+    ///   ``MediaTransportLatencyTimeline`` (DEBUG latency milestones)
     func performMediaTransportCommand(
         _ command: MediaTransportCommand,
         generation: UInt64
     ) async {
+        #if DEBUG
+        MediaTransportLatencyTimeline.mark(
+            .mediaTransportExecuteStarted,
+            detail: "command=\(command) epoch=\(generation)"
+        )
+        #endif
+
         switch command {
         case .play:
             // Idempotent while Connecting; thermal refuse lives inside userRequestedPlay.
@@ -300,6 +318,10 @@ extension SharedPlayerManager {
             } else if currentVisualState.blocksPlannedPlay && Self.isDeviceThermallyStressed() {
                 #if DEBUG
                 print("[SharedPlayerManager] media-transport toggle refused — thermal gate still active")
+                MediaTransportLatencyTimeline.mark(
+                    .mediaTransportExecuteFinished,
+                    detail: "command=\(command) epoch=\(generation) result=thermalRefuse"
+                )
                 #endif
                 return
             } else {
@@ -307,6 +329,13 @@ extension SharedPlayerManager {
                 await reassertStickyPauseIfSupersededByPause(generation: generation)
             }
         }
+
+        #if DEBUG
+        MediaTransportLatencyTimeline.mark(
+            .mediaTransportExecuteFinished,
+            detail: "command=\(command) epoch=\(generation)"
+        )
+        #endif
     }
 
     /// If a pause/stop was submitted after `generation` and remains the latest transport

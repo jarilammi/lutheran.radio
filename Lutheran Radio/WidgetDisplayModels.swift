@@ -253,8 +253,13 @@ enum WidgetIntentExecution {
     ///   ``SharedPlayerManager/persistLiveActivityToggleVisualStateMirror(_:)``,
     ///   ``SharedPlayerManager/shouldDistrustDurableMirrorPlayPlanning()``,
     ///   ``SharedPlayerManager/isConnectingPlayback``,
-    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
+    ///   ``MediaTransportLatencyTimeline`` (DEBUG latency milestones).
     static func performLiveActivityToggle() async {
+        #if DEBUG
+        MediaTransportLatencyTimeline.mark(.liveActivityToggleStarted)
+        #endif
+
         let liveActivityContent = currentLiveActivityContentVisualState()
         let durableMirror = SharedPlayerManager.loadLiveActivityToggleVisualStateMirror()
         let actorVisualState = await SharedPlayerManager.shared.currentVisualState
@@ -275,8 +280,9 @@ enum WidgetIntentExecution {
         )
 
         #if DEBUG
-        print(
-            "[WidgetIntentExecution] LA toggle plan=\(plan) source=\(resolution.source.rawValue) state=\(resolution.visualState) distrustMirrorPlay=\(distrustDurableMirrorPlay) connecting=\(isConnectingPlayback)"
+        MediaTransportLatencyTimeline.mark(
+            .liveActivityTogglePlanResolved,
+            detail: "plan=\(plan) source=\(resolution.source.rawValue) state=\(resolution.visualState) distrustMirrorPlay=\(distrustDurableMirrorPlay) connecting=\(isConnectingPlayback)"
         )
         #endif
 
@@ -306,8 +312,20 @@ enum WidgetIntentExecution {
             SharedPlayerManager.persistLiveActivityLanguageMirror(contentLanguage)
         }
         await pushOptimisticLiveActivityToggleContent(visualState: optimisticTarget)
+        #if DEBUG
+        MediaTransportLatencyTimeline.mark(
+            .liveActivityToggleOptimisticPublished,
+            detail: "visual=\(optimisticTarget)"
+        )
+        #endif
 
+        #if DEBUG
+        MediaTransportLatencyTimeline.mark(.liveActivityToggleExecuteStarted, detail: "plan=\(plan)")
+        #endif
         await executeLiveActivityToggle(plan: plan)
+        #if DEBUG
+        MediaTransportLatencyTimeline.mark(.liveActivityToggleExecuteFinished, detail: "plan=\(plan)")
+        #endif
     }
 
     /// Reads `ContentState.visualState` from the first active/stale Lutheran Radio Live Activity.
