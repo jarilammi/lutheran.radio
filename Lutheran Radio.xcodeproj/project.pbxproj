@@ -196,6 +196,7 @@
 		B73ADB913007667000E8255C /* Exceptions for "Lutheran Radio" folder in "LutheranRadioWidgetTests" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				MediaTransportLatencyTimeline.swift,
 				SharedPlayerManager.swift,
 				WidgetDisplayModels.swift,
 				WidgetRefreshManager.swift,
@@ -213,6 +214,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Localizable.xcstrings,
+				MediaTransportLatencyTimeline.swift,
 				SharedPlayerManager.swift,
 				WidgetDisplayModels.swift,
 				WidgetRefreshManager.swift,
