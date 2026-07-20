@@ -4,6 +4,8 @@
 //
 //  ICY parsing and Now Playing display-string SSOT coverage.
 //
+//  Created by Jari Lammi on 6.6.2026.
+//
 
 import XCTest
 import WidgetSurface
