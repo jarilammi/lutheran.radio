@@ -3167,12 +3167,17 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// - Important: Never call from the start of ``SharedPlayerManager/play()`` or from
     ///   ``startPlayback(context:attachGeneration:)`` while still awaiting `.readyToPlay`.
     /// - SeeAlso: ``SharedPlayerManager/setPlaying()``, ``shouldAllowAudiblePlaybackKick()``,
-    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (connecting chrome vs audible start).
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (connecting chrome vs audible start),
+    ///   ``MediaTransportLatencyTimeline`` (DEBUG first-audio milestone).
     @MainActor
     private func publishAuthoritativePlayingIfNeeded() async {
         guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
             #if DEBUG
             print("[DirectStreamingPlayer] publishAuthoritativePlayingIfNeeded skipped — sticky pause/lock")
+            MediaTransportLatencyTimeline.mark(
+                .authoritativePlayingSkipped,
+                detail: "reason=stickyPauseOrLock"
+            )
             #endif
             return
         }
@@ -3180,12 +3185,17 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         guard visual != .playing else {
             #if DEBUG
             print("[DirectStreamingPlayer] publishAuthoritativePlayingIfNeeded no-op — already .playing")
+            MediaTransportLatencyTimeline.mark(
+                .authoritativePlayingSkipped,
+                detail: "reason=alreadyPlaying"
+            )
             #endif
             return
         }
         await SharedPlayerManager.shared.setPlaying()
         #if DEBUG
         print("[DirectStreamingPlayer] publishAuthoritativePlayingIfNeeded → setPlaying after audible start")
+        MediaTransportLatencyTimeline.mark(.authoritativePlayingPublished)
         #endif
     }
 
@@ -3645,7 +3655,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     ///   - applyUserPauseVisualLock: Pass `false` when ``SharedPlayerManager/stop()`` already
     ///     locked sticky `.userPaused` and will perform the single media-surface refresh.
     /// - SeeAlso: ``stop(reason:completion:silent:applyUserPauseVisualLock:)``,
-    ///   ``SharedPlayerManager/stop()``, docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    ///   ``SharedPlayerManager/stop()``, docs/Live-Activity-Stacking-and-Media-Surfaces.md,
+    ///   ``MediaTransportLatencyTimeline`` (DEBUG soft-silence milestone).
     func stopAndWait(
         reason: StopReason = .userAction,
         silent: Bool = false,
@@ -3659,6 +3670,13 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 applyUserPauseVisualLock: applyUserPauseVisualLock
             )
         }
+        #if DEBUG
+        // Engine-complete: soft pause has rate 0 / hard path finished before this resumes.
+        MediaTransportLatencyTimeline.mark(
+            .softSilenceComplete,
+            detail: "reason=\(reason) silent=\(silent) applyVisualLock=\(applyUserPauseVisualLock)"
+        )
+        #endif
     }
 
     /// Performs the actual stop operation (MainActor entry from ``stop``’s isolation task).

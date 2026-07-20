@@ -221,6 +221,8 @@ and cannot live in `WidgetSurface` without a circular dependency):
   catalog-aware ``displayLanguageName(for:)`` wrapper that forwards pure assembly
   to ``WidgetProviderPresentationAssembly``)
 - `WidgetRefreshManager.swift` (debouncing + active-widgets privacy gate)
+- `MediaTransportLatencyTimeline.swift` (DEBUG-only structured latency timeline for
+  lock-screen / Live Activity / remote / extension-drain measurement; stripped from Release)
 - `Localizable.xcstrings` (extension + extension-profile tests)
 
 These implement the cross-process widget state and intent **execution** SSOTs.
@@ -388,7 +390,7 @@ These guidelines exist because the cost of a force-unwrap or a data race in a ba
 | `LutheranRadioWidget/`                            | Home-screen / Control / LA SwiftUI shells + AppIntents                         | Thin delegates; presentation via `import WidgetSurface`; same `Core` security rules |
 | `WidgetSurface/`                                  | Presentation-only embedded framework (visual state, coordinators, timeline factory, liveness, metadata display, language chrome, pure Provider assembly) | App embeds; extension + widget tests link. **No** security logic. See cross-target section. |
 | `docs/`                                           | All architecture & security decision records                                   | Read before any major change                                                   |
-| `SharedPlayerManager.swift` + `WidgetDisplayModels.swift` + `WidgetRefreshManager.swift` | Membership-exception SSOT: actor state, intent execution + snapshot hygiene, widget refresh | Compiled into app + extension + `LutheranRadioWidgetTests`. Pure presentation lives in `WidgetSurface/`. Never duplicate widget state logic. |
+| `SharedPlayerManager.swift` + `WidgetDisplayModels.swift` + `WidgetRefreshManager.swift` + `MediaTransportLatencyTimeline.swift` | Membership-exception SSOT: actor state, intent execution + snapshot hygiene, widget refresh; DEBUG transport latency timeline | Compiled into app + extension + `LutheranRadioWidgetTests`. Pure presentation lives in `WidgetSurface/`. Never duplicate widget state logic. |
 
 ### Core Framework Surface Area (Mandatory Knowledge)
 

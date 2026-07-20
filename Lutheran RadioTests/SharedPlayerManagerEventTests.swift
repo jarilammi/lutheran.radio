@@ -3007,6 +3007,96 @@ final class SharedPlayerManagerEventTests: XCTestCase {
         XCTAssertEqual(intent, .shouldBePlaying)
     }
 
+    // MARK: - Media transport latency timeline (DEBUG)
+
+    /// Protects the DEBUG ``MediaTransportLatencyTimeline`` pause path: mailbox enqueue →
+    /// execute → soft silence after ``stop()`` via ``stopAndWait``.
+    ///
+    /// Why: Device QA needs ordered, named milestones for intent → silence measurement.
+    /// Capture is DEBUG-only and must not alter sticky pause or transport policy.
+    ///
+    /// - SeeAlso: ``MediaTransportLatencyTimeline``, ``SharedPlayerManager/submitMediaTransportCommandAndWait(_:)``,
+    ///   ``DirectStreamingPlayer/stopAndWait(reason:silent:applyUserPauseVisualLock:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md
+    func testMediaTransportLatencyTimelineRecordsPauseMailboxAndSoftSilence() async {
+        MediaTransportLatencyTimeline._test_resetAndStartCapture()
+        defer { MediaTransportLatencyTimeline._test_clearCapture() }
+
+        await manager.setPlaying()
+        await manager.submitMediaTransportCommandAndWait(.pause)
+
+        let milestones = MediaTransportLatencyTimeline._test_milestones()
+        assertEventsContainMilestones(
+            milestones,
+            [
+                .mediaTransportEnqueued,
+                .mediaTransportExecuteStarted,
+                .softSilenceComplete,
+                .mediaTransportExecuteFinished
+            ]
+        )
+
+        let visual = await manager.currentVisualState
+        XCTAssertEqual(visual, .userPaused, "Timeline marks must not change pause policy")
+    }
+
+    /// Protects the DEBUG latency timeline around main-app Live Activity toggle execution
+    /// (optimistic ContentState path + mailbox pause): plan → optimistic → execute → soft silence.
+    ///
+    /// - SeeAlso: ``WidgetIntentExecution/performLiveActivityToggle()``,
+    ///   ``MediaTransportLatencyTimeline``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md
+    func testMediaTransportLatencyTimelineRecordsLiveActivityTogglePauseChain() async {
+        MediaTransportLatencyTimeline._test_resetAndStartCapture()
+        defer { MediaTransportLatencyTimeline._test_clearCapture() }
+
+        // Seed playing visual so multi-source resolve plans pause (no ActivityKit activities
+        // under UITestMode; actor/session fallback still yields pause from .playing).
+        await manager.setPlaying()
+        await WidgetIntentExecution.performLiveActivityToggle()
+
+        let milestones = MediaTransportLatencyTimeline._test_milestones()
+        assertEventsContainMilestones(
+            milestones,
+            [
+                .liveActivityToggleStarted,
+                .liveActivityTogglePlanResolved,
+                .liveActivityToggleOptimisticPublished,
+                .liveActivityToggleExecuteStarted,
+                .mediaTransportEnqueued,
+                .mediaTransportExecuteStarted,
+                .softSilenceComplete,
+                .mediaTransportExecuteFinished,
+                .liveActivityToggleExecuteFinished
+            ]
+        )
+
+        let visual = await manager.currentVisualState
+        XCTAssertEqual(visual, .userPaused)
+    }
+
+    /// Ordered-subsequence matcher for DEBUG latency milestones (same pattern as
+    /// ``assertEvents(_:containInOrder:)`` for `PlayerEvent`).
+    private func assertEventsContainMilestones(
+        _ actual: [MediaTransportLatencyTimeline.Milestone],
+        _ expectedSubsequence: [MediaTransportLatencyTimeline.Milestone],
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        var searchFrom = actual.startIndex
+        for expected in expectedSubsequence {
+            guard let found = actual[searchFrom...].firstIndex(of: expected) else {
+                XCTFail(
+                    "Missing milestone \(expected.rawValue) in \(actual.map(\.rawValue)); expected subsequence \(expectedSubsequence.map(\.rawValue))",
+                    file: file,
+                    line: line
+                )
+                return
+            }
+            searchFrom = actual.index(after: found)
+        }
+    }
+
     /// Verifies the orchestration contract of ``SharedPlayerManager/performSessionAndWidgetTeardown(includeFactoryReset:liveActivityTeardown:refreshWidgets:widgetVisualState:staleLiveness:)``.
     ///
     /// The test drives the full awaited path with factory reset, termination liveness sentinel,
