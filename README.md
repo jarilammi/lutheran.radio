@@ -504,6 +504,7 @@ Two layers keep app, widget extension, and Live Activity presentation aligned. *
 
 - `SharedPlayerManager.swift` (actor + `PersistedWidgetState` + authoritative `PlayerEvent` emission)
 - `WidgetDisplayModels.swift` (`WidgetIntentExecution`; `WidgetProviderSnapshotResolver` snapshot reads / actor hygiene / stream-catalog labels; catalog-aware `displayLanguageName(for:)` wrapper that forwards pure assembly to `WidgetProviderPresentationAssembly`)
+- `MediaTransportLatencyTimeline.swift` (DEBUG-only structured latency timeline for media-transport / Live Activity / extension-drain measurement; stripped from Release)
 - `WidgetRefreshManager.swift` (debouncing + active-widgets privacy gate)
 - `Localizable.xcstrings` (extension + extension-profile tests)
 
