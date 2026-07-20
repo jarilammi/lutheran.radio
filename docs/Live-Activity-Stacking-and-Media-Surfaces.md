@@ -102,6 +102,33 @@ Apple documents coalescing of frequent updates; Lutheran Radio does not implemen
 
 Mutation-path timeline reloads are driven by the Tier 2 ``PlayerEvent`` observer in ``WidgetRefreshManager`` (debounce + coalesce). Imperative ``refreshIfNeeded`` remains for lifecycle, teardown, extension optimistic intents, and optional ``refreshAllMediaSurfaces(widgetRefresh: true)`` call sites.
 
+### DEBUG media-transport latency timeline
+
+``MediaTransportLatencyTimeline`` (DEBUG only; stripped from Release) records ordered milestones so device QA can measure intent → soft silence and intent → first audio with numbers rather than anecdotes. **It does not change transport policy**, mailbox ordering, soft-pause, or surface refresh.
+
+| Milestone family | Insertion points |
+|------------------|------------------|
+| Live Activity toggle | ``WidgetIntentExecution/performLiveActivityToggle()`` — started, plan resolved, optimistic published, execute started/finished |
+| Mailbox | ``submitMediaTransportCommand`` enqueue; ``performMediaTransportCommand`` execute start/finish |
+| Soft silence | ``DirectStreamingPlayer/stopAndWait`` resume (engine-complete) |
+| First audio chrome | ``publishAuthoritativePlayingIfNeeded`` published / skipped |
+| Extension drain | ``ViewController/checkForPendingWidgetActions()`` — entered, same-direction debounced, play/pause start/finish |
+
+**Console format** (grep `[MediaTransportLatency]`):
+
+```text
+[MediaTransportLatency] #n t=+Tms dt=+Dms <milestone> [detail]
+```
+
+- `t` — elapsed since last ``MediaTransportLatencyTimeline/reset()`` (or first mark after process start)
+- `dt` — delta since the previous mark (per-hop latency)
+
+**Unit gates:** `SharedPlayerManagerEventTests` — `testMediaTransportLatencyTimelineRecordsPauseMailboxAndSoftSilence`, `testMediaTransportLatencyTimelineRecordsLiveActivityTogglePauseChain`.
+
+**Device QA:** Before a lock-screen scenario, optionally call ``MediaTransportLatencyTimeline/reset()`` from a DEBUG hook or rely on process-start origin; then pause/play from Now Playing and Live Activity and read `dt=` on `softSilenceComplete` and `authoritativePlayingPublished`.
+
+- SeeAlso: ``MediaTransportLatencyTimeline``, docs/Widget-Functionality-Roadmap.md
+
 ---
 
 ## `refreshAllMediaSurfaces` Coordination Wrapper
@@ -215,4 +242,5 @@ Required convergence: paused chrome and silent engine — never durable “pause
 - [`docs/Widget-Functionality-Roadmap.md`](Widget-Functionality-Roadmap.md) — Tier 4 completion status
 - [`docs/Event-Driven-Refactor-Roadmap.md`](Event-Driven-Refactor-Roadmap.md) — `PlayerEvent` consumer paths
 - `Lutheran RadioTests/RadioLiveActivityManagerTests.swift` — LA diff suppression
-- `Lutheran RadioTests/SharedPlayerManagerEventTests.swift` — `refreshAllMediaSurfaces` contract; Now Playing rate/`playbackState` alignment; unsupported remote-command disable; media-transport mailbox (double-toggle, pause preemption, LA + remote interleave)
+- `Lutheran RadioTests/SharedPlayerManagerEventTests.swift` — `refreshAllMediaSurfaces` contract; Now Playing rate/`playbackState` alignment; unsupported remote-command disable; media-transport mailbox (double-toggle, pause preemption, LA + remote interleave); DEBUG ``MediaTransportLatencyTimeline`` pause + LA toggle chains
+- `Lutheran Radio/MediaTransportLatencyTimeline.swift` — DEBUG-only structured latency timeline (membership-exception; stripped from Release)
