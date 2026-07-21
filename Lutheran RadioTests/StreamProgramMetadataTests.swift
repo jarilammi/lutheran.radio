@@ -14,11 +14,15 @@ import WidgetSurface
 /// Protects ``StreamProgramMetadata/from(rawICYMetadata:)`` and
 /// ``StreamProgramMetadata/nowPlayingDisplayStrings(fromParsed:rawFallback:stationName:languageName:)``.
 ///
-/// Alignment with ``widgetNowPlayingDisplayModel(visualState:streamMetadata:languageName:)`` is
-/// asserted for shared program-title fixtures (Tier 4 media-surface parity).
+/// Coverage includes ASCII and typographic dash separators, multi-segment program titles,
+/// the `" by "` speaker form, empty/whitespace rejection, the Now Playing formatter matrix,
+/// and alignment with ``widgetNowPlayingDisplayModel(visualState:streamMetadata:languageName:)``
+/// for shared program-title fixtures (Tier 4 media-surface parity).
 ///
-/// - SeeAlso: `StreamProgramMetadata.swift`, `WidgetDisplayModels.swift`,
-///   docs/Widget-Functionality-Roadmap.md (Tier 4 / Tier 5).
+/// - SeeAlso: `WidgetSurface/StreamProgramMetadata.swift`,
+///   docs/Widget-Functionality-Roadmap.md (Tier 4 / Tier 5),
+///   docs/Widget-Presentation-Dataflow.md (formatter parity),
+///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
 final class StreamProgramMetadataTests: XCTestCase {
 
     private let programTitle = "Sunday Sermon on Grace"
@@ -43,15 +47,71 @@ final class StreamProgramMetadataTests: XCTestCase {
         XCTAssertEqual(metadata?.programTitle, "The Good Shepherd")
     }
 
+    /// En dash (U+2013) is common in station automation; must yield speaker + title, not title-only.
+    func testFromRawSpeakerEnDashTitle() {
+        let raw = "Guest Speaker \u{2013} The Good Shepherd"
+        let metadata = StreamProgramMetadata.from(rawICYMetadata: raw)
+        XCTAssertEqual(metadata?.speaker, "Guest Speaker")
+        XCTAssertEqual(metadata?.programTitle, "The Good Shepherd")
+    }
+
+    /// Em dash (U+2014) must share the same separator policy as hyphen-minus and en dash.
+    func testFromRawSpeakerEmDashTitle() {
+        let raw = "Guest Speaker \u{2014} The Good Shepherd"
+        let metadata = StreamProgramMetadata.from(rawICYMetadata: raw)
+        XCTAssertEqual(metadata?.speaker, "Guest Speaker")
+        XCTAssertEqual(metadata?.programTitle, "The Good Shepherd")
+    }
+
+    /// Segments after the first dash separator remain part of the program title.
+    func testFromRawMultiSegmentDashTitleJoinsTrailingParts() {
+        let metadata = StreamProgramMetadata.from(
+            rawICYMetadata: "Cantor - Vespers - Evening Prayer"
+        )
+        XCTAssertEqual(metadata?.speaker, "Cantor")
+        XCTAssertEqual(metadata?.programTitle, "Vespers - Evening Prayer")
+    }
+
+    /// Multi-segment titles with en dash normalize and re-join with ASCII `" - "`.
+    func testFromRawMultiSegmentEnDashTitleJoinsWithAsciiSeparator() {
+        let raw = "Cantor \u{2013} Vespers \u{2013} Evening Prayer"
+        let metadata = StreamProgramMetadata.from(rawICYMetadata: raw)
+        XCTAssertEqual(metadata?.speaker, "Cantor")
+        XCTAssertEqual(metadata?.programTitle, "Vespers - Evening Prayer")
+    }
+
     func testFromRawTitleBySpeaker() {
         let metadata = StreamProgramMetadata.from(rawICYMetadata: "Morning Service by Guest Speaker")
         XCTAssertEqual(metadata?.programTitle, "Morning Service")
         XCTAssertEqual(metadata?.speaker, "Guest Speaker")
     }
 
+    /// Unspaced hyphens inside words must not trigger speaker/title splitting.
+    func testFromRawUnspacedHyphenRemainsTitleOnly() {
+        let title = "Well-known Hymn Study"
+        let metadata = StreamProgramMetadata.from(rawICYMetadata: title)
+        XCTAssertEqual(metadata?.programTitle, title)
+        XCTAssertNil(metadata?.speaker)
+    }
+
     func testFromEmptyReturnsNil() {
         XCTAssertNil(StreamProgramMetadata.from(rawICYMetadata: nil))
         XCTAssertNil(StreamProgramMetadata.from(rawICYMetadata: "   "))
+    }
+
+    func testHasDisplayableContentRequiresNonEmptyField() {
+        XCTAssertTrue(
+            StreamProgramMetadata(programTitle: "Title", speaker: nil).hasDisplayableContent
+        )
+        XCTAssertTrue(
+            StreamProgramMetadata(programTitle: nil, speaker: "Speaker").hasDisplayableContent
+        )
+        XCTAssertFalse(
+            StreamProgramMetadata(programTitle: "", speaker: "").hasDisplayableContent
+        )
+        XCTAssertFalse(
+            StreamProgramMetadata(programTitle: nil, speaker: nil).hasDisplayableContent
+        )
     }
 
     // MARK: - nowPlayingDisplayStrings matrix
