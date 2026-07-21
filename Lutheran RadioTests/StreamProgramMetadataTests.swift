@@ -16,6 +16,7 @@ import WidgetSurface
 ///
 /// Coverage includes ASCII and typographic dash separators, multi-segment program titles,
 /// the `" by "` speaker form, empty/whitespace rejection, the Now Playing formatter matrix,
+/// raw-ICY → parse → formatter chains that keep speaker attribution on the system artist line,
 /// and alignment with ``widgetNowPlayingDisplayModel(visualState:streamMetadata:languageName:)``
 /// for shared program-title fixtures (Tier 4 media-surface parity).
 ///
@@ -126,6 +127,39 @@ final class StreamProgramMetadataTests: XCTestCase {
         )
         XCTAssertEqual(display.title, programTitle)
         XCTAssertEqual(display.artist, "\(speaker) • \(stationName)")
+    }
+
+    /// Raw StreamTitle with spaced en dash must parse to speaker + title and surface the
+    /// speaker on the Now Playing artist line (same ladder used by widgets and Live Activities).
+    func testNowPlayingDisplayStringsFromEnDashRawICYYieldsSpeakerArtistLine() {
+        let raw = "Guest Speaker \u{2013} The Good Shepherd"
+        let parsed = StreamProgramMetadata.from(rawICYMetadata: raw)
+        let display = StreamProgramMetadata.nowPlayingDisplayStrings(
+            fromParsed: parsed,
+            rawFallback: raw,
+            stationName: stationName,
+            languageName: languageName
+        )
+        XCTAssertEqual(parsed?.speaker, "Guest Speaker")
+        XCTAssertEqual(parsed?.programTitle, "The Good Shepherd")
+        XCTAssertEqual(display.title, "The Good Shepherd")
+        XCTAssertEqual(display.artist, "Guest Speaker • \(stationName)")
+    }
+
+    /// Raw StreamTitle with spaced em dash must share the en-dash parse → formatter chain.
+    func testNowPlayingDisplayStringsFromEmDashRawICYYieldsSpeakerArtistLine() {
+        let raw = "Guest Speaker \u{2014} The Good Shepherd"
+        let parsed = StreamProgramMetadata.from(rawICYMetadata: raw)
+        let display = StreamProgramMetadata.nowPlayingDisplayStrings(
+            fromParsed: parsed,
+            rawFallback: raw,
+            stationName: stationName,
+            languageName: languageName
+        )
+        XCTAssertEqual(parsed?.speaker, "Guest Speaker")
+        XCTAssertEqual(parsed?.programTitle, "The Good Shepherd")
+        XCTAssertEqual(display.title, "The Good Shepherd")
+        XCTAssertEqual(display.artist, "Guest Speaker • \(stationName)")
     }
 
     func testNowPlayingDisplayStringsParsedTitleOnlyUsesLanguageArtistLine() {

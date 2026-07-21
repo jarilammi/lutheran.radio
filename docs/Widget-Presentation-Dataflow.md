@@ -191,7 +191,7 @@ See `RadioLiveActivityManager.swift` (class docs, ``updateCurrentActivity()``, `
 
 System Now Playing, Live Activities, and widgets are three independent iOS surfaces with intentional coexistence. When both Now Playing and a Live Activity are active, iOS stacks both cards on the Lock Screen — expected platform behavior, not a defect.
 
-- **Formatter parity:** `StreamProgramMetadata.nowPlayingDisplayStrings(...)` (`WidgetSurface/StreamProgramMetadata.swift`) is shared with ``updateNowPlayingInfo()`` and widget/LA title resolution.
+- **Formatter parity:** `StreamProgramMetadata.nowPlayingDisplayStrings(...)` (`WidgetSurface/StreamProgramMetadata.swift`) is shared with ``updateNowPlayingInfo()`` and widget/LA title resolution. ICY ``from(rawICYMetadata:)`` recognizes spaced ASCII hyphen-minus, en dash (U+2013), and em dash (U+2014) speaker/title separators so speaker attribution reaches Now Playing, widgets, and Live Activities from the same parse.
 - **Coordinated refresh:** ``SharedPlayerManager/refreshAllMediaSurfaces(liveActivity:widgetRefresh:widgetRefreshImmediate:)`` (main app) aligns Now Playing + Live Activity after visual transitions; widget reloads remain on the Tier 2 ``PlayerEvent`` observer unless explicitly requested.
 - **LA start policy:** First `.playing` via ``setPlaying()`` (``.startOrUpdate``); background catch-up via ``RadioLiveActivityManager/handleAppWillEnterBackground()``; termination ends LA immediately.
 
