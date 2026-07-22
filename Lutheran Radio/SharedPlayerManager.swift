@@ -196,6 +196,7 @@ import WidgetKit
 /// | .prePlay        | Cold launch first play                            | Security valid + inside 25s window (or first time)              | .prePlay (Connecting) → .playing | `.playing` only after engine soft-resume / readyToPlay kick (`setPlaying`); sets `initialPlaybackHasRun = true` when prePlay path proceeds |
 /// | .userPaused     | Explicit user play (button, widget, Siri, etc.)   | `userRequestedPlay()` → `setUserIntentToPlay()` first           | .prePlay (Connecting) → .playing | Intent `.shouldBePlaying` immediately; chrome stays Connecting until engine `setPlaying` |
 /// | .playing        | User taps pause/stop (any surface)                | `stop()` or `markAsUserPaused()` at top of method               | .userPaused     | Immediate sticky lock + early `saveVisualState()` |
+/// | .playing        | Second explicit play / double-fire (same language)| `userRequestedPlay()` / `play()` — engine already audible       | .playing (unchanged) | **No-op** (optional surface reaffirm): never `setStreamAndPlay` / item rebuild; independent of cold-launch `resurrectionProtectionRelaxed` |
 /// | .playing        | User-initiated stream/language switch             | `resetToPrePlayForNewStream()` then `play()`                    | .prePlay → .playing | Hold prePlay through attach; engine `setPlaying` after readyToPlay |
 /// | .playing        | AV interruption, stall, or thermal event          | `attemptResurrectionIfAllowed()` or player recovery nudges      | .playing        | Only proceeds if `shouldAutoPlayOrResume` |
 /// | any             | Security validation failure (DNS/403/cert)        | Inside `play()` guard or StreamingSessionDelegate 403 handler   | .securityLocked | Permanent until explicit successful play |
@@ -1377,7 +1378,8 @@ actor SharedPlayerManager {
     /// - ensureVisualStateLoaded + (main) configureNowPlaying + cancelSleep
     /// - `clearUserPausedLockIfNeeded()` (defensive top-level clear)
     /// - Classify context (cold / streamSwitch / resume) + resurrectionProtectionRelaxed
-    /// - Early returns for stickyPauseOrLock, already-playing (outside relaxed), duplicate prePlay
+    /// - Early returns for stickyPauseOrLock, start-pipeline active, **already-audible play
+    ///   idempotency** (engine-aware; independent of cold-launch relaxed window), duplicate prePlay
     /// - Security validation (DNS TXT + cert) → on fail: securityLocked + return
     /// - **Re-check sticky pause after validation** (user may pause during the `await`)
     /// - **Keep Connecting chrome** (``.prePlay`` / stream-switch hold) — do **not** call
@@ -1397,8 +1399,8 @@ actor SharedPlayerManager {
     /// Direct calls are permitted only for the cases documented on `userRequestedPlay()`.
     ///
     /// - SeeAlso: ``userRequestedPlay()``, ``setUserIntentToPlay()``,
-    ///   ``clearUserPausedLockIfNeeded()``, ``canProceedWithPlayback()``,
-    ///   ``attemptResurrectionIfAllowed()``, ``stop()``,
+    ///   ``shouldNoOpPlayWhileAlreadyAudible()``, ``clearUserPausedLockIfNeeded()``,
+    ///   ``canProceedWithPlayback()``, ``attemptResurrectionIfAllowed()``, ``stop()``,
     ///   RadioPlayerCoordinator (canonical switch methods + shims),
     ///   ``isRunningInUITestMode``, ViewController.viewDidLoad,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (user pause during connect),
@@ -1410,7 +1412,8 @@ actor SharedPlayerManager {
     ///   2. cold launch still allowed exactly once via the one-shot + relaxed window
     ///   3. explicit .userPaused remains sticky even inside 25s window
     ///   4. pause during validation / attach never leaves play proceeding to audible start
-    /// Cross-update the resurrection table below, userRequestedPlay doc, and
+    ///   5. second play while already audible is a no-op even when resurrection is relaxed
+    /// Cross-update the resurrection table, userRequestedPlay doc, and
     /// coordinator architecture comment.
     func play() async {
         ensureVisualStateLoaded()
@@ -1501,6 +1504,7 @@ actor SharedPlayerManager {
         }
 
         // Resurrection protection — relaxed during the settling window or explicit play paths.
+        // Sticky pause already returned above; this branch only logs classification under DEBUG.
         if !resurrectionProtectionRelaxed {
             if currentPlaybackIntent.isStickyPauseOrLock {
                 #if DEBUG
@@ -1519,13 +1523,16 @@ actor SharedPlayerManager {
             }
             #endif
         }
-        
-        // Re-entrancy guard : Detect actual AVPlayer state to break recovery loops.
-        // Intent is the primary signal; this visual check is deliberately narrow (only outside relaxed window)
-        // to protect against tight recovery-task loops when the player is already playing.
-        if currentVisualState == .playing && !resurrectionProtectionRelaxed {
+
+        // Already-audible play idempotency (engine-aware).
+        //
+        // Why independent of `resurrectionProtectionRelaxed`: the cold-launch / first-play
+        // window previously disabled a visual-only skip, so a second `userRequestedPlay` while
+        // the secured item was already live rebuilt observers and thrashing ICY mid-audio.
+        // Soft-paused resume is intentionally excluded (`isActuallyPlaying` is false at rate 0).
+        if await shouldNoOpPlayWhileAlreadyAudible() {
             #if DEBUG
-            print("[SharedPlayerManager] SharedPlayerManager.play() — already .playing, skipping redundant call (recovery loop prevented)")
+            print("[SharedPlayerManager] SharedPlayerManager.play() — already audibly playing matching selection, skipping setStreamAndPlay (idempotent)")
             #endif
             return
         }
@@ -1857,12 +1864,18 @@ actor SharedPlayerManager {
     /// This is the **single authoritative explicit-play entry point**.
     ///
     /// Contract (in order):
-    /// 1. (Main-app only) `configureNowPlayingControlsIfNeeded()`
-    /// 2. `setUserIntentToPlay()` — forces `.prePlay` on sticky pause/clear, does
+    /// 1. Thermal refuse while device is still stressed (policy chrome stays).
+    /// 2. Idempotent no-op while Connecting (start pipeline already active).
+    /// 3. Idempotent no-op while already audibly playing the selected language — **before**
+    ///    ``setUserIntentToPlay()`` so chrome is never forced through Connecting and the
+    ///    secured item is never rebuilt (holds even inside the cold-launch relaxed window).
+    /// 4. (Main-app only) `configureNowPlayingControlsIfNeeded()`
+    /// 5. `setUserIntentToPlay()` — forces `.prePlay` on sticky pause/clear, does
     ///    `updatePlaybackIntent(to: .shouldBePlaying)`, double-saves.
-    /// 3. `play()` — the execution engine (defensive clear, classify cold/stream-switch/resume,
+    /// 6. `play()` — the execution engine (defensive clear, classify cold/stream-switch/resume,
     ///    sticky/one-shot/security guards, connecting chrome, engine drive; ``setPlaying()`` only
-    ///    after soft-resume or readyToPlay audible kick).
+    ///    after soft-resume or readyToPlay audible kick). Soft-paused same-language resume still
+    ///    reaches ``DirectStreamingPlayer/resumeFromSoftPauseIfAvailable()`` (not step 3).
     ///
     /// - Precondition: Must be used for every *explicit user* "start playing" surface.
     ///   Raw `play()` is reserved for cold-launch initial, internal continuation when
@@ -1871,10 +1884,12 @@ actor SharedPlayerManager {
     ///   branch inside `play()`.
     ///
     /// - Postcondition: `currentPlaybackIntent` is `.shouldBePlaying` (or derived) and
-    ///   (if allowed) playback proceeds or is initiated.
+    ///   (if allowed) playback proceeds or is initiated. When already audibly playing
+    ///   matching selection, state is unchanged (optional surface reaffirm only).
     ///
-    /// - SeeAlso: ``play()``, ``setUserIntentToPlay()``, ``clearUserPausedLockIfNeeded()``,
-    ///   ``currentPlaybackIntent``, ``attemptResurrectionIfAllowed()``,
+    /// - SeeAlso: ``play()``, ``setUserIntentToPlay()``, ``shouldNoOpPlayWhileAlreadyAudible()``,
+    ///   ``clearUserPausedLockIfNeeded()``, ``currentPlaybackIntent``,
+    ///   ``attemptResurrectionIfAllowed()``,
     ///   RadioPlayerCoordinator.completeStreamSwitch,
     ///   RadioPlayerCoordinator.switchToStreamFromWidget,
     ///   CODING_AGENT.md (Single Source of Truth Principles),
@@ -1910,6 +1925,20 @@ actor SharedPlayerManager {
             #endif
             return
         }
+
+        // Already audibly playing the selected language: do not force Connecting via
+        // `setUserIntentToPlay` and do not rebuild the secured item. Soft-paused resume
+        // does not hit this branch (engine rate is 0).
+        if await shouldNoOpPlayWhileAlreadyAudible() {
+            #if DEBUG
+            print("[SharedPlayerManager] userRequestedPlay() no-op — already audibly playing matching selection")
+            #endif
+            #if LUTHERAN_MAIN_APP
+            // Light surface reaffirm only — no visual/intent mutation, no attach.
+            await refreshAllMediaSurfaces(liveActivity: .updateIfActive)
+            #endif
+            return
+        }
         
         hasProcessedExplicitUserPlayRequest = true
         #if LUTHERAN_MAIN_APP
@@ -1917,6 +1946,62 @@ actor SharedPlayerManager {
         #endif
         await setUserIntentToPlay()
         await play()   // ← Fixed: no try/catch needed (play() is now non-throwing)
+    }
+
+    /// Whether a second play request must no-op because playback is already audible on the
+    /// currently selected language (or UITest chrome already reports authoritative `.playing`).
+    ///
+    /// Production signal is engine-truth via ``DirectStreamingPlayer/isActuallyPlaying()`` plus
+    /// same-language attach (``DirectStreamingPlayer/softPauseResumeRequiresStreamReattach()`` is
+    /// false). Soft-paused same-stream resume is **not** a no-op: soft silence has rate 0, so
+    /// `isActuallyPlaying` is false and the caller proceeds to soft-resume.
+    ///
+    /// **Invariant:** This check must **not** depend on cold-launch `resurrectionProtectionRelaxed`.
+    /// The relaxed window exists so first play / recovery may proceed despite prior sticky
+    /// snapshots; it must never authorize tearing down a live secured item for a redundant play.
+    ///
+    /// - Returns: `true` when the caller should return without `setStreamAndPlay` / intent thrash.
+    /// - Precondition: Sticky pause/lock and stream-switch hold are handled separately
+    ///   (`false` here so intentional switch attach and pause→play resume stay open).
+    /// - SeeAlso: ``userRequestedPlay()``, ``play()``,
+    ///   ``DirectStreamingPlayer/resumeFromSoftPauseIfAvailable()``,
+    ///   ``DirectStreamingPlayer/isActuallyPlaying()``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
+    ///   CODING_AGENT.md (Single Source of Truth Principles), <doc:Architecture>.
+    ///
+    /// AGENT NOTE: Single source of truth for play-while-already-playing idempotency.
+    /// Both ``userRequestedPlay()`` (before ``setUserIntentToPlay()``) and ``play()`` must
+    /// consult this helper. Do not re-introduce a visual-only skip gated on the cold-launch window.
+    private func shouldNoOpPlayWhileAlreadyAudible() async -> Bool {
+        if currentPlaybackIntent.isStickyPauseOrLock {
+            return false
+        }
+        // Stream-switch hold means a new attach is intentional — never treat as already-playing.
+        if holdPrePlayVisualUntilPlayback {
+            return false
+        }
+
+        #if LUTHERAN_MAIN_APP
+        // Engine-truth: already audible on the attached language matching `selectedStream`.
+        if DirectStreamingPlayer.shared.isActuallyPlaying() {
+            let needsLanguageReattach =
+                await DirectStreamingPlayer.shared.softPauseResumeRequiresStreamReattach()
+            if needsLanguageReattach {
+                return false
+            }
+            return true
+        }
+
+        // UITestMode has no real AVPlayer rate. Authoritative chrome `.playing` with an active
+        // playback intent is the stand-in so unit tests can prove idempotency without network audio.
+        if Self.isRunningInUITestMode,
+           currentVisualState == .playing,
+           currentPlaybackIntent.isActivePlaybackIntent {
+            return true
+        }
+        #endif
+
+        return false
     }
     
     /// Explicitly records that the user performed a manual pause or stop.

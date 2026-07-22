@@ -2645,6 +2645,102 @@ final class SharedPlayerManagerEventTests: XCTestCase {
         XCTAssertTrue(connecting, "Pipeline must remain active until stop or setPlaying")
     }
 
+    /// Second ``userRequestedPlay()`` while chrome is already authoritative `.playing` must
+    /// no-op: no Connecting thrash, no sticky re-plan, visual stays `.playing`.
+    ///
+    /// Why: Cold-launch `resurrectionProtectionRelaxed` used to disable the visual already-
+    /// playing skip, so an explicit play while audio was live rebuilt the secured item.
+    /// Idempotency is engine-aware in production and independent of that window; under
+    /// UITestMode, chrome `.playing` is the stand-in (no real AVPlayer rate). Soft-paused
+    /// resume remains a separate path and is not covered here.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/userRequestedPlay()``, ``SharedPlayerManager/setPlaying()``,
+    ///   ``SharedPlayerManager/play()``, CODING_AGENT.md (Single Source of Truth Principles).
+    func testUserRequestedPlayWhileAlreadyPlayingIsIdempotent() async {
+        // Establish authoritative playing chrome (UITestMode: no real engine attach).
+        await manager.setPlaying()
+
+        let visualBefore = await manager.currentVisualState
+        let intentBefore = await manager.currentPlaybackIntent
+        XCTAssertEqual(visualBefore, .playing, "Precondition: already authoritative playing")
+        XCTAssertEqual(intentBefore, .shouldBePlaying)
+
+        // Short-timeout seam window: redundant play should not emit stop or Connecting.
+        // High minimumCount forces the timeout path so we capture whatever (if anything) arrived.
+        let spm = manager
+        let events = await collectSeamEvents(minimumCount: 64, timeout: 1.0, whilePerforming: {
+            await spm.userRequestedPlay()
+        })
+
+        let visualAfter = await manager.currentVisualState
+        let intentAfter = await manager.currentPlaybackIntent
+        let connecting = await manager.isConnectingPlayback
+        XCTAssertEqual(visualAfter, .playing, "Second play must leave chrome authoritative playing")
+        XCTAssertEqual(intentAfter, .shouldBePlaying, "Intent must stay shouldBePlaying")
+        XCTAssertFalse(connecting, "Must not re-enter Connecting pipeline while already playing")
+
+        let forcedConnecting = events.contains {
+            if case .visualStateDidChange(.prePlay) = $0 { return true }
+            return false
+        }
+        XCTAssertFalse(
+            forcedConnecting,
+            "Already-playing play must not force Connecting chrome via setUserIntentToPlay"
+        )
+        let toreDown = events.contains {
+            if case .streamDidStop = $0 { return true }
+            return false
+        }
+        XCTAssertFalse(toreDown, "Already-playing play must not stop / rebuild the stream")
+    }
+
+    /// Direct ``play()`` while already `.playing` must also no-op (internal callers share the
+    /// same engine-aware idempotency as ``userRequestedPlay()``).
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/play()``, ``SharedPlayerManager/setPlaying()``
+    func testPlayWhileAlreadyPlayingIsIdempotentEvenOnDirectEntry() async {
+        await manager.setPlaying()
+        let before = await manager.currentVisualState
+        XCTAssertEqual(before, .playing)
+
+        await manager.play()
+
+        let visual = await manager.currentVisualState
+        let intent = await manager.currentPlaybackIntent
+        let connecting = await manager.isConnectingPlayback
+        XCTAssertEqual(visual, .playing)
+        XCTAssertEqual(intent, .shouldBePlaying)
+        XCTAssertFalse(connecting, "Direct play while already playing must not open start pipeline")
+    }
+
+    /// Soft-paused resume must still proceed (already-playing no-op is rate-aware and must
+    /// not block ``resumeFromSoftPauseIfAvailable`` after sticky pause).
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/userRequestedPlay()``, ``SharedPlayerManager/stop()``,
+    ///   ``DirectStreamingPlayer/resumeFromSoftPauseIfAvailable()``
+    func testUserRequestedPlayAfterSoftPauseStillPlansResume() async {
+        await manager.setPlaying()
+        await manager.stop()
+
+        let pausedVisual = await manager.currentVisualState
+        let pausedIntent = await manager.currentPlaybackIntent
+        XCTAssertEqual(pausedVisual, .userPaused)
+        XCTAssertEqual(pausedIntent, .userPaused)
+
+        await manager.userRequestedPlay()
+
+        let visual = await manager.currentVisualState
+        let intent = await manager.currentPlaybackIntent
+        // Under UITestMode play short-circuits to .playing after setUserIntentToPlay → .prePlay.
+        // Soft-pause path is not blocked: sticky pause clears and intent becomes shouldBePlaying.
+        XCTAssertEqual(intent, .shouldBePlaying, "Pause→play must clear sticky and plan playback")
+        XCTAssertTrue(
+            visual == .playing || visual == .prePlay,
+            "Resume must reach Connecting or authoritative playing, not stay sticky paused"
+        )
+        XCTAssertNotEqual(visual, .userPaused, "Soft-pause resume must not remain userPaused")
+    }
+
     /// Security recovery explicit play moves chrome to Connecting before validation / attach.
     ///
     /// - SeeAlso: ``SharedPlayerManager/setUserIntentToPlay()``,
