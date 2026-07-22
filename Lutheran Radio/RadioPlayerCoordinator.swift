@@ -1024,6 +1024,18 @@ final class RadioPlayerCoordinator {
     }
 
     // MARK: - Update distribution (single place for visual state application to all subviews)
+
+    /// Applies a `PlayerVisualState` to in-app chrome (SwiftUI `PlayerViewModel` + security alert).
+    ///
+    /// Dedupes consecutive identical states via `lastAppliedVisualState` so connecting/buffering
+    /// chatter does not thrash the pill. Authoritative promotion to `.playing` after deferred
+    /// Connecting is decided in ``handleStatusChange(_:reasonKey:)`` /
+    /// ``RadioPlayerChromeVisualResolver`` — this method only paints what it is given.
+    ///
+    /// - Parameter visualState: Chrome visual to apply (not necessarily equal to SPM yet during
+    ///   the deferred ``setPlaying()`` window).
+    /// - SeeAlso: ``handleStatusChange(_:reasonKey:)``, ``RadioPlayerChromeVisualResolver``,
+    ///   `PlayerViewModel`, CODING_AGENT.md (Single Source of Truth Principles).
     @MainActor
     func updateUI(for visualState: PlayerVisualState) {
         if lastAppliedVisualState == visualState {
@@ -1738,70 +1750,60 @@ final class RadioPlayerCoordinator {
     ///
     /// This is the central choke point for mapping low-level `PlayerStatus` + `reasonKey`
     /// (from `DirectStreamingPlayer.safeOnStatusChange`) into high-level `PlayerVisualState`
-    /// and user-visible surfaces.
+    /// and user-visible surfaces via ``RadioPlayerChromeVisualResolver``.
+    ///
+    /// **Connecting-until-audible chrome:** While the start pipeline is active, SPM holds
+    /// `.prePlay` until engine ``setPlaying()`` / `publishAuthoritativePlayingIfNeeded`.
+    /// Engine `status_playing` can arrive on MainActor **before** that actor mutation is
+    /// visible. Chrome must still promote to `.playing` promptly — freezing `.prePlay` here
+    /// leaves the in-app pill yellow while audio and Live Activity already show playing.
+    /// Sticky `.userPaused` / `.cleared` / policy chrome remain protected.
     ///
     /// Special handling exists for transient states (connecting/buffering preserve optimistic
-    /// prePlay/playing) and for explicit user pauses. The unavailable/failed reaction now
-    /// includes an `isInInitialRecoveryWindow` guard so that normal self-healing ICY decoder
-    /// noise immediately after a language switch (or cold launch) does not force `.userPaused`
-    /// + alert.
+    /// prePlay/playing, with an engine-audible race guard) and for explicit user pauses. The
+    /// unavailable/failed reaction includes an `isInInitialRecoveryWindow` guard so that normal
+    /// self-healing ICY decoder noise immediately after a language switch (or cold launch)
+    /// does not force `.userPaused` + alert.
     ///
     /// - Parameters:
     ///   - status: Coarse player status.
     ///   - reasonKey: Exact Localizable key (e.g. "status_playing", "status_stream_unavailable").
     ///     Used both for localization and for precise branching.
     ///
-    /// - SeeAlso: `DirectStreamingPlayer.safeOnStatusChange`, `handleItemStatusFailure(_:)`,
+    /// - SeeAlso: ``RadioPlayerChromeVisualResolver/resolve(status:reasonKey:visualState:playbackIntent:engineIsActuallyPlaying:)``,
+    ///   `DirectStreamingPlayer.safeOnStatusChange`, `handleItemStatusFailure(_:)`,
     ///   `streamingPlayer.isInInitialRecoveryWindow`, `SharedPlayerManager.markPlaybackStoppedByStreamFailure`,
-    ///   `updateUI(for:)`, CODING_AGENT.md (transient vs permanent modeling)
+    ///   `SharedPlayerManager.setPlaying()`, `updateUI(for:)`, CODING_AGENT.md (transient vs permanent modeling)
     func handleStatusChange(_ status: PlayerStatus, reasonKey: String?) async {
         let visualState = await SharedPlayerManager.shared.currentVisualState
         let playbackIntent = await SharedPlayerManager.shared.currentPlaybackIntent
+        // Engine-truth for the deferred-setPlaying race: status_playing / brief buffer while
+        // rate is already 1 must not re-stick Connecting chrome before SPM flips to `.playing`.
+        let engineIsActuallyPlaying = streamingPlayer.isActuallyPlaying()
 
         #if DEBUG
-        print("[RadioPlayerCoordinator] onStatusChange → \(status) (reasonKey: \(reasonKey ?? "nil")) → visualState \(visualState)")
+        print("[RadioPlayerCoordinator] onStatusChange → \(status) (reasonKey: \(reasonKey ?? "nil")) → visualState \(visualState) enginePlaying=\(engineIsActuallyPlaying)")
         #endif
 
-        let effectiveVisualState: PlayerVisualState = {
-            // .cleared (post-privacy-clear) must be preserved on any status callbacks after the reset
-            // (including "connecting"/"buffering"/"stopped" from the silent stop). This is the fix
-            // for the "status reset visual issue": without this the pill would flip back to .prePlay
-            // "Connect" yellow. The .cleared *intent* is still the resurrection blocker.
-            if playbackIntent == .cleared {
-                return .cleared
-            }
+        let effectiveVisualState = RadioPlayerChromeVisualResolver.resolve(
+            status: status,
+            reasonKey: reasonKey,
+            visualState: visualState,
+            playbackIntent: playbackIntent,
+            engineIsActuallyPlaying: engineIsActuallyPlaying
+        )
 
-            if let reasonKey,
-               (reasonKey == "status_connecting" || reasonKey == "status_buffering"),
-               status != .playing {
-                if visualState == .prePlay || visualState == .playing || visualState == .cleared {
-                    return visualState
-                }
-                if playbackIntent.isActivePlaybackIntent {
-                    return .prePlay
-                }
-            }
-
-            // Strong protection for explicit *user pause* (.userPaused visual or intent) on terminal
-            // statuses (status_stopped etc. from KVO on live streams while paused). We must not
-            // regress a grey paused UI to yellow "yhditää"/.prePlay. 
-            // Post "Clear local state" the reset uses .cleared visual + .cleared intent (the
-            // intent alone blocks); this prevents .userPaused (grey) from leaking into post-clear
-            // cold launches or causing "Blocked initial playback".
-            // The language selector is independently reseeded to a clean initial locale.
-            // Security has its own red. Only target real .userPaused here.
-            if status == .stopped || status == .paused
-                || reasonKey == "status_stopped" || reasonKey == "status_paused" {
-                if visualState == .userPaused || playbackIntent == .userPaused {
-                    return .userPaused
-                }
-            }
-
-            if visualState == .userPaused || visualState == .prePlay || visualState == .cleared {
-                return visualState
-            }
-            return visualState
-        }()
+        #if DEBUG
+        if effectiveVisualState == .playing
+            && visualState == .prePlay
+            && (reasonKey == "status_playing" || engineIsActuallyPlaying) {
+            print("[RadioPlayerCoordinator] in-app chrome → .playing while SPM still .prePlay (deferred setPlaying race; engine audible)")
+            MediaTransportLatencyTimeline.mark(
+                .inAppChromeAppliedPlaying,
+                detail: "spmVisual=prePlay reasonKey=\(reasonKey ?? "nil")"
+            )
+        }
+        #endif
 
         self.updateUI(for: effectiveVisualState)
 
@@ -1907,5 +1909,128 @@ final class RadioPlayerCoordinator {
         #if DEBUG
         print("[RadioPlayerCoordinator] deinit completed")
         #endif
+    }
+}
+
+// MARK: - In-app chrome visual resolver (engine status → pill / glyph)
+
+/// Pure mapping from streaming-engine status callbacks into the in-app chrome `PlayerVisualState`.
+///
+/// ``RadioPlayerCoordinator/handleStatusChange(_:reasonKey:)`` is the sole production call site.
+/// Logic lives here so unit tests can assert Connecting-until-audible, sticky pause, and privacy
+/// clear contracts without constructing a full UIKit host or driving `AVPlayer`.
+///
+/// ## Why this is not a dumb pass-through of SPM visual
+///
+/// SharedPlayerManager defers authoritative ``setPlaying()`` until soft-resume rate kick or
+/// readyToPlay first-play kick (`publishAuthoritativePlayingIfNeeded`). Engine
+/// `status_playing` is delivered via `DispatchQueue.main.async` and can interleave **before**
+/// the SPM actor mutation is visible. Freezing chrome on SPM `.prePlay` in that window leaves
+/// the main-app pill yellow (Connecting) while audio is live and Live Activity / Now Playing
+/// already show playing.
+///
+/// Holding `.prePlay` during **true** Connecting (`status_connecting` / buffering while the
+/// engine is not audibly playing) remains correct.
+///
+/// ## Sticky / policy protection (must not regress)
+///
+/// - `.userPaused` visual or intent on terminal stop/pause keys → grey pause chrome.
+/// - `.cleared` intent (privacy clear) → blue cleared chrome for any residual engine chatter.
+/// - `.securityLocked` / `.thermalPaused` while those visuals are authoritative → keep policy chrome
+///   even if a late `status_playing` races in (engine kick should already be suppressed).
+///
+/// - SeeAlso: ``RadioPlayerCoordinator/handleStatusChange(_:reasonKey:)``,
+///   ``SharedPlayerManager/setPlaying()``, `DirectStreamingPlayer.publishAuthoritativePlayingIfNeeded`,
+///   `PlayerVisualState`, CODING_AGENT.md (Single Source of Truth Principles).
+enum RadioPlayerChromeVisualResolver: Sendable {
+
+    /// Resolves the chrome visual that ``RadioPlayerCoordinator/updateUI(for:)`` should apply.
+    ///
+    /// - Parameters:
+    ///   - status: Coarse `PlayerStatus` from the streaming delegate (note: `status_connecting` is
+    ///     often delivered with `isPlaying: true` → `.playing` status; always prefer `reasonKey`).
+    ///   - reasonKey: Exact Localizable key from `safeOnStatusChange` (e.g. `"status_playing"`).
+    ///   - visualState: Current SPM `currentVisualState` (may still be `.prePlay` after audible start).
+    ///   - playbackIntent: Current SPM `currentPlaybackIntent`.
+    ///   - engineIsActuallyPlaying: ``DirectStreamingPlayer/isActuallyPlaying()`` — rate + timeControl
+    ///     truth used to avoid re-sticking Connecting chrome during the deferred-`setPlaying` race
+    ///     when buffering/connecting keys arrive while audio is already flowing.
+    /// - Returns: Chrome visual to apply. Does **not** mutate SPM; the actor remains SSOT for
+    ///   persistence / widgets / LA. In-app chrome may lead SPM by one frame during deferred setPlaying.
+    /// - SeeAlso: ``RadioPlayerCoordinator/handleStatusChange(_:reasonKey:)``,
+    ///   ``SharedPlayerManager/setPlaying()``, CODING_AGENT.md.
+    static func resolve(
+        status: PlayerStatus,
+        reasonKey: String?,
+        visualState: PlayerVisualState,
+        playbackIntent: PlaybackIntent,
+        engineIsActuallyPlaying: Bool = false
+    ) -> PlayerVisualState {
+        // Privacy clear: intent alone blocks resurrection; chrome must stay blue `.cleared`
+        // through residual connecting/stopped callbacks from the silent teardown.
+        if playbackIntent == .cleared {
+            return .cleared
+        }
+
+        // Authoritative audible-start report from the engine.
+        // Prefer reasonKey: `status_connecting` is also delivered with PlayerStatus.playing
+        // because safeOnStatusChange uses isPlaying:true for connecting feedback.
+        let isAuthoritativePlayingReport =
+            reasonKey == "status_playing"
+            || (status == .playing && reasonKey == nil)
+
+        if isAuthoritativePlayingReport {
+            if visualState == .userPaused || playbackIntent == .userPaused {
+                return .userPaused
+            }
+            if visualState == .cleared {
+                return .cleared
+            }
+            if visualState == .securityLocked || playbackIntent == .securityLocked {
+                return .securityLocked
+            }
+            if visualState == .thermalPaused {
+                return .thermalPaused
+            }
+            // Deferred Connecting (.prePlay), already-playing SPM, or any other non-sticky
+            // surface: promote chrome to green promptly when the engine reports audible play.
+            return .playing
+        }
+
+        // Connecting / buffering: preserve optimistic chrome.
+        // Key off reasonKey only — do not require `status != .playing`, because connecting is
+        // emitted with isPlaying:true → PlayerStatus.playing.
+        if let reasonKey,
+           reasonKey == "status_connecting" || reasonKey == "status_buffering" {
+            // Deferred setPlaying race: engine already audible, SPM still .prePlay, and a
+            // buffer/connect key arrives after we (or status_playing) painted green — do not
+            // re-stick yellow Connecting while rate is 1 and intent still wants play.
+            if engineIsActuallyPlaying,
+               playbackIntent.isActivePlaybackIntent,
+               visualState == .prePlay || visualState == .playing {
+                return .playing
+            }
+            if visualState == .prePlay || visualState == .playing || visualState == .cleared {
+                return visualState
+            }
+            if playbackIntent.isActivePlaybackIntent {
+                return .prePlay
+            }
+        }
+
+        // Explicit user pause: terminal stop/pause keys must not regress grey → yellow Connecting.
+        if status == .stopped || status == .paused
+            || reasonKey == "status_stopped" || reasonKey == "status_paused" {
+            if visualState == .userPaused || playbackIntent == .userPaused {
+                return .userPaused
+            }
+        }
+
+        // Protect sticky chrome from other engine chatter (SSL keys, unavailable noise, etc.).
+        // Authoritative playing is handled above so this no longer freezes Connecting after audible start.
+        if visualState == .userPaused || visualState == .prePlay || visualState == .cleared {
+            return visualState
+        }
+        return visualState
     }
 }

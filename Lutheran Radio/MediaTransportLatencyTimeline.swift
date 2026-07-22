@@ -84,6 +84,10 @@ enum MediaTransportLatencyTimeline: Sendable {
         case authoritativePlayingPublished
         /// Authoritative playing publish skipped (sticky pause or already playing).
         case authoritativePlayingSkipped
+        /// In-app chrome applied `.playing` while SPM still held deferred Connecting (`.prePlay`).
+        /// Marks coordinator chrome catch-up after engine `status_playing` / audible rate
+        /// (Connecting-until-audible race). Detail may carry `spmVisual` + `reasonKey`.
+        case inAppChromeAppliedPlaying
 
         /// ``checkForPendingWidgetActions()`` found a fresh pending action (detail = action).
         case pendingActionDrainEntered
