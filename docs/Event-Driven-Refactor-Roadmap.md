@@ -92,13 +92,13 @@ These items are architectural defects or policy gaps exposed by production-like 
 
 **SeeAlso:** ``SharedPlayerManager/resetToFactoryDefaultsOnLaunch()``, ``ensureVisualStateLoaded()``, ViewController.viewDidLoad cold-launch Task, resurrection tables in `SharedPlayerManager.swift`, CODING_AGENT.md (Single Source of Truth Principles).
 
-### OI-2 — Live Activity language chrome is not on the ActivityKit payload (cross-process SSOT) — **RESOLVED 2026-07-19**
+### Live Activity language chrome on ContentState (resolved 2026-07-19)
 
 **Status:** Resolved (2026-07-19) — shipped in Widget Functionality Roadmap “Live Activity language chrome SSOT”
 
 **Resolution:** ``LutheranRadioLiveActivityAttributes.ContentState`` carries `currentLanguage` pushed by ``RadioLiveActivityManager`` from ``SharedPlayerManager/mainAppLiveActivityLanguageCode()`` (stream attach language). Lock Screen / Dynamic Island language chrome reads only `context.state.currentLanguage`. Durable App Group ``liveActivityCurrentLanguage`` mirrors the code for extension optimistic paths (same lifecycle as the toggle visual mirror; not gated by ``hasActiveWidgets``). Home-widget write suppression and main-app-only `PlayerEvent` emission were not reopened.
 
-**SeeAlso:** ``RadioLiveActivityManager/updateCurrentActivity()``, ``SharedPlayerManager/mainAppLiveActivityLanguageCode()``, ``SharedPlayerManager/persistLiveActivityLanguageMirror(_:)``, ``SharedPlayerManager/languageForLiveActivityOrWidgetOptimistic()``, OI-1, docs/Widget-Functionality-Roadmap.md, docs/Widget-Presentation-Dataflow.md.
+**SeeAlso:** ``RadioLiveActivityManager/updateCurrentActivity()``, ``SharedPlayerManager/mainAppLiveActivityLanguageCode()``, ``SharedPlayerManager/persistLiveActivityLanguageMirror(_:)``, ``SharedPlayerManager/languageForLiveActivityOrWidgetOptimistic()``, cold-launch memory-only visual policy (section above), docs/Widget-Functionality-Roadmap.md, docs/Widget-Presentation-Dataflow.md.
 
 ---
 
@@ -224,7 +224,7 @@ Widget extension processes (home widget, Control Center widget, Live Activity UI
 
 **Live Activity attribute payload completeness (language)**
 
-`ContentState` projects visual state, stream metadata, and **stream language** (`currentLanguage`) for Lock Screen / Dynamic Island. Language chrome is rendered exclusively from `context.state` (not ``preferredWidgetLanguage()``). Durable ``liveActivityCurrentLanguage`` supports extension optimistic paths without reopening home-widget write suppression. **OI-2 resolved 2026-07-19** (Widget Functionality Roadmap).
+`ContentState` projects visual state, stream metadata, and **stream language** (`currentLanguage`) for Lock Screen / Dynamic Island. Language chrome is rendered exclusively from `context.state` (not ``preferredWidgetLanguage()``). Durable ``liveActivityCurrentLanguage`` supports extension optimistic paths without reopening home-widget write suppression. **Live Activity language chrome shipped 2026-07-19** (Widget Functionality Roadmap).
 
 **Selection criteria for actual replacements (when Tier 4 work begins)**
 
@@ -269,7 +269,7 @@ Goal: Document the event-driven architecture and protect emitter/consumer contra
 
 The next item is always the highest-priority remaining entry in the backlog. Tier 1–3 emission, replay, and consumer wiring are complete; Tier 5 (tests + documentation) is complete (2026-07-09). Remaining event-path work is Tier 4 consolidation, deferred until the event path is device-proven.
 
-**Adjacent (not Tier 4):** Open Issue **OI-2** (Live Activity language on `ContentState`) is presentation / cross-process payload work owned by the Widget Functionality Roadmap. Do not fold it into event-emission or refresh-call-site consolidation.
+**Adjacent (resolved, not Tier 4):** Live Activity language chrome on `ContentState` is **shipped (2026-07-19)** — `ContentState.currentLanguage` with chrome from `context.state` only; durable language mirror for optimistic paths; home-widget write suppression unchanged. Owned by the Widget Functionality Roadmap. Do not re-open as event-emission work or fold into Tier 4 refresh-call-site consolidation.
 
 Each micro-step is a tiny, isolated, additive change (for example, adding a single emission site or a small non-forcing consumer) that follows every rule in `CODING_AGENT.md`, including reading target files first, using production-level comments, updating cross-references, and passing build gates.
 
@@ -337,8 +337,9 @@ Keep a short chronological log of major milestones:
 - Tier 5 documentation complete (2026-07-09): `README.md` SSOT section extended with "Event-driven player state (outside `Core/`)" — authoritative emitter surfaces, consumer table, non-forcing rule, cross-process reality, and cross-links. Tier 5 backlog closed; only Tier 4 consolidation remains (device-proven gate).
 - Widget Tier 3 refresh dedup (2026-07-13): mutation-path imperative ``refreshIfNeeded`` removed from ``performActualSave``, ``didUpdateStreamMetadata``, ``updateUserDefaultsLanguage``; event-path urgency extended. Cross-link: [`docs/Widget-Functionality-Roadmap.md`](Widget-Functionality-Roadmap.md).
 - Joined optimistic→drain refresh observation (2026-07-17): `testOptimisticPlayDrainRequestsWidgetRefreshPassingGuards` indexes the post-drain Tier 2 observer path (gate-outcome recording, no WidgetCenter IPC). Cross-link: [`docs/Widget-Functionality-Roadmap.md`](Widget-Functionality-Roadmap.md) Tier 5 joined-round-trip index. Docs-only; no production behavior change.
-- Open Issue **OI-2** recorded (2026-07-18): Live Activity language chrome is not on `ContentState`; extension re-derivation via ``preferredWidgetLanguage()`` defaults to English under memory-only session + no home widgets while LA remains active. Not an event-emission gap; full implementation contract lives in Widget Functionality Roadmap. Cross-process section and micro-step guidance updated so agents do not mis-route this into Tier 4 consolidation or `PlayerEvent` streaming.
-- Open Issue **OI-2 resolved** (2026-07-19): `ContentState.currentLanguage` + durable language mirror + chrome from `context.state`; ``mainAppLiveActivityLanguageCode()`` from stream attach; optimistic language via ``languageForLiveActivityOrWidgetOptimistic()``. Home-widget privacy write suppression unchanged.
+- Live Activity language chrome gap recorded (2026-07-18): language not on `ContentState`; extension re-derivation via ``preferredWidgetLanguage()`` defaults to English under memory-only session + no home widgets while LA remains active. Not an event-emission gap; full implementation contract lives in Widget Functionality Roadmap. Cross-process section and micro-step guidance updated so agents do not mis-route this into Tier 4 consolidation or `PlayerEvent` streaming.
+- Live Activity language chrome SSOT shipped (2026-07-19): `ContentState.currentLanguage` + durable language mirror + chrome from `context.state`; ``mainAppLiveActivityLanguageCode()`` from stream attach; optimistic language via ``languageForLiveActivityOrWidgetOptimistic()``. Home-widget privacy write suppression unchanged.
+- Micro-step guidance hygiene (2026-07-22): "Selecting and Implementing Micro-Steps" and residual roadmap wording describe Live Activity language chrome as **shipped** (mechanism names only; Widget Functionality Roadmap ownership; not event Tier 4). Docs-only; no production behavior change.
 
 ---
 
