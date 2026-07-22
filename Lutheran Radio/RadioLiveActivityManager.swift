@@ -351,6 +351,12 @@ class RadioLiveActivityManager: ObservableObject {
     /// LA presentation from the durable `PersistedWidgetState` writes that widgets and
     /// relaunch require — language chrome must not depend on privacy-gated home-widget writes.
     ///
+    /// **Stream-switch hold:** While ``SharedPlayerManager/isStreamSwitchPrePlayHoldActive``
+    /// or ``SharedPlayerManager/isConnectingPlayback`` is true, a candidate visual of
+    /// `.playing` is clamped to `.prePlay` so lock-screen chrome cannot flash play affordance
+    /// during silent engine teardown or first-byte attach. Coordinators establish Connecting
+    /// before `.streamSwitch` stop; this clamp is defense-in-depth.
+    ///
     /// - Precondition: Must be called on the main actor (the method is `@MainActor`).
     /// - Postcondition: If an update is sent, `lastPushedContent` holds the exact
     ///   `ContentState` that was pushed. Durable visual + language App Group mirrors are
@@ -365,12 +371,15 @@ class RadioLiveActivityManager: ObservableObject {
     ///   we hold a strong local reference on the main actor.
     ///
     /// - SeeAlso: `startActivity()`, `SharedPlayerManager.setPlaying`,
+    ///   `SharedPlayerManager.resetToPrePlayForNewStream`,
     ///   `SharedPlayerManager.didUpdateStreamMetadata`,
     ///   `performActualSave` (the bridge call remains for widget parity),
     ///   ``beginObservingActivityEvents(_:)`` (the Live Activity events surface that
     ///   keeps `lastPushedContent` aligned), ``isRunningUnderTest``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
     ///   docs/Widget-Presentation-Dataflow.md,
     ///   docs/Widget-Functionality-Roadmap.md (Live Activity language chrome SSOT),
+    ///   docs/cold-launch-streamplay-regression-checklist.md (§6),
     ///   RadioLiveActivityManagerTests
     @MainActor
     func updateCurrentActivity() async {
@@ -393,7 +402,16 @@ class RadioLiveActivityManager: ObservableObject {
         // Prefer the live in-memory values (decoupled path). Persisted is only fallback
         // so that an early push before the first mutation still has something reasonable.
         // This is the key separation: LA does not *require* a PersistedWidgetState write.
-        let visualState = await manager.currentVisualState
+        var visualState = await manager.currentVisualState
+        // Stream-switch hold / in-flight connect: never advertise `.playing` on LA while the
+        // engine is tearing down or attaching a new secured item. Coordinators establish
+        // `.prePlay` before silent stop; this clamp is defense-in-depth against a race where
+        // language chrome updates before visual SSOT settles.
+        let streamSwitchHold = await manager.isStreamSwitchPrePlayHoldActive
+        let connecting = await manager.isConnectingPlayback
+        if (streamSwitchHold || connecting) && visualState == .playing {
+            visualState = .prePlay
+        }
         let streamMetadata = await manager.currentStreamMetadata
             ?? SharedPlayerManager.loadPersistedStreamMetadata()
         let currentLanguage = SharedPlayerManager.mainAppLiveActivityLanguageCode()

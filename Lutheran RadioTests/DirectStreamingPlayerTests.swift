@@ -1029,6 +1029,87 @@ class DirectStreamingPlayerTests: XCTestCase {
             "Publish must not override sticky user pause after stop"
         )
     }
+
+    // MARK: - Early-window attach recovery (stream-switch / cold launch)
+
+    /// Early-window recovery must hard-cap secured recreates so progressive ICY loading
+    /// cannot thrash `recreatePlayerItem` while first-byte settles after a stream switch.
+    ///
+    /// Protects: each admitted recovery increments the shared budget; after
+    /// `maxInitialRetries` admissions, further stall-class recoveries are refused.
+    ///
+    /// - SeeAlso: `DirectStreamingPlayer.attemptEarlyWindowTransientRecovery`,
+    ///   `shouldAttemptEarlyAttachStallRecovery`,
+    ///   docs/cold-launch-streamplay-regression-checklist.md (§8).
+    func testEarlyWindowRecoveryBudgetIsHardCapped() async {
+        let engine = DirectStreamingPlayer.shared
+        await SharedPlayerManager.shared.setUserIntentToPlay()
+        engine.test_resetInitialPlaybackCountersForNewStream()
+        // Allow the async counter-reset Task (if any) to settle.
+        await Task.yield()
+        engine.test_markCurrentAttachBegan(at: Date().addingTimeInterval(-10))
+
+        let maxRetries = engine.test_maxInitialRetries
+        XCTAssertGreaterThan(maxRetries, 0)
+
+        for attempt in 1...maxRetries {
+            let admitted = await engine.test_attemptEarlyWindowTransientRecovery(
+                reason: "test-budget-\(attempt)",
+                allowWhileDeferringFirstPlayKick: true
+            )
+            XCTAssertTrue(
+                admitted,
+                "Recovery attempt \(attempt)/\(maxRetries) must be admitted under active play intent"
+            )
+            XCTAssertEqual(
+                engine.test_initialPlaybackRetryCount,
+                attempt,
+                "Each admission must increment the shared recreate budget"
+            )
+        }
+
+        let overBudget = await engine.test_attemptEarlyWindowTransientRecovery(
+            reason: "test-budget-exhausted",
+            allowWhileDeferringFirstPlayKick: true
+        )
+        XCTAssertFalse(
+            overBudget,
+            "After maxInitialRetries admissions, early-window recovery must refuse further recreates"
+        )
+        XCTAssertEqual(
+            engine.test_initialPlaybackRetryCount,
+            maxRetries,
+            "Exhausted budget must not keep incrementing"
+        )
+
+        await SharedPlayerManager.shared.stop()
+    }
+
+    /// Stall-class recovery must treat `AVPlayerItem.Status.unknown` without error as
+    /// normal progressive loading inside the attach grace window — not an immediate recreate.
+    ///
+    /// - SeeAlso: `DirectStreamingPlayer.shouldAttemptEarlyAttachStallRecovery`,
+    ///   docs/cold-launch-streamplay-regression-checklist.md (§8 loading grace).
+    func testEarlyAttachStallRecoveryRespectsLoadingGraceForUnknownItem() async {
+        let engine = DirectStreamingPlayer.shared
+        engine.test_resetInitialPlaybackCountersForNewStream()
+        await Task.yield()
+
+        // Fresh dummy item stays at .unknown without a real network load under UITest isolation.
+        let loadingItem = AVPlayerItem(url: URL(string: "https://example.invalid/stream.mp3")!)
+
+        engine.test_markCurrentAttachBegan(at: Date())
+        XCTAssertFalse(
+            engine.test_shouldAttemptEarlyAttachStallRecovery(item: loadingItem, rate: 0),
+            "Unknown item inside loading grace must not be treated as an early stall"
+        )
+
+        engine.test_markCurrentAttachBegan(at: Date().addingTimeInterval(-10))
+        XCTAssertTrue(
+            engine.test_shouldAttemptEarlyAttachStallRecovery(item: loadingItem, rate: 0),
+            "After loading grace expires, unknown + rate 0 may enter stall recovery"
+        )
+    }
     
     // MARK: - Performance Tests
     

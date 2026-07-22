@@ -1832,23 +1832,25 @@ final class SharedPlayerManagerEventTests: XCTestCase {
     /// Verifies the full active-intent language-switch path emission contract.
     ///
     /// Mirrors the resume branch of `RadioPlayerCoordinator.completeStreamSwitch` /
-    /// `switchToStreamFromWidget`: ``resetToPrePlayForNewStream()`` (yellow `.prePlay` hold),
-    /// engine prep via ``switchToStream(_:)``, then successful attach via ``setPlaying()``
-    /// (stand-in for ``play()`` under UITestMode, which skips canonical emissions).
+    /// `switchToStreamFromWidget`: ``resetToPrePlayForNewStream()`` (yellow `.prePlay` hold
+    /// **before** engine silent stop), engine prep via ``switchToStream(_:)``, then successful
+    /// attach via ``setPlaying()`` (stand-in for ``play()`` under UITestMode).
     ///
-    /// **Reset phase:** `visualStateDidChange(.prePlay)` precedes `.persistedWidgetStateDidUpdate`;
+    /// **Reset phase:** `visualStateDidChange(.prePlay)` and metadata clear precede engine prep;
     /// intent stays `.shouldBePlaying` (no `playbackIntentChanged`, no stream verbs).
     ///
     /// **Resume phase:** `visualStateDidChange(.playing)` → `streamDidStart` → persist signal;
     /// intent still unchanged.
     ///
     /// Collection uses the DEBUG notification seam. Ordered subsequence matching tolerates
-    /// extra `.persistedWidgetStateDidUpdate` emissions from the engine `switchToStream`
-    /// silent-stop save.
+    /// extra `.persistedWidgetStateDidUpdate` / `.metadataDidUpdate(nil)` emissions from the
+    /// hold path and engine silent-stop save.
     ///
     /// - SeeAlso: ``resetToPrePlayForNewStream(preserveActiveSleepTimer:)``,
     ///   ``switchToStream(_:)``, ``setPlaying()``, ``isStreamSwitchPrePlayHoldActive``,
-    ///   `RadioPlayerCoordinator.completeStreamSwitch`, docs/Event-Driven-Refactor-Roadmap.md (Tier 5),
+    ///   `RadioPlayerCoordinator.completeStreamSwitch`,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
+    ///   docs/Event-Driven-Refactor-Roadmap.md (Tier 5),
     ///   CODING_AGENT.md (Test Execution Patience and Fast, Reliable Test Patterns).
     func testActiveLanguageSwitchResetThenResumeEmissionOrderPreservesIntent() async {
         let streams = manager.availableStreams
@@ -1897,6 +1899,58 @@ final class SharedPlayerManagerEventTests: XCTestCase {
 
         let current = SharedPlayerManager.streamForLanguageCode(other.languageCode)
         XCTAssertEqual(current.languageCode, other.languageCode)
+    }
+
+    /// Active-intent stream switch must establish Connecting chrome and clear prior-language
+    /// program metadata **before** engine silent stop, so lock-screen surfaces cannot keep
+    /// `.playing` mid teardown.
+    ///
+    /// Protects the coordinator contract: ``resetToPrePlayForNewStream()`` then
+    /// ``switchToStream(_:)`` leaves ``isStreamSwitchPrePlayHoldActive`` true with nil metadata
+    /// until authoritative ``setPlaying()``.
+    ///
+    /// - SeeAlso: ``resetToPrePlayForNewStream(preserveActiveSleepTimer:)``,
+    ///   ``isStreamSwitchPrePlayHoldActive``, ``switchToStream(_:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
+    ///   docs/cold-launch-streamplay-regression-checklist.md (§6).
+    func testActiveStreamSwitchHoldClearsPlayingChromeAndMetadataBeforeEnginePrep() async {
+        let streams = manager.availableStreams
+        guard streams.count >= 2 else { return }
+        let other = await targetStreamDifferentFromCurrent(in: streams)
+
+        await manager.setPlaying()
+        await manager.didUpdateStreamMetadata("Prior Language Program • Speaker")
+        var meta = await manager.currentStreamMetadata
+        XCTAssertNotNil(meta, "Arrange: prior-language ICY title present before switch")
+
+        await manager.resetToPrePlayForNewStream()
+
+        let visualDuringHold = await manager.currentVisualState
+        let holdActive = await manager.isStreamSwitchPrePlayHoldActive
+        meta = await manager.currentStreamMetadata
+        XCTAssertEqual(visualDuringHold, .prePlay, "Hold must force Connecting chrome before silent stop")
+        XCTAssertTrue(holdActive, "Stream-switch prePlay hold must be active before engine prep")
+        XCTAssertNil(meta, "Prior-language program title must clear with the hold")
+
+        await manager.switchToStream(other)
+
+        let visualAfterEnginePrep = await manager.currentVisualState
+        let holdAfterEnginePrep = await manager.isStreamSwitchPrePlayHoldActive
+        XCTAssertEqual(
+            visualAfterEnginePrep,
+            .prePlay,
+            "Silent streamSwitch stop must not restore .playing while hold is active"
+        )
+        XCTAssertTrue(
+            holdAfterEnginePrep,
+            "Hold must remain until authoritative setPlaying after attach"
+        )
+
+        let intent = await manager.currentPlaybackIntent
+        XCTAssertTrue(
+            intent.isActivePlaybackIntent,
+            "Active-intent switch must preserve play intent through hold + engine prep"
+        )
     }
 
     /// Verifies the full paused language-switch path emission contract.

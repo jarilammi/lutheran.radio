@@ -197,7 +197,7 @@ import WidgetKit
 /// | .userPaused     | Explicit user play (button, widget, Siri, etc.)   | `userRequestedPlay()` → `setUserIntentToPlay()` first           | .prePlay (Connecting) → .playing | Intent `.shouldBePlaying` immediately; chrome stays Connecting until engine `setPlaying` |
 /// | .playing        | User taps pause/stop (any surface)                | `stop()` or `markAsUserPaused()` at top of method               | .userPaused     | Immediate sticky lock + early `saveVisualState()` |
 /// | .playing        | Second explicit play / double-fire (same language)| `userRequestedPlay()` / `play()` — engine already audible       | .playing (unchanged) | **No-op** (optional surface reaffirm): never `setStreamAndPlay` / item rebuild; independent of cold-launch `resurrectionProtectionRelaxed` |
-/// | .playing        | User-initiated stream/language switch             | `resetToPrePlayForNewStream()` then `play()`                    | .prePlay → .playing | Hold prePlay through attach; engine `setPlaying` after readyToPlay |
+/// | .playing        | User-initiated stream/language switch             | `resetToPrePlayForNewStream()` (chrome + clear ICY) **before** silent engine stop / language push, then `play()` | .prePlay → .playing | Hold prePlay through attach; never advertise `.playing` mid teardown; engine `setPlaying` after readyToPlay |
 /// | .playing        | AV interruption, stall, or thermal event          | `attemptResurrectionIfAllowed()` or player recovery nudges      | .playing        | Only proceeds if `shouldAutoPlayOrResume` |
 /// | any             | Security validation failure (DNS/403/cert)        | Inside `play()` guard or StreamingSessionDelegate 403 handler   | .securityLocked | Permanent until explicit successful play |
 /// | .thermalPaused  | Device cools sufficiently                         | DirectStreamingPlayer thermal recovery logic                    | .playing        | Only via `shouldAutoResumeOnThermalRecovery` |
@@ -2207,26 +2207,33 @@ actor SharedPlayerManager {
     ///   - preserveActiveSleepTimer: When true, the sleep timer (if any) is left running
     ///     across the switch (rare; normally false).
     ///
-    /// Called from stream-switch paths (`didSelectItemAt`, `completeStreamSwitch`,
-    /// `switchToStreamFromWidget`, Siri intents, widget/shortcut).
-    /// Enables the cold-launch-like first-play path after a switch while preserving
-    /// `.userPaused` / `.securityLocked` protection.
+    /// Establishes Connecting chrome for an active-intent stream/language switch.
     ///
-    /// **Switch timing contract**: Callers that are performing a language change for an
-    /// *active* playback intent are expected to have already executed
-    /// `DirectStreamingPlayer.switchToStream(target)` (which updates the model) before
-    /// calling this method. `saveCurrentState` (called from here) and `play()` will
-    /// then see the updated model and prefer it over any prior snapshot value. This is
-    /// what keeps widget language switches from reverting.
+    /// Called from stream-switch paths (`handleLanguageSelection`, `completeStreamSwitch`,
+    /// `switchToStreamFromWidget`, Siri intents, widget/shortcut). Enables the cold-launch-like
+    /// first-play path after a switch while preserving sticky pause / security protection on
+    /// non-resume paths.
+    ///
+    /// **Switch timing contract (chrome before teardown):**
+    /// For an *active* playback intent, call this **before** (or atomically with) language
+    /// snapshot writes and **before** the engine silent `.streamSwitch` stop. That order
+    /// guarantees Live Activity / Now Playing never advertise `.playing` with a mid-teardown
+    /// language while the secured item is being torn down. Engine prep
+    /// (`DirectStreamingPlayer.switchToStream`) may still update the stream model after this
+    /// hold is active; `saveCurrentState` / `play()` prefer the Direct model under the hold.
     ///
     /// - Postcondition: `currentVisualState == .prePlay`, `holdPrePlayVisualUntilPlayback == true`,
-    ///   `initialPlaybackHasRun == false`. A snapshot save has occurred (language update
-    ///   is driven by the caller via `updateUserDefaultsLanguage` → `saveCombinedWidgetState`).
+    ///   `initialPlaybackHasRun == false`, soft-pause ICY stash cleared (no stale program title
+    ///   across languages). Main-app media surfaces refreshed so lock-screen chrome shows
+    ///   Connecting immediately. Language snapshot writes remain the caller's job via
+    ///   `updateUserDefaultsLanguage` → `saveCombinedWidgetState`.
     ///
-    /// Documentation modernized to reflect that cold-launch special
-    /// casing is now minimal and driven by the authoritative intent model.
-    ///
-    /// - SeeAlso: ``play()``, ``saveCurrentState()``, CODING_AGENT.md (Single Source of Truth Principles).
+    /// - SeeAlso: ``play()``, ``saveCurrentState()``, ``clearSoftPauseMetadataStashForLanguageChange()``,
+    ///   ``refreshAllMediaSurfaces(liveActivity:widgetRefresh:widgetRefreshImmediate:)``,
+    ///   `RadioPlayerCoordinator.completeStreamSwitch`, `RadioPlayerCoordinator.switchToStreamFromWidget`,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
+    ///   docs/cold-launch-streamplay-regression-checklist.md (§6),
+    ///   CODING_AGENT.md (Single Source of Truth Principles).
     func resetToPrePlayForNewStream(preserveActiveSleepTimer: Bool = false) async {
         #if LUTHERAN_MAIN_APP
         if !preserveActiveSleepTimer {
@@ -2240,19 +2247,20 @@ actor SharedPlayerManager {
         applyVisualState(.prePlay)
         holdPrePlayVisualUntilPlayback = true
         initialPlaybackHasRun = false
+        // Drop prior-language program title before any language mirror / LA push so ContentState
+        // cannot show "playing + old title + new language" during silent engine teardown.
+        _clearIcyMetadataStash()
         saveVisualState()
         await saveCurrentState()
 
-        // NOTE: We no longer write persistedWidgetState snapshot here.
-        // resetToPrePlayForNewStream is the intentional cold-launch-style reset for
-        // stream switches so the next play() call gets the correct first-play path.
-        // Language changes are driven by callers via updateUserDefaultsLanguage() →
-        // saveCombinedWidgetState(), which is the single place that authors the atomic
-        // (visual + language) snapshot. This reduces a source of potentially-stale
-        // language in the snapshot (the old read of "currentLanguage" here could race
-        // with the update in some call orders, e.g. widget switch handler).
-        // performActualSave will still write the snapshot if it detects a language
-        // change via its internal check.
+        #if LUTHERAN_MAIN_APP
+        // Push Connecting chrome immediately (do not wait for setPlaying or a later language write).
+        await refreshAllMediaSurfaces(liveActivity: .updateIfActive)
+        #endif
+
+        // NOTE: We do not author the language half of the combined snapshot here.
+        // Callers drive language via updateUserDefaultsLanguage() → saveCombinedWidgetState()
+        // after engine model prep so language chrome and visual stay consistent under the hold.
         
         #if DEBUG
         print("[SharedPlayerManager] resetToPrePlayForNewStream() — state reset to .prePlay for atomic stream switch")

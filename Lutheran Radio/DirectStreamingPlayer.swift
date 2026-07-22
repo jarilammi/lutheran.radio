@@ -802,7 +802,33 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     private var lastError: Error?
     
     private var initialPlaybackRetryCount = 0
+    /// Hard cap on secured-item recreates from early-window recovery **and** the startup safety net
+    /// for a single attach attempt (cold launch or stream switch). Prevents multi-recreate storms
+    /// while progressive ICY items are still loading toward `.readyToPlay`.
     private let maxInitialRetries = 2
+
+    /// Wall-clock start of the current secured attach (item prepare / recreate).
+    ///
+    /// Used only for early-window **stall** patience: progressive live MP3 often spends several
+    /// seconds at `AVPlayerItem.Status.unknown` with no tracks yet. That is normal loading, not
+    /// a reason to tear down and rebuild the secured item. Hard failures (item `.failed`,
+    /// buffer-empty with `AVFoundationErrorDomain`) bypass this grace and recover immediately.
+    ///
+    /// - SeeAlso: ``earlyAttachLoadingGraceSeconds``, ``shouldAttemptEarlyAttachStallRecovery(item:rate:)``,
+    ///   ``attemptEarlyWindowTransientRecovery(reason:allowWhileDeferringFirstPlayKick:)``,
+    ///   docs/cold-launch-streamplay-regression-checklist.md (§6, §8).
+    @MainActor private var currentAttachBeganAt: Date?
+
+    /// Minimum time after attach before "not likely to keep up + rate 0" alone may recreate.
+    ///
+    /// Long enough for first-byte / Fig ICY settle under typical cellular and post-DNS paths;
+    /// short enough that a true dead attach still recovers before multi-second dead air feels stuck.
+    /// AGENT NOTE: Single source of truth for loading patience — do not invent a second grace timer
+    /// in buffer KVO or the startup safety net.
+    private let earlyAttachLoadingGraceSeconds: TimeInterval = 4.0
+
+    /// Debounce after the loading grace (or after `.readyToPlay`) before stall recovery fires.
+    private let earlyAttachStallDebounceSeconds: TimeInterval = 1.5
 
     /// Whether the current attach is still within its initial per-stream recovery budget.
     ///
@@ -1169,9 +1195,11 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// transient ICY noise or safety-net exhaustion from the *previous* stream cannot
     /// trigger a false-positive status_stream_unavailable (red banner + popup).
     ///
-    /// Resets cold-launch recovery counters so each stream switch gets a fresh attempt budget.
-    /// The budget is observable via `isInInitialRecoveryWindow`, which the coordinator
-    /// uses to suppress transient failure UI during the window.
+    /// Resets cold-launch / stream-switch recovery counters so each attach gets a fresh budget.
+    ///
+    /// The budget is observable via `isInInitialRecoveryWindow`, which the coordinator uses to
+    /// suppress transient failure UI during the window. Also clears the loading-grace clock so
+    /// the next secured item starts a clean patience window.
     ///
     /// AGENT NOTE: Prefer calling `switchToStream(_:)` (or the higher-level coordinator paths)
     /// rather than manually calling the individual reset + stop steps.
@@ -1181,7 +1209,9 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         isDeferringFirstPlayKick = false
         hasReceivedLiveStreamMetadata = false
         Task { @MainActor [weak self] in
-            self?.cancelEarlyICYDropRecreate()
+            guard let self else { return }
+            self.cancelEarlyICYDropRecreate()
+            self.currentAttachBeganAt = nil
         }
 
         #if DEBUG
@@ -2676,6 +2706,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             self.isDeferringFirstPlayKick = true
             self.hasReceivedLiveStreamMetadata = false
             self.cancelEarlyICYDropRecreate()
+            // Loading grace clock for early-window stall patience (stream-switch + cold launch).
+            self.currentAttachBeganAt = Date()
             self.safeOnStatusChange(isPlaying: false, reasonKey: "status_connecting")
             
             #if DEBUG
@@ -2958,19 +2990,26 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                         }
                     }
                 } else if !newValue && (self.player?.rate ?? 0) == 0 {
-                    // Early attach stalls should not wait the long post-stable timeout;
-                    // the startup safety net remains a final fallback only.
-                    let inEarlyWindow = !self.hasStartedPlaying
-                        && self.initialPlaybackRetryCount < self.maxInitialRetries
-                    let stalledDelay: TimeInterval = {
-                        if inEarlyWindow {
-                            return self.isLowEfficiencyMode ? 1.5 : 0.75
-                        }
-                        return self.isLowEfficiencyMode ? 20.0 : 10.0
-                    }()
+                    // KVO is nonisolated — hop to MainActor before reading attach grace /
+                    // early-window state (``currentAttachBeganAt`` is MainActor-isolated).
+                    // Early attach: wait loading grace + short debounce before treating
+                    // "not likely to keep up" as a stall. Post-stable uses a longer debounce.
+                    // Startup safety net remains a final fallback only.
                     Task { @MainActor [weak self] in
-                        try? await Task.sleep(for: .seconds(stalledDelay))
                         guard let self else { return }
+                        let inEarlyWindow = !self.hasStartedPlaying
+                            && self.initialPlaybackRetryCount < self.maxInitialRetries
+                        let stalledDelay: TimeInterval = {
+                            if inEarlyWindow {
+                                let graceRemaining = self.remainingEarlyAttachLoadingGraceSeconds()
+                                let debounce = self.isLowEfficiencyMode
+                                    ? self.earlyAttachStallDebounceSeconds * 1.5
+                                    : self.earlyAttachStallDebounceSeconds
+                                return graceRemaining + debounce
+                            }
+                            return self.isLowEfficiencyMode ? 20.0 : 10.0
+                        }()
+                        try? await Task.sleep(for: .seconds(stalledDelay))
                         guard !self.isPlaybackTeardownActive else { return }
                         guard let currentItem = self.playerItem,
                               currentItem === item,
@@ -2978,6 +3017,15 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                               (self.player?.rate ?? 0) == 0 else { return }
                         guard await SharedPlayerManager.shared.canProceedWithPlayback() else { return }
                         if !self.hasStartedPlaying && self.initialPlaybackRetryCount < self.maxInitialRetries {
+                            guard self.shouldAttemptEarlyAttachStallRecovery(
+                                item: currentItem,
+                                rate: self.player?.rate ?? 0
+                            ) else {
+                                #if DEBUG
+                                print("[DirectStreamingPlayer] Early-window stall deferred — item still loading within grace (status=\(currentItem.status.rawValue))")
+                                #endif
+                                return
+                            }
                             #if DEBUG
                             print("[DirectStreamingPlayer] Early-window stall — secured recreatePlayerItem")
                             #endif
@@ -2985,7 +3033,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                                 reason: "stalled-early",
                                 allowWhileDeferringFirstPlayKick: true
                             )
-                        } else {
+                        } else if self.hasStartedPlaying {
                             #if DEBUG
                             print("[DirectStreamingPlayer] Stalled — secured recreatePlayerItem")
                             #endif
@@ -3262,6 +3310,48 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// Test seam: AVPlayer rate after soft silence (nil when no player is attached).
     @MainActor
     var test_playerRate: Float? { player?.rate }
+
+    /// Test seam: early-window retry budget consumed so far for the current attach.
+    @MainActor
+    var test_initialPlaybackRetryCount: Int { initialPlaybackRetryCount }
+
+    /// Test seam: hard cap shared by early-window recovery and the startup safety net.
+    @MainActor
+    var test_maxInitialRetries: Int { maxInitialRetries }
+
+    /// Test seam: reset counters + loading grace for a fresh attach (stream-switch / cold).
+    @MainActor
+    func test_resetInitialPlaybackCountersForNewStream() {
+        resetInitialPlaybackCountersForNewStream()
+        currentAttachBeganAt = nil
+    }
+
+    /// Test seam: mark attach clock as if a secured item just attached.
+    @MainActor
+    func test_markCurrentAttachBegan(at date: Date = Date()) {
+        currentAttachBeganAt = date
+    }
+
+    /// Test seam: stall-class early recovery gate (loading grace + item status).
+    @MainActor
+    func test_shouldAttemptEarlyAttachStallRecovery(item: AVPlayerItem, rate: Float) -> Bool {
+        shouldAttemptEarlyAttachStallRecovery(item: item, rate: rate)
+    }
+
+    /// Test seam: early-window recovery admission (increments budget when it returns true).
+    @MainActor
+    @discardableResult
+    func test_attemptEarlyWindowTransientRecovery(
+        reason: String,
+        allowWhileDeferringFirstPlayKick: Bool
+    ) async -> Bool {
+        // Under UITestMode there is usually no real item to recreate; we still exercise the
+        // budget / intent / teardown gates. recreatePlayerItem no-ops without a URL asset.
+        await attemptEarlyWindowTransientRecovery(
+            reason: reason,
+            allowWhileDeferringFirstPlayKick: allowWhileDeferringFirstPlayKick
+        )
+    }
     #endif
 
     // MARK: - Startup Safety Net (cold launch / stream-switch first attach)
@@ -3291,27 +3381,21 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                                         self.currentItemStatus == .readyToPlay
                 
                 if !isActuallyPlaying {
-                    self.initialPlaybackRetryCount += 1
-                    #if DEBUG
-                    print("[DirectStreamingPlayer] [Playback] Startup safety net: no playback detected after 5s – retry \(self.initialPlaybackRetryCount)/\(self.maxInitialRetries) | hasStartedPlaying=\(self.hasStartedPlaying) | currentItemStatus=\(self.currentItemStatus.rawValue) | hasPlayerItem=\(self.playerItem != nil) | rate=\(self.player?.rate ?? -1)")
-                    #endif
-
+                    // Share the same hard budget as early-window recovery so stall recreates
+                    // and the 5 s safety net cannot stack into a multi-recreate storm.
                     if self.initialPlaybackRetryCount >= self.maxInitialRetries {
                         #if DEBUG
                         let tc = self.player?.timeControlStatus.rawValue ?? -1
-                        print("[DirectStreamingPlayer] [Playback] Max attempts (\(self.maxInitialRetries)) reached - giving up")
+                        print("[DirectStreamingPlayer] [Playback] Startup safety net: budget already exhausted (\(self.initialPlaybackRetryCount)/\(self.maxInitialRetries))")
                         print("[DirectStreamingPlayer] [Playback] Safety net terminal: hasPermanentError=\(self.hasPermanentError) | timeControlStatus=\(tc) | rate=\(self.player?.rate ?? -1) | currentItemStatus=\(self.currentItemStatus.rawValue)")
                         #endif
 
                         if self.hasPermanentError {
-                            // Real permanent failure (via handleLoadingError or item.failed permanent).
-                            // Emit the modern hard-failure key so red banner + popup use the
-                            // correct localized "Failed" / reason text (post-unification).
                             self.safeOnStatusChange(isPlaying: false, reasonKey: "status_failed")
                         } else {
-                            // Pure transient ICY/Fig/decoder noise on noisy streams (Viro etc.).
-                            // Give one final recreatePlayerItem() (unified resource-loader item)
-                            // and suppress the severe status entirely. No red UX for recoverable cases.
+                            // One last secured recreate only — still no permanent red UX for
+                            // pure transient ICY/Fig noise. Intent stays active so a later
+                            // language switch or explicit play can recover.
                             #if DEBUG
                             print("[DirectStreamingPlayer] [Playback] Transient give-up: performing FINAL recreatePlayerItem() then suppressing severe status. No red popup.")
                             #endif
@@ -3320,6 +3404,10 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                         return
                     }
 
+                    self.initialPlaybackRetryCount += 1
+                    #if DEBUG
+                    print("[DirectStreamingPlayer] [Playback] Startup safety net: no playback detected after 5s – retry \(self.initialPlaybackRetryCount)/\(self.maxInitialRetries) | hasStartedPlaying=\(self.hasStartedPlaying) | currentItemStatus=\(self.currentItemStatus.rawValue) | hasPlayerItem=\(self.playerItem != nil) | rate=\(self.player?.rate ?? -1)")
+                    #endif
                     self.recreatePlayerItem()
                 }
             }
@@ -3387,6 +3475,50 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         earlyICYDropRecreateTask = nil
     }
 
+    /// Seconds remaining in the post-attach loading grace (0 when expired or not started).
+    @MainActor
+    private func remainingEarlyAttachLoadingGraceSeconds() -> TimeInterval {
+        guard let began = currentAttachBeganAt else {
+            // No clock yet (observers before attach mark) — treat as full grace so we do not
+            // recreate from a zero-delay path.
+            return earlyAttachLoadingGraceSeconds
+        }
+        let elapsed = Date().timeIntervalSince(began)
+        return max(0, earlyAttachLoadingGraceSeconds - elapsed)
+    }
+
+    /// Whether "buffer not likely to keep up + rate 0" may enter early-window recovery.
+    ///
+    /// Returns `false` while the secured item is still legitimately loading
+    /// (`status == .unknown`, no error) inside ``earlyAttachLoadingGraceSeconds``.
+    /// Hard errors and post-ready stuck rate always return `true` when the early budget remains.
+    ///
+    /// - Parameters:
+    ///   - item: Current `AVPlayerItem` under observation.
+    ///   - rate: Current `AVPlayer.rate`.
+    /// - Returns: `true` when a stall-class early recreate is allowed to proceed.
+    /// - SeeAlso: ``attemptEarlyWindowTransientRecovery(reason:allowWhileDeferringFirstPlayKick:)``,
+    ///   ``earlyAttachLoadingGraceSeconds``, docs/cold-launch-streamplay-regression-checklist.md (§8).
+    @MainActor
+    func shouldAttemptEarlyAttachStallRecovery(item: AVPlayerItem, rate: Float) -> Bool {
+        guard !hasStartedPlaying else { return false }
+        guard initialPlaybackRetryCount < maxInitialRetries else { return false }
+        guard rate < 0.1 else { return false }
+        if item.error != nil { return true }
+        switch item.status {
+        case .failed:
+            return true
+        case .readyToPlay:
+            // Ready but silent — short patience already applied by the caller's debounce.
+            return true
+        case .unknown:
+            // Progressive ICY: unknown + no error is normal loading, not a stall, until grace ends.
+            return remainingEarlyAttachLoadingGraceSeconds() <= 0
+        @unknown default:
+            return remainingEarlyAttachLoadingGraceSeconds() <= 0
+        }
+    }
+
     /// Silent recovery for transient ICY / Fig / decoder noise on a fresh attach.
     ///
     /// This is the single decision gate for early-window recovery. Callers (KVO, buffer
@@ -3394,11 +3526,16 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// `reason` only. The gate enforces:
     /// - teardown suppression
     /// - pre-stable-play window (`!hasStartedPlaying`)
-    /// - per-stream retry budget (`initialPlaybackRetryCount` / `maxInitialRetries`)
+    /// - per-stream retry budget (`initialPlaybackRetryCount` / `maxInitialRetries`) —
+    ///   **each successful admission increments the count** so the budget is a hard cap
     /// - ``SharedPlayerManager/canProceedWithPlayback()`` (sticky pause / security / clear)
     ///
+    /// Stall-class callers must also pass ``shouldAttemptEarlyAttachStallRecovery(item:rate:)``
+    /// so normal first-byte loading is not treated as an immediate recreate.
+    ///
     /// On success it schedules ``recreatePlayerItem()``, which always rebuilds a **secured**
-    /// item (resource loader + DNSSEC/cert path). Permanent failures never enter here.
+    /// item (resource loader + DNSSEC/cert path) under the current ``playbackAttachGeneration``.
+    /// Permanent failures never enter here.
     ///
     /// - Parameters:
     ///   - reason: DEBUG diagnostic label for the recovery trigger.
@@ -3408,6 +3545,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     ///     (item failure / resource-loader errors cannot wait for ready).
     /// - Returns: `true` if ``recreatePlayerItem()`` was invoked.
     /// - SeeAlso: `recreatePlayerItem()`, `handleItemStatusFailure(_:)`,
+    ///   `shouldAttemptEarlyAttachStallRecovery(item:rate:)`,
     ///   `isInInitialRecoveryWindow`, docs/cold-launch-streamplay-regression-checklist.md (§8).
     @MainActor
     @discardableResult
@@ -3423,16 +3561,20 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             #endif
             return false
         }
-        guard initialPlaybackRetryCount < maxInitialRetries else { return false }
+        guard initialPlaybackRetryCount < maxInitialRetries else {
+            #if DEBUG
+            print("[DirectStreamingPlayer] early-window recovery budget exhausted (\(reason)) — \(initialPlaybackRetryCount)/\(maxInitialRetries)")
+            #endif
+            return false
+        }
         guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
             #if DEBUG
             print("[DirectStreamingPlayer] early-window recovery suppressed by playbackIntent (\(reason))")
             #endif
             return false
         }
-        if initialPlaybackRetryCount == 0 {
-            initialPlaybackRetryCount = 1
-        }
+        // Hard cap: every admitted recovery consumes one budget unit (never sticky-at-1).
+        initialPlaybackRetryCount += 1
         #if DEBUG
         print("[DirectStreamingPlayer] early-window recovery → recreatePlayerItem | reason=\(reason) | retryCount=\(initialPlaybackRetryCount)/\(maxInitialRetries)")
         #endif
@@ -3445,9 +3587,11 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// Canonical recovery tool for transient ICY/Fig/decoder noise and mid-session stalls.
     /// Always creates the replacement item via ``makeSecuredPlayerItem(for:)`` so DNSSEC and
     /// runtime certificate validation remain in force. Single-flight (`recreateInFlight`);
-    /// suppressed while `isPlaybackTeardownActive`. Rebinds player-level and item-level
-    /// observers, then restarts only when ``SharedPlayerManager/canProceedWithPlayback()``
-    /// still allows audio.
+    /// suppressed while `isPlaybackTeardownActive`. Captures ``playbackAttachGeneration`` at
+    /// entry and aborts if a concurrent ``stop(reason:completion:silent:)`` advanced it
+    /// (stream-switch teardown or user pause supersedes the in-flight recreate).
+    /// Rebinds player-level and item-level observers, then restarts only when
+    /// ``SharedPlayerManager/canProceedWithPlayback()`` still allows audio.
     ///
     /// - SeeAlso: `attemptEarlyWindowTransientRecovery(reason:allowWhileDeferringFirstPlayKick:)`,
     ///   `makeSecuredPlayerItem(for:)`, `setupPlaybackObservers()`,
@@ -3467,6 +3611,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 #endif
                 return
             }
+            let generationAtStart = self.playbackAttachGeneration
             self.recreateInFlight = true
             defer { self.recreateInFlight = false }
             
@@ -3487,6 +3632,20 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             // Clear item-level observations before replacing the item.
             self.playerItemObservations.forEach { $0.invalidate() }
             self.playerItemObservations.removeAll()
+
+            // Stream-switch / user stop may have advanced generation after we entered.
+            guard generationAtStart == self.playbackAttachGeneration else {
+                #if DEBUG
+                print("[DirectStreamingPlayer] [Playback] recreatePlayerItem: discarded — attach generation advanced")
+                #endif
+                return
+            }
+            guard !self.isPlaybackTeardownActive else {
+                #if DEBUG
+                print("[DirectStreamingPlayer] [Playback] recreatePlayerItem: discarded — teardown became active")
+                #endif
+                return
+            }
             
             // Security invariant: replacement items must use the resource-loader path
             // (never a bare AVURLAsset without the streaming delegate).
@@ -3496,6 +3655,9 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             self.playerItem = newItem
             self.bindAttachedItemToSelectedStream()
             self.clearPlaybackTeardownGuard()
+            // Fresh loading grace for the replacement item (prefer one recreate settling cleanly
+            // over a second recreate while tracks are still attaching).
+            self.currentAttachBeganAt = Date()
             
             // Rebind player-level KVO + ICY, then item-level buffer/status observers.
             self.setupPlaybackObservers()
@@ -3506,6 +3668,15 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 print("[DirectStreamingPlayer] recreatePlayerItem: audible restart suppressed (intent / soft-pause / teardown)")
                 #endif
                 self.isDeferringFirstPlayKick = false
+                self.player?.pause()
+                self.player?.rate = 0.0
+                return
+            }
+
+            guard generationAtStart == self.playbackAttachGeneration else {
+                #if DEBUG
+                print("[DirectStreamingPlayer] [Playback] recreatePlayerItem: discarded after kick check — generation advanced")
+                #endif
                 self.player?.pause()
                 self.player?.rate = 0.0
                 return

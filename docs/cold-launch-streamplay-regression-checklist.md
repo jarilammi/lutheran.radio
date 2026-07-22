@@ -53,9 +53,9 @@ End with security impact, build status, localization needed.
 **Observer layout (recreate / teardown)**
 
 1. `setupPlaybackObservers()` — `timeControlStatus` KVO on `AVPlayer`; early `.paused` on fresh ICY item schedules debounced recreate (150 ms) via `attemptEarlyWindowTransientRecovery`; skipped while `isPlaybackTeardownActive`.
-2. `recreatePlayerItem()` — single-flight via `recreateInFlight` on MainActor; always rebuilds via `makeSecuredPlayerItem` (resource loader + DNSSEC/cert path); rebinds `setupPlaybackObservers` + `addObservers`; bails during teardown.
-3. `addObservers()` — item `status` / buffer KVO; buffer-empty with `AVFoundationErrorDomain` and early-window stalls call secured recreate under intent + budget guards (short early-window stall delay; longer post-stable stall delay).
-4. `attemptEarlyWindowTransientRecovery` — single gate for pre-stable-play silent recovery (budget, intent, teardown).
+2. `recreatePlayerItem()` — single-flight via `recreateInFlight` on MainActor; always rebuilds via `makeSecuredPlayerItem` (resource loader + DNSSEC/cert path); rebinds `setupPlaybackObservers` + `addObservers`; bails during teardown; discards when `playbackAttachGeneration` advanced; restarts loading-grace clock on success.
+3. `addObservers()` — item `status` / buffer KVO; buffer-empty with `AVFoundationErrorDomain` and early-window stalls call secured recreate under intent + budget + loading-grace guards (grace + debounce for pre-stable stalls; longer post-stable stall delay).
+4. `attemptEarlyWindowTransientRecovery` — single gate for pre-stable-play silent recovery (budget increments per admission, intent, teardown). Stall-class callers also use `shouldAttemptEarlyAttachStallRecovery`.
 5. `stop()` / `performActualStop` — `activatePlaybackTeardownGuardFromStop()` runs synchronously on main thread before async cleanup; item observers invalidated and `playerItem = nil`; guard cleared when new secured item attaches.
 
 ---
@@ -128,19 +128,20 @@ End with security impact, build status, localization needed.
 
 ## 6. Stream switch (in-app and widget)
 
-1. **Switch order** — `Stream model updated (no player item)` → tuning → atomic switch / ping → single `play()`.
-2. **Single streamSwitch stop** — One `FORCE STOPPING … reason: streamSwitch` per switch; zero `userAction` stop during widget switch.
-3. **One observer attach** — One `setupPlaybackObservers` per final attach.
-4. **No userPaused lock workaround** — Zero `[Widget] Cleared userPaused lock` during widget switch.
-5. **PrePlay hold dedup** — One `resetToPrePlayForNewStream` on tap; `Skipping redundant resetToPrePlayForNewStream` in `completeStreamSwitch` when hold active.
-6. **Play-path label** — DEBUG: `stream-switch play, proceeding`.
-7. **Startup safety net** — ≤1 net on stream-switch first attach; cancelled on teardown.
-8. **Teardown during switch** — Stale post-stop `timeControlStatus → 0` does not trigger recreate or `status_stopped` flash.
-9. **ICY per language** — Fresh `LIVE ICY` for each switched language.
-10. **Widget playing-path switch** — `▶ [Widget Switch] Starting new stream using SharedPlayerManager.play()`; no extra play tap.
-11. **Explicit-pause switch block** — Widget pause then switch: `[Widget Switch] Blocked — userPaused, no auto-resume`.
-12. **Stream-failure switch** — After decode/network failure (not user pause): `markPlaybackStoppedByStreamFailure()` with intent unchanged (`.shouldBePlaying`); widget switch auto-resumes without extra play tap. See Section 12.3.
-13. **Widget switch delivery** — `SwitchStreamIntent` must reach the main app via App Group + Darwin before §6.10 handler lines: `Found pending action: switch` with non-nil `Pending language: {code}`; then `Executing widget switch action to language:`. If pause/play Darwin works but switch produces zero pending-action logs, treat as extension routing regression (`isRunningInWidget`, `signalWidgetSwitchAction`), not ICY or stream failure.
+1. **Chrome before teardown** — Active-intent switch establishes `resetToPrePlayForNewStream` (Connecting / `.prePlay` hold, ICY stash cleared, media surfaces refreshed) **before** silent `.streamSwitch` stop and **before** language snapshot / LA language mirror push. Live Activity must not advertise `.playing` mid teardown.
+2. **Switch order** — Connecting hold → `Stream model updated (no player item)` + silent stop → language snapshot → tuning (in-app) → single `play()`.
+3. **Single streamSwitch stop** — One `FORCE STOPPING … reason: streamSwitch` per switch; zero `userAction` stop during widget switch.
+4. **One observer attach** — One `setupPlaybackObservers` per final attach; early-window recreates are budget-capped (see §8).
+5. **No userPaused lock workaround** — Zero `[Widget] Cleared userPaused lock` during widget switch.
+6. **PrePlay hold dedup** — One `resetToPrePlayForNewStream` on tap / entry; completeStreamSwitch skips a second reset when hold active.
+7. **Play-path label** — DEBUG: `stream-switch play, proceeding`.
+8. **Startup safety net** — Shares the early-window recreate budget; cancelled on teardown; no multi-recreate storm with stall recovery.
+9. **Teardown during switch** — Stale post-stop `timeControlStatus → 0` does not trigger recreate or `status_stopped` flash; in-flight recreate aborts when `playbackAttachGeneration` advances.
+10. **ICY per language** — Fresh `LIVE ICY` for each switched language; prior-language program title cleared at prePlay hold.
+11. **Widget playing-path switch** — `▶ [Widget Switch] Starting new stream using SharedPlayerManager.play()`; no extra play tap.
+12. **Explicit-pause switch block** — Widget pause then switch: `[Widget Switch] Blocked — userPaused, no auto-resume`.
+13. **Stream-failure switch** — After decode/network failure (not user pause): `markPlaybackStoppedByStreamFailure()` with intent unchanged (`.shouldBePlaying`); widget switch auto-resumes without extra play tap. See Section 12.3.
+14. **Widget switch delivery** — `SwitchStreamIntent` must reach the main app via App Group + Darwin before §6.10 handler lines: `Found pending action: switch` with non-nil `Pending language: {code}`; then `Executing widget switch action to language:`. If pause/play Darwin works but switch produces zero pending-action logs, treat as extension routing regression (`isRunningInWidget`, `signalWidgetSwitchAction`), not ICY or stream failure.
 
 ---
 
@@ -163,15 +164,17 @@ End with security impact, build status, localization needed.
 
 1. **Single-flight recreate** — `recreatePlayerItem()` coalesces concurrent callers.
 2. **Secured recreate** — Every recreate uses `makeSecuredPlayerItem` (resource loader delegate); never a bare `AVURLAsset` without the streaming security path.
-3. **Early-window recovery gate** — `attemptEarlyWindowTransientRecovery` is the single pre-stable-play gate (budget + intent + teardown) for timeControl, buffer-empty, item `.failed`, resource-loader, and loading-error paths.
-4. **Early-ICY debounce** — 150 ms on early `.paused` KVO; cancelled on `.playing`, stop, counter reset.
-5. **Early stall delay** — Pre-stable stall recovery uses a short delay (~0.75–1.5 s); post-stable stalls keep the longer debounce.
-6. **Teardown guard** — `isPlaybackTeardownActive` at `stop()` start; suppresses recreate and early-ICY until new item attached.
-7. **Guard cleared on attach** — `clearPlaybackTeardownGuard()` in `preparePlayerItem`, `createAndStartPlayer`, `startPlayback`, successful recreate.
-8. **No recreate during switch stop** — Zero `Cannot recreate` and zero duplicate secured-item recreate during switch teardown.
-9. **Transient status_stopped** — `transient status_stopped while visualState .playing → suppress pipeline` during ICY bursts.
-10. **Item failure handling** — `status_stream_unavailable` / `status_failed` → `markPlaybackStoppedByStreamFailure()`, not `setUserPaused()`; intent stays `.shouldBePlaying` (or `.sleepTimer`) unless user explicitly paused.
-11. **Observer invalidation** — Stop invalidates item observers and sets `playerItem = nil`.
+3. **Early-window recovery gate** — `attemptEarlyWindowTransientRecovery` is the single pre-stable-play gate (budget + intent + teardown) for timeControl, buffer-empty, item `.failed`, resource-loader, and loading-error paths. **Each admission increments** `initialPlaybackRetryCount` up to `maxInitialRetries` (hard cap shared with the startup safety net).
+4. **Loading grace** — Progressive ICY items often stay at `status == .unknown` with no error for several seconds. Stall-class recovery uses `shouldAttemptEarlyAttachStallRecovery` + `earlyAttachLoadingGraceSeconds` (~4 s from attach / recreate) so normal first-byte loading is not treated as an immediate recreate. Hard failures (item `.failed`, buffer-empty with `AVFoundationErrorDomain`) bypass grace.
+5. **Early-ICY debounce** — 150 ms on early `.paused` KVO; cancelled on `.playing`, stop, counter reset.
+6. **Early stall delay** — Pre-stable stall waits remaining loading grace + ~1.5 s debounce (longer under Low Power Mode); post-stable stalls keep the longer debounce.
+7. **Generation-aware recreate** — `recreatePlayerItem` captures `playbackAttachGeneration` and aborts if stop / stream-switch advanced it mid-flight.
+8. **Teardown guard** — `isPlaybackTeardownActive` at `stop()` start; suppresses recreate and early-ICY until new item attached.
+9. **Guard cleared on attach** — `clearPlaybackTeardownGuard()` in `preparePlayerItem`, `createAndStartPlayer`, `startPlayback`, successful recreate; successful recreate restarts the loading-grace clock.
+10. **No recreate during switch stop** — Zero `Cannot recreate` and zero duplicate secured-item recreate during switch teardown.
+11. **Transient status_stopped** — `transient status_stopped while visualState .playing → suppress pipeline` during ICY bursts.
+12. **Item failure handling** — `status_stream_unavailable` / `status_failed` → `markPlaybackStoppedByStreamFailure()`, not `setUserPaused()`; intent stays `.shouldBePlaying` (or `.sleepTimer`) unless user explicitly paused.
+13. **Observer invalidation** — Stop invalidates item observers and sets `playerItem = nil`.
 
 ---
 

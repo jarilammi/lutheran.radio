@@ -53,6 +53,7 @@ Live Activities are **not** requested at cold launch. They start when playback b
 | Background while playing | ``RadioLiveActivityManager/handleAppWillEnterBackground()`` | ``startActivity()`` when `loadSharedState().isPlaying && currentActivity == nil` | Lock-screen / DI controls while audio continues |
 | Foreground correction | ``handleAppDidEnterForeground()`` | ``updateCurrentActivity()`` only | Catch-up after long background without polling |
 | User pause / stop | ``stop()``, ``setUserPaused()``, etc. | Update only (LA **not** ended) | Paused LA with working play intent is intentional while process lives |
+| Active-intent stream / language switch | ``resetToPrePlayForNewStream()`` then silent engine `.streamSwitch` stop, then language mirror + ``refreshAllMediaSurfaces`` | Update only | Connecting (``.prePlay``) before teardown; never leave ContentState at `.playing` mid switch. ``updateCurrentActivity()`` also clamps `.playing` → `.prePlay` while stream-switch hold or connect pipeline is active (defense-in-depth). |
 | Process termination | ``handleAppWillTerminate()`` | ``endActivity(.immediate)`` | No orphaned interactive LA after process exit |
 
 **Never** start LA from widget extension processes. Activity ownership is main-app only.
@@ -66,6 +67,8 @@ Live Activities are **not** requested at cold launch. They start when playback b
 ### Live Activity
 
 ``RadioLiveActivityManager/updateCurrentActivity()`` builds a candidate ``ContentState(visualState:streamMetadata:currentLanguage:)`` and compares it to in-memory ``lastPushedContent``. **ActivityKit IPC occurs only when the tuple differs** (or on first push). ICY title churn and language-only stream switches therefore cost one crossing per actual title/speaker/visual/**language** change, not per timer tick. Language chrome rides `currentLanguage` from main-app stream attach (``mainAppLiveActivityLanguageCode()``); durable ``liveActivityCurrentLanguage`` warms extension optimistic paths without reopening home-widget write suppression.
+
+**Stream-switch honesty:** Coordinators establish ``holdPrePlayVisualUntilPlayback`` (via ``resetToPrePlayForNewStream()``) and clear prior-language ICY metadata **before** silent engine stop and language push. While the hold or play-start pipeline is active, a candidate visual of `.playing` is forced to `.prePlay` so lock-screen glyphs cannot claim audible playback during attach.
 
 The attribute-events observer (``contentUpdates`` via ``WidgetEventObserver``) keeps ``lastPushedContent`` aligned with the system-accepted state, strengthening suppression of redundant ``Activity.update`` calls.
 

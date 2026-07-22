@@ -443,16 +443,18 @@ final class RadioPlayerCoordinator {
     /// Responsibilities (executed in order):
     /// 1. Read `currentPlaybackIntent` once at entry and derive `shouldResumeAfterSwitch`
     ///    (`isActivePlaybackIntent`).
-    /// 2. Engine preparation exclusively via `DirectStreamingPlayer.switchToStream(_:)`
+    /// 2. If resuming: `resetToPrePlayForNewStream` + Connecting UI **before** engine teardown
+    ///    so Live Activity never stays `.playing` mid silent stop (symmetric with
+    ///    `completeStreamSwitch`).
+    /// 3. Engine preparation exclusively via `DirectStreamingPlayer.switchToStream(_:)`
     ///    (the SSOT: model update, transient reset, awaited stop for lang change, counter reset).
-    /// 3. Mirror selection + chrome (index, background, UserDefaults language, selector view).
-    /// 4. If `!shouldResumeAfterSwitch`: clear soft-pause stash, force `.userPaused` visual,
+    /// 4. Mirror selection + language snapshot + LA language mirror + media-surface refresh.
+    /// 5. If `!shouldResumeAfterSwitch`: clear soft-pause stash, force `.userPaused` visual,
     ///    announce, clear the `actionId`, and return (no playback started).
-    /// 5. If resuming: `resetToPrePlayForNewStream(preserveActiveSleepTimer:)` when intent is
-    ///    `.sleepTimer` (symmetric with `completeStreamSwitch`), update UI to `.prePlay`, then
-    ///    `SharedPlayerManager.play()`. Stream failure leaves intent active
-    ///    (`.shouldBePlaying` / `.sleepTimer`), so this path auto-resumes without an extra play tap.
-    /// 6. Announce + clear pending `actionId`.
+    /// 6. If resuming: `SharedPlayerManager.play()` (hold already active). Stream failure leaves
+    ///    intent active (`.shouldBePlaying` / `.sleepTimer`), so this path auto-resumes without
+    ///    an extra play tap.
+    /// 7. Announce + clear pending `actionId`.
     ///
     /// **Direct `play()` rule (authoritative):** The call to `play()` in the resume branch is
     /// the *internal continuation in the active-intent resume branch* (after `isActivePlaybackIntent`
@@ -510,13 +512,27 @@ final class RadioPlayerCoordinator {
         let playbackIntent = await SharedPlayerManager.shared.currentPlaybackIntent
         let shouldResumeAfterSwitch = playbackIntent.isActivePlaybackIntent
 
+        // Connecting chrome **before** silent engine teardown + language push so Live Activity
+        // never shows `.playing` for a mid-switch language (symmetric with completeStreamSwitch).
+        if shouldResumeAfterSwitch {
+            await SharedPlayerManager.shared.resetToPrePlayForNewStream(
+                preserveActiveSleepTimer: playbackIntent == .sleepTimer
+            )
+            updateUI(for: .prePlay)
+        }
+
         // Engine prep via the SSOT. Replaces all prior manual setSelected + reset + stop sites
         // on the widget path.
         await streamingPlayer.switchToStream(stream)
 
         selectedStreamIndex = index
         backgroundImageController.update(for: stream)
+        // Language after prePlay hold (resume) or while paused visual is still sticky.
         updateUserDefaultsLanguage(stream.languageCode)
+        SharedPlayerManager.persistLiveActivityLanguageMirror(stream.languageCode)
+        #if LUTHERAN_MAIN_APP
+        await SharedPlayerManager.shared.refreshAllMediaSurfaces(liveActivity: .updateIfActive)
+        #endif
 
         viewModel?.selectedStreamIndex = index // migrated from // languageSelectorView (SwiftUI uses VM) .setSelectedIndex(index, animated: true, caller: "widgetSwitch")
 
@@ -532,24 +548,12 @@ final class RadioPlayerCoordinator {
             return
         }
 
-        // Preserve an active sleep timer across failure→switch and normal playing switches
-        // (symmetric with completeStreamSwitch). Stream failure leaves intent as
-        // `.shouldBePlaying` or `.sleepTimer`; sticky `.userPaused` never reaches here.
-        await SharedPlayerManager.shared.resetToPrePlayForNewStream(
-            preserveActiveSleepTimer: playbackIntent == .sleepTimer
-        )
-        viewModel?.selectedStreamIndex = index // migrated from // languageSelectorView (SwiftUI uses VM) .setSelectedIndex(index, caller: "widgetSwitch-prePlay")
-        updateUI(for: .prePlay)
-
         #if DEBUG
         print("[RadioPlayerCoordinator] ▶ [Widget Switch] Starting new stream using SharedPlayerManager.play() — main app path")
         #endif
 
-        // Direct `play()` after `isActivePlaybackIntent` check + resetToPrePlayForNewStream.
-        // This is the permitted internal continuation when playback intent was already active.
-        // See the rule stated in the `///` above and the Precondition on `userRequestedPlay()`.
-        // Do NOT change this site to `userRequestedPlay()`; that would be semantically incorrect
-        // for a continuation-of-active-intent switch and would break symmetry with completeStreamSwitch.
+        // Direct `play()` after prePlay hold + engine prep. Permitted internal continuation
+        // when playback intent was already active — do not route to `userRequestedPlay()`.
         await SharedPlayerManager.shared.play()
 
         #if DEBUG
@@ -879,16 +883,16 @@ final class RadioPlayerCoordinator {
     /// intent-conditional continuation, Now Playing updates).
     ///
     /// Responsibilities (executed in order inside the debounced Task):
-    /// 1. Snapshot language + save widget state.
-    /// 2. (In caller `handleLanguageSelection`) optimistic `.prePlay` UI when the prior
-    ///    visual permitted auto-resume.
-    /// 3. Engine prep via `DirectStreamingPlayer.switchToStream` (SSOT).
-    /// 4. Intent guard using a snapshot of `currentPlaybackIntent.isActivePlaybackIntent`.
-    /// 5. If not resuming: clear soft-pause, force `.userPaused` UI, announce, return.
-    /// 6. If resuming: optional tuning sound + needle animation, second guard,
-    ///    conditional `resetToPrePlayForNewStream` (skips when hold already active),
-    ///    set `.prePlay` UI, then `SharedPlayerManager.play()`.
-    /// 7. Final announce.
+    /// 1. Snapshot intent; when resuming, establish `resetToPrePlayForNewStream` hold +
+    ///    Connecting chrome **before** engine teardown (may already be set by
+    ///    `handleLanguageSelection`).
+    /// 2. Engine prep via `DirectStreamingPlayer.switchToStream` (SSOT silent stop + model).
+    /// 3. Language snapshot + Live Activity language mirror + media-surface refresh
+    ///    (visual is already Connecting or sticky pause — never `.playing` mid-teardown).
+    /// 4. If not resuming: clear soft-pause metadata, force `.userPaused` UI, announce, return.
+    /// 5. If resuming: optional tuning sound + needle animation, second guard,
+    ///    conditional redundant-hold skip, then `SharedPlayerManager.play()`.
+    /// 6. Final announce.
     ///
     /// **Direct `play()` rule (authoritative):** Inside the active-intent resume branch we
     /// call `play()` directly. This is internal continuation after a prior explicit action
@@ -929,8 +933,6 @@ final class RadioPlayerCoordinator {
     /// Keep the "update together" set in sync: these two `///` docs + architecture block +
     /// userRequestedPlay Precondition + resurrection table.
     private func completeStreamSwitch(stream: DirectStreamingPlayer.Stream, index: Int) {
-        updateUserDefaultsLanguage(stream.languageCode)
-
         self.selectedStreamIndex = index
         saveStateForWidget()
 
@@ -950,13 +952,37 @@ final class RadioPlayerCoordinator {
 
             let shouldResumeAfterSwitch = playbackIntent.isActivePlaybackIntent
 
+            // Connecting chrome **before** language snapshot + silent engine teardown so Live
+            // Activity / Now Playing never advertise `.playing` mid stream-switch stop.
+            // `handleLanguageSelection` may already have set the hold; skip a second reset.
+            if shouldResumeAfterSwitch {
+                if await SharedPlayerManager.shared.isStreamSwitchPrePlayHoldActive {
+                    #if DEBUG
+                    print("[RadioPlayerCoordinator] [completeStreamSwitch] prePlay hold already active before engine prep")
+                    #endif
+                } else {
+                    await SharedPlayerManager.shared.resetToPrePlayForNewStream(
+                        preserveActiveSleepTimer: playbackIntent == .sleepTimer
+                    )
+                }
+                self.updateUI(for: .prePlay)
+            }
+
             // Engine preparation is performed via the SSOT for *every* user-initiated
             // stream choice (both the resume/play path and the explicit-paused path).
-            // This replaces all prior manual setSelectedStreamModelOnly + resetTransientErrors
-            // sites inside this method. switchToStream guarantees ordering (model first,
-            // awaited stop when language changes, fresh counters).
+            // switchToStream guarantees ordering (model first, awaited stop when language
+            // changes, fresh counters). Visual is already Connecting when intent is active.
             await streamingPlayer.switchToStream(stream)
             guard !Task.isCancelled else { return }
+
+            // Language snapshot + LA language mirror only after prePlay hold (resume) or while
+            // sticky pause is preserved (paused path). Never push language while visual is still
+            // `.playing` from the prior stream.
+            updateUserDefaultsLanguage(stream.languageCode)
+            SharedPlayerManager.persistLiveActivityLanguageMirror(stream.languageCode)
+            #if LUTHERAN_MAIN_APP
+            await SharedPlayerManager.shared.refreshAllMediaSurfaces(liveActivity: .updateIfActive)
+            #endif
 
             guard shouldResumeAfterSwitch else {
                 #if DEBUG
@@ -997,11 +1023,9 @@ final class RadioPlayerCoordinator {
             // it only after `isActivePlaybackIntent` was already true. Explicit play requests
             // use `userRequestedPlay()`. See the `///` rule above and the Precondition on
             // `userRequestedPlay()`.
-            updateUserDefaultsLanguage(stream.languageCode)
-
             if await SharedPlayerManager.shared.isStreamSwitchPrePlayHoldActive {
                 #if DEBUG
-                print("[RadioPlayerCoordinator] [completeStreamSwitch] Skipping redundant resetToPrePlayForNewStream — tap already set .prePlay hold")
+                print("[RadioPlayerCoordinator] [completeStreamSwitch] Skipping redundant resetToPrePlayForNewStream — hold already active")
                 #endif
             } else {
                 let intent = await SharedPlayerManager.shared.currentPlaybackIntent
