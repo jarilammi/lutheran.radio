@@ -3206,12 +3206,16 @@ final class SharedPlayerManagerEventTests: XCTestCase {
 
     /// Protects cold-launch factory reset: stale on-disk visual state must never restore after relaunch.
     ///
-    /// Simulates an App Group blob left by a prior session (`.playing`, `.thermalPaused`, etc.).
-    /// ``resetToFactoryDefaultsOnLaunch()`` must purge disk keys and leave `.prePlay` with no
-    /// in-memory session snapshot so auto-play on first launch remains viable.
+    /// Seeds retired App Group keys left by pre-memory-only installs (snapshot blobs, playback
+    /// bools, bare language). ``resetToFactoryDefaultsOnLaunch()`` must purge them via
+    /// ``clearPersistedVisualStateKeysFromDisk()`` and leave `.prePlay` with no in-memory session
+    /// snapshot so auto-play on first launch remains viable. Visual state is never upgraded from
+    /// disk — purge only.
     ///
     /// - SeeAlso: ``SharedPlayerManager/resetToFactoryDefaultsOnLaunch()``,
-    ///   ``SharedPlayerManager/loadPersistedWidgetState()``, docs/Event-Driven-Refactor-Roadmap.md.
+    ///   ``SharedPlayerManager/clearPersistedVisualStateKeysFromDisk()``,
+    ///   ``SharedPlayerManager/loadPersistedWidgetState()``,
+    ///   docs/Event-Driven-Refactor-Roadmap.md (OI-1).
     func testColdLaunchFactoryResetClearsDiskVisualStateAndReturnsPrePlay() async {
         let stale = SharedPlayerManager.PersistedWidgetState(
             visualState: .thermalPaused,
@@ -3221,6 +3225,10 @@ final class SharedPlayerManagerEventTests: XCTestCase {
         let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared")
         defaults?.set(data, forKey: "persistedWidgetState")
         defaults?.set(data, forKey: "playerVisualState")
+        defaults?.set(true, forKey: "isPlaying")
+        defaults?.set(true, forKey: "playing")
+        defaults?.set(true, forKey: "hasError")
+        defaults?.set("fi", forKey: "currentLanguage")
         // Stale durable LA toggle visual + language mirrors must not survive factory reset.
         SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(.playing)
         SharedPlayerManager.persistLiveActivityLanguageMirror("fi")
@@ -3236,6 +3244,13 @@ final class SharedPlayerManagerEventTests: XCTestCase {
         XCTAssertEqual(SharedPlayerManager.loadPersistedVisualStateDirect(), .prePlay)
         XCTAssertNil(defaults?.data(forKey: "persistedWidgetState"))
         XCTAssertNil(defaults?.data(forKey: "playerVisualState"))
+        XCTAssertNil(defaults?.object(forKey: "isPlaying"))
+        XCTAssertNil(defaults?.object(forKey: "playing"))
+        XCTAssertNil(defaults?.object(forKey: "hasError"))
+        XCTAssertNil(
+            defaults?.object(forKey: "currentLanguage"),
+            "Retired bare currentLanguage must be purged with other visual keys"
+        )
         XCTAssertNil(
             SharedPlayerManager.loadLiveActivityToggleVisualStateMirror(),
             "Factory reset must explicitly clear liveActivityToggleVisualState"
@@ -3246,6 +3261,36 @@ final class SharedPlayerManagerEventTests: XCTestCase {
         )
         // Boot identity realigned so same-boot post-reset planning is not false-reboot.
         XCTAssertFalse(SharedPlayerManager.hasDeviceRebootedSinceLastRecordedBoot())
+    }
+
+    /// With no session snapshot and no active home widgets, ``preferredWidgetLanguage()``
+    /// hard-defaults to `"en"` even when a retired App Group `currentLanguage` value is present.
+    ///
+    /// **Privacy invariant protected:** bare language leftovers from pre-memory-only installs
+    /// must not influence home-widget language when writes are suppressed. Resolution is
+    /// snapshot → `bestInitialLanguageCode()` (widgets active) → hard `"en"` only — never the
+    /// bare App Group key (which is also purged by ``clearPersistedVisualStateKeysFromDisk()``).
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/preferredWidgetLanguage()``,
+    ///   ``SharedPlayerManager/clearPersistedVisualStateKeysFromDisk()``,
+    ///   docs/Event-Driven-Refactor-Roadmap.md (OI-1).
+    func testPreferredWidgetLanguageIgnoresRetiredBareCurrentLanguageKey() async {
+        await manager.resetToFactoryDefaultsOnLaunch()
+        await MainActor.run {
+            WidgetRefreshManager.setHasActiveLutheranWidgets(false)
+        }
+
+        let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared")
+        // Seed after factory purge so a pre-memory-only leftover is the only disk language signal.
+        defaults?.set("sv", forKey: "currentLanguage")
+
+        XCTAssertEqual(
+            SharedPlayerManager.preferredWidgetLanguage(),
+            "en",
+            "No-widgets path must hard-default to en; bare currentLanguage is not a language SSOT"
+        )
+
+        SharedPlayerManager.clearPersistedVisualStateKeysFromDisk()
     }
 
     /// Main-app LA language SSOT tracks engine ``selectedStream``, not privacy-gated preferred widget language.

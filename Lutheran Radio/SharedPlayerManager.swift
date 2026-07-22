@@ -61,9 +61,10 @@
 // or forcing shims where possible (additive only).
 //
 // Memory-only policy (2026-07-07): PersistedWidgetState is an in-process session
-// snapshot only (visualState + currentLanguage + hasError + streamMetadata). Disk keys
-// (`persistedWidgetState`, `playerVisualState`, legacy bools) are cleared on every cold
-// launch and never written. Legacy keys are purged on read for old installs.
+// snapshot only (visualState + currentLanguage + hasError + streamMetadata). Retired
+// App Group keys (`persistedWidgetState`, `playerVisualState`, `isPlaying`, `playing`,
+// `hasError`, bare `currentLanguage`) are purged on cold launch / read via
+// ``clearPersistedVisualStateKeysFromDisk()`` and are never written.
 
 import Foundation
 import Core
@@ -216,8 +217,10 @@ import WidgetKit
 /// in-session updates flow via `WidgetRefreshManager.refreshIfNeeded` and short-lived instant
 /// feedback keys.
 ///
-/// Legacy on-disk keys (`persistedWidgetState`, `playerVisualState`, `isPlaying`, `hasError`) are
-/// **purged** on launch and never written. `migrateLegacyIsPlayingIfNeeded()` only clears them.
+/// Retired on-disk keys (`persistedWidgetState`, `playerVisualState`, `isPlaying`, `playing`,
+/// `hasError`, bare `currentLanguage`) are **purged** on launch and read paths and never written.
+/// ``clearPersistedVisualStateKeysFromDisk()`` is the sole purge entry point (upgrade hygiene for
+/// App Group leftovers from pre-memory-only installs). Visual state is never restored from disk.
 ///
 /// This is the authoritative shared state model. All values are anonymous. No PII, no listening history.
 ///
@@ -225,12 +228,12 @@ import WidgetKit
 ///
 /// | Key                     | Type                  | Primary Writers                                              | Primary Readers (widgets, recovery, UI)                              | Purpose & Semantics                                          | Lifetime / Notes |
 /// |-------------------------|-----------------------|--------------------------------------------------------------|----------------------------------------------------------------------|--------------------------------------------------------------|------------------|
-/// | playerVisualState       | Data (JSON)           | (Retired — purged on launch, never written)                  | (none — returns `.prePlay`) | Legacy visual key. Cleared by ``resetToFactoryDefaultsOnLaunch()``. | Purged only |
+/// | playerVisualState       | Data (JSON)           | (Retired — purged on launch, never written)                  | (none — returns `.prePlay`) | Retired visual blob. Cleared by ``clearPersistedVisualStateKeysFromDisk()`` / ``resetToFactoryDefaultsOnLaunch()``. | Purged only |
 /// | persistedWidgetState    | Data (JSON)           | (Retired — purged on launch, never written)                  | (none — in-memory session only) | Was on-disk SSOT; now in-process session snapshot via `inMemorySessionWidgetSnapshot`. | Memory-only |
-/// | playing (legacy)        | Bool                  | (Retired — purged on launch)                                 | (none) | Legacy bool. Purged on launch. | Purged only |
-/// | isPlaying               | Bool                  | (Legacy — no longer written by performActualSave)            | `loadSharedState`, widget timeline providers                         | Derived at read time from snapshot.visualState.isActivelyPlaying (or legacy bool fallback) | Read-only fallback for pre-snapshot installs |
-/// | currentLanguage         | String (languageCode) | (Legacy — no longer written by current paths)                | Migration fallbacks only in `loadPersistedWidgetState` / `preferredWidgetLanguage` | Legacy separate language key. Snapshot + `preferredWidgetLanguage()` are the SSOT. | Migration / compat only |
-/// | hasError                | Bool                  | (Inside snapshot only)                                       | `loadSharedState` (prefers PersistedWidgetState.hasError), widgets   | Permanent error flag for UI chrome. Lives inside the snapshot SSOT since extension. | Set on security or unrecoverable network failures |
+/// | playing                 | Bool                  | (Retired — purged on launch, never written)                  | (none) | Retired playback bool. | Purged only |
+/// | isPlaying               | Bool                  | (Retired — purged on launch, never written)                  | (none) | Retired playback bool. In-session playback chrome is derived only from the memory snapshot (`visualState.isActivelyPlaying`) and short-lived instant-feedback keys — never from this App Group bool. | Purged only |
+/// | currentLanguage         | String (languageCode) | (Retired — purged on launch, never written)                  | (none) | Retired bare language key. Language SSOT is in-process `PersistedWidgetState.currentLanguage` plus ``preferredWidgetLanguage()`` (snapshot → `bestInitialLanguageCode()` when widgets active → hard `"en"` when not). | Purged only |
+/// | hasError                | Bool                  | (Inside in-process snapshot only; retired App Group bool purged) | `loadSharedState` (from `PersistedWidgetState.hasError`), widgets   | Permanent error flag for UI chrome. Lives inside the in-process session snapshot. Retired standalone App Group bool is purged only. | In-session snapshot; set on security or unrecoverable network failures |
 /// | lastUpdateTime          | Double (epoch)        | `performActualSave`, `bumpWidgetLivenessTimestamp`, widget handlers, lifecycle hooks | Widget providers (isAppRunning 60 s check), instant-feedback expiry | Liveness heartbeat — bumped on saves and throttled unchanged-snapshot skips | Keeps widget controls alive during background playback |
 /// | lastUserPauseTime | Double (epoch) | ViewController (explicit pause paths) + widget pause round-trips | Cross-process / extension readers (for compatibility); legacy barrier consumers | 8-second pause window after any user pause (recovery paths in DirectStreamingPlayer now use authoritative actor `wasRecentlyUserPaused()` instead of raw UD + defensive sync) | Prevents resurrection attempts immediately after pause |
 /// | isInstantFeedback       | Bool                  | Widget handlers (`handleWidgetPlay/Stop/Switch`)             | `loadSharedState` (checked first)                                    | Signals that a widget action just occurred (optimistic UI)   | Short-lived; cleared after 15s or next authoritative save |
@@ -2474,8 +2477,8 @@ actor SharedPlayerManager {
     /// Widget providers must call this (directly or via ``syncVisualStateFromPersistence()``)
     /// before trusting `currentVisualState`.
     private func ensureVisualStateLoaded() {
-        // Purge any legacy on-disk visual keys from pre-policy installs.
-        Self.migrateLegacyIsPlayingIfNeeded()
+        // Upgrade hygiene: remove retired App Group visual/language keys if present.
+        Self.clearPersistedVisualStateKeysFromDisk()
 
         guard !hasLoadedVisualStateFromPersistence else { return }
 
@@ -2620,14 +2623,8 @@ actor SharedPlayerManager {
     nonisolated private func handleWidgetSwitch(to stream: DirectStreamingPlayer.Stream) {
         // Preserve the current play/pause (or other) visual across language switch for the
         // optimistic PersistedWidgetState snapshot. Must use loadPersistedVisualStateDirect()
-        // (prefers the combined snapshot written by widget pause/play signals via
-        // persistOptimisticWidgetSnapshot / persistWidgetSnapshot) rather than loadSharedState().isPlaying.
-        //
-        // Historical: the legacy "isPlaying" bool (written only by older performActualSave paths)
-        // lagged after widget pause (snapshot would be .userPaused but the bool stayed true).
-        // This caused "pause on widget → language switch on widget → resume on widget" to
-        // erroneously synthesize a .playing snapshot. The migration to snapshot-as-SSOT
-        // (visualState carried inside persistedWidgetState) eliminated the desync.
+        // (in-process session snapshot via persistOptimisticWidgetSnapshot / persistWidgetSnapshot).
+        // Retired App Group `isPlaying` is never consulted; playback chrome is snapshot-derived only.
         //
         // Using the snapshot visual ensures switch while paused carries .userPaused + new
         // language; the follow-on "play" pending + preferred-lang alignment inside play()
@@ -3258,23 +3255,29 @@ actor SharedPlayerManager {
         return .prePlay
     }
 
-    // MARK: - Legacy Migration
+    // MARK: - Retired App Group Key Purge
 
-    /// Purges retired on-disk visual/playback keys from pre-memory-only installs.
+    /// Removes retired on-disk visual/playback keys and the bare language key left by
+    /// pre-memory-only installs.
     ///
-    /// **No migration:** Legacy `isPlaying` / `persistedWidgetState` blobs are removed, not upgraded.
-    /// Visual state is never restored from disk; cold launch always uses factory `.prePlay`.
+    /// **Purge only — not a migration.** Blobs and bools are deleted, never decoded into
+    /// session state. Visual chrome is never restored from disk; every cold launch uses
+    /// factory `.prePlay` via ``resetToFactoryDefaultsOnLaunch()`` / ``init()``.
     ///
-    /// Called from ``loadPersistedWidgetState()``, ``ensureVisualStateLoaded()``, and
-    /// ``resetToFactoryDefaultsOnLaunch()``.
-    nonisolated static func migrateLegacyIsPlayingIfNeeded() {
-        clearPersistedVisualStateKeysFromDisk()
-    }
-
-    /// Removes all on-disk visual/playback keys. Does **not** touch security, language-only
-    /// prefs, liveness, pending actions, or instant-feedback keys.
+    /// Keys cleared: `persistedWidgetState`, `playerVisualState`, `isPlaying`, `playing`,
+    /// `hasError`, bare `currentLanguage`.
     ///
-    /// - SeeAlso: ``resetToFactoryDefaultsOnLaunch()``, ``removeAllLocalPlaybackKeys()``.
+    /// Does **not** touch security caches, liveness (`lastUpdateTime`), pending-action keys,
+    /// instant-feedback keys, or durable Live Activity mirrors
+    /// (`liveActivityToggleVisualState`, `liveActivityCurrentLanguage`).
+    ///
+    /// Called from ``loadPersistedWidgetState()``, ``ensureVisualStateLoaded()``,
+    /// ``resetToFactoryDefaultsOnLaunch()`` / factory-reset teardown,
+    /// ``updateInMemorySessionSnapshot``, and ``removeAllLocalPlaybackKeys()``.
+    ///
+    /// - SeeAlso: ``resetToFactoryDefaultsOnLaunch()``, ``removeAllLocalPlaybackKeys()``,
+    ///   ``preferredWidgetLanguage()``, docs/Event-Driven-Refactor-Roadmap.md (OI-1),
+    ///   CODING_AGENT.md (Single Source of Truth Principles).
     nonisolated static func clearPersistedVisualStateKeysFromDisk() {
         guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return }
         defaults.removeObject(forKey: "persistedWidgetState")
@@ -3282,6 +3285,8 @@ actor SharedPlayerManager {
         defaults.removeObject(forKey: "isPlaying")
         defaults.removeObject(forKey: "playing")
         defaults.removeObject(forKey: "hasError")
+        // Retired bare language key (never written by current paths; purge for upgrade hygiene).
+        defaults.removeObject(forKey: "currentLanguage")
     }
 
     /// Drops the in-process session snapshot. SSOT write helper — sole `nil` assignment site.
@@ -3369,9 +3374,9 @@ actor SharedPlayerManager {
     /// In-process session snapshot carrying visual intent, language, metadata, and error flag.
     /// Never serialized to UserDefaults (memory-only policy).
     ///
-    /// Now also carries `hasError` so that `loadSharedState()` can derive both
-    /// `isPlaying` and `hasError` strictly from the SSOT snapshot for normal operation
-    /// (legacy bools are migration/compat only).
+    /// Carries `hasError` so ``loadSharedState()`` can derive both playback chrome and the
+    /// permanent-error flag strictly from this in-process snapshot (never from retired
+    /// App Group bools — those are purged only via ``clearPersistedVisualStateKeysFromDisk()``).
     struct PersistedWidgetState: Codable {
         let visualState: PlayerVisualState
         let currentLanguage: String
@@ -3463,10 +3468,11 @@ actor SharedPlayerManager {
     ///   in-session write. Callers must treat `nil` as "default to `.prePlay` + best initial language
     ///   + `hasError == false`".
     ///
-    /// - Note: Purges any legacy on-disk visual keys before returning. Cross-process widget
-    ///   timelines see `nil` after relaunch (factory "Tap to Play" defaults).
+    /// - Note: Calls ``clearPersistedVisualStateKeysFromDisk()`` before returning (upgrade hygiene).
+    ///   Cross-process widget timelines see `nil` after relaunch (factory "Tap to Play" defaults).
     ///
-    /// - SeeAlso: ``resetToFactoryDefaultsOnLaunch()``, ``persistWidgetSnapshot(visualState:language:streamMetadata:clearStreamMetadata:hasError:)``,
+    /// - SeeAlso: ``resetToFactoryDefaultsOnLaunch()``, ``clearPersistedVisualStateKeysFromDisk()``,
+    ///   ``persistWidgetSnapshot(visualState:language:streamMetadata:clearStreamMetadata:hasError:)``,
     ///   ``loadPersistedVisualStateDirect()``, `loadSharedState()`,
     ///   CODING_AGENT.md (Single Source of Truth Principles).
     ///
@@ -3478,7 +3484,7 @@ actor SharedPlayerManager {
         streamMetadata: StreamProgramMetadata?,
         hasError: Bool
     )? {
-        migrateLegacyIsPlayingIfNeeded()
+        clearPersistedVisualStateKeysFromDisk()
 
         guard let snapshot = unsafe inMemorySessionWidgetSnapshot else { return nil }
         let visual = sanitizedVisualStateForCrossProcessRestore(snapshot.visualState)
@@ -3557,23 +3563,25 @@ actor SharedPlayerManager {
         }
     }
 
-    /// Preferred source for widget language (and callers that need display language for
-    /// widgets and Live Activities). Strongly prefers the combined `PersistedWidgetState`
-    /// snapshot. Falls back to the legacy separate "currentLanguage" key only for migration
-    /// compatibility.
+    /// Preferred language for home-screen / Control widget chrome and privacy-gated paths.
     ///
-    /// When no snapshot exists:
-    /// - If `hasActiveWidgets` is true (widget installed/configured and writes are allowed),
-    ///   fall back via `DirectStreamingPlayer.bestInitialLanguageCode()` (respects the user's
-    ///   `Locale.preferredLanguages` for a supported stream). This ensures first-run or post-clear
-    ///   users with widgets get a good initial language instead of always English.
-    /// - Otherwise (no widgets ever, or post-`clearAllLocalState` where the flag is forced false),
-    ///   hard-default to "en" (no locale probing). Writes are suppressed by the `hasActiveWidgets`
-    ///   guards in all persist/force paths, preserving the no-identifying-language-signal property
-    ///   for the no-widgets / post-clear case.
+    /// Resolution order (canonical):
+    /// 1. In-process session snapshot (`PersistedWidgetState.currentLanguage`) when present.
+    /// 2. When no snapshot and ``hasActiveWidgets`` is true: `DirectStreamingPlayer.bestInitialLanguageCode()`
+    ///    (first supported stream matching `Locale.preferredLanguages`).
+    /// 3. When no snapshot and no active widgets (or post-`clearAllLocalState`): hard `"en"`.
     ///
-    /// Using this helper (instead of reading the raw key directly) routes language reads
-    /// through the snapshot and reduces the need for forcing or staleness heuristics.
+    /// **Privacy invariant:** With no home widgets configured, this path must not surface a
+    /// stale App Group language signal. Bare `currentLanguage` is retired, purged by
+    /// ``clearPersistedVisualStateKeysFromDisk()``, and is never read here.
+    ///
+    /// Live Activity language chrome must **not** use this helper — it reads
+    /// ``ContentState.currentLanguage`` (main-app stream attach) and, for optimistic extension
+    /// paths, ``languageForLiveActivityOrWidgetOptimistic()``.
+    ///
+    /// - SeeAlso: ``preferredMainAppInitialLanguageCode()``, ``loadPersistedWidgetState()``,
+    ///   ``languageForLiveActivityOrWidgetOptimistic()``, ``clearPersistedVisualStateKeysFromDisk()``,
+    ///   CODING_AGENT.md (Single Source of Truth Principles).
     nonisolated static func preferredWidgetLanguage() -> String {
         if let combined = loadPersistedWidgetState() {
             return combined.currentLanguage
@@ -3581,9 +3589,8 @@ actor SharedPlayerManager {
         if Self.hasActiveWidgets {
             return DirectStreamingPlayer.bestInitialLanguageCode()
         }
-        // Ultimate fallback (migration only, or privacy no-signal when no widgets / post-clear)
-        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return "en" }
-        return defaults.string(forKey: "currentLanguage") ?? "en"
+        // Privacy: no home widgets / post-clear → hard default; no App Group language read.
+        return "en"
     }
 
     /// Preferred initial language for main-app UI (LanguageSelectorView needle, early cold-launch
@@ -3597,9 +3604,10 @@ actor SharedPlayerManager {
     /// and picks the first supported radio stream (en/de/fi/sv/et) that matches the user's language
     /// preferences. This is the device locale reseed used for the post-clear / no-snapshot case.
     ///
-    /// Distinct from `preferredWidgetLanguage()`: the widget helper now consults `hasActiveWidgets`
-    /// for its no-snapshot fallback (bestInitial when writes are allowed; "en" + suppressed writes
-    /// otherwise). This helper is the main-app path that always prefers bestInitial on no-snapshot.
+    /// Distinct from ``preferredWidgetLanguage()``: the widget helper consults `hasActiveWidgets`
+    /// for its no-snapshot fallback (`bestInitialLanguageCode` when writes are allowed; hard `"en"`
+    /// otherwise). This helper is the main-app path that always prefers `bestInitialLanguageCode`
+    /// when no session snapshot exists.
     nonisolated static func preferredMainAppInitialLanguageCode() -> String {
         if let combined = loadPersistedWidgetState() {
             return combined.currentLanguage
@@ -3653,7 +3661,7 @@ actor SharedPlayerManager {
         _clearIcyMetadataStash()
         savePersistedWidgetState(visualState: currentVisualState, language: language, streamMetadata: nil)
 
-        // 2026-05-29: Legacy separate "currentLanguage" key retired. lastUpdateTime
+        // Bare App Group `currentLanguage` is retired (purged only). lastUpdateTime
         // is still bumped for the 60 s "isAppRunning" widget check and general freshness.
         sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "lastUpdateTime")
         // Explicit synchronize removed (see UserDefaults hygiene note near other sites).
@@ -3911,15 +3919,11 @@ extension SharedPlayerManager {
             }
         }
         
-        // Normal state loading — derive strictly from the PersistedWidgetState snapshot.
+        // Normal path: playback chrome and hasError from the in-process session snapshot only.
+        // Language via preferredWidgetLanguage() (snapshot → bestInitial when widgets active → "en").
         let persisted = Self.loadPersistedWidgetState()
         let isPlaying = persisted?.visualState.isActivelyPlaying ?? false
         let hasError = persisted?.hasError ?? false
-        // Language is returned via the preferred helper (combined snapshot first).
-        // This gives the large majority of call sites (Live Activities, many ViewController
-        // paths, etc.) the authoritative language with no further changes.
-        // The old direct key remains only as the ultimate migration fallback inside
-        // preferredWidgetLanguage().
         let currentLanguage = Self.preferredWidgetLanguage()
         return (isPlaying, currentLanguage, hasError)
     }
@@ -4067,10 +4071,8 @@ extension SharedPlayerManager {
         clearInMemorySessionSnapshot()
         guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return }
 
+        // Retired visual/playback/language keys (persistedWidgetState, isPlaying, bare currentLanguage, …).
         clearPersistedVisualStateKeysFromDisk()
-
-        // Legacy language key (non-visual; cleared on explicit privacy clear)
-        defaults.removeObject(forKey: "currentLanguage")
 
         // Playback-related transient / recent activity keys
         defaults.removeObject(forKey: "lastUserPauseTime")
