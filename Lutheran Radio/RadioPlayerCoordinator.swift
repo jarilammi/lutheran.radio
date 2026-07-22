@@ -70,15 +70,11 @@ final class RadioPlayerCoordinator {
 
     /// Optional hook for the SwiftUI sleep timer button tap.
     ///
-    /// During the hybrid phase the closure passed from `RadioPlayerView` typically calls
-    /// `configureSleepTimerButtonMenu()`. This property exists for future cleaner wiring
-    /// (e.g. if the coordinator itself wants to drive presentation of a SwiftUI sheet or
-    /// confirmation dialog without the caller knowing the implementation).
-    ///
-    /// Current primary path: PlaybackControlsView presents its own `.confirmationDialog`
-    /// and the resulting choices are delivered via the `PlayerViewModel` action closures
-    /// (onSleepTimerPresetSelected / onSleepTimerCancelSelected) which are wired directly
-    /// to `handleSleepTimerPresetSelected` / `handleSleepTimerCancelSelected`.
+    /// Primary path: `PlaybackControlsView` presents its own `.confirmationDialog`; choices
+    /// arrive via `PlayerViewModel` action closures (`onSleepTimerPresetSelected` /
+    /// `onSleepTimerCancelSelected`) wired to `handleSleepTimerPresetSelected` /
+    /// `handleSleepTimerCancelSelected`. When set, `RadioPlayerView` may also call
+    /// `configureSleepTimerButtonMenu()` through this hook for menu configuration.
     var onSleepTimerButtonTapped: (() -> Void)?
 
     // MARK: - SwiftUI observation bridge (optional, non-breaking)

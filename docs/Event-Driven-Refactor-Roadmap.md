@@ -143,24 +143,24 @@ Goal: Introduce the first real observers of the `events` stream without forcing 
 
 This subsection records the authoritative inventory of direct "force", refresh, persistence-refresh, and polling patterns that became visible once Tier 1–3 emission + replay + first consumers were in place. It is the reference for any future Tier 4 micro-steps. All descriptions use production-level language; replacements remain strictly additive, very late stage, and gated on proven reliability of the event path across widget, Live Activity, UI, and recovery surfaces.
 
-**1. Legacy forcing shims (widget optimistic + termination liveness)**
+**1. Optimistic snapshot & lifecycle surfaces (permanent infrastructure)**
 
-- `SharedPlayerManager.forcePersistVisualState(_:language:)` and private `_forceSetCurrentVisualState(_:)` (SharedPlayerManager.swift:929).  
-  Nonisolated public surface that writes the authoritative `PersistedWidgetState` snapshot and performs an in-memory visual update inside the actor (widget process only).  
-  Primary callers: widget AppIntent handlers (play/pause/switch paths inside SharedPlayerManager for optimistic cross-process feedback), LutheranRadioWidgetControl.swift, and internal signal paths.  
-  Current status: Explicitly documented as "legacy forcing surface" and "exists solely for widget optimistic instant-feedback paths". The `emit` guard already prevents events from widget processes.  
-  Late-stage note: Snapshot writes from the widget process are required for instant visibility before any Darwin round-trip. Event-driven observation is main-app only. The force path can never be removed; at most some call sites inside the main app could be audited later.
+- ``SharedPlayerManager/persistOptimisticWidgetSnapshot(_:language:)`` and private `_forceSetCurrentVisualState(_:)`.  
+  Nonisolated public surface that writes the authoritative `PersistedWidgetState` snapshot and performs an in-memory visual update inside the actor (widget process).  
+  Primary callers: widget AppIntent handlers (play/pause/switch paths inside `SharedPlayerManager` for optimistic cross-process feedback), Control widget intents, and internal signal paths.  
+  Status: Permanent widget optimistic instant-feedback infrastructure. The `emit` guard prevents `PlayerEvent` yields from widget processes.  
+  Note: Snapshot writes from the widget process are required for instant visibility before any Darwin round-trip. Event-driven observation is main-app only. This path is not a removal target.
 
-- `SharedPlayerManager.forceStaleLivenessTimestampForTermination()` (SharedPlayerManager.swift:2373).  
+- `SharedPlayerManager.forceStaleLivenessTimestampForTermination()`.  
   Writes the `lastUpdateTime = 0` sentinel.  
   Call sites: AppDelegate.applicationWillTerminate, SceneDelegate.sceneDidDisconnect, tests.  
   Purpose: Forces passive "tap to open" presentation in widgets/Live Activities after the main process is gone.  
   Relation to events: Not a player-domain visual or intent transition; it is a process-lifecycle signal. Remains a direct, explicit lifecycle API.
 
-- `refreshVisualStateFromPersistence()` / `syncVisualStateFromPersistence()` (SharedPlayerManager.swift:956, 971).  
-  Read-side helpers that reset the one-shot `hasLoadedVisualStateFromPersistence` guard so long-lived widget extension processes see the latest main-app or forcePersist writes.  
-  Call sites: Every widget Provider entry point (LutheranRadioWidget.swift:307, LutheranRadioWidgetControl.swift:174), RadioPlayerCoordinator.performColdLaunchPlaybackIfAllowed + other paths (217), ViewController cold-launch / foreground guards (428, 499), and defensive spots inside SharedPlayerManager.  
-  Late-stage note: Widget extension processes have no access to `SharedPlayerManager.events`. These read-refresh surfaces are expected to remain for extension hygiene even after main-app consolidation.
+- `refreshVisualStateFromPersistence()` / `syncVisualStateFromPersistence()`.  
+  Read-side helpers that reset the one-shot `hasLoadedVisualStateFromPersistence` guard so long-lived widget extension processes see the latest main-app or ``persistOptimisticWidgetSnapshot`` writes.  
+  Call sites: Every widget Provider entry point (`LutheranRadioWidget`, `LutheranRadioWidgetControl`), `RadioPlayerCoordinator.performColdLaunchPlaybackIfAllowed` and related paths, ViewController cold-launch / foreground guards, and defensive spots inside `SharedPlayerManager`.  
+  Note: Widget extension processes have no access to `SharedPlayerManager.events`. These read-refresh surfaces remain for extension hygiene.
 
 **2. Imperative `refreshIfNeeded` call sites (primary path; event observer already parallels them)**
 
@@ -230,10 +230,10 @@ Widget extension processes (home widget, Control Center widget, Live Activity UI
 
 - Only after the event path has multiple independent, long-lived consumers that have been exercised on device for weeks.
 - Changes are tiny, isolated, and additive: an imperative call site may be deleted only after the equivalent event trigger is proven to produce identical observable behavior (including timing, coalescing, and privacy gates).
-- Legacy forcing surfaces that exist for cross-process instant feedback or process-lifecycle sentinels are documented as permanent compatibility shims; they are not removal targets.
+- Permanent cross-process surfaces for optimistic instant feedback (``persistOptimisticWidgetSnapshot``) and process-lifecycle sentinels (`forceStaleLivenessTimestampForTermination`) are not removal targets.
 - All edits must upgrade documentation, add SeeAlso links to this roadmap, preserve test seams, and pass the full build + test gates.
 
-- SeeAlso: `WidgetRefreshManager.handlePlayerEvent`, `PlayerEventSubscriber`, `WidgetEventObserver`, `SharedPlayerManager.emit`, `forcePersistVisualState` documentation, `docs/Widget-Presentation-Dataflow.md`, CODING_AGENT.md (Single Source of Truth Principles + event-driven direction).
+- SeeAlso: `WidgetRefreshManager.handlePlayerEvent`, `PlayerEventSubscriber`, `WidgetEventObserver`, `SharedPlayerManager.emit`, ``persistOptimisticWidgetSnapshot(_:language:)``, `docs/Widget-Presentation-Dataflow.md`, `docs/Widget-Functionality-Roadmap.md`, CODING_AGENT.md (Single Source of Truth Principles + event-driven direction).
 
 **Rule (reaffirmed):** Nothing is removed or made secondary until the event-driven path has proven itself as a reliable, complete, and observable replacement for the specific call site under consideration. Direct state access and snapshot writes remain available forever for compatibility and simplicity.
 
@@ -340,6 +340,7 @@ Keep a short chronological log of major milestones:
 - Live Activity language chrome gap recorded (2026-07-18): language not on `ContentState`; extension re-derivation via ``preferredWidgetLanguage()`` defaults to English under memory-only session + no home widgets while LA remains active. Not an event-emission gap; full implementation contract lives in Widget Functionality Roadmap. Cross-process section and micro-step guidance updated so agents do not mis-route this into Tier 4 consolidation or `PlayerEvent` streaming.
 - Live Activity language chrome SSOT shipped (2026-07-19): `ContentState.currentLanguage` + durable language mirror + chrome from `context.state`; ``mainAppLiveActivityLanguageCode()`` from stream attach; optimistic language via ``languageForLiveActivityOrWidgetOptimistic()``. Home-widget privacy write suppression unchanged.
 - Micro-step guidance hygiene (2026-07-22): "Selecting and Implementing Micro-Steps" and residual roadmap wording describe Live Activity language chrome as **shipped** (mechanism names only; Widget Functionality Roadmap ownership; not event Tier 4). Docs-only; no production behavior change.
+- Retire `forcePersistVisualState` alias (2026-07-22): public optimistic write surface is ``persistOptimisticWidgetSnapshot(_:language:)`` only. Tier 4 inventory and SeeAlso updated to present-tense optimistic-snapshot SSOT; historical Completed entries retain prior rename wording. Cross-link: [`docs/Widget-Functionality-Roadmap.md`](Widget-Functionality-Roadmap.md). No emission or consumer behavior change.
 
 ---
 

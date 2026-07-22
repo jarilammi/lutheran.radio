@@ -26,9 +26,9 @@ The finish line is a **hybrid, two-zone model** — not a migration from snapsho
 - Three narrow, `Equatable` surfaces derived **once per snapshot**: `PlayerStatusPresentation`, `PlayerControlPresentation`, `WidgetNowPlayingDisplayModel`.
 - Leaf views and LA regions consume explicit slices — not full `PlayerVisualState` policy re-derived in `body`.
 
-**Commands & shims (permanent, not legacy)**
+**Commands & shims (permanent infrastructure)**
 
-- Optimistic `forcePersistVisualState`, `refreshVisualStateFromPersistence`, liveness sentinel (`lastUpdateTime = 0`), and pending-action App Group keys stay in place. Tier 3 “consolidation” does not remove them.
+- Optimistic ``persistOptimisticWidgetSnapshot``, `refreshVisualStateFromPersistence`, liveness sentinel (`lastUpdateTime = 0`), and pending-action App Group keys are permanent cross-process surfaces. Main-app refresh consolidation does not remove them.
 
 **What “done” means**
 
@@ -82,7 +82,7 @@ The finish line is a **hybrid, two-zone model** — not a migration from snapsho
 - **`PersistedWidgetState` in-process session snapshot** (memory-only visual policy, 2026-07-07): `loadPersistedWidgetState()` reads `inMemorySessionWidgetSnapshot` only; cold launch resets to factory `.prePlay` via `resetToFactoryDefaultsOnLaunch()`. Resolves event-roadmap **OI-1** for widgets. Protected by `testColdLaunchFactoryResetClearsDiskVisualStateAndReturnsPrePlay`.
 - **App Group + Darwin round-trip** for widget/Control/LA intents: extension writes optimistic snapshot + `pendingAction` (+ `pendingActionId`); main app processes via `checkForPendingWidgetActions` / `handleWidgetAction` / coordinator SSOT paths. Widget pause uses `SharedPlayerManager.stop()` (no duplicated player logic). Widget switch mirrors `completeStreamSwitch` SSOT (**P5-1 shipped**).
 - **Optimistic instant feedback** (`isInstantFeedback`, `instantFeedbackTime`, `instantFeedbackLanguage`) for sub-round-trip UI; 15 s validity window.
-- **Legacy forcing shim** `forcePersistVisualState(_:language:)` documented and scoped to widget optimistic paths only; `emit(_:)` guard suppresses `PlayerEvent` yields in widget process.
+- **Optimistic snapshot write** ``persistOptimisticWidgetSnapshot(_:language:)`` — permanent widget/LA infrastructure for instant feedback; scoped to extension optimistic paths; `emit(_:)` guard suppresses `PlayerEvent` yields in the widget process.
 - **Liveness heuristic SSOT:** `SharedPlayerManager.isMainAppProcessRecentlyActive()` (60 s window + `lastUpdateTime = 0` termination sentinel). Family views delegate the passive-branch decision to ``WidgetLivenessPresentation/shouldShowPassiveTapToOpen(isMainAppRecentlyActive:)`` (heartbeat remains in `SharedPlayerManager`). Protected by `testForceStaleLivenessMakesIsRecentlyActiveFalse_AndBumpRestores`.
 - **WidgetSurface intent + entry SSOT (2026-07-14):** ``WidgetIntentCoordinators`` (toggle plans), ``WidgetIntentExecution`` in membership-exception `WidgetDisplayModels.swift` (cross-target side effects), ``WidgetTimelineEntryFactory`` (home/control blueprints). Extension `perform()` and Provider paths are thin delegates. Toggle-mapping tests in `WidgetIntentContractTests` call coordinators directly (no mirror helpers).
 - **Pure presentation extraction into WidgetSurface (2026-07-18):** ``displayFlag(for:)`` and pure ``displayLanguageName(for:preferredStreamLanguage:)`` in `WidgetLanguageDisplay.swift`; ``WidgetProviderPresentationAssembly`` owns pure Provider slice assembly. Membership-exception ``WidgetProviderSnapshotResolver`` retains snapshot reads, actor hygiene, stream-catalog station labels, and a thin catalog-aware assemble wrapper. ``WidgetIntentExecution`` remains membership-exception (requires ``SharedPlayerManager`` + ``WidgetRefreshManager``).
@@ -133,7 +133,7 @@ This is **permanent architecture**, not a gap to close with events.
 
 | Concern | SSOT | Writers | Readers |
 |---------|------|---------|---------|
-| Visual state (session) | `PersistedWidgetState.visualState` | Main app `savePersistedWidgetState`; widget `forcePersistVisualState` (optimistic) | All Providers, Control widget, `loadSharedState` |
+| Visual state (session) | `PersistedWidgetState.visualState` | Main app `savePersistedWidgetState`; widget ``persistOptimisticWidgetSnapshot`` (optimistic) | All Providers, Control widget, `loadSharedState` |
 | Stream metadata (session) | `PersistedWidgetState.streamMetadata` | `didUpdateStreamMetadata`, widget handlers | Provider metadata resolver, LA fallback |
 | Language | `PersistedWidgetState.currentLanguage` / `preferredWidgetLanguage()` | Saves, widget switch intents | Flag grids, metadata fallback strings |
 | Permanent error | `PersistedWidgetState.hasError` | Security / unrecoverable failure paths | Widget chrome, `deriveRefreshParameters` |
@@ -262,7 +262,7 @@ Ordered by increasing risk and decreasing isolation. Earlier items are safer.
 - [x] **`widgetNowPlayingDisplayModel` resolver matrix (2026-07-13):** `WidgetDisplayModelsTests.swift` — title/speaker/emphasis for every `PlayerVisualState` × metadata presence/absence × language fallback. Pure function; no WidgetCenter IPC.
 - [x] **Pending-action dedup contract (2026-07-13):** `WidgetIntentContractTests` — rapid schedule replaces pending; `clearPendingAction(actionId:)` ignores stale IDs; `getPendingActionIfFresh` clears expired `pendingActionTime`.
 - [x] **Optimistic `persistOptimisticWidgetSnapshot` contract (2026-07-13):** `WidgetIntentContractTests.testPersistOptimisticWidgetSnapshotWritesSnapshotWithoutPlayerEventYield` + authoritative overwrite + pending preservation; extends `testEmitSuppressesYieldWhenRunningInWidgetProcess`.
-- [x] **Rename `forcePersistVisualState` → `persistOptimisticWidgetSnapshot` (2026-07-13):** Renamed public API; deprecated `forcePersistVisualState` forwarding wrapper retained; `///` headers updated in `SharedPlayerManager.swift`.
+- [x] **Rename `forcePersistVisualState` → `persistOptimisticWidgetSnapshot` (2026-07-13; alias retired 2026-07-22):** Public API is ``persistOptimisticWidgetSnapshot(_:language:)`` only; deprecated `forcePersistVisualState` forwarding wrapper removed after zero remaining call sites; canonical docs and SSOT tables use the present-tense name.
 - [x] **Widget switch SSOT regression (2026-07-13):** `WidgetIntentContractTests` — paused optimistic snapshot preserved on widget switch; `handleWidgetSwitchToLanguage` paused reconciliation + `processedActionIds` dedup (checklist §6.11 / §6.13).
 - [x] **Instant-feedback expiry (2026-07-13):** `WidgetIntentContractTests` — `loadSharedState` prefers instant-feedback within 15 s, falls back after expiry.
 - [x] **Play/pause pending-action drain (2026-07-14):** `WidgetIntentContractTests` — optimistic `signalWidgetPendingAction` (play/pause), main-app `checkForPendingWidgetActions` drain (play, pause, double-pause ignore, debounce), Darwin notify + foreground drain, UITestMode drain-only, home-widget and Control-widget toggle mapping matrices + end-to-end signal paths, `handleWidgetPauseAction` coordinator surface (13 tests; method names in Tier 5 play/pause index).
@@ -350,9 +350,9 @@ Ordered by increasing risk and decreasing isolation. Earlier items are safer.
 
 Authoritative inventory (no behavior change until device-proven). Mirrors Event-Driven Roadmap Tier 4 style.
 
-**1. Legacy forcing & lifecycle shims (permanent)**
+**1. Optimistic snapshot & lifecycle surfaces (permanent)**
 
-- `persistOptimisticWidgetSnapshot` (formerly `forcePersistVisualState`) — widget optimistic instant feedback; permanent infrastructure, not a removal target.
+- ``persistOptimisticWidgetSnapshot(_:language:)`` — widget/LA optimistic instant feedback; permanent infrastructure, not a removal target.
 - `forceStaleLivenessTimestampForTermination` — process-lifecycle sentinel; not a player event.
 - `refreshVisualStateFromPersistence` / `syncVisualStateFromPersistence` — extension hygiene; expected to remain.
 
@@ -417,7 +417,7 @@ Contributors consult it when touching:
 - `LutheranRadioWidget/` (home widgets, Control widget, LA views, intents)
 - `WidgetDisplayModels.swift` (provider resolver + `WidgetIntentExecution`)
 - `WidgetRefreshManager.swift`
-- Widget-related surfaces in `SharedPlayerManager.swift` (persistence, intents, liveness, `forcePersist*`)
+- Widget-related surfaces in `SharedPlayerManager.swift` (persistence, intents, liveness, ``persistOptimisticWidgetSnapshot``)
 - Widget-adjacent tests
 
 When a backlog item splits or priorities shift, update this document in the same change.
@@ -430,6 +430,7 @@ For presentation mapping rules and termination invariants, use [`docs/Widget-Pre
 
 ## Update Log
 
+- **2026-07-22:** **Retire `forcePersistVisualState` alias + optimistic-snapshot SSOT alignment** — public API is ``persistOptimisticWidgetSnapshot(_:language:)`` only (deprecated forwarding wrapper removed; zero call sites). Present-tense SSOT tables and architecture docs use the optimistic-snapshot name; permanent infrastructure language for cross-process optimistic writes. Canonical: `SharedPlayerManager.swift`, [`docs/Widget-Presentation-Dataflow.md`](Widget-Presentation-Dataflow.md), ``<doc:Architecture>``, [`docs/Event-Driven-Refactor-Roadmap.md`](Event-Driven-Refactor-Roadmap.md). No security surface change; no behavior change.
 - **2026-07-21:** **ICY StreamTitle typographic dash parse + Now Playing chain gates** — ``StreamProgramMetadata/from(rawICYMetadata:)`` normalizes spaced en/em dashes (U+2013 / U+2014) to ASCII `" - "` and re-joins multi-segment program titles; unit coverage includes separator matrices and raw-ICY → ``nowPlayingDisplayStrings(...)`` chains that keep speaker attribution on the system artist line (`testNowPlayingDisplayStringsFromEnDashRawICYYieldsSpeakerArtistLine`, `testNowPlayingDisplayStringsFromEmDashRawICYYieldsSpeakerArtistLine`). Tier 5 Now Playing formatter index updated. Presentation-only; no security surface change. SeeAlso: `WidgetSurface/StreamProgramMetadata.swift`, [`docs/Widget-Presentation-Dataflow.md`](Widget-Presentation-Dataflow.md).
 - **2026-07-20:** **DEBUG media-transport latency timeline** — ``MediaTransportLatencyTimeline`` (membership-exception, DEBUG-only) marks LA toggle, mailbox enqueue/execute, soft silence, authoritative playing, and pending-action drain; console `[MediaTransportLatency]` lines with `t=` / `dt=`; unit gates in `SharedPlayerManagerEventTests`; no transport policy change. Canonical: [`docs/Live-Activity-Stacking-and-Media-Surfaces.md`](Live-Activity-Stacking-and-Media-Surfaces.md).
 - **2026-07-19:** **Live Activity language chrome SSOT closed** — `ContentState.currentLanguage` pushed from ``mainAppLiveActivityLanguageCode()`` (stream attach); Lock Screen / Dynamic Island hoist `context.state.currentLanguage` only; durable ``liveActivityCurrentLanguage`` mirror (not gated by ``hasActiveWidgets``); optimistic play/pause uses ``languageForLiveActivityOrWidgetOptimistic()``; language-only changes force ActivityKit update; unit gates in WidgetSurfaceTests, RadioLiveActivityManagerTests, LutheranRadioWidgetTests, SharedPlayerManagerEventTests. Event-Driven roadmap records the same shipped contract (not event Tier 4). Home-widget write suppression unchanged.

@@ -1257,26 +1257,17 @@ actor SharedPlayerManager {
         Task { await Self.shared.ensureVisualStateLoaded() }
     }
     
-    /// Nonisolated helper that widget intents can call to persist a visual state directly.
-    /// This gives the next Provider run (even before the Darwin roundtrip completes) something
-    /// authoritative to load.
+    /// Writes an optimistic widget snapshot for instant extension feedback (App Intents, Control Center, Live Activity).
     ///
-    /// Writes the combined `PersistedWidgetState` snapshot (visual + current preferred language).
-    /// This makes the snapshot the single source of truth for both authoritative saves from the
-    /// main app and optimistic updates from widget intents. Providers that check the snapshot
-    /// first see correct play/pause + language immediately.
+    /// Permanent cross-process infrastructure: persists the in-memory session `PersistedWidgetState`
+    /// (visual + language) and updates the actor's `currentVisualState` in the executing process so
+    /// the next Provider run sees correct play/pause and language before the Darwin round-trip
+    /// completes. Main-app authoritative saves via ``saveCurrentState()`` / ``performActualSave``
+    /// overwrite without corrupting pending actions. Widget processes never emit ``PlayerEvent``
+    /// (see ``emit(_:)`` guard).
     ///
-    /// Also updates the in-memory currentVisualState in this process.
-    ///
-    /// Writes an optimistic widget snapshot for instant extension feedback (App Intents, Control Center).
-    ///
-    /// Permanent cross-process widget infrastructure: persists the in-memory session snapshot and
-    /// updates the actor's `currentVisualState` in the executing process. Main-app authoritative
-    /// saves via ``saveCurrentState()`` / ``performActualSave`` overwrite without corrupting pending
-    /// actions. Widget processes never emit ``PlayerEvent`` (see ``emit(_:)`` guard).
-    ///
-    /// New main-app consumers should observe ``events`` (or snapshot reads) instead of introducing
-    /// additional optimistic write call sites.
+    /// New main-app consumers should observe ``events`` (or snapshot reads) rather than adding
+    /// optimistic write call sites in the main app.
     ///
     /// - Parameters:
     ///   - state: Target visual state (typically `.playing` or `.userPaused` from a widget intent).
@@ -1290,8 +1281,8 @@ actor SharedPlayerManager {
     /// - SeeAlso: ``signalWidgetPendingAction(visualState:action:language:)``,
     ///   ``persistWidgetSnapshot(visualState:language:streamMetadata:clearStreamMetadata:hasError:)``,
     ///   ``WidgetToggleRadioIntent``, ``events``, ``emit(_:)``,
-    ///   docs/Widget-Functionality-Roadmap.md, docs/Event-Driven-Refactor-Roadmap.md,
-    ///   CODING_AGENT.md (SSOT + event-driven direction).
+    ///   docs/Widget-Functionality-Roadmap.md, docs/Widget-Presentation-Dataflow.md,
+    ///   docs/Event-Driven-Refactor-Roadmap.md, CODING_AGENT.md (SSOT + event-driven direction).
     nonisolated public func persistOptimisticWidgetSnapshot(_ state: PlayerVisualState, language: String? = nil) {
         let lang = language ?? Self.preferredWidgetLanguage()
         Self.persistWidgetSnapshot(visualState: state, language: lang)
@@ -1300,25 +1291,18 @@ actor SharedPlayerManager {
         Task { await Self.shared._forceSetCurrentVisualState(state) }
     }
 
-    /// Deprecated alias retained for one release beat. Use ``persistOptimisticWidgetSnapshot(_:language:)``.
-    @available(*, deprecated, renamed: "persistOptimisticWidgetSnapshot(_:language:)")
-    nonisolated public func forcePersistVisualState(_ state: PlayerVisualState, language: String? = nil) {
-        persistOptimisticWidgetSnapshot(state, language: language)
-    }
-
-    /// Internal helper supporting the optimistic widget ``persistOptimisticWidgetSnapshot`` path only.
+    /// Applies an optimistic visual state on the actor after a nonisolated hop from
+    /// ``persistOptimisticWidgetSnapshot(_:language:)``.
     ///
-    /// Applies the visual state directly inside the actor after a nonisolated hop.
     /// Sets the persistence-loaded guard so subsequent `ensureVisualStateLoaded` calls
-    /// see the value. Never emits (widget processes are guarded in ``emit(_:)``).
+    /// see the value. Never emits (`emit(_:)` is main-app-only; widget processes are guarded).
     ///
-    /// - Parameter state: The visual state written optimistically by a widget intent.
-    /// - SeeAlso: ``persistOptimisticWidgetSnapshot(_:language:)``, ``events``.
+    /// - Parameter state: The visual state written optimistically by a widget or Live Activity intent.
+    /// - Important: Permanent infrastructure for cross-process instant feedback. Authoritative
+    ///   transitions for main-app observers still flow through ``emit(_:)`` after engine mutations.
+    /// - SeeAlso: ``persistOptimisticWidgetSnapshot(_:language:)``, ``events``,
+    ///   docs/Widget-Functionality-Roadmap.md, docs/Widget-Presentation-Dataflow.md.
     private func _forceSetCurrentVisualState(_ state: PlayerVisualState) {
-        // Purpose: apply optimistic visual update from persistOptimisticWidgetSnapshot path only.
-        // Key constraint: only invoked via Task hop from nonisolated public surface; sets the loaded guard.
-        // This is a compatibility shim for cross-process widget instant feedback.
-        // Event-driven observers receive authoritative transitions via the main-app emit path.
         currentVisualState = state
         hasLoadedVisualStateFromPersistence = true
     }
@@ -1458,8 +1442,8 @@ actor SharedPlayerManager {
         //
         // Why: Device wake with a visible Lock Screen Live Activity must never synthesize playback
         // intent or cause DirectStreamingPlayer to emit the tuning sound / attach a stream.
-        // Widgets + LAs are permitted only UI updates, forcePersist, pending actions, and Darwin
-        // notifications — zero side-effects into the player.
+        // Widgets + LAs may perform UI updates, ``persistOptimisticWidgetSnapshot``, pending actions,
+        // and Darwin notifications — zero side-effects into the player engine from those paths alone.
         //
         // See also the matching guard before `playSpecialTuningSound` in ViewController.viewDidLoad.
         // ─────────────────────────────────────────────────────────────────────────────

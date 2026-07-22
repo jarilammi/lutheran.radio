@@ -222,13 +222,13 @@ Widget extension processes (home widget, Control Center widget, Live Activity UI
 
 - Emission is guarded to the main app process.
 - Extensions read `loadPersistedWidgetState()` and call `refreshVisualStateFromPersistence()` at provider entry points.
-- Widget intents use `forcePersistVisualState` for optimistic instant feedback before Darwin round-trips.
+- Widget and Live Activity intents use ``persistOptimisticWidgetSnapshot(_:language:)`` for optimistic instant feedback before Darwin round-trips.
 
-Cross-process presentation therefore relies on snapshot reads plus main-app-driven `WidgetCenter.reloadTimelines` and Live Activity attribute updates. This is permanent architecture, not a migration gap.
+Cross-process presentation therefore relies on snapshot reads plus main-app-driven `WidgetCenter.reloadTimelines` and Live Activity attribute updates. This is permanent architecture.
 
 ### Relationship to Imperative Paths
 
-Direct mutation, snapshot writes, and polling timers coexist with the event path. Consolidation candidates (imperative `refreshIfNeeded` call sites, coordinator eager sync, widget-action polling timers) are inventoried in `docs/Event-Driven-Refactor-Roadmap.md` under Tier 4. Nothing is removed until the event path proves reliable on device for weeks. Legacy forcing shims for widget optimistic writes and termination liveness sentinels remain documented compatibility surfaces.
+Direct mutation, snapshot writes, and lifecycle refresh calls coexist with the event path. Consolidation candidates (imperative `refreshIfNeeded` call sites, coordinator eager sync) are inventoried in `docs/Event-Driven-Refactor-Roadmap.md` under Tier 4. Imperative paths remain primary until the event path proves reliable on device. Permanent cross-process surfaces include ``persistOptimisticWidgetSnapshot(_:language:)`` for optimistic widget writes and `forceStaleLivenessTimestampForTermination()` for the termination liveness sentinel.
 
 ### Cross-Target Shared Sources
 

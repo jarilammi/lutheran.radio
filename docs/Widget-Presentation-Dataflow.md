@@ -107,7 +107,7 @@ Never derive presentation inside leaf view `body` for the three canonical surfac
 
 | Concern                        | Single Source of Truth                  | Write Path                                      | Read for Live Activity                  | Disk I/O on hot path? |
 |--------------------------------|-----------------------------------------|-------------------------------------------------|-----------------------------------------|-----------------------|
-| Widgets + Control widgets      | `PersistedWidgetState` (snapshot)       | `persistWidgetSnapshot`, `performActualSave`, `saveCombinedWidgetState`, widget intents via `forcePersistVisualState` | `loadPersistedWidgetState()` (providers) | Yes (required) |
+| Widgets + Control widgets      | `PersistedWidgetState` (snapshot)       | `persistWidgetSnapshot`, `performActualSave`, `saveCombinedWidgetState`, widget intents via ``persistOptimisticWidgetSnapshot`` | `loadPersistedWidgetState()` (providers) | Yes (required) |
 | App relaunch / resurrection    | `PersistedWidgetState` + liveness (`lastUpdateTime` + sentinel 0) | Same as above + `bumpWidgetLivenessTimestamp`   | Same + `isMainAppProcessRecentlyActive` | Yes (required) |
 | Live Activity (transient UI)   | In-memory `currentVisualState` + `currentStreamMetadata` + stream language (`mainAppLiveActivityLanguageCode` / `selectedStream`) | None for LA itself. Visual/metadata/language mutations + direct notify; durable LA language App Group mirror warmed on push | `await manager.currentVisualState` / `currentStreamMetadata` + language for `ContentState.currentLanguage` | **No** (in-memory compare + conditional `Activity.update`) |
 
