@@ -922,20 +922,24 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     /// Consolidated entry point for audio session (re)activation from ViewController surfaces.
     ///
     /// All activation calls originating in ViewController (interruption recovery, route change,
-    /// category change, and tuning sound setup) route through this method so that
-    /// activation logic stays in one place and always uses the async helper
-    /// (`configureAudioSessionAsync` is the player SSOT).
+    /// and category change) route through this method so that activation logic stays in one
+    /// place and always uses the async helper (`configureAudioSessionAsync` is the player SSOT).
     ///
     /// The underlying implementation guarantees that `setActive` is never invoked directly
     /// on the main thread (iOS 27+ uses framework async; 26.x uses off-main dispatch).
+    ///
+    /// Bundled tuning clips must not use this alone and then construct `AVAudioPlayer` on
+    /// `@MainActor` — use ``DirectStreamingPlayer/startLocalClipPlayer(contentsOf:volume:numberOfLoops:)``
+    /// so prepare/play (and any implicit activation) stay off the main actor.
     ///
     /// Playback entry points inside the player call `configureAudioSessionAsync()` (or the
     /// thin `setupAudioSession()` wrapper) directly.
     ///
     /// - SeeAlso: ``DirectStreamingPlayer/configureAudioSessionAsync()``,
     ///   ``DirectStreamingPlayer/deactivateAudioSessionAsync()``,
-    ///   ``DirectStreamingPlayer/setupAudioSession()``, `handleInterruption(_:)`,
-    ///   `handleRouteChange(_:)`, `playSpecialTuningSound(completion:)`.
+    ///   ``DirectStreamingPlayer/setupAudioSession()``,
+    ///   ``DirectStreamingPlayer/startLocalClipPlayer(contentsOf:volume:numberOfLoops:)``,
+    ///   `handleInterruption(_:)`, `handleRouteChange(_:)`, `playSpecialTuningSound(completion:)`.
     @MainActor
     private func reconfigureAudioSession() async {
         _ = await streamingPlayer.configureAudioSessionAsync()
@@ -1260,6 +1264,19 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     }
     
     // MARK: - Audio Setup
+    /// Plays the one-shot cold-launch special tuning clip, then signals ``TuningSoundCoordinator``.
+    ///
+    /// Session configuration and clip start go through
+    /// ``DirectStreamingPlayer/startLocalClipPlayer(contentsOf:volume:numberOfLoops:)`` so
+    /// `AVAudioPlayer` prepare/play never runs on the main actor (avoids implicit main-thread
+    /// session activation). Initial stream attach remains `SharedPlayerManager.play()` after
+    /// the coordinator wait — this method must not start the secured stream.
+    ///
+    /// - Parameter completion: Optional finish hook; preferred completion path is
+    ///   `AVAudioPlayerDelegate` → ``TuningSoundCoordinator/notifyPlaybackFinished(source:)``.
+    /// - SeeAlso: ``DirectStreamingPlayer/startLocalClipPlayer(contentsOf:volume:numberOfLoops:)``,
+    ///   ``DirectStreamingPlayer/configureAudioSessionAsync()``, `TuningSoundCoordinator`,
+    ///   `SharedPlayerManager.play()`.
     func playSpecialTuningSound(completion: (() -> Void)? = nil) async {
         guard !hasPlayedSpecialTuningSound else {
             #if DEBUG
@@ -1279,37 +1296,37 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         }
         
         do {
-            // Consolidated through reconfigureAudioSession() (uses the SSOT
-            // `configureAudioSessionAsync` under the hood). The player ensures
-            // activation never triggers main-thread setActive warnings on 26.x.
-            await self.reconfigureAudioSession()
-            
-            // Strong reference - critical to prevent sound cut-off
-            tuningPlayer = try AVAudioPlayer(contentsOf: tuningURL)
-            tuningPlayer?.delegate = self
-            tuningPlayer?.volume = preferredVolume()
-            
-            #if DEBUG
-            print("[ViewController] Set special tuning sound volume to \(tuningPlayer?.volume ?? -1.0)")
-            #endif
-            
-            tuningPlayer?.numberOfLoops = 0
-            tuningPlayer?.prepareToPlay()
-            
-            // Important: Never trigger playback after tuning sound.
-            // Initial playback is handled only via viewDidAppear + SharedPlayerManager.
-            // Resurrection is fully blocked by PlayerVisualState.mustSuppressResurrection.
-            
-            let didPlay = tuningPlayer?.play() ?? false
-            isTuningSoundPlaying = didPlay
+            // SSOT: session activate + off-main AVAudioPlayer construct/prepare/play.
+            // Retain the returned player on MainActor; delegate finish still owns waiters.
+            guard let clip = try await streamingPlayer.startLocalClipPlayer(
+                contentsOf: tuningURL,
+                volume: preferredVolume(),
+                numberOfLoops: 0
+            ) else {
+                await TuningSoundCoordinator.shared.notifyNoActivePlayback()
+                completion?()
+                return
+            }
+
+            let player = clip.player
+            player.delegate = self
+            tuningPlayer = player
+            isTuningSoundPlaying = clip.didStart
             hasPlayedSpecialTuningSound = true
-            
+
             #if DEBUG
-            print(didPlay ? "[ViewController] Special tuning sound started playing" : "[ViewController] Failed to start special tuning sound")
+            print("[ViewController] Set special tuning sound volume to \(player.volume)")
+            print(clip.didStart
+                  ? "[ViewController] Special tuning sound started playing"
+                  : "[ViewController] Failed to start special tuning sound")
             #endif
-            
-            if didPlay, let duration = tuningPlayer?.duration {
-                await TuningSoundCoordinator.shared.notifyPlaybackStarted(estimatedDuration: duration)
+
+            // Important: Never trigger secured stream playback after tuning sound.
+            // Initial playback is handled only via SharedPlayerManager.play() after the
+            // TuningSoundCoordinator wait. Resurrection remains gated by sticky intent.
+
+            if clip.didStart {
+                await TuningSoundCoordinator.shared.notifyPlaybackStarted(estimatedDuration: player.duration)
             } else {
                 await TuningSoundCoordinator.shared.notifyNoActivePlayback()
                 tuningPlayer = nil

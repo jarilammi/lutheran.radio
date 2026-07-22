@@ -1272,6 +1272,14 @@ final class RadioPlayerCoordinator {
     }
 
     // MARK: - Tuning sounds (moved with state; part of stream selection delight flow)
+    /// Optional special-clip path on the coordinator (duration-based completion; no delegate).
+    ///
+    /// Production cold-launch special clip is owned by `ViewController.playSpecialTuningSound`
+    /// + `TuningSoundCoordinator`. This method remains for legacy/coordinator-only call sites
+    /// and uses the same local-clip SSOT so prepare/play never run on the main actor.
+    ///
+    /// - SeeAlso: ``DirectStreamingPlayer/startLocalClipPlayer(contentsOf:volume:numberOfLoops:)``,
+    ///   `ViewController.playSpecialTuningSound(completion:)`.
     func playSpecialTuningSound(completion: (() -> Void)? = nil) async {
         guard !hasPlayedSpecialTuningSound else {
             #if DEBUG
@@ -1289,28 +1297,27 @@ final class RadioPlayerCoordinator {
             return
         }
 
-        // Ensure AVAudioSession is configured before AVAudioPlayer creation/play.
-        // Routes through DirectStreamingPlayer.configureAudioSessionAsync (SSOT) which
-        // uses the iOS 27+ async API when available or off-main dispatch on 26.x to
-        // avoid main-thread setActive warnings.
-        _ = await streamingPlayer.configureAudioSessionAsync()
-
         do {
-            tuningPlayer = try AVAudioPlayer(contentsOf: tuningURL)
-            tuningPlayer?.delegate = nil // Coordinator does not conform to AVAudioPlayerDelegate; completion is fire-and-forget for special clip
-            tuningPlayer?.prepareToPlay()
+            guard let clip = try await streamingPlayer.startLocalClipPlayer(
+                contentsOf: tuningURL,
+                numberOfLoops: 0
+            ) else {
+                completion?()
+                return
+            }
+
+            // No AVAudioPlayerDelegate on the coordinator; completion is duration-based.
+            clip.player.delegate = nil
+            tuningPlayer = clip.player
             hasPlayedSpecialTuningSound = true
-            isTuningSoundPlaying = true
+            isTuningSoundPlaying = clip.didStart
             lastTuningSoundTime = Date()
 
             #if DEBUG
-            print("[RadioPlayerCoordinator] Playing special tuning sound (duration: \(tuningPlayer?.duration ?? 0)s)")
+            print("[RadioPlayerCoordinator] Playing special tuning sound (duration: \(clip.player.duration)s, didStart=\(clip.didStart))")
             #endif
 
-            tuningPlayer?.play()
-
-            // Fire completion after estimated duration (matches prior timing)
-            let duration = tuningPlayer?.duration ?? 1.5
+            let duration = clip.player.duration > 0 ? clip.player.duration : 1.5
             try? await Task.sleep(for: .seconds(duration + 0.1))
             isTuningSoundPlaying = false
             completion?()
@@ -1323,6 +1330,15 @@ final class RadioPlayerCoordinator {
         }
     }
 
+    /// Stream-switch / language-selector tuning delight clip.
+    ///
+    /// Uses ``DirectStreamingPlayer/startLocalClipPlayer(contentsOf:volume:numberOfLoops:)`` so
+    /// session configuration and `AVAudioPlayer` prepare/play stay off the main-actor
+    /// activation path. Needle index is applied on the main actor after start returns.
+    ///
+    /// - Parameter index: Optional stream index to commit to the view model while the clip plays.
+    /// - SeeAlso: ``DirectStreamingPlayer/startLocalClipPlayer(contentsOf:volume:numberOfLoops:)``,
+    ///   ``DirectStreamingPlayer/configureAudioSessionAsync()``.
     func playTuningSound(animateNeedleTo index: Int? = nil) async {
         guard let tuningURL = Bundle.main.url(forResource: "tuning_sound_1", withExtension: "wav") else {
             #if DEBUG
@@ -1345,31 +1361,31 @@ final class RadioPlayerCoordinator {
             return
         }
 
-        // Ensure AVAudioSession is configured before AVAudioPlayer creation/play.
-        // Routes through DirectStreamingPlayer.configureAudioSessionAsync (SSOT) which
-        // uses the iOS 27+ async API when available or off-main dispatch on 26.x to
-        // avoid main-thread setActive warnings.
-        _ = await streamingPlayer.configureAudioSessionAsync()
-
         do {
-            tuningPlayer = try AVAudioPlayer(contentsOf: tuningURL)
-            tuningPlayer?.delegate = nil
-            tuningPlayer?.prepareToPlay()
-            isTuningSoundPlaying = true
+            guard let clip = try await streamingPlayer.startLocalClipPlayer(
+                contentsOf: tuningURL,
+                numberOfLoops: 0
+            ) else {
+                if let idx = index {
+                    viewModel?.selectedStreamIndex = idx
+                }
+                return
+            }
+
+            clip.player.delegate = nil
+            tuningPlayer = clip.player
+            isTuningSoundPlaying = clip.didStart
             lastTuningSoundTime = Date()
 
             #if DEBUG
-            print("[RadioPlayerCoordinator] Playing tuning sound (duration: \(tuningPlayer?.duration ?? 0)s)")
+            print("[RadioPlayerCoordinator] Playing tuning sound (duration: \(clip.player.duration)s, didStart=\(clip.didStart))")
             #endif
 
             if let idx = index {
                 viewModel?.selectedStreamIndex = idx
             }
 
-            tuningPlayer?.play()
-
-            // Non-blocking wait matching prior behavior
-            let duration = tuningPlayer?.duration ?? 0.8
+            let duration = clip.player.duration > 0 ? clip.player.duration : 0.8
             try? await Task.sleep(for: .seconds(duration + 0.1))
             isTuningSoundPlaying = false
         } catch {

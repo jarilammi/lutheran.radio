@@ -419,6 +419,23 @@ class DirectStreamingPlayerTests: XCTestCase {
         // Reset for other tests
         mockAudioSession.shouldThrowOnSetActive = false
     }
+
+    /// Local file-clip start must no-op under UITestMode / XCTest host so unit tests never
+    /// construct `AVAudioPlayer` or activate the shared session (same isolation contract as
+    /// `configureAudioSessionAsync` / `play()`).
+    ///
+    /// - SeeAlso: `DirectStreamingPlayer.startLocalClipPlayer(contentsOf:volume:numberOfLoops:)`,
+    ///   `SharedPlayerManager.isRunningInUITestMode`.
+    func testStartLocalClipPlayerNoOpsUnderUITestMode() async throws {
+        XCTAssertTrue(
+            SharedPlayerManager.isRunningInUITestMode,
+            "XCTest host must report UITestMode so engine audio paths stay silent"
+        )
+        // Missing file is fine: isTesting short-circuits before open/play.
+        let missing = URL(fileURLWithPath: "/tmp/lutheran-radio-local-clip-test-missing.wav")
+        let result = try await DirectStreamingPlayer.shared.startLocalClipPlayer(contentsOf: missing)
+        XCTAssertNil(result, "startLocalClipPlayer must return nil under UITestMode without throwing")
+    }
     
     func testNetworkMonitoringSetup() {
         // Test that we can control the mock network monitor

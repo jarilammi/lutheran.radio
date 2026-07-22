@@ -3,14 +3,24 @@
 //  Lutheran Radio
 //
 //  Coordinates AVAudioPlayer tuning clips with SharedPlayerManager.play().
-//  ViewController signals start/finish; play() awaits delegate completion instead of a fixed delay.
+//  ViewController signals start/finish after DirectStreamingPlayer.startLocalClipPlayer
+//  returns; play() awaits delegate completion instead of a fixed delay.
 //
 //  Created by Jari Lammi on 5.6.2026.
 //
 
 import Foundation
 
-/// Bridges `AVAudioPlayer` tuning clips in ViewController with `SharedPlayerManager.play()`.
+/// Bridges cold-launch / special tuning clips with `SharedPlayerManager.play()`.
+///
+/// Clip construction and start are owned by
+/// `DirectStreamingPlayer.startLocalClipPlayer(contentsOf:volume:numberOfLoops:)`
+/// (session SSOT + off-main `AVAudioPlayer` prepare/play). This actor only serializes
+/// the wait between clip start and main-stream attach.
+///
+/// - SeeAlso: `DirectStreamingPlayer.startLocalClipPlayer(contentsOf:volume:numberOfLoops:)`,
+///   `DirectStreamingPlayer.configureAudioSessionAsync()`, `ViewController.playSpecialTuningSound(completion:)`,
+///   `SharedPlayerManager.play()`.
 actor TuningSoundCoordinator {
     static let shared = TuningSoundCoordinator()
 

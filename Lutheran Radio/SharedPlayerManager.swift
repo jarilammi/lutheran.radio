@@ -72,6 +72,10 @@ import WidgetSurface
 #if LUTHERAN_MAIN_APP
 import os
 import WidgetKit
+#else
+// SAFETY: `@unsafe @preconcurrency` required under SWIFT_STRICT_MEMORY_SAFETY for AVFoundation;
+// widget stub only needs `AVAudioPlayer` in the local-clip no-op signature for type parity with main.
+@unsafe @preconcurrency import AVFoundation
 #endif
 
 /// `SharedPlayerManager` is the central actor **and authoritative emitter** of
@@ -4274,7 +4278,8 @@ extension Notification.Name {
 // This provides the minimal surface required for SharedPlayerManager + widget code
 // to type-check references such as DirectStreamingPlayer.Stream, .availableStreams,
 // .streamForLanguageCode, .selectedStream, setSelectedStreamModelOnly, switchToStream,
-// stop, isActuallyPlaying, player, the audio no-op methods, and StreamErrorType.
+// stop, isActuallyPlaying, player, the audio no-op methods (including local-clip start),
+// and StreamErrorType.
 //
 // The real implementation (AVPlayer, AVAudioSession, streaming, security-integrated playback)
 // lives exclusively in the main "Lutheran Radio" target.
@@ -4423,8 +4428,9 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     var hasPermanentError: Bool { false }
 
     // Lightweight no-op paths for audio session when this stub is used (widget extension).
-    // The real implementations (with #available(iOS 27.0, *) + setActive paths + off-main dispatch)
-    // live only in the main-target DirectStreamingPlayer.swift and are never compiled into the widget target.
+    // The real implementations (with #available(iOS 27.0, *) + setActive paths + off-main dispatch
+    // + local-clip start) live only in the main-target DirectStreamingPlayer.swift and are
+    // never compiled into the widget target.
     @MainActor
     func configureAudioSessionAsync() async -> Bool { false }
 
@@ -4433,6 +4439,17 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
 
     @MainActor
     func deactivateAudioSessionAsync() async -> Bool { true }
+
+    /// Widget stub: no local `AVAudioPlayer` work in the extension process.
+    /// - SeeAlso: Main-target ``DirectStreamingPlayer/startLocalClipPlayer(contentsOf:volume:numberOfLoops:)``.
+    @MainActor
+    func startLocalClipPlayer(
+        contentsOf url: URL,
+        volume: Float = 1.0,
+        numberOfLoops: Int = 0
+    ) async throws -> (player: AVAudioPlayer, didStart: Bool)? {
+        nil
+    }
 
 }
 #endif
