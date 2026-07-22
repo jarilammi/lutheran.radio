@@ -39,7 +39,6 @@
 import UIKit
 import SwiftUI
 @unsafe @preconcurrency import AVFoundation
-import AVKit
 import Network
 import CoreImage
 import CoreHaptics
@@ -62,11 +61,16 @@ import WidgetSurface
 /// `PlaybackControlsView` + `VolumeAndAirPlayRow`. All visual state is driven by `PlayerViewModel`,
 /// with orchestration remaining in `RadioPlayerCoordinator`.
 ///
+/// AirPlay is **not** owned by this host: route-picker chrome lives exclusively in
+/// SwiftUI `AirPlayButton` (deferred `AVRoutePickerView` construction after hierarchy attach).
+/// Eager UIKit `AVRoutePickerView` on this type previously ran during scene-create and could
+/// hit the launch watchdog under cold load — do not reintroduce it.
+///
 /// All playback user intents ultimately route through `userRequestedPlay()` or
 /// `handleUserTogglePlayback()` (see SSOT comments).
 ///
 /// - Note: iOS 26.2+ only. See `RadioPlayerView` and the coordinator for the modern layout.
-/// - SeeAlso: `RadioPlayerView`, `PlayerViewModel`, `RadioPlayerCoordinator`,
+/// - SeeAlso: `RadioPlayerView`, `AirPlayButton`, `PlayerViewModel`, `RadioPlayerCoordinator`,
 ///   `DirectStreamingPlayer`, `SharedPlayerManager`, CODING_AGENT.md, <doc:Architecture>.
 @MainActor
 class ViewController: UIViewController, AVAudioPlayerDelegate {
@@ -144,16 +148,25 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         slider.accessibilityHint = String(localized: "accessibility_hint_volume", table: "Localizable")
         return slider
     }()
-    
-    let airplayButton: AVRoutePickerView = {
-        let view = AVRoutePickerView(frame: CGRect(x: 0, y: 0, width: 44, height: 44))
-        view.tintColor = .tintColor
-        view.translatesAutoresizingMaskIntoConstraints = false
-        view.isAccessibilityElement = true
-        view.accessibilityLabel = String(localized: "accessibility_label_airplay", table: "Localizable")
-        view.accessibilityHint = String(localized: "accessibility_hint_airplay", table: "Localizable")
-        return view
-    }()
+
+    // AGENT NOTE: AirPlay is **not** constructed here.
+    //
+    // Why: A stored `AVRoutePickerView` property initializer ran during
+    // `ViewController.init` on the scene-create callout (`SceneDelegate.scene(_:willConnectTo:)`).
+    // `AVRoutePickerView` immediately sets up `AVOutputContext`, which pulls CoreMedia /
+    // CFPreferences over XPC. Under cold Simulator + post-reboot host load that IPC can
+    // exceed the Background scene-create wall-clock budget (0x8BADF00D / FRONTBOARD).
+    //
+    // Ownership: the sole user-facing AirPlay control is SwiftUI `AirPlayButton` inside
+    // `RadioPlayerView` / `VolumeAndAirPlayRow`. That path builds `AVRoutePickerView` only
+    // inside `UIViewRepresentable.makeUIView` after the hosting hierarchy is attached —
+    // off the scene-create critical path and after `ViewController` construction returns.
+    //
+    // Never reintroduce an eager (or setupControls-forced) UIKit `AVRoutePickerView` on this
+    // type without an explicit deferred construction strategy and cold-launch verification.
+    //
+    // - SeeAlso: `AirPlayButton`, `VolumeAndAirPlayRow`, `SceneDelegate.scene(_:willConnectTo:)`,
+    //   CODING_AGENT.md (launch / MediaRemoteUI watchdog history), <doc:Architecture>
     
     // Local hapticEngine lazy + handlers removed (single owner in RadioPlayerCoordinator).
     // The early init call site in viewDidLoad was removed; wireAndInitialSetup performs equivalent.
@@ -734,21 +747,8 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         volumeSlider.accessibilityLabel = String(localized: "accessibility_label_volume", table: "Localizable")  // e.g., "Volume"
         volumeSlider.accessibilityTraits = .adjustable  // Default, but explicit for clarity
         volumeSlider.accessibilityValue = unsafe String(format: String(localized: "accessibility_value_volume", table: "Localizable"), Int(volumeSlider.value * 100))  // e.g., "50 percent"
-        
-        // Add AirPlay button tap feedback
-        airplayButton.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(airplayTapped)))
-        airplayButton.accessibilityLabel = String(localized: "accessibility_label_airplay", table: "Localizable")  // e.g., "AirPlay picker"
-        airplayButton.accessibilityHint = String(localized: "accessibility_hint_airplay", table: "Localizable")  // e.g., "Double tap to select audio output"
-    }
-    
-    @objc private func airplayTapped() {
-        UIView.animate(withDuration: 0.1, animations: {
-            self.airplayButton.transform = CGAffineTransform(scaleX: 0.9, y: 0.9)
-        }) { _ in
-            UIView.animate(withDuration: 0.1) {
-                self.airplayButton.transform = .identity
-            }
-        }
+        // AirPlay chrome lives exclusively in SwiftUI `AirPlayButton` (see AGENT NOTE above).
+        // Do not construct `AVRoutePickerView` from this host — scene-create watchdog risk.
     }
     
     // MARK: - Network and Interruption Handling

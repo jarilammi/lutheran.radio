@@ -684,9 +684,25 @@ private struct SystemVolumeRepresentable: UIViewRepresentable {
     }
 }
 
-/// UIViewRepresentable wrapper for the native AirPlay picker button.
+/// Native AirPlay route-picker control for the SwiftUI player chrome.
 ///
-/// Prioritizes audio-only routes (video devices disabled) to match historical behavior.
+/// Sole user-facing AirPlay surface in the main app. Wraps `AVRoutePickerView` via
+/// `AirPlayPickerView` and applies localized accessibility label/hint.
+///
+/// **Why construction stays here (not on `ViewController`):**
+/// `AVRoutePickerView` init triggers `AVOutputContext` + CoreMedia preference work that can
+/// block the main thread on CFPreferences/XPC. Building it during `ViewController` stored
+/// property init ran on the scene-create callout and could exhaust the Background scene-create
+/// watchdog (0x8BADF00D) under cold Simulator / post-reboot load. This type only materializes
+/// the picker inside `UIViewRepresentable.makeUIView` after the hosting hierarchy is attached —
+/// after scene connect returns and off that critical path.
+///
+/// Prioritizes audio-only routes (`prioritizesVideoDevices = false`) to match historical behavior.
+///
+/// - Important: Do not move `AVRoutePickerView` construction into `ViewController.init`,
+///   stored property initializers, or any other scene-create-synchronous path.
+/// - SeeAlso: `VolumeAndAirPlayRow`, `AirPlayPickerView`, `ViewController` (AirPlay ownership note),
+///   CODING_AGENT.md, <doc:Architecture>
 struct AirPlayButton: View {
     var body: some View {
         AirPlayPickerView()
@@ -696,8 +712,16 @@ struct AirPlayButton: View {
     }
 }
 
+/// Bridges `AVRoutePickerView` into SwiftUI.
+///
+/// Construction of the underlying picker happens only in `makeUIView`, which SwiftUI invokes
+/// when the representable is inserted into an active hierarchy — intentionally later than
+/// `ViewController` / scene-create init (see `AirPlayButton` docs).
+///
+/// - SeeAlso: `AirPlayButton`, `VolumeAndAirPlayRow`
 private struct AirPlayPickerView: UIViewRepresentable {
     func makeUIView(context: Context) -> AVRoutePickerView {
+        // Safe to construct here: not on the scene-create critical path (see AirPlayButton).
         let picker = AVRoutePickerView()
         picker.prioritizesVideoDevices = false
         picker.tintColor = UIColor.secondaryLabel
