@@ -148,9 +148,27 @@ final class WidgetRefreshManager: @unchecked Sendable {
     // (and widget extension code) while updates remain serialized on @MainActor.
     nonisolated static var hasActiveLutheranWidgets: Bool { unsafe _hasActiveLutheranWidgets }
 
+    /// Sets the home/Control widget privacy write-suppression flag.
+    ///
+    /// When the gate **closes** (`value == false`), also removes residual App Group liveness
+    /// (`lastUpdateTime`) and short-lived instant-feedback keys so operational signals do not
+    /// linger after privacy clear or when the user has no Lutheran widgets. Does not clear
+    /// pending-action mailbox keys, Live Activity durable mirrors, or security caches.
+    ///
+    /// - Parameter value: `true` when at least one of our home/Control widget kinds is configured
+    ///   (or a test/provider seam opens the gate); `false` forces write suppression.
+    /// - SeeAlso: ``hasActiveLutheranWidgets``,
+    ///   ``SharedPlayerManager/clearHomeWidgetLivenessAndInstantFeedbackResiduals()``,
+    ///   ``SharedPlayerManager/bumpWidgetLivenessTimestamp(policy:minInterval:)``,
+    ///   ``SharedPlayerManager/clearAllLocalState()``.
     @MainActor
     static func setHasActiveLutheranWidgets(_ value: Bool) {
         unsafe _hasActiveLutheranWidgets = value
+        if !value {
+            // Privacy residual: suppress future bumps via the flag, and drop any leftover
+            // heartbeat / optimistic language keys that pre-dated the closed gate.
+            SharedPlayerManager.clearHomeWidgetLivenessAndInstantFeedbackResiduals()
+        }
     }
 
     /// Cross-process teardown gate: suppresses WidgetCenter IPC while system Now Playing

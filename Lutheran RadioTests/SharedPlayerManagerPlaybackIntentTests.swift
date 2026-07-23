@@ -194,4 +194,118 @@ final class SharedPlayerManagerPlaybackIntentTests: XCTestCase {
         // Restore a neutral state for other tests (remove the key so default false)
         defaults.removeObject(forKey: key)
     }
+
+    // MARK: - Privacy residual (liveness + instant feedback)
+
+    /// Closing the home-widget privacy gate must drop residual `lastUpdateTime` and instant-feedback
+    /// keys so operational signals do not linger when no Lutheran widgets are configured.
+    ///
+    /// **Invariant protected:** ``WidgetRefreshManager/setHasActiveLutheranWidgets(_:)`` with
+    /// `false` calls ``SharedPlayerManager/clearHomeWidgetLivenessAndInstantFeedbackResiduals()``.
+    /// Security DNS cache (`lastSecurityValidation` on the standard suite) is never touched.
+    /// Pending-action mailbox and Live Activity durable mirrors are out of scope for this residual
+    /// helper (privacy clear removes them via ``removeAllLocalPlaybackKeys()``).
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/clearHomeWidgetLivenessAndInstantFeedbackResiduals()``,
+    ///   ``SharedPlayerManager/bumpWidgetLivenessTimestamp(policy:minInterval:)``,
+    ///   ``SharedPlayerManager/writeInstantFeedback(language:)``.
+    func testClosingPrivacyGateClearsLivenessAndInstantFeedbackResiduals() async {
+        let suite = "group.radio.lutheran.shared"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            XCTFail("App Group UserDefaults unavailable")
+            return
+        }
+
+        await MainActor.run {
+            WidgetRefreshManager.setHasActiveLutheranWidgets(true)
+        }
+        let now = Date().timeIntervalSince1970
+        defaults.set(now, forKey: "lastUpdateTime")
+        defaults.set(true, forKey: "isInstantFeedback")
+        defaults.set(now, forKey: "instantFeedbackTime")
+        defaults.set("fi", forKey: "instantFeedbackLanguage")
+
+        // Seed a security cache marker on the standard suite — must survive residual clear.
+        let securityKey = "lastSecurityValidation"
+        let securityMarker = "privacy-residual-test-\(UUID().uuidString)"
+        UserDefaults.standard.set(securityMarker, forKey: securityKey)
+        defer { UserDefaults.standard.removeObject(forKey: securityKey) }
+
+        await MainActor.run {
+            WidgetRefreshManager.setHasActiveLutheranWidgets(false)
+        }
+
+        XCTAssertNil(defaults.object(forKey: "lastUpdateTime"),
+                     "Closed privacy gate must remove residual lastUpdateTime")
+        XCTAssertNil(defaults.object(forKey: "isInstantFeedback"),
+                     "Closed privacy gate must remove residual isInstantFeedback")
+        XCTAssertNil(defaults.object(forKey: "instantFeedbackTime"))
+        XCTAssertNil(defaults.object(forKey: "instantFeedbackLanguage"))
+        XCTAssertEqual(
+            UserDefaults.standard.string(forKey: securityKey),
+            securityMarker,
+            "Privacy residual clear must never touch lastSecurityValidation"
+        )
+    }
+
+    /// Full privacy clear removes liveness + instant keys and must not reintroduce them via
+    /// main-app language / liveness call sites while the gate remains forced closed.
+    ///
+    /// **Invariant protected:** After ``clearAllLocalState()``, ``bumpWidgetLivenessTimestamp``
+    /// and ``writeInstantFeedback`` are suppressed for the main process (no widget-process bypass).
+    /// Security cache untouched.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/clearAllLocalState()``,
+    ///   ``SharedPlayerManager/removeAllLocalPlaybackKeys()``,
+    ///   ``SharedPlayerManager/bumpWidgetLivenessTimestamp(policy:minInterval:)``.
+    func testPrivacyClearRemovesLivenessInstantKeysAndSuppressesMainAppRewrites() async {
+        let suite = "group.radio.lutheran.shared"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            XCTFail("App Group UserDefaults unavailable")
+            return
+        }
+
+        await MainActor.run {
+            WidgetRefreshManager.setHasActiveLutheranWidgets(true)
+        }
+        let now = Date().timeIntervalSince1970
+        defaults.set(now, forKey: "lastUpdateTime")
+        defaults.set(true, forKey: "isInstantFeedback")
+        defaults.set(now, forKey: "instantFeedbackTime")
+        defaults.set("sv", forKey: "instantFeedbackLanguage")
+
+        let securityKey = "lastSecurityValidation"
+        let securityMarker = "privacy-clear-test-\(UUID().uuidString)"
+        UserDefaults.standard.set(securityMarker, forKey: securityKey)
+        defer { UserDefaults.standard.removeObject(forKey: securityKey) }
+
+        await SharedPlayerManager.clearAllLocalState()
+
+        XCTAssertNil(defaults.object(forKey: "lastUpdateTime"),
+                     "Privacy clear must remove lastUpdateTime")
+        XCTAssertNil(defaults.object(forKey: "isInstantFeedback"))
+        XCTAssertNil(defaults.object(forKey: "instantFeedbackTime"))
+        XCTAssertNil(defaults.object(forKey: "instantFeedbackLanguage"))
+        XCTAssertFalse(
+            WidgetRefreshManager.hasActiveLutheranWidgets,
+            "Privacy clear must force the home-widget write gate closed"
+        )
+        XCTAssertEqual(
+            UserDefaults.standard.string(forKey: securityKey),
+            securityMarker,
+            "Privacy clear must never touch lastSecurityValidation"
+        )
+
+        // Main-app paths must not reintroduce residual keys while the gate is closed.
+        SharedPlayerManager.bumpWidgetLivenessTimestamp(policy: .immediate)
+        SharedPlayerManager.writeInstantFeedback(language: "de")
+        XCTAssertNil(
+            defaults.object(forKey: "lastUpdateTime"),
+            "Main-app liveness bump must stay suppressed after privacy clear"
+        )
+        XCTAssertNil(
+            defaults.object(forKey: "isInstantFeedback"),
+            "Main-app instant feedback must stay suppressed after privacy clear"
+        )
+    }
 }

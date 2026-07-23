@@ -3348,7 +3348,7 @@ final class SharedPlayerManagerEventTests: XCTestCase {
         defaults?.set(data, forKey: "persistedWidgetState")
         defaults?.set(data, forKey: "playerVisualState")
 
-        SharedPlayerManager.bumpWidgetLivenessTimestamp(force: true)
+        SharedPlayerManager.bumpWidgetLivenessTimestamp(policy: .immediate)
         XCTAssertFalse(
             SharedPlayerManager.hasExplicitTerminationSentinel(),
             "Precondition: liveness heartbeat must be non-sentinel before teardown"

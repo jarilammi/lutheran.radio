@@ -241,11 +241,11 @@ import WidgetKit
 /// | isPlaying               | Bool                  | (Retired — purged on launch, never written)                  | (none) | Retired playback bool. In-session playback chrome is derived only from the memory snapshot (`visualState.isActivelyPlaying`) and short-lived instant-feedback keys — never from this App Group bool. | Purged only |
 /// | currentLanguage         | String (languageCode) | (Retired — purged on launch, never written)                  | (none) | Retired bare language key. Language SSOT is in-process `PersistedWidgetState.currentLanguage` plus ``preferredWidgetLanguage()`` (snapshot → `bestInitialLanguageCode()` when widgets active → hard `"en"` when not). | Purged only |
 /// | hasError                | Bool                  | (Inside in-process snapshot only; retired App Group bool purged) | `loadSharedState` (from `PersistedWidgetState.hasError`), widgets   | Permanent error flag for UI chrome. Lives inside the in-process session snapshot. Retired standalone App Group bool is purged only. | In-session snapshot; set on security or unrecoverable network failures |
-/// | lastUpdateTime          | Double (epoch)        | `performActualSave`, `bumpWidgetLivenessTimestamp`, widget handlers, lifecycle hooks | Widget providers (isAppRunning 60 s check), instant-feedback expiry | Liveness heartbeat — bumped on saves and throttled unchanged-snapshot skips | Keeps widget controls alive during background playback |
+/// | lastUpdateTime          | Double (epoch)        | ``bumpWidgetLivenessTimestamp(policy:minInterval:)`` (canonical; ``WidgetLivenessWritePolicy``), `performActualSave` / `saveCombinedWidgetState` when home widgets active, widget-process optimistic handlers | Widget providers (`isMainAppProcessRecentlyActive` 60 s check) | Liveness heartbeat — bumped on saves and throttled unchanged-snapshot skips | Kept only while home/Control widgets are relevant; removed by privacy clear and when ``WidgetRefreshManager/hasActiveLutheranWidgets`` closes |
 /// | lastUserPauseTime | Double (epoch) | (Retired — purged on launch, never written) | (none) | Was App Group pause barrier. Recovery uses in-actor ``lastUserPauseTimestamp`` / ``wasRecentlyUserPaused(within:)`` only. | Purged only |
-/// | isInstantFeedback       | Bool                  | Widget handlers (`handleWidgetPlay/Stop/Switch`)             | `loadSharedState` (checked first)                                    | Signals that a widget action just occurred (optimistic UI)   | Short-lived; cleared after 15s or next authoritative save |
-/// | instantFeedbackTime     | Double (epoch)        | Widget handlers                                              | `loadSharedState`                                                    | Timestamp for the instant feedback validity window           | 15-second validity window |
-/// | instantFeedbackLanguage | String                | Widget handlers                                              | `loadSharedState`                                                    | Language to show during the optimistic widget update         | Matches the language of the widget action |
+/// | isInstantFeedback       | Bool                  | Widget handlers (`writeInstantFeedback` / switch path)       | `loadSharedState` (checked first)                                    | Signals that a widget action just occurred (optimistic UI)   | Short-lived; cleared after 15s, next authoritative save, privacy clear, or when the home-widget privacy gate closes |
+/// | instantFeedbackTime     | Double (epoch)        | Widget handlers                                              | `loadSharedState`                                                    | Timestamp for the instant feedback validity window           | Same lifetime as `isInstantFeedback` |
+/// | instantFeedbackLanguage | String                | Widget handlers                                              | `loadSharedState`                                                    | Language to show during the optimistic widget update         | Same lifetime as `isInstantFeedback` |
 /// | pendingAction           | String ("play","pause","switch") | Widget intent handlers, Control Center, some ViewController paths | `getPendingAction()`, SceneDelegate, widget providers          | One-shot command from extension process to main app          | Cleared by `clearPendingAction(actionId:)` after processing |
 /// | pendingActionId         | String (UUID)         | Same writers as pendingAction                                | `getPendingAction()`, `clearPendingAction()`                         | Deduplication token to handle rapid repeated taps            | Prevents double-processing on race conditions |
 /// | pendingActionTime       | Double (epoch)        | Same writers as pendingAction                                | Widget providers (staleness checks)                                  | Freshness timestamp for pending actions                      | Used to ignore very old pending actions |
@@ -2800,6 +2800,22 @@ actor SharedPlayerManager {
     // crossing the actor boundary on the hot path.
 
     /// Writes the short-lived instant-feedback keys used by widget providers for optimistic UI.
+    ///
+    /// Also refreshes ``lastUpdateTime`` so providers treat the extension process as recently active
+    /// for the interactive chrome window.
+    ///
+    /// - Parameter language: Language code shown during the optimistic window (must match the
+    ///   widget timeline language when possible).
+    /// - Precondition: Home-widget privacy gate open (`hasActiveWidgets`) **or** call is from a
+    ///   widget/extension process (intent execution is proof a surface exists).
+    /// - Postcondition: On success, `isInstantFeedback` / `instantFeedbackTime` /
+    ///   `instantFeedbackLanguage` and a fresh `lastUpdateTime` are present in the App Group.
+    ///   When suppressed, **no** keys are written (residuals are cleared only via privacy clear
+    ///   or ``clearHomeWidgetLivenessAndInstantFeedbackResiduals()`` when the gate closes).
+    /// - SeeAlso: ``bumpWidgetLivenessTimestamp(policy:minInterval:)``,
+    ///   ``clearHomeWidgetLivenessAndInstantFeedbackResiduals()``,
+    ///   ``loadSharedState()``, ``signalWidgetSwitchAction(visualState:language:)``,
+    ///   CODING_AGENT.md (Single Source of Truth Principles).
     nonisolated static func writeInstantFeedback(language: String) {
         // Privacy gate (write suppression: no widgets configured).
         //
@@ -2817,24 +2833,87 @@ actor SharedPlayerManager {
         }
         guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return }
         let now = Date().timeIntervalSince1970
-        defaults.set(now, forKey: "lastUpdateTime")
+        // Liveness via the same privacy-gated helper (gate already passed above; immediate
+        // stamp so interactive chrome is current after an extension action).
+        Self.bumpWidgetLivenessTimestamp(policy: .immediate)
         defaults.set(true, forKey: "isInstantFeedback")
         defaults.set(now, forKey: "instantFeedbackTime")
         defaults.set(language, forKey: "instantFeedbackLanguage")
         // Explicit synchronize() removed — unnecessary for App Group + Darwin on iOS 26+.
     }
 
+    /// Removes residual home-widget liveness and short-lived instant-feedback keys from the App Group.
+    ///
+    /// **Privacy residual hygiene:** When no Lutheran home/Control widgets are configured, or after
+    /// an explicit privacy clear forces write suppression, `lastUpdateTime` and the three instant-
+    /// feedback keys must not linger as operational "recent activity / recent language" signals.
+    ///
+    /// Does **not** touch:
+    /// - Pending-action mailbox (`pendingAction*`, `pendingLanguage`) — first post-clear widget
+    ///   intent must still deliver Darwin + pending when the main app is suspended
+    /// - Durable Live Activity mirrors (`liveActivityToggleVisualState`, `liveActivityCurrentLanguage`)
+    /// - Security caches (standard suite `lastSecurityValidation` and Core policy)
+    /// - Retired visual keys (handled by ``clearPersistedVisualStateKeysFromDisk()``)
+    ///
+    /// - Postcondition: `lastUpdateTime`, `isInstantFeedback`, `instantFeedbackTime`, and
+    ///   `instantFeedbackLanguage` are absent from the App Group suite (if available).
+    /// - SeeAlso: ``removeAllLocalPlaybackKeys()``, ``writeInstantFeedback(language:)``,
+    ///   ``bumpWidgetLivenessTimestamp(policy:minInterval:)``,
+    ///   ``WidgetRefreshManager/setHasActiveLutheranWidgets(_:)``,
+    ///   CODING_AGENT.md (Single Source of Truth Principles).
+    ///
+    /// AGENT NOTE: Call when the home-widget privacy gate closes. Privacy clear also removes
+    /// these keys via ``removeAllLocalPlaybackKeys()`` (same set). Widget-process one-shot
+    /// writes after re-add remain allowed via ``isWidgetProcess()`` bypasses on bump/instant.
+    nonisolated static func clearHomeWidgetLivenessAndInstantFeedbackResiduals() {
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return }
+        defaults.removeObject(forKey: "lastUpdateTime")
+        defaults.removeObject(forKey: "isInstantFeedback")
+        defaults.removeObject(forKey: "instantFeedbackTime")
+        defaults.removeObject(forKey: "instantFeedbackLanguage")
+        #if DEBUG
+        print("[SharedPlayerManager] Cleared home-widget liveness + instant-feedback residuals (privacy / no-widgets)")
+        #endif
+    }
+
+    /// Write cadence for the home-widget liveness heartbeat (`lastUpdateTime`).
+    ///
+    /// Chooses only whether a privacy-allowed write is coalesced or stamped now. Orthogonal to:
+    /// - the home-widget privacy gate (``hasActiveWidgets`` / widget-process bypass)
+    /// - `PlayerEvent` emission and non-forcing refresh rules
+    /// - termination sentinel writes (``forceStaleLivenessTimestampForTermination()``)
+    ///
+    /// - SeeAlso: ``bumpWidgetLivenessTimestamp(policy:minInterval:)``,
+    ///   ``isMainAppProcessRecentlyActive()``, CODING_AGENT.md (Single Source of Truth Principles).
+    enum WidgetLivenessWritePolicy: Sendable {
+        /// Coalesce under `minInterval` (KVO / unchanged-snapshot heartbeats).
+        case throttled
+        /// Stamp `lastUpdateTime` now (language change, widget intent, fg/bg lifecycle edge).
+        case immediate
+    }
+
     /// Refreshes the App Group `lastUpdateTime` heartbeat used by widget `isAppRunning()` (60 s window).
-    /// Throttled by default so unchanged-snapshot save skips do not spam UserDefaults on every KVO tick.
     ///
-    /// The `force` parameter bypasses the minInterval for termination and widget-action
-    /// instant feedback. This liveness surface is orthogonal to the `PlayerEvent` stream;
-    /// it exists to let passive widget renders decide "main app recently alive vs. tap-to-open".
+    /// Default ``WidgetLivenessWritePolicy/throttled`` coalesces under `minInterval` so unchanged-snapshot
+    /// save skips do not spam UserDefaults on every KVO tick. ``WidgetLivenessWritePolicy/immediate``
+    /// stamps now for language-edge, widget-action, and lifecycle edges so interactive chrome does not
+    /// lag. This surface is orthogonal to the `PlayerEvent` stream; it only informs passive vs
+    /// interactive widget presentation.
     ///
-    /// - SeeAlso: ``forceStaleLivenessTimestampForTermination()``, ``isMainAppProcessRecentlyActive()``,
+    /// **Privacy:** Suppressed when ``hasActiveWidgets`` is false **unless** the call runs in a
+    /// widget/extension process (intent proof). Main-app call sites (including language changes)
+    /// must use this helper rather than writing `lastUpdateTime` directly so residual signals
+    /// cannot reappear after privacy clear or with no home widgets.
+    ///
+    /// - Parameters:
+    ///   - policy: ``.throttled`` (default) respects `minInterval`; ``.immediate`` always stamps when allowed.
+    ///   - minInterval: Minimum seconds between throttled writes (default 30). Ignored for `.immediate`.
+    /// - SeeAlso: ``WidgetLivenessWritePolicy``, ``forceStaleLivenessTimestampForTermination()``,
+    ///   ``isMainAppProcessRecentlyActive()``,
+    ///   ``clearHomeWidgetLivenessAndInstantFeedbackResiduals()``,
     ///   ``events``, docs/Event-Driven-Refactor-Roadmap.md.
     nonisolated static func bumpWidgetLivenessTimestamp(
-        force: Bool = false,
+        policy: WidgetLivenessWritePolicy = .throttled,
         minInterval: TimeInterval = 30
     ) {
         // Privacy gate: suppress liveness timestamp (and thus "app was recently running" signal) when no widgets installed.
@@ -2851,7 +2930,7 @@ actor SharedPlayerManager {
         }
         guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return }
         let now = Date().timeIntervalSince1970
-        if !force,
+        if policy == .throttled,
            let last = defaults.object(forKey: "lastUpdateTime") as? Double,
            now - last < minInterval {
             return
@@ -2860,10 +2939,13 @@ actor SharedPlayerManager {
         // Explicit synchronize() removed — unnecessary for App Group + Darwin on iOS 26+.
     }
 
-    /// Unconditional liveness bump for lifecycle edges (background, foreground) where the widget
+    /// Immediate liveness stamp for lifecycle edges (background, foreground) where the widget
     /// must not flip to the offline prompt while audio continues.
+    ///
+    /// Uses ``WidgetLivenessWritePolicy/immediate`` only — still privacy-gated and non-forcing
+    /// with respect to `PlayerEvent` / WidgetCenter.
     func recordWidgetLiveness() {
-        Self.bumpWidgetLivenessTimestamp(force: true)
+        Self.bumpWidgetLivenessTimestamp(policy: .immediate)
     }
 
     // MARK: - Widget / Live Activity Liveness Heuristic & Termination Cleanup (SSOT)
@@ -2899,7 +2981,7 @@ actor SharedPlayerManager {
     ///   `currentPlaybackIntent`, and `PlayerVisualState` directly.
     /// - Returns: `false` for missing key, explicit termination sentinel (0), or stale (>60 s).
     /// - Note: 60 s matches the original widget `isAppRunning` window; keep in sync.
-    /// - SeeAlso: ``bumpWidgetLivenessTimestamp(force:minInterval:)``,
+    /// - SeeAlso: ``bumpWidgetLivenessTimestamp(policy:minInterval:)``,
     ///   ``forceStaleLivenessTimestampForTermination()``, `LutheranRadioWidget.swift`
     ///   (the `if !isAppRunning()` branches and `widgetURL`), `WidgetRefreshManager`,
     ///   CODING_AGENT.md (Single Source of Truth Principles + cross-target shared files),
@@ -3253,7 +3335,7 @@ actor SharedPlayerManager {
         persistOptimisticWidgetSnapshot(visualState, language: language)
         // Also bump liveness from the widget action itself so isAppRunning() flips true
         // without requiring main-app processing (prevents "tap_to_open" after widget play).
-        Self.bumpWidgetLivenessTimestamp(force: true)
+        Self.bumpWidgetLivenessTimestamp(policy: .immediate)
         let actionId = scheduleWidgetAction(action: action)
         notifyMainApp(action: action)
         return actionId
@@ -3267,7 +3349,7 @@ actor SharedPlayerManager {
     ) -> String? {
         Self.writeInstantFeedback(language: language)
         Self.persistWidgetSnapshot(visualState: visualState, language: language, clearStreamMetadata: true)
-        Self.bumpWidgetLivenessTimestamp(force: true)
+        Self.bumpWidgetLivenessTimestamp(policy: .immediate)
         let actionId = scheduleWidgetAction(action: "switch", parameter: language)
         notifyMainApp(action: "switch", parameter: language)
         return actionId
@@ -3809,7 +3891,7 @@ actor SharedPlayerManager {
             language: Self.preferredWidgetLanguage(),
             streamMetadata: currentStreamMetadata
         )
-        Self.bumpWidgetLivenessTimestamp(force: true)
+        Self.bumpWidgetLivenessTimestamp(policy: .immediate)
     }
     #endif
 
@@ -3827,10 +3909,9 @@ actor SharedPlayerManager {
         _clearIcyMetadataStash()
         savePersistedWidgetState(visualState: currentVisualState, language: language, streamMetadata: nil)
 
-        // Bare App Group `currentLanguage` is retired (purged only). lastUpdateTime
-        // is still bumped for the 60 s "isAppRunning" widget check and general freshness.
-        sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "lastUpdateTime")
-        // Explicit synchronize removed (see UserDefaults hygiene note near other sites).
+        // Bare App Group `currentLanguage` is retired (purged only). Liveness uses the
+        // privacy-gated helper so residual heartbeats cannot reappear with the gate closed.
+        Self.bumpWidgetLivenessTimestamp(policy: .immediate)
     }
 }
 
@@ -3965,7 +4046,7 @@ extension SharedPlayerManager {
     
     private func performActualSave(_ state: (isPlaying: Bool, currentLanguage: String, hasError: Bool),
                                    widgetState: WidgetState,
-                                   at time: Date) {
+                                   at _: Date) {
         // Privacy gate: when !hasActiveWidgets we suppress all the legacy + snapshot writes
         // (savePersisted is also guarded, but we avoid the work and the downstream refreshIfNeeded scheduling).
         guard Self.hasActiveWidgets else {
@@ -4017,8 +4098,9 @@ extension SharedPlayerManager {
             hasError: state.hasError
         )
 
-        // lastUpdateTime remains for the widget "isAppRunning" 60 s freshness heuristic.
-        sharedDefaults?.set(time.timeIntervalSince1970, forKey: "lastUpdateTime")
+        // Liveness via privacy-gated helper (60 s "isAppRunning" heuristic). Outer
+        // `hasActiveWidgets` guard already returned when suppressed; stamp immediately on real saves.
+        Self.bumpWidgetLivenessTimestamp(policy: .immediate)
 
         // Clear instant feedback flags (still required for widget responsiveness)
         sharedDefaults?.removeObject(forKey: "isInstantFeedback")
@@ -4233,6 +4315,11 @@ extension SharedPlayerManager {
     ///
     /// The clear always removes the primary snapshot even if widgets are configured (user explicitly requested it).
     /// After clear, `loadPersistedWidgetState()` returns nil and providers fall back to safe .prePlay / "en".
+    /// Liveness + instant-feedback residuals are removed via
+    /// ``clearHomeWidgetLivenessAndInstantFeedbackResiduals()`` (same helper as privacy-gate close).
+    ///
+    /// - SeeAlso: ``clearAllLocalState()``, ``clearHomeWidgetLivenessAndInstantFeedbackResiduals()``,
+    ///   ``clearPersistedVisualStateKeysFromDisk()``, CODING_AGENT.md.
     nonisolated static func removeAllLocalPlaybackKeys() {
         clearInMemorySessionSnapshot()
         guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return }
@@ -4241,13 +4328,11 @@ extension SharedPlayerManager {
         // (persistedWidgetState, isPlaying, bare currentLanguage, lastUserPauseTime, preferredVolume, …).
         clearPersistedVisualStateKeysFromDisk()
 
-        // Playback-related transient / recent activity keys
-        defaults.removeObject(forKey: "lastUpdateTime")
+        // Liveness + optimistic instant feedback (shared residual helper used when the privacy
+        // gate closes without a full clear as well).
+        clearHomeWidgetLivenessAndInstantFeedbackResiduals()
 
-        // Optimistic widget feedback + pending intent keys (these can leak "I just interacted")
-        defaults.removeObject(forKey: "isInstantFeedback")
-        defaults.removeObject(forKey: "instantFeedbackTime")
-        defaults.removeObject(forKey: "instantFeedbackLanguage")
+        // Pending intent keys (these can leak "I just interacted")
         defaults.removeObject(forKey: "pendingAction")
         defaults.removeObject(forKey: "pendingActionId")
         defaults.removeObject(forKey: "pendingActionTime")

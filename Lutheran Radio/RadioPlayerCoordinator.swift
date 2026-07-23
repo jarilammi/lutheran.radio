@@ -843,10 +843,22 @@ final class RadioPlayerCoordinator {
     ///   ``WidgetRefreshManager/refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)``,
     ///   `PersistedWidgetState`, CODING_AGENT.md (Single Source of Truth Principles),
     ///   SharedPlayerManager.swift (handleWidgetSwitch + "pause on widget → language switch" contract).
+    /// Updates session language snapshot paths after an in-app language selection.
+    ///
+    /// Liveness uses ``SharedPlayerManager/bumpWidgetLivenessTimestamp(policy:minInterval:)`` so the
+    /// home-widget privacy gate suppresses `lastUpdateTime` when no Lutheran widgets are configured
+    /// (and after privacy clear forces the gate closed). Snapshot persistence remains gated inside
+    /// ``SharedPlayerManager/saveCombinedWidgetState(language:)``.
+    ///
+    /// - Parameter languageCode: Stream language code to persist when the privacy gate allows.
+    /// - SeeAlso: ``SharedPlayerManager/bumpWidgetLivenessTimestamp(policy:minInterval:)``,
+    ///   ``SharedPlayerManager/WidgetLivenessWritePolicy``,
+    ///   ``SharedPlayerManager/saveCombinedWidgetState(language:)``,
+    ///   ``SharedPlayerManager/clearHomeWidgetLivenessAndInstantFeedbackResiduals()``,
+    ///   CODING_AGENT.md (Single Source of Truth Principles).
     func updateUserDefaultsLanguage(_ languageCode: String) {
-        let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared")
-        sharedDefaults?.set(Date().timeIntervalSince1970, forKey: "lastUpdateTime")
-        sharedDefaults?.synchronize()
+        // Privacy-gated liveness only — never write lastUpdateTime raw (residual after clear / no widgets).
+        SharedPlayerManager.bumpWidgetLivenessTimestamp(policy: .immediate)
 
         Task {
             await SharedPlayerManager.shared.saveCombinedWidgetState(language: languageCode)
