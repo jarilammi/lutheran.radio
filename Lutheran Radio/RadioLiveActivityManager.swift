@@ -25,8 +25,9 @@ import WidgetSurface
 /// - Widget and relaunch presentation use `PersistedWidgetState` exclusively
 ///   (see `loadPersistedWidgetState`, `savePersistedWidgetState`).
 /// - Live Activity transient UI is derived from in-memory `SharedPlayerManager`
-///   (`currentVisualState` + `currentStreamMetadata`) plus main-app stream language
-///   (``SharedPlayerManager/mainAppLiveActivityLanguageCode()``) for zero-disk hot path.
+///   (`currentVisualState` + `currentStreamMetadata`) plus
+///   ``SharedPlayerManager/liveActivityLanguageCodeForContentPush()`` (stream attach,
+///   or destination language while a stream-switch Connecting hold is active).
 /// - `ContentState.currentLanguage` is the language-chrome SSOT on Lock Screen / Dynamic
 ///   Island; views must not re-derive via privacy-gated ``preferredWidgetLanguage()``.
 /// - Durable App Group mirrors (visual + language) warm extension-hosted intent paths
@@ -300,7 +301,8 @@ class RadioLiveActivityManager: ObservableObject {
         let visualState = await manager.currentVisualState
         let streamMetadata = await manager.currentStreamMetadata
             ?? SharedPlayerManager.loadPersistedStreamMetadata()
-        let currentLanguage = SharedPlayerManager.mainAppLiveActivityLanguageCode()
+        // Prefer hold-time connecting language when a stream switch is in flight.
+        let currentLanguage = await manager.liveActivityLanguageCodeForContentPush()
         
         let initialContentState = LutheranRadioLiveActivityAttributes.ContentState(
             visualState: visualState,
@@ -344,10 +346,9 @@ class RadioLiveActivityManager: ObservableObject {
     /// and the old `performActualSave` bridge) invoke this on meaningful change.
     ///
     /// Derivation uses the **in-memory** actor state (`currentVisualState` +
-    /// `currentStreamMetadata`) and main-app stream language
-    /// (``SharedPlayerManager/mainAppLiveActivityLanguageCode()``) when the main app is
-    /// running. The persisted snapshot is used only as a safe fallback for metadata
-    /// (e.g. very early after start before the first mutation). This decouples transient
+    /// `currentStreamMetadata`) and ``SharedPlayerManager/liveActivityLanguageCodeForContentPush()``
+    /// when the main app is running. The persisted snapshot is used only as a safe fallback for
+    /// metadata (e.g. very early after start before the first mutation). This decouples transient
     /// LA presentation from the durable `PersistedWidgetState` writes that widgets and
     /// relaunch require — language chrome must not depend on privacy-gated home-widget writes.
     ///
@@ -355,7 +356,8 @@ class RadioLiveActivityManager: ObservableObject {
     /// or ``SharedPlayerManager/isConnectingPlayback`` is true, a candidate visual of
     /// `.playing` is clamped to `.prePlay` so lock-screen chrome cannot flash play affordance
     /// during silent engine teardown or first-byte attach. Coordinators establish Connecting
-    /// before `.streamSwitch` stop; this clamp is defense-in-depth.
+    /// **with the destination language** via ``resetToPrePlayForNewStream`` before `.streamSwitch`
+    /// stop so language chrome does not lag one content push behind visual Connecting.
     ///
     /// - Precondition: Must be called on the main actor (the method is `@MainActor`).
     /// - Postcondition: If an update is sent, `lastPushedContent` holds the exact
@@ -414,7 +416,9 @@ class RadioLiveActivityManager: ObservableObject {
         }
         let streamMetadata = await manager.currentStreamMetadata
             ?? SharedPlayerManager.loadPersistedStreamMetadata()
-        let currentLanguage = SharedPlayerManager.mainAppLiveActivityLanguageCode()
+        // Hold-time target language advances with Connecting so the card never shows the
+        // prior stream’s flag/name for one content push while the engine model is still old.
+        let currentLanguage = await manager.liveActivityLanguageCodeForContentPush()
         
         let candidate = LutheranRadioLiveActivityAttributes.ContentState(
             visualState: visualState,

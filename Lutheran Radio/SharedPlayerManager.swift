@@ -201,7 +201,7 @@ import WidgetKit
 /// | .userPaused     | Explicit user play (button, widget, Siri, etc.)   | `userRequestedPlay()` → `setUserIntentToPlay()` first           | .prePlay (Connecting) → .playing | Intent `.shouldBePlaying` immediately; chrome stays Connecting until engine `setPlaying` |
 /// | .playing        | User taps pause/stop (any surface)                | `stop()` or `markAsUserPaused()` at top of method               | .userPaused     | Immediate sticky lock + early `saveVisualState()` |
 /// | .playing        | Second explicit play / double-fire (same language)| `userRequestedPlay()` / `play()` — engine already audible       | .playing (unchanged) | **No-op** (optional surface reaffirm): never `setStreamAndPlay` / item rebuild; independent of cold-launch `resurrectionProtectionRelaxed` |
-/// | .playing        | User-initiated stream/language switch             | `resetToPrePlayForNewStream()` (chrome + clear ICY) **before** silent engine stop / language push, then `play()` | .prePlay → .playing | Hold prePlay through attach; never advertise `.playing` mid teardown; engine `setPlaying` after readyToPlay |
+/// | .playing        | User-initiated stream/language switch             | `resetToPrePlayForNewStream(connectingLanguageCode:)` (chrome + clear ICY + destination language) **before** silent engine stop, then `play()` | .prePlay → .playing | Hold prePlay through attach; never advertise `.playing` mid teardown; never prior-language chrome with Connecting; engine `setPlaying` after readyToPlay |
 /// | .playing        | AV interruption, stall, or thermal event          | `attemptResurrectionIfAllowed()` or player recovery nudges      | .playing        | Only proceeds if `shouldAutoPlayOrResume` |
 /// | any             | Security validation failure (DNS/403/cert)        | Inside `play()` guard or StreamingSessionDelegate 403 handler   | .securityLocked | Permanent until explicit successful play |
 /// | .thermalPaused  | Device cools sufficiently                         | DirectStreamingPlayer thermal recovery logic                    | .playing        | Only via `shouldAutoResumeOnThermalRecovery` |
@@ -558,6 +558,18 @@ actor SharedPlayerManager {
     /// inside ``setPlaying()`` / privacy reset / UITest short-circuit — not at the start of ``play()``.
     private var holdPrePlayVisualUntilPlayback = false
 
+    /// Target stream language for Live Activity / media-surface chrome while a stream-switch
+    /// Connecting hold is active **before** ``DirectStreamingPlayer/selectedStream`` settles.
+    ///
+    /// Without this, the hold-time ``refreshAllMediaSurfaces`` push can publish `.prePlay` with
+    /// the **prior** language (engine model still on the old stream), then a second push with the
+    /// new language after `switchToStream` — a one-frame wrong flag/name on Lock Screen.
+    /// Callers that know the destination language pass it to ``resetToPrePlayForNewStream``.
+    /// Cleared with the hold (``setPlaying()``, privacy reset, UITest short-circuit).
+    ///
+    /// - SeeAlso: ``liveActivityLanguageCodeForContentPush()``, ``resetToPrePlayForNewStream(preserveActiveSleepTimer:connectingLanguageCode:)``
+    private var streamSwitchConnectingLanguageCode: String?
+
     /// True while ``play()`` has passed sticky/early guards and has not yet reached authoritative
     /// ``setPlaying()`` or an abort that clears the pipeline (security lock, sticky pause, stop).
     ///
@@ -589,6 +601,33 @@ actor SharedPlayerManager {
     /// (`didSelectItemAt` optimistic yellow). `completeStreamSwitch` skips a second reset.
     var isStreamSwitchPrePlayHoldActive: Bool {
         currentVisualState == .prePlay && holdPrePlayVisualUntilPlayback
+    }
+
+    /// Clears stream-switch Connecting hold and any target-language override for LA chrome.
+    ///
+    /// Call only at hold-end sites (authoritative ``setPlaying()``, privacy cleared, UITest
+    /// short-circuit). Does not touch visual or intent.
+    private func clearStreamSwitchPrePlayHold() {
+        holdPrePlayVisualUntilPlayback = false
+        streamSwitchConnectingLanguageCode = nil
+    }
+
+    /// Language code for Live Activity `ContentState.currentLanguage` (and durable mirror warm).
+    ///
+    /// Prefer ``streamSwitchConnectingLanguageCode`` while an active-intent switch hold is in
+    /// flight so Connecting chrome and language chrome advance together before the engine model
+    /// is updated. Otherwise falls back to ``mainAppLiveActivityLanguageCode()`` (stream attach).
+    ///
+    /// - Returns: Non-empty language code for ActivityKit content.
+    /// - SeeAlso: ``resetToPrePlayForNewStream(preserveActiveSleepTimer:connectingLanguageCode:)``,
+    ///   ``RadioLiveActivityManager/updateCurrentActivity()``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
+    ///   docs/Widget-Functionality-Roadmap.md (Live Activity language chrome SSOT).
+    func liveActivityLanguageCodeForContentPush() -> String {
+        if let pending = streamSwitchConnectingLanguageCode, !pending.isEmpty {
+            return pending
+        }
+        return Self.mainAppLiveActivityLanguageCode()
     }
     
     /// Guards one-time application of the factory-default visual load path per process.
@@ -1596,7 +1635,7 @@ actor SharedPlayerManager {
             #if DEBUG
             print("[SharedPlayerManager] play() UITestMode — skipping SecurityModelValidator, setStreamAndPlay, and all widget/Live Activity work")
             #endif
-            holdPrePlayVisualUntilPlayback = false
+            clearStreamSwitchPrePlayHold()
 
             // Only set minimal visual state for test assertions. Do NOT call setPlaying()
             // because it triggers Live Activities and Now Playing.
@@ -2207,10 +2246,6 @@ actor SharedPlayerManager {
     /// a real language/stream switch behaves **exactly** like the initial
     /// cold-launch playback path.
     ///
-    /// - Parameters:
-    ///   - preserveActiveSleepTimer: When true, the sleep timer (if any) is left running
-    ///     across the switch (rare; normally false).
-    ///
     /// Establishes Connecting chrome for an active-intent stream/language switch.
     ///
     /// Called from stream-switch paths (`handleLanguageSelection`, `completeStreamSwitch`,
@@ -2219,26 +2254,40 @@ actor SharedPlayerManager {
     /// non-resume paths.
     ///
     /// **Switch timing contract (chrome before teardown):**
-    /// For an *active* playback intent, call this **before** (or atomically with) language
-    /// snapshot writes and **before** the engine silent `.streamSwitch` stop. That order
-    /// guarantees Live Activity / Now Playing never advertise `.playing` with a mid-teardown
-    /// language while the secured item is being torn down. Engine prep
-    /// (`DirectStreamingPlayer.switchToStream`) may still update the stream model after this
-    /// hold is active; `saveCurrentState` / `play()` prefer the Direct model under the hold.
+    /// For an *active* playback intent, call this **before** the engine silent `.streamSwitch`
+    /// stop and **with** the destination language when known. That order guarantees Live Activity
+    /// / Now Playing never advertise `.playing` mid teardown, and never show Connecting with the
+    /// **prior** stream’s language chrome for a frame while the engine model still points at the
+    /// old stream. Engine prep (`DirectStreamingPlayer.switchToStream`) may update the stream
+    /// model after this hold is active; `saveCurrentState` / `play()` prefer the Direct model
+    /// under the hold. Home-widget session language snapshot writes remain the caller’s job via
+    /// `updateUserDefaultsLanguage` → `saveCombinedWidgetState` after model prep.
+    ///
+    /// - Parameters:
+    ///   - preserveActiveSleepTimer: When true, the sleep timer (if any) is left running
+    ///     across the switch (rare; normally false).
+    ///   - connectingLanguageCode: Destination stream language for LA / durable language mirror
+    ///     on the immediate Connecting surface refresh. Pass the target code whenever the
+    ///     caller knows it (widget switch, flag tap, Siri). When `nil`, language chrome follows
+    ///     ``mainAppLiveActivityLanguageCode()`` (may still be the prior stream until engine prep).
     ///
     /// - Postcondition: `currentVisualState == .prePlay`, `holdPrePlayVisualUntilPlayback == true`,
     ///   `initialPlaybackHasRun == false`, soft-pause ICY stash cleared (no stale program title
-    ///   across languages). Main-app media surfaces refreshed so lock-screen chrome shows
-    ///   Connecting immediately. Language snapshot writes remain the caller's job via
-    ///   `updateUserDefaultsLanguage` → `saveCombinedWidgetState`.
+    ///   across languages). When `connectingLanguageCode` is non-empty, durable LA language mirror
+    ///   and ``liveActivityLanguageCodeForContentPush()`` report that code for the hold duration.
+    ///   Main-app media surfaces refreshed so lock-screen chrome shows Connecting + target language.
     ///
-    /// - SeeAlso: ``play()``, ``saveCurrentState()``, ``clearSoftPauseMetadataStashForLanguageChange()``,
+    /// - SeeAlso: ``liveActivityLanguageCodeForContentPush()``, ``play()``, ``saveCurrentState()``,
+    ///   ``clearSoftPauseMetadataStashForLanguageChange()``,
     ///   ``refreshAllMediaSurfaces(liveActivity:widgetRefresh:widgetRefreshImmediate:)``,
     ///   `RadioPlayerCoordinator.completeStreamSwitch`, `RadioPlayerCoordinator.switchToStreamFromWidget`,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
     ///   docs/cold-launch-streamplay-regression-checklist.md (§6),
     ///   CODING_AGENT.md (Single Source of Truth Principles).
-    func resetToPrePlayForNewStream(preserveActiveSleepTimer: Bool = false) async {
+    func resetToPrePlayForNewStream(
+        preserveActiveSleepTimer: Bool = false,
+        connectingLanguageCode: String? = nil
+    ) async {
         #if LUTHERAN_MAIN_APP
         if !preserveActiveSleepTimer {
             await cancelSleepTimer(restorePlaybackIntent: false)
@@ -2251,6 +2300,13 @@ actor SharedPlayerManager {
         applyVisualState(.prePlay)
         holdPrePlayVisualUntilPlayback = true
         initialPlaybackHasRun = false
+        // Destination language for the hold-time surface push (before selectedStream updates).
+        if let connectingLanguageCode, !connectingLanguageCode.isEmpty {
+            streamSwitchConnectingLanguageCode = connectingLanguageCode
+            Self.persistLiveActivityLanguageMirror(connectingLanguageCode)
+        } else {
+            streamSwitchConnectingLanguageCode = nil
+        }
         // Drop prior-language program title before any language mirror / LA push so ContentState
         // cannot show "playing + old title + new language" during silent engine teardown.
         _clearIcyMetadataStash()
@@ -2258,16 +2314,17 @@ actor SharedPlayerManager {
         await saveCurrentState()
 
         #if LUTHERAN_MAIN_APP
-        // Push Connecting chrome immediately (do not wait for setPlaying or a later language write).
+        // Push Connecting chrome immediately with target language when provided (do not wait
+        // for setPlaying or a later post-switch language write).
         await refreshAllMediaSurfaces(liveActivity: .updateIfActive)
         #endif
 
-        // NOTE: We do not author the language half of the combined snapshot here.
-        // Callers drive language via updateUserDefaultsLanguage() → saveCombinedWidgetState()
-        // after engine model prep so language chrome and visual stay consistent under the hold.
+        // NOTE: Home-widget session language snapshot is still authored by callers via
+        // updateUserDefaultsLanguage() → saveCombinedWidgetState() after engine model prep.
         
         #if DEBUG
-        print("[SharedPlayerManager] resetToPrePlayForNewStream() — state reset to .prePlay for atomic stream switch")
+        let languageNote = connectingLanguageCode.map { " language=\($0)" } ?? ""
+        print("[SharedPlayerManager] resetToPrePlayForNewStream() — state reset to .prePlay for atomic stream switch\(languageNote)")
         #endif
     }
 
@@ -2283,7 +2340,7 @@ actor SharedPlayerManager {
     func resetStateToClearedForPrivacy() {
         Self.clearInMemorySessionSnapshot()
         applyVisualState(.cleared)
-        holdPrePlayVisualUntilPlayback = false
+        clearStreamSwitchPrePlayHold()
         initialPlaybackHasRun = false
         updatePlaybackIntent(to: .cleared)
         // Use the canonical clear helper (which now also emits .metadataDidUpdate(nil)).
@@ -2475,7 +2532,7 @@ actor SharedPlayerManager {
         // IPC — the expensive surfaces that previously caused multi-minute test stalls.
         if Self.isRunningInUITestMode {
             ensureVisualStateLoaded()
-            holdPrePlayVisualUntilPlayback = false
+            clearStreamSwitchPrePlayHold()
             clearPlaybackStartPipeline()
             applyVisualState(.playing)
 
@@ -2491,7 +2548,7 @@ actor SharedPlayerManager {
         }
 
         ensureVisualStateLoaded()
-        holdPrePlayVisualUntilPlayback = false
+        clearStreamSwitchPrePlayHold()
         clearPlaybackStartPipeline()
         applyVisualState(.playing)
         
@@ -3035,18 +3092,23 @@ actor SharedPlayerManager {
         defaults.removeObject(forKey: liveActivityCurrentLanguageAppGroupKey)
     }
 
-    /// Main-app stream language for Live Activity `ContentState.currentLanguage` pushes.
+    /// Main-app stream language from engine attach / session (no stream-switch hold override).
     ///
     /// Prefer ``DirectStreamingPlayer/selectedStream`` (stream attach SSOT) so language chrome
     /// tracks the engine even when home-widget write suppression leaves the session snapshot
     /// empty and ``preferredWidgetLanguage()`` would hard-default to `"en"`. Falls back to the
     /// in-process session snapshot language, then ``preferredMainAppInitialLanguageCode()``.
     ///
+    /// **Live Activity content pushes** should use ``liveActivityLanguageCodeForContentPush()``
+    /// so an in-flight Connecting hold can report the destination language before
+    /// ``selectedStream`` updates.
+    ///
     /// - Returns: Non-empty language code suitable for ActivityKit content and the durable language mirror.
     /// - Important: Main-app only semantics. Extension hosts must not use this for chrome; they
     ///   render ``ContentState.currentLanguage`` and may read the durable language mirror for
     ///   optimistic intent language only.
-    /// - SeeAlso: ``persistLiveActivityLanguageMirror(_:)``, ``languageForLiveActivityOrWidgetOptimistic()``,
+    /// - SeeAlso: ``liveActivityLanguageCodeForContentPush()``, ``persistLiveActivityLanguageMirror(_:)``,
+    ///   ``languageForLiveActivityOrWidgetOptimistic()``,
     ///   docs/Widget-Functionality-Roadmap.md (Live Activity language chrome SSOT).
     nonisolated static func mainAppLiveActivityLanguageCode() -> String {
         let selected = DirectStreamingPlayer.shared.selectedStream.languageCode

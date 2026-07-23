@@ -340,7 +340,8 @@ final class RadioPlayerCoordinator {
             if await SharedPlayerManager.shared.canProceedWithPlayback() {
                 let intent = await SharedPlayerManager.shared.currentPlaybackIntent
                 await SharedPlayerManager.shared.resetToPrePlayForNewStream(
-                    preserveActiveSleepTimer: intent == .sleepTimer
+                    preserveActiveSleepTimer: intent == .sleepTimer,
+                    connectingLanguageCode: targetStream.languageCode
                 )
                 updateUI(for: .prePlay)
             }
@@ -512,11 +513,13 @@ final class RadioPlayerCoordinator {
         let playbackIntent = await SharedPlayerManager.shared.currentPlaybackIntent
         let shouldResumeAfterSwitch = playbackIntent.isActivePlaybackIntent
 
-        // Connecting chrome **before** silent engine teardown + language push so Live Activity
-        // never shows `.playing` for a mid-switch language (symmetric with completeStreamSwitch).
+        // Connecting chrome **before** silent engine teardown, with destination language so Live
+        // Activity never shows `.playing` mid-switch and never shows prior-language chrome for one
+        // content push while visual is already Connecting (symmetric with completeStreamSwitch).
         if shouldResumeAfterSwitch {
             await SharedPlayerManager.shared.resetToPrePlayForNewStream(
-                preserveActiveSleepTimer: playbackIntent == .sleepTimer
+                preserveActiveSleepTimer: playbackIntent == .sleepTimer,
+                connectingLanguageCode: stream.languageCode
             )
             updateUI(for: .prePlay)
         }
@@ -527,7 +530,7 @@ final class RadioPlayerCoordinator {
 
         selectedStreamIndex = index
         backgroundImageController.update(for: stream)
-        // Language after prePlay hold (resume) or while paused visual is still sticky.
+        // Session snapshot language after engine model prep (LA language already on hold when resuming).
         updateUserDefaultsLanguage(stream.languageCode)
         SharedPlayerManager.persistLiveActivityLanguageMirror(stream.languageCode)
         #if LUTHERAN_MAIN_APP
@@ -763,8 +766,12 @@ final class RadioPlayerCoordinator {
             let vs = await SharedPlayerManager.shared.currentVisualState
             if vs.shouldAutoPlayOrResume {
                 let intent = await SharedPlayerManager.shared.currentPlaybackIntent
+                let streams = DirectStreamingPlayer.availableStreams
+                let connectingLanguage: String? =
+                    streams.indices.contains(newIndex) ? streams[newIndex].languageCode : nil
                 await SharedPlayerManager.shared.resetToPrePlayForNewStream(
-                    preserveActiveSleepTimer: intent == .sleepTimer
+                    preserveActiveSleepTimer: intent == .sleepTimer,
+                    connectingLanguageCode: connectingLanguage
                 )
                 self.updateUI(for: .prePlay)
             } else {
@@ -952,8 +959,9 @@ final class RadioPlayerCoordinator {
 
             let shouldResumeAfterSwitch = playbackIntent.isActivePlaybackIntent
 
-            // Connecting chrome **before** language snapshot + silent engine teardown so Live
-            // Activity / Now Playing never advertise `.playing` mid stream-switch stop.
+            // Connecting chrome **before** silent engine teardown, with destination language so
+            // Live Activity / Now Playing never advertise `.playing` mid stream-switch stop and
+            // language chrome advances with Connecting (no prior-language one-frame lag).
             // `handleLanguageSelection` may already have set the hold; skip a second reset.
             if shouldResumeAfterSwitch {
                 if await SharedPlayerManager.shared.isStreamSwitchPrePlayHoldActive {
@@ -962,7 +970,8 @@ final class RadioPlayerCoordinator {
                     #endif
                 } else {
                     await SharedPlayerManager.shared.resetToPrePlayForNewStream(
-                        preserveActiveSleepTimer: playbackIntent == .sleepTimer
+                        preserveActiveSleepTimer: playbackIntent == .sleepTimer,
+                        connectingLanguageCode: stream.languageCode
                     )
                 }
                 self.updateUI(for: .prePlay)
@@ -975,9 +984,8 @@ final class RadioPlayerCoordinator {
             await streamingPlayer.switchToStream(stream)
             guard !Task.isCancelled else { return }
 
-            // Language snapshot + LA language mirror only after prePlay hold (resume) or while
-            // sticky pause is preserved (paused path). Never push language while visual is still
-            // `.playing` from the prior stream.
+            // Session snapshot language after model prep (LA language already on hold when resuming).
+            // Paused path: still warm language mirror + surfaces without claiming `.playing`.
             updateUserDefaultsLanguage(stream.languageCode)
             SharedPlayerManager.persistLiveActivityLanguageMirror(stream.languageCode)
             #if LUTHERAN_MAIN_APP
@@ -1030,7 +1038,8 @@ final class RadioPlayerCoordinator {
             } else {
                 let intent = await SharedPlayerManager.shared.currentPlaybackIntent
                 await SharedPlayerManager.shared.resetToPrePlayForNewStream(
-                    preserveActiveSleepTimer: intent == .sleepTimer
+                    preserveActiveSleepTimer: intent == .sleepTimer,
+                    connectingLanguageCode: stream.languageCode
                 )
             }
             updateUI(for: .prePlay)

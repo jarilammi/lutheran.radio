@@ -1846,7 +1846,7 @@ final class SharedPlayerManagerEventTests: XCTestCase {
     /// extra `.persistedWidgetStateDidUpdate` / `.metadataDidUpdate(nil)` emissions from the
     /// hold path and engine silent-stop save.
     ///
-    /// - SeeAlso: ``resetToPrePlayForNewStream(preserveActiveSleepTimer:)``,
+    /// - SeeAlso: ``resetToPrePlayForNewStream(preserveActiveSleepTimer:connectingLanguageCode:)``,
     ///   ``switchToStream(_:)``, ``setPlaying()``, ``isStreamSwitchPrePlayHoldActive``,
     ///   `RadioPlayerCoordinator.completeStreamSwitch`,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
@@ -1909,7 +1909,7 @@ final class SharedPlayerManagerEventTests: XCTestCase {
     /// ``switchToStream(_:)`` leaves ``isStreamSwitchPrePlayHoldActive`` true with nil metadata
     /// until authoritative ``setPlaying()``.
     ///
-    /// - SeeAlso: ``resetToPrePlayForNewStream(preserveActiveSleepTimer:)``,
+    /// - SeeAlso: ``resetToPrePlayForNewStream(preserveActiveSleepTimer:connectingLanguageCode:)``,
     ///   ``isStreamSwitchPrePlayHoldActive``, ``switchToStream(_:)``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
     ///   docs/cold-launch-streamplay-regression-checklist.md (§6).
@@ -1923,7 +1923,7 @@ final class SharedPlayerManagerEventTests: XCTestCase {
         var meta = await manager.currentStreamMetadata
         XCTAssertNotNil(meta, "Arrange: prior-language ICY title present before switch")
 
-        await manager.resetToPrePlayForNewStream()
+        await manager.resetToPrePlayForNewStream(connectingLanguageCode: other.languageCode)
 
         let visualDuringHold = await manager.currentVisualState
         let holdActive = await manager.isStreamSwitchPrePlayHoldActive
@@ -1950,6 +1950,71 @@ final class SharedPlayerManagerEventTests: XCTestCase {
         XCTAssertTrue(
             intent.isActivePlaybackIntent,
             "Active-intent switch must preserve play intent through hold + engine prep"
+        )
+    }
+
+    /// Stream-switch Connecting hold must publish the **destination** language for Live Activity
+    /// content **before** ``selectedStream`` updates, so Lock Screen chrome does not show
+    /// `.prePlay` with the prior stream’s flag/name for one content push.
+    ///
+    /// After ``setPlaying()`` the hold-time override clears and language follows stream attach.
+    ///
+    /// - SeeAlso: ``resetToPrePlayForNewStream(preserveActiveSleepTimer:connectingLanguageCode:)``,
+    ///   ``liveActivityLanguageCodeForContentPush()``, ``mainAppLiveActivityLanguageCode()``,
+    ///   ``persistLiveActivityLanguageMirror(_:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
+    ///   docs/Widget-Functionality-Roadmap.md (Live Activity language chrome SSOT).
+    func testStreamSwitchHoldContentLanguageMatchesDestinationBeforeEnginePrep() async {
+        let streams = manager.availableStreams
+        guard streams.count >= 2 else { return }
+        let other = await targetStreamDifferentFromCurrent(in: streams)
+        let priorLanguage = await MainActor.run {
+            DirectStreamingPlayer.shared.selectedStream.languageCode
+        }
+        XCTAssertNotEqual(
+            priorLanguage,
+            other.languageCode,
+            "Arrange: destination must differ from engine selection before hold"
+        )
+
+        await manager.setPlaying()
+        await manager.resetToPrePlayForNewStream(connectingLanguageCode: other.languageCode)
+
+        let holdActive = await manager.isStreamSwitchPrePlayHoldActive
+        let contentLanguage = await manager.liveActivityLanguageCodeForContentPush()
+        let engineLanguage = SharedPlayerManager.mainAppLiveActivityLanguageCode()
+        let mirror = SharedPlayerManager.loadLiveActivityLanguageMirror()
+
+        XCTAssertTrue(holdActive, "Hold must be active for the content-language override")
+        XCTAssertEqual(
+            contentLanguage,
+            other.languageCode,
+            "LA ContentState language must be destination during Connecting hold"
+        )
+        XCTAssertEqual(
+            engineLanguage,
+            priorLanguage,
+            "Engine selectedStream may still be prior until switchToStream — that is the race this override covers"
+        )
+        XCTAssertEqual(
+            mirror,
+            other.languageCode,
+            "Durable LA language mirror must warm destination on hold (extension optimistic paths)"
+        )
+
+        await manager.switchToStream(other)
+        let contentAfterPrep = await manager.liveActivityLanguageCodeForContentPush()
+        XCTAssertEqual(contentAfterPrep, other.languageCode)
+
+        await manager.setPlaying()
+        let contentAfterPlay = await manager.liveActivityLanguageCodeForContentPush()
+        let engineAfterPlay = SharedPlayerManager.mainAppLiveActivityLanguageCode()
+        XCTAssertEqual(contentAfterPlay, other.languageCode)
+        XCTAssertEqual(engineAfterPlay, other.languageCode)
+        XCTAssertEqual(
+            contentAfterPlay,
+            engineAfterPlay,
+            "After setPlaying, content language must equal stream-attach language (hold override cleared)"
         )
     }
 
@@ -3164,6 +3229,8 @@ final class SharedPlayerManagerEventTests: XCTestCase {
     ///
     /// Why: Device QA needs ordered, named milestones for intent → silence measurement.
     /// Capture is DEBUG-only and must not alter sticky pause or transport policy.
+    /// Each milestone appears **once** in capture (console uses a single `print` sink so Xcode
+    /// does not mirror identical `[MediaTransportLatency]` lines via stdout + os.Logger).
     ///
     /// - SeeAlso: ``MediaTransportLatencyTimeline``, ``SharedPlayerManager/submitMediaTransportCommandAndWait(_:)``,
     ///   ``DirectStreamingPlayer/stopAndWait(reason:silent:applyUserPauseVisualLock:)``,
@@ -3184,6 +3251,12 @@ final class SharedPlayerManagerEventTests: XCTestCase {
                 .softSilenceComplete,
                 .mediaTransportExecuteFinished
             ]
+        )
+        // No duplicate marks for the same hop within one pause path (single-sink console contract).
+        XCTAssertEqual(
+            milestones.filter { $0 == .softSilenceComplete }.count,
+            1,
+            "softSilenceComplete must be recorded once per pause path; got: \(milestones.map(\.rawValue))"
         )
 
         let visual = await manager.currentVisualState

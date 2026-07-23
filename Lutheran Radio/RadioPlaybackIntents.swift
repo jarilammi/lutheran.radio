@@ -129,7 +129,8 @@ struct PlayRadioIntent: AppIntent {
             // clearing sticky states and driving the guarded engine.
             let intent = await manager.currentPlaybackIntent
             await manager.resetToPrePlayForNewStream(
-                preserveActiveSleepTimer: intent == .sleepTimer
+                preserveActiveSleepTimer: intent == .sleepTimer,
+                connectingLanguageCode: targetStream.languageCode
             )
             await manager.switchToStream(targetStream)
         }
@@ -221,7 +222,8 @@ struct SwitchToLanguageIntent: AppIntent {
         // Preserve an active sleep timer across the switch (symmetric with completeStreamSwitch).
         let intent = await manager.currentPlaybackIntent
         await manager.resetToPrePlayForNewStream(
-            preserveActiveSleepTimer: intent == .sleepTimer
+            preserveActiveSleepTimer: intent == .sleepTimer,
+            connectingLanguageCode: targetStream.languageCode
         )
         await manager.switchToStream(targetStream)
         await manager.userRequestedPlay()

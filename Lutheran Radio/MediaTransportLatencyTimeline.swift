@@ -21,10 +21,14 @@
 // - No security logic. Security decisions live only in `Core/`.
 // - Safe from actor-isolated and MainActor call sites (internal lock).
 //
-// Console format (device QA greps this prefix):
+// Console format (device QA greps this prefix) — **one line per mark** via `print` only:
 //   [MediaTransportLatency] #n t=+Tms dt=+Dms <milestone> [detail]
 //   - t  = elapsed since last ``reset()`` (or first mark after process start)
 //   - dt = delta since previous mark (the useful per-hop latency)
+//
+// Do not also emit the same string through `os.Logger`: Xcode’s console mirrors both
+// stdout and the unified log, which previously produced identical duplicate lines and
+// polluted field latency analysis.
 //
 // - SeeAlso: ``SharedPlayerManager/submitMediaTransportCommand(_:)``,
 //   ``WidgetIntentExecution/performLiveActivityToggle()``,
@@ -37,6 +41,7 @@
 #if DEBUG
 
 import Foundation
+// OSAllocatedUnfairLock lives in the os module (no Logger twin for console marks).
 import os
 
 /// DEBUG-only structured latency timeline for lock-screen and media-transport paths.
@@ -44,6 +49,10 @@ import os
 /// Captures ordered milestones so device QA can measure intent → soft silence and
 /// intent → first audio with numbers rather than anecdotes. Does **not** alter
 /// transport policy, mailbox ordering, soft-pause, or surface refresh.
+///
+/// **Console output:** Each mark prints **once** (`print` only). Dual emission via
+/// `print` + `os.Logger` is intentionally avoided so Xcode console does not show
+/// identical `[MediaTransportLatency]` lines twice.
 ///
 /// **Thread-safety:** Marks are serialized with ``OSAllocatedUnfairLock``. Safe to call
 /// from ``SharedPlayerManager`` (actor), MainActor UI, and extension intent hosts.
@@ -138,11 +147,6 @@ enum MediaTransportLatencyTimeline: Sendable {
 
     private static let maxCapturedSamples = 256
 
-    private static let log = Logger(
-        subsystem: "radio.lutheran",
-        category: "MediaTransportLatency"
-    )
-
     // MARK: - Public API
 
     /// Resets the elapsed-time origin and clears captured samples.
@@ -159,8 +163,8 @@ enum MediaTransportLatencyTimeline: Sendable {
             s.samples = []
         }
         let suffix = reason.map { " reason=\($0)" } ?? ""
+        // Single console emission only (see type docs — no os.Logger twin).
         print("[MediaTransportLatency] reset\(suffix)")
-        log.debug("reset\(suffix, privacy: .public)")
     }
 
     /// Records a milestone, prints a structured console line, and optionally captures for tests.
@@ -169,6 +173,7 @@ enum MediaTransportLatencyTimeline: Sendable {
     ///   - milestone: Named hop along the transport / drain path.
     ///   - detail: Compact context (e.g. `pause`, `plan=pause source=contentState`).
     /// - Important: No-op with respect to product behavior — logging and test capture only.
+    ///   Emits **one** console line per call via `print` (not also via `os.Logger`).
     static func mark(_ milestone: Milestone, detail: String? = nil) {
         let now = ContinuousClock.now
         let sample: Sample = state.withLock { s in
@@ -192,9 +197,9 @@ enum MediaTransportLatencyTimeline: Sendable {
             return sample
         }
 
-        let line = formatConsoleLine(sample)
-        print(line)
-        log.debug("\(line, privacy: .public)")
+        // Single emission: Xcode mirrors both stdout and os.Logger, so dual sinks
+        // produced identical duplicate lines with the same t=/dt= (field-analysis noise).
+        print(formatConsoleLine(sample))
     }
 
     // MARK: - Test seams
