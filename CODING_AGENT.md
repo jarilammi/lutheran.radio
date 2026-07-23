@@ -245,13 +245,15 @@ These files stay under `Lutheran Radio/` and are compiled into the main app,
 Synchronized Group `membershipExceptions` (they depend on `SharedPlayerManager`
 and cannot live in `WidgetSurface` without a circular dependency):
 
-- `SharedPlayerManager.swift` (actor + nested `PersistedWidgetState` + static
-  facades for persistence and signaling)
-- `WidgetDisplayModels.swift` (`WidgetIntentExecution`; ``WidgetProviderSnapshotResolver``
-  snapshot reads / actor hygiene / stream-catalog station labels and
-  catalog-aware ``displayLanguageName(for:)`` wrapper that forwards pure assembly
-  to ``WidgetProviderPresentationAssembly``)
-- `WidgetRefreshManager.swift` (debouncing + active-widgets privacy gate)
+- `SharedPlayerManager.swift` and mechanical extensions (`+PlaybackPipeline`, `+AppGroup`,
+  `+LiveActivityMirrors`, `+Persistence`, `+PrivacyClear`, `+DebugTestSeams`) — actor +
+  nested `PersistedWidgetState` + static facades for persistence and signaling
+- `DirectStreamingPlayer+WidgetStub.swift` — extension-only DirectStreamingPlayer type surface
+- `WidgetDisplayModels.swift` — ``WidgetProviderSnapshotResolver`` snapshot hygiene / catalog labels
+  and catalog-aware ``displayLanguageName(for:)`` wrapper
+- `WidgetIntentExecution.swift` — AppIntent perform SSOT and side effects
+- `WidgetRefreshManager.swift` + `WidgetRefreshManager+TestSupport.swift` (DEBUG harness) —
+  debouncing + active-widgets privacy gate
 - `MediaTransportLatencyTimeline.swift` (DEBUG-only structured latency timeline for
   lock-screen / Live Activity / remote / extension-drain measurement; stripped from Release)
 - `Localizable.xcstrings` (extension + extension-profile tests)
@@ -421,7 +423,7 @@ These guidelines exist because the cost of a force-unwrap or a data race in a ba
 | `LutheranRadioWidget/`                            | Home-screen / Control / LA SwiftUI shells + AppIntents                         | Thin delegates; presentation via `import WidgetSurface`; same `Core` security rules |
 | `WidgetSurface/`                                  | Presentation-only embedded framework (visual state, coordinators, timeline factory, liveness, metadata display, language chrome, pure Provider assembly) | App embeds; extension + widget tests link. **No** security logic. See cross-target section. |
 | `docs/`                                           | All architecture & security decision records                                   | Read before any major change                                                   |
-| `SharedPlayerManager.swift` + `WidgetDisplayModels.swift` + `WidgetRefreshManager.swift` + `MediaTransportLatencyTimeline.swift` | Membership-exception SSOT: actor state, intent execution + snapshot hygiene, widget refresh; DEBUG transport latency timeline | Compiled into app + extension + `LutheranRadioWidgetTests`. Pure presentation lives in `WidgetSurface/`. Never duplicate widget state logic. |
+| `SharedPlayerManager.swift` (+ extensions) + `DirectStreamingPlayer+WidgetStub.swift` + `WidgetDisplayModels.swift` + `WidgetIntentExecution.swift` + `WidgetRefreshManager.swift` (+ test support) + `MediaTransportLatencyTimeline.swift` | Membership-exception SSOT: actor state, intent execution + snapshot hygiene, widget refresh; DEBUG transport latency timeline | Compiled into app + extension + `LutheranRadioWidgetTests`. Pure presentation lives in `WidgetSurface/`. Never duplicate widget state logic. |
 
 ### Core Framework Surface Area (Mandatory Knowledge)
 
