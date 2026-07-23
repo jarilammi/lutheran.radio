@@ -226,8 +226,11 @@ class ViewController: UIViewController {
         view.backgroundColor = .systemBackground
         // Processed image cache limit is now configured inside BackgroundImageController.
         
-        // Accessibility custom actions for play/pause live in SwiftUI PlaybackControlsView.
-        // Volume accessibility lives on SwiftUI VolumeAndAirPlayRow / MPVolumeView (identifier volumeSlider).
+        // Accessibility custom actions for play/pause live in SwiftUI PlaybackControlsView
+        // (state-dependent play/pause labels + named `toggle_playback` action).
+        // Volume VoiceOver cluster (value, increase/decrease actions, volume_set_to announce)
+        // lives on SwiftUI VolumeAndAirPlayRow / SystemVolumeVoiceOver / MPVolumeView
+        // (identifier volumeSlider).
         
         // Playback audio session is configured in DirectStreamingPlayer.init (single owner).
         

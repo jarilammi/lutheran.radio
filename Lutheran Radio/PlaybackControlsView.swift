@@ -9,6 +9,9 @@
 //    value received from the caller.
 //  - Semantic state (whether audio is actively playing) is supplied explicitly as
 //    `isActivelyPlaying` for action routing, `.symbolEffect`, and accessibility.
+//  - VoiceOver label is short and state-dependent (`accessibility_label_play` /
+//    `accessibility_label_pause`); the longer toggle instruction stays on the hint
+//    and the named `toggle_playback` custom action.
 //
 //  Sleep timer:
 //  - Uses a native `.confirmationDialog` with duration presets, conditional "Cancel timer",
@@ -48,6 +51,15 @@ import WidgetSurface
 /// model) is now consistent across the main player and the widget / Live Activity
 /// leaf views (`WidgetMetadataRegion`, button builders in Dynamic Island, etc.).
 ///
+/// Accessibility (play / pause):
+/// - Label is short and state-dependent: `accessibility_label_play` when idle,
+///   `accessibility_label_pause` when actively playing (revives the catalog key that
+///   was orphaned when SwiftUI used the longer `accessibility_label_play_pause` as the label).
+/// - Hint remains `accessibility_hint_play_pause` (toggle instruction).
+/// - Named custom action `toggle_playback` keeps the discoverable rotor action for
+///   VoiceOver / Switch Control (same revival pattern as the volume cluster on
+///   `VolumeAndAirPlayRow`).
+///
 /// Sleep timer presentation:
 /// - Timer countdown and accessibility value come in pre-computed.
 /// - The moon button tap triggers a native `.confirmationDialog` offering the presets,
@@ -57,7 +69,7 @@ import WidgetSurface
 /// - Precondition: The values must be driven by the coordinator (or mock for previews/tests).
 /// - Note: The privacy clear path does a secondary confirmation via UIAlert before acting.
 /// - SeeAlso: ``PlayerViewModel``, ``PlayerControlPresentation``, ``PlayerStatusPresentation``,
-///   `StatusPill`, `NowPlayingDisplayModel`, `RadioPlayerCoordinator`,
+///   `StatusPill`, `NowPlayingDisplayModel`, `RadioPlayerCoordinator`, `VolumeAndAirPlayRow`,
 ///   CODING_AGENT.md (narrow inputs for separate View types + cached derived values),
 ///   <doc:Architecture>.
 struct PlaybackControlsView: View {
@@ -118,9 +130,14 @@ struct PlaybackControlsView: View {
             .buttonStyle(.plain)
             .accessibilityIdentifier("playPauseButton")
             .accessibilityHint(String(localized: "accessibility_hint_play_pause", table: "Localizable"))
+            // State-dependent short labels: "Play" when idle, "Pause" when actively playing.
+            // Revives `accessibility_label_pause` (orphaned when the SwiftUI migration used the
+            // longer `accessibility_label_play_pause` string as the label). The long toggle
+            // instruction remains on the hint; the named `toggle_playback` action below is
+            // the discoverable rotor entry for VoiceOver / Switch Control.
             .accessibilityLabel(
                 isActivelyPlaying
-                    ? String(localized: "accessibility_label_play_pause", table: "Localizable")
+                    ? String(localized: "accessibility_label_pause", table: "Localizable")
                     : String(localized: "accessibility_label_play", table: "Localizable")
             )
             // Revives the stale "toggle_playback" string as an explicit accessibility action name.

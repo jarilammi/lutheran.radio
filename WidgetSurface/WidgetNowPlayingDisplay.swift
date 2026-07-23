@@ -55,8 +55,21 @@ public struct WidgetNowPlayingDisplayModel: Equatable, Sendable {
 }
 
 /// Returns the localized "X · Live Stream" fallback when no ICY program title is present.
+///
+/// Uses catalog key `live_activity_program_fallback` from the app/widget `Localizable`
+/// table (all 21 languages). The key is marked `extractionState: manual` in
+/// `Localizable.xcstrings` because this call site lives in the `WidgetSurface` framework;
+/// Xcode auto-extraction only scans the catalog-owning targets and would otherwise mark
+/// the entry stale despite live usage.
+///
+/// - Parameter languageName: Localized stream language label inserted into the format.
+/// - Returns: Formatted fallback such as "English · Live Stream".
+/// - SeeAlso: ``widgetNowPlayingDisplayModel(visualState:streamMetadata:languageName:)``,
+///   `Localizable.xcstrings` (`live_activity_program_fallback`), CODING_AGENT.md.
 public func widgetLiveStreamFallback(languageName: String) -> String {
     // SAFETY: `unsafe String(format:)` is required for localized format strings under strict memory safety.
+    // Catalog format string with `%@` + trusted language name (same pattern as other
+    // placeholder-bearing Localizable keys under SWIFT_STRICT_MEMORY_SAFETY = YES).
     unsafe String(
         format: String(localized: "live_activity_program_fallback", defaultValue: "%@ · Live Stream", table: "Localizable"),
         languageName

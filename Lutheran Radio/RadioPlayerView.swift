@@ -519,21 +519,35 @@ struct RadioPlayerView: View {
 /// - AirPlay: fixed 44×44 as defined in `AirPlayButton`.
 /// - Row height 44 provides consistent touch targets.
 ///
-/// Accessibility:
+/// Accessibility (VoiceOver / Switch Control volume cluster revival):
 /// - `accessibilityIdentifier("volumeSlider")` is set on the inner `UISlider` of the
 ///   `MPVolumeView` (see `SystemVolumeRepresentable.makeUIView`) to keep the existing
-///   `app.sliders["volumeSlider"]` UI tests passing without modification.
-/// - Label and hint forwarded from Localizable (all 21 languages) on the SwiftUI wrapper.
-/// - The underlying `MPVolumeView` / its slider supplies its own adjustable trait, current
-///   value, and live announcements when volume changes via hardware or gestures.
+///   `app.sliders["volumeSlider"]` / descendant UI tests passing without modification.
+/// - Label (`accessibility_label_volume`) and hint (`accessibility_hint_volume`) on the
+///   SwiftUI wrapper (all 21 languages).
+/// - Value (`accessibility_value_volume`, e.g. "50 percent") kept live on the UIKit slider
+///   and mirrored on the SwiftUI wrapper so VO speaks a localized percent.
+/// - Named custom actions `increase_volume` / `decrease_volume` step system volume by 10%
+///   and announce `volume_set_to` — the same cluster that lived on the pre-migration UIKit
+///   `UISlider`, revived so the catalog entries stay live for blind users.
+/// - AGENT NOTE: Step **system** route volume via the live `MPVolumeView` slider only.
+///   Never call `DirectStreamingPlayer.setVolume` from this row (internal AVPlayer gain).
 ///
 /// - Important: This is the canonical volume surface for the SwiftUI player chrome.
 /// - Note: `DirectStreamingPlayer.setVolume` is intentionally not called from this row and
 ///   remains untouched for potential legacy or other internal gain uses.
-/// - SeeAlso: `SystemVolumeSlider`, `AirPlayButton`, `RadioPlayerView`,
-///   `MPVolumeView.configureAsVolumeSliderOnly`, CODING_AGENT.md (Documentation & Comment Standards for AI Coding Agents),
+/// - SeeAlso: `SystemVolumeSlider`, `SystemVolumeVoiceOver`, `AirPlayButton`, `RadioPlayerView`,
+///   `PlaybackControlsView` (play/pause a11y revival), `MPVolumeView.configureAsVolumeSliderOnly`,
+///   CODING_AGENT.md (Documentation & Comment Standards for AI Coding Agents),
 ///   <doc:Architecture>
 struct VolumeAndAirPlayRow: View {
+    /// Localized percent string for the SwiftUI accessibility value (mirrors the UIKit slider).
+    /// Refreshed when VoiceOver custom actions step volume and when the representable posts
+    /// ``Notification.Name.lutheranSystemVolumeAccessibilityDidChange``.
+    @State private var volumeAccessibilityValue: String = SystemVolumeVoiceOver.accessibilityValueText(
+        for: SystemVolumeVoiceOver.currentValue()
+    )
+
     var body: some View {
         HStack(spacing: 16) {
             Image(systemName: "speaker.wave.2.fill")
@@ -544,12 +558,187 @@ struct VolumeAndAirPlayRow: View {
             SystemVolumeSlider()
                 .accessibilityLabel(String(localized: "accessibility_label_volume", table: "Localizable"))
                 .accessibilityHint(String(localized: "accessibility_hint_volume", table: "Localizable"))
+                // Revives stale `accessibility_value_volume` on the SwiftUI wrapper (UIKit slider
+                // also carries the same value — whichever element VO focuses, percent is spoken).
+                .accessibilityValue(volumeAccessibilityValue)
+                // Revives stale `increase_volume` / `decrease_volume` as discoverable named actions
+                // (rotor / Switch Control). Steps match the historical UIKit ±0.1 (10%) behavior.
+                .accessibilityAction(
+                    named: String(
+                        localized: "increase_volume",
+                        defaultValue: "Increase Volume",
+                        table: "Localizable",
+                        comment: "Accessibility action to increase volume"
+                    )
+                ) {
+                    SystemVolumeVoiceOver.step(by: SystemVolumeVoiceOver.stepAmount)
+                    refreshVolumeAccessibilityValue()
+                }
+                .accessibilityAction(
+                    named: String(
+                        localized: "decrease_volume",
+                        defaultValue: "Decrease Volume",
+                        table: "Localizable",
+                        comment: "Accessibility action to decrease volume"
+                    )
+                ) {
+                    SystemVolumeVoiceOver.step(by: -SystemVolumeVoiceOver.stepAmount)
+                    refreshVolumeAccessibilityValue()
+                }
+                .onReceive(
+                    NotificationCenter.default.publisher(
+                        for: .lutheranSystemVolumeAccessibilityDidChange
+                    )
+                ) { _ in
+                    refreshVolumeAccessibilityValue()
+                }
+                .onAppear {
+                    refreshVolumeAccessibilityValue()
+                }
 
             // AirPlay route picker (native, kept exactly as implemented).
             AirPlayButton()
         }
         .frame(height: 44)
     }
+
+    /// Re-reads the live system volume and updates the SwiftUI accessibility value string.
+    private func refreshVolumeAccessibilityValue() {
+        volumeAccessibilityValue = SystemVolumeVoiceOver.accessibilityValueText(
+            for: SystemVolumeVoiceOver.currentValue()
+        )
+    }
+}
+
+// MARK: - System volume VoiceOver helpers
+
+/// Steps and reports **system** route volume for VoiceOver / Switch Control.
+///
+/// Revives the localization cluster orphaned when the UIKit `volumeSlider` was removed in
+/// favor of ``MPVolumeView`` (`accessibility_value_volume`, `increase_volume`,
+/// `decrease_volume`, `volume_set_to`). All 21 language translations remain in
+/// `Localizable.xcstrings`.
+///
+/// - Important: Never routes through `DirectStreamingPlayer.setVolume` (AVPlayer internal
+///   gain only). Always drives the live `MPVolumeView` `UISlider` when attached.
+/// - Note: `liveSlider` is set by ``SystemVolumeRepresentable`` after the slider subview
+///   appears; custom actions no-op safely if the representable is not yet in the hierarchy.
+/// - SeeAlso: ``VolumeAndAirPlayRow``, ``SystemVolumeRepresentable``, `PlaybackControlsView`
+///   (same revival pattern for `toggle_playback`), CODING_AGENT.md, <doc:Architecture>.
+@MainActor
+enum SystemVolumeVoiceOver {
+    /// Historical UIKit step size (10% of full scale per custom action invocation).
+    static let stepAmount: Float = 0.1
+
+    /// Weak reference to the on-screen `MPVolumeView` volume slider.
+    /// Set exclusively by ``SystemVolumeRepresentable``; cleared when the view is torn down.
+    static weak var liveSlider: UISlider?
+
+    /// Current system volume in 0...1, preferring the live slider when available.
+    ///
+    /// - Returns: The live slider value when attached; otherwise a best-effort read from a
+    ///   transient `MPVolumeView` slider (same public path as programmatic volume set).
+    static func currentValue() -> Float {
+        if let liveSlider {
+            return liveSlider.value
+        }
+        return resolveTransientSlider()?.value ?? 0
+    }
+
+    /// Localized accessibility value for a volume in 0...1 (e.g. "50 percent").
+    ///
+    /// - Parameter value: System volume in unit interval.
+    /// - Returns: Catalog-formatted percent string via `accessibility_value_volume`.
+    static func accessibilityValueText(for value: Float) -> String {
+        let percent = percent(for: value)
+        // SAFETY: `String(format:)` with a catalog-provided format containing `%d` is the
+        // established VoiceOver format pattern (see `sleepTimerAccessibilityValue` on
+        // `PlayerViewModel` and `announceSwitchedToLanguage` on `RadioPlayerCoordinator`).
+        // The format is trusted (`Localizable.xcstrings`) and the argument is a simple `Int`.
+        // Required under `SWIFT_STRICT_MEMORY_SAFETY = YES`.
+        return unsafe String(
+            format: String(localized: "accessibility_value_volume", table: "Localizable"),
+            percent
+        )
+    }
+
+    /// Steps system volume by `delta` (clamped to 0...1), syncs a11y value, and announces
+    /// the new level via `volume_set_to`.
+    ///
+    /// - Parameter delta: Signed step in unit interval (typically ±``stepAmount``).
+    /// - Postcondition: Live slider (when attached) reflects the clamped value; VoiceOver
+    ///   receives a localized "Volume set to N percent" announcement.
+    static func step(by delta: Float) {
+        let newValue = min(1.0, max(0.0, currentValue() + delta))
+        applySystemVolume(newValue)
+        announceVolumeSet(to: newValue)
+        NotificationCenter.default.post(name: .lutheranSystemVolumeAccessibilityDidChange, object: nil)
+    }
+
+    /// Applies a unit-interval system volume through the live (or transient) `MPVolumeView` slider.
+    ///
+    /// - Parameter value: Target volume in 0...1 (caller should clamp).
+    static func applySystemVolume(_ value: Float) {
+        if let slider = liveSlider {
+            slider.setValue(value, animated: true)
+            slider.accessibilityValue = accessibilityValueText(for: value)
+            return
+        }
+        // Representable not attached yet (rare: action before layout). Drive a retained
+        // transient MPVolumeView so the step still affects system volume. Not kept in the
+        // visible hierarchy; only used as a write path fallback.
+        if let slider = resolveTransientSlider() {
+            slider.setValue(value, animated: false)
+        }
+    }
+
+    /// Posts a localized VoiceOver announcement for the new volume percent.
+    ///
+    /// - Parameter value: System volume in 0...1 after the step.
+    static func announceVolumeSet(to value: Float) {
+        let percent = percent(for: value)
+        // SAFETY: catalog format string with `%d` + Int argument (same pattern as
+        // `accessibilityValueText(for:)` and sleep-timer VoiceOver formatting).
+        let message = unsafe String(
+            format: String(
+                localized: "volume_set_to",
+                defaultValue: "Volume set to %d percent",
+                table: "Localizable"
+            ),
+            percent
+        )
+        // SAFETY: `UIAccessibility.post` is the established announcement API for VoiceOver
+        // in this codebase (see `announceSwitchedToLanguage` / post-clear revival).
+        unsafe UIAccessibility.post(notification: .announcement, argument: message)
+    }
+
+    /// Converts unit-interval volume to a whole-number percent for catalog format strings.
+    static func percent(for value: Float) -> Int {
+        Int((value * 100).rounded())
+    }
+
+    /// Retained fallback `MPVolumeView` used only when `liveSlider` is nil (pre-attach).
+    /// Avoids creating a new view on every fallback read/write.
+    private static var transientVolumeView: MPVolumeView?
+
+    /// Returns the live slider, or the volume slider inside a retained transient `MPVolumeView`.
+    private static func resolveTransientSlider() -> UISlider? {
+        if let liveSlider { return liveSlider }
+        let view = transientVolumeView ?? MPVolumeView(frame: .zero)
+        transientVolumeView = view
+        return view.subviews.first(where: { $0 is UISlider }) as? UISlider
+    }
+}
+
+extension Notification.Name {
+    /// Posted when system volume is stepped via VoiceOver custom actions (or the UIKit
+    /// slider path updates accessibility value). ``VolumeAndAirPlayRow`` listens to refresh
+    /// its SwiftUI `accessibilityValue`.
+    ///
+    /// - SeeAlso: ``SystemVolumeVoiceOver/step(by:)``, ``VolumeAndAirPlayRow``
+    static let lutheranSystemVolumeAccessibilityDidChange = Notification.Name(
+        "LutheranRadioSystemVolumeAccessibilityDidChange"
+    )
 }
 
 /// A reusable SwiftUI wrapper presenting the native system volume slider backed by `MPVolumeView`.
@@ -578,19 +767,19 @@ struct VolumeAndAirPlayRow: View {
 /// No additional state, observers, or UserDefaults wiring is present or required.
 /// `MPVolumeView` manages observation of `AVAudioSession` and route volume internally.
 ///
-/// Accessibility is attached by the caller (`VolumeAndAirPlayRow`) so that identifier,
-/// label, and hint can be centralized while the inner control retains its value behavior.
+/// Accessibility for the inner `UISlider` (identifier, localized value, increase/decrease
+/// custom actions) is installed by ``SystemVolumeRepresentable`` so VoiceOver focuses the
+/// same control UITests query. Label/hint/value/actions are also applied on the SwiftUI
+/// wrapper by ``VolumeAndAirPlayRow`` so either focus target speaks the revived catalog keys.
 ///
 /// - Precondition: Must be used on the main actor / main thread (standard for all
 ///   UIViewRepresentable in SwiftUI). The hosting `UIHostingController` guarantees this.
 /// - Postcondition: After insertion, user gestures and external volume changes are reflected
 ///   live in the slider and affect audible output level for the current route.
-/// - Note: This type is intentionally simple. The only subview walk performed is a one-time
-///   assignment of the accessibility identifier onto the child UISlider strictly to preserve
-///   UI test compatibility (see implementation in makeUIView). No KVO, no observers, and
-///   no hidden `MPVolumeView` instances are used.
-/// - SeeAlso: `VolumeAndAirPlayRow`, `AirPlayButton`, `MPVolumeView` (MediaPlayer),
-///   CODING_AGENT.md, <doc:Architecture>
+/// - Note: Subview walk attaches a11y + ``SystemVolumeVoiceOver/liveSlider``; no KVO and no
+///   extra on-screen `MPVolumeView` instances in the normal path.
+/// - SeeAlso: `VolumeAndAirPlayRow`, `SystemVolumeVoiceOver`, `AirPlayButton`,
+///   `MPVolumeView` (MediaPlayer), CODING_AGENT.md, <doc:Architecture>
 struct SystemVolumeSlider: View {
     var body: some View {
         SystemVolumeRepresentable()
@@ -643,14 +832,28 @@ private extension MPVolumeView {
 /// the deprecation while preserving the native volume slider behavior that is
 /// required for system-wide volume sync (see `VolumeAndAirPlayRow`).
 ///
+/// VoiceOver cluster (Tier A revival):
+/// After the volume `UISlider` subview appears, ``Coordinator`` attaches:
+/// - `accessibilityIdentifier("volumeSlider")` (UITest contract)
+/// - Localized `accessibilityValue` via `accessibility_value_volume`
+/// - Custom actions `increase_volume` / `decrease_volume` (10% steps + `volume_set_to` announce)
+/// - ``SystemVolumeVoiceOver/liveSlider`` so SwiftUI-named actions drive the same control
+///
 /// Implementation notes:
 /// - Route button suppressed via dedicated helper (no direct use of deprecated `showsRouteButton` property at the call site).
 /// - Tint applied once in `makeUIView`; `MPVolumeView` does not require per-update tint pushes.
-/// - `updateUIView` is intentionally a no-op. The control is live and self-managed.
-/// - No force-unwraps, no `!`, no unsafe bridging. Pure value-type configuration.
+/// - `updateUIView` re-attempts slider attachment if the private subview is late.
+/// - `dismantleUIView` clears ``SystemVolumeVoiceOver/liveSlider`` when it still points at this instance.
+/// - No force-unwraps, no `!`. Volume format/announce paths use documented `// SAFETY:` markers.
 ///
 /// This type is file-private; the public surface is `SystemVolumeSlider`.
+///
+/// - SeeAlso: ``SystemVolumeVoiceOver``, ``VolumeAndAirPlayRow``, CODING_AGENT.md, <doc:Architecture>
 private struct SystemVolumeRepresentable: UIViewRepresentable {
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
     func makeUIView(context: Context) -> MPVolumeView {
         let volumeView = MPVolumeView()
         volumeView.configureAsVolumeSliderOnly()
@@ -662,25 +865,122 @@ private struct SystemVolumeRepresentable: UIViewRepresentable {
         // and attempt to forward to its child UISlider (for legacy slider queries).
         volumeView.accessibilityIdentifier = "volumeSlider"
 
-        // Assign the accessibility identifier to the underlying UISlider so that
-        // XCUITest queries of the form `app.sliders["volumeSlider"]` continue to
-        // locate the control (testVolumeSliderExists and similar) where possible.
-        // MPVolumeView's volume indicator is implemented as a private UISlider subclass;
-        // the walk is performed to maximize compatibility.
-        //
-        // This is a one-time configuration walk (no KVO, no observation, no hidden
-        // listeners) performed only to preserve the existing UI test contract.
-        // It is the minimal intervention that avoids changing the UITest while
-        // using the real system volume control.
-        if let slider = volumeView.subviews.first(where: { $0 is UISlider }) as? UISlider {
-            slider.accessibilityIdentifier = "volumeSlider"
+        // Attach a11y + liveSlider bridge as soon as the private UISlider exists.
+        // MPVolumeView sometimes materializes the slider one runloop later — `updateUIView`
+        // and a deferred attach cover that race without KVO on private hierarchy.
+        context.coordinator.attachVolumeSliderIfNeeded(from: volumeView)
+        DispatchQueue.main.async {
+            context.coordinator.attachVolumeSliderIfNeeded(from: volumeView)
         }
         return volumeView
     }
 
     func updateUIView(_ uiView: MPVolumeView, context: Context) {
-        // Intentionally empty: MPVolumeView observes AVAudioSession and updates itself.
-        // External mutations are not performed from SwiftUI state.
+        // MPVolumeView is self-managed for volume; we only ensure VoiceOver attachment.
+        context.coordinator.attachVolumeSliderIfNeeded(from: uiView)
+    }
+
+    static func dismantleUIView(_ uiView: MPVolumeView, coordinator: Coordinator) {
+        coordinator.detachIfNeeded(from: uiView)
+    }
+
+    /// Owns VoiceOver custom actions and the ``SystemVolumeVoiceOver/liveSlider`` bridge.
+    ///
+    /// Isolated to the main actor because it mutates UIKit controls and
+    /// ``SystemVolumeVoiceOver`` (itself `@MainActor`). `UIViewRepresentable` lifecycle
+    /// and `UISlider` target/action callbacks run on the main thread.
+    ///
+    /// - SeeAlso: ``SystemVolumeVoiceOver``, ``VolumeAndAirPlayRow``
+    @MainActor
+    final class Coordinator: NSObject {
+        private weak var attachedSlider: UISlider?
+
+        /// Locates the private volume `UISlider` and installs identifier, value, and custom actions.
+        ///
+        /// - Parameter volumeView: The hosting `MPVolumeView`.
+        /// - Note: Safe to call repeatedly; no-ops when already attached to the same slider.
+        func attachVolumeSliderIfNeeded(from volumeView: MPVolumeView) {
+            guard let slider = volumeView.subviews.first(where: { $0 is UISlider }) as? UISlider else {
+                return
+            }
+            if attachedSlider === slider {
+                // Keep percent value current when SwiftUI re-renders.
+                refreshAccessibilityValue(on: slider)
+                return
+            }
+            detachTargets(from: attachedSlider)
+            attachedSlider = slider
+            SystemVolumeVoiceOver.liveSlider = slider
+
+            // UITest contract: `app.sliders["volumeSlider"]` / descendant queries.
+            slider.accessibilityIdentifier = "volumeSlider"
+            // Localized label/hint also on the UIKit control so VO focus on the slider
+            // (not only the SwiftUI wrapper) still speaks the catalog strings.
+            slider.accessibilityLabel = String(localized: "accessibility_label_volume", table: "Localizable")
+            slider.accessibilityHint = String(localized: "accessibility_hint_volume", table: "Localizable")
+            refreshAccessibilityValue(on: slider)
+
+            // Custom actions revive `increase_volume` / `decrease_volume` on the element
+            // VoiceOver typically focuses for adjustable volume (the private UISlider).
+            slider.accessibilityCustomActions = [
+                UIAccessibilityCustomAction(
+                    name: String(
+                        localized: "increase_volume",
+                        defaultValue: "Increase Volume",
+                        table: "Localizable",
+                        comment: "Accessibility action to increase volume"
+                    )
+                ) { [weak self] _ in
+                    self?.performStep(by: SystemVolumeVoiceOver.stepAmount) ?? false
+                },
+                UIAccessibilityCustomAction(
+                    name: String(
+                        localized: "decrease_volume",
+                        defaultValue: "Decrease Volume",
+                        table: "Localizable",
+                        comment: "Accessibility action to decrease volume"
+                    )
+                ) { [weak self] _ in
+                    self?.performStep(by: -SystemVolumeVoiceOver.stepAmount) ?? false
+                }
+            ]
+
+            slider.addTarget(self, action: #selector(sliderValueChanged(_:)), for: .valueChanged)
+        }
+
+        /// Clears the bridge when this representable's slider is going away.
+        func detachIfNeeded(from volumeView: MPVolumeView) {
+            let slider = volumeView.subviews.first(where: { $0 is UISlider }) as? UISlider
+            if let slider, SystemVolumeVoiceOver.liveSlider === slider {
+                SystemVolumeVoiceOver.liveSlider = nil
+            } else if let attachedSlider, SystemVolumeVoiceOver.liveSlider === attachedSlider {
+                SystemVolumeVoiceOver.liveSlider = nil
+            }
+            detachTargets(from: attachedSlider)
+            attachedSlider = nil
+        }
+
+        @objc private func sliderValueChanged(_ sender: UISlider) {
+            refreshAccessibilityValue(on: sender)
+            NotificationCenter.default.post(
+                name: .lutheranSystemVolumeAccessibilityDidChange,
+                object: nil
+            )
+        }
+
+        private func performStep(by delta: Float) -> Bool {
+            SystemVolumeVoiceOver.step(by: delta)
+            return true
+        }
+
+        private func refreshAccessibilityValue(on slider: UISlider) {
+            slider.accessibilityValue = SystemVolumeVoiceOver.accessibilityValueText(for: slider.value)
+        }
+
+        private func detachTargets(from slider: UISlider?) {
+            slider?.removeTarget(self, action: #selector(sliderValueChanged(_:)), for: .valueChanged)
+            slider?.accessibilityCustomActions = nil
+        }
     }
 }
 

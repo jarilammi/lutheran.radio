@@ -1377,10 +1377,16 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
     /// Connecting is decided in ``handleStatusChange(_:reasonKey:)`` /
     /// ``RadioPlayerChromeVisualResolver`` — this method only paints what it is given.
     ///
+    /// VoiceOver: thermal enter/exit is announced here (modern chrome SSOT) via
+    /// ``announceThermalVisualTransition(from:to:)`` so `status_thermal_paused` is spoken
+    /// without requiring focus on the status pill. Other status strings continue to use the
+    /// legacy `safeUpdateStatusLabel` allowlist where that path still runs.
+    ///
     /// - Parameter visualState: Chrome visual to apply (not necessarily equal to SPM yet during
     ///   the deferred ``setPlaying()`` window).
     /// - SeeAlso: ``handleStatusChange(_:reasonKey:)``, ``RadioPlayerChromeVisualResolver``,
-    ///   `PlayerViewModel`, CODING_AGENT.md (Single Source of Truth Principles).
+    ///   ``announceThermalVisualTransition(from:to:)``, `PlayerViewModel`,
+    ///   CODING_AGENT.md (Single Source of Truth Principles).
     @MainActor
     func updateUI(for visualState: PlayerVisualState) {
         if lastAppliedVisualState == visualState {
@@ -1389,6 +1395,7 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
             #endif
             return
         }
+        let previousVisualState = lastAppliedVisualState
         lastAppliedVisualState = visualState
 
         // Pure SwiftUI views are driven via viewModel (pushed below).
@@ -1438,6 +1445,11 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
                 presentAlert?(alert)
             }
         }
+
+        // Thermal pause is involuntary hardware chrome — announce enter/exit so VoiceOver
+        // users hear `status_thermal_paused` / recovery without focusing the status pill.
+        // Dedupe above ensures we only announce real transitions.
+        announceThermalVisualTransition(from: previousVisualState, to: visualState)
 
         #if DEBUG
         print("[RadioPlayerCoordinator] updateUI → applied \(visualState) (bg=\(visualState.backgroundColor), tint=\(visualState.buttonTintColor))")
@@ -1585,6 +1597,37 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
             stream.language
         )
         unsafe UIAccessibility.post(notification: .announcement, argument: announcement)
+    }
+
+    /// Announces thermal pause enter/exit on the modern ``updateUI(for:)`` chrome path.
+    ///
+    /// Keeps `status_thermal_paused` active for VoiceOver without requiring focus on the
+    /// status pill. Sighted users already see the orange "Device hot" pill via
+    /// ``PlayerVisualState/makeStatusPresentation()``; this only adds a proactive
+    /// announcement for non-sighted users when the hardware gate flips.
+    ///
+    /// - Parameters:
+    ///   - previous: Visual applied before this transition (`nil` on first paint).
+    ///   - next: Visual being applied now (already deduped by ``updateUI(for:)``).
+    /// - Note: Enter posts the catalog thermal string. Leave posts the destination
+    ///   status-pill text (Play / Pause / …) so recovery is spoken once from this SSOT.
+    /// - SeeAlso: ``updateUI(for:)``, ``PlayerVisualState/thermalPaused``,
+    ///   `status_thermal_paused` in `Localizable.xcstrings`, CODING_AGENT.md.
+    private func announceThermalVisualTransition(from previous: PlayerVisualState?, to next: PlayerVisualState) {
+        let message: String?
+        if next == .thermalPaused {
+            // Enter thermal: speak the same short status string the pill shows.
+            message = String(localized: "status_thermal_paused", table: "Localizable")
+        } else if previous == .thermalPaused {
+            // Leave thermal: speak the destination chrome status (e.g. Play after auto-resume).
+            message = next.makeStatusPresentation().text
+        } else {
+            message = nil
+        }
+        guard let message, !message.isEmpty else { return }
+        // SAFETY: UIAccessibility.post is the established VoiceOver announcement API
+        // (same pattern as `announceSwitchedToLanguage` and post-clear `clear_local_state_done`).
+        unsafe UIAccessibility.post(notification: .announcement, argument: message)
     }
 
     // MARK: - Haptics (tiny controller extraction P5+; thin forward only — behavior preserved)

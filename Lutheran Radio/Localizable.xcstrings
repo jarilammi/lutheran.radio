@@ -1301,8 +1301,7 @@
             "value" : "Pausa"
           }
         }
-      },
-      "extractionState" : "manual"
+      }
     },
     "accessibility_label_photo_of_format" : {
       "comment" : "Accessibility label for speaker photo. %@ is the speaker or program name.",
@@ -1561,136 +1560,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Spela"
-          }
-        }
-      }
-    },
-    "accessibility_label_play_pause" : {
-      "localizations" : {
-        "da" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dobbelttryk for at afspille eller pause radiostrømmen"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Doppelt tippen, um den Radiostream abzuspielen oder zu pausieren"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Double tap to play or pause the radio stream"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Toca dos veces para reproducir o pausar el stream de radio"
-          }
-        },
-        "et" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Topeltpuudutus raadio voo esitamiseks või peatamiseks"
-          }
-        },
-        "fi" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Kaksoisnapauta toistaaksesi tai keskeyttääksesi radion toiston"
-          }
-        },
-        "fit" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Kaksoisnapauta soitaaksesi tai keskeyttääksesi radiovirran"
-          }
-        },
-        "fo" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tvífalt slá til at spæla ella steðga radiosendingina"
-          }
-        },
-        "gag" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Radyo stream-ini oynatmak yahut duraklatmak için iki defa bas"
-          }
-        },
-        "is" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tvöfalt snerta til að spila eða gera hlé á útvarpsstreymi"
-          }
-        },
-        "kl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Peqatigiilluni aallaatilluni radio ilinniarneq"
-          }
-        },
-        "lt" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dvigubas bakstelėjimas, kad grotumėte arba pristabdytumėte radijo srautą"
-          }
-        },
-        "lv" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dubultpieskāriens, lai atskaņotu vai apturētu radio straumi"
-          }
-        },
-        "nb" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dobbelttrykk for å spille av eller pause radiostrømmen"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dubbeltik om de radiostream af te spelen of te pauzeren"
-          }
-        },
-        "nn" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dobbelttrykk for å spela av eller pausa radiostrømmen"
-          }
-        },
-        "pl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dotknij dwukrotnie, aby odtworzyć lub wstrzymać strumień radiowy"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Дважды коснитесь, чтобы воспроизвести или приостановить радиопоток"
-          }
-        },
-        "se" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Duppalbáhccehálddu láigge ávdnasaččat čájeheaddji radio jođa"
-          }
-        },
-        "sk" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dvojitým klepnutím spustíte alebo pozastavíte rozhlasový stream"
-          }
-        },
-        "sv" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dubbeltryck för att spela upp eller pausa radioströmmen"
           }
         }
       }
@@ -2083,8 +1952,7 @@
             "value" : "%d procent"
           }
         }
-      },
-      "extractionState" : "stale"
+      }
     },
     "alert_continue" : {
       "localizations" : {
@@ -3387,6 +3255,7 @@
       }
     },
     "Connection error" : {
+      "comment" : "Home/Control widget status message when the provider snapshot reports hasError. Used from WidgetSurface `WidgetProviderPresentationAssembly.assemblePresentationSlices` via String(localized:table: Localizable). extractionState is manual because the catalog is owned by the main app/widget targets; the call site lives in WidgetSurface and is not seen by Xcode auto-extraction.",
       "localizations" : {
         "da" : {
           "stringUnit" : {
@@ -3515,7 +3384,7 @@
           }
         }
       },
-      "extractionState" : "stale"
+      "extractionState" : "manual"
     },
     "Control Lutheran Radio playback and see current station." : {
       "localizations" : {
@@ -3906,8 +3775,7 @@
             "value" : "Minska volymen"
           }
         }
-      },
-      "extractionState" : "stale"
+      }
     },
     "increase_volume" : {
       "comment" : "Accessibility action to increase volume",
@@ -4038,8 +3906,7 @@
             "value" : "Öka volymen"
           }
         }
-      },
-      "extractionState" : "stale"
+      }
     },
     "Is Playing" : {
       "localizations" : {
@@ -5218,6 +5085,7 @@
       }
     },
     "live_activity_program_fallback" : {
+      "comment" : "Live Activity / widget metadata fallback when no ICY program title is present (format: language name + live stream). Used from WidgetSurface `widgetLiveStreamFallback(languageName:)` via String(localized:table: Localizable). extractionState is manual because the catalog is owned by the main app/widget targets; the call site lives in the WidgetSurface framework and is not seen by Xcode auto-extraction.",
       "localizations" : {
         "da" : {
           "stringUnit" : {
@@ -5346,7 +5214,7 @@
           }
         }
       },
-      "extractionState" : "stale"
+      "extractionState" : "manual"
     },
     "Local Only" : {
       "localizations" : {
@@ -10555,8 +10423,7 @@
             "value" : "Enheten het"
           }
         }
-      },
-      "extractionState" : "stale"
+      }
     },
     "stream_unavailable_message" : {
       "localizations" : {
@@ -12381,8 +12248,7 @@
             "value" : "Volym inställd på %d procent"
           }
         }
-      },
-      "extractionState" : "stale"
+      }
     },
     "Widget Configuration" : {
       "localizations" : {

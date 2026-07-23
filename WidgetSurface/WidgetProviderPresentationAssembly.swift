@@ -53,6 +53,9 @@ public enum WidgetProviderPresentationAssembly {
     ) -> WidgetProviderPresentationSlices {
         let statusPresentation = fields.visualState.makeStatusPresentation()
         let controlPresentation = fields.visualState.makeControlPresentation()
+        // `Connection error` is the widget error chrome string (Localizable, 21 langs).
+        // Marked extractionState: manual in the app catalog: this call site is in WidgetSurface,
+        // so Xcode auto-extraction on the catalog-owning targets would otherwise mark it stale.
         let statusMessage: String = fields.hasError
             ? String(localized: "Connection error", defaultValue: "Connection error", table: "Localizable")
             : statusPresentation.text
