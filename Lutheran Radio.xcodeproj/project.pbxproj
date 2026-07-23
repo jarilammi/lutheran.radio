@@ -196,10 +196,19 @@
 		B73ADB913007667000E8255C /* Exceptions for "Lutheran Radio" folder in "LutheranRadioWidgetTests" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				"DirectStreamingPlayer+WidgetStub.swift",
 				MediaTransportLatencyTimeline.swift,
 				SharedPlayerManager.swift,
+				"SharedPlayerManager+AppGroup.swift",
+				"SharedPlayerManager+DebugTestSeams.swift",
+				"SharedPlayerManager+LiveActivityMirrors.swift",
+				"SharedPlayerManager+Persistence.swift",
+				"SharedPlayerManager+PlaybackPipeline.swift",
+				"SharedPlayerManager+PrivacyClear.swift",
 				WidgetDisplayModels.swift,
+				WidgetIntentExecution.swift,
 				WidgetRefreshManager.swift,
+				"WidgetRefreshManager+TestSupport.swift",
 			);
 			target = B77E58E7300748E500A070E9 /* LutheranRadioWidgetTests */;
 		};
@@ -213,11 +222,20 @@
 		B777FE962DEF8307000007DA /* Exceptions for "Lutheran Radio" folder in "LutheranRadioWidgetExtension" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				"DirectStreamingPlayer+WidgetStub.swift",
 				Localizable.xcstrings,
 				MediaTransportLatencyTimeline.swift,
 				SharedPlayerManager.swift,
+				"SharedPlayerManager+AppGroup.swift",
+				"SharedPlayerManager+DebugTestSeams.swift",
+				"SharedPlayerManager+LiveActivityMirrors.swift",
+				"SharedPlayerManager+Persistence.swift",
+				"SharedPlayerManager+PlaybackPipeline.swift",
+				"SharedPlayerManager+PrivacyClear.swift",
 				WidgetDisplayModels.swift,
+				WidgetIntentExecution.swift,
 				WidgetRefreshManager.swift,
+				"WidgetRefreshManager+TestSupport.swift",
 			);
 			target = B757A77B2DEF7B5C00FF90FC /* LutheranRadioWidgetExtension */;
 		};

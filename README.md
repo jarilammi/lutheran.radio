@@ -502,10 +502,12 @@ Two layers keep app, widget extension, and Live Activity presentation aligned. *
 
 **2. Membership-exception sources under `Lutheran Radio/`** — compiled into the main app, extension, and `LutheranRadioWidgetTests` via File System Synchronized Group `membershipExceptions` (cannot move into `WidgetSurface` without a circular dependency on `SharedPlayerManager`):
 
-- `SharedPlayerManager.swift` (actor + `PersistedWidgetState` + authoritative `PlayerEvent` emission)
-- `WidgetDisplayModels.swift` (`WidgetIntentExecution`; `WidgetProviderSnapshotResolver` snapshot reads / actor hygiene / stream-catalog labels; catalog-aware `displayLanguageName(for:)` wrapper that forwards pure assembly to `WidgetProviderPresentationAssembly`)
+- `SharedPlayerManager.swift` + extensions (`+PlaybackPipeline`, `+AppGroup`, `+LiveActivityMirrors`, `+Persistence`, `+PrivacyClear`, `+DebugTestSeams`) — actor + `PersistedWidgetState` + authoritative `PlayerEvent` emission
+- `DirectStreamingPlayer+WidgetStub.swift` — extension-only DirectStreamingPlayer type surface
+- `WidgetDisplayModels.swift` — `WidgetProviderSnapshotResolver` snapshot hygiene / catalog labels; catalog-aware `displayLanguageName(for:)` wrapper
+- `WidgetIntentExecution.swift` — AppIntent perform SSOT and side effects
 - `MediaTransportLatencyTimeline.swift` (DEBUG-only structured latency timeline for media-transport / Live Activity / extension-drain measurement; stripped from Release)
-- `WidgetRefreshManager.swift` (debouncing + active-widgets privacy gate)
+- `WidgetRefreshManager.swift` + `WidgetRefreshManager+TestSupport.swift` (DEBUG harness) — debouncing + active-widgets privacy gate
 - `Localizable.xcstrings` (extension + extension-profile tests)
 
 See `CODING_AGENT.md` ("Cross-target widget sources and `WidgetSurface`") for agent rules. Security items stay in `Core/`.
@@ -558,7 +560,7 @@ See [docs/Widget-Presentation-Dataflow.md](docs/Widget-Presentation-Dataflow.md)
 | Presentation contract (three narrow surfaces) | [docs/Widget-Presentation-Dataflow.md](docs/Widget-Presentation-Dataflow.md) |
 | Backlog + architecture status | [docs/Widget-Functionality-Roadmap.md](docs/Widget-Functionality-Roadmap.md) |
 | Presentation framework | `WidgetSurface/` (coordinators, timeline factory, liveness, display models, language chrome, pure Provider assembly) |
-| Intent execution (cross-target) | `WidgetIntentExecution` in membership-exception `WidgetDisplayModels.swift` |
+| Intent execution (cross-target) | `WidgetIntentExecution` in membership-exception `WidgetIntentExecution.swift` |
 | Provider presentation assembly (pure) | `WidgetProviderPresentationAssembly` in `WidgetSurface/` |
 | Provider snapshot hygiene (SPM-coupled) | `WidgetProviderSnapshotResolver` in membership-exception `WidgetDisplayModels.swift` |
 | Now Playing + LA stacking, start policy, metadata push cost | [docs/Live-Activity-Stacking-and-Media-Surfaces.md](docs/Live-Activity-Stacking-and-Media-Surfaces.md) |
