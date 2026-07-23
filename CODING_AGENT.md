@@ -301,7 +301,9 @@ Certain legitimate test executions (particularly `xcodebuild ... test-without-bu
 
 When authoring new tests that touch `PlayerEvent` emission, `SharedPlayerManager.events` / `makeEventsStreamWithReplay()`, Live Activities, `PersistedWidgetState`, `WidgetRefreshManager`, or similar surfaces, implement the fast/reliable patterns below. The authoritative living examples are:
 
-- `Lutheran RadioTests/SharedPlayerManagerEventTests.swift` — helpers: `collectEvents(whilePerforming:)`, `waitForEvent(whilePerforming:)`, `collectSeamEvents(minimumCount:whilePerforming:)`, `assertEvents(_:containInOrder:)`, `waitForEmission(matching:whilePerforming:)`; tests: `testMakeEventsStreamWithReplayYieldsCurrentStateThenLiveEvents` (Tier 3 prefix), `testLiveEmitsTransitionEventsForStopPauseFailAndIntent` (live coverage), `testReplayStreamPrefixesStateThenForwardsLiveStopEmissionsInOrder` (hybrid replay + emission order); setUp sanitization
+- **`Lutheran RadioTests/Support/PlayerEventTestSupport.swift`** — **canonical shared helpers** (do not re-copy): `collectEvents(whilePerforming:)`, `collectEventsConcurrently`, `waitForEvent(whilePerforming:)`, `collectSeamEvents(minimumCount:whilePerforming:)`, `collectSeamEventsUntil`, `assertEvents(_:containInOrder:)`, `waitForEmission(matching:whilePerforming:)`, `sanitizeLiveActivityLocalState()`, `playerEventEmittedForTestNotification`
+- `Lutheran RadioTests/SharedPlayerManagerEventTests.swift` — primary *usage* suite: `testMakeEventsStreamWithReplayYieldsCurrentStateThenLiveEvents` (Tier 3 prefix), `testLiveEmitsTransitionEventsForStopPauseFailAndIntent` (live coverage), `testReplayStreamPrefixesStateThenForwardsLiveStopEmissionsInOrder` (hybrid replay + emission order); setUp sanitization via shared helpers
+- `Lutheran RadioTests/PlayerEventSubscriberEventTests.swift` / `WidgetRefreshManagerEventTests.swift` — additional consumers of the shared collectors / LA sanitization
 - `Lutheran RadioTests/RadioLiveActivityManagerTests.swift` (setUp/tearDown hygiene)
 - `Lutheran Radio/RadioLiveActivityManager.swift` (deferral + guards)
 - `Lutheran Radio/SharedPlayerManager.swift` (`isRunningInUITestMode`, `makeEventsStreamWithReplay()` yield hardening)
@@ -387,9 +389,9 @@ When authoring new tests that touch `PlayerEvent` emission, `SharedPlayerManager
    - Never assert a fixed total event count for `stop()` or similar multi-emit paths — use ordered subsequence matching.
    - Never use bare `Task` + separate timeout for never-finishing streams (use `collectEvents` / `waitForEvent` helpers).
 
-Following these keeps the full test suite fast and repeatable while still giving meaningful coverage of the event-driven architecture and media surfaces. Before writing new tests in this area, re-read the implementation of `collectEvents`, `collectSeamEvents`, `assertEvents(containInOrder:)`, and the test methods under "Replay Scenario", "Live Emission Coverage", and "Replay Forwarding & Emission Order" in `SharedPlayerManagerEventTests.swift`.
+Following these keeps the full test suite fast and repeatable while still giving meaningful coverage of the event-driven architecture and media surfaces. Before writing new tests in this area, re-read `Lutheran RadioTests/Support/PlayerEventTestSupport.swift` (canonical collectors) and the test methods under "Replay Scenario", "Live Emission Coverage", and "Replay Forwarding & Emission Order" in `SharedPlayerManagerEventTests.swift`.
 
-- SeeAlso: `SharedPlayerManager.isRunningInUITestMode`, `RadioLiveActivityManager.isRunningUnderTest` and its `observeExistingActivities`, the collection helpers, "Test documentation" rule above, README.md (Agent Verification Commands + Troubleshooting), docs/Event-Driven-Refactor-Roadmap.md.
+- SeeAlso: `PlayerEventTestSupport.swift`, `SharedPlayerManager.isRunningInUITestMode`, `RadioLiveActivityManager.isRunningUnderTest` and its `observeExistingActivities`, the collection helpers, "Test documentation" rule above, README.md (Agent Verification Commands + Troubleshooting), docs/Event-Driven-Refactor-Roadmap.md.
 
 These guidelines exist because the cost of a force-unwrap or a data race in a backgrounded streaming app is unusually high. They are meant to steer agents toward safer defaults without creating impossible requirements for mechanical or incremental work.
 

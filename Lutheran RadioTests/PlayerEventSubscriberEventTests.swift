@@ -30,10 +30,14 @@ import WidgetSurface
 /// - **Widget process:** ``beginObserving()`` returns before intent seeding or replay attachment
 ///   when ``SharedPlayerManager/isWidgetProcess()`` is `true`.
 ///
+/// Shared collectors (`collectEvents`, `sanitizeLiveActivityLocalState`) live in
+/// `Lutheran RadioTests/Support/PlayerEventTestSupport.swift` — do not re-copy them here.
+///
 /// - SeeAlso: ``PlayerEventSubscriber/beginObserving()``, ``PlayerEventSubscriber/eventCount``,
 ///   ``PlayerEventSubscriber/lastObservedIntent``, ``SharedPlayerManager/makeEventsStreamWithReplay()``,
 ///   ``WidgetEventObserver``, ``RadioPlayerView``, ``SharedPlayerManagerEventTests``,
-///   ``WidgetRefreshManagerEventTests``, docs/Event-Driven-Refactor-Roadmap.md (Tier 2 / Tier 5),
+///   ``WidgetRefreshManagerEventTests``, `PlayerEventTestSupport.swift`,
+///   docs/Event-Driven-Refactor-Roadmap.md (Tier 2 / Tier 5),
 ///   CODING_AGENT.md (Test Execution Patience and Fast, Reliable Test Patterns).
 @MainActor
 final class PlayerEventSubscriberEventTests: XCTestCase {
@@ -54,19 +58,12 @@ final class PlayerEventSubscriberEventTests: XCTestCase {
         await Task.yield()
         try? await Task.sleep(for: .milliseconds(150))
 
-        await MainActor.run {
-            let la = RadioLiveActivityManager.shared
-            la.stopLocalUpdateTimer()
-            la.activityObservationTask?.cancel()
-            la.currentActivity = nil
-        }
+        sanitizeLiveActivityLocalState()
 
         await SharedPlayerManager.clearAllLocalState()
         await manager.setUserIntentToPlay()
 
-        await MainActor.run {
-            WidgetRefreshManager.setHasActiveLutheranWidgets(true)
-        }
+        WidgetRefreshManager.setHasActiveLutheranWidgets(true)
 
         SharedPlayerManager._test_setSimulateWidgetProcessContext(false)
 
@@ -89,63 +86,13 @@ final class PlayerEventSubscriberEventTests: XCTestCase {
         WidgetRefreshManager._test_setSuppressPlayerEventObservation(false)
         SharedPlayerManager._test_setSimulateWidgetProcessContext(false)
 
-        await MainActor.run {
-            let la = RadioLiveActivityManager.shared
-            la.stopLocalUpdateTimer()
-            la.activityObservationTask?.cancel()
-            la.currentActivity = nil
-        }
+        sanitizeLiveActivityLocalState()
         try await super.tearDown()
     }
 
     // MARK: - Helpers
-
-    /// Collects up to `count` events from a stream using subscribe-before-action ordering.
-    ///
-    /// Mirrors the canonical helper in ``SharedPlayerManagerEventTests`` so replay
-    /// live-forwarding tests share the same attach race hardening as the emitter suite.
-    private func collectEvents(
-        from stream: AsyncStream<PlayerEvent>,
-        count: Int,
-        timeout: TimeInterval = 10.0,
-        whilePerforming action: () async -> Void = {}
-    ) async -> [PlayerEvent] {
-        let collectionTask = Task<[PlayerEvent], Never> {
-            var local: [PlayerEvent] = []
-            var seen = 0
-            for await event in stream {
-                if Task.isCancelled { break }
-                local.append(event)
-                seen += 1
-                if seen >= count { break }
-            }
-            return local
-        }
-
-        await Task.yield()
-        await Task.yield()
-        try? await Task.sleep(for: .milliseconds(100))
-
-        await action()
-
-        await Task.yield()
-        try? await Task.sleep(for: .milliseconds(100))
-
-        return await withTaskGroup(of: [PlayerEvent].self) { group -> [PlayerEvent] in
-            group.addTask { await collectionTask.value }
-            group.addTask {
-                try? await Task.sleep(for: .seconds(Int(timeout)))
-                collectionTask.cancel()
-                try? await Task.sleep(for: .milliseconds(150))
-                return await collectionTask.value
-            }
-            for await first in group {
-                group.cancelAll()
-                return first
-            }
-            return []
-        }
-    }
+    //
+    // `collectEvents` is provided by Support/PlayerEventTestSupport.swift.
 
     private func waitForEventCount(
         on subscriber: PlayerEventSubscriber,
@@ -364,8 +311,10 @@ final class PlayerEventSubscriberEventTests: XCTestCase {
 
         // Single continuous iterator: subscribe before ``setUserPaused()`` so prefix and
         // live yields share one attach (mirrors beginObserving + live mutation in production).
+        // Capture the actor (Sendable) — not `self` — for the @Sendable action closure.
+        let m = manager
         let events = await collectEvents(from: replayStream, count: 5, timeout: 5.0) {
-            await manager.setUserPaused()
+            await m.setUserPaused()
         }
 
         XCTAssertGreaterThanOrEqual(

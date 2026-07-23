@@ -29,12 +29,16 @@ import WidgetSurface
 /// share production code paths so derivation and event-path refresh gate outcomes are
 /// verified without timeline reloads or system-service stalls.
 ///
+/// Live Activity sanitization uses shared ``sanitizeLiveActivityLocalState()`` from
+/// `Lutheran RadioTests/Support/PlayerEventTestSupport.swift`.
+///
 /// - SeeAlso: ``WidgetRefreshManager/handlePlayerEvent(_:)``,
 ///   ``WidgetRefreshManager/_test_deriveRefreshParameters(for:)``,
 ///   ``WidgetRefreshManager/_test_invokeHandlePlayerEvent(_:)``,
 ///   ``WidgetRefreshManager/_test_refreshIfNeededGateOutcomeLog()``,
 ///   ``SharedPlayerManager/persistWidgetSnapshot(visualState:language:streamMetadata:clearStreamMetadata:hasError:)``,
-///   ``SharedPlayerManagerEventTests``, docs/Event-Driven-Refactor-Roadmap.md (Tier 5),
+///   ``SharedPlayerManagerEventTests``, `PlayerEventTestSupport.swift`,
+///   docs/Event-Driven-Refactor-Roadmap.md (Tier 5),
 ///   CODING_AGENT.md (Test Execution Patience and Fast, Reliable Test Patterns).
 @MainActor
 final class WidgetRefreshManagerEventTests: XCTestCase {
@@ -47,43 +51,29 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
     override func setUp() async throws {
         try await super.setUp()
 
-        await MainActor.run {
-            let la = RadioLiveActivityManager.shared
-            la.stopLocalUpdateTimer()
-            la.activityObservationTask?.cancel()
-            la.currentActivity = nil
-
-            // Suspend before clear so teardown emissions cannot re-persist a snapshot mid-setUp.
-            refreshManager._test_suspendPlayerEventObservation()
-            WidgetRefreshManager._test_setSuppressPlayerEventObservation(true)
-        }
+        // Suspend before clear so teardown emissions cannot re-persist a snapshot mid-setUp.
+        sanitizeLiveActivityLocalState()
+        refreshManager._test_suspendPlayerEventObservation()
+        WidgetRefreshManager._test_setSuppressPlayerEventObservation(true)
 
         await SharedPlayerManager.clearAllLocalState()
         await manager.cancelReplayForwarding()
 
-        await MainActor.run {
-            WidgetRefreshManager.setHasActiveLutheranWidgets(true)
-            WidgetRefreshManager._test_setRecordHandlePlayerEventDerivation(true)
-        }
+        WidgetRefreshManager.setHasActiveLutheranWidgets(true)
+        WidgetRefreshManager._test_setRecordHandlePlayerEventDerivation(true)
     }
 
     override func tearDown() async throws {
-        await MainActor.run {
-            refreshManager._test_suspendPlayerEventObservation()
-            WidgetRefreshManager._test_setSuppressPlayerEventObservation(true)
-            WidgetRefreshManager.setSessionTeardownInProgress(false)
-            WidgetRefreshManager._test_setBypassUITestModeForRefreshGateObservation(false)
-            WidgetRefreshManager._test_setRecordRefreshIfNeededGateOutcomes(false)
-            WidgetRefreshManager._test_setRecordHandlePlayerEventDerivation(false)
-            WidgetRefreshManager._test_setRecordHandlePlayerEventImmediate(false)
-            WidgetRefreshManager._test_setBypassUITestModeForDebounceObservation(false)
-            WidgetRefreshManager._test_setRecordDebounceOutcomes(false)
-
-            let la = RadioLiveActivityManager.shared
-            la.stopLocalUpdateTimer()
-            la.activityObservationTask?.cancel()
-            la.currentActivity = nil
-        }
+        refreshManager._test_suspendPlayerEventObservation()
+        WidgetRefreshManager._test_setSuppressPlayerEventObservation(true)
+        WidgetRefreshManager.setSessionTeardownInProgress(false)
+        WidgetRefreshManager._test_setBypassUITestModeForRefreshGateObservation(false)
+        WidgetRefreshManager._test_setRecordRefreshIfNeededGateOutcomes(false)
+        WidgetRefreshManager._test_setRecordHandlePlayerEventDerivation(false)
+        WidgetRefreshManager._test_setRecordHandlePlayerEventImmediate(false)
+        WidgetRefreshManager._test_setBypassUITestModeForDebounceObservation(false)
+        WidgetRefreshManager._test_setRecordDebounceOutcomes(false)
+        sanitizeLiveActivityLocalState()
 
         try await super.tearDown()
     }

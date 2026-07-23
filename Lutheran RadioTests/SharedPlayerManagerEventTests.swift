@@ -19,10 +19,15 @@ import WidgetSurface
 ///
 /// ## Fast & Reliable Test Patterns (Reference for Future Agents)
 ///
-/// This file (together with RadioLiveActivityManager.swift) is the canonical
-/// reference implementation for fast, terminating tests over live AsyncStreams
-/// and Live Activity surfaces. The patterns here solved the multi-minute hangs
-/// and launch stalls fixed in commit 10e0e46f968f4ecffe2dcd9cc2a1cc7c007cf4cd.
+/// **Canonical collectors and assertions** live in
+/// `Lutheran RadioTests/Support/PlayerEventTestSupport.swift`
+/// (`collectEvents`, `collectSeamEvents`, `waitForEmission`, `assertEvents`,
+/// `sanitizeLiveActivityLocalState`, and related helpers). This suite is the
+/// primary *usage* reference for emitter / replay / hybrid contracts; do not
+/// re-copy collectors into new test files.
+///
+/// The patterns solved multi-minute hangs and launch stalls fixed in commit
+/// `10e0e46f968f4ecffe2dcd9cc2a1cc7c007cf4cd`.
 ///
 /// **AGENT RULE**: Allow the test runner sufficient time (often many minutes)
 /// when output appears stalled. Bounded collection + sanitization + UITestMode
@@ -33,18 +38,19 @@ import WidgetSurface
 /// - Subscribe *before* the action; drive actions inside `collectEvents(whilePerforming:)`.
 /// - `withTaskGroup` + `cancelAll()` + grace sleep for never-finishing streams.
 /// - Cheap sanitization of RadioLiveActivityManager (cancel obs + nil currentActivity)
-///   *before* clearAllLocalState / endActivity paths.
+///   *before* clearAllLocalState / endActivity paths (`sanitizeLiveActivityLocalState()`).
 /// - Direct seams (`setHasActiveLutheranWidgets`) instead of WidgetCenter / ActivityKit.
 /// - Pre-warm + `Task.yield()` + short sleeps around attach and trigger.
 /// - Suspend Tier 2 observation in `setUp()`; recreate the live stream with
 ///   ``_test_resetEventsStreamForIsolation()`` when a test must assert pure ``events``
 ///   delivery without buffered emissions from an arrange-phase mutation.
 ///
-/// Re-read `collectEvents`, `waitForEvent`, the Tier 5 test method body, and its
-/// long documentation comment before writing new event or Live Activity tests.
+/// Re-read `PlayerEventTestSupport.swift`, the Tier 5 test method bodies, and their
+/// long documentation comments before writing new event or Live Activity tests.
 ///
 /// - SeeAlso: ``PlayerEvent``, ``SharedPlayerManager/events``, ``SharedPlayerManager/makeEventsStreamWithReplay()``,
 ///   ``SharedPlayerManager/currentState``, ``PlayerCurrentState``,
+///   `PlayerEventTestSupport.swift` (shared collectors),
 ///   RadioLiveActivityManager (isRunningUnderTest + deferred observeExistingActivities),
 ///   SharedPlayerManager.isRunningInUITestMode,
 ///   docs/Event-Driven-Refactor-Roadmap.md,
@@ -59,28 +65,10 @@ final class SharedPlayerManagerEventTests: XCTestCase {
         try await super.setUp()
 
         // Cheap Live Activity sanitization (must precede clearAllLocalState()).
-        //
-        // Why this exact sequence:
-        // - clearAllLocalState() always calls RadioLiveActivityManager.shared.endActivity().
-        // - A real Live Activity left on the simulator (from prior manual play) makes
-        //   endActivity() (and observeExistingActivities) perform expensive synchronous
-        //   calls into ActivityKit's system services that can take many minutes under
-        //   the test host.
-        // - By cancelling the obs task and nilling currentActivity on MainActor *first*,
-        //   the guards inside endActivity / observe see no activity and do only cheap work.
-        // - This is the companion to the defer + yield in RadioLiveActivityManager.init.
-        //
-        // Do the same pattern in any new test that calls clearAllLocalState or ends
-        // activities. See CODING_AGENT.md (Fast, Reliable Test Patterns) and the
-        // identical sanitization in RadioLiveActivityManagerTests.setUp.
-        //
-        // UITestMode + isRunningUnderTest guards (in LA manager, WidgetRefreshManager,
-        // ViewController, DirectStreamingPlayer, etc.) provide defense-in-depth.
+        // Shared helper: cancel obs + nil currentActivity so endActivity stays cheap.
+        // See `sanitizeLiveActivityLocalState()` and CODING_AGENT.md fast-test patterns.
         await MainActor.run {
-            let la = RadioLiveActivityManager.shared
-            la.stopLocalUpdateTimer()
-            la.activityObservationTask?.cancel()
-            la.currentActivity = nil
+            sanitizeLiveActivityLocalState()
         }
 
         // Establish a clean, known starting state for each test.
@@ -123,13 +111,8 @@ final class SharedPlayerManagerEventTests: XCTestCase {
         await manager.cancelReplayForwarding()
 
         // Mirror the cheap LA sanitization from setUp for test isolation hygiene.
-        // Ensures no lingering observation tasks or activity references can affect
-        // subsequent tests or keep system services (ActivityKit etc.) "interested" in this xctest process.
         await MainActor.run {
-            let la = RadioLiveActivityManager.shared
-            la.stopLocalUpdateTimer()
-            la.activityObservationTask?.cancel()
-            la.currentActivity = nil
+            sanitizeLiveActivityLocalState()
             WidgetRefreshManager.setSessionTeardownInProgress(false)
             WidgetRefreshManager._test_setBypassUITestModeForRefreshGateObservation(false)
             WidgetRefreshManager._test_setRecordRefreshIfNeededGateOutcomes(false)
@@ -142,432 +125,12 @@ final class SharedPlayerManagerEventTests: XCTestCase {
         try await super.tearDown()
     }
 
-    // MARK: - Event Collection Helper
-
-    /// Collects up to `count` events from the given stream while (optionally) performing an action.
-    ///
-    /// **This is the recommended helper for observing live AsyncStream emissions in tests.**
-    ///
-    /// Subscription to the stream begins immediately (so that emissions triggered by the
-    /// action are observed). The action is then executed inside the same bounded wait.
-    /// Collection completes when the requested count is reached or the timeout fires.
-    ///
-    /// Why the specific shape (subscribe-first + inside-action + withTaskGroup + grace):
-    /// - The shared live `events` stream only delivers to *currently active* iterators.
-    /// - A separate collector task + bare timeout Task can leave the `await collectionTask.value`
-    ///   hanging because cancellation of `for await` on a never-finishing stream is cooperative
-    ///   and can be delayed by the XCTest host scheduler.
-    /// - `withTaskGroup` + explicit `cancelAll()` + a short grace sleep after cancel guarantees
-    ///   the outer await always terminates.
-    ///
-    /// See CODING_AGENT.md ("Test Execution Patience and Fast, Reliable Test Patterns")
-    /// and the long comment on `testLiveEmitsTransitionEventsForStopPauseFailAndIntent`.
-    ///
-    /// - Parameters:
-    ///   - stream: The `AsyncStream<PlayerEvent>` to observe (live `events` or replay stream).
-    ///   - count: Maximum number of events to collect.
-    ///   - timeout: Maximum wait time in seconds. Use a higher value (e.g. 10s) for simulator noise.
-    ///   - action: Work that should cause new events. Called after subscription is attached.
-    /// - Returns: Collected events in yield order.
-    private func collectEvents(
-        from stream: AsyncStream<PlayerEvent>,
-        count: Int,
-        timeout: TimeInterval = 10.0,
-        whilePerforming action: () async -> Void = {}
-    ) async -> [PlayerEvent] {
-        // Start collection task first so we are subscribed before the triggering action.
-        // Higher default (10s) for simulator / XCTest scheduling noise on the singleton stream.
-        let collectionTask = Task<[PlayerEvent], Never> {
-            var local: [PlayerEvent] = []
-            var seen = 0
-            for await event in stream {
-                if Task.isCancelled { break }
-                local.append(event)
-                seen += 1
-                if seen >= count { break }
-            }
-            return local
-        }
-
-        // Allow the consumer task to attach to the stream before we trigger emissions.
-        await Task.yield()
-        await Task.yield()
-        try? await Task.sleep(for: .milliseconds(100))
-
-        await action()
-
-        // Give the action a chance to propagate through the actor and yield on the continuation.
-        await Task.yield()
-        try? await Task.sleep(for: .milliseconds(100))
-
-        // Race the collector against a timeout. Using a task group + explicit cancelAll
-        // guarantees the await on collectionTask.value never hangs the test indefinitely
-        // even if cooperative cancellation of a for-await on the (never-finishing) live
-        // AsyncStream is delayed by the test host scheduler. Past yields to the shared
-        // live stream are only visible to iterators that are active at yield time.
-        let result = await withTaskGroup(of: [PlayerEvent].self) { group -> [PlayerEvent] in
-            group.addTask {
-                await collectionTask.value
-            }
-            group.addTask {
-                try? await Task.sleep(for: .seconds(Int(timeout)))
-                collectionTask.cancel()
-                // Grace period for the cancelled for-await to observe cancellation and exit.
-                try? await Task.sleep(for: .milliseconds(150))
-                // Return partial progress so callers can XCTFail instead of trapping on subscripts.
-                return await collectionTask.value
-            }
-
-            for await first in group {
-                group.cancelAll()
-                return first
-            }
-            return []
-        }
-        return result
-    }
-
-    /// Collects up to `countEach` events from multiple streams concurrently while
-    /// performing a single shared action after every iterator has attached.
-    ///
-    /// Use this for multi-subscriber replay tests: each `makeEventsStreamWithReplay()`
-    /// call produces an independent stream, but live forwarding races are only meaningful
-    /// when all collectors subscribe before the one mutation that should fan out.
-    ///
-    /// - Parameters:
-    ///   - streams: Independent replay (or live) streams to observe in parallel.
-    ///   - countEach: Maximum events to collect per stream.
-    ///   - timeout: Per-stream bounded wait in seconds.
-    ///   - action: Work expected to cause live emissions visible to every attached iterator.
-    /// - Returns: Collected events per stream in the same order as `streams`.
-    private func collectEventsConcurrently(
-        from streams: [AsyncStream<PlayerEvent>],
-        countEach: Int,
-        timeout: TimeInterval = 5.0,
-        whilePerforming action: () async -> Void = {}
-    ) async -> [[PlayerEvent]] {
-        let collectionTasks = streams.map { stream in
-            Task<[PlayerEvent], Never> {
-                var local: [PlayerEvent] = []
-                var seen = 0
-                for await event in stream {
-                    if Task.isCancelled { break }
-                    local.append(event)
-                    seen += 1
-                    if seen >= countEach { break }
-                }
-                return local
-            }
-        }
-
-        await Task.yield()
-        await Task.yield()
-        try? await Task.sleep(for: .milliseconds(150))
-
-        await action()
-
-        await Task.yield()
-        try? await Task.sleep(for: .milliseconds(100))
-
-        return await withTaskGroup(of: (Int, [PlayerEvent]).self) { group -> [[PlayerEvent]] in
-            for (index, task) in collectionTasks.enumerated() {
-                group.addTask {
-                    let events = await withTaskGroup(of: [PlayerEvent].self) { inner -> [PlayerEvent] in
-                        inner.addTask { await task.value }
-                        inner.addTask {
-                            try? await Task.sleep(for: .seconds(Int(timeout)))
-                            task.cancel()
-                            try? await Task.sleep(for: .milliseconds(150))
-                            return await task.value
-                        }
-                        for await first in inner {
-                            inner.cancelAll()
-                            return first
-                        }
-                        return []
-                    }
-                    return (index, events)
-                }
-            }
-
-            var results = Array(repeating: [PlayerEvent](), count: streams.count)
-            for await (index, events) in group {
-                results[index] = events
-            }
-            return results
-        }
-    }
-
-    /// Helper box to avoid escaping capture issues with observer token.
-    private final class EmissionObserverBox: @unchecked Sendable {
-        var token: NSObjectProtocol?
-    }
-
-    /// One-shot box for safe single resume of a continuation.
-    ///
-    /// Uses `NSLock` because grace-delay `Task`s spawned from the notification
-    /// observer can race when `minimumCount` is reached on one event and trailing
-    /// emissions arrive before the grace sleep completes.
-    private final class OneShotResume: @unchecked Sendable {
-        private let lock = NSLock()
-        private var did = false
-        func markAndCheck() -> Bool {
-            lock.lock()
-            defer { lock.unlock() }
-            if did { return false }
-            did = true
-            return true
-        }
-    }
-
-    /// Collects live emissions via the DEBUG notification seam until `terminal` matches
-    /// an event (plus a short grace for trailing async emissions) or `timeout` elapses.
-    ///
-    /// Prefer this over ``collectSeamEvents(minimumCount:timeout:whilePerforming:)`` when
-    /// the action completes asynchronously after the triggering call returns (for example
-    /// engine `switchToStream` prep followed by an authoritative metadata clear).
-    private func collectSeamEventsUntil(
-        timeout: TimeInterval = 8.0,
-        until terminal: @escaping @Sendable (PlayerEvent) -> Bool,
-        whilePerforming action: @escaping @Sendable () async -> Void = {}
-    ) async -> [PlayerEvent] {
-        final class SeamCollector: @unchecked Sendable {
-            var events: [PlayerEvent] = []
-            var token: NSObjectProtocol?
-        }
-
-        let collector = SeamCollector()
-        let oneShot = OneShotResume()
-
-        return await withCheckedContinuation { (cont: CheckedContinuation<[PlayerEvent], Never>) in
-            collector.token = NotificationCenter.default.addObserver(
-                forName: Notification.Name("PlayerEventEmittedForTest"),
-                object: nil,
-                queue: .main
-            ) { note in
-                if let event = note.userInfo?["event"] as? PlayerEvent {
-                    collector.events.append(event)
-                    if terminal(event) {
-                        Task { @Sendable in
-                            try? await Task.sleep(for: .milliseconds(400))
-                            if oneShot.markAndCheck() {
-                                if let token = collector.token {
-                                    NotificationCenter.default.removeObserver(token)
-                                    collector.token = nil
-                                }
-                                cont.resume(returning: collector.events)
-                            }
-                        }
-                    }
-                }
-            }
-
-            Task { @Sendable in
-                await action()
-            }
-
-            Task { @Sendable in
-                try? await Task.sleep(for: .seconds(Int(timeout)))
-                if oneShot.markAndCheck() {
-                    if let token = collector.token {
-                        NotificationCenter.default.removeObserver(token)
-                        collector.token = nil
-                    }
-                    cont.resume(returning: collector.events)
-                }
-            }
-        }
-    }
-
-    /// Collects live emissions via the DEBUG notification seam until `minimumCount`
-    /// events arrive or `timeout` elapses.
-    ///
-    /// Prefer this over replay-stream collection when asserting canonical emission order
-    /// from `stop()` and similar bursts — the seam is posted synchronously from `emit(_:)`
-    /// and is not subject to AsyncStream iterator attach races in the test host.
-    private func collectSeamEvents(
-        minimumCount: Int,
-        timeout: TimeInterval = 5.0,
-        whilePerforming action: @escaping @Sendable () async -> Void = {}
-    ) async -> [PlayerEvent] {
-        final class SeamCollector: @unchecked Sendable {
-            var events: [PlayerEvent] = []
-            var token: NSObjectProtocol?
-        }
-
-        let collector = SeamCollector()
-        let oneShot = OneShotResume()
-
-        return await withCheckedContinuation { (cont: CheckedContinuation<[PlayerEvent], Never>) in
-            collector.token = NotificationCenter.default.addObserver(
-                forName: Notification.Name("PlayerEventEmittedForTest"),
-                object: nil,
-                queue: .main
-            ) { note in
-                if let event = note.userInfo?["event"] as? PlayerEvent {
-                    collector.events.append(event)
-                    // Schedule exactly one grace window when the threshold is first reached
-                    // so trailing async emissions (e.g. `.persistedWidgetStateDidUpdate`)
-                    // are captured without spawning duplicate grace tasks.
-                    if collector.events.count == minimumCount {
-                        // Grace for trailing async emissions (e.g. `.persistedWidgetStateDidUpdate`
-                        // from `saveCurrentState()` immediately after `streamDidStop`).
-                        Task { @Sendable in
-                            try? await Task.sleep(for: .milliseconds(400))
-                            if oneShot.markAndCheck() {
-                                if let token = collector.token {
-                                    NotificationCenter.default.removeObserver(token)
-                                    collector.token = nil
-                                }
-                                cont.resume(returning: collector.events)
-                            }
-                        }
-                    }
-                }
-            }
-
-            Task { @Sendable in
-                await action()
-            }
-
-            Task { @Sendable in
-                try? await Task.sleep(for: .seconds(Int(timeout)))
-                if oneShot.markAndCheck() {
-                    if let token = collector.token {
-                        NotificationCenter.default.removeObserver(token)
-                        collector.token = nil
-                    }
-                    cont.resume(returning: collector.events)
-                }
-            }
-        }
-    }
-
-    /// Waits (via NotificationCenter) for an emission of a specific `PlayerEvent`.
-    /// Uses a checked continuation + main-queue observer for reliable delivery
-    /// in the simulator test host. Complements the AsyncStream (the DEBUG
-    /// notification is posted from `emit` at the same time as the yield).
-    private func waitForEmission(matching match: @escaping @Sendable (PlayerEvent) -> Bool,
-                                 timeout: TimeInterval = 5.0,
-                                 whilePerforming action: @escaping @Sendable () async -> Void = {}) async -> PlayerEvent? {
-        let box = EmissionObserverBox()
-        let oneShot = OneShotResume()
-        return await withCheckedContinuation { (cont: CheckedContinuation<PlayerEvent?, Never>) in
-            box.token = NotificationCenter.default.addObserver(
-                forName: Notification.Name("PlayerEventEmittedForTest"),
-                object: nil,
-                queue: .main
-            ) { note in
-                if let event = note.userInfo?["event"] as? PlayerEvent, match(event) {
-                    if oneShot.markAndCheck() {
-                        if let t = box.token {
-                            NotificationCenter.default.removeObserver(t)
-                            box.token = nil
-                        }
-                        cont.resume(returning: event)
-                    }
-                }
-            }
-
-            Task { @Sendable in
-                await action()
-            }
-
-            Task { @Sendable in
-                try? await Task.sleep(for: .seconds(Int(timeout)))
-                if oneShot.markAndCheck() {
-                    if let t = box.token {
-                        NotificationCenter.default.removeObserver(t)
-                        box.token = nil
-                    }
-                    cont.resume(returning: nil)
-                }
-            }
-        }
-    }
-
-    /// Verifies that `events` contains a subsequence matching the predicates in order.
-    ///
-    /// Each matcher must match exactly one later event than the previous match. This
-    /// supports emission-order assertions when unrelated events may appear between
-    /// the canonical mutation → transition → persist steps (for example setup noise
-    /// or asynchronous side effects).
-    ///
-    /// - Parameters:
-    ///   - events: Collected emissions in yield order.
-    ///   - pattern: Ordered predicates describing the required subsequence.
-    private func assertEvents(
-        _ events: [PlayerEvent],
-        containInOrder pattern: [@Sendable (PlayerEvent) -> Bool],
-        file: StaticString = #filePath,
-        line: UInt = #line
-    ) {
-        var searchStart = events.startIndex
-        for (index, matcher) in pattern.enumerated() {
-            guard let matchIndex = events[searchStart...].firstIndex(where: matcher) else {
-                XCTFail(
-                    "Expected ordered emission at position \(index) was not found. Collected: \(events)",
-                    file: file,
-                    line: line
-                )
-                return
-            }
-            searchStart = events.index(after: matchIndex)
-        }
-    }
-
-    /// Waits for the first event matching the predicate after (optionally) performing an action.
-    /// More resilient than fixed-count collection when the exact number of intervening events
-    /// is unknown (e.g. setup emissions, multiple side-effect emits from one public call).
-    ///
-    /// - Parameters:
-    ///   - stream: Live or replay stream.
-    ///   - timeout: Max seconds to wait.
-    ///   - match: Predicate for the desired event.
-    ///   - action: Work expected to cause the matching emission.
-    /// - Returns: The first matching event, or nil on timeout.
-    private func waitForEvent(
-        from stream: AsyncStream<PlayerEvent>,
-        timeout: TimeInterval = 10.0,
-        matching match: @escaping @Sendable (PlayerEvent) -> Bool,
-        whilePerforming action: () async -> Void = {}
-    ) async -> PlayerEvent? {
-        let waiterTask = Task<PlayerEvent?, Never> {
-            for await event in stream {
-                if Task.isCancelled { break }
-                if match(event) { return event }
-            }
-            return nil
-        }
-
-        await Task.yield()
-        await Task.yield()
-        try? await Task.sleep(for: .milliseconds(100))
-
-        await action()
-
-        await Task.yield()
-        try? await Task.sleep(for: .milliseconds(100))
-
-        let result = await withTaskGroup(of: PlayerEvent?.self) { group -> PlayerEvent? in
-            group.addTask {
-                await waiterTask.value
-            }
-            group.addTask {
-                try? await Task.sleep(for: .seconds(Int(timeout)))
-                waiterTask.cancel()
-                try? await Task.sleep(for: .milliseconds(150))
-                return nil
-            }
-
-            for await first in group {
-                group.cancelAll()
-                return first
-            }
-            return nil
-        }
-        return result
-    }
+    // MARK: - Event Collection Helpers
+    //
+    // Canonical implementations: `Lutheran RadioTests/Support/PlayerEventTestSupport.swift`
+    // (`collectEvents`, `collectEventsConcurrently`, `collectSeamEvents`,
+    // `collectSeamEventsUntil`, `waitForEmission`, `waitForEvent`, `assertEvents`,
+    // `sanitizeLiveActivityLocalState`). Call those free functions directly.
 
     // MARK: - Sleep Timer Test Fixtures
 
@@ -810,7 +373,7 @@ final class SharedPlayerManagerEventTests: XCTestCase {
         let hybrid = HybridCollector()
 
         hybrid.seamToken = NotificationCenter.default.addObserver(
-            forName: Notification.Name("PlayerEventEmittedForTest"),
+            forName: playerEventEmittedForTestNotification,
             object: nil,
             queue: .main
         ) { note in
@@ -2569,10 +2132,7 @@ final class SharedPlayerManagerEventTests: XCTestCase {
     /// emission scenario inside a single test method (explicit-pause vs failure contrast).
     private func resetManagerForContrastPhase() async {
         await MainActor.run {
-            let la = RadioLiveActivityManager.shared
-            la.stopLocalUpdateTimer()
-            la.activityObservationTask?.cancel()
-            la.currentActivity = nil
+            sanitizeLiveActivityLocalState()
         }
 
         await SharedPlayerManager.clearAllLocalState()
