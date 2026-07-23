@@ -251,6 +251,7 @@ and cannot live in `WidgetSurface` without a circular dependency):
   `+LiveActivityMirrors`, `+Persistence`, `+PrivacyClear`, `+DebugTestSeams`) — actor +
   nested `PersistedWidgetState` + static facades for persistence and signaling
 - `DirectStreamingPlayer+WidgetStub.swift` — extension-only DirectStreamingPlayer type surface
+- `SecurityValidationFacade.swift` — named main-app security-model validation intents (Core policy only)
 - `WidgetDisplayModels.swift` — ``WidgetProviderSnapshotResolver`` snapshot hygiene / catalog labels
   and catalog-aware ``displayLanguageName(for:)`` wrapper
 - `WidgetIntentExecution.swift` — AppIntent perform SSOT and side effects
@@ -427,7 +428,7 @@ These guidelines exist because the cost of a force-unwrap or a data race in a ba
 | `LutheranRadioWidget/`                            | Home-screen / Control / LA SwiftUI shells + AppIntents                         | Thin delegates; presentation via `import WidgetSurface`; same `Core` security rules |
 | `WidgetSurface/`                                  | Presentation-only embedded framework (visual state, coordinators, timeline factory, liveness, metadata display, language chrome, pure Provider assembly) | App embeds; extension + widget tests link. **No** security logic. See cross-target section. |
 | `docs/`                                           | All architecture & security decision records                                   | Read before any major change                                                   |
-| `SharedPlayerManager.swift` (+ extensions) + `DirectStreamingPlayer+WidgetStub.swift` + `WidgetDisplayModels.swift` + `WidgetIntentExecution.swift` + `WidgetRefreshManager.swift` (+ test support) + `MediaTransportLatencyTimeline.swift` | Membership-exception SSOT: actor state, intent execution + snapshot hygiene, widget refresh; DEBUG transport latency timeline | Compiled into app + extension + `LutheranRadioWidgetTests`. Pure presentation lives in `WidgetSurface/`. Never duplicate widget state logic. |
+| `SharedPlayerManager.swift` (+ extensions) + `DirectStreamingPlayer+WidgetStub.swift` + `SecurityValidationFacade.swift` + `WidgetDisplayModels.swift` + `WidgetIntentExecution.swift` + `WidgetRefreshManager.swift` (+ test support) + `MediaTransportLatencyTimeline.swift` | Membership-exception SSOT: actor state, named security call-site intents, intent execution + snapshot hygiene, widget refresh; DEBUG transport latency timeline | Compiled into app + extension + `LutheranRadioWidgetTests`. Pure presentation lives in `WidgetSurface/`. Never duplicate widget state logic. Security *policy* stays in `Core/`. |
 
 ### Core Framework Surface Area (Mandatory Knowledge)
 
