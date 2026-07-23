@@ -317,17 +317,17 @@ extension SharedPlayerManager {
     /// Widget and Live Activity consumers should read via `loadPersistedWidgetState()` (or
     /// the `loadSharedState` facade) rather than calling this.
     ///
-    /// - Important: Language derivation prefers the PersistedWidgetState snapshot via
-    ///   `preferredWidgetLanguage()`. During stream-switch reconciliation we additionally
-    ///   prefer the Direct player model (already updated by `switchToStream`) when it
-    ///   differs and we are in the `.prePlay`/hold window. This closes the exact race
-    ///   that caused widget language taps to revert to the previous stream.
+    /// - Important: Language derivation is pure via ``PersistedLanguageResolution/resolve``:
+    ///   preferredWidgetLanguage → no-snapshot model repair → stale `"en"` repair →
+    ///   stream-switch hold prefers Direct model (already updated by switch prep).
+    ///   That closes the race that caused widget language taps to revert to the previous stream.
     ///
     /// - Postcondition: If a write occurs, the in-process session snapshot contains the latest
     ///   (visualState, currentLanguage, hasError, metadata). Widget timeline reload is scheduled
     ///   by the Tier 2 ``PlayerEvent`` observer (``.persistedWidgetStateDidUpdate`` and related cases).
     ///
-    /// - SeeAlso: ``performActualSave(_:widgetState:at:)``, ``preferredWidgetLanguage()``,
+    /// - SeeAlso: ``PersistedLanguageResolution``, ``performActualSave(_:widgetState:at:)``,
+    ///   ``preferredWidgetLanguage()``,
     ///   ``persistWidgetSnapshot(visualState:language:streamMetadata:clearStreamMetadata:hasError:)``,
     ///   ``loadPersistedWidgetState()``, CODING_AGENT.md (Single Source of Truth Principles),
     ///   the resurrection and persistence tables in this file.
@@ -341,67 +341,16 @@ extension SharedPlayerManager {
         
         let now = Date()
         
-        // Fetch current values from the real player
-        // NOTE (architectural shift): Language read now goes through preferredWidgetLanguage()
-        // which strongly prefers the combined PersistedWidgetState snapshot. The old direct
-        // key read is only in the ultimate fallback inside the helper (migration path).
-        var currentLanguageCode = Self.preferredWidgetLanguage()
-
-        // Post-clear / no-snapshot repair (defense-in-depth for widget-present case and timing races):
-        // With the change to preferredWidgetLanguage, when hasActiveWidgets is true we now get
-        // bestInitial directly from the no-snapshot fallback. The repair below (prefer selectedStream
-        // when no snapshot at write time, or repair stale "en") remains useful for early lifecycle
-        // saves, widget signals that race the main cold-launch seed, or legacy "en" snapshots.
-        // Launch / reseed paths seed the player model via preferredMainAppInitialLanguageCode() +
-        // bestInitialLanguageCode. Persistence is still gated on hasActiveWidgets in performActualSave,
-        // so the no-widget / post-clear (forced-false) case produces zero language signal in the App Group.
-        if Self.loadPersistedWidgetState() == nil {
-            let selected = DirectStreamingPlayer.shared.selectedStream.languageCode
-            if !selected.isEmpty {
-                currentLanguageCode = selected
-            }
-        } else if currentLanguageCode == "en" {
-            // Existing snapshot present — repair a stale "en" from it or the player model (unchanged logic).
-            if let previous = Self.loadPersistedWidgetState(), previous.currentLanguage != "en" {
-                currentLanguageCode = previous.currentLanguage
-            } else {
-                let selected = DirectStreamingPlayer.shared.selectedStream.languageCode
-                if selected != "en" {
-                    currentLanguageCode = selected
-                }
-            }
-        }
-
-        // Stream-switch / widget-switch reconciliation safety.
-        // In the canonical widget (and main) switch paths the caller performs
-        // DirectStreamingPlayer.switchToStream(target) — which updates the selected model
-        // to the desired language — *before* calling resetToPrePlayForNewStream + play().
-        // A KVO during the silent stop, a save from setPlaying(), an async saveCombined
-        // from updateUserDefaultsLanguage, or a refresh can otherwise read a prior snapshot
-        // value (or perform a preferredWidgetLanguage read that races) and write the *old*
-        // language back into the snapshot. That stale snapshot then feeds the alignment
-        // block or WidgetRefresh, producing the exact "tap et, model briefly et, then
-        // Aligning sv (was et), plays sv" reversion.
-        //
-        // IMPORTANT (paused selection case): We must NOT clobber a widget-provided language
-        // in the snapshot simply because we set .prePlay for a resume from .userPaused.
-        // Widget SwitchStreamIntent (while paused) + immediate play writes the desired lang
-        // into PersistedWidgetState (the SSOT). The bare `|| currentVisualState == .prePlay`
-        // would force the (potentially stale) Direct model value, defeating "paused sv -> en
-        // then play yields en". Only override to model when we are inside an *active
-        // orchestrated switch* (holdPrePlayVisualUntilPlayback set by switchToStreamFromWidget
-        // / resetToPrePlayForNewStream). The alignment block later in play() + the defensive
-        // alignment now in setUserIntentToPlay ensure the snapshot / model converge on the
-        // widget choice for resume-after-lang-select.
-        //
-        // The snapshot (via preferredWidgetLanguage + loadPersistedWidgetState) remains the
-        // long-term SSOT for widget + play resurrection language.
-        let modelLang = DirectStreamingPlayer.shared.selectedStream.languageCode
-        if !modelLang.isEmpty && modelLang != currentLanguageCode {
-            if holdPrePlayVisualUntilPlayback {
-                currentLanguageCode = modelLang
-            }
-        }
+        // Pure language reconciliation (table-tested in WidgetSurface). Actor only gathers inputs.
+        // Privacy write suppression remains in performActualSave — resolution never decides write.
+        let snapshot = Self.loadPersistedWidgetState()
+        let currentLanguageCode = PersistedLanguageResolution.resolve(
+            preferredLanguage: Self.preferredWidgetLanguage(),
+            hasSnapshot: snapshot != nil,
+            snapshotLanguage: snapshot?.currentLanguage,
+            modelLanguage: DirectStreamingPlayer.shared.selectedStream.languageCode,
+            streamSwitchHoldActive: holdPrePlayVisualUntilPlayback
+        )
 
         let isPermanentError    = await player.isLastErrorPermanent()
         // Source the legacy "playing" bool from the authoritative visual state (SSOT),

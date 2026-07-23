@@ -241,7 +241,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     private var lastObservedTimeControl: AVPlayer.TimeControlStatus?
     private var lastObservedItemStatus: AVPlayerItem.Status?
     
-    /// True while ``play()`` or ``setStreamAndPlay(to:context:)`` is crossing async attach boundaries
+    /// True while ``play()`` or ``attachAndPlay(to:context:)`` is crossing async attach boundaries
     /// (security validation, server selection, audio-session activation, secured item attach).
     ///
     /// - Important: User pause during this window must **not** leave a late `playImmediately` audible.
@@ -249,7 +249,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     ///   ``playbackAttachGeneration`` and soft-silences the engine; in-flight work re-checks generation
     ///   + ``SharedPlayerManager/canProceedWithPlayback()`` after every significant `await` and discards
     ///   when either fails.
-    /// - SeeAlso: ``beginInFlightPlaybackAttach()``, ``shouldContinueInFlightAttach(startedAt:)``,
+    /// - SeeAlso: ``PlaybackAttachState``, ``beginInFlightPlaybackAttach()``,
+    ///   ``shouldContinueInFlightAttach(startedAt:)``,
     ///   ``invalidateInFlightPlaybackAttach()``, ``stopAndWait(reason:silent:applyUserPauseVisualLock:)``,
     ///   `SharedPlayerManager.stop()`, docs/Live-Activity-Stacking-and-Media-Surfaces.md (transport coordination).
     private var isCurrentlyAttemptingPlayback = false
@@ -264,6 +265,59 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// AGENT NOTE: Single source of truth for "this attach attempt is still valid". Do not reset to 0;
     /// only advance. Pair every post-`await` continue with a generation + intent re-check.
     private var playbackAttachGeneration: UInt64 = 0
+
+    // MARK: - Playback attach state (soft-pause / generation / language binding)
+
+    /// Read-only snapshot of soft-pause, attach generation, and attached-vs-selected language.
+    ///
+    /// SharedPlayerManager and media-surface observers **read** this surface; they must not
+    /// reimplement soft-pause / generation rules. Mutation stays inside DirectStreamingPlayer
+    /// stop / attach / resume paths.
+    ///
+    /// | Field | Meaning |
+    /// |-------|---------|
+    /// | `generation` | Monotonic attach generation; advanced on every stop |
+    /// | `isInFlight` | Attach/start path suspended across `await` |
+    /// | `isSoftPaused` | Secured item retained at rate 0 (same-stream resume eligible) |
+    /// | `attachedItemLanguageCode` | Language bound to the current/soft-paused item |
+    /// | `selectedStreamLanguageCode` | Current model selection |
+    /// | `requiresStreamReattach` | Attached language ≠ selected → full attach required |
+    ///
+    /// - SeeAlso: ``currentPlaybackAttachState()``, ``softPauseResumeRequiresStreamReattach()``,
+    ///   ``resumeFromSoftPauseIfAvailable()``, ``PlaybackPlayDecision``, SharedPlayerManager.play().
+    struct PlaybackAttachState: Sendable, Equatable {
+        let generation: UInt64
+        let isInFlight: Bool
+        let isSoftPaused: Bool
+        let attachedItemLanguageCode: String?
+        let selectedStreamLanguageCode: String
+
+        /// True when a soft-paused or attached item targets a different language than the model.
+        var requiresStreamReattach: Bool {
+            guard let attached = attachedItemLanguageCode else { return false }
+            return attached != selectedStreamLanguageCode
+        }
+
+        /// Soft-pause holds an item whose language matches selection (gapless resume candidate).
+        var canSoftResumeSameStream: Bool {
+            isSoftPaused && !requiresStreamReattach && attachedItemLanguageCode != nil
+        }
+    }
+
+    /// Captures the current attach / soft-pause surface for observers (MainActor).
+    ///
+    /// - Returns: Immutable ``PlaybackAttachState`` snapshot.
+    /// - SeeAlso: ``softPauseResumeRequiresStreamReattach()``, SharedPlayerManager.play().
+    @MainActor
+    func currentPlaybackAttachState() -> PlaybackAttachState {
+        PlaybackAttachState(
+            generation: playbackAttachGeneration,
+            isInFlight: isCurrentlyAttemptingPlayback,
+            isSoftPaused: isSoftPaused,
+            attachedItemLanguageCode: attachedItemLanguageCode,
+            selectedStreamLanguageCode: selectedStream.languageCode
+        )
+    }
     
     // MARK: - Energy Efficiency (Battery Optimization)
     /// Detects if the device is in Low Power Mode to throttle non-essential tasks (e.g., retry intervals) and extend battery life during streaming.
@@ -1055,7 +1109,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             // This avoids DNS TXT + security network I/O on every UITest launch before any test code runs.
             // Real validation still occurs for normal app cold launches (via SPM.play and other paths).
             Task { @MainActor in
-                let isValid = await SecurityModelValidator.shared.validateSecurityModel()
+                let isValid = await SecurityValidationFacade.validate(.eagerWarm)
                 
                 #if DEBUG
                 print("[DirectStreamingPlayer] Initial validation completed: \(isValid)")
@@ -1064,7 +1118,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 if isValid {
                     self.safeOnStatusChange(isPlaying: false, reasonKey: "status_connecting")
                 } else {
-                    let isPermanent = await SecurityModelValidator.shared.isPermanentlyInvalid
+                    let isPermanent = await SecurityValidationFacade.isPermanentlyInvalid()
                     let statusKey = isPermanent ? "status_security_failed" : "status_no_internet"
                     self.safeOnStatusChange(isPlaying: false, reasonKey: statusKey)
                     
@@ -1144,22 +1198,22 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                 self.lastServerSelectionTime = nil
                 self.serverFailureCount.removeAll()
 
-                // Reset transient security state + revalidate
+                // Reset transient security state + revalidate (named reconnect intent).
                 Task {
-                    await SecurityModelValidator.shared.resetTransientState()
+                    await SecurityValidationFacade.resetTransientState()
 
                     #if DEBUG
                     print("[DirectStreamingPlayer] [Network] Invalidated security model validation cache (transient reset)")
                     #endif
 
-                    let isValid = await SecurityModelValidator.shared.validateSecurityModel()
+                    let isValid = await SecurityValidationFacade.validate(.onReconnect)
 
                     #if DEBUG
                     print("[DirectStreamingPlayer] [Network] Revalidation result on reconnect: \(isValid)")
                     #endif
 
                     if !isValid {
-                        let isPermanent = await SecurityModelValidator.shared.isPermanentlyInvalid
+                        let isPermanent = await SecurityValidationFacade.isPermanentlyInvalid()
 
                         let statusKey = isPermanent ? "status_security_failed" : "status_no_internet"
 
@@ -1291,7 +1345,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             // Matches the designated init() and prevents real DNS/security I/O + status callbacks
             // during unit tests (MockDirectStreamingPlayer path) and UI tests.
             Task { @MainActor in
-                let isValid = await SecurityModelValidator.shared.validateSecurityModel()
+                let isValid = await SecurityValidationFacade.validate(.eagerWarm)
                 
                 #if DEBUG
                 print("[DirectStreamingPlayer] Initial validation completed: \(isValid)")
@@ -1301,7 +1355,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                     self.safeOnStatusChange(isPlaying: false, reasonKey: "status_connecting")
                 } else {
                     // Optional: show appropriate failure state
-                    let isPermanent = await SecurityModelValidator.shared.isPermanentlyInvalid
+                    let isPermanent = await SecurityValidationFacade.isPermanentlyInvalid()
                     let statusKey = isPermanent ? "status_security_failed" : "status_no_internet"
                     self.safeOnStatusChange(
                         isPlaying: false,
@@ -1842,14 +1896,14 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         safeOnStatusChange(isPlaying: true, reasonKey: "status_connecting")   // ← changed
         SharedPlayerManager.shared.saveFireAndForget()
         
-        let isValid = await SecurityModelValidator.shared.isCurrentlyValid()
+        let isValid = await SecurityValidationFacade.validate(.recoveryValidityCheck)
         // User may have paused (lock screen / Live Activity / Now Playing) during validation.
         guard await shouldContinueInFlightAttach(startedAt: attachGeneration) else {
             enforceSilenceAfterDiscardedAttach()
             return false
         }
         guard isValid else {
-            let isPermanent = await SecurityModelValidator.shared.isPermanentlyInvalid
+            let isPermanent = await SecurityValidationFacade.isPermanentlyInvalid()
             guard await shouldContinueInFlightAttach(startedAt: attachGeneration) else {
                 enforceSilenceAfterDiscardedAttach()
                 return false
@@ -2255,66 +2309,153 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// Note: after `switchToStream` on an active-intent path, the subsequent direct `play()`
     /// is the internal continuation case (already-active playback intent); explicit starts
     /// use `userRequestedPlay()`. See the Precondition on `userRequestedPlay()`.
+    // MARK: - Stream choice + attach (canonical)
+
+    /// Prepares a stream choice without starting audible attach.
+    ///
+    /// Canonical engine entry for model-only seed and orchestrated language-switch prep.
+    /// Prefer this over the legacy wrappers when writing new call sites.
+    ///
+    /// - Parameters:
+    ///   - stream: Target stream model (language / URL template).
+    ///   - preparation: ``StreamChoicePreparation/modelOnly`` or ``StreamChoicePreparation/switchPrep``.
+    /// - SeeAlso: ``StreamChoicePreparation``, ``attachAndPlay(to:context:)``,
+    ///   ``switchToStream(_:)``, ``setSelectedStreamModelOnly(to:)``,
+    ///   SharedPlayerManager.play(), RadioPlayerCoordinator stream-switch paths.
+    ///
+    /// AGENT NOTE: This is the only place model-only update and switch-prep (silent stop +
+    /// counter reset) are allowed. Callers must not reimplement setModel + stop + counterReset.
     @MainActor
-    func switchToStream(_ stream: Stream) async {
-        let previousLanguage = selectedStream.languageCode
-        let newLanguage = stream.languageCode
-        let isLanguageChange = previousLanguage != newLanguage
-
-        // Set model first (matches the pattern used by the current coordinator switch paths).
-        await setSelectedStreamModelOnly(to: stream)
-        resetTransientErrors()
-
-        if isLanguageChange {
+    func prepareStreamChoice(_ stream: Stream, preparation: StreamChoicePreparation) async {
+        switch preparation {
+        case .modelOnly:
+            // Under test we still allow the pure model update (no network, no AV work).
+            lastEmittedStatus = nil
+            lastObservedTimeControl = nil
+            lastObservedItemStatus = nil
+            selectedStream = stream
             #if DEBUG
-            print("[DirectStreamingPlayer] switchToStream — awaiting silent .streamSwitch stop (\(previousLanguage) → \(newLanguage))")
+            print("[DirectStreamingPlayer] prepareStreamChoice(.modelOnly) for \(stream.language)")
             #endif
-            await withCheckedContinuation { continuation in
-                stop(
-                    reason: .streamSwitch,
-                    completion: { continuation.resume() },
-                    silent: true
-                )
+
+        case .switchPrep:
+            let previousLanguage = selectedStream.languageCode
+            let newLanguage = stream.languageCode
+            let isLanguageChange = previousLanguage != newLanguage
+
+            await prepareStreamChoice(stream, preparation: .modelOnly)
+            resetTransientErrors()
+
+            if isLanguageChange {
+                #if DEBUG
+                print("[DirectStreamingPlayer] prepareStreamChoice(.switchPrep) — silent .streamSwitch stop (\(previousLanguage) → \(newLanguage))")
+                #endif
+                await withCheckedContinuation { continuation in
+                    stop(
+                        reason: .streamSwitch,
+                        completion: { continuation.resume() },
+                        silent: true
+                    )
+                }
             }
+
+            resetInitialPlaybackCountersForNewStream()
+
+            #if DEBUG
+            print("[DirectStreamingPlayer] prepareStreamChoice(.switchPrep) complete for \(newLanguage)")
+            #endif
+        }
+    }
+
+    /// Full atomic "prepare secured item + start playing" — primary attach entry for ``SharedPlayerManager/play()``.
+    ///
+    /// Prepares `stream` and starts attach under the same in-flight generation as recovery ``play()``.
+    /// User pause while this method is suspended advances ``playbackAttachGeneration``; post-await
+    /// re-checks discard the attach so sticky `.userPaused` cannot race a late first-play kick.
+    ///
+    /// - Parameters:
+    ///   - stream: Target stream model (language / URL template).
+    ///   - context: Cold launch, stream switch, or same-stream resume attach semantics.
+    /// - SeeAlso: ``prepareStreamChoice(_:preparation:)``, ``startPlayback(context:attachGeneration:)``,
+    ///   ``shouldContinueInFlightAttach(startedAt:)``, ``PlaybackAttachState``,
+    ///   ``SharedPlayerManager/play()``.
+    ///
+    /// - Note: MainActor-isolated with ``play()`` so attach generation begin/end and silence
+    ///   enforcement are same-isolation (no redundant `await` on synchronous MainActor helpers).
+    @MainActor
+    func attachAndPlay(to stream: Stream, context: PlaybackAttachContext = .coldLaunch) async {
+        // UI Test isolation: never attach real items or start playback from the engine.
+        // SharedPlayerManager.play() already short-circuits before reaching here for
+        // explicit test taps; this guard protects any direct callers or future paths.
+        guard !isTesting else {
+            #if DEBUG
+            print("[DirectStreamingPlayer] attachAndPlay — isTesting, no-op (no network, no AVPlayer work)")
+            #endif
+            return
         }
 
-        resetInitialPlaybackCountersForNewStream()
+        // Cover the primary attach path (not only recovery `play()`) so stop during
+        // connect/first-play can invalidate generation and soft-silence consistently.
+        let attachGeneration = beginInFlightPlaybackAttach()
+        await prepareSecuredPlayerItem(for: stream)
 
-        #if DEBUG
-        print("[DirectStreamingPlayer] switchToStream engine prep complete for \(newLanguage)")
-        #endif
+        guard await shouldContinueInFlightAttach(startedAt: attachGeneration) else {
+            enforceSilenceAfterDiscardedAttach()
+            endInFlightPlaybackAttach()
+            return
+        }
+
+        await startPlayback(context: context, attachGeneration: attachGeneration)
+        endInFlightPlaybackAttach()
     }
-    
-    // MARK: - Stream Switching (Single Source of Truth)
 
-    /// Updates the selected stream model without creating or replacing an `AVPlayerItem`.
-    /// Used on cold launch before tuning so the secured item is created once in `setStreamAndPlay`.
+    /// Legacy name for ``prepareStreamChoice(_:preparation:)`` with ``StreamChoicePreparation/switchPrep``.
+    ///
+    /// - SeeAlso: ``prepareStreamChoice(_:preparation:)``, RadioPlayerCoordinator stream-switch paths.
+    @MainActor
+    func switchToStream(_ stream: Stream) async {
+        #if DEBUG
+        print("[DirectStreamingPlayer] switchToStream → prepareStreamChoice(.switchPrep)")
+        #endif
+        await prepareStreamChoice(stream, preparation: .switchPrep)
+    }
+
+    /// Legacy name for ``prepareStreamChoice(_:preparation:)`` with ``StreamChoicePreparation/modelOnly``.
+    /// Used on cold launch before tuning so the secured item is created once in ``attachAndPlay``.
     func setSelectedStreamModelOnly(to stream: Stream) async {
-        // Under test we still allow the pure model update (no network, no AV work).
-        // ViewController already short-circuits before calling this in UITestMode, but
-        // keeping the engine tolerant is useful for direct test injection.
-        lastEmittedStatus = nil
-        lastObservedTimeControl = nil
-        lastObservedItemStatus = nil
-        selectedStream = stream
-
         #if DEBUG
-        print("[DirectStreamingPlayer] Stream model updated (no player item) for \(stream.language)")
+        print("[DirectStreamingPlayer] setSelectedStreamModelOnly → prepareStreamChoice(.modelOnly)")
         #endif
+        await prepareStreamChoice(stream, preparation: .modelOnly)
     }
 
-    /// Updates the selected stream model and prepares the player.
-    /// Does NOT start playback — call `play()` afterwards if needed.
+    /// Legacy name for ``attachAndPlay(to:context:)``. Prefer ``attachAndPlay`` in new code.
+    @MainActor
+    func setStreamAndPlay(to stream: Stream, context: PlaybackAttachContext = .coldLaunch) async {
+        #if DEBUG
+        print("[DirectStreamingPlayer] setStreamAndPlay → attachAndPlay")
+        #endif
+        await attachAndPlay(to: stream, context: context)
+    }
+
+    /// Updates the selected stream model and prepares the secured player item (no audible start).
+    ///
+    /// Internal attach helper used by ``attachAndPlay(to:context:)``. Prefer the canonical
+    /// ``prepareStreamChoice`` + ``attachAndPlay`` pair at call sites.
     @MainActor
     func setStream(to stream: Stream) async {
+        await prepareSecuredPlayerItem(for: stream)
+    }
+
+    /// Model update + optional clean stop + secured `AVPlayerItem` prepare (no audible kick).
+    @MainActor
+    private func prepareSecuredPlayerItem(for stream: Stream) async {
         // UI Test isolation: prevent even model-only prepares from triggering
         // urlWithOptimalServer (which may ping) or AVURLAsset/resourceLoader work.
         guard !isTesting else {
-            // Still update the model so that visual / language queries in tests see the intended value
-            // if a test directly manipulates the player (rare). Most UI tests go through the coordinator/VM.
             selectedStream = stream
             #if DEBUG
-            print("[DirectStreamingPlayer] setStream — isTesting, model updated but no network/asset work")
+            print("[DirectStreamingPlayer] prepareSecuredPlayerItem — isTesting, model updated but no network/asset work")
             #endif
             return
         }
@@ -2346,70 +2487,26 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             isSoftPaused = false
 
             if playerItem != nil || attachedLanguage != nil {
-                stop(reason: .streamSwitch, silent: true)   // ← removed `await`
+                stop(reason: .streamSwitch, silent: true)
             }
         } else {
             #if DEBUG
             print("[DirectStreamingPlayer] Same stream or initial playback (\(newLanguage)) – skipping stop()")
             #endif
         }
-        
-        // Clear dedup state for the new stream context so the first status after the switch emits.
+
         lastEmittedStatus = nil
         lastObservedTimeControl = nil
         lastObservedItemStatus = nil
 
-        // Update model
         selectedStream = stream
 
-        // Secured AVURLAsset + resourceLoader path (same as cold-launch startPlayback and createAndStartPlayer).
         let url = await urlWithOptimalServer(for: stream)
         await preparePlayerItem(for: url)
 
         #if DEBUG
         print("[DirectStreamingPlayer] Stream model updated and secured AVPlayerItem prepared for \(stream.language)")
         #endif
-    }
-
-    /// Full atomic "switch stream + start playing" — primary attach entry for ``SharedPlayerManager/play()``.
-    ///
-    /// Prepares `stream` and starts attach under the same in-flight generation as ``play()``.
-    /// User pause while this method is suspended advances ``playbackAttachGeneration``; post-await
-    /// re-checks discard the attach so sticky `.userPaused` cannot race a late first-play kick.
-    ///
-    /// - Parameters:
-    ///   - stream: Target stream model (language / URL template).
-    ///   - context: Cold launch, stream switch, or same-stream resume attach semantics.
-    /// - SeeAlso: ``startPlayback(context:attachGeneration:)``, ``shouldContinueInFlightAttach(startedAt:)``,
-    ///   ``SharedPlayerManager/play()``.
-    ///
-    /// - Note: MainActor-isolated with ``play()`` so attach generation begin/end and silence
-    ///   enforcement are same-isolation (no redundant `await` on synchronous MainActor helpers).
-    @MainActor
-    func setStreamAndPlay(to stream: Stream, context: PlaybackAttachContext = .coldLaunch) async {
-        // UI Test isolation: never attach real items or start playback from the engine.
-        // SharedPlayerManager.play() already short-circuits before reaching here for
-        // explicit test taps; this guard protects any direct callers or future paths.
-        guard !isTesting else {
-            #if DEBUG
-            print("[DirectStreamingPlayer] setStreamAndPlay — isTesting, no-op (no network, no AVPlayer work)")
-            #endif
-            return
-        }
-
-        // Cover the primary attach path (not only recovery `play()`) so stop during
-        // connect/first-play can invalidate generation and soft-silence consistently.
-        let attachGeneration = beginInFlightPlaybackAttach()
-        await setStream(to: stream)
-
-        guard await shouldContinueInFlightAttach(startedAt: attachGeneration) else {
-            enforceSilenceAfterDiscardedAttach()
-            endInFlightPlaybackAttach()
-            return
-        }
-
-        await startPlayback(context: context, attachGeneration: attachGeneration)
-        endInFlightPlaybackAttach()
     }
 
     /// Cancels any pending startup safety-net recreate (e.g. before sleep-timer scheduling).
@@ -2420,10 +2517,11 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     }
 
     /// True when a soft-paused or attached item targets a different language than `selectedStream`.
+    ///
+    /// Delegates to ``currentPlaybackAttachState()`` so SPM does not reimplement language binding.
     @MainActor
     func softPauseResumeRequiresStreamReattach() -> Bool {
-        guard let attached = attachedItemLanguageCode else { return false }
-        return attached != selectedStream.languageCode
+        currentPlaybackAttachState().requiresStreamReattach
     }
 
     @MainActor
