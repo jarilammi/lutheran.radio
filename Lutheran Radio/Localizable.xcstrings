@@ -2083,7 +2083,8 @@
             "value" : "%d procent"
           }
         }
-      }
+      },
+      "extractionState" : "stale"
     },
     "alert_continue" : {
       "localizations" : {
@@ -3905,7 +3906,8 @@
             "value" : "Minska volymen"
           }
         }
-      }
+      },
+      "extractionState" : "stale"
     },
     "increase_volume" : {
       "comment" : "Accessibility action to increase volume",
@@ -4036,7 +4038,8 @@
             "value" : "Öka volymen"
           }
         }
-      }
+      },
+      "extractionState" : "stale"
     },
     "Is Playing" : {
       "localizations" : {
@@ -12378,7 +12381,8 @@
             "value" : "Volym inställd på %d procent"
           }
         }
-      }
+      },
+      "extractionState" : "stale"
     },
     "Widget Configuration" : {
       "localizations" : {

@@ -55,17 +55,27 @@ import WidgetSurface
 /// - Owning the single `UIHostingController` that presents `RadioPlayerView`
 /// - Retaining a few hard-to-move observers (network, interruptions, route, Darwin widget notify)
 /// - Public entry points for SceneDelegate, widgets, Siri, and URL schemes (thin shims to coordinator / SPM)
+/// - Cellular permission prompt presentation (decision logic in `CellularPermissionManager`)
 ///
-/// **Pending-action drain** (App Group `pendingAction*` → play/pause/switch) is owned by
-/// ``RadioPlayerCoordinator/checkForPendingWidgetActions()``. This type only installs the Darwin
-/// observer, schedules the launch burst, and exposes a one-line public shim so SceneDelegate and
-/// tests can call drain without holding a coordinator reference.
+/// **Orchestration owned by ``RadioPlayerCoordinator`` (not this type):**
+/// - Pending-action drain (App Group `pendingAction*` → play/pause/switch)
+/// - `selectedStreamIndex` + SwiftUI needle / language selection
+/// - Sleep-timer interaction window + deferred metadata apply
+/// - ICY `onMetadataChange` → VM / Now Playing
+/// - Cold-launch special tuning clip + stream-switch tuning delight (`TuningSoundCoordinator` gate)
+/// - Visual distribution, haptics, stream-switch debounce
+///
+/// This type only installs the Darwin observer, schedules the launch burst, and exposes a
+/// one-line public shim so SceneDelegate and tests can call drain without holding a
+/// coordinator reference.
 ///
 /// The primary player UI has been extracted into pure SwiftUI:
 /// `RadioPlayerView` (composition root) + `NowPlayingMetadataView` + `LanguageSelectorView` +
 /// `PlaybackControlsView` + `VolumeAndAirPlayRow`. All visual state is driven by `PlayerViewModel`,
 /// with orchestration remaining in `RadioPlayerCoordinator`.
 ///
+/// Volume chrome is **not** owned by this host: system volume is SSOT via SwiftUI
+/// `VolumeAndAirPlayRow` / `MPVolumeView` (identifier `volumeSlider` for UI tests).
 /// AirPlay is **not** owned by this host: route-picker chrome lives exclusively in
 /// SwiftUI `AirPlayButton` (deferred `AVRoutePickerView` construction after hierarchy attach).
 /// Eager UIKit `AVRoutePickerView` on this type previously ran during scene-create and could
@@ -75,17 +85,16 @@ import WidgetSurface
 /// `handleUserTogglePlayback()` (see SSOT comments).
 ///
 /// - Note: iOS 26.2+ only. See `RadioPlayerView` and the coordinator for the modern layout.
-/// - SeeAlso: `RadioPlayerView`, `AirPlayButton`, `PlayerViewModel`, `RadioPlayerCoordinator`,
-///   `DirectStreamingPlayer`, `SharedPlayerManager`, CODING_AGENT.md, <doc:Architecture>.
+/// - SeeAlso: `RadioPlayerView`, `AirPlayButton`, `VolumeAndAirPlayRow`, `PlayerViewModel`,
+///   `RadioPlayerCoordinator`, `TuningSoundCoordinator`, `DirectStreamingPlayer`,
+///   `SharedPlayerManager`, CODING_AGENT.md, <doc:Architecture>.
 @MainActor
-class ViewController: UIViewController, AVAudioPlayerDelegate {
+class ViewController: UIViewController {
     // MARK: - Private Properties and Constants
     
-    // NOTE: lastAppliedVisualState, selectedStreamIndex (mirror only for legacy sync spots),
-    // tuning*, streamSwitch*, sleep UI*, hasShownSecurityAlert, hasPlayedSpecialTuningSound, hasEverPlayed,
-    // pending-action drain + play/pause debounce, and widget-switch work items live exclusively in
-    // RadioPlayerCoordinator. VC keeps only what is required for the thin host surface (network flags,
-    // isDeallocating, test accessors, legacy URL-scheme actionId set for handleWidgetAction).
+    // Orchestration state (selectedStreamIndex, sleep interaction, tuning clips, visual
+    // distribution, pending-action drain, metadata callbacks) lives exclusively in
+    // RadioPlayerCoordinator. This host keeps only lifecycle, network, and thin public shims.
     
     // Cellular permission state + migration + per-launch prompting is fully extracted to CellularPermissionManager
     // (owned here because the network path handler + alert presentation remain in the retained thin host surface
@@ -129,22 +138,6 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     /// Lightweight RadioPlayerCoordinator (wiring + full stream selection flow + visual distribution + sleep glue + haptics + initial sequencing).
     var radioPlayerCoordinator: RadioPlayerCoordinator!
 
-    // playerViewModel declared above as the driver for the modern SwiftUI composed views.
-
-    let volumeSlider: UISlider = {
-        let slider = UISlider()
-        slider.minimumValue = 0.0
-        slider.maximumValue = 1.0
-        slider.value = 0.5 // Default volume
-        slider.minimumTrackTintColor = .tintColor
-        slider.maximumTrackTintColor = .tertiaryLabel
-        slider.translatesAutoresizingMaskIntoConstraints = false
-        slider.isAccessibilityElement = true
-        slider.accessibilityLabel = String(localized: "accessibility_label_volume", table: "Localizable")
-        slider.accessibilityHint = String(localized: "accessibility_hint_volume", table: "Localizable")
-        return slider
-    }()
-
     // AGENT NOTE: AirPlay is **not** constructed here.
     //
     // Why: A stored `AVRoutePickerView` property initializer ran during
@@ -164,17 +157,10 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     // - SeeAlso: `AirPlayButton`, `VolumeAndAirPlayRow`, `SceneDelegate.scene(_:willConnectTo:)`,
     //   CODING_AGENT.md (launch / MediaRemoteUI watchdog history), <doc:Architecture>
     
-    // Local hapticEngine lazy + handlers removed (single owner in RadioPlayerCoordinator).
-    // The early init call site in viewDidLoad was removed; wireAndInitialSetup performs equivalent.
-    
-    // selectedStreamIndex kept as thin mirror for cold-launch seed only; orchestration mutates the
-    // coordinator's index (including pending-action play language sync after drain).
-    private var selectedStreamIndex: Int = 0
-    
     private var isInitialSetupComplete = false
     
     // MARK: - Audio and Streaming
-    // New streaming player
+    // Streaming engine is shared; orchestration (status chrome, metadata, tuning) is on the coordinator.
     nonisolated private let streamingPlayer: DirectStreamingPlayer
     private let audioQueue = DispatchQueue(label: "radio.lutheran.audio", qos: .userInitiated)
 
@@ -188,19 +174,6 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     private var lastConnectionAttemptTime: Date?
     private var isDeallocating = false // Flag to prevent operations during deallocation
 
-    // NOTE (P5): Most orchestration state removed (see above). Retained for the *special* cold-launch tuning sound path only
-    // (the one path that stays in VC host because it is the unique user of AVAudioPlayerDelegate + TuningSoundCoordinator gate):
-    private var hasPlayedSpecialTuningSound = false
-    private var isTuningSoundPlaying = false
-    private var tuningPlayer: AVAudioPlayer?
-    // (lastTuningSoundTime + regular playTuningSound/stopTuningSound fully removed; regular tuning delight now only in coordinator.)
-
-    // Retained (P5): sleep interaction suppression state for the onMetadataChange callback (which lives in VC because it is registered on the streamingPlayer here).
-    // The coordinator's sleep handlers set the authoritative flag; we sync it here so the callback sees the window and stashes to both copies so coordinator finish can consume.
-    // internal (not private) so RadioPlayerCoordinator (same module, via weak viewController) can sync the flag/pending for the metadata suppression window that is observed from VC's onMetadataChange callback.
-    var isSleepTimerInteractionActive = false
-    var pendingMetadataVisualRefresh: String?
-    
     // Testable accessors
     @objc var isPlayingState: Bool {
         get { isPlaying }
@@ -253,21 +226,8 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         view.backgroundColor = .systemBackground
         // Processed image cache limit is now configured inside BackgroundImageController.
         
-        // Accessibility custom actions for play/pause now handled inside SwiftUI PlaybackControlsView.
-        
-        // Add custom accessibility actions for volumeSlider
-        volumeSlider.accessibilityCustomActions = [
-            UIAccessibilityCustomAction(
-                name: String(localized: "increase_volume", defaultValue: "Increase Volume", table: "Localizable", comment: "Accessibility action to increase volume"),
-                target: self,
-                selector: #selector(increaseVolume)
-            ),
-            UIAccessibilityCustomAction(
-                name: String(localized: "decrease_volume", defaultValue: "Decrease Volume", table: "Localizable", comment: "Accessibility action to decrease volume"),
-                target: self,
-                selector: #selector(decreaseVolume)
-            )
-        ]
+        // Accessibility custom actions for play/pause live in SwiftUI PlaybackControlsView.
+        // Volume accessibility lives on SwiftUI VolumeAndAirPlayRow / MPVolumeView (identifier volumeSlider).
         
         // Playback audio session is configured in DirectStreamingPlayer.init (single owner).
         
@@ -320,23 +280,10 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         }
         radioPlayerCoordinator.wireAndInitialSetup()
         
-        // No instance selectedStreamIndex mutation or onSelectionChanged wiring here (coordinator owns).
-        // Compute initial language preferring the PersistedWidgetState last language (via SSOT helper)
-        // so the early seed, persist snapshot, player model, updateUserDefaultsLanguage, *and* the
-        // coordinator's needle (set in wireAndInitialSetup) are consistent for "last stream remembered".
-        // Falls back via bestInitialLanguageCode (robust preferredLanguages) when no snapshot
-        // (first-run / clear / privacy). Uses the shared indexForLanguageCode helper.
+        // Initial language + selectedStreamIndex + VM needle seed are owned by
+        // RadioPlayerCoordinator.wireAndInitialSetup (preferredMainAppInitialLanguageCode SSOT).
+        // Host only needs the language code for the cold-launch stream model attach below.
         let languageCode = SharedPlayerManager.preferredMainAppInitialLanguageCode()
-        let initialIndex = DirectStreamingPlayer.indexForLanguageCode(languageCode)
-        selectedStreamIndex = initialIndex  // Seed thin mirror for viewDidLayoutSubviews notifyLayoutChange (width-claim) so initial needle is not stomped by stale 0 (regression guard)
-
-        // Seed the SwiftUI VM's index so that any early SwiftUI rendering sees the correct initial selection
-        // (coordinator will keep it in sync on subsequent updateUI calls).
-        playerViewModel?.selectedStreamIndex = initialIndex
-        
-        // Legacy UIKit volumeSlider is not in the hierarchy (SwiftUI `VolumeAndAirPlayRow`
-        // owns system volume via `MPVolumeView`). Seed accessibility value only; no App Group.
-        volumeSlider.accessibilityValue = unsafe String(format: String(localized: "accessibility_value_volume", table: "Localizable"), Int(volumeSlider.value * 100))
         
         setupControls()
         // Reset per-launch cellular permission flags early (before network monitoring can fire the expensive path).
@@ -347,7 +294,8 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         }
         setupInterruptionHandling()
         setupRouteChangeHandling()
-        setupStreamingCallbacks()
+        // ICY onMetadataChange is registered in RadioPlayerCoordinator.wireAndInitialSetup
+        // (single owner with sleep-interaction deferred apply).
         
         NotificationCenter.default.addObserver(
             self,
@@ -462,7 +410,9 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
             // Early UI to .prePlay for needle/selector positioning (matches prior behavior for allowed cold launches).
             self.updateUI(for: .prePlay)
             
-            await self.playSpecialTuningSound()
+            // Special cold-launch clip: coordinator owns clip + TuningSoundCoordinator gate.
+            // SharedPlayerManager.play() awaits the same gate after this returns.
+            await self.radioPlayerCoordinator?.playSpecialTuningSound()
             
             // Re-fetch after tuning: persistence refresh and thermal sanitization may have
             // updated in-memory state while the tuning clip played.
@@ -677,60 +627,16 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         }
     }
     
-    // MARK: - Streaming Callbacks (metadata only)
-    // Status changes: StreamingPlayerDelegate.onStatusChange → updateUI(for:).
-    // onMetadataChange only (speaker photo, metadata label, Now Playing).
-    
-    private func setupStreamingCallbacks() {
-        streamingPlayer.onMetadataChange = { [weak self] metadata in
-            guard let self else {
-                #if DEBUG
-                print("[ViewController] onMetadataChange: ViewController is nil, skipping callback")
-                #endif
-                return
-            }
-            
-            // Hop to main for UI updates only.
-            // SwiftUI NowPlayingMetadataView handles its own text + photo using VM.currentMetadata.
-            DispatchQueue.main.async { [self] in
-                if let metadata = metadata {
-                    radioPlayerCoordinator?.syncMetadataToViewModel(metadata)
-                    if self.isSleepTimerInteractionActive {
-                        self.pendingMetadataVisualRefresh = metadata
-                        radioPlayerCoordinator?.pendingMetadataVisualRefresh = metadata
-                    } else {
-                        self.updateNowPlayingInfo(title: metadata)
-                    }
-                } else {
-                    radioPlayerCoordinator?.syncMetadataToViewModel(nil)
-                    if !self.isSleepTimerInteractionActive {
-                        self.updateNowPlayingInfo()
-                    }
-                }
-                self.saveStateForWidget()
-            }
-        }
-    }
-    
-    // showSecurityModelAlert + showSSLTransitionAlert removed (their creation + presentation logic lives inside RadioPlayerCoordinator.updateUI/handleStatusChange using the injected presentAlert hook).
-    // No call sites remain in VC.
+    // Status changes: StreamingPlayerDelegate.onStatusChange → coordinator handleStatusChange.
+    // ICY metadata: coordinator registers DirectStreamingPlayer.onMetadataChange in wireAndInitialSetup.
+    // showSecurityModelAlert + showSSLTransitionAlert: coordinator presentAlert hook.
     
     private func setupControls() {
-        // SwiftUI PlaybackControlsView owns its own Buttons and taps (wired to viewModel).
-        // Sleep timer *presentation* is now native .confirmationDialog in PlaybackControlsView (includes Clear local state privacy action).
-        // The call to configureSleepTimerButtonMenu is retained for compatibility + internal glue
-        // (the method is never removed during the incremental migration). All timer + clear logic lives in coordinator.
-        // Accessibility and identifiers are now inside the SwiftUI views.
-        radioPlayerCoordinator?.configureSleepTimerButtonMenu()  // compatibility / re-sync path; presentation is SwiftUI-native
-        
-        volumeSlider.addTarget(self, action: #selector(volumeChanged(_:)), for: .valueChanged)
-        volumeSlider.accessibilityIdentifier = "volumeSlider"
-        volumeSlider.accessibilityHint = String(localized: "accessibility_hint_volume", table: "Localizable")
-        volumeSlider.accessibilityLabel = String(localized: "accessibility_label_volume", table: "Localizable")  // e.g., "Volume"
-        volumeSlider.accessibilityTraits = .adjustable  // Default, but explicit for clarity
-        volumeSlider.accessibilityValue = unsafe String(format: String(localized: "accessibility_value_volume", table: "Localizable"), Int(volumeSlider.value * 100))  // e.g., "50 percent"
-        // AirPlay chrome lives exclusively in SwiftUI `AirPlayButton` (see AGENT NOTE above).
-        // Do not construct `AVRoutePickerView` from this host — scene-create watchdog risk.
+        // SwiftUI PlaybackControlsView owns buttons/taps (wired to viewModel).
+        // Sleep timer presentation is native .confirmationDialog in PlaybackControlsView.
+        // configureSleepTimerButtonMenu retained for compatibility re-sync; all timer logic is on coordinator.
+        // Volume + AirPlay chrome: SwiftUI VolumeAndAirPlayRow / AirPlayButton only (no UIKit residual).
+        radioPlayerCoordinator?.configureSleepTimerButtonMenu()
     }
     
     // MARK: - Network and Interruption Handling
@@ -921,7 +827,8 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     ///   ``DirectStreamingPlayer/deactivateAudioSessionAsync()``,
     ///   ``DirectStreamingPlayer/setupAudioSession()``,
     ///   ``DirectStreamingPlayer/startLocalClipPlayer(contentsOf:volume:numberOfLoops:)``,
-    ///   `handleInterruption(_:)`, `handleRouteChange(_:)`, `playSpecialTuningSound(completion:)`.
+    ///   `handleInterruption(_:)`, `handleRouteChange(_:)`,
+    ///   `RadioPlayerCoordinator.playSpecialTuningSound(completion:)`.
     @MainActor
     private func reconfigureAudioSession() async {
         _ = await streamingPlayer.configureAudioSessionAsync()
@@ -1176,13 +1083,6 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         radioPlayerCoordinator?.updateUI(for: visualState)
     }
     
-    @objc private func volumeChanged(_ sender: UISlider) {
-        // Legacy UIKit slider path (slider not in hierarchy). Adjusts engine relative gain only;
-        // does not persist to App Group — system volume remains SSOT for user-facing level.
-        streamingPlayer.setVolume(sender.value)
-        sender.accessibilityValue = unsafe String(format: String(localized: "accessibility_value_volume", table: "Localizable"), Int(sender.value * 100))  // e.g., "75 percent"
-    }
-    
     private func setupUI() {
         view.backgroundColor = .systemBackground
 
@@ -1246,114 +1146,8 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         #endif
     }
     
-    // MARK: - Audio Setup
-    /// Plays the one-shot cold-launch special tuning clip, then signals ``TuningSoundCoordinator``.
-    ///
-    /// Session configuration and clip start go through
-    /// ``DirectStreamingPlayer/startLocalClipPlayer(contentsOf:volume:numberOfLoops:)`` so
-    /// `AVAudioPlayer` prepare/play never runs on the main actor (avoids implicit main-thread
-    /// session activation). Initial stream attach remains `SharedPlayerManager.play()` after
-    /// the coordinator wait — this method must not start the secured stream.
-    ///
-    /// - Parameter completion: Optional finish hook; preferred completion path is
-    ///   `AVAudioPlayerDelegate` → ``TuningSoundCoordinator/notifyPlaybackFinished(source:)``.
-    /// - SeeAlso: ``DirectStreamingPlayer/startLocalClipPlayer(contentsOf:volume:numberOfLoops:)``,
-    ///   ``DirectStreamingPlayer/configureAudioSessionAsync()``, `TuningSoundCoordinator`,
-    ///   `SharedPlayerManager.play()`.
-    func playSpecialTuningSound(completion: (() -> Void)? = nil) async {
-        guard !hasPlayedSpecialTuningSound else {
-            #if DEBUG
-            print("[ViewController] Special tuning sound already played, skipping")
-            #endif
-            completion?()
-            return
-        }
-        
-        guard let tuningURL = Bundle.main.url(forResource: "special_tuning_sound", withExtension: "wav") else {
-            #if DEBUG
-            print("[ViewController] Error: special_tuning_sound.wav not found in bundle")
-            #endif
-            await TuningSoundCoordinator.shared.notifyNoActivePlayback()
-            completion?()
-            return
-        }
-        
-        do {
-            // SSOT: session activate + off-main AVAudioPlayer construct/prepare/play.
-            // Retain the returned player on MainActor; delegate finish still owns waiters.
-            // Volume default 1.0 (full relative gain). System output volume is SSOT; no App Group preferred volume.
-            guard let clip = try await streamingPlayer.startLocalClipPlayer(
-                contentsOf: tuningURL,
-                volume: 1.0,
-                numberOfLoops: 0
-            ) else {
-                await TuningSoundCoordinator.shared.notifyNoActivePlayback()
-                completion?()
-                return
-            }
-
-            let player = clip.player
-            player.delegate = self
-            tuningPlayer = player
-            isTuningSoundPlaying = clip.didStart
-            hasPlayedSpecialTuningSound = true
-
-            #if DEBUG
-            print("[ViewController] Set special tuning sound volume to \(player.volume)")
-            print(clip.didStart
-                  ? "[ViewController] Special tuning sound started playing"
-                  : "[ViewController] Failed to start special tuning sound")
-            #endif
-
-            // Important: Never trigger secured stream playback after tuning sound.
-            // Initial playback is handled only via SharedPlayerManager.play() after the
-            // TuningSoundCoordinator wait. Resurrection remains gated by sticky intent.
-
-            if clip.didStart {
-                await TuningSoundCoordinator.shared.notifyPlaybackStarted(estimatedDuration: player.duration)
-            } else {
-                await TuningSoundCoordinator.shared.notifyNoActivePlayback()
-                tuningPlayer = nil
-            }
-        } catch {
-            #if DEBUG
-            print("[ViewController] Error loading special tuning sound: \(error.localizedDescription)")
-            #endif
-            await TuningSoundCoordinator.shared.notifyNoActivePlayback()
-            completion?()
-            tuningPlayer = nil
-        }
-    }
-
-    // Retained solely to support the special cold-launch tuning clip (AVAudioPlayerDelegate set on tuningPlayer in playSpecialTuningSound).
-    // Regular tuning paths no longer use these (removed regular playTuningSound body + stopTuningSound).
-    nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-        Task { @MainActor in
-            guard player === tuningPlayer else { return }
-            #if DEBUG
-            print("[ViewController] Tuning sound finished playing, success: \(flag)")
-            #endif
-            isTuningSoundPlaying = false
-            tuningPlayer = nil
-            await TuningSoundCoordinator.shared.notifyPlaybackFinished()
-        }
-    }
-    
-    nonisolated func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
-        Task { @MainActor in
-            guard player === tuningPlayer else { return }
-            #if DEBUG
-            print("[ViewController] Tuning sound decode error: \(error?.localizedDescription ?? "Unknown")")
-            #endif
-            isTuningSoundPlaying = false
-            tuningPlayer = nil
-            await TuningSoundCoordinator.shared.notifyPlaybackFinished()
-        }
-    }
-    
-    // Regular playTuningSound / stopTuningSound + their state removed (orchestration exclusively in RadioPlayerCoordinator.playTuningSound for switch delight flows).
-    // Special tuning sound (cold-launch only, integrates TuningSoundCoordinator gate + AV delegate for finish) remains here because it is called from the host viewDidLoad Task and the AVAudioPlayerDelegate conformance is on ViewController.
-    // The two audioPlayer* delegate impls below are retained solely for the special clip path.
+    // Special cold-launch tuning + AVAudioPlayerDelegate finish path live on RadioPlayerCoordinator
+    // (playSpecialTuningSound + TuningSoundCoordinator gate). Host only invokes the coordinator method.
     
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
@@ -1503,20 +1297,6 @@ extension ViewController {
     // playHapticFeedback (and the companion startHapticEngine) removed from VC.
     // All call sites updated to radioPlayerCoordinator?.playHapticFeedback(...) or removed with the deleted bodies.
     // Single implementation + engine live in RadioPlayerCoordinator.
-    
-    @objc private func increaseVolume() {
-        let newValue = min(volumeSlider.value + 0.1, volumeSlider.maximumValue)
-        volumeSlider.setValue(newValue, animated: true)
-        volumeChanged(volumeSlider)
-        unsafe UIAccessibility.post(notification: .announcement, argument: String(format: String(localized: "volume_set_to", defaultValue: "Volume set to %d percent", table: "Localizable", comment: ""), Int(newValue * 100)))
-    }
-    
-    @objc private func decreaseVolume() {
-        let newValue = max(volumeSlider.value - 0.1, volumeSlider.minimumValue)
-        volumeSlider.setValue(newValue, animated: true)
-        volumeChanged(volumeSlider)
-        unsafe UIAccessibility.post(notification: .announcement, argument: String(format: String(localized: "volume_set_to", defaultValue: "Volume set to %d percent", table: "Localizable", comment: ""), Int(newValue * 100)))
-    }
     
     private func safeUpdateStatusLabel(text: String, backgroundColor: UIColor, textColor: UIColor, isPermanentError: Bool) {
         DispatchQueue.main.async { [weak self] in

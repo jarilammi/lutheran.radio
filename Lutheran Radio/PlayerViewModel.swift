@@ -23,7 +23,7 @@
 //  - Sleep timer uses existing SleepTimerNotification + coordinator's local countdown glue
 //    (pushed here too). Presentation (confirmationDialog) + choices live in SwiftUI;
 //    all set/cancel + sync logic remains in coordinator.
-//  - Metadata arrives via DirectStreamingPlayer.onMetadataChange (forwarded here).
+//  - Metadata arrives via DirectStreamingPlayer.onMetadataChange (registered by RadioPlayerCoordinator).
 //  - selectedStreamIndex and isSwitchingStream are mirrored from coordinator / player.
 //
 //  Action methods (`play()`, `pause()`, `selectLanguage(at:)`) forward via injected

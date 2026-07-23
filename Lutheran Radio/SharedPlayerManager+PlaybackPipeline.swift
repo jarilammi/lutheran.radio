@@ -231,7 +231,8 @@ extension SharedPlayerManager {
         // Widgets + LAs may perform UI updates, ``persistOptimisticWidgetSnapshot``, pending actions,
         // and Darwin notifications — zero side-effects into the player engine from those paths alone.
         //
-        // See also the matching guard before `playSpecialTuningSound` in ViewController.viewDidLoad.
+        // See also the matching cold-launch guard before special tuning in ViewController.viewDidLoad
+        // (host Task) and RadioPlayerCoordinator.playSpecialTuningSound.
         // ─────────────────────────────────────────────────────────────────────────────
         if Self.hasExplicitTerminationSentinel() && !hasProcessedExplicitUserPlayRequest {
             #if DEBUG

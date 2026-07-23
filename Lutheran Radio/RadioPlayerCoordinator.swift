@@ -16,8 +16,13 @@
 //
 //  ViewController remains the thin lifecycle host + view hierarchy builder + public intent shims
 //  (for SceneDelegate, widgets, remote commands) + hard-to-move observers (network, interruptions, route,
-//  Darwin listener setup, deinit CF cleanup). Pending-action drain (App Group mailbox → play/pause/switch)
-//  is owned here; VC / SceneDelegate only call the public drain entry after lifecycle or Darwin notify.
+//  Darwin listener setup, deinit CF cleanup). Orchestration owned here (not on VC):
+//  - Pending-action drain (App Group mailbox → play/pause/switch)
+//  - selectedStreamIndex + language selection / stream-switch
+//  - Sleep-timer interaction window + deferred ICY metadata apply
+//  - DirectStreamingPlayer.onMetadataChange registration
+//  - Cold-launch special tuning (TuningSoundCoordinator gate) + stream-switch tuning delight
+//  VC / SceneDelegate only call thin public shims after lifecycle or Darwin notify.
 //
 //  SwiftUI observation: coordinator now optionally drives a PlayerViewModel (@Observable) from
 //  the same updateUI + orchestration paths. This is additive; UIKit subviews continue to be driven
@@ -47,16 +52,27 @@ import WidgetSurface
 /// clears without executing unless the DEBUG bypass is set. Lifecycle hosts call
 /// ``checkForPendingWidgetActions()`` only — they do not reimplement debounce or mailbox enqueue.
 ///
+/// **Stream index:** Single owner of `selectedStreamIndex` (wired to `PlayerViewModel` and all
+/// language / widget / stream-switch paths). The host does not mirror this value.
+///
+/// **Metadata:** Registers `DirectStreamingPlayer.onMetadataChange` in ``wireAndInitialSetup()`` and
+/// owns the sleep-timer interaction window that defers Now Playing title apply during modal settle.
+///
+/// **Special tuning:** Production cold-launch clip is ``playSpecialTuningSound(completion:)`` here —
+/// session/clip start via ``DirectStreamingPlayer/startLocalClipPlayer``, finish via
+/// `AVAudioPlayerDelegate` → ``TuningSoundCoordinator``. Stream-switch delight uses
+/// ``playTuningSound(animateNeedleTo:)`` (duration-based; no main-stream gate).
+///
 /// Sleep timer note: coordinator is the single owner of timer logic (set/cancel + countdown glue +
 /// interaction windows + VM sync). SwiftUI (PlaybackControlsView) owns only the .confirmationDialog
 /// presentation and calls back via PlayerViewModel closures. configureSleepTimerButtonMenu is retained.
 ///
 /// - SeeAlso: ``SharedPlayerManager/signalWidgetPendingAction(visualState:action:language:)``,
 ///   ``SharedPlayerManager/submitMediaTransportCommandAndWait(_:)``,
-///   docs/Live-Activity-Stacking-and-Media-Surfaces.md, docs/Widget-Functionality-Roadmap.md,
-///   CODING_AGENT.md (Single Source of Truth Principles).
+///   `TuningSoundCoordinator`, docs/Live-Activity-Stacking-and-Media-Surfaces.md,
+///   docs/Widget-Functionality-Roadmap.md, CODING_AGENT.md (Single Source of Truth Principles).
 @MainActor
-final class RadioPlayerCoordinator {
+final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
 
     // MARK: - Owned sub-components
     // LanguageSelectorView, PlaybackControlsView, NowPlayingMetadataView are now pure SwiftUI
@@ -118,10 +134,10 @@ final class RadioPlayerCoordinator {
     // Sleep timer UI glue state + Task (verbatim; deep coupling to SharedPlayerManager + SleepTimer remains)
     private var sleepTimerDisplayTask: Task<Void, Never>?
     private var cachedSleepTimerRemaining: Int?
-    // internal for cross-sync with VC's onMetadataChange suppression check (same sleep interaction window)
-    var isSleepTimerInteractionActive = false
-    // internal so VC metadata callback (kept in host) can cross-stash during sleep interaction window
-    var pendingMetadataVisualRefresh: String?
+    /// True while sleep-timer dialog settle is in flight; defers Now Playing title apply.
+    private var isSleepTimerInteractionActive = false
+    /// Metadata stashed during the interaction window; applied in ``finishSleepTimerInteraction``.
+    private var pendingMetadataVisualRefresh: String?
     private static let sleepTimerMenuSettleNs: UInt64 = 250_000_000
     private static let sleepTimerPostScheduleUISettleNs: UInt64 = 300_000_000
     private static let sleepTimerDeferredVisualSettleNs: UInt64 = 500_000_000
@@ -150,6 +166,7 @@ final class RadioPlayerCoordinator {
     ) {
         self.backgroundImageController = backgroundImageController
         self.streamingPlayer = streamingPlayer
+        super.init()
     }
 
     /// Called by VC after it has added the subviews to the hierarchy (setupUI complete).
@@ -197,6 +214,34 @@ final class RadioPlayerCoordinator {
             name: SleepTimerNotification.stateDidChange,
             object: nil
         )
+
+        // ICY metadata → VM + Now Playing (single owner; sleep interaction defers title apply).
+        // Status chrome still arrives via StreamingPlayerDelegate → handleStatusChange.
+        streamingPlayer.onMetadataChange = { [weak self] metadata in
+            guard let self else {
+                #if DEBUG
+                print("[RadioPlayerCoordinator] onMetadataChange: coordinator is nil, skipping")
+                #endif
+                return
+            }
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                if let metadata {
+                    self.syncMetadataToViewModel(metadata)
+                    if self.isSleepTimerInteractionActive {
+                        self.pendingMetadataVisualRefresh = metadata
+                    } else {
+                        self.updateNowPlayingInfo(title: metadata)
+                    }
+                } else {
+                    self.syncMetadataToViewModel(nil)
+                    if !self.isSleepTimerInteractionActive {
+                        self.updateNowPlayingInfo()
+                    }
+                }
+                self.saveStateForWidget()
+            }
+        }
 
         // Privacy clear observer.
         // Reacts to SharedPlayerManager.clearAllLocalState() from any path (sleep menu, future settings, etc.).
@@ -1547,15 +1592,24 @@ final class RadioPlayerCoordinator {
         hapticsController.playHapticFeedback(style: style)
     }
 
-    // MARK: - Tuning sounds (moved with state; part of stream selection delight flow)
-    /// Optional special-clip path on the coordinator (duration-based completion; no delegate).
+    // MARK: - Tuning sounds (stream selection delight + cold-launch special clip)
+    /// Plays the one-shot cold-launch special tuning clip, then signals ``TuningSoundCoordinator``.
     ///
-    /// Production cold-launch special clip is owned by `ViewController.playSpecialTuningSound`
-    /// + `TuningSoundCoordinator`. This method remains for legacy/coordinator-only call sites
-    /// and uses the same local-clip SSOT so prepare/play never run on the main actor.
+    /// Session configuration and clip start go through
+    /// ``DirectStreamingPlayer/startLocalClipPlayer(contentsOf:volume:numberOfLoops:)`` so
+    /// `AVAudioPlayer` prepare/play never runs on the main actor. Initial stream attach remains
+    /// `SharedPlayerManager.play()` after the coordinator wait — this method must not start the
+    /// secured stream.
     ///
+    /// AGENT NOTE: Single production owner for the special cold-launch clip. The thin host only
+    /// invokes this method from its cold-launch Task; it does not retain clip state or conform to
+    /// `AVAudioPlayerDelegate`.
+    ///
+    /// - Parameter completion: Optional early-exit hook; successful start finishes via
+    ///   `AVAudioPlayerDelegate` → ``TuningSoundCoordinator/notifyPlaybackFinished(source:)``.
     /// - SeeAlso: ``DirectStreamingPlayer/startLocalClipPlayer(contentsOf:volume:numberOfLoops:)``,
-    ///   `ViewController.playSpecialTuningSound(completion:)`.
+    ///   ``DirectStreamingPlayer/configureAudioSessionAsync()``, `TuningSoundCoordinator`,
+    ///   `SharedPlayerManager.play()`.
     func playSpecialTuningSound(completion: (() -> Void)? = nil) async {
         guard !hasPlayedSpecialTuningSound else {
             #if DEBUG
@@ -1569,40 +1623,80 @@ final class RadioPlayerCoordinator {
             #if DEBUG
             print("[RadioPlayerCoordinator] Error: special_tuning_sound.wav not found in bundle")
             #endif
+            await TuningSoundCoordinator.shared.notifyNoActivePlayback()
             completion?()
             return
         }
 
         do {
+            // SSOT: session activate + off-main AVAudioPlayer construct/prepare/play.
+            // Retain the returned player on MainActor; delegate finish still owns waiters.
+            // Volume default 1.0 (full relative gain). System output volume is SSOT.
             guard let clip = try await streamingPlayer.startLocalClipPlayer(
                 contentsOf: tuningURL,
+                volume: 1.0,
                 numberOfLoops: 0
             ) else {
+                await TuningSoundCoordinator.shared.notifyNoActivePlayback()
                 completion?()
                 return
             }
 
-            // No AVAudioPlayerDelegate on the coordinator; completion is duration-based.
-            clip.player.delegate = nil
-            tuningPlayer = clip.player
-            hasPlayedSpecialTuningSound = true
+            let player = clip.player
+            player.delegate = self
+            tuningPlayer = player
             isTuningSoundPlaying = clip.didStart
+            hasPlayedSpecialTuningSound = true
             lastTuningSoundTime = Date()
 
             #if DEBUG
-            print("[RadioPlayerCoordinator] Playing special tuning sound (duration: \(clip.player.duration)s, didStart=\(clip.didStart))")
+            print("[RadioPlayerCoordinator] Set special tuning sound volume to \(player.volume)")
+            print(clip.didStart
+                  ? "[RadioPlayerCoordinator] Special tuning sound started playing"
+                  : "[RadioPlayerCoordinator] Failed to start special tuning sound")
             #endif
 
-            let duration = clip.player.duration > 0 ? clip.player.duration : 1.5
-            try? await Task.sleep(for: .seconds(duration + 0.1))
-            isTuningSoundPlaying = false
-            completion?()
+            // Never trigger secured stream playback after tuning sound.
+            // Initial playback is SharedPlayerManager.play() after the TuningSoundCoordinator wait.
+            if clip.didStart {
+                await TuningSoundCoordinator.shared.notifyPlaybackStarted(estimatedDuration: player.duration)
+            } else {
+                await TuningSoundCoordinator.shared.notifyNoActivePlayback()
+                tuningPlayer = nil
+            }
         } catch {
             #if DEBUG
-            print("[RadioPlayerCoordinator] Failed to play special tuning sound: \(error)")
+            print("[RadioPlayerCoordinator] Error loading special tuning sound: \(error.localizedDescription)")
             #endif
-            isTuningSoundPlaying = false
+            await TuningSoundCoordinator.shared.notifyNoActivePlayback()
             completion?()
+            tuningPlayer = nil
+        }
+    }
+
+    // MARK: - AVAudioPlayerDelegate (special cold-launch clip finish only)
+
+    nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        Task { @MainActor in
+            guard player === self.tuningPlayer else { return }
+            #if DEBUG
+            print("[RadioPlayerCoordinator] Special tuning sound finished playing, success: \(flag)")
+            #endif
+            self.isTuningSoundPlaying = false
+            self.tuningPlayer = nil
+            await TuningSoundCoordinator.shared.notifyPlaybackFinished()
+        }
+    }
+
+    nonisolated func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
+        Task { @MainActor in
+            guard player === self.tuningPlayer else { return }
+            #if DEBUG
+            print("[RadioPlayerCoordinator] Special tuning decode error: \(error?.localizedDescription ?? "Unknown")")
+            #endif
+            self.isTuningSoundPlaying = false
+            self.tuningPlayer = nil
+            await TuningSoundCoordinator.shared.notifyPlaybackFinished()
         }
     }
 
@@ -1676,9 +1770,14 @@ final class RadioPlayerCoordinator {
     }
 
     func stopTuningSound() {
+        let wasActive = tuningPlayer != nil || isTuningSoundPlaying
         tuningPlayer?.stop()
         tuningPlayer = nil
         isTuningSoundPlaying = false
+        if wasActive {
+            // Resume any SharedPlayerManager.play() waiters if special clip was interrupted.
+            Task { await TuningSoundCoordinator.shared.notifyPlaybackFinished(source: .cancelled) }
+        }
         #if DEBUG
         print("[RadioPlayerCoordinator] Tuning sound stopped")
         #endif
@@ -1743,7 +1842,6 @@ final class RadioPlayerCoordinator {
     @MainActor
     private func handleSleepTimerPresetSelected(minutes: Int) {
         isSleepTimerInteractionActive = true
-        viewController?.isSleepTimerInteractionActive = true
         backgroundImageController.cancelDeferredForModalInteraction()
 
         let totalSeconds = max(1, minutes * 60)
@@ -1772,7 +1870,6 @@ final class RadioPlayerCoordinator {
     @MainActor
     private func handleSleepTimerCancelSelected() {
         isSleepTimerInteractionActive = true
-        viewController?.isSleepTimerInteractionActive = true
         backgroundImageController.cancelDeferredForModalInteraction()
 
         Task { @MainActor [weak self] in
@@ -1789,10 +1886,8 @@ final class RadioPlayerCoordinator {
     @MainActor
     private func finishSleepTimerInteraction(applyDeferredVisuals: Bool) {
         isSleepTimerInteractionActive = false
-        viewController?.isSleepTimerInteractionActive = false
         guard applyDeferredVisuals, let metadata = pendingMetadataVisualRefresh else { return }
         pendingMetadataVisualRefresh = nil
-        viewController?.pendingMetadataVisualRefresh = nil
         updateNowPlayingInfo(title: metadata)
         // SwiftUI photo logic reacts to VM metadata change.
     }
