@@ -617,11 +617,10 @@ final class RadioPlayerCoordinator {
                 sharedDefaults.removeObject(forKey: "pendingActionTime")
                 sharedDefaults.removeObject(forKey: "pendingLanguage")
             }
-
-            sharedDefaults.set(Date().timeIntervalSince1970, forKey: "lastUserPauseTime")
-            sharedDefaults.synchronize()
         }
 
+        // Pause barrier is in-actor only (``recordUserPauseTimestamp`` → ``wasRecentlyUserPaused``).
+        // App Group `lastUserPauseTime` is retired (no readers); residual keys are purged on launch.
         await SharedPlayerManager.shared.recordUserPauseTimestamp()
         await SharedPlayerManager.shared.submitMediaTransportCommandAndWait(.pause)
         // Note: isPlaying flag lives in VC for a few legacy paths; coordinator does not duplicate the flag.

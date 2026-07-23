@@ -63,8 +63,8 @@
 // Memory-only policy (2026-07-07): PersistedWidgetState is an in-process session
 // snapshot only (visualState + currentLanguage + hasError + streamMetadata). Retired
 // App Group keys (`persistedWidgetState`, `playerVisualState`, `isPlaying`, `playing`,
-// `hasError`, bare `currentLanguage`) are purged on cold launch / read via
-// ``clearPersistedVisualStateKeysFromDisk()`` and are never written.
+// `hasError`, bare `currentLanguage`, `lastUserPauseTime`, `preferredVolume`) are purged
+// on cold launch / read via ``clearPersistedVisualStateKeysFromDisk()`` and are never written.
 
 import Foundation
 import Core
@@ -223,9 +223,11 @@ import WidgetKit
 /// feedback keys.
 ///
 /// Retired on-disk keys (`persistedWidgetState`, `playerVisualState`, `isPlaying`, `playing`,
-/// `hasError`, bare `currentLanguage`) are **purged** on launch and read paths and never written.
-/// ``clearPersistedVisualStateKeysFromDisk()`` is the sole purge entry point (upgrade hygiene for
-/// App Group leftovers from pre-memory-only installs). Visual state is never restored from disk.
+/// `hasError`, bare `currentLanguage`, `lastUserPauseTime`, `preferredVolume`) are **purged** on
+/// launch and read paths and never written. ``clearPersistedVisualStateKeysFromDisk()`` is the
+/// sole purge entry point (upgrade hygiene for App Group leftovers). Visual state is never
+/// restored from disk. Pause recovery uses in-actor ``lastUserPauseTimestamp``; volume uses
+/// system output (`MPVolumeView`).
 ///
 /// This is the authoritative shared state model. All values are anonymous. No PII, no listening history.
 ///
@@ -240,7 +242,7 @@ import WidgetKit
 /// | currentLanguage         | String (languageCode) | (Retired — purged on launch, never written)                  | (none) | Retired bare language key. Language SSOT is in-process `PersistedWidgetState.currentLanguage` plus ``preferredWidgetLanguage()`` (snapshot → `bestInitialLanguageCode()` when widgets active → hard `"en"` when not). | Purged only |
 /// | hasError                | Bool                  | (Inside in-process snapshot only; retired App Group bool purged) | `loadSharedState` (from `PersistedWidgetState.hasError`), widgets   | Permanent error flag for UI chrome. Lives inside the in-process session snapshot. Retired standalone App Group bool is purged only. | In-session snapshot; set on security or unrecoverable network failures |
 /// | lastUpdateTime          | Double (epoch)        | `performActualSave`, `bumpWidgetLivenessTimestamp`, widget handlers, lifecycle hooks | Widget providers (isAppRunning 60 s check), instant-feedback expiry | Liveness heartbeat — bumped on saves and throttled unchanged-snapshot skips | Keeps widget controls alive during background playback |
-/// | lastUserPauseTime | Double (epoch) | ViewController (explicit pause paths) + widget pause round-trips | Cross-process / extension readers (for compatibility); legacy barrier consumers | 8-second pause window after any user pause (recovery paths in DirectStreamingPlayer now use authoritative actor `wasRecentlyUserPaused()` instead of raw UD + defensive sync) | Prevents resurrection attempts immediately after pause |
+/// | lastUserPauseTime | Double (epoch) | (Retired — purged on launch, never written) | (none) | Was App Group pause barrier. Recovery uses in-actor ``lastUserPauseTimestamp`` / ``wasRecentlyUserPaused(within:)`` only. | Purged only |
 /// | isInstantFeedback       | Bool                  | Widget handlers (`handleWidgetPlay/Stop/Switch`)             | `loadSharedState` (checked first)                                    | Signals that a widget action just occurred (optimistic UI)   | Short-lived; cleared after 15s or next authoritative save |
 /// | instantFeedbackTime     | Double (epoch)        | Widget handlers                                              | `loadSharedState`                                                    | Timestamp for the instant feedback validity window           | 15-second validity window |
 /// | instantFeedbackLanguage | String                | Widget handlers                                              | `loadSharedState`                                                    | Language to show during the optimistic widget update         | Matches the language of the widget action |
@@ -251,6 +253,7 @@ import WidgetKit
 /// | liveActivityToggleVisualState | String (case name) | `RadioLiveActivityManager` on every ContentState push; optimistic LA toggle | ``loadLiveActivityToggleVisualStateMirror()`` + ``WidgetIntentExecution/performLiveActivityToggle()`` | Durable cross-process LA play/pause plan signal when extension memory snapshot is empty | Cleared on LA end, termination, **factory reset**, privacy clear; **not** gated by home-widget `hasActiveWidgets` |
 /// | liveActivityCurrentLanguage | String (languageCode) | `RadioLiveActivityManager` on every ContentState push; optimistic LA paths | ``loadLiveActivityLanguageMirror()`` + ``languageForLiveActivityOrWidgetOptimistic()`` | Durable LA language chrome / optimistic intent language when extension has no session snapshot and home-widget writes are suppressed | Same lifecycle as visual mirror; **not** gated by `hasActiveWidgets` |
 /// | recordedSystemBootTime  | Double (epoch of boot) | ``recordCurrentSystemBootTime()`` on LA mirror write + factory reset | ``hasDeviceRebootedSinceLastRecordedBoot()`` / ``shouldDistrustDurableMirrorPlayPlanning()`` | Boot identity for post-reboot LA toggle hygiene | Lets lock-screen planning refuse durable-mirror-alone **play** after hard power-off |
+/// | preferredVolume         | Float                 | (Retired — purged on launch, never written)                  | (none) | Was UIKit App Group volume preference. User-facing level is system volume (`MPVolumeView`); engine relative gain defaults to 1.0. | Purged only |
 ///
 /// **Key invariants**:
 /// - The main app is always the source of truth. Widgets write optimistic visual state +
@@ -362,7 +365,7 @@ actor SharedPlayerManager {
         static let instantFeedbackTimeout: TimeInterval = 15.0
 
         /// Default interval used by `wasRecentlyUserPaused` to suppress immediate resurrection
-        /// after an explicit pause (cross-process contract also exposed via lastUserPauseTime).
+        /// after an explicit pause (in-actor barrier only; no App Group pause-time key).
         static let recentUserPauseBarrier: TimeInterval = 8.0
     }
 
@@ -459,7 +462,7 @@ actor SharedPlayerManager {
     
     // MARK: - Recent user pause (in-actor barrier for recovery paths)
     /// Authoritative timestamp for `wasRecentlyUserPaused(within:)`.
-    /// The UserDefaults `lastUserPauseTime` key remains the cross-process contract for extensions.
+    /// In-process only — retired App Group `lastUserPauseTime` is purged and never written.
     private var lastUserPauseTimestamp: TimeInterval = 0
     
     #if LUTHERAN_MAIN_APP
@@ -934,11 +937,12 @@ actor SharedPlayerManager {
 
     /// Returns whether the user paused within the given interval (default 8 s).
     ///
-    /// Recovery paths should use this instead of reading `lastUserPauseTime` from UserDefaults.
-    /// Extensions continue to use the UserDefaults key for cross-process reads.
+    /// Reads the in-actor ``lastUserPauseTimestamp`` only. Retired App Group
+    /// `lastUserPauseTime` is never consulted (purged on launch; no writers).
     ///
-    ///
-    ///
+    /// - Parameter interval: Maximum age in seconds for a pause to count as "recent".
+    /// - Returns: `true` when an in-session pause was recorded within `interval`.
+    /// - SeeAlso: ``recordUserPauseTimestamp()``, ``Constants/recentUserPauseBarrier``
     func wasRecentlyUserPaused(within interval: TimeInterval = Constants.recentUserPauseBarrier) async -> Bool {
         // For true cold-launch or first recovery before any pause has been recorded,
         // treat as "not recently paused".
@@ -946,20 +950,18 @@ actor SharedPlayerManager {
         return Date().timeIntervalSince1970 - lastUserPauseTimestamp < interval
     }
 
-    /// Public helper for external callers (e.g. ViewController pause paths) to record
-    /// an explicit user pause timestamp into the authoritative actor state.
+    /// Records an explicit user pause into the in-actor recovery barrier.
     ///
-    /// This keeps the in-actor `lastUserPauseTimestamp` (used by recovery paths via
-    /// `wasRecentlyUserPaused()`) in sync when pauses are initiated from ViewController
-    /// surfaces that also need to write the raw UserDefaults key for extension readers.
+    /// Call from main-app pause surfaces (widget drain, coordinator, stop paths that
+    /// already set intent elsewhere). Does **not** write App Group keys — the former
+    /// `lastUserPauseTime` disk signal is retired with no remaining readers.
     ///
+    /// - SeeAlso: ``wasRecentlyUserPaused(within:)``, `RadioPlayerCoordinator.handleWidgetPauseAction()`
     nonisolated func recordUserPauseTimestamp() async {
         await _recordUserPauseTimestampInternal()
     }
     
     private func _recordUserPauseTimestampInternal() async {
-        // Purpose: record authoritative in-actor timestamp for wasRecentlyUserPaused.
-        // Key constraint: cross-process readers (widgets) continue to use lastUserPauseTime in UserDefaults.
         lastUserPauseTimestamp = Date().timeIntervalSince1970
     }
 
@@ -3416,15 +3418,16 @@ actor SharedPlayerManager {
 
     // MARK: - Retired App Group Key Purge
 
-    /// Removes retired on-disk visual/playback keys and the bare language key left by
-    /// pre-memory-only installs.
+    /// Removes retired on-disk App Group leftovers from pre-memory-only installs and
+    /// retired operational keys that no longer have writers or readers.
     ///
     /// **Purge only — not a migration.** Blobs and bools are deleted, never decoded into
     /// session state. Visual chrome is never restored from disk; every cold launch uses
     /// factory `.prePlay` via ``resetToFactoryDefaultsOnLaunch()`` / ``init()``.
     ///
     /// Keys cleared: `persistedWidgetState`, `playerVisualState`, `isPlaying`, `playing`,
-    /// `hasError`, bare `currentLanguage`.
+    /// `hasError`, bare `currentLanguage`, retired `lastUserPauseTime` (pause barrier is
+    /// in-actor only), retired `preferredVolume` (system volume is SSOT).
     ///
     /// Does **not** touch security caches, liveness (`lastUpdateTime`), pending-action keys,
     /// instant-feedback keys, or durable Live Activity mirrors
@@ -3435,7 +3438,8 @@ actor SharedPlayerManager {
     /// ``updateInMemorySessionSnapshot``, and ``removeAllLocalPlaybackKeys()``.
     ///
     /// - SeeAlso: ``resetToFactoryDefaultsOnLaunch()``, ``removeAllLocalPlaybackKeys()``,
-    ///   ``preferredWidgetLanguage()``, docs/Event-Driven-Refactor-Roadmap.md (OI-1),
+    ///   ``preferredWidgetLanguage()``, ``wasRecentlyUserPaused(within:)``,
+    ///   docs/Event-Driven-Refactor-Roadmap.md (OI-1),
     ///   CODING_AGENT.md (Single Source of Truth Principles).
     nonisolated static func clearPersistedVisualStateKeysFromDisk() {
         guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return }
@@ -3446,6 +3450,9 @@ actor SharedPlayerManager {
         defaults.removeObject(forKey: "hasError")
         // Retired bare language key (never written by current paths; purge for upgrade hygiene).
         defaults.removeObject(forKey: "currentLanguage")
+        // Retired operational keys (no writers/readers; in-actor / system SSOT replaced them).
+        defaults.removeObject(forKey: "lastUserPauseTime")
+        defaults.removeObject(forKey: "preferredVolume")
     }
 
     /// Drops the in-process session snapshot. SSOT write helper — sole `nil` assignment site.
@@ -4222,7 +4229,7 @@ extension SharedPlayerManager {
     /// Does **not** touch:
     /// - "lastSecurityValidation" (Core DNS TXT 1-hour success cache — required for secure launch & streaming)
     /// - Any keys written by SecurityModelValidator / Core security
-    /// - Certificate pinning data, app version, migration flags, volume prefs, or launch-critical state
+    /// - Certificate pinning data, app version, migration flags, or launch-critical state
     ///
     /// The clear always removes the primary snapshot even if widgets are configured (user explicitly requested it).
     /// After clear, `loadPersistedWidgetState()` returns nil and providers fall back to safe .prePlay / "en".
@@ -4230,11 +4237,11 @@ extension SharedPlayerManager {
         clearInMemorySessionSnapshot()
         guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return }
 
-        // Retired visual/playback/language keys (persistedWidgetState, isPlaying, bare currentLanguage, …).
+        // Retired visual/playback/language + orphan operational keys
+        // (persistedWidgetState, isPlaying, bare currentLanguage, lastUserPauseTime, preferredVolume, …).
         clearPersistedVisualStateKeysFromDisk()
 
         // Playback-related transient / recent activity keys
-        defaults.removeObject(forKey: "lastUserPauseTime")
         defaults.removeObject(forKey: "lastUpdateTime")
 
         // Optimistic widget feedback + pending intent keys (these can leak "I just interacted")

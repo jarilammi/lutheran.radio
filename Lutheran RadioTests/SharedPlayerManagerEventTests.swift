@@ -3452,6 +3452,9 @@ final class SharedPlayerManagerEventTests: XCTestCase {
         defaults?.set(true, forKey: "playing")
         defaults?.set(true, forKey: "hasError")
         defaults?.set("fi", forKey: "currentLanguage")
+        // Retired operational App Group leftovers (no writers; must purge on factory reset).
+        defaults?.set(Date().timeIntervalSince1970, forKey: "lastUserPauseTime")
+        defaults?.set(0.75, forKey: "preferredVolume")
         // Stale durable LA toggle visual + language mirrors must not survive factory reset.
         SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(.playing)
         SharedPlayerManager.persistLiveActivityLanguageMirror("fi")
@@ -3473,6 +3476,14 @@ final class SharedPlayerManagerEventTests: XCTestCase {
         XCTAssertNil(
             defaults?.object(forKey: "currentLanguage"),
             "Retired bare currentLanguage must be purged with other visual keys"
+        )
+        XCTAssertNil(
+            defaults?.object(forKey: "lastUserPauseTime"),
+            "Retired lastUserPauseTime must be purged (in-actor pause barrier only)"
+        )
+        XCTAssertNil(
+            defaults?.object(forKey: "preferredVolume"),
+            "Retired preferredVolume must be purged (system volume is SSOT)"
         )
         XCTAssertNil(
             SharedPlayerManager.loadLiveActivityToggleVisualStateMirror(),

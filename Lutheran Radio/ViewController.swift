@@ -338,13 +338,9 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         // (coordinator will keep it in sync on subsequent updateUI calls).
         playerViewModel?.selectedStreamIndex = initialIndex
         
-        // Set initial volume slider position (UI only)
-        let volumeToUse = preferredVolume()
-        volumeSlider.value = volumeToUse
-        volumeSlider.accessibilityValue = unsafe String(format: String(localized: "accessibility_value_volume", table: "Localizable"), Int(volumeToUse * 100))
-        #if DEBUG
-        print("[ViewController] Set initial volumeSlider to \(volumeToUse)")
-        #endif
+        // Legacy UIKit volumeSlider is not in the hierarchy (SwiftUI `VolumeAndAirPlayRow`
+        // owns system volume via `MPVolumeView`). Seed accessibility value only; no App Group.
+        volumeSlider.accessibilityValue = unsafe String(format: String(localized: "accessibility_value_volume", table: "Localizable"), Int(volumeSlider.value * 100))
         
         setupControls()
         // Reset per-launch cellular permission flags early (before network monitoring can fire the expensive path).
@@ -526,7 +522,8 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
             // guard (see RadioPlayerCoordinator.performColdLaunchPlaybackIfAllowed and
             // userRequestedPlay Precondition in SPM). Not an "explicit tap" path.
             await SharedPlayerManager.shared.play()
-            self.restoreVolume()
+            // Full relative engine gain; system output volume is SSOT via `MPVolumeView`.
+            self.restoreEngineVolumeToUnity()
         }
     }
     
@@ -538,27 +535,15 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         radioPlayerCoordinator?.notifyLayoutChange()
     }
     
-    private func preferredVolume() -> Float {
-        guard let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
-            return 0.5
-        }
-        let savedVolume = sharedDefaults.float(forKey: "preferredVolume")
-        let volumeToUse = savedVolume > 0 ? savedVolume : 0.5
-        // Persist default if none exists (for consistency with restoreVolume)
-        persistPreferredVolume(volumeToUse)
-        return volumeToUse
-    }
-
-    private func persistPreferredVolume(_ volume: Float) {
-        guard let sharedDefaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return }
-        sharedDefaults.set(volume, forKey: "preferredVolume")
-        sharedDefaults.synchronize()
-    }
-    
-    private func restoreVolume() {
-        let volumeToUse = preferredVolume()
-        volumeSlider.value = volumeToUse
-        streamingPlayer.setVolume(volumeToUse)
+    /// Sets `DirectStreamingPlayer` relative gain to 1.0 after stream attach.
+    ///
+    /// System output level is owned by iOS (`MPVolumeView` / hardware buttons). This path
+    /// does not read or write App Group volume preferences (retired orphan key purged on
+    /// launch via ``SharedPlayerManager/clearPersistedVisualStateKeysFromDisk()``).
+    ///
+    /// - SeeAlso: `VolumeAndAirPlayRow`, ``DirectStreamingPlayer/setVolume(_:)``
+    private func restoreEngineVolumeToUnity() {
+        streamingPlayer.setVolume(1.0)
     }
     
     func setupDarwinNotificationListener() {
@@ -1195,9 +1180,10 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     }
     
     @objc private func volumeChanged(_ sender: UISlider) {
+        // Legacy UIKit slider path (slider not in hierarchy). Adjusts engine relative gain only;
+        // does not persist to App Group — system volume remains SSOT for user-facing level.
         streamingPlayer.setVolume(sender.value)
         sender.accessibilityValue = unsafe String(format: String(localized: "accessibility_value_volume", table: "Localizable"), Int(sender.value * 100))  // e.g., "75 percent"
-        persistPreferredVolume(sender.value)
     }
     
     private func setupUI() {
@@ -1298,9 +1284,10 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         do {
             // SSOT: session activate + off-main AVAudioPlayer construct/prepare/play.
             // Retain the returned player on MainActor; delegate finish still owns waiters.
+            // Volume default 1.0 (full relative gain). System output volume is SSOT; no App Group preferred volume.
             guard let clip = try await streamingPlayer.startLocalClipPlayer(
                 contentsOf: tuningURL,
-                volume: preferredVolume(),
+                volume: 1.0,
                 numberOfLoops: 0
             ) else {
                 await TuningSoundCoordinator.shared.notifyNoActivePlayback()
