@@ -21,7 +21,9 @@ import WidgetSurface
 /// The extraction of `ParsedWidgetAction` and `rootViewController(in:)` centralizes the previously repeated VC lookup and query parsing. All "open" handling for Live Activity taps correctly surfaces the app without forcing playback (see resurrection check).
 ///
 /// For related background features, see `RadioLiveActivityManager.swift`. Ensures seamless widget-to-app handoff without tracking.
-/// - SeeAlso: `ViewController.handleOpenFromLiveActivity`, `ViewController.handleWidgetAction`, `SharedPlayerManager` (pending actions)
+/// - SeeAlso: `ViewController.handleOpenFromLiveActivity`, `ViewController.handleWidgetAction`,
+///   ``RadioPlayerCoordinator/checkForPendingWidgetActions()`` (pending-action drain SSOT; VC is thin shim),
+///   `SharedPlayerManager` (pending mailbox)
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     /// The main window for the app's user interface.
     var window: UIWindow?

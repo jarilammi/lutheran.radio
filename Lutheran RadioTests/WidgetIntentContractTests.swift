@@ -13,14 +13,16 @@ import WidgetSurface
 
 /// Fast unit tests for App Group pending actions, instant-feedback windows,
 /// optimistic widget snapshots, widget stream-switch SSOT (checklist §6),
-/// play/pause pending-action drain (Darwin → ``checkForPendingWidgetActions``),
+/// play/pause pending-action drain (Darwin → ``RadioPlayerCoordinator/checkForPendingWidgetActions()``
+/// via the thin ViewController shim),
 /// and joined optimistic-signal → main-app-drain → authoritative-state contracts
 /// (including refresh gate observation without WidgetCenter IPC).
 ///
 /// Never calls real `WidgetCenter.reloadTimelines` or ActivityKit IPC.
 ///
 /// - SeeAlso: `SharedPlayerManager.swift`, `RadioPlayerCoordinator.swift`,
-///   `ViewController.checkForPendingWidgetActions`,
+///   ``RadioPlayerCoordinator/checkForPendingWidgetActions()``,
+///   ``ViewController/checkForPendingWidgetActions()`` (lifecycle shim),
 ///   ``SharedPlayerManager/signalWidgetPendingAction``,
 ///   ``WidgetRefreshManager/refreshIfNeeded``,
 ///   docs/Widget-Functionality-Roadmap.md (Tier 2),
@@ -66,15 +68,26 @@ final class WidgetIntentContractTests: XCTestCase {
         try await super.tearDown()
     }
 
+    /// Builds a host with a real ``RadioPlayerCoordinator`` (single pending-action drain owner).
+    ///
+    /// Drain lives on the coordinator; a bare `ViewController()` without wiring is a no-op shim
+    /// and must not be used for drain contracts. Set `bypassUITestMode` false to exercise the
+    /// production UITestMode clear-without-execute path.
+    ///
+    /// - Parameter bypassUITestMode: When true, allows real play/pause/switch execution under the
+    ///   XCTest host (`isRunningInUITestMode`).
+    /// - SeeAlso: ``RadioPlayerCoordinator/checkForPendingWidgetActions()``
     @MainActor
-    private static func makePendingActionDrainHost() -> ViewController {
+    private static func makePendingActionDrainHost(bypassUITestMode: Bool = true) -> ViewController {
         let host = ViewController()
         host.radioPlayerCoordinator = RadioPlayerCoordinator(
             backgroundImageController: BackgroundImageController(),
             streamingPlayer: DirectStreamingPlayer.shared
         )
-        ViewController._test_setBypassUITestModeForPendingActionProcessing(true)
-        host._test_resetWidgetActionDebounceForTests()
+        ViewController._test_setBypassUITestModeForPendingActionProcessing(bypassUITestMode)
+        if bypassUITestMode {
+            host._test_resetWidgetActionDebounceForTests()
+        }
         return host
     }
 
@@ -537,7 +550,8 @@ final class WidgetIntentContractTests: XCTestCase {
     /// Darwin drain. Dropping an opposite pending left chrome paused while audio continued
     /// (or the reverse). Debounce applies only to same-direction repeats.
     ///
-    /// - SeeAlso: ``ViewController/checkForPendingWidgetActions()``,
+    /// - SeeAlso: ``RadioPlayerCoordinator/checkForPendingWidgetActions()``,
+    ///   ``ViewController/checkForPendingWidgetActions()`` (shim),
     ///   ``SharedPlayerManager/submitMediaTransportCommandAndWait(_:)``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md
     @MainActor
@@ -628,8 +642,7 @@ final class WidgetIntentContractTests: XCTestCase {
         await manager.setUserPaused()
         let actionId = manager.scheduleWidgetAction(action: "play")!
 
-        ViewController._test_setBypassUITestModeForPendingActionProcessing(false)
-        let host = ViewController()
+        let host = Self.makePendingActionDrainHost(bypassUITestMode: false)
         host.checkForPendingWidgetActions()
         _ = host
 
@@ -647,15 +660,15 @@ final class WidgetIntentContractTests: XCTestCase {
     ///
     /// Protects the two-phase cross-process contract: extension-shaped
     /// ``signalWidgetPendingAction`` writes an optimistic session snapshot and pending
-    /// command; ``checkForPendingWidgetActions`` then clears pending and drives
-    /// ``userRequestedPlay`` so visual and intent match main-app authority.
+    /// command; ``RadioPlayerCoordinator/checkForPendingWidgetActions()`` then clears pending
+    /// and drives mailbox play so visual and intent match main-app authority.
     ///
     /// Isolation: UITestMode host; pending-action bypass only via the drain host factory;
     /// widget-process simulation only during the optimistic write; no WidgetCenter or
     /// ActivityKit IPC.
     ///
     /// - SeeAlso: ``SharedPlayerManager/signalWidgetPendingAction``,
-    ///   ``ViewController/checkForPendingWidgetActions()``,
+    ///   ``RadioPlayerCoordinator/checkForPendingWidgetActions()``,
     ///   `testCheckForPendingWidgetActionsDrainsPlayPending`,
     ///   `testSignalWidgetPendingActionPlayWritesOptimisticSnapshotAndPending`,
     ///   docs/Widget-Functionality-Roadmap.md (Tier 2),
@@ -731,7 +744,7 @@ final class WidgetIntentContractTests: XCTestCase {
     ///
     /// - SeeAlso: ``SharedPlayerManager/persistOptimisticWidgetSnapshot(_:language:)``,
     ///   ``SharedPlayerManager/scheduleWidgetAction(action:parameter:)``,
-    ///   ``ViewController/checkForPendingWidgetActions()``,
+    ///   ``RadioPlayerCoordinator/checkForPendingWidgetActions()``,
     ///   `testCheckForPendingWidgetActionsDrainsPausePending`,
     ///   `testSignalWidgetPendingActionPauseWritesOptimisticSnapshotAndPending`,
     ///   docs/Widget-Functionality-Roadmap.md (Tier 2),
@@ -890,7 +903,7 @@ final class WidgetIntentContractTests: XCTestCase {
     /// optimistic write; no WidgetCenter or ActivityKit IPC.
     ///
     /// - SeeAlso: ``SharedPlayerManager/signalWidgetPendingAction``,
-    ///   ``ViewController/checkForPendingWidgetActions()``,
+    ///   ``RadioPlayerCoordinator/checkForPendingWidgetActions()``,
     ///   `testUITestModeWithoutBypassDrainsPendingWithoutExecuting`,
     ///   docs/Widget-Functionality-Roadmap.md (Tier 2),
     ///   CODING_AGENT.md (UITestMode isolation SSOT).
@@ -914,8 +927,7 @@ final class WidgetIntentContractTests: XCTestCase {
         )
         XCTAssertNotNil(manager.getPendingActionIfFresh())
 
-        ViewController._test_setBypassUITestModeForPendingActionProcessing(false)
-        let host = ViewController()
+        let host = Self.makePendingActionDrainHost(bypassUITestMode: false)
         host.checkForPendingWidgetActions()
         _ = host
 

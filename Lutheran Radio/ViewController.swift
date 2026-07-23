@@ -53,8 +53,13 @@ import WidgetSurface
 /// Responsibilities that remain here:
 /// - Hosting the background image layer (`BackgroundImageController`)
 /// - Owning the single `UIHostingController` that presents `RadioPlayerView`
-/// - Retaining a few hard-to-move observers (network, interruptions, route, Darwin widget actions)
+/// - Retaining a few hard-to-move observers (network, interruptions, route, Darwin widget notify)
 /// - Public entry points for SceneDelegate, widgets, Siri, and URL schemes (thin shims to coordinator / SPM)
+///
+/// **Pending-action drain** (App Group `pendingAction*` → play/pause/switch) is owned by
+/// ``RadioPlayerCoordinator/checkForPendingWidgetActions()``. This type only installs the Darwin
+/// observer, schedules the launch burst, and exposes a one-line public shim so SceneDelegate and
+/// tests can call drain without holding a coordinator reference.
 ///
 /// The primary player UI has been extracted into pure SwiftUI:
 /// `RadioPlayerView` (composition root) + `NowPlayingMetadataView` + `LanguageSelectorView` +
@@ -77,28 +82,19 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     // MARK: - Private Properties and Constants
     
     // NOTE: lastAppliedVisualState, selectedStreamIndex (mirror only for legacy sync spots),
-    // tuning*, streamSwitch*, sleep UI*, hasShownSecurityAlert, hasPlayedSpecialTuningSound, hasEverPlayed
-    // and related orchestration state now live exclusively in RadioPlayerCoordinator. VC keeps only
-    // what is required for the thin host surface (network flags, isDeallocating, test accessors,
-    // widget polling debounce/processed set, pending widget switch work item).
+    // tuning*, streamSwitch*, sleep UI*, hasShownSecurityAlert, hasPlayedSpecialTuningSound, hasEverPlayed,
+    // pending-action drain + play/pause debounce, and widget-switch work items live exclusively in
+    // RadioPlayerCoordinator. VC keeps only what is required for the thin host surface (network flags,
+    // isDeallocating, test accessors, legacy URL-scheme actionId set for handleWidgetAction).
     
     // Cellular permission state + migration + per-launch prompting is fully extracted to CellularPermissionManager
     // (owned here because the network path handler + alert presentation remain in the retained thin host surface
     // per decomposition guardrails; the manager contains no security or streaming logic).
     private let cellularPermissionManager = CellularPermissionManager()
     
-    private var lastWidgetSwitchTime: Date?
-    private var pendingWidgetSwitchWorkItem: DispatchWorkItem?
+    /// Dedup set for legacy `lutheranradio://widget-action` URL path only (`handleWidgetAction`).
+    /// Pending-action drain and silent switch use the coordinator's set.
     private var processedActionIds: Set<String> = []
-    
-    // Widget / extension-hosted play/pause drain debouncing.
-    // Same-direction repeats within the interval are dropped (AVFoundation thrash guard).
-    // Opposite verbs always execute so a rapid play→pause (or pause→play) flip is not lost
-    // after optimistic Live Activity / home-widget chrome already acknowledged the second tap.
-    private var lastWidgetActionTime: Date = .distantPast
-    /// Last executed pending verb for play/pause drain (`"play"` or `"pause"`).
-    private var lastWidgetPlayPauseAction: String?
-    private let widgetActionDebounceInterval: TimeInterval = 0.65
     
     // MARK: - UI Elements
 
@@ -171,8 +167,8 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     // Local hapticEngine lazy + handlers removed (single owner in RadioPlayerCoordinator).
     // The early init call site in viewDidLoad was removed; wireAndInitialSetup performs equivalent.
     
-    // selectedStreamIndex kept as thin mirror only for a few legacy sync sites in checkForPending/play paths
-    // that read it before delegating. All orchestration mutates the one in RadioPlayerCoordinator.
+    // selectedStreamIndex kept as thin mirror for cold-launch seed only; orchestration mutates the
+    // coordinator's index (including pending-action play language sync after drain).
     private var selectedStreamIndex: Int = 0
     
     private var isInitialSetupComplete = false
@@ -571,6 +567,7 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
                     #if DEBUG
                     print("[ViewController] Received Darwin notification for widget action")
                     #endif
+                    // Thin lifecycle shim → coordinator owns drain + debounce + mailbox enqueue.
                     vc.checkForPendingWidgetActions()
                 }
             },
@@ -649,15 +646,15 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
 
     private func setupFastWidgetActionChecking() {
         // Widget-action delivery does not use a repeating foreground poll timer (Tier 3).
-        // Primary path: Darwin notify → checkForPendingWidgetActions. Defense-in-depth:
-        // this 1…5 s burst after launch, SceneDelegate sceneDidBecomeActive /
-        // sceneWillEnterForeground, and AppDelegate foreground hooks.
+        // Primary path: Darwin notify → coordinator drain (via checkForPendingWidgetActions shim).
+        // Defense-in-depth: this 1…5 s burst after launch, SceneDelegate sceneDidBecomeActive /
+        // sceneWillEnterForeground.
         //
         // UITestMode: skip entirely. The checker would only risk picking up stale pendings
         // from prior killed sessions and turning them into "user input". The guard inside
-        // checkForPendingWidgetActions is defense-in-depth; skipping the schedule avoids
-        // the "Fast widget action checking completed" timing marker during unit tests
-        // and reduces scheduler noise in the test host.
+        // RadioPlayerCoordinator.checkForPendingWidgetActions is defense-in-depth; skipping
+        // the schedule avoids the "Fast widget action checking completed" timing marker during
+        // unit tests and reduces scheduler noise in the test host.
         if SharedPlayerManager.isRunningInUITestMode {
             #if DEBUG
             print("[ViewController] UITestMode — skipping fast widget action checking schedule")
@@ -1393,244 +1390,25 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     // removed. Single source now in RadioPlayerCoordinator (wired via onSelectionChanged closure set in wireAndInitialSetup; no overwrite here).
     // The languageSelectorView.onSelectionChanged wiring that pointed here has been removed so the coordinator's handler is authoritative.
     
-    // private handleWidgetPlayAction / handleWidgetPauseAction bodies removed (logic lives in coordinator equivalents or direct manager calls in checkForPendingWidgetActions).
-    // The pause call site below now delegates. Play uses the direct authoritative path (per comments in checkForPending).
-
     /// Handles widget-initiated stream switching to a specific language without playing tuning sounds.
     public func handleWidgetSwitchToLanguage(_ languageCode: String, actionId: String) {
-        // Full implementation (processed guard, debounce, workItem, stop/set/play flow, intent checks) lives in RadioPlayerCoordinator.
+        // Full implementation (processed guard, workItem, stop/set/play flow, intent checks) lives in RadioPlayerCoordinator.
         radioPlayerCoordinator?.handleWidgetSwitchToLanguage(languageCode, actionId: actionId)
     }
     
     // MARK: - Widget and URL Scheme Handling
 
-    /// Whether a widget/extension play or pause pending should execute under the same-direction debounce.
+    /// Thin lifecycle / test entry for App Group pending-action drain.
     ///
-    /// - Parameter action: `"play"` or `"pause"`.
-    /// - Returns: `false` only when the same verb ran within ``widgetActionDebounceInterval``;
-    ///   opposite verbs and the first verb after the window always return `true`.
-    /// - Note: Pending is already cleared before this check so a dropped same-direction
-    ///   repeat cannot stick in the App Group. Opposite taps must not be dropped: extension
-    ///   hosts publish optimistic chrome before Darwin drain, and a dropped opposite leaves
-    ///   chrome and engine permanently skewed until the next user action.
-    /// - SeeAlso: ``checkForPendingWidgetActions()``,
+    /// Ownership of debounce, UITestMode drain-without-execute, mailbox enqueue, and
+    /// switch work-item cancel is ``RadioPlayerCoordinator/checkForPendingWidgetActions()``.
+    /// Darwin notify, SceneDelegate become-active / foreground, and the launch 1…5 s burst
+    /// call this shim only.
+    ///
+    /// - SeeAlso: ``RadioPlayerCoordinator/checkForPendingWidgetActions()``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md
-    private func shouldExecuteWidgetPlayPauseAction(_ action: String) -> Bool {
-        let elapsed = Date().timeIntervalSince(lastWidgetActionTime)
-        if elapsed > widgetActionDebounceInterval {
-            return true
-        }
-        if let last = lastWidgetPlayPauseAction, last == action {
-            return false
-        }
-        return true
-    }
-
-    /// Records the wall-clock and verb of a play/pause pending that will execute.
-    private func recordWidgetPlayPauseAction(_ action: String) {
-        lastWidgetActionTime = Date()
-        lastWidgetPlayPauseAction = action
-    }
-
-    /// Drains one App Group pending action written by the widget extension / Control widget /
-    /// extension-hosted Live Activity intent (play, pause, or switch).
-    ///
-    /// **Cross-process latency path (extension host):**
-    /// 1. Extension writes optimistic snapshot / LA ContentState + `pendingAction*` and posts
-    ///    Darwin `radio.lutheran.widget.action` (`notifyMainApp`).
-    /// 2. Main app receives Darwin (or SceneDelegate become-active / launch burst) and calls
-    ///    this method.
-    /// 3. Play and pause execute on the serial ``MediaTransportCommand`` mailbox so a rapid
-    ///    opposite drain can preempt an in-flight play the same way headset remotes do.
-    ///
-    /// **Debounce:** same-direction play/pause only (``shouldExecuteWidgetPlayPauseAction``);
-    /// opposite verbs always run. UITestMode still drains without executing unless the DEBUG
-    /// pending-action bypass is set.
-    ///
-    /// - Note: Relies on `DirectStreamingPlayer.isSwitchingStream` (set to `internal`) to
-    ///   coordinate stream switches and suppress unnecessary "stopped" status updates during
-    ///   transitions.
-    /// - SeeAlso: ``SharedPlayerManager/submitMediaTransportCommandAndWait(_:)``,
-    ///   ``SharedPlayerManager/signalWidgetPendingAction(visualState:action:language:)``,
-    ///   ``RadioPlayerCoordinator/handleWidgetPauseAction()``,
-    ///   ``MediaTransportLatencyTimeline`` (DEBUG drain milestones),
-    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
-    ///   docs/Widget-Functionality-Roadmap.md
     public func checkForPendingWidgetActions() {
-        // UITestMode defense-in-depth.
-        // Even if a prior killed test session (or manual run) left a "play"/"pause" pendingAction
-        // or Darwin notification in the shared App Group, do not interpret it as user input.
-        // This prevents the "background test sessions would be interpreted as user input"
-        // scenario that leaves the host in yellow .prePlay "connecting" state and stalls the
-        // test runner. We still drain the pending key so the next real run starts clean.
-        if SharedPlayerManager.isRunningInUITestMode {
-            #if DEBUG
-            if unsafe Self._test_bypassUITestModeForPendingActionProcessing {
-                // Unit-test host: exercise the real play/pause drain contract (see WidgetIntentContractTests).
-            } else {
-                if let pending = SharedPlayerManager.shared.getPendingActionIfFresh(maxAge: 30.0) {
-                    SharedPlayerManager.shared.clearPendingAction(actionId: pending.actionId)
-                    print("[ViewController] UITestMode — cleared stale pending \(pending.action) without executing (avoids killed-session user input interpretation)")
-                }
-                return
-            }
-            #else
-            if let pending = SharedPlayerManager.shared.getPendingActionIfFresh(maxAge: 30.0) {
-                SharedPlayerManager.shared.clearPendingAction(actionId: pending.actionId)
-            }
-            return
-            #endif
-        }
-
-        guard let pending = SharedPlayerManager.shared.getPendingActionIfFresh(maxAge: 30.0) else {
-            return
-        }
-
-        let pendingAction = pending.action
-        let pendingLanguage = pending.parameter
-        let actionId = pending.actionId
-
-        #if DEBUG
-        print("[ViewController] Found pending action: \(pendingAction), ID: \(actionId)")
-        print("[ViewController] Pending language: \(pendingLanguage ?? "nil")")
-        MediaTransportLatencyTimeline.mark(
-            .pendingActionDrainEntered,
-            detail: "action=\(pendingAction) id=\(actionId)"
-        )
-        #endif
-
-        // Clear action immediately to prevent re-processing
-        SharedPlayerManager.shared.clearPendingAction(actionId: actionId)
-        
-        switch pendingAction {
-        case "switch":
-            if let languageCode = pendingLanguage {
-                #if DEBUG
-                print("[ViewController] Executing widget switch action to language: \(languageCode)")
-                #endif
-                handleWidgetSwitchToLanguage(languageCode, actionId: actionId)
-            } else {
-                #if DEBUG
-                print("[ViewController] Switch action missing language code - pendingLanguage was nil")
-                #endif
-            }
-        case "play":
-            #if DEBUG
-            print("[ViewController] Executing widget play action")
-            #endif
-
-            // Same-direction debounce only — opposite pause after a rapid flip must run.
-            guard shouldExecuteWidgetPlayPauseAction("play") else {
-                #if DEBUG
-                print("[ViewController] Widget play debounced (same-direction within \(widgetActionDebounceInterval)s)")
-                MediaTransportLatencyTimeline.mark(
-                    .pendingActionDrainDebounced,
-                    detail: "action=play"
-                )
-                #endif
-                return
-            }
-            recordWidgetPlayPauseAction("play")
-
-            // Widget play: clear any user pause lock then play. Do NOT reset to prePlay here
-            // (resetToPrePlayForNewStream is only for language stream switches).
-            // Engine work goes through the media-transport mailbox so a following pause
-            // pending (or headset pause) can preempt an in-flight attach — same ordering as
-            // system Now Playing and main-hosted Live Activity toggles.
-            Task { @MainActor [weak self] in
-                #if DEBUG
-                MediaTransportLatencyTimeline.mark(.pendingActionDrainPlayStarted)
-                #endif
-                // If a widget switch was recently scheduled (to select a lang while paused) and a play
-                // tap followed immediately, cancel the deferred switch workItem. Its selection effect
-                // is now covered by the alignment inside play() + the sync below; letting the workItem
-                // run could issue a late stop() on the stream we just started.
-                self?.pendingWidgetSwitchWorkItem?.cancel()
-                self?.pendingWidgetSwitchWorkItem = nil
-
-                await SharedPlayerManager.shared.submitMediaTransportCommandAndWait(.play)
-
-                // After play (which now defensively aligns the model to the persisted language from
-                // any preceding widget switch signal), sync the in-app language selector + needle
-                // so the main UI reflects the language that is actually playing. This prevents the
-                // "en selected in widget/needle, but fi audible" desync observed in the 2026-06-12
-                // re-capture of initial-streamplay-start.txt.
-
-                // For widget-originated play (initial play via widget is the key case in the log),
-                // ensure the privacy gate is refreshed and we force an authoritative snapshot +
-                // liveness bump. The widget intent may have written an optimistic snapshot (now
-                // allowed via isWidgetProcess bypass), but the main app must also write so that
-                // hasError, metadata, and the actually played language are authoritative.
-                await WidgetRefreshManager.shared.refreshHasActiveWidgets()
-                await SharedPlayerManager.shared.recordWidgetLiveness()
-                await SharedPlayerManager.shared.saveCurrentState()
-
-                #if DEBUG
-                MediaTransportLatencyTimeline.mark(.pendingActionDrainPlayFinished)
-                #endif
-
-                guard let self else { return }
-                let playingLang = DirectStreamingPlayer.shared.selectedStream.languageCode
-                if let targetIndex = DirectStreamingPlayer.availableStreams.firstIndex(where: { $0.languageCode == playingLang }) {
-                    if self.selectedStreamIndex != targetIndex {
-                        self.selectedStreamIndex = targetIndex
-                        radioPlayerCoordinator?.selectedStreamIndex = targetIndex
-                    }
-                    self.playerViewModel?.selectedStreamIndex = targetIndex // SwiftUI observes VM
-                }
-            }
-        case "pause":
-            #if DEBUG
-            print("[ViewController] Executing widget pause action")
-            #endif
-
-            // Same-direction debounce only — opposite play after a rapid flip must run.
-            guard shouldExecuteWidgetPlayPauseAction("pause") else {
-                #if DEBUG
-                print("[ViewController] Widget pause debounced (same-direction within \(widgetActionDebounceInterval)s)")
-                MediaTransportLatencyTimeline.mark(
-                    .pendingActionDrainDebounced,
-                    detail: "action=pause"
-                )
-                #endif
-                return
-            }
-            recordWidgetPlayPauseAction("pause")
-
-            // Single MainActor Task: already-.userPaused ignore + coordinator pause (mailbox).
-            // Avoids a nested Task hop that previously delayed engine silence after Darwin.
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                #if DEBUG
-                MediaTransportLatencyTimeline.mark(.pendingActionDrainPauseStarted)
-                #endif
-                let vs = await SharedPlayerManager.shared.currentVisualState
-                if vs == .userPaused {
-                    #if DEBUG
-                    print("[ViewController] Widget pause ignored — already .userPaused (prevents double-pause resurrection races)")
-                    MediaTransportLatencyTimeline.mark(
-                        .pendingActionDrainPauseFinished,
-                        detail: "result=alreadyUserPaused"
-                    )
-                    #endif
-                    return
-                }
-                await radioPlayerCoordinator?.handleWidgetPauseAction()
-                #if DEBUG
-                MediaTransportLatencyTimeline.mark(.pendingActionDrainPauseFinished)
-                #endif
-            }
-        default:
-            #if DEBUG
-            print("[ViewController] Unknown pending action: \(pendingAction)")
-            #endif
-        }
-        
-        // Clean up old processed action IDs (keep only last 10)
-        if processedActionIds.count > 10 {
-            let sortedIds = Array(processedActionIds).suffix(10)
-            processedActionIds = Set(sortedIds)
-        }
+        radioPlayerCoordinator?.checkForPendingWidgetActions()
     }
     
 }
@@ -1839,13 +1617,12 @@ extension ViewController: StreamingPlayerDelegate {
                     #if DEBUG
                     print("[ViewController] Widget switch action reached legacy handleWidgetAction path — delegating to canonical coordinator handler (primary routes use handleWidgetSwitchToLanguage + switchToStreamFromWidget)")
                     #endif
-                    // Primary call sites (SceneDelegate widget-action + checkForPendingWidgetActions)
+                    // Primary call sites (SceneDelegate widget-action + coordinator drain)
                     // already special-case "switch" and call handleWidgetSwitchToLanguage directly.
                     // This case is legacy/unreachable in current routing. Delegation ensures that
                     // even if hit, we do not duplicate manual engine sequences or UI logic.
-                    // The processedActionIds guard inserted at top of this method will cause the
-                    // inner handler to early-return; the trailing clearPending + save below still run.
-                    // Any real switch work will have been driven by the canonical path.
+                    // The coordinator's processedActionIds may already contain actionId if the
+                    // canonical path ran first; the trailing clearPending + save below still run.
                     handleWidgetSwitchToLanguage(languageCode, actionId: actionId)
                 }
                 
@@ -1872,24 +1649,20 @@ extension ViewController: StreamingPlayerDelegate {
 #if DEBUG
 extension ViewController {
 
-    /// When `true`, ``checkForPendingWidgetActions()`` processes play/pause/switch pendings
-    /// under the XCTest host instead of the UITestMode drain-only path.
+    /// Forwards to ``RadioPlayerCoordinator`` (single owner of pending-action drain seams).
     ///
-    /// Mirrors ``WidgetRefreshManager/_test_setBypassUITestModeForRefreshGateObservation(_:)``.
+    /// Existing contract tests call this on the host ViewController without holding a
+    /// coordinator reference; the bypass flag itself lives on the coordinator.
     ///
-    /// - SeeAlso: ``WidgetIntentContractTests``, ``checkForPendingWidgetActions()``,
-    ///   ``SharedPlayerManager/isRunningInUITestMode``, docs/Widget-Functionality-Roadmap.md (Tier 2).
-    nonisolated(unsafe) private static var _test_bypassUITestModeForPendingActionProcessing = false
-
-    /// Enables or disables real pending-action processing while `isRunningInUITestMode` is true.
+    /// - SeeAlso: ``RadioPlayerCoordinator/_test_setBypassUITestModeForPendingActionProcessing(_:)``,
+    ///   ``checkForPendingWidgetActions()``, docs/Widget-Functionality-Roadmap.md (Tier 2).
     nonisolated static func _test_setBypassUITestModeForPendingActionProcessing(_ bypass: Bool) {
-        unsafe _test_bypassUITestModeForPendingActionProcessing = bypass
+        RadioPlayerCoordinator._test_setBypassUITestModeForPendingActionProcessing(bypass)
     }
 
-    /// Resets widget play/pause debounce so back-to-back contract tests do not interfere.
+    /// Forwards debounce reset to the coordinator (no-op if coordinator is not yet assigned).
     func _test_resetWidgetActionDebounceForTests() {
-        lastWidgetActionTime = .distantPast
-        lastWidgetPlayPauseAction = nil
+        radioPlayerCoordinator?._test_resetWidgetActionDebounceForTests()
     }
 }
 #endif

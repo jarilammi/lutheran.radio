@@ -360,13 +360,14 @@ enum WidgetIntentExecution {
     ///
     /// **Extension host latency:** optimistic ContentState + durable mirror are published
     /// before this method runs (``performLiveActivityToggle()``). Engine silence / first
-    /// audio still requires main-app ``checkForPendingWidgetActions`` after Darwin notify;
-    /// the main app debounces only same-direction play/pause so a rapid opposite flip is
-    /// not dropped, and drained play/pause share the media-transport mailbox for preemption.
+    /// audio still requires main-app ``RadioPlayerCoordinator/checkForPendingWidgetActions()``
+    /// after Darwin notify; the main app debounces only same-direction play/pause so a rapid
+    /// opposite flip is not dropped, and drained play/pause share the media-transport mailbox
+    /// for preemption.
     ///
     /// - Parameter plan: Direction from ``WidgetIntentCoordinators/planLiveActivityToggle(from:)``.
     /// - SeeAlso: ``MediaTransportCommand``, ``SharedPlayerManager/submitMediaTransportCommandAndWait(_:)``,
-    ///   ``ViewController/checkForPendingWidgetActions()``,
+    ///   ``RadioPlayerCoordinator/checkForPendingWidgetActions()``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md
     static func executeLiveActivityToggle(plan: WidgetLiveActivityTogglePlan) async {
         let manager = SharedPlayerManager.shared

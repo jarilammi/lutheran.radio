@@ -95,10 +95,12 @@ Apple documents coalescing of frequent updates; Lutheran Radio does not implemen
 
 **Serial media-transport mailbox:** Remote handlers return `.success` immediately and enqueue ``MediaTransportCommand`` values via ``SharedPlayerManager/submitMediaTransportCommand(_:)``. Play and toggle wait for the prior verb; pause/stop preempt (cancel + ``stop()`` without waiting for an in-flight play) and record a pause epoch so a late `userRequestedPlay` re-asserts sticky `.userPaused`. Toggle direction is decided only inside ``performMediaTransportCommand(_:generation:)`` after prior verbs commit state — never as a split visual read in the remote-command callback. Toggle pause when ``isActivelyPlaying`` **or** ``isConnectingPlayback`` (cancel connect); thermal refuse while ``blocksPlannedPlay`` and the device is still stressed. Main-app ``WidgetIntentExecution/executeLiveActivityToggle(plan:)`` uses ``submitMediaTransportCommandAndWait(_:)`` so Live Activity engine execution shares the same ordering as headset / Control Center.
 
-**Extension-hosted Live Activity / home-widget play-pause:** The extension process still uses direct ``stop()`` / ``userRequestedPlay()`` (optimistic snapshot + `pendingAction*` + Darwin `notifyMainApp`). Real audio changes only after the main app drains via ``ViewController/checkForPendingWidgetActions()``. Drain rules that keep chrome trustworthy:
+**Extension-hosted Live Activity / home-widget play-pause:** The extension process still uses direct ``stop()`` / ``userRequestedPlay()`` (optimistic snapshot + `pendingAction*` + Darwin `notifyMainApp`). Real audio changes only after the main app drains via ``RadioPlayerCoordinator/checkForPendingWidgetActions()`` (single owner of debounce, UITestMode drain-without-execute, and mailbox enqueue). `ViewController` and `SceneDelegate` only call a thin public shim after Darwin notify or lifecycle events.
+
+Drain rules that keep chrome trustworthy:
 
 - **Same-direction debounce (0.65 s):** A second `"play"` or second `"pause"` within the window is dropped after clearing the pending key (AVFoundation thrash guard). **Opposite** verbs always execute so a rapid flip is not lost after optimistic ContentState already showed the second glyph.
-- **Mailbox on drain:** Drained play and pause enqueue ``submitMediaTransportCommandAndWait`` (play) / coordinator pause (pause → mailbox), so an opposite pause can preempt an in-flight extension-originated play the same way system remotes do. Pause drain uses a single MainActor Task (no nested coordinator Task hop).
+- **Mailbox on drain:** Drained play and pause enqueue ``submitMediaTransportCommandAndWait`` (play) / ``handleWidgetPauseAction`` (pause → mailbox), so an opposite pause can preempt an in-flight extension-originated play the same way system remotes do. Pause drain uses a single MainActor Task (no nested Task hop).
 - **Delivery path:** Darwin `deliverImmediately` + main-queue drain remains primary; SceneDelegate become-active / launch 1…5 s burst are defense-in-depth. No long-period poll timer (unreliable while suspended). UITestMode still clears pendings without executing unless the DEBUG bypass is set.
 
 ### Widgets
@@ -115,7 +117,7 @@ Mutation-path timeline reloads are driven by the Tier 2 ``PlayerEvent`` observer
 | Mailbox | ``submitMediaTransportCommand`` enqueue; ``performMediaTransportCommand`` execute start/finish |
 | Soft silence | ``DirectStreamingPlayer/stopAndWait`` resume (engine-complete) |
 | First audio chrome | ``publishAuthoritativePlayingIfNeeded`` published / skipped |
-| Extension drain | ``ViewController/checkForPendingWidgetActions()`` — entered, same-direction debounced, play/pause start/finish |
+| Extension drain | ``RadioPlayerCoordinator/checkForPendingWidgetActions()`` — entered, same-direction debounced, play/pause start/finish |
 
 **Console format** (grep `[MediaTransportLatency]`):
 

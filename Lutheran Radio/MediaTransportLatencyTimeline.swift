@@ -34,7 +34,7 @@
 //   ``WidgetIntentExecution/performLiveActivityToggle()``,
 //   ``DirectStreamingPlayer/stopAndWait(reason:silent:applyUserPauseVisualLock:)``,
 //   ``DirectStreamingPlayer`` `publishAuthoritativePlayingIfNeeded`,
-//   ``ViewController/checkForPendingWidgetActions()``,
+//   ``RadioPlayerCoordinator/checkForPendingWidgetActions()``,
 //   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
 //   CODING_AGENT.md (cross-target widget sources).
 
@@ -98,7 +98,7 @@ enum MediaTransportLatencyTimeline: Sendable {
         /// (Connecting-until-audible race). Detail may carry `spmVisual` + `reasonKey`.
         case inAppChromeAppliedPlaying
 
-        /// ``checkForPendingWidgetActions()`` found a fresh pending action (detail = action).
+        /// ``RadioPlayerCoordinator/checkForPendingWidgetActions()`` found a fresh pending (detail = action).
         case pendingActionDrainEntered
         /// Same-direction play/pause debounce dropped the drain (detail = action).
         case pendingActionDrainDebounced
