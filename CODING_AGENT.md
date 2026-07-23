@@ -47,6 +47,37 @@ Agents must apply these standards to all new code and to any symbol or file they
   5. `README.md` security sections (operational details, history table, verification commands).
   6. Implementation (`///` + inline `// SAFETY:` comments).
 - **Test documentation**: Tests should state the specific invariant, permanent/transient error case, or behavioral property they protect (see existing Core test patterns). For tests involving AsyncStreams, Live Activities, or widget state, also follow the fast/reliable patterns and "test execution patience" guidance in the "Test Execution Patience and Fast, Reliable Test Patterns" section below. Reference the canonical examples in `SharedPlayerManagerEventTests.swift`.
+- **Canonical citations only** (see "Canonical Citations and Temporary Work Products" below): product source, DocC, permanent `docs/`, README, commit messages, and PR text must name committed symbols and permanent architecture docs — never untracked scratch, living briefs, or session-only labels.
+- **Honest, non-forcing names** (see "Naming: Honest and Non-Forcing" below): public and SSOT API names describe actual effect (e.g. write cadence policy) without implying bypass of privacy, security, or non-forcing observation rules.
+
+### Canonical Citations and Temporary Work Products
+
+Product source (`///`, inline comments, file headers), DocC, permanent documentation under `docs/`, `README.md`, commit messages, and PR titles/bodies must cite **only** canonical, repository-committed surfaces:
+
+- Types, methods, keys, tests, and SSOT tables that exist in the tree (e.g. ``bumpWidgetLivenessTimestamp(policy:minInterval:)``, ``WidgetLivenessWritePolicy``, ``clearHomeWidgetLivenessAndInstantFeedbackResiduals()``, the App Group table in `SharedPlayerManager.swift`)
+- Permanent architecture docs already on the mainline (e.g. Widget Functionality Roadmap, Event-Driven Refactor Roadmap, Widget Presentation Dataflow, Core DocC articles, README security/SSOT sections, this file)
+
+**Never** cite in those surfaces:
+
+- Untracked or session-local files (scratch notes, device logs, local audit dumps)
+- Living / working briefs, handoff prompts, or analysis plans that are not permanent architecture docs
+- Backlog labels invented only for session planning (cluster IDs, "phase N", "temporary migration")
+- Informal aliases ("the ephemeral prompt", "the privacy residual plan", "per the analysis")
+
+Working briefs may guide implementation sessions. When shipping, absorb truth into committed symbols and permanent docs using **mechanism names**, not provenance from temporary files. If a brief is promoted into permanent `docs/`, treat it as canonical only after it is committed and linked from the relevant roadmap or SSOT.
+
+`- SeeAlso:` links must resolve to DocC articles, committed types/methods, permanent `docs/` paths, README sections, or this file — not to temporary paths.
+
+### Naming: Honest and Non-Forcing
+
+Public and cross-target API names (parameters, enums, helpers) must describe **what the operation does**, without implying a broader architecture override:
+
+- Prefer cadence / policy vocabulary for optional write intensity (e.g. ``WidgetLivenessWritePolicy`` `.throttled` / `.immediate`) over overloaded `force` when the only effect is skipping a coalesce window or choosing write urgency.
+- Reserve "force" for cases that truly override a hard contract (e.g. termination liveness sentinel) or for documented unsafe constructs (`// SAFETY:` force-unwraps) — not for ordinary "do this now" edges that remain privacy-gated and non-forcing with respect to `PlayerEvent` / WidgetCenter.
+- Naming must not suggest bypassing privacy write suppression, security validation, PlayerEvent non-forcing observation, or WidgetCenter policy when those gates remain in effect.
+- Prefer present-tense production language in source and permanent docs ("removes residual keys", "stamps liveness immediately") over migration theater ("will migrate", "temporary phase", "until we delete").
+
+When renaming an authoritative symbol, update SeeAlso, SSOT tables, and permanent roadmaps in the same change.
 
 ### Avoiding Over-Documentation
 Heavy structured documentation is a deliberate investment for security invariants, single sources of truth, and surfaces that future agents will need with limited surrounding context. It should be applied with clear scope rather than uniformly to every symbol.
