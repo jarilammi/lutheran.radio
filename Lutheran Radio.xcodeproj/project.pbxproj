@@ -198,6 +198,7 @@
 			membershipExceptions = (
 				"DirectStreamingPlayer+WidgetStub.swift",
 				MediaTransportLatencyTimeline.swift,
+				SecurityValidationFacade.swift,
 				SharedPlayerManager.swift,
 				"SharedPlayerManager+AppGroup.swift",
 				"SharedPlayerManager+DebugTestSeams.swift",
@@ -225,6 +226,7 @@
 				"DirectStreamingPlayer+WidgetStub.swift",
 				Localizable.xcstrings,
 				MediaTransportLatencyTimeline.swift,
+				SecurityValidationFacade.swift,
 				SharedPlayerManager.swift,
 				"SharedPlayerManager+AppGroup.swift",
 				"SharedPlayerManager+DebugTestSeams.swift",

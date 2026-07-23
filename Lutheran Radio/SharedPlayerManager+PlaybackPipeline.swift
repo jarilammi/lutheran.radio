@@ -157,37 +157,36 @@ extension SharedPlayerManager {
     /// Responsibilities (order matters for resurrection / one-shot / intent correctness):
     /// - ensureVisualStateLoaded + (main) configureNowPlaying + cancelSleep
     /// - `clearUserPausedLockIfNeeded()` (defensive top-level clear)
-    /// - Classify context (cold / streamSwitch / resume) + resurrectionProtectionRelaxed
-    /// - Early returns for stickyPauseOrLock, start-pipeline active, **already-audible play
-    ///   idempotency** (engine-aware; independent of cold-launch relaxed window), duplicate prePlay
-    /// - Security validation (DNS TXT + cert) → on fail: securityLocked + return
+    /// - Pure early gates via ``PlaybackPlayDecision/evaluateEarlyGates(_:)`` (sentinel, sticky,
+    ///   pipeline, already-audible, prePlay one-shot, UITest vs security path)
+    /// - Classify context via ``PlaybackPlayDecision/classify`` + attach via ``attachContext``
+    /// - Security validation (``SecurityValidationFacade`` `.beforeAttach`) → on fail: securityLocked
     /// - **Re-check sticky pause after validation** (user may pause during the `await`)
     /// - **Keep Connecting chrome** (``.prePlay`` / stream-switch hold) — do **not** call
     ///   ``setPlaying()`` here; rate 1 / pause glyph before audio is a transport lie
-    /// - Widget branch (optimistic extension visual) or main: soft-pause resume, alignment, setStreamAndPlay
+    /// - Widget branch (optimistic extension visual) or main: soft-pause resume, alignment, attachAndPlay
     /// - **Re-check sticky pause after tuning wait / soft-resume / immediately before attach**
     /// - Authoritative ``setPlaying()`` only from engine: soft-resume after rate kick, or readyToPlay
     ///   first-play kick (``DirectStreamingPlayer``)
     ///
-    /// UITestMode special case: when `isRunningInUITestMode` is true (via "-UITestMode" launch arg),
-    /// we short-circuit *before* the SecurityModelValidator call and never reach setStreamAndPlay.
-    /// This is the primary mechanism for UI test isolation (no real audio, no DNS, deterministic launch).
-    /// Visual transition to .playing is still performed for explicit userRequestedPlay taps
-    /// (so tests can assert on the resulting PlayerVisualState). Auto cold-launch play is
-    /// prevented earlier in ViewController.viewDidLoad.
+    /// UITestMode special case: pure early outcome `.enterUITestIsolation` short-circuits *before*
+    /// security validation and never reaches attach. Visual transition to .playing is still
+    /// performed for explicit userRequestedPlay taps. Auto cold-launch play is prevented earlier
+    /// in ViewController.viewDidLoad.
     ///
     /// Direct calls are permitted only for the cases documented on `userRequestedPlay()`.
     ///
     /// - SeeAlso: ``userRequestedPlay()``, ``setUserIntentToPlay()``,
-    ///   ``shouldNoOpPlayWhileAlreadyAudible()``, ``clearUserPausedLockIfNeeded()``,
-    ///   ``canProceedWithPlayback()``, ``attemptResurrectionIfAllowed()``, ``stop()``,
+    ///   ``PlaybackPlayDecision``, ``shouldNoOpPlayWhileAlreadyAudible()``,
+    ///   ``clearUserPausedLockIfNeeded()``, ``canProceedWithPlayback()``,
+    ///   ``attemptResurrectionIfAllowed()``, ``stop()``,
     ///   RadioPlayerCoordinator (canonical switch methods + shims),
     ///   ``isRunningInUITestMode``, ViewController.viewDidLoad,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (user pause during connect),
     ///   CODING_AGENT.md (test isolation requirements), <doc:Architecture>, <doc:Security-Invariants>.
     ///
-    /// AGENT NOTE (SSOT): After any edit to guards, classification, or early returns here,
-    /// re-verify:
+    /// AGENT NOTE (SSOT): Early-gate *ordering* lives in ``PlaybackPlayDecision``. After any edit
+    /// to pure tables or actor side effects here, re-verify:
     ///   1. widget resume after .userPaused reaches the engine when signaled
     ///   2. cold launch still allowed exactly once via the one-shot + relaxed window
     ///   3. explicit .userPaused remains sticky even inside 25s window
@@ -214,167 +213,98 @@ extension SharedPlayerManager {
         // This covers widget play, Control Center, lock screen, and Siri — everything.
         await clearUserPausedLockIfNeeded()
 
-        // ─────────────────────────────────────────────────────────────────────────────
-        // Post-termination sentinel + sticky intent hard blocker (SSOT resurrection policy)
-        //
-        // `currentPlaybackIntent.isStickyPauseOrLock` already covers .userPaused / .securityLocked / .cleared.
-        // The `hasExplicitTerminationSentinel()` (lastUpdateTime == 0) covers the case where the prior
-        // session ended via termination (power off, force-quit, willTerminate) even if the snapshot
-        // visual was .playing and intent defaulted to .shouldBePlaying.
-        //
-        // The `hasProcessedExplicitUserPlayRequest` flag (set only by `userRequestedPlay` / `setUserIntentToPlay`)
-        // allows a *fresh* explicit user gesture on this launch (widget tap, button, LA "play", Siri, etc.)
-        // to proceed even after a terminated prior session.
-        //
-        // Why: Device wake with a visible Lock Screen Live Activity must never synthesize playback
-        // intent or cause DirectStreamingPlayer to emit the tuning sound / attach a stream.
-        // Widgets + LAs may perform UI updates, ``persistOptimisticWidgetSnapshot``, pending actions,
-        // and Darwin notifications — zero side-effects into the player engine from those paths alone.
-        //
-        // See also the matching cold-launch guard before special tuning in ViewController.viewDidLoad
-        // (host Task) and RadioPlayerCoordinator.playSpecialTuningSound.
-        // ─────────────────────────────────────────────────────────────────────────────
-        if Self.hasExplicitTerminationSentinel() && !hasProcessedExplicitUserPlayRequest {
+        // AGENT NOTE: Explicit user play requests must have already run setUserIntentToPlay()
+        // (via `userRequestedPlay()` or by establishing an active playback intent before an
+        // internal `play()` call). See the Precondition on `userRequestedPlay()`.
+
+        #if DEBUG
+        print("[SharedPlayerManager] SharedPlayerManager.play() ENTERED – currentPlaybackIntent = \(currentPlaybackIntent), currentVisualState = \(currentVisualState)")
+        #endif
+
+        let playClassification = PlaybackPlayDecision.classify(
+            holdPrePlayVisualUntilPlayback: holdPrePlayVisualUntilPlayback,
+            hasCompletedTrueColdLaunchPlay: hasCompletedTrueColdLaunchPlay
+        )
+        let isStreamSwitchPlay = playClassification == .streamSwitch
+        let isTrueColdLaunchPlay = playClassification == .trueColdLaunch
+        let isResumePlay = playClassification == .resume
+        let resurrectionProtectionRelaxed = !initialPlaybackHasRun ||
+            Date().timeIntervalSince(appLaunchTime) < Constants.coldLaunchWindow
+
+        #if DEBUG
+        if resurrectionProtectionRelaxed {
+            switch playClassification {
+            case .trueColdLaunch:
+                print("[SharedPlayerManager] Cold-launch first play – resurrection protection relaxed")
+            case .streamSwitch:
+                print("[SharedPlayerManager] Stream-switch play – resurrection protection relaxed")
+            case .resume:
+                print("[SharedPlayerManager] Resume play – resurrection protection relaxed")
+            }
+        }
+        #endif
+
+        let alreadyAudible = await shouldNoOpPlayWhileAlreadyAudible()
+        let earlyDecision = PlaybackPlayDecision.evaluateEarlyGates(
+            PlaybackPlayDecisionInputs(
+                hasTerminationSentinel: Self.hasExplicitTerminationSentinel(),
+                hasProcessedExplicitUserPlayRequest: hasProcessedExplicitUserPlayRequest,
+                isStickyPauseOrLock: currentPlaybackIntent.isStickyPauseOrLock,
+                isPlaybackStartPipelineActive: isPlaybackStartPipelineActive,
+                alreadyAudibleMatchingSelection: alreadyAudible,
+                isPrePlayVisual: currentVisualState == .prePlay,
+                initialPlaybackHasRun: initialPlaybackHasRun,
+                isActivePlaybackIntent: currentPlaybackIntent.isActivePlaybackIntent,
+                isTrueColdLaunchPlay: isTrueColdLaunchPlay,
+                isUITestMode: Self.isRunningInUITestMode
+            )
+        )
+
+        if let setInitial = earlyDecision.setInitialPlaybackHasRun {
+            initialPlaybackHasRun = setInitial
+        }
+        if earlyDecision.markTrueColdLaunchCompleted {
+            hasCompletedTrueColdLaunchPlay = true
+        }
+
+        switch earlyDecision.outcome {
+        case .blockTerminationSentinel:
             #if DEBUG
             print("[SharedPlayerManager] play() BLOCKED — hasExplicitTerminationSentinel() && !hasProcessedExplicitUserPlayRequest (device wake / LA visible / power-up protection)")
             #endif
             return
-        }
 
-        // AGENT NOTE: Explicit user play requests must have already run setUserIntentToPlay()
-        // (via `userRequestedPlay()` or by establishing an active playback intent before an
-        // internal `play()` call). See the Precondition on `userRequestedPlay()`. If you are
-        // adding a call to `play()` here or in a caller, confirm it is one of the four
-        // permitted cases or route via the designated entry.
-        
-        #if DEBUG
-        print("[SharedPlayerManager] SharedPlayerManager.play() ENTERED – currentPlaybackIntent = \(currentPlaybackIntent), currentVisualState = \(currentVisualState)")
-        #endif
-        
-        // ──────────────────────────────────────────────────────────────
-        // Play-context classification (DEBUG labels + one-shot guard semantics).
-        // `resurrectionProtectionRelaxed` preserves the prior cold-launch window behavior.
-        //
-        // `isStreamSwitchPlay` is also used to suppress snapshot-driven alignment and to
-        // allow model-preferred language in saves — see the switch timing contract on
-        // `resetToPrePlayForNewStream` and the defensive blocks in `saveCurrentState` + play().
-        let isStreamSwitchPlay = holdPrePlayVisualUntilPlayback
-        let isTrueColdLaunchPlay = !hasCompletedTrueColdLaunchPlay && !isStreamSwitchPlay
-        let isResumePlay = hasCompletedTrueColdLaunchPlay && !isStreamSwitchPlay
-        let resurrectionProtectionRelaxed = !initialPlaybackHasRun ||
-            Date().timeIntervalSince(appLaunchTime) < Constants.coldLaunchWindow
-        // ──────────────────────────────────────────────────────────────
-        
-        // Rule: Never bypass resurrection protection for explicit sticky blockers
-        // (.userPaused, .cleared privacy clear, .securityLocked), even when resurrection
-        // protection is relaxed. User intent wins.
-        if currentPlaybackIntent.isStickyPauseOrLock {
+        case .blockStickyPauseOrLock:
             #if DEBUG
             print("[SharedPlayerManager] play() blocked — explicit \(currentPlaybackIntent) (resurrection bypass ignored)")
             #endif
             clearPlaybackStartPipeline()
             return
-        }
 
-        // Duplicate play while Connecting: keep the in-flight pipeline; do not re-enter.
-        if isPlaybackStartPipelineActive {
+        case .skipDuplicateStartPipeline:
             #if DEBUG
             print("[SharedPlayerManager] play() — start pipeline already active, skipping duplicate entry")
             #endif
             return
-        }
 
-        // Resurrection protection — relaxed during the settling window or explicit play paths.
-        // Sticky pause already returned above; this branch only logs classification under DEBUG.
-        if !resurrectionProtectionRelaxed {
-            if currentPlaybackIntent.isStickyPauseOrLock {
-                #if DEBUG
-                print("[SharedPlayerManager] play() BLOCKED by playbackIntent = \(currentPlaybackIntent)")
-                #endif
-                return
-            }
-        } else {
+        case .skipAlreadyAudible:
             #if DEBUG
-            if isTrueColdLaunchPlay {
-                print("[SharedPlayerManager] Cold-launch first play – resurrection protection relaxed")
-            } else if isStreamSwitchPlay {
-                print("[SharedPlayerManager] Stream-switch play – resurrection protection relaxed")
-            } else if isResumePlay {
-                print("[SharedPlayerManager] Resume play – resurrection protection relaxed")
-            }
-            #endif
-        }
-
-        // Already-audible play idempotency (engine-aware).
-        //
-        // Why independent of `resurrectionProtectionRelaxed`: the cold-launch / first-play
-        // window previously disabled a visual-only skip, so a second `userRequestedPlay` while
-        // the secured item was already live rebuilt observers and thrashing ICY mid-audio.
-        // Soft-paused resume is intentionally excluded (`isActuallyPlaying` is false at rate 0).
-        if await shouldNoOpPlayWhileAlreadyAudible() {
-            #if DEBUG
-            print("[SharedPlayerManager] SharedPlayerManager.play() — already audibly playing matching selection, skipping setStreamAndPlay (idempotent)")
+            print("[SharedPlayerManager] SharedPlayerManager.play() — already audibly playing matching selection, skipping attachAndPlay (idempotent)")
             #endif
             return
-        }
-        
-        // === ONE-SHOT GUARD FOR AUTOMATIC PRE-PLAY INITIAL PLAYBACK ===
-        // The authoritative `currentPlaybackIntent` is the primary signal; the one-shot flag
-        // only prevents duplicate automatic first-play attempts without explicit `.shouldBePlaying`.
-        if currentVisualState == .prePlay {
-            if initialPlaybackHasRun && !currentPlaybackIntent.isActivePlaybackIntent {
-                #if DEBUG
-                print("SharedPlayerManager.play() – skipping duplicate automatic prePlay playback")
-                #endif
-                return
-            } else {
-                if currentPlaybackIntent.isActivePlaybackIntent {
-                    initialPlaybackHasRun = false
-                } else {
-                    initialPlaybackHasRun = true
-                }
-                #if DEBUG
-                if isStreamSwitchPlay {
-                    print("SharedPlayerManager.play() – stream-switch play, proceeding")
-                } else if isTrueColdLaunchPlay {
-                    print("SharedPlayerManager.play() – cold-launch first play, proceeding")
-                } else if isResumePlay {
-                    print("SharedPlayerManager.play() – resume play, proceeding")
-                } else {
-                    print("SharedPlayerManager.play() – prePlay play, proceeding")
-                }
-                #endif
-                if isTrueColdLaunchPlay {
-                    hasCompletedTrueColdLaunchPlay = true
-                }
-            }
-        }
 
-        // Mark start pipeline after sticky / one-shot / already-playing guards so toggles can
-        // cancel Connecting and a second play is idempotent through validation + attach.
-        isPlaybackStartPipelineActive = true
-
-        // UI Test isolation (launch arg driven):
-        // Skip security validation (DNS TXT against securitymodels.lutheran.radio + time skew + model check)
-        // and the entire real streaming attach path. This is safe because:
-        // - No production audio/network is allowed during UITest runs.
-        // - Visual + intent state transitions are still applied for explicit interactions
-        //   (so a test tap of play can observe .playing UI state without side effects).
-        // - Security invariants remain fully enforced for every non-test launch.
-        // The check is after sticky/one-shot guards so resurrection semantics are preserved
-        // in the actor state even under test.
-        //
-        // AGENT NOTE: If you add new early exits here, re-verify resurrection table and
-        // that explicit userRequestedPlay paths still reach setPlaying() for UITest visual assertions.
-        // - SeeAlso: SharedPlayerManager.isRunningInUITestMode, ViewController (cold launch Task guard),
-        //   DirectStreamingPlayer.play / setStreamAndPlay (engine no-op opportunities),
-        //   CODING_AGENT.md (test isolation + launch arguments preference).
-        if Self.isRunningInUITestMode {
+        case .skipDuplicateAutomaticPrePlay:
             #if DEBUG
-            print("[SharedPlayerManager] play() UITestMode — skipping SecurityModelValidator, setStreamAndPlay, and all widget/Live Activity work")
+            print("SharedPlayerManager.play() – skipping duplicate automatic prePlay playback")
+            #endif
+            return
+
+        case .enterUITestIsolation:
+            isPlaybackStartPipelineActive = true
+            #if DEBUG
+            print("[SharedPlayerManager] play() UITestMode — skipping SecurityValidationFacade, attachAndPlay, and all widget/Live Activity work")
             #endif
             clearStreamSwitchPrePlayHold()
-
             // Only set minimal visual state for test assertions. Do NOT call setPlaying()
             // because it triggers Live Activities and Now Playing.
             if currentPlaybackIntent.isActivePlaybackIntent {
@@ -382,12 +312,26 @@ extension SharedPlayerManager {
             }
             clearPlaybackStartPipeline()
             return
+
+        case .proceedToSecurityValidation:
+            isPlaybackStartPipelineActive = true
+            #if DEBUG
+            switch playClassification {
+            case .streamSwitch:
+                print("SharedPlayerManager.play() – stream-switch play, proceeding")
+            case .trueColdLaunch:
+                print("SharedPlayerManager.play() – cold-launch first play, proceeding")
+            case .resume:
+                print("SharedPlayerManager.play() – resume play, proceeding")
+            }
+            #endif
+            break
         }
-        
-        let isValid = await SecurityModelValidator.shared.validateSecurityModel()
+
+        let isValid = await SecurityValidationFacade.validate(.beforeAttach)
         
         #if DEBUG
-        print("🔐 SecurityModelValidator returned: \(isValid)")
+        print("🔐 SecurityValidationFacade.beforeAttach returned: \(isValid)")
         if !isValid {
             print("[SharedPlayerManager] Validation failed → bailing out of playback")
         } else {
@@ -459,7 +403,7 @@ extension SharedPlayerManager {
         
         #if LUTHERAN_MAIN_APP
         await waitForTuningSoundIfActive()
-        // Pause during tuning sound must not reach setStreamAndPlay / first-play kick.
+        // Pause during tuning sound must not reach attachAndPlay / first-play kick.
         if currentPlaybackIntent.isStickyPauseOrLock {
             #if DEBUG
             print("[SharedPlayerManager] play() aborted after tuning wait — sticky \(currentPlaybackIntent)")
@@ -476,7 +420,7 @@ extension SharedPlayerManager {
             if resumed {
                 await rehydrateStreamMetadataFromStashIfNeeded()
                 #if DEBUG
-                print("[SharedPlayerManager] Resumed from soft pause — skipped setStreamAndPlay")
+                print("[SharedPlayerManager] Resumed from soft pause — skipped attachAndPlay")
                 #endif
                 // Soft-resume publishes authoritative playing (clears pipeline in setPlaying).
                 return
@@ -496,23 +440,16 @@ extension SharedPlayerManager {
         }
         #endif
 
-        let attachContext: PlaybackAttachContext
         #if LUTHERAN_MAIN_APP
-        if isStreamSwitchPlay || declinedSoftPauseForLanguageChange {
-            attachContext = .streamSwitch
-        } else if isResumePlay {
-            attachContext = .resume
-        } else {
-            attachContext = .coldLaunch
-        }
+        let attachContext = PlaybackPlayDecision.attachContext(
+            classification: playClassification,
+            declinedSoftPauseForLanguageChange: declinedSoftPauseForLanguageChange
+        )
         #else
-        if isStreamSwitchPlay {
-            attachContext = .streamSwitch
-        } else if isResumePlay {
-            attachContext = .resume
-        } else {
-            attachContext = .coldLaunch
-        }
+        let attachContext = PlaybackPlayDecision.attachContext(
+            classification: playClassification,
+            declinedSoftPauseForLanguageChange: false
+        )
         #endif
 
         // Defensive alignment for *widget switch* timing only (see Widget SwitchStreamIntent optimistic
@@ -530,11 +467,10 @@ extension SharedPlayerManager {
         //
         // Stream-switch reconciliation exception (AGENT NOTE):
         // For widget (and main-app) language switches the orchestrator *first* calls
-        // switchToStream(target) — which updates the Direct model — then resetToPrePlayForNewStream
-        // + play(). Alignment must not blindly re-apply a snapshot that still contains the old
-        // language (written by a KVO save during the silent stop, a save that raced the widget's
-        // persist, or before the model-preference in saveCurrentState took effect).
-        // Guarding here + the model preference in saveCurrentState prevents the reversion.
+        // prepareStreamChoice(.switchPrep) / switchToStream — which updates the Direct model —
+        // then resetToPrePlayForNewStream + play(). Alignment must not blindly re-apply a snapshot
+        // that still contains the old language. Guarding here + model preference in saveCurrentState
+        // prevents the reversion.
         if !isStreamSwitchPlay {
             if let snapshot = Self.loadPersistedWidgetState() {
                 let preferredLang = snapshot.currentLanguage
@@ -542,19 +478,19 @@ extension SharedPlayerManager {
                     let synced = Self.streamForLanguageCode(preferredLang)
                     if synced.languageCode == preferredLang {
                         #if DEBUG
-                        print("[SharedPlayerManager] Aligning selectedStream to persisted widget language \(preferredLang) (was \(DirectStreamingPlayer.shared.selectedStream.languageCode)) before setStreamAndPlay")
+                        print("[SharedPlayerManager] Aligning selectedStream to persisted widget language \(preferredLang) (was \(DirectStreamingPlayer.shared.selectedStream.languageCode)) before attachAndPlay")
                         #endif
-                        await DirectStreamingPlayer.shared.setSelectedStreamModelOnly(to: synced)
+                        await DirectStreamingPlayer.shared.prepareStreamChoice(synced, preparation: .modelOnly)
                     }
                 }
             }
         }
 
         // Final sticky re-check immediately before engine attach (last await may have been
-        // setSelectedStreamModelOnly or soft-pause helpers above).
+        // prepareStreamChoice(.modelOnly) or soft-pause helpers above).
         if currentPlaybackIntent.isStickyPauseOrLock {
             #if DEBUG
-            print("[SharedPlayerManager] play() aborted before setStreamAndPlay — sticky \(currentPlaybackIntent)")
+            print("[SharedPlayerManager] play() aborted before attachAndPlay — sticky \(currentPlaybackIntent)")
             #endif
             clearPlaybackStartPipeline()
             return
@@ -565,7 +501,7 @@ extension SharedPlayerManager {
         print("[SharedPlayerManager] Setting stream to: \(stream)")
         #endif
         
-        await DirectStreamingPlayer.shared.setStreamAndPlay(to: stream, context: attachContext)
+        await DirectStreamingPlayer.shared.attachAndPlay(to: stream, context: attachContext)
         
         // Pipeline stays active until engine ``setPlaying()`` or user ``stop()`` so Connecting
         // toggles can still cancel attach. No saveCurrentState() here — observer will handle it.
@@ -1139,7 +1075,7 @@ extension SharedPlayerManager {
                     #if DEBUG
                     print("[SharedPlayerManager] setUserIntentToPlay alignment: using persisted lang \(preferredLang) (was \(DirectStreamingPlayer.shared.selectedStream.languageCode))")
                     #endif
-                    await DirectStreamingPlayer.shared.setSelectedStreamModelOnly(to: synced)
+                    await DirectStreamingPlayer.shared.prepareStreamChoice(synced, preparation: .modelOnly)
                 }
             }
         }

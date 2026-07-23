@@ -11,7 +11,7 @@
 //  Purpose:
 //  Provides the minimal surface SharedPlayerManager and widget code need to type-check
 //  references such as DirectStreamingPlayer.Stream, .availableStreams, stream lookup,
-//  selectedStream, setSelectedStreamModelOnly, switchToStream, stop, isActuallyPlaying,
+//  selectedStream, prepareStreamChoice, attachAndPlay, switchToStream, stop, isActuallyPlaying,
 //  player, audio no-op methods (including local-clip start), and StreamErrorType.
 //
 //  Single source of truth for the stream *list* remains DirectStreamingPlayer.swift (main).
@@ -118,16 +118,24 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
 
     var selectedStream: Stream
 
-    func setSelectedStreamModelOnly(to stream: Stream) async {
+    func prepareStreamChoice(_ stream: Stream, preparation: StreamChoicePreparation) async {
         selectedStream = stream
     }
 
+    func setSelectedStreamModelOnly(to stream: Stream) async {
+        await prepareStreamChoice(stream, preparation: .modelOnly)
+    }
+
     func switchToStream(_ stream: Stream) async {
+        await prepareStreamChoice(stream, preparation: .switchPrep)
+    }
+
+    func attachAndPlay(to stream: Stream, context: PlaybackAttachContext = .coldLaunch) async {
         selectedStream = stream
     }
 
     func setStreamAndPlay(to stream: Stream, context: PlaybackAttachContext = .coldLaunch) async {
-        selectedStream = stream
+        await attachAndPlay(to: stream, context: context)
     }
 
     func stop() {}

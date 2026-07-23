@@ -98,3 +98,25 @@ public enum StopReason: Sendable {
     case streamSwitch
     case resume
 }
+
+/// How `DirectStreamingPlayer` prepares a stream choice **without** starting audible attach.
+///
+/// Canonical entry: ``DirectStreamingPlayer/prepareStreamChoice(_:preparation:)``.
+/// Legacy wrappers (`setSelectedStreamModelOnly`, `switchToStream`) map to these cases.
+///
+/// | Case | Effect | Typical callers |
+/// |------|--------|-----------------|
+/// | ``modelOnly`` | Update `selectedStream` only (no item, no stop) | Cold-launch seed, snapshot alignment before attach |
+/// | ``switchPrep`` | Model + silent stop on language change + recovery budget reset | Orchestrated language switch before play |
+///
+/// Audible attach is always ``DirectStreamingPlayer/attachAndPlay(to:context:)``
+/// (legacy name: `setStreamAndPlay`).
+///
+/// - SeeAlso: ``PlaybackAttachContext``, ``PlaybackPlayDecision``,
+///   SharedPlayerManager.play(), RadioPlayerCoordinator stream-switch paths.
+@frozen public enum StreamChoicePreparation: Sendable, Equatable {
+    /// Update selected stream model only (no secured item, no silent stop).
+    case modelOnly
+    /// Full switch prep: model, silent `.streamSwitch` stop when language changes, counter reset.
+    case switchPrep
+}

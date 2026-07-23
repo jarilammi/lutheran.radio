@@ -1430,11 +1430,11 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
                     guard let self else { return }
                     Task { @MainActor in
                         self.streamingPlayer.resetTransientErrors()
-                        let isValid = await SecurityModelValidator.shared.validateSecurityModel()
+                        let isValid = await SecurityValidationFacade.validate(.securityRetry)
                         if isValid {
                             await SharedPlayerManager.shared.userRequestedPlay()
                         } else {
-                            let isPermanent = await SecurityModelValidator.shared.isPermanentlyInvalid
+                            let isPermanent = await SecurityValidationFacade.isPermanentlyInvalid()
                             #if DEBUG
                             print("[RadioPlayerCoordinator] Retry failed — permanent? \(isPermanent)")
                             #endif

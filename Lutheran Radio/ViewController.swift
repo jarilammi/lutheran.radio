@@ -357,7 +357,7 @@ class ViewController: UIViewController {
             self.updateUI(for: .prePlay)  // not the post-clear path (that now uses .cleared)
             
             // Stream model and UI only; secured AVPlayerItem is created once in setStreamAndPlay after tuning.
-            await self.streamingPlayer.setSelectedStreamModelOnly(to: initialStream)
+            await self.streamingPlayer.prepareStreamChoice(initialStream, preparation: .modelOnly)
             
             // Background deferral state is now owned by BackgroundImageController (cold launch path preserved).
             // Actual image processing is deferred until playback is stable; choosing the initial lang
@@ -995,9 +995,9 @@ class ViewController: UIViewController {
             // 1. Reset transient failures
             self.streamingPlayer.resetTransientErrors()
             
-            // 2. Re-validate using the shared actor (this success condition is the preserved
-            //    trigger for the reconnection playback attempt per historical behavior).
-            let isValid = await SecurityModelValidator.shared.validateSecurityModel()
+            // 2. Re-validate via named reconnect intent (Core policy unchanged).
+            //    Success remains the preserved trigger for reconnection playback.
+            let isValid = await SecurityValidationFacade.validate(.onReconnect)
             
             if isValid {
                 #if DEBUG
