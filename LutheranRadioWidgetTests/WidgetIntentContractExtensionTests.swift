@@ -532,7 +532,7 @@ final class WidgetIntentContractExtensionTests: XCTestCase {
     func testExecuteOptimisticToggleCompletesImmediateRefreshPath() async {
         SharedPlayerManager.persistWidgetSnapshot(visualState: .userPaused, language: "et")
         let plan = WidgetIntentCoordinators.planHomeWidgetToggle(from: .userPaused)
-        XCTAssertEqual(plan.action, "play")
+        XCTAssertEqual(plan.action, .play)
 
         await WidgetIntentExecution.executeOptimisticToggle(plan: plan, language: "et")
 

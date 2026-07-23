@@ -35,14 +35,14 @@ final class WidgetIntentCoordinatorTests: XCTestCase {
         for state in allVisualStates {
             let plan = WidgetIntentCoordinators.planHomeWidgetToggle(from: state)
             if state.plansMediaToggleAsPause {
-                XCTAssertEqual(plan.action, "pause", "Playing must plan pause for \(state)")
+                XCTAssertEqual(plan.action, .pause, "Playing must plan pause for \(state)")
                 XCTAssertEqual(plan.targetVisualState, .userPaused)
             } else if state.blocksPlannedPlay {
-                XCTAssertEqual(plan.action, "none", "Thermal must refuse pending action for \(state)")
+                XCTAssertEqual(plan.action, .none, "Thermal must refuse pending action for \(state)")
                 XCTAssertEqual(plan.targetVisualState, state)
                 XCTAssertFalse(plan.shouldExecutePendingAction)
             } else {
-                XCTAssertEqual(plan.action, "play", "Non-playing non-thermal must plan play for \(state)")
+                XCTAssertEqual(plan.action, .play, "Non-playing non-thermal must plan play for \(state)")
                 XCTAssertEqual(plan.targetVisualState, state.optimisticVisualAfterPlayPlan)
                 XCTAssertTrue(plan.shouldExecutePendingAction)
             }
@@ -54,11 +54,11 @@ final class WidgetIntentCoordinatorTests: XCTestCase {
     /// Control-widget bool: `true` → play/`.playing`, `false` → pause/`.userPaused`.
     func testPlanControlWidgetToggleMatrix() {
         let playPlan = WidgetIntentCoordinators.planControlWidgetToggle(isPlayingRequested: true)
-        XCTAssertEqual(playPlan.action, "play")
+        XCTAssertEqual(playPlan.action, .play)
         XCTAssertEqual(playPlan.targetVisualState, .playing)
 
         let pausePlan = WidgetIntentCoordinators.planControlWidgetToggle(isPlayingRequested: false)
-        XCTAssertEqual(pausePlan.action, "pause")
+        XCTAssertEqual(pausePlan.action, .pause)
         XCTAssertEqual(pausePlan.targetVisualState, .userPaused)
     }
 

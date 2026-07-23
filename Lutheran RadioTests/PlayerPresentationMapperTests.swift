@@ -23,10 +23,11 @@ import WidgetSurface
 /// **Contracts protected:**
 /// - Status axis: background, foreground, localized text, and optional `systemImage` per case.
 /// - Control axis: `pause.fill` only when ``PlayerVisualState/isActivelyPlaying``; otherwise `play.fill`.
-/// - Control tint derives from ``PlayerVisualState/buttonTintColor`` via a single `Color(uiColor:)` bridge.
+/// - Status and control colors both derive from ``PlayerVisualChromePalette``.
 ///
 /// - SeeAlso: ``PlayerStatusPresentation``, ``PlayerControlPresentation``,
-///   ``PlayerVisualState``, docs/Widget-Presentation-Dataflow.md,
+///   ``PlayerVisualChromePalette``, ``PlayerVisualState``,
+///   docs/Widget-Presentation-Dataflow.md,
 ///   docs/Widget-Functionality-Roadmap.md (Tier 5 presentation mapper coverage).
 final class PlayerPresentationMapperTests: XCTestCase {
 
@@ -40,38 +41,38 @@ final class PlayerPresentationMapperTests: XCTestCase {
     func testMakeStatusPresentationMatrixMapsEveryVisualState() {
         let expectations: [PlayerVisualState: PlayerStatusPresentation] = [
             .playing: PlayerStatusPresentation(
-                background: .green,
-                foreground: .white,
+                background: PlayerVisualChromePalette.backgroundColor(for: .playing),
+                foreground: PlayerVisualChromePalette.textColor(for: .playing),
                 text: String(localized: "status_playing", defaultValue: "Playing", table: "Localizable"),
                 systemImage: "play.fill"
             ),
             .prePlay: PlayerStatusPresentation(
-                background: .yellow,
-                foreground: .black,
+                background: PlayerVisualChromePalette.backgroundColor(for: .prePlay),
+                foreground: PlayerVisualChromePalette.textColor(for: .prePlay),
                 text: String(localized: "status_connecting", defaultValue: "Connecting", table: "Localizable"),
                 systemImage: "play.circle"
             ),
             .cleared: PlayerStatusPresentation(
-                background: .blue,
-                foreground: .white,
+                background: PlayerVisualChromePalette.backgroundColor(for: .cleared),
+                foreground: PlayerVisualChromePalette.textColor(for: .cleared),
                 text: String(localized: "clear_local_state_done", defaultValue: "Cleared", table: "Localizable"),
                 systemImage: nil
             ),
             .userPaused: PlayerStatusPresentation(
-                background: .gray,
-                foreground: .white,
+                background: PlayerVisualChromePalette.backgroundColor(for: .userPaused),
+                foreground: PlayerVisualChromePalette.textColor(for: .userPaused),
                 text: String(localized: "status_paused", defaultValue: "Paused", table: "Localizable"),
                 systemImage: "pause.fill"
             ),
             .thermalPaused: PlayerStatusPresentation(
-                background: .orange,
-                foreground: .white,
+                background: PlayerVisualChromePalette.backgroundColor(for: .thermalPaused),
+                foreground: PlayerVisualChromePalette.textColor(for: .thermalPaused),
                 text: String(localized: "status_thermal_paused", defaultValue: "Paused (device hot)", table: "Localizable"),
                 systemImage: "pause.fill"
             ),
             .securityLocked: PlayerStatusPresentation(
-                background: .red,
-                foreground: .white,
+                background: PlayerVisualChromePalette.backgroundColor(for: .securityLocked),
+                foreground: PlayerVisualChromePalette.textColor(for: .securityLocked),
                 text: String(localized: "status_security_failed", defaultValue: "Security check failed", table: "Localizable"),
                 systemImage: "lock.fill"
             ),
@@ -148,7 +149,7 @@ final class PlayerPresentationMapperTests: XCTestCase {
         for state in allVisualStates {
             let expected = PlayerControlPresentation(
                 systemImage: state.isActivelyPlaying ? "pause.fill" : "play.fill",
-                tint: Color(uiColor: state.buttonTintColor)
+                tint: PlayerVisualChromePalette.buttonTintColor(for: state)
             )
             XCTAssertEqual(
                 state.makeControlPresentation(),
@@ -170,7 +171,7 @@ final class PlayerPresentationMapperTests: XCTestCase {
         }
     }
 
-    /// Control tint must remain aligned with ``buttonTintColor`` (single bridge site in mapper).
+    /// Control tint and UIKit ``buttonTintColor`` both delegate to ``PlayerVisualChromePalette``.
     func testMakeControlPresentationTintMatchesButtonTintColorPolicy() {
         let expectedUIColors: [PlayerVisualState: UIColor] = [
             .prePlay: .systemYellow,
@@ -185,14 +186,46 @@ final class PlayerPresentationMapperTests: XCTestCase {
             let presentation = state.makeControlPresentation()
             let policyColor = expectedUIColors[state] ?? state.buttonTintColor
             XCTAssertEqual(
+                PlayerVisualChromePalette.buttonTintUIColor(for: state),
+                policyColor,
+                "Chrome palette button tint must remain stable for \(state)"
+            )
+            XCTAssertEqual(
                 state.buttonTintColor,
                 policyColor,
-                "buttonTintColor policy must remain stable for \(state)"
+                "buttonTintColor must delegate to chrome palette for \(state)"
             )
             XCTAssertEqual(
                 presentation.tint,
-                Color(uiColor: policyColor),
-                "Control tint must mirror buttonTintColor for \(state)"
+                PlayerVisualChromePalette.buttonTintColor(for: state),
+                "Control tint must mirror chrome palette for \(state)"
+            )
+        }
+    }
+
+    /// Status presentation colors match the same palette as UIKit chrome properties.
+    func testMakeStatusPresentationColorsMatchChromePalette() {
+        for state in allVisualStates {
+            let presentation = state.makeStatusPresentation()
+            XCTAssertEqual(
+                presentation.background,
+                PlayerVisualChromePalette.backgroundColor(for: state),
+                "Status background must match chrome palette for \(state)"
+            )
+            XCTAssertEqual(
+                presentation.foreground,
+                PlayerVisualChromePalette.textColor(for: state),
+                "Status foreground must match chrome palette for \(state)"
+            )
+            XCTAssertEqual(
+                state.backgroundColor,
+                PlayerVisualChromePalette.backgroundUIColor(for: state),
+                "UIKit backgroundColor must match chrome palette for \(state)"
+            )
+            XCTAssertEqual(
+                state.textColor,
+                PlayerVisualChromePalette.textUIColor(for: state),
+                "UIKit textColor must match chrome palette for \(state)"
             )
         }
     }

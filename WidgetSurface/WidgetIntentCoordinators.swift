@@ -7,7 +7,10 @@
 //  Pure intent planning SSOT for home widgets, Control Center, and Live Activity toggles.
 //  Extension `perform()` bodies delegate here for action/target mapping; cross-target
 //  execution lives in ``WidgetIntentExecution`` (membership-exception source under
-//  `Lutheran Radio/WidgetDisplayModels.swift`).
+//  `Lutheran Radio/`).
+//
+//  Pending play/pause verbs are typed as ``WidgetToggleAction`` inside planning; App Group
+//  mailbox boundaries convert via ``WidgetToggleAction/wireValue``.
 //
 //  - SeeAlso: docs/Widget-Functionality-Roadmap.md, docs/Widget-Presentation-Dataflow.md,
 //    CODING_AGENT.md (cross-target widget sources).
@@ -15,25 +18,57 @@
 
 import Foundation
 
+// MARK: - WidgetToggleAction
+
+/// Typed pending play/pause verb for home-widget and Control-widget toggle plans.
+///
+/// Planning and tests use the enum. App Group / Darwin mailbox writers convert with
+/// ``wireValue`` (`"play"`, `"pause"`). Refuse plans use ``none`` and do not schedule
+/// a pending action (thermal gate keeps chrome authoritative).
+///
+/// - Note: Stream-switch pending actions use the separate `"switch"` wire verb and are
+///   not represented on this enum (see ``SharedPlayerManager/scheduleWidgetAction``).
+/// - SeeAlso: ``WidgetToggleActionPlan``, ``WidgetIntentExecution/executeOptimisticToggle(plan:language:)``
+public enum WidgetToggleAction: String, Sendable, Equatable, Hashable {
+    case play
+    case pause
+    /// Policy refuse — no pending App Group action and no engine mutation.
+    case none
+
+    /// Wire form written to App Group `pendingAction` for executable plans.
+    ///
+    /// - Returns: `"play"`, `"pause"`, or `"none"` (refuse plans should not call schedule).
+    public var wireValue: String { rawValue }
+
+    /// Parses an App Group / Darwin wire string into a typed toggle action.
+    ///
+    /// - Parameter wireValue: Stored `pendingAction` string (`"play"`, `"pause"`, `"none"`).
+    /// - Returns: Matching case, or `nil` when the string is not a toggle verb
+    ///   (e.g. `"switch"` uses a different mailbox path).
+    public init?(wireValue: String) {
+        self.init(rawValue: wireValue)
+    }
+}
+
 /// Optimistic play/pause plan for home-widget and Control-widget toggle intents.
 public struct WidgetToggleActionPlan: Sendable, Equatable {
-    /// Pending-action verb written to App Group (`"play"` or `"pause"`), or `"none"` when
-    /// the plan is a policy refuse (no Darwin drain / no engine mutation).
-    public let action: String
+    /// Typed pending-action verb. Executable plans use ``WidgetToggleAction/play`` or
+    /// ``WidgetToggleAction/pause``; thermal refuse uses ``WidgetToggleAction/none``.
+    public let action: WidgetToggleAction
     /// Optimistic visual state persisted before the main app drains the pending action.
     /// For refuse plans, equals the current visual (thermal chrome stays authoritative).
     public let targetVisualState: PlayerVisualState
 
-    public init(action: String, targetVisualState: PlayerVisualState) {
+    public init(action: WidgetToggleAction, targetVisualState: PlayerVisualState) {
         self.action = action
         self.targetVisualState = targetVisualState
     }
 
     /// Whether a pending App Group action should be scheduled and drained.
     ///
-    /// - Returns: `true` for `"play"` / `"pause"`; `false` for `"none"` (thermal refuse).
+    /// - Returns: `true` for play/pause; `false` for none (thermal refuse).
     public var shouldExecutePendingAction: Bool {
-        action == "play" || action == "pause"
+        action == .play || action == .pause
     }
 }
 
@@ -110,13 +145,13 @@ public enum WidgetIntentCoordinators {
     /// - SeeAlso: ``planLiveActivityToggle(from:)``, ``PlayerVisualState/blocksPlannedPlay``
     public static func planHomeWidgetToggle(from visualState: PlayerVisualState) -> WidgetToggleActionPlan {
         if visualState.plansMediaToggleAsPause {
-            return WidgetToggleActionPlan(action: "pause", targetVisualState: .userPaused)
+            return WidgetToggleActionPlan(action: .pause, targetVisualState: .userPaused)
         }
         if visualState.blocksPlannedPlay {
-            return WidgetToggleActionPlan(action: "none", targetVisualState: visualState)
+            return WidgetToggleActionPlan(action: .none, targetVisualState: visualState)
         }
         return WidgetToggleActionPlan(
-            action: "play",
+            action: .play,
             targetVisualState: visualState.optimisticVisualAfterPlayPlan
         )
     }
@@ -127,7 +162,7 @@ public enum WidgetIntentCoordinators {
     /// - Returns: Pending action + optimistic target visual state.
     public static func planControlWidgetToggle(isPlayingRequested value: Bool) -> WidgetToggleActionPlan {
         WidgetToggleActionPlan(
-            action: value ? "play" : "pause",
+            action: value ? .play : .pause,
             targetVisualState: value ? .playing : .userPaused
         )
     }

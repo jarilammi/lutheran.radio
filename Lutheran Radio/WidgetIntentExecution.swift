@@ -301,7 +301,7 @@ enum WidgetIntentExecution {
         let manager = SharedPlayerManager.shared
         _ = manager.signalWidgetPendingAction(
             visualState: plan.targetVisualState,
-            action: plan.action,
+            action: plan.action.wireValue,
             language: language
         )
         let state = manager.loadSharedState()

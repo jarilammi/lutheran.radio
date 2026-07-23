@@ -223,12 +223,14 @@ blueprints, liveness policy, pure language chrome, and pure Provider presentatio
 assembly. The main app **embeds** the framework; the widget extension and widget
 unit tests **link** it (`import WidgetSurface`).
 
-Includes (non-exhaustive): `PlayerVisualState.swift` (`PlayerVisualState`,
-`PlaybackIntent`, `PlayerEvent`, presentation mappers), `StreamProgramMetadata.swift`,
+Includes (non-exhaustive): `PlayerVisualState.swift` (visual policy),
+`PlaybackIntent.swift` (intent + stop/attach), `PlayerEvent.swift` (event vocabulary
++ `PlayerCurrentState`), `PlayerPresentation.swift` (status/control presentation,
+`PlayerVisualChromePalette`, mappers), `StreamProgramMetadata.swift`,
 `LutheranRadioLiveActivityAttributes.swift`, `WidgetEventObserver.swift`,
-`WidgetIntentCoordinators.swift`, `WidgetTimelineEntryFactory.swift`,
-`WidgetLivenessPresentation.swift`, `WidgetNowPlayingDisplay.swift`,
-`WidgetLanguageDisplay.swift` (`displayFlag(for:)`, pure
+`WidgetIntentCoordinators.swift` (`WidgetToggleAction` + planners),
+`WidgetTimelineEntryFactory.swift`, `WidgetLivenessPresentation.swift`,
+`WidgetNowPlayingDisplay.swift`, `WidgetLanguageDisplay.swift` (`displayFlag(for:)`, pure
 `displayLanguageName(for:preferredStreamLanguage:)`),
 `WidgetProviderPresentationAssembly.swift` (pure slice assembly from snapshot
 fields + explicit language labels), `PlayerStatus.swift`, `StreamErrorType.swift`.

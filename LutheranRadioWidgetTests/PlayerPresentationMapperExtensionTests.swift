@@ -9,7 +9,8 @@
 //  linkage as the widget extension (WidgetSurface framework, no LUTHERAN_MAIN_APP).
 //
 //  - SeeAlso: ``PlayerStatusPresentation``, ``PlayerControlPresentation``,
-//    docs/Widget-Presentation-Dataflow.md, docs/Widget-Functionality-Roadmap.md.
+//    ``PlayerVisualChromePalette``, docs/Widget-Presentation-Dataflow.md,
+//    docs/Widget-Functionality-Roadmap.md.
 //
 
 import SwiftUI
@@ -26,38 +27,38 @@ final class PlayerPresentationMapperExtensionTests: XCTestCase {
     func testMakeStatusPresentationMatrixMapsEveryVisualState() {
         let expectations: [PlayerVisualState: PlayerStatusPresentation] = [
             .playing: PlayerStatusPresentation(
-                background: .green,
-                foreground: .white,
+                background: PlayerVisualChromePalette.backgroundColor(for: .playing),
+                foreground: PlayerVisualChromePalette.textColor(for: .playing),
                 text: String(localized: "status_playing", defaultValue: "Playing", table: "Localizable"),
                 systemImage: "play.fill"
             ),
             .prePlay: PlayerStatusPresentation(
-                background: .yellow,
-                foreground: .black,
+                background: PlayerVisualChromePalette.backgroundColor(for: .prePlay),
+                foreground: PlayerVisualChromePalette.textColor(for: .prePlay),
                 text: String(localized: "status_connecting", defaultValue: "Connecting", table: "Localizable"),
                 systemImage: "play.circle"
             ),
             .cleared: PlayerStatusPresentation(
-                background: .blue,
-                foreground: .white,
+                background: PlayerVisualChromePalette.backgroundColor(for: .cleared),
+                foreground: PlayerVisualChromePalette.textColor(for: .cleared),
                 text: String(localized: "clear_local_state_done", defaultValue: "Cleared", table: "Localizable"),
                 systemImage: nil
             ),
             .userPaused: PlayerStatusPresentation(
-                background: .gray,
-                foreground: .white,
+                background: PlayerVisualChromePalette.backgroundColor(for: .userPaused),
+                foreground: PlayerVisualChromePalette.textColor(for: .userPaused),
                 text: String(localized: "status_paused", defaultValue: "Paused", table: "Localizable"),
                 systemImage: "pause.fill"
             ),
             .thermalPaused: PlayerStatusPresentation(
-                background: .orange,
-                foreground: .white,
+                background: PlayerVisualChromePalette.backgroundColor(for: .thermalPaused),
+                foreground: PlayerVisualChromePalette.textColor(for: .thermalPaused),
                 text: String(localized: "status_thermal_paused", defaultValue: "Paused (device hot)", table: "Localizable"),
                 systemImage: "pause.fill"
             ),
             .securityLocked: PlayerStatusPresentation(
-                background: .red,
-                foreground: .white,
+                background: PlayerVisualChromePalette.backgroundColor(for: .securityLocked),
+                foreground: PlayerVisualChromePalette.textColor(for: .securityLocked),
                 text: String(localized: "status_security_failed", defaultValue: "Security check failed", table: "Localizable"),
                 systemImage: "lock.fill"
             ),
@@ -89,7 +90,7 @@ final class PlayerPresentationMapperExtensionTests: XCTestCase {
         for state in allVisualStates {
             let expected = PlayerControlPresentation(
                 systemImage: state.isActivelyPlaying ? "pause.fill" : "play.fill",
-                tint: Color(uiColor: state.buttonTintColor)
+                tint: PlayerVisualChromePalette.buttonTintColor(for: state)
             )
             XCTAssertEqual(state.makeControlPresentation(), expected)
         }

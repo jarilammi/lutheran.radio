@@ -949,7 +949,7 @@ final class WidgetIntentContractTests: XCTestCase {
         ]
         for state in playEligible {
             let mapped = WidgetIntentCoordinators.planHomeWidgetToggle(from: state)
-            XCTAssertEqual(mapped.action, "play", "Play-eligible \(state) must schedule play")
+            XCTAssertEqual(mapped.action, .play, "Play-eligible \(state) must schedule play")
             XCTAssertEqual(
                 mapped.targetVisualState,
                 state.optimisticVisualAfterPlayPlan,
@@ -958,23 +958,23 @@ final class WidgetIntentContractTests: XCTestCase {
         }
 
         let thermalMapped = WidgetIntentCoordinators.planHomeWidgetToggle(from: .thermalPaused)
-        XCTAssertEqual(thermalMapped.action, "none")
+        XCTAssertEqual(thermalMapped.action, .none)
         XCTAssertEqual(thermalMapped.targetVisualState, .thermalPaused)
         XCTAssertFalse(thermalMapped.shouldExecutePendingAction)
 
         let playingMapped = WidgetIntentCoordinators.planHomeWidgetToggle(from: .playing)
-        XCTAssertEqual(playingMapped.action, "pause")
+        XCTAssertEqual(playingMapped.action, .pause)
         XCTAssertEqual(playingMapped.targetVisualState, .userPaused)
     }
 
     /// Control widget `SetValueIntent` bool maps true → play, false → pause.
     func testControlWidgetToggleActionMappingMatrix() {
         let playMapped = WidgetIntentCoordinators.planControlWidgetToggle(isPlayingRequested: true)
-        XCTAssertEqual(playMapped.action, "play")
+        XCTAssertEqual(playMapped.action, .play)
         XCTAssertEqual(playMapped.targetVisualState, .playing)
 
         let pauseMapped = WidgetIntentCoordinators.planControlWidgetToggle(isPlayingRequested: false)
-        XCTAssertEqual(pauseMapped.action, "pause")
+        XCTAssertEqual(pauseMapped.action, .pause)
         XCTAssertEqual(pauseMapped.targetVisualState, .userPaused)
     }
 
@@ -993,7 +993,7 @@ final class WidgetIntentContractTests: XCTestCase {
 
             let actionId = SharedPlayerManager.shared.signalWidgetPendingAction(
                 visualState: mapped.targetVisualState,
-                action: mapped.action,
+                action: mapped.action.wireValue,
                 language: "en"
             )
             XCTAssertNotNil(actionId)
@@ -1002,7 +1002,7 @@ final class WidgetIntentContractTests: XCTestCase {
                 XCTFail("Expected pending for visual \(state)")
                 continue
             }
-            XCTAssertEqual(pending.action, mapped.action)
+            XCTAssertEqual(pending.action, mapped.action.wireValue)
 
             let snapshot = SharedPlayerManager.loadPersistedWidgetState()
             XCTAssertEqual(snapshot?.visualState, mapped.targetVisualState)
@@ -1024,7 +1024,7 @@ final class WidgetIntentContractTests: XCTestCase {
 
             let actionId = SharedPlayerManager.shared.signalWidgetPendingAction(
                 visualState: mapped.targetVisualState,
-                action: mapped.action,
+                action: mapped.action.wireValue,
                 language: "sv"
             )
             XCTAssertNotNil(actionId)
@@ -1033,7 +1033,7 @@ final class WidgetIntentContractTests: XCTestCase {
                 XCTFail("Expected pending for control value \(value)")
                 continue
             }
-            XCTAssertEqual(pending.action, mapped.action)
+            XCTAssertEqual(pending.action, mapped.action.wireValue)
             XCTAssertEqual(SharedPlayerManager.loadPersistedWidgetState()?.visualState, mapped.targetVisualState)
         }
     }

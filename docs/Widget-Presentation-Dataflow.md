@@ -2,7 +2,7 @@
 
 This document is the concise, permanent reference for how Lutheran Radio derives and consumes presentation data for WidgetKit home-screen widgets and ActivityKit Live Activities (Dynamic Island + Lock Screen).
 
-It complements (and is cross-referenced by) the source headers in `LutheranRadioWidget.swift`, `LutheranRadioWidgetLiveActivity.swift`, `WidgetSurface/` (`PlayerVisualState.swift`, `WidgetNowPlayingDisplay.swift`, `WidgetTimelineEntryFactory.swift`, `WidgetProviderPresentationAssembly.swift`, `WidgetLanguageDisplay.swift`, `WidgetLivenessPresentation.swift`), membership-exception `WidgetDisplayModels.swift`, and `CODING_AGENT.md`.
+It complements (and is cross-referenced by) the source headers in `LutheranRadioWidget.swift`, `LutheranRadioWidgetLiveActivity.swift`, `WidgetSurface/` (`PlayerVisualState.swift`, `PlayerPresentation.swift`, `PlaybackIntent.swift`, `PlayerEvent.swift`, `WidgetNowPlayingDisplay.swift`, `WidgetTimelineEntryFactory.swift`, `WidgetProviderPresentationAssembly.swift`, `WidgetLanguageDisplay.swift`, `WidgetLivenessPresentation.swift`), membership-exception `WidgetDisplayModels.swift`, and `CODING_AGENT.md`.
 
 ## Snapshot-Driven Model
 
@@ -19,8 +19,8 @@ All presentation is organized into three narrow, `Equatable` value types derived
 
 | Surface                        | Type                              | Mapper / Resolver (`WidgetSurface/`)           | What it carries                          | Consumers |
 |--------------------------------|-----------------------------------|------------------------------------------------|------------------------------------------|-----------|
-| Status indicator               | `PlayerStatusPresentation`        | `PlayerVisualState.makeStatusPresentation()` (`PlayerVisualState.swift`) | `background`, `foreground`, `text`, `systemImage?` | Status text, pills, indicators in widgets + LA + Control widget |
-| Primary play/pause control     | `PlayerControlPresentation`       | `PlayerVisualState.makeControlPresentation()` (`PlayerVisualState.swift`) | `systemImage` ("play.fill"/"pause.fill"), `tint: Color` | Play/pause buttons (Small/Medium/Large, DI trailing/compactTrailing, Lock Screen row, Control widget) |
+| Status indicator               | `PlayerStatusPresentation`        | `PlayerVisualState.makeStatusPresentation()` (`PlayerPresentation.swift`; colors via `PlayerVisualChromePalette`) | `background`, `foreground`, `text`, `systemImage?` | Status text, pills, indicators in widgets + LA + Control widget |
+| Primary play/pause control     | `PlayerControlPresentation`       | `PlayerVisualState.makeControlPresentation()` (`PlayerPresentation.swift`; tint via `PlayerVisualChromePalette`) | `systemImage` ("play.fill"/"pause.fill"), `tint: Color` | Play/pause buttons (Small/Medium/Large, DI trailing/compactTrailing, Lock Screen row, Control widget) |
 | Metadata / emphasis (title + speaker) | `WidgetNowPlayingDisplayModel` | `widgetNowPlayingDisplayModel(visualState:streamMetadata:languageName:)` (`WidgetNowPlayingDisplay.swift`) | `programTitle`, `speakerLine`, `speakerVisible`, `emphasis: WidgetMetadataEmphasis` | `WidgetMetadataRegion`, DI center/compactLeading, Lock Screen metadata blocks |
 
 **Derivation rule (snapshot-driven):**
@@ -36,7 +36,7 @@ All presentation is organized into three narrow, `Equatable` value types derived
 - **Invalidation cost**: WidgetKit performs structural comparison on the `TimelineEntry`. A change to an unrelated field (e.g. `configuration` or full `availableStreams` ordering) should not force re-work in a leaf that only renders the play glyph. Carrying the already-derived narrow value shrinks the set of mutations that cause body re-evaluation for that leaf.
 - **Region work in ActivityKit**: Dynamic Island regions are independent. Re-deriving title/speaker or control glyph inside every region multiplies work on every push. One computation at the outer closure is bounded.
 - **View simplicity**: Leaf views and region closures become trivial — they render exactly the four (or two) fields they need. No `switch`, no fallback logic, no `Color(uiColor:)` bridging inside bodies.
-- **Consistency**: The same mapping rules apply to main-app UI (via `PlayerViewModel`), home widgets, Live Activities, and Control widgets because status/control mappers live on `PlayerVisualState` (`WidgetSurface/PlayerVisualState.swift`) and the metadata resolver lives in `WidgetSurface/WidgetNowPlayingDisplay.swift`.
+- **Consistency**: The same mapping rules apply to main-app UI (via `PlayerViewModel`), home widgets, Live Activities, and Control widgets because status/control mappers live on `PlayerVisualState` (`WidgetSurface/PlayerPresentation.swift`, palette in `PlayerVisualChromePalette`) and the metadata resolver lives in `WidgetSurface/WidgetNowPlayingDisplay.swift`.
 
 ## Semantic vs. Presentation Uses of PlayerVisualState
 
@@ -54,12 +54,12 @@ All presentation is organized into three narrow, `Equatable` value types derived
 
 Pure play/pause glyph choice and tint for **controls** must use `makeControlPresentation()` (glyph still follows `isActivelyPlaying` so Connecting keeps a play affordance until audible start).
 
-See the header of `WidgetSurface/PlayerVisualState.swift` for the exact division and AGENT NOTE.
+See the headers of `WidgetSurface/PlayerVisualState.swift` (policy) and `WidgetSurface/PlayerPresentation.swift` (display derivation + chrome palette) for the exact division and AGENT NOTE.
 
 ## Adding or Changing a Presentation Axis (Guidance for Contributors)
 
 1. Decide whether the concern belongs on one of the existing surfaces or needs a new narrow type (prefer adding a new `...Presentation` or `...DisplayModel` struct).
-2. Implement (or extend) the pure mapper on `PlayerVisualState` (`WidgetSurface/PlayerVisualState.swift`) for status/control axes, or as a free function in `WidgetSurface/WidgetNowPlayingDisplay.swift` for metadata/emphasis. Pure Provider slice assembly stays in ``WidgetProviderPresentationAssembly``; snapshot hygiene wrappers stay in membership-exception `WidgetDisplayModels.swift`; blueprints stay in `WidgetSurface/WidgetTimelineEntryFactory.swift`.
+2. Implement (or extend) the pure mapper on `PlayerVisualState` (`WidgetSurface/PlayerPresentation.swift`) for status/control axes, or as a free function in `WidgetSurface/WidgetNowPlayingDisplay.swift` for metadata/emphasis. Color decisions belong in ``PlayerVisualChromePalette``. Pure Provider slice assembly stays in ``WidgetProviderPresentationAssembly``; snapshot hygiene wrappers stay in membership-exception `WidgetDisplayModels.swift`; blueprints stay in `WidgetSurface/WidgetTimelineEntryFactory.swift`.
 3. Update derivation sites:
    - Add the new field to `SimpleEntry`.
    - Compute it once in `Provider.placeholder`, `createEntry`, and `timeline`.
@@ -67,7 +67,7 @@ See the header of `WidgetSurface/PlayerVisualState.swift` for the exact division
 4. Change consumers (family views, regions, LA region closures, Control widget) to read only the narrow value.
 5. Update `SimpleEntry` property documentation and the three main widget/LA files' headers.
 6. Add or update an entry in the table above.
-7. Update this document, the relevant `///` headers (with `- SeeAlso:`), and the `WidgetSurface/PlayerVisualState.swift` header if the division of concerns changed.
+7. Update this document, the relevant `///` headers (with `- SeeAlso:`), and the `WidgetSurface/PlayerVisualState.swift` / `PlayerPresentation.swift` headers if the division of concerns changed.
 8. Verify with the preview matrix in `LutheranRadioWidget.swift` and on-device widget/LA surfaces.
 
 Never derive presentation inside leaf view `body` for the three canonical surfaces. Never duplicate the mapping rules.
@@ -201,7 +201,10 @@ Full stacking matrix, push-cost analysis, and QA scenarios: [`docs/Live-Activity
 
 ### `WidgetSurface/` (presentation-only embedded framework)
 
-- `PlayerVisualState.swift` — `PlayerVisualState`, `PlaybackIntent`, `makeStatusPresentation()` / `makeControlPresentation()` + semantics of `isActivelyPlaying`.
+- `PlayerVisualState.swift` — `PlayerVisualState` policy cases + `isActivelyPlaying` / resurrection helpers.
+- `PlayerPresentation.swift` — `PlayerStatusPresentation`, `PlayerControlPresentation`, `PlayerVisualChromePalette`, `makeStatusPresentation()` / `makeControlPresentation()`.
+- `PlaybackIntent.swift` — `PlaybackIntent`, `StopReason`, `PlaybackAttachContext`.
+- `PlayerEvent.swift` — `PlayerEvent`, `PlayerCurrentState`.
 - `WidgetNowPlayingDisplay.swift` — `WidgetMetadataEmphasis`, `WidgetNowPlayingDisplayModel`, `widgetNowPlayingDisplayModel(...)`.
 - `WidgetTimelineEntryFactory.swift` — `WidgetProviderSnapshotFields`, `WidgetProviderPresentationSlices`, home/control entry blueprints.
 - `WidgetLivenessPresentation.swift` — passive `tap_to_open` vs interactive chrome policy.

@@ -31,7 +31,7 @@
 // - `visualState.makeControlPresentation()` → play/pause glyph + tint
 // - `currentLanguage` → flag / language name / alt-stream exclusion (hoisted once)
 // (computed once per view or outer DynamicIsland closure, then passed inward).
-// See LutheranRadioWidgetLiveActivity.swift and PlayerVisualState.swift.
+// See LutheranRadioWidgetLiveActivity.swift, PlayerVisualState.swift, PlayerPresentation.swift.
 //
 // Toggle planning contract:
 // `ContentState.visualState` is the preferred input for lock-screen play/pause

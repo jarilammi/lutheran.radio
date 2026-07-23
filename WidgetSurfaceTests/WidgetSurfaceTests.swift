@@ -21,23 +21,23 @@ struct WidgetSurfaceTests {
 
     @Test func planHomeWidgetTogglePlayingIsPause() {
         let plan = WidgetIntentCoordinators.planHomeWidgetToggle(from: .playing)
-        #expect(plan.action == "pause")
+        #expect(plan.action == .pause)
         #expect(plan.targetVisualState == .userPaused)
     }
 
     @Test func planHomeWidgetTogglePausedIsPlay() {
         let plan = WidgetIntentCoordinators.planHomeWidgetToggle(from: .userPaused)
-        #expect(plan.action == "play")
+        #expect(plan.action == .play)
         #expect(plan.targetVisualState == .playing)
     }
 
     @Test func planControlWidgetToggleBoolMatrix() {
         let play = WidgetIntentCoordinators.planControlWidgetToggle(isPlayingRequested: true)
-        #expect(play.action == "play")
+        #expect(play.action == .play)
         #expect(play.targetVisualState == .playing)
 
         let pause = WidgetIntentCoordinators.planControlWidgetToggle(isPlayingRequested: false)
-        #expect(pause.action == "pause")
+        #expect(pause.action == .pause)
         #expect(pause.targetVisualState == .userPaused)
     }
 
@@ -52,12 +52,12 @@ struct WidgetSurfaceTests {
 
     @Test func planHomeWidgetToggleThermalRefusesAndSecurityConnects() {
         let thermal = WidgetIntentCoordinators.planHomeWidgetToggle(from: .thermalPaused)
-        #expect(thermal.action == "none")
+        #expect(thermal.action == .none)
         #expect(thermal.targetVisualState == .thermalPaused)
         #expect(!thermal.shouldExecutePendingAction)
 
         let security = WidgetIntentCoordinators.planHomeWidgetToggle(from: .securityLocked)
-        #expect(security.action == "play")
+        #expect(security.action == .play)
         #expect(security.targetVisualState == .prePlay)
         #expect(security.shouldExecutePendingAction)
     }
@@ -291,6 +291,34 @@ struct WidgetSurfaceTests {
     @Test func controlPresentationPlayingUsesPauseGlyph() {
         let presentation = PlayerVisualState.playing.makeControlPresentation()
         #expect(presentation.systemImage == "pause.fill")
+    }
+
+    /// Status and control colors both derive from ``PlayerVisualChromePalette``.
+    @Test func chromePaletteFeedsStatusAndControlPresentation() {
+        let states: [PlayerVisualState] = [
+            .prePlay, .cleared, .playing, .userPaused, .thermalPaused, .securityLocked
+        ]
+        for state in states {
+            let status = state.makeStatusPresentation()
+            #expect(status.background == PlayerVisualChromePalette.backgroundColor(for: state))
+            #expect(status.foreground == PlayerVisualChromePalette.textColor(for: state))
+            #expect(state.backgroundColor == PlayerVisualChromePalette.backgroundUIColor(for: state))
+            #expect(state.textColor == PlayerVisualChromePalette.textUIColor(for: state))
+            #expect(state.buttonTintColor == PlayerVisualChromePalette.buttonTintUIColor(for: state))
+            #expect(
+                state.makeControlPresentation().tint
+                    == PlayerVisualChromePalette.buttonTintColor(for: state)
+            )
+        }
+    }
+
+    /// Typed toggle actions wire to App Group verbs at the mailbox boundary only.
+    @Test func widgetToggleActionWireValuesMatchAppGroupVerbs() {
+        #expect(WidgetToggleAction.play.wireValue == "play")
+        #expect(WidgetToggleAction.pause.wireValue == "pause")
+        #expect(WidgetToggleAction.none.wireValue == "none")
+        #expect(WidgetToggleAction(wireValue: "play") == .play)
+        #expect(WidgetToggleAction(wireValue: "switch") == nil)
     }
 
     // MARK: - Language display (pure)
