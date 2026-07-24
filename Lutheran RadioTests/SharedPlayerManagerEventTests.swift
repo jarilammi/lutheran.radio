@@ -927,9 +927,8 @@ final class SharedPlayerManagerEventTests: XCTestCase {
     /// before the engine tears down playback. The event subsequence matches
     /// ``setUserPaused()`` because both routes perform the same mutation sequence
     /// (`applyVisualState` → `updatePlaybackIntent` → `streamDidPause` →
-    /// `saveCurrentState`) even though ``markAsUserPaused()`` omits the early
-    /// `saveVisualState()` call and the post-save Live Activity update task present
-    /// in ``setUserPaused()``.
+    /// `saveCurrentState`). Authoritative snapshot writes are only via
+    /// ``saveCurrentState()`` / `performActualSave` (privacy-gated).
     ///
     /// Consumers (`WidgetRefreshManager`, ``PlayerEventSubscriber``) observe the
     /// identical pause vocabulary regardless of which canonical surface the player

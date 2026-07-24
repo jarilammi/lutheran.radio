@@ -544,7 +544,7 @@ extension SharedPlayerManager {
     /// - Note: Does not set `lastUserPauseTimestamp` (contrast with `stop()` / `markAsUserPaused`).
     ///
     /// - SeeAlso: ``RadioPlayerCoordinator/sleepTimerStateDidChange(_:)``,
-    ///   ``PlaybackIntent/sleepTimer``, ``currentVisualState``, ``saveVisualState()``,
+    ///   ``PlaybackIntent/sleepTimer``, ``currentVisualState``, ``saveCurrentState()``,
     ///   `DirectStreamingPlayer.stop(reason:)`, CODING_AGENT.md (Single Source of Truth Principles),
     ///   SharedPlayerManager.swift (resurrection protection table + "sleepTimer" intent rules).
     ///
@@ -555,7 +555,6 @@ extension SharedPlayerManager {
         ensureVisualStateLoaded()
 
         applyVisualState(.userPaused)
-        saveVisualState()
         updatePlaybackIntent(to: .sleepTimer)
 
         DirectStreamingPlayer.shared.stop(reason: .interruption)

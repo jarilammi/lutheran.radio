@@ -739,9 +739,8 @@ extension SharedPlayerManager {
     ///
     /// - Note: Emission subsequence matches ``setUserPaused()`` (`visualStateDidChange` →
     ///   `playbackIntentChanged` → `streamDidPause` → `persistedWidgetStateDidUpdate`).
-    ///   This surface omits the early `saveVisualState()` and post-save Live Activity
-    ///   update task present in ``setUserPaused()``; those differences do not alter the
-    ///   event vocabulary consumers observe.
+    ///   Both surfaces persist via ``saveCurrentState()`` after mutation; consumers observe
+    ///   the same pause vocabulary regardless of which canonical entry was invoked.
     ///
     /// AGENT NOTE: Emission site for pause is after mutation. This method is called
     /// by the player; do not move pause decision logic here.
@@ -800,8 +799,8 @@ extension SharedPlayerManager {
     ///   ``markAsUserPaused()`` (no second surface storm, no `streamDidPause` after `streamDidStop`).
     ///
     /// - Postcondition: visual + intent forced to `.userPaused`, timestamp recorded,
-    ///   early visual save for widgets/Darwin, engine soft silence awaited (main),
-    ///   authoritative save performed, surfaces notified once after silence, and
+    ///   engine soft silence awaited (main), authoritative ``saveCurrentState()``
+    ///   performed (privacy-gated), surfaces notified once after silence, and
     ///   `streamDidStop` emitted.
     ///
     /// - SeeAlso: ``setUserPaused()``, ``markAsUserPaused()``, ``emit(_:)``,
@@ -828,9 +827,9 @@ extension SharedPlayerManager {
         clearPlaybackStartPipeline()
 
         // Note: Lock .userPaused IMMEDIATELY at the very top
-        // This closes the race window that causes resurrection after pause
+        // This closes the race window that causes resurrection after pause.
+        // Authoritative cross-process snapshot is written later via saveCurrentState().
         applyVisualState(.userPaused)
-        saveVisualState()   // persist early so widgets, Live Activity, and Darwin notifications see the new state
 
         updatePlaybackIntent(to: .userPaused)
 
@@ -984,7 +983,6 @@ extension SharedPlayerManager {
         // Drop prior-language program title before any language mirror / LA push so ContentState
         // cannot show "playing + old title + new language" during silent engine teardown.
         _clearIcyMetadataStash()
-        saveVisualState()
         await saveCurrentState()
 
         #if LUTHERAN_MAIN_APP
@@ -1080,7 +1078,6 @@ extension SharedPlayerManager {
             }
         }
         
-        saveVisualState()
         await saveCurrentState()
     }
     
@@ -1126,7 +1123,6 @@ extension SharedPlayerManager {
         // The payload carries the exact classified value from the player.
         emit(.streamDidFail(errorType))
 
-        saveVisualState()
         await saveCurrentState()
         #if LUTHERAN_MAIN_APP
         await refreshAllMediaSurfaces(liveActivity: .updateIfActive)
@@ -1166,7 +1162,6 @@ extension SharedPlayerManager {
         // Additive: saveCurrentState + NowPlaying + LA paths are unaltered.
         emit(.streamDidPause)
         
-        saveVisualState()
         await saveCurrentState()
         #if LUTHERAN_MAIN_APP
         await refreshAllMediaSurfaces(liveActivity: .updateIfActive)
@@ -1216,7 +1211,6 @@ extension SharedPlayerManager {
 
             emit(.streamDidStart)
 
-            saveVisualState()
             await saveCurrentState()
             return
         }
@@ -1235,7 +1229,6 @@ extension SharedPlayerManager {
         // Additive only: all prior save/NowPlaying/LA logic continues exactly.
         emit(.streamDidStart)
         
-        saveVisualState()
         await saveCurrentState()
         #if LUTHERAN_MAIN_APP
         await refreshAllMediaSurfaces(liveActivity: .startOrUpdate)
@@ -1279,7 +1272,6 @@ extension SharedPlayerManager {
             }
         }
         
-        saveVisualState()
         await saveCurrentState()
         
         if currentVisualState.mustSuppressResurrection {
@@ -1391,8 +1383,6 @@ extension SharedPlayerManager {
         
         updatePlaybackIntent(to: .shouldBePlaying)
         
-        saveVisualState()
-        
         scheduleWidgetAction(action: "play")
         notifyMainApp(action: "play")
         
@@ -1429,8 +1419,6 @@ extension SharedPlayerManager {
         
         // Record authoritative pause timestamp for recovery paths.
         lastUserPauseTimestamp = Date().timeIntervalSince1970
-        
-        saveVisualState()
         
         scheduleWidgetAction(action: "pause")
         notifyMainApp(action: "pause")

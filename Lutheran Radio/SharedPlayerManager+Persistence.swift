@@ -24,12 +24,18 @@ import WidgetKit
 extension SharedPlayerManager {
     // MARK: - PlayerVisualState Persistence & Restoration (Private)
 
-    internal func saveVisualState() {
-        // Purpose: no-op retained after eb52d3b6 PersistedWidgetState SSOT consolidation.
-        // Key constraint: authoritative writes now occur only via performActualSave +
-        // persistWidgetSnapshot; call sites preserved solely for resurrection path structure.
-    }
-
+    /// Loads the in-process session visual chrome for the current runtime.
+    ///
+    /// Authoritative **writes** are only via ``saveCurrentState()`` → `performActualSave`
+    /// / ``persistWidgetSnapshot`` (privacy-gated). There is no separate visual-save API —
+    /// sticky mutations (`applyVisualState`) take effect immediately in-actor; surfaces
+    /// observe them after the next real persist path.
+    ///
+    /// - Returns: Sanitized session visual state, or `.prePlay` when no session snapshot exists.
+    /// - Note: Cold launch always yields factory `.prePlay` (memory-only visual policy; OI-1).
+    /// - SeeAlso: ``saveCurrentState()``, ``persistWidgetSnapshot``,
+    ///   ``clearPersistedVisualStateKeysFromDisk()``, SharedPlayerManager.swift (App Group table),
+    ///   docs/Event-Driven-Refactor-Roadmap.md (OI-1), CODING_AGENT.md (SSOT).
     internal func loadVisualState() -> PlayerVisualState {
         // In-session memory snapshot only; cold launch returns .prePlay.
         if let combined = Self.loadPersistedWidgetState() {
