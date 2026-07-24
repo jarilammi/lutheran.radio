@@ -129,7 +129,7 @@ Mutation-path timeline reloads are driven by the Tier 2 ``PlayerEvent`` observer
 - `dt` — delta since the previous mark (per-hop latency)
 - **One line per mark:** each milestone is emitted once via `print` only. Do not reintroduce a twin `os.Logger` emit of the same string — Xcode’s console mirrors both sinks and previously showed identical duplicate lines (same `t=` / `dt=`), which polluted field analysis.
 
-**Unit gates:** `SharedPlayerManagerEventTests` — `testMediaTransportLatencyTimelineRecordsPauseMailboxAndSoftSilence` (includes single `softSilenceComplete` count), `testMediaTransportLatencyTimelineRecordsLiveActivityTogglePauseChain`.
+**Unit gates:** `SharedPlayerManagerMediaTransportLatencyTests` — `testMediaTransportLatencyTimelineRecordsPauseMailboxAndSoftSilence` (includes single `softSilenceComplete` count), `testMediaTransportLatencyTimelineRecordsLiveActivityTogglePauseChain`.
 
 **Device QA:** Before a lock-screen scenario, optionally call ``MediaTransportLatencyTimeline/reset()`` from a DEBUG hook or rely on process-start origin; then pause/play from Now Playing and Live Activity and read `dt=` on `softSilenceComplete` and `authoritativePlayingPublished`. Each milestone should appear once in the console.
 
@@ -248,5 +248,6 @@ Required convergence: paused chrome and silent engine — never durable “pause
 - [`docs/Widget-Functionality-Roadmap.md`](Widget-Functionality-Roadmap.md) — Tier 4 completion status
 - [`docs/Event-Driven-Refactor-Roadmap.md`](Event-Driven-Refactor-Roadmap.md) — `PlayerEvent` consumer paths
 - `Lutheran RadioTests/RadioLiveActivityManagerTests.swift` — LA diff suppression
-- `Lutheran RadioTests/SharedPlayerManagerEventTests.swift` — `refreshAllMediaSurfaces` contract; Now Playing rate/`playbackState` alignment; unsupported remote-command disable; media-transport mailbox (double-toggle, pause preemption, LA + remote interleave); DEBUG ``MediaTransportLatencyTimeline`` pause + LA toggle chains
+- `Lutheran RadioTests/SharedPlayerManagerMediaSurfaceTests.swift` — `refreshAllMediaSurfaces` contract; Now Playing rate/`playbackState` alignment; unsupported remote-command disable; media-transport mailbox (double-toggle, pause preemption, LA + remote interleave)
+- `Lutheran RadioTests/SharedPlayerManagerMediaTransportLatencyTests.swift` — DEBUG ``MediaTransportLatencyTimeline`` pause + LA toggle chains
 - `Lutheran Radio/MediaTransportLatencyTimeline.swift` — DEBUG-only structured latency timeline (membership-exception; stripped from Release)

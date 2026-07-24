@@ -4,10 +4,10 @@
 //
 //  Created by Jari Lammi on 15.7.2026.
 //
-//  Extension-profile port of metadata resolver + Provider synthesis contracts, plus
-//  stream-catalog ``displayLanguageName(for:)`` and pure ``displayFlag(for:)`` (WidgetSurface).
-//  Compiles membership-exception ``WidgetDisplayModels.swift`` without `LUTHERAN_MAIN_APP`
-//  (same as the widget extension).
+//  Extension-profile linkage for membership-exception display models and Provider
+//  synthesis. Full pure presentation matrices (every visual state, flag map) live
+//  in WidgetSurfaceTests. This suite keeps snapshot / catalog / blueprint smoke that
+//  exercises SharedPlayerManager under the widget compile profile.
 //
 //  - SeeAlso: ``widgetNowPlayingDisplayModel(visualState:streamMetadata:languageName:)``,
 //    ``WidgetProviderSnapshotResolver``, ``WidgetProviderPresentationAssembly``,
@@ -18,7 +18,7 @@
 import XCTest
 import WidgetSurface
 
-/// Metadata resolver matrix + Provider assembly under the extension compile profile.
+/// Extension-profile snapshot resolver + thin presentation linkage smoke.
 final class WidgetDisplayModelsExtensionTests: XCTestCase {
 
     private let manager = SharedPlayerManager.shared
@@ -50,20 +50,6 @@ final class WidgetDisplayModelsExtensionTests: XCTestCase {
         )
     }
 
-    private func snapshotFields(
-        visualState: PlayerVisualState,
-        language: String = "fi",
-        metadata: StreamProgramMetadata? = nil,
-        hasError: Bool = false
-    ) -> WidgetProviderSnapshotFields {
-        WidgetProviderSnapshotFields(
-            currentLanguage: language,
-            hasError: hasError,
-            visualState: visualState,
-            streamMetadata: metadata
-        )
-    }
-
     override func setUp() async throws {
         try await super.setUp()
         await MainActor.run {
@@ -77,7 +63,7 @@ final class WidgetDisplayModelsExtensionTests: XCTestCase {
         try await super.tearDown()
     }
 
-    // MARK: - Metadata resolver (extension-profile)
+    // MARK: - Metadata resolver (representative extension-profile samples)
 
     func testPlayingWithoutMetadataUsesLiveFallbackActiveEmphasis() {
         let model = resolve(visualState: .playing, metadata: nil)
@@ -100,19 +86,7 @@ final class WidgetDisplayModelsExtensionTests: XCTestCase {
         XCTAssertEqual(model.emphasis, .placeholder)
     }
 
-    func testUserPausedWithTitleRetainsSubduedTitle() {
-        let model = resolve(visualState: .userPaused, metadata: metadata(title: programTitle))
-        XCTAssertEqual(model.programTitle, programTitle)
-        XCTAssertEqual(model.emphasis, .subdued)
-    }
-
-    func testPrePlayWithoutMetadataUsesLiveFallbackSubdued() {
-        let model = resolve(visualState: .prePlay, metadata: nil)
-        XCTAssertEqual(model.programTitle, liveFallback)
-        XCTAssertEqual(model.emphasis, .subdued)
-    }
-
-    // MARK: - Provider snapshot resolver
+    // MARK: - Provider snapshot resolver (membership-exception SSOT)
 
     func testProviderSnapshotResolverReturnsPersistedFields() {
         SharedPlayerManager.persistWidgetSnapshot(
@@ -154,29 +128,19 @@ final class WidgetDisplayModelsExtensionTests: XCTestCase {
         XCTAssertEqual(hygieneFields.currentLanguage, "de")
     }
 
-    // MARK: - Presentation assembly + factory blueprint (Provider synthesis)
+    // MARK: - Presentation assembly + factory blueprint (thin linkage smoke)
 
-    func testAssemblePresentationSlicesMatrixMapsEveryVisualState() {
-        let states: [PlayerVisualState] = [
-            .prePlay, .cleared, .playing, .userPaused, .thermalPaused, .securityLocked
-        ]
-
-        for state in states {
-            let fields = snapshotFields(visualState: state, language: "en")
-            let slices = WidgetProviderSnapshotResolver.assemblePresentationSlices(from: fields)
-            let stream = SharedPlayerManager.streamForLanguageCode("en")
-
-            XCTAssertEqual(slices.statusPresentation, state.makeStatusPresentation())
-            XCTAssertEqual(slices.controlPresentation, state.makeControlPresentation())
-            XCTAssertEqual(
-                slices.widgetNowPlayingDisplayModel,
-                widgetNowPlayingDisplayModel(
-                    visualState: state,
-                    streamMetadata: nil,
-                    languageName: stream.language
-                )
-            )
-        }
+    /// Single-state assembly smoke under extension linkage (full matrix in WidgetSurfaceTests).
+    func testAssemblePresentationSlicesPlayingSmokeLinksUnderExtensionProfile() {
+        let fields = WidgetProviderSnapshotFields(
+            currentLanguage: "en",
+            hasError: false,
+            visualState: .playing,
+            streamMetadata: nil
+        )
+        let slices = WidgetProviderSnapshotResolver.assemblePresentationSlices(from: fields)
+        XCTAssertEqual(slices.statusPresentation, PlayerVisualState.playing.makeStatusPresentation())
+        XCTAssertEqual(slices.controlPresentation, PlayerVisualState.playing.makeControlPresentation())
     }
 
     func testHomeBlueprintFromResolverMatchesProviderContract() {
@@ -219,23 +183,7 @@ final class WidgetDisplayModelsExtensionTests: XCTestCase {
         XCTAssertEqual(blueprint.currentStation, slices.currentStation)
     }
 
-    // MARK: - displayFlag / displayLanguageName (pure helpers)
-
-    /// Flag mapping for curated LA alt-stream + preview codes (no stream dependency).
-    func testDisplayFlagMatrixForCuratedLanguageCodes() {
-        XCTAssertEqual(displayFlag(for: "en"), "🇺🇸")
-        XCTAssertEqual(displayFlag(for: "de"), "🇩🇪")
-        XCTAssertEqual(displayFlag(for: "fi"), "🇫🇮")
-        XCTAssertEqual(displayFlag(for: "sv"), "🇸🇪")
-        XCTAssertEqual(displayFlag(for: "et"), "🇪🇪")
-    }
-
-    /// Unknown codes use the globe fallback (never empty).
-    func testDisplayFlagUnknownCodeUsesGlobeFallback() {
-        XCTAssertEqual(displayFlag(for: "xx"), "🌍")
-        XCTAssertEqual(displayFlag(for: ""), "🌍")
-        XCTAssertEqual(displayFlag(for: "nb"), "🌍")
-    }
+    // MARK: - Catalog-aware display helpers (extension stream stub linkage)
 
     /// Known codes prefer ``SharedPlayerManager/availableStreams`` language names.
     func testDisplayLanguageNamePrefersAvailableStreams() {
@@ -247,18 +195,8 @@ final class WidgetDisplayModelsExtensionTests: XCTestCase {
         }
         XCTAssertEqual(displayLanguageName(for: "en"), en.language)
         XCTAssertEqual(displayLanguageName(for: "fi"), fi.language)
-        // Cross-check: stream list language is non-empty and not the raw code.
         XCTAssertFalse(en.language.isEmpty)
         XCTAssertNotEqual(displayLanguageName(for: "en"), "en")
-    }
-
-    /// Codes absent from the stream list use localized fallback or capitalized code.
-    ///
-    /// Stub ``availableStreams`` only covers en/de/fi/sv/et; fallback switch still covers
-    /// those same codes when streams are empty, but for a truly unknown code we capitalize.
-    func testDisplayLanguageNameUnknownCodeCapitalizes() {
-        XCTAssertEqual(displayLanguageName(for: "xx"), "Xx")
-        XCTAssertEqual(displayLanguageName(for: "zz"), "Zz")
     }
 
     /// Curated codes match stream-list flags when present (LA button consistency).

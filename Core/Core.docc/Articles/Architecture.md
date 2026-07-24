@@ -247,7 +247,8 @@ Security logic is **never** placed in this cross-target set.
 
 Emitter and consumer contracts are protected by 71 event-driven unit tests (as of 2026-07-09):
 
-- `SharedPlayerManagerEventTests` — emission order, replay prefix, live stream delivery, session teardown, privacy gate
+- `SharedPlayerManagerEventTests` — emission order, replay prefix, live stream delivery, privacy gate
+- `SharedPlayerManagerMediaSurfaceTests` / `SharedPlayerManagerColdLaunchHygieneTests` / `SharedPlayerManagerMediaTransportLatencyTests` — session teardown, media surfaces, cold-launch hygiene, DEBUG latency timeline
 - `WidgetRefreshManagerEventTests` — derivation matrix, event-path gates, debounce/coalesce timing
 - `PlayerEventSubscriberEventTests` — replay prefix, observable rules, widget-process guard
 - `WidgetEventObserverTests` — delivery, termination, cancel, restart
@@ -255,7 +256,7 @@ Emitter and consumer contracts are protected by 71 event-driven unit tests (as o
 
 Tests use fast/reliable patterns documented in `CODING_AGENT.md`: UITestMode short-circuits for DNS/streaming/ActivityKit IPC, subscribe-before-action collection on `AsyncStream`, and a DEBUG notification seam posted from `emit(_:)` for deterministic emission-order assertions. Replay live-forwarding in the XCTest host is best-effort only; primary contracts gate on the DEBUG seam and replay prefix.
 
-Canonical test files live under `Lutheran RadioTests/` (`SharedPlayerManagerEventTests.swift`, `WidgetRefreshManagerEventTests.swift`, `PlayerEventSubscriberEventTests.swift`, `WidgetEventObserverTests.swift`, and the attribute-events subset in `RadioLiveActivityManagerTests.swift`). The Tier 5 checklist in `docs/Event-Driven-Refactor-Roadmap.md` records the protected contracts.
+Canonical test files live under `Lutheran RadioTests/` (`SharedPlayerManagerEventTests.swift` plus media-surface / cold-launch / latency sibling suites, `WidgetRefreshManagerEventTests.swift`, `PlayerEventSubscriberEventTests.swift`, `WidgetEventObserverTests.swift`, and the attribute-events subset in `RadioLiveActivityManagerTests.swift`). The Tier 5 checklist in `docs/Event-Driven-Refactor-Roadmap.md` records the protected contracts.
 
 ## See Also
 
@@ -274,5 +275,5 @@ Canonical test files live under `Lutheran RadioTests/` (`SharedPlayerManagerEven
 - `WidgetEventObserver`, `WidgetRefreshManager`, `PlayerEventSubscriber`
 - `docs/Event-Driven-Refactor-Roadmap.md` — authoritative backlog, architectural evaluation, and Tier 5 test checklist
 - `docs/Widget-Presentation-Dataflow.md` — widget and Live Activity data flow
-- `Lutheran RadioTests/SharedPlayerManagerEventTests.swift` — canonical emission-order and replay helpers
+- `Lutheran RadioTests/SharedPlayerManagerEventTests.swift` — canonical emission-order and replay usage; collectors in `Support/PlayerEventTestSupport.swift`
 - `CODING_AGENT.md` — Single Source of Truth Principles, cross-target shared files, test execution patience

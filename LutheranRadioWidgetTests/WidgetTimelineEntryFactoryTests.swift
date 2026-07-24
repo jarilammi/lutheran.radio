@@ -4,7 +4,8 @@
 //
 //  Created by Jari Lammi on 15.7.2026.
 //
-//  Extension-profile unit tests for ``WidgetTimelineEntryFactory`` blueprints.
+//  Thin extension-profile smoke for ``WidgetTimelineEntryFactory`` blueprints.
+//  Full per-visual-state presentation matrices live in WidgetSurfaceTests.
 //
 //  - SeeAlso: ``WidgetTimelineEntryFactory``, ``WidgetProviderPresentationSlices``,
 //    docs/Widget-Functionality-Roadmap.md, docs/Widget-Presentation-Dataflow.md.
@@ -13,7 +14,7 @@
 import XCTest
 import WidgetSurface
 
-/// Protects home-widget and Control-widget blueprint assembly from snapshot fields + slices.
+/// Extension-profile linkage for home/Control blueprint assembly (full matrices elsewhere).
 final class WidgetTimelineEntryFactoryTests: XCTestCase {
 
     private let entryDate = Date(timeIntervalSince1970: 1_700_000_000)
@@ -90,25 +91,5 @@ final class WidgetTimelineEntryFactoryTests: XCTestCase {
         XCTAssertEqual(blueprint.currentStation, s.currentStation)
         XCTAssertEqual(blueprint.statusPresentation, s.statusPresentation)
         XCTAssertEqual(blueprint.controlPresentation, s.controlPresentation)
-    }
-
-    /// Blueprint matrix: every visual state produces distinct status + control presentations.
-    func testHomeBlueprintMatrixMapsEveryVisualState() {
-        let states: [PlayerVisualState] = [
-            .prePlay, .cleared, .playing, .userPaused, .thermalPaused, .securityLocked
-        ]
-
-        for state in states {
-            let f = fields(visualState: state, language: "en")
-            let s = slices(for: state, language: "en", station: "🇺🇸 English")
-            let blueprint = WidgetTimelineEntryFactory.makeHomeWidgetBlueprint(
-                date: entryDate,
-                fields: f,
-                slices: s
-            )
-            XCTAssertEqual(blueprint.visualState, state)
-            XCTAssertEqual(blueprint.statusPresentation, state.makeStatusPresentation())
-            XCTAssertEqual(blueprint.controlPresentation, state.makeControlPresentation())
-        }
     }
 }

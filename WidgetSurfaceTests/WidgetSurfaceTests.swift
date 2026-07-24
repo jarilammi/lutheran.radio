@@ -279,7 +279,50 @@ struct WidgetSurfaceTests {
         #expect(blueprint.date == date)
     }
 
-    // MARK: - Presentation mappers
+    // MARK: - Presentation mappers (full matrix — pure WidgetSurface host)
+
+    /// Full status presentation matrix for every visual state (authoritative pure host).
+    /// Extension targets keep thin linkage smoke only.
+    @Test func statusPresentationMatrixMapsEveryVisualState() {
+        let states: [PlayerVisualState] = [
+            .prePlay, .cleared, .playing, .userPaused, .thermalPaused, .securityLocked
+        ]
+        let expectedGlyphs: [PlayerVisualState: String?] = [
+            .playing: "play.fill",
+            .prePlay: "play.circle",
+            .cleared: nil,
+            .userPaused: "pause.fill",
+            .thermalPaused: "pause.fill",
+            .securityLocked: "lock.fill",
+        ]
+        for state in states {
+            let presentation = state.makeStatusPresentation()
+            #expect(!presentation.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            #expect(presentation.systemImage == expectedGlyphs[state] ?? nil)
+            #expect(presentation.background == PlayerVisualChromePalette.backgroundColor(for: state))
+            #expect(presentation.foreground == PlayerVisualChromePalette.textColor(for: state))
+        }
+        // Distinct status chrome across states (no collapsed cases).
+        let pairs = states.map { ($0, $0.makeStatusPresentation()) }
+        for i in pairs.indices {
+            for j in pairs.indices where j > i {
+                #expect(pairs[i].1 != pairs[j].1)
+            }
+        }
+    }
+
+    /// Full control presentation matrix: pause glyph only when actively playing.
+    @Test func controlPresentationMatrixMapsEveryVisualState() {
+        let states: [PlayerVisualState] = [
+            .prePlay, .cleared, .playing, .userPaused, .thermalPaused, .securityLocked
+        ]
+        for state in states {
+            let presentation = state.makeControlPresentation()
+            let expectedGlyph = state.isActivelyPlaying ? "pause.fill" : "play.fill"
+            #expect(presentation.systemImage == expectedGlyph)
+            #expect(presentation.tint == PlayerVisualChromePalette.buttonTintColor(for: state))
+        }
+    }
 
     @Test func statusPresentationPlayingUsesPlayGlyph() {
         let presentation = PlayerVisualState.playing.makeStatusPresentation()

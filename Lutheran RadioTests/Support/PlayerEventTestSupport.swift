@@ -497,3 +497,85 @@ func assertEvents(
         searchStart = events.index(after: matchIndex)
     }
 }
+
+// MARK: - Shared suite isolation (event / media-surface hosts)
+
+/// Cheap, deterministic isolation for main-host suites that exercise
+/// ``SharedPlayerManager`` emission, media-surface coordination, cold-launch hygiene,
+/// or DEBUG transport latency.
+///
+/// Order is intentional: Live Activity local nil → clearAllLocalState → enable
+/// widgets-active privacy gate for observability → cancel replay forwarding →
+/// suspend Tier 2 observation → pre-warm ``events``.
+///
+/// - Parameters:
+///   - manager: Actor under test (defaults to the process singleton).
+/// - SeeAlso: ``sanitizeLiveActivityLocalState()``,
+///   CODING_AGENT.md (Test Execution Patience and Fast, Reliable Test Patterns).
+func prepareSharedPlayerManagerEventTestIsolation(
+    manager: SharedPlayerManager = .shared
+) async {
+    await MainActor.run {
+        sanitizeLiveActivityLocalState()
+    }
+
+    await SharedPlayerManager.clearAllLocalState()
+    await manager.setUserIntentToPlay()
+
+    await MainActor.run {
+        WidgetRefreshManager.setHasActiveLutheranWidgets(true)
+    }
+
+    await manager.cancelReplayForwarding()
+    await MainActor.run {
+        WidgetRefreshManager._test_setSuppressPlayerEventObservation(true)
+        WidgetRefreshManager.shared._test_suspendPlayerEventObservation()
+    }
+    await Task.yield()
+    await Task.yield()
+    try? await Task.sleep(for: .milliseconds(150))
+
+    _ = await manager.events
+    await Task.yield()
+    try? await Task.sleep(for: .milliseconds(100))
+}
+
+/// Symmetric tear-down for suites that call ``prepareSharedPlayerManagerEventTestIsolation``.
+///
+/// Resets DEBUG observation / gate / Now Playing coordination seams so later tests
+/// do not inherit isolation flags.
+///
+/// - Parameters:
+///   - manager: Actor under test (defaults to the process singleton).
+func tearDownSharedPlayerManagerEventTestIsolation(
+    manager: SharedPlayerManager = .shared
+) async {
+    await manager.cancelReplayForwarding()
+
+    await MainActor.run {
+        sanitizeLiveActivityLocalState()
+        WidgetRefreshManager.setSessionTeardownInProgress(false)
+        WidgetRefreshManager._test_setBypassUITestModeForRefreshGateObservation(false)
+        WidgetRefreshManager._test_setRecordRefreshIfNeededGateOutcomes(false)
+        WidgetRefreshManager._test_setSuppressPlayerEventObservation(false)
+        SharedPlayerManager._test_setSimulateWidgetProcessContext(false)
+        SharedPlayerManager._test_setBypassUITestModeForNowPlayingUpdates(false)
+        SharedPlayerManager._test_setRecordMediaSurfaceCoordinationOrder(false)
+        SharedPlayerManager._test_clearMediaSurfaceCoordinationOrderLog()
+    }
+}
+
+/// Picks a stream guaranteed to differ from the engine's current selection so
+/// `switchToStream` exercises the language-change silent-stop path under test.
+///
+/// - Parameters:
+///   - streams: Catalog from ``SharedPlayerManager/availableStreams`` or the engine list.
+/// - Returns: A stream whose language code differs from the current engine selection.
+func targetStreamDifferentFromCurrent(
+    in streams: [DirectStreamingPlayer.Stream]
+) async -> DirectStreamingPlayer.Stream {
+    await MainActor.run {
+        let current = DirectStreamingPlayer.shared.selectedStream.languageCode
+        return streams.first { $0.languageCode != current } ?? streams[1]
+    }
+}
