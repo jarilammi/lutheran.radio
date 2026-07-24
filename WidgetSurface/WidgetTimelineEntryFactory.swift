@@ -38,12 +38,15 @@ public struct WidgetProviderSnapshotFields: Sendable, Equatable {
 }
 
 /// Pre-derived presentation slices assembled once from resolved snapshot fields.
+///
+/// Home-widget ``SimpleEntry`` stores only these slices plus station / language / streams —
+/// not the full ``PlayerVisualState`` or raw ``StreamProgramMetadata`` (already folded into
+/// ``widgetNowPlayingDisplayModel`` and status/control presentations).
 public struct WidgetProviderPresentationSlices: Sendable, Equatable {
     public let currentLanguageCode: String
     public let currentStation: String
     public let statusPresentation: PlayerStatusPresentation
     public let controlPresentation: PlayerControlPresentation
-    public let statusMessage: String
     public let widgetNowPlayingDisplayModel: WidgetNowPlayingDisplayModel
 
     public init(
@@ -51,25 +54,26 @@ public struct WidgetProviderPresentationSlices: Sendable, Equatable {
         currentStation: String,
         statusPresentation: PlayerStatusPresentation,
         controlPresentation: PlayerControlPresentation,
-        statusMessage: String,
         widgetNowPlayingDisplayModel: WidgetNowPlayingDisplayModel
     ) {
         self.currentLanguageCode = currentLanguageCode
         self.currentStation = currentStation
         self.statusPresentation = statusPresentation
         self.controlPresentation = controlPresentation
-        self.statusMessage = statusMessage
         self.widgetNowPlayingDisplayModel = widgetNowPlayingDisplayModel
     }
 }
 
 /// Field bundle for home-widget ``SimpleEntry`` synthesis (extension adds streams + configuration).
+///
+/// Carries policy-side fields (`visualState`, `streamMetadata`) for Control-adjacent tests and
+/// DEBUG logging; ``SimpleEntry`` itself stores only the narrow presentation slices that family
+/// views consume (see ``WidgetTimelineEntryFactory/makeHomeWidgetBlueprint``).
 public struct WidgetHomeTimelineEntryBlueprint: Sendable, Equatable {
     public let date: Date
     public let visualState: PlayerVisualState
     public let currentStation: String
     public let currentLanguageCode: String
-    public let statusMessage: String
     public let statusPresentation: PlayerStatusPresentation
     public let controlPresentation: PlayerControlPresentation
     public let widgetNowPlayingDisplayModel: WidgetNowPlayingDisplayModel
@@ -80,7 +84,6 @@ public struct WidgetHomeTimelineEntryBlueprint: Sendable, Equatable {
         visualState: PlayerVisualState,
         currentStation: String,
         currentLanguageCode: String,
-        statusMessage: String,
         statusPresentation: PlayerStatusPresentation,
         controlPresentation: PlayerControlPresentation,
         widgetNowPlayingDisplayModel: WidgetNowPlayingDisplayModel,
@@ -90,7 +93,6 @@ public struct WidgetHomeTimelineEntryBlueprint: Sendable, Equatable {
         self.visualState = visualState
         self.currentStation = currentStation
         self.currentLanguageCode = currentLanguageCode
-        self.statusMessage = statusMessage
         self.statusPresentation = statusPresentation
         self.controlPresentation = controlPresentation
         self.widgetNowPlayingDisplayModel = widgetNowPlayingDisplayModel
@@ -140,7 +142,6 @@ public enum WidgetTimelineEntryFactory {
             visualState: fields.visualState,
             currentStation: slices.currentStation,
             currentLanguageCode: slices.currentLanguageCode,
-            statusMessage: slices.statusMessage,
             statusPresentation: slices.statusPresentation,
             controlPresentation: slices.controlPresentation,
             widgetNowPlayingDisplayModel: slices.widgetNowPlayingDisplayModel,

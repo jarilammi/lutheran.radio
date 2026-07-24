@@ -51,14 +51,27 @@ public enum WidgetProviderPresentationAssembly {
         languageName: String,
         stationLabel: String
     ) -> WidgetProviderPresentationSlices {
-        let statusPresentation = fields.visualState.makeStatusPresentation()
+        let baseStatus = fields.visualState.makeStatusPresentation()
+        // Fold `hasError` into the narrow status surface so family views never need a
+        // parallel `statusMessage` string. `Connection error` is Localizable (21 langs);
+        // marked extractionState: manual in the app catalog because this call site is in
+        // WidgetSurface (catalog-owning targets would otherwise mark it stale).
+        let statusPresentation: PlayerStatusPresentation
+        if fields.hasError {
+            statusPresentation = PlayerStatusPresentation(
+                background: baseStatus.background,
+                foreground: baseStatus.foreground,
+                text: String(
+                    localized: "Connection error",
+                    defaultValue: "Connection error",
+                    table: "Localizable"
+                ),
+                systemImage: baseStatus.systemImage
+            )
+        } else {
+            statusPresentation = baseStatus
+        }
         let controlPresentation = fields.visualState.makeControlPresentation()
-        // `Connection error` is the widget error chrome string (Localizable, 21 langs).
-        // Marked extractionState: manual in the app catalog: this call site is in WidgetSurface,
-        // so Xcode auto-extraction on the catalog-owning targets would otherwise mark it stale.
-        let statusMessage: String = fields.hasError
-            ? String(localized: "Connection error", defaultValue: "Connection error", table: "Localizable")
-            : statusPresentation.text
         let metadataModel = widgetNowPlayingDisplayModel(
             visualState: fields.visualState,
             streamMetadata: fields.streamMetadata,
@@ -69,7 +82,6 @@ public enum WidgetProviderPresentationAssembly {
             currentStation: stationLabel,
             statusPresentation: statusPresentation,
             controlPresentation: controlPresentation,
-            statusMessage: statusMessage,
             widgetNowPlayingDisplayModel: metadataModel
         )
     }

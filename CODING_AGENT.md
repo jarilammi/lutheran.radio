@@ -233,7 +233,10 @@ Includes (non-exhaustive): `PlayerVisualState.swift` (visual policy),
 `WidgetNowPlayingDisplay.swift`, `WidgetLanguageDisplay.swift` (`displayFlag(for:)`, pure
 `displayLanguageName(for:preferredStreamLanguage:)`),
 `WidgetProviderPresentationAssembly.swift` (pure slice assembly from snapshot
-fields + explicit language labels), `PlayerStatus.swift`, `StreamErrorType.swift`.
+fields + explicit language labels), `WidgetHomeChrome.swift` (passive `tap_to_open`
++ stream chips + pure `alternativeStreamCodes`), `LiveActivityPresentationChrome.swift`
+(shared LA metadata / language / equalizer chrome), `PlayerStatus.swift`,
+`StreamErrorType.swift`.
 
 **Rule**: No security logic in `WidgetSurface`. Prefer this framework for new
 presentation-only shared code rather than membership exceptions. Do not import

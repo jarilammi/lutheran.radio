@@ -264,7 +264,6 @@ struct WidgetSurfaceTests {
             currentStation: "🇫🇮 Finnish",
             statusPresentation: status,
             controlPresentation: control,
-            statusMessage: status.text,
             widgetNowPlayingDisplayModel: model
         )
         let date = Date(timeIntervalSince1970: 0)
@@ -373,7 +372,6 @@ struct WidgetSurfaceTests {
             #expect(slices.currentStation == "🇺🇸 English")
             #expect(slices.statusPresentation == state.makeStatusPresentation())
             #expect(slices.controlPresentation == state.makeControlPresentation())
-            #expect(slices.statusMessage == slices.statusPresentation.text)
             #expect(
                 slices.widgetNowPlayingDisplayModel == widgetNowPlayingDisplayModel(
                     visualState: state,
@@ -401,8 +399,11 @@ struct WidgetSurfaceTests {
             defaultValue: "Connection error",
             table: "Localizable"
         )
-        #expect(slices.statusMessage == expectedError)
-        #expect(slices.statusPresentation == PlayerVisualState.playing.makeStatusPresentation())
+        let base = PlayerVisualState.playing.makeStatusPresentation()
+        #expect(slices.statusPresentation.text == expectedError)
+        #expect(slices.statusPresentation.background == base.background)
+        #expect(slices.statusPresentation.foreground == base.foreground)
+        #expect(slices.statusPresentation.systemImage == base.systemImage)
         #expect(slices.controlPresentation == PlayerVisualState.playing.makeControlPresentation())
     }
 

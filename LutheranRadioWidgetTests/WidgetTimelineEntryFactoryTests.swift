@@ -50,7 +50,6 @@ final class WidgetTimelineEntryFactoryTests: XCTestCase {
             currentStation: station,
             statusPresentation: status,
             controlPresentation: control,
-            statusMessage: status.text,
             widgetNowPlayingDisplayModel: model
         )
     }
@@ -71,7 +70,6 @@ final class WidgetTimelineEntryFactoryTests: XCTestCase {
         XCTAssertEqual(blueprint.visualState, .userPaused)
         XCTAssertEqual(blueprint.currentStation, s.currentStation)
         XCTAssertEqual(blueprint.currentLanguageCode, "sv")
-        XCTAssertEqual(blueprint.statusMessage, s.statusMessage)
         XCTAssertEqual(blueprint.statusPresentation, s.statusPresentation)
         XCTAssertEqual(blueprint.controlPresentation, s.controlPresentation)
         XCTAssertEqual(blueprint.widgetNowPlayingDisplayModel, s.widgetNowPlayingDisplayModel)

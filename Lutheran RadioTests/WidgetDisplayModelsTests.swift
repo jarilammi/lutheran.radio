@@ -321,11 +321,11 @@ final class WidgetDisplayModelsTests: XCTestCase {
                     languageName: stream.language
                 )
             )
-            XCTAssertEqual(slices.statusMessage, slices.statusPresentation.text)
         }
     }
 
-    /// Verifies connection-error chrome overrides status text while preserving presentations.
+    /// Verifies connection-error chrome is folded into ``statusPresentation.text``
+    /// (no parallel statusMessage field) while preserving colors and control presentation.
     func testAssemblePresentationSlicesUsesConnectionErrorWhenHasError() {
         let fields = snapshotFields(visualState: .playing, language: "fi", hasError: true)
         let slices = WidgetProviderSnapshotResolver.assemblePresentationSlices(from: fields)
@@ -334,9 +334,12 @@ final class WidgetDisplayModelsTests: XCTestCase {
             defaultValue: "Connection error",
             table: "Localizable"
         )
+        let base = PlayerVisualState.playing.makeStatusPresentation()
 
-        XCTAssertEqual(slices.statusMessage, expectedError)
-        XCTAssertEqual(slices.statusPresentation, PlayerVisualState.playing.makeStatusPresentation())
+        XCTAssertEqual(slices.statusPresentation.text, expectedError)
+        XCTAssertEqual(slices.statusPresentation.background, base.background)
+        XCTAssertEqual(slices.statusPresentation.foreground, base.foreground)
+        XCTAssertEqual(slices.statusPresentation.systemImage, base.systemImage)
         XCTAssertEqual(slices.controlPresentation, PlayerVisualState.playing.makeControlPresentation())
     }
 

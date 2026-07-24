@@ -12,10 +12,11 @@
 //
 //  Role in event-driven architecture:
 //  - Hosts the primary SwiftUI player surface (via UIHostingController in ViewController).
-//  - Owns a lightweight additive `PlayerEventSubscriber` (via @State + modern Observation)
-//    that consumes `SharedPlayerManager.events` for UI-only side effects.
-//  - All direct @Bindable bindings to `PlayerViewModel`, subview inputs, and imperative
-//    coordinator paths remain the primary mechanism and are untouched.
+//  - Chrome is driven exclusively by `PlayerViewModel` + coordinator (status, control,
+//    metadata, language index, sleep timer). There is no third presentation path.
+//  - `PlayerEventSubscriber` remains available as a testable observation helper type in this
+//    file; production `RadioPlayerView` does not attach empty `.onChange` no-ops or
+//    re-drive chrome from events (non-forcing event roadmap: additive, not dual UI).
 //
 //  Key invariants (UI layer only):
 //  - No security, certificate, DNS, or Core/ logic lives here or is called from here.
@@ -26,13 +27,12 @@
 //  - Value-type driven updates preferred: @State + onChange(of: subscriber.prop) +
 //    local @State for any animation/refresh coordination.
 //
-//  - SeeAlso: `PlayerEventSubscriber` (the new subscriber helper defined in this file),
+//  - SeeAlso: `PlayerEventSubscriber` (testable observation helper co-located in this file),
 //    `PlayerViewModel`, `ViewController`, `SharedPlayerManager` (``events``, ``PlayerEvent``),
-//    `WidgetEventObserver` (reused internally for task management),
-//    `PlaybackControlsView`, `LanguageSelectorView`, `NowPlayingMetadataView`,
+//    `WidgetEventObserver`, `PlaybackControlsView`, `LanguageSelectorView`, `NowPlayingMetadataView`,
 //    CODING_AGENT.md (Documentation & Comment Standards, Single Source of Truth Principles,
-//    "Cross-target shared source files (non-Core)", Defensive Swift Practices, event-driven direction),
-//    docs/Event-Driven-Refactor-Roadmap.md (Tier 2 UI subscriber item),
+//    Defensive Swift Practices, event-driven direction),
+//    docs/Event-Driven-Refactor-Roadmap.md,
 //    <doc:Architecture>.
 //
 //  Created by Jari Lammi on 19.6.2026.
@@ -308,19 +308,6 @@ final class PlayerEventSubscriber {
 struct RadioPlayerView: View {
     @Bindable var viewModel: PlayerViewModel
 
-    /// Lightweight subscriber that reacts to `playbackIntentChanged` (and other
-    /// `PlayerEvent` cases) from `SharedPlayerManager.events`.
-    ///
-    /// Owned with `@State` so its `@Observable` properties participate in SwiftUI's
-    /// Observation system and can drive additional local `@State` or `.onChange`
-    /// side effects. This is deliberately separate from the primary
-    /// `@Bindable viewModel` surface.
-    ///
-    /// - Important: All existing direct bindings and subview contracts remain
-    ///   unchanged. The subscriber is purely additive.
-    /// - SeeAlso: `PlayerEventSubscriber`, ``body``, CODING_AGENT.md.
-    @State private var playerEventSubscriber = PlayerEventSubscriber()
-
     /// Called when the user taps the sleep timer button (compatibility / side-effect path).
     /// Primary presentation and choice handling for sleep timer now lives in
     /// `PlaybackControlsView` (`.confirmationDialog`) + `PlayerViewModel` action closures
@@ -419,63 +406,12 @@ struct RadioPlayerView: View {
             }
         }
         .background(Color.clear)
-
-        // --------------------------------------------------------------------
-        // Additive PlayerEvent subscriber wiring (UI layer only)
-        // --------------------------------------------------------------------
-        // The `.task` starts the lightweight `PlayerEventSubscriber` when this
-        // composition root appears. The subscriber consumes `SharedPlayerManager.events`
-        // and updates its `@Observable` value properties.
-        //
-        // `.onChange` sites are the attachment points for UI-only side effects:
-        // - updating local @State (for animations or derived values)
-        // - triggering view refreshes on specific subtrees
-        // - future coordination with WidgetKit timelines or Live Activity intents
-        //   originating from the primary player view.
-        //
-        // All of the above run in parallel with (never instead of) the existing
-        // @Bindable viewModel + coordinator-driven paths.
-        //
-        // - Precondition: The view is hosted on the main actor (guaranteed by
-        //   UIHostingController in ViewController).
-        // - SeeAlso: `playerEventSubscriber`, `PlayerEventSubscriber.beginObserving()`,
-        //   `PlayerEventSubscriber.eventCount`, SharedPlayerManager.`events`,
-        //   docs/Event-Driven-Refactor-Roadmap.md (this completes the listed Tier 2 UI item),
-        //   CODING_AGENT.md.
-        .task {
-            await playerEventSubscriber.beginObserving()
-        }
-        .onDisappear {
-            playerEventSubscriber.cancel()
-        }
-        .onChange(of: playerEventSubscriber.eventCount) { _, _ in
-            // Reacts to *every* key player event (including playbackIntentChanged and
-            // all state transitions). The count is a pure value change that can be
-            // used to drive local @State updates or animation triggers without
-            // depending on the specific event payload.
-            //
-            // Current implementation performs no mutation of other @State (to keep
-            // the change minimal and non-visual). Future additive work can introduce
-            //   @State private var uiAnimationPhase: Int = 0
-            // inside RadioPlayerView (or on the subscriber) and update it here,
-            // then consume via `.animation(..., value: uiAnimationPhase)` or
-            // `.id(...)` on a narrow subtree.
-            //
-            // This site must never perform player control, intent changes, or
-            // security work.
-        }
-        .onChange(of: playerEventSubscriber.lastObservedIntent) { _, newIntent in
-            // Specific reaction to `playbackIntentChanged`.
-            // Provides the value-type hook for intent-driven UI-only effects
-            // (e.g. local animation state that follows "should the user expect audio"
-            // without ever reading the actor directly from the view body).
-            //
-            // Existing playback visuals continue to flow exclusively through
-            // viewModel.visualState / viewModel.controlPresentation etc.
-            // This onChange is additive observation only.
-            //
-            // - SeeAlso: case `playbackIntentChanged(PlaybackIntent)` in PlayerEvent.
-        }
+        // Player chrome is driven solely by `viewModel` (and coordinator-wired
+        // closures). `PlayerEventSubscriber` is retained as a testable type in this
+        // file for event-observation contracts; production does not attach a second
+        // presentation path or empty `.onChange` no-ops here.
+        // SeeAlso: `PlayerEventSubscriber`, docs/Event-Driven-Refactor-Roadmap.md,
+        // CODING_AGENT.md (non-forcing events; Single Source of Truth for UI chrome).
     }
 }
 

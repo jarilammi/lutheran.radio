@@ -92,59 +92,38 @@ import WidgetSurface
 // `widgetNowPlayingDisplayModel`). Call sites derive once at the top of the relevant
 // view or outer Dynamic Island closure and close over the narrow values.
 //
-// In Live Activities, small derived values (`isPlaying`, `radioIconTint`) are also
-// computed once near the top of `LockScreenLiveActivityView.body` and once inside
-// the outer `dynamicIsland` closure, then closed over by all region builders.
-// This eliminates repeated direct reads of `visualState.isActivelyPlaying` and
-// `visualState.buttonTintColor` for pure visual decisions (LIVE indicator, bars,
-// decorative radio glyph tint/background) while keeping semantic/policy reads
-// (intents, resurrection) on the source.
+// Shared layout chrome lives in WidgetSurface:
+// - ``LiveActivityMetadataBlock`` / ``LiveActivityLanguageLabel`` / ``LiveActivityStreamSwitchChipLabel``
+// - ``LiveActivityEqualizerBars`` (deterministic heights; no random)
+// - ``alternativeStreamCodes(current:availableLanguageCodes:maxCount:fallbackCodes:)``
+// - ``liveActivityLockScreenControlSystemImage(from:)``
 //
-// See the file header for the exact division and
-// docs/Widget-Presentation-Dataflow.md for the full snapshot-driven contract.
+// Language names prefer the stream catalog via the membership-exception
+// ``displayLanguageName(for:)`` wrapper; pure ``displayFlag(for:)`` is WidgetSurface-only.
 //
-// Language and flag helpers: pure ``displayFlag(for:)`` in WidgetSurface; stream-catalog
-// ``displayLanguageName(for:)`` wrapper in the membership-exception display models source.
+// See the file header and docs/Widget-Presentation-Dataflow.md for the snapshot contract.
 
-/// Returns the localized display name for a language code (e.g. "English").
-///
-/// Forwards to the stream-catalog-aware ``displayLanguageName(for:)`` wrapper, which prefers
-/// ``SharedPlayerManager/availableStreams`` and falls back to pure WidgetSurface curated keys.
-/// Keeps names consistent between widgets, Live Activity, and previews.
-///
-/// - SeeAlso: ``displayLanguageName(for:)``, ``displayLanguageName(for:preferredStreamLanguage:)``,
-///   ``SharedPlayerManager/streamForLanguageCode``.
+/// Localized display name for a language code (stream catalog when available).
 private func getLanguageName(_ code: String) -> String {
     displayLanguageName(for: code)
 }
 
-/// Returns the flag emoji for a language code.
-///
-/// Forwards to pure ``displayFlag(for:)`` in WidgetSurface.
-///
-/// - SeeAlso: ``displayFlag(for:)``.
+/// Flag emoji for a language code (pure WidgetSurface mapping).
 private func getStreamFlag(_ code: String) -> String {
     displayFlag(for: code)
 }
 
-/// Returns up to 4 alternative language codes for the quick-switch row (excluding current).
+/// Up to 4 alternative language codes for DI / Lock Screen quick-switch rows.
 ///
-/// Prefers the authoritative `SharedPlayerManager.availableStreams` (full 21 languages)
-/// so every supported language can appear as a switch target when it is not the active one.
-/// Falls back to the legacy curated set only if the streams list is empty (defensive).
+/// Pure selection via ``alternativeStreamCodes``; catalog codes come from
+/// ``SharedPlayerManager/availableStreams``.
 ///
-/// - Important: The count is capped at 4 for layout reasons in both the DI center region
-///   (horizontal ScrollView) and the Lock Screen row (fixed HStack).
-/// - SeeAlso: ``SharedPlayerManager/availableStreams``.
+/// - SeeAlso: ``alternativeStreamCodes(current:availableLanguageCodes:maxCount:fallbackCodes:)``.
 private func getAlternativeStreams(current: String) -> [String] {
-    let streams = SharedPlayerManager.shared.availableStreams
-    let codes = streams.map { $0.languageCode }
-    if !codes.isEmpty {
-        return Array(codes.filter { $0 != current }.prefix(4))
-    }
-    // Legacy small set fallback (never reached on normal runs).
-    let fallback = ["en", "de", "fi", "sv", "et"]
-    return Array(fallback.filter { $0 != current }.prefix(4))
+    alternativeStreamCodes(
+        current: current,
+        availableLanguageCodes: SharedPlayerManager.shared.availableStreams.map(\.languageCode)
+    )
 }
 
 // Unified program title + speaker resolver lives in WidgetDisplayModels.swift
@@ -351,29 +330,25 @@ struct LutheranRadioLiveActivityWidget: Widget {
                             Circle()
                                 .fill(isPlaying ? Color.green.opacity(0.2) : Color.gray.opacity(0.2))
                                 .frame(width: 32, height: 32)
-                            
+
                             // Non-control decorative radio icon tint (per PlayerVisualState policy for
                             // buttonTintColor outside primary controls). Uses hoisted `radioIconTint`.
                             Image(systemName: "radio")
                                 .foregroundColor(radioIconTint)
                                 .font(.system(size: 16, weight: .medium))
                         }
-                        
+
                         VStack(alignment: .leading, spacing: 2) {
                             Text(LocalizedStringKey("lutheran_radio_title"))
                                 .font(.caption)
                                 .fontWeight(.semibold)
                                 .foregroundColor(.primary)
-                            
-                            HStack(spacing: 4) {
-                                Text(getStreamFlag(currentLanguage))
-                                    .font(.caption2)
-                                Text(getLanguageName(currentLanguage))
-                                    .font(.caption2)
-                                    .fontWeight(.medium)
-                                    .foregroundColor(.secondary)
-                            }
-                            
+
+                            LiveActivityLanguageLabel(
+                                flag: getStreamFlag(currentLanguage),
+                                name: getLanguageName(currentLanguage)
+                            )
+
                             // LIVE indicator presence driven by hoisted isPlaying (pure visual decision).
                             // The actual semantic "actively streaming" flag lives on PlayerVisualState.
                             if isPlaying {
@@ -391,7 +366,7 @@ struct LutheranRadioLiveActivityWidget: Widget {
                         }
                     }
                 }
-                
+
                 DynamicIslandExpandedRegion(.trailing) {
                     VStack(spacing: 8) {
                         Button(intent: LiveActivityTogglePlaybackIntent()) {
@@ -401,7 +376,7 @@ struct LutheranRadioLiveActivityWidget: Widget {
                                 Circle()
                                     .fill(controlPres.tint.opacity(0.2))
                                     .frame(width: 44, height: 44)
-                                
+
                                 Image(systemName: controlPres.systemImage)
                                     .font(.title3)
                                     .fontWeight(.semibold)
@@ -409,23 +384,14 @@ struct LutheranRadioLiveActivityWidget: Widget {
                             }
                         }
                         .buttonStyle(.plain)
-                        
-                        // Equalizer-style animation bars: presence is a visual decision driven by the
-                        // hoisted `isPlaying` value (computed once at outer closure). Animation value
-                        // uses the stable isPlaying Boolean to avoid capturing the whole visualState.
+
+                        // Deterministic equalizer bars (WidgetSurface); presence gated by isPlaying.
                         if isPlaying {
-                            HStack(spacing: 2) {
-                                ForEach(0..<3, id: \.self) { index in
-                                    RoundedRectangle(cornerRadius: 1)
-                                        .fill(Color.green)
-                                        .frame(width: 2, height: CGFloat.random(in: 4...12))
-                                        .animation(.easeInOut(duration: Double.random(in: 0.3...0.7)).repeatForever(autoreverses: true), value: isPlaying)
-                                }
-                            }
+                            LiveActivityEqualizerBars(style: .expandedTrailing, isPlaying: isPlaying)
                         }
                     }
                 }
-                
+
                 DynamicIslandExpandedRegion(.center) {
                     // statusPres and metadataModel are computed once at the outer dynamicIsland level.
                     VStack(spacing: 6) {
@@ -434,42 +400,20 @@ struct LutheranRadioLiveActivityWidget: Widget {
                                 .font(.caption)
                                 .fontWeight(.medium)
                                 .foregroundStyle(statusPres.foreground)
-                            
-                            // Fixed metadata region (no conditional insertion) using the outer-derived narrow model.
-                            Text(metadataModel.programTitle)
-                                .font(.system(size: 10, weight: .semibold))
-                                .foregroundColor(.primary)
-                                .lineLimit(2)
-                                .minimumScaleFactor(0.85)
-                                .truncationMode(.tail)
-                                .multilineTextAlignment(.center)
-                                .opacity(metadataModel.emphasis.opacity)
-                                .frame(maxWidth: .infinity, minHeight: 18, maxHeight: 22, alignment: .center)
-                            
-                            Text(metadataModel.speakerLine)
-                                .font(.system(size: 9))
-                                .foregroundColor(.secondary)
-                                .lineLimit(1)
-                                .truncationMode(.tail)
-                                .opacity(metadataModel.speakerVisible ? metadataModel.emphasis.opacity : 0)
-                                .frame(maxWidth: .infinity, minHeight: 12, maxHeight: 14, alignment: .center)
+
+                            LiveActivityMetadataBlock(model: metadataModel, layout: .dynamicIsland)
                         }
-                        
+
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 12) {
                                 ForEach(getAlternativeStreams(current: currentLanguage), id: \.self) { langCode in
                                     Button(intent: LiveActivitySwitchStreamIntent(languageCode: langCode)) {
-                                        VStack(spacing: 2) {
-                                            Text(getStreamFlag(langCode))
-                                                .font(.system(size: 16))
-                                            Text(getLanguageName(langCode))
-                                                .font(.system(size: 8, weight: .medium))
-                                                .foregroundColor(.secondary)
-                                        }
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 4)
-                                        .background(Color.gray.opacity(0.1))
-                                        .cornerRadius(8)
+                                        LiveActivityStreamSwitchChipLabel(
+                                            flag: getStreamFlag(langCode),
+                                            name: getLanguageName(langCode),
+                                            nameFont: .system(size: 8, weight: .medium),
+                                            showsBackground: true
+                                        )
                                     }
                                     .buttonStyle(.plain)
                                 }
@@ -478,7 +422,7 @@ struct LutheranRadioLiveActivityWidget: Widget {
                         }
                     }
                 }
-                
+
                 DynamicIslandExpandedRegion(.bottom) {
                     HStack {
                         // Status indicator closes over the hoisted statusPres from the outer closure.
@@ -490,30 +434,14 @@ struct LutheranRadioLiveActivityWidget: Widget {
                                 .font(.system(size: 10, weight: .medium))
                                 .foregroundColor(.secondary)
                         }
-                        
+
                         Spacer()
-                        
+
                         // Animation bars (or "Local Only" privacy label) use the hoisted `isPlaying`.
                         // This is a pure presentation decision; the bars are decorative equalizer UI.
                         // "Local Only" appears only when not actively playing (semantic presence).
                         if isPlaying {
-                            HStack(spacing: 1) {
-                                ForEach(0..<5, id: \.self) { index in
-                                    RoundedRectangle(cornerRadius: 0.5)
-                                        .fill(LinearGradient(
-                                            gradient: Gradient(colors: [.green, .blue]),
-                                            startPoint: .bottom,
-                                            endPoint: .top
-                                        ))
-                                        .frame(width: 2, height: CGFloat.random(in: 3...10))
-                                        .animation(
-                                            .easeInOut(duration: Double.random(in: 0.3...0.8))
-                                            .repeatForever(autoreverses: true)
-                                            .delay(Double(index) * 0.1),
-                                            value: isPlaying
-                                        )
-                                }
-                            }
+                            LiveActivityEqualizerBars(style: .expandedBottom, isPlaying: isPlaying)
                         } else {
                             HStack(spacing: 2) {
                                 Image(systemName: "lock.fill")
@@ -537,24 +465,17 @@ struct LutheranRadioLiveActivityWidget: Widget {
                         Circle()
                             .fill(isPlaying ? Color.green.opacity(0.2) : Color.gray.opacity(0.2))
                             .frame(width: 20, height: 20)
-                        
+
                         Image(systemName: "radio")
                             .font(.system(size: 10, weight: .medium))
                             .foregroundColor(radioIconTint)
                     }
-                    
+
                     // Compact animation bars + program title appear only while playing.
                     // Decision uses hoisted isPlaying (visual presence), not repeated visualState read.
                     if isPlaying {
-                        HStack(spacing: 1) {
-                            ForEach(0..<2, id: \.self) { index in
-                                RoundedRectangle(cornerRadius: 0.5)
-                                    .fill(Color.green)
-                                    .frame(width: 1, height: CGFloat.random(in: 2...6))
-                                    .animation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true), value: isPlaying)
-                            }
-                        }
-                        
+                        LiveActivityEqualizerBars(style: .compactLeading, isPlaying: isPlaying)
+
                         // Use the once-computed metadataModel from the outer dynamicIsland closure.
                         // compactLeading only needs programTitle while actively playing.
                         Text(metadataModel.programTitle)
@@ -675,97 +596,71 @@ struct LockScreenLiveActivityView: View {
         // Semantic label copy decision also uses a once-computed local for a single read site.
         let controlPres = context.state.visualState.makeControlPresentation()
         // Lock Screen uses circle variants of the control glyphs for visual weight.
-        // Derive the exact variant name purely from the narrow control presentation value
-        // (no re-inspection of visualState or isActivelyPlaying for glyph choice).
-        let lockScreenControlImage = controlPres.systemImage == "pause.fill" ? "pause.circle.fill" : "play.circle.fill"
+        // Derive via pure WidgetSurface helper from the narrow control presentation value.
+        let lockScreenControlImage = liveActivityLockScreenControlSystemImage(from: controlPres.systemImage)
 
         // Hoisted once for the semantic label copy ("Paused" vs "Play") that accompanies
         // the control button. This is the documented exception where isActivelyPlaying
         // drives copy rather than glyph choice (see file header and PlayerVisualState).
         // Using a local eliminates a direct context.state.visualState read deep in the tree.
         let isPlaying = context.state.visualState.isActivelyPlaying
-        
+
         VStack(spacing: 6) {
             // Header
             HStack(spacing: 6) {
                 Image(systemName: "radio")
                     .foregroundStyle(.white)
                     .font(.subheadline)
-                
+
                 Text(String(localized: "lutheran_radio_title", table: "Localizable"))
                     .font(.subheadline)
                     .fontWeight(.semibold)
                     .foregroundStyle(.primary)
-                
+
                 Spacer(minLength: 4)
-                
-                Text("\(getStreamFlag(currentLanguage)) \(getLanguageName(currentLanguage))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+
+                LiveActivityLanguageLabel(
+                    flag: getStreamFlag(currentLanguage),
+                    name: getLanguageName(currentLanguage),
+                    flagFont: .caption,
+                    nameFont: .caption,
+                    spacing: 2
+                )
             }
-            
+
             // Status driven from PlayerStatusPresentation (via makeStatusPresentation()).
             Text(statusPres.text)
                 .font(.caption)
                 .fontWeight(.medium)
                 .foregroundStyle(statusPres.foreground)
                 .lineLimit(1)
-            
-            // Metadata
-            VStack(spacing: 2) {
-                Text(metadataModel.programTitle)
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.75)
-                    .truncationMode(.tail)
-                    .opacity(metadataModel.emphasis.opacity)
-                    .frame(maxWidth: .infinity, minHeight: 18, maxHeight: 22, alignment: .center)
-                
-                Text(metadataModel.speakerLine)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .opacity(metadataModel.speakerVisible ? metadataModel.emphasis.opacity : 0)
-                    .frame(maxWidth: .infinity, minHeight: 12, maxHeight: 14, alignment: .center)
-            }
-            
+
+            LiveActivityMetadataBlock(model: metadataModel, layout: .lockScreen)
+
             // Language row + play button (clean, no ScrollView, no pills)
             HStack(spacing: 12) {
                 ForEach(getAlternativeStreams(current: currentLanguage), id: \.self) { langCode in
                     Button(intent: LiveActivitySwitchStreamIntent(languageCode: langCode)) {
-                        VStack(spacing: 2) {
-                            Text(getStreamFlag(langCode))
-                                .font(.system(size: 16))
-                            Text(getLanguageName(langCode))
-                                .font(.system(size: 9, weight: .medium))
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
+                        LiveActivityStreamSwitchChipLabel(
+                            flag: getStreamFlag(langCode),
+                            name: getLanguageName(langCode),
+                            nameFont: .system(size: 9, weight: .medium),
+                            showsBackground: false
+                        )
                     }
                     .buttonStyle(.plain)
                 }
-                
+
                 Spacer()
-                
+
                 Button(intent: LiveActivityTogglePlaybackIntent()) {
                     VStack(spacing: 2) {
-                        // Glyph chosen from the once-computed narrow control presentation (circle variant
-                        // selected locally for Lock Screen visual weight). Tint comes directly from the
-                        // narrow presentation. No direct visualState.isActivelyPlaying or buttonTintColor
-                        // read remains for this control button.
+                        // Glyph from narrow control presentation (circle variant for Lock Screen weight).
                         Image(systemName: lockScreenControlImage)
                             .font(.title2)
                             .foregroundStyle(controlPres.tint)
-                        
+
                         // Label copy decision kept on the semantic `isPlaying` flag (hoisted above).
-                        // This distinguishes "what the button shows" (controlPres) from "what label text
-                        // accompanies it" (state-driven copy). Matches prior behavior exactly.
-                        // The value is semantically isActivelyPlaying; the hoisting is only for
-                        // single-evaluation hygiene (consistent with DI regions).
                         Text(isPlaying
                              ? String(localized: "status_paused", defaultValue: "Paused", table: "Localizable")
                              : String(localized: "Play", defaultValue: "Play", table: "Localizable"))

@@ -138,30 +138,26 @@ struct LutheranRadioWidget: Widget {
 struct Provider: AppIntentTimelineProvider {
     
     func placeholder(in context: Context) -> SimpleEntry {
-        let vs = PlayerVisualState.prePlay
-        let pres = vs.makeStatusPresentation()
-        let controlPres = vs.makeControlPresentation()
-
-        // Derive the metadata/emphasis model once for the placeholder snapshot.
-        // Use the canonical English name for the live-stream fallback (mirrors currentStation).
-        // See WidgetDisplayModels.swift for the resolver contract and snapshot-driven rationale.
-        let placeholderLanguageName = String(localized: "language_english", table: "Localizable")
-        let metaModel = widgetNowPlayingDisplayModel(
-            visualState: vs,
-            streamMetadata: nil,
-            languageName: placeholderLanguageName
+        // Placeholder via pure factory/assembly path (same narrow slices as timeline entries).
+        let fields = WidgetProviderSnapshotFields(
+            currentLanguage: "en",
+            hasError: false,
+            visualState: .prePlay,
+            streamMetadata: nil
         )
-
-        return SimpleEntry(
+        let languageName = String(localized: "language_english", table: "Localizable")
+        let slices = WidgetProviderPresentationAssembly.assemblePresentationSlices(
+            from: fields,
+            languageName: languageName,
+            stationLabel: "🇺🇸 " + languageName
+        )
+        let blueprint = WidgetTimelineEntryFactory.makeHomeWidgetBlueprint(
             date: Date(),
-            visualState: vs,
-            currentStation: "🇺🇸 " + String(localized: "language_english", table: "Localizable"),
-            currentLanguageCode: "en",
-            statusMessage: pres.text,
-            statusPresentation: pres,
-            controlPresentation: controlPres,
-            widgetNowPlayingDisplayModel: metaModel,
-            streamMetadata: nil,
+            fields: fields,
+            slices: slices
+        )
+        return SimpleEntry(
+            blueprint: blueprint,
             availableStreams: SharedPlayerManager.shared.availableStreams,
             configuration: RadioWidgetConfiguration()
         )
@@ -214,12 +210,18 @@ struct Provider: AppIntentTimelineProvider {
     }
 }
 
+/// Home-widget timeline entry: narrow presentation slices only.
+///
+/// Does **not** store full ``PlayerVisualState`` policy, raw ``StreamProgramMetadata``,
+/// or a redundant `statusMessage` string. Status/control/metadata are pre-derived once
+/// in the Provider (via ``WidgetProviderPresentationAssembly`` + ``WidgetTimelineEntryFactory``);
+/// family views read only the fields projected below.
+///
+/// - SeeAlso: ``WidgetHomeTimelineEntryBlueprint``, docs/Widget-Presentation-Dataflow.md.
 struct SimpleEntry: TimelineEntry, Sendable {
     let date: Date
-    let visualState: PlayerVisualState
     let currentStation: String
     let currentLanguageCode: String
-    let statusMessage: String
 
     init(
         blueprint: WidgetHomeTimelineEntryBlueprint,
@@ -227,99 +229,62 @@ struct SimpleEntry: TimelineEntry, Sendable {
         configuration: RadioWidgetConfiguration
     ) {
         self.date = blueprint.date
-        self.visualState = blueprint.visualState
         self.currentStation = blueprint.currentStation
         self.currentLanguageCode = blueprint.currentLanguageCode
-        self.statusMessage = blueprint.statusMessage
         self.statusPresentation = blueprint.statusPresentation
         self.controlPresentation = blueprint.controlPresentation
         self.widgetNowPlayingDisplayModel = blueprint.widgetNowPlayingDisplayModel
-        self.streamMetadata = blueprint.streamMetadata
         self.availableStreams = availableStreams
         self.configuration = configuration
     }
 
     init(
         date: Date,
-        visualState: PlayerVisualState,
         currentStation: String,
         currentLanguageCode: String,
-        statusMessage: String,
         statusPresentation: PlayerStatusPresentation,
         controlPresentation: PlayerControlPresentation,
         widgetNowPlayingDisplayModel: WidgetNowPlayingDisplayModel,
-        streamMetadata: StreamProgramMetadata?,
         availableStreams: [DirectStreamingPlayer.Stream],
         configuration: RadioWidgetConfiguration
     ) {
         self.date = date
-        self.visualState = visualState
         self.currentStation = currentStation
         self.currentLanguageCode = currentLanguageCode
-        self.statusMessage = statusMessage
         self.statusPresentation = statusPresentation
         self.controlPresentation = controlPresentation
         self.widgetNowPlayingDisplayModel = widgetNowPlayingDisplayModel
-        self.streamMetadata = streamMetadata
         self.availableStreams = availableStreams
         self.configuration = configuration
     }
 
     /// Narrow presentation for the status indicator (text + associated colors).
-    /// Populated from `visualState.makeStatusPresentation()` (the single canonical mapper)
-    /// inside the provider paths. Widget family views consume this directly rather than
-    /// re-reading `visualState` for status concerns. Reduces invalidation surface.
+    ///
+    /// Populated from ``PlayerVisualState/makeStatusPresentation()`` (with `hasError`
+    /// folded into `text` at assembly time). Family views never re-read policy state.
     ///
     /// - SeeAlso: `PlayerStatusPresentation`, ``PlayerVisualState/makeStatusPresentation()``,
-    ///   `controlPresentation` (the parallel narrow type for play/pause controls).
+    ///   `controlPresentation`.
     let statusPresentation: PlayerStatusPresentation
 
     /// Narrow presentation for the primary play/pause control affordance.
     ///
-    /// Populated from `visualState.makeControlPresentation()` (SSOT) in the provider.
-    /// Contains only the `systemImage` ("play.fill" / "pause.fill") and `tint` Color
-    /// needed by the control button. This is the control-axis counterpart to
-    /// `statusPresentation`.
-    ///
-    /// All three family views (Small/Medium/Large) now read the play/pause
-    /// `Image(systemName:)` and foreground tint exclusively from this value.
-    ///
-    /// Why: WidgetKit snapshots are value types compared field-by-field. Handing
-    /// only the slices a leaf needs (instead of the whole visualState) shrinks
-    /// the set of changes that cause body re-evaluation for the button.
+    /// Populated from ``PlayerVisualState/makeControlPresentation()`` (SSOT) in the provider.
+    /// Contains only the `systemImage` and `tint` needed by the control button.
     ///
     /// - SeeAlso: `PlayerControlPresentation`, ``PlayerVisualState/makeControlPresentation()``,
-    ///   `statusPresentation`, LutheranRadioWidgetLiveActivity (same derivation pattern
-    ///   performed once at the top of LockScreen / outer DynamicIsland closure).
+    ///   `statusPresentation`, LutheranRadioWidgetLiveActivity.
     let controlPresentation: PlayerControlPresentation
 
-    /// Pre-derived display model for program title, speaker line, visibility and emphasis (metadata axis).
+    /// Pre-derived display model for program title, speaker line, visibility and emphasis.
     ///
-    /// Populated once per snapshot from `widgetNowPlayingDisplayModel(visualState:streamMetadata:languageName:)`
-    /// inside the Provider (`placeholder`, `snapshot`, `timeline` / `createEntry`). This is the
-    /// metadata/emphasis counterpart to `statusPresentation` and `controlPresentation`.
+    /// Populated once per snapshot from ``widgetNowPlayingDisplayModel`` inside Provider
+    /// assembly. Medium/Large and ``WidgetMetadataRegion`` read this value directly.
     ///
-    /// `MediumWidgetView`, `LargeWidgetView`, and `WidgetMetadataRegion` read this value directly
-    /// instead of invoking the resolver inside their `body`. The four fields are the only data
-    /// the metadata region needs; everything else (station, status text, controls, language grid)
-    /// comes from sibling properties on the entry.
-    ///
-    /// Why pre-derive here (see WidgetDisplayModels.swift header for full rationale):
-    /// - Reduces repeated derivation work on every view body evaluation.
-    /// - Narrows the invalidation surface for WidgetKit: only a change to the concrete title/speaker/emphasis
-    ///   affects the metadata region without a full visualState-driven re-comparison in the view.
-    /// - Makes the data dependency of `WidgetMetadataRegion` explicit and minimal.
-    ///
-    /// - SeeAlso: `widgetNowPlayingDisplayModel(visualState:streamMetadata:languageName:)`,
-    ///   `WidgetNowPlayingDisplayModel`, `WidgetMetadataRegion`,
-    ///   ``PlayerVisualState`` (the source), `SimpleEntry.statusPresentation`,
-    ///   `SimpleEntry.controlPresentation`,
-    ///   `LutheranRadioWidgetLiveActivity.swift` (parallel top-level derivation for ActivityKit),
-    ///   `WidgetDisplayModels.swift` (SSOT + snapshot-driven usage pattern),
-    ///   CODING_AGENT.md (narrow inputs, Single Source of Truth Principles).
+    /// - SeeAlso: `WidgetNowPlayingDisplayModel`, `WidgetMetadataRegion`,
+    ///   `SimpleEntry.statusPresentation`, `SimpleEntry.controlPresentation`.
     let widgetNowPlayingDisplayModel: WidgetNowPlayingDisplayModel
 
-    let streamMetadata: StreamProgramMetadata?
     let availableStreams: [DirectStreamingPlayer.Stream]
     let configuration: RadioWidgetConfiguration
 }
@@ -407,21 +372,9 @@ struct SmallWidgetView: View {
 
     var body: some View {
         if shouldShowPassiveTapToOpen() {
-            VStack(spacing: 8) {
-                Image(systemName: "radio")
-                    .font(.title2)
-                    .foregroundColor(.secondary)
-                
-                Text(String(localized: "tap_to_open", table: "Localizable"))
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundColor(.primary)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.8)
-            }
-            .padding()
-            .widgetURL(URL(string: "lutheranradio://open"))
+            WidgetPassiveTapToOpenChrome(style: .small)
+                .padding()
+                .widgetURL(URL(string: "lutheranradio://open"))
         } else {
             VStack(spacing: 4) {
                 Text(statusPresentation.text)
@@ -436,12 +389,12 @@ struct SmallWidgetView: View {
                     VStack(spacing: 3) {
                         HStack(spacing: 4) {
                             ForEach(topRow, id: \.languageCode) { stream in
-                                smallWidgetStreamFlagButton(for: stream)
+                                homeWidgetStreamFlagButton(for: stream, expandsToFill: false)
                             }
                         }
                         HStack(spacing: 4) {
                             ForEach(bottomRow, id: \.languageCode) { stream in
-                                smallWidgetStreamFlagButton(for: stream)
+                                homeWidgetStreamFlagButton(for: stream, expandsToFill: false)
                             }
                         }
                     }
@@ -451,7 +404,6 @@ struct SmallWidgetView: View {
 
                 // Control affordance sourced exclusively from the narrow pre-derived
                 // PlayerControlPresentation (populated via makeControlPresentation in the Provider).
-                // This removes the last direct read of visualState for glyph/tint inside SmallWidgetView.
                 Button(intent: WidgetToggleRadioIntent()) {
                     Image(systemName: controlPresentation.systemImage)
                         .font(.title2)
@@ -464,20 +416,17 @@ struct SmallWidgetView: View {
     }
 
     @ViewBuilder
-    private func smallWidgetStreamFlagButton(for stream: DirectStreamingPlayer.Stream) -> some View {
-        let isSelected = stream.languageCode == currentLanguageCode
-
+    private func homeWidgetStreamFlagButton(
+        for stream: DirectStreamingPlayer.Stream,
+        expandsToFill: Bool
+    ) -> some View {
         Button(intent: SwitchStreamIntent(streamLanguageCode: stream.languageCode)) {
-            Text(stream.flag)
-                .font(.subheadline)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 4)
-                .background(isSelected ? Color.blue.opacity(0.2) : Color.gray.opacity(0.08))
-                .cornerRadius(6)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6)
-                        .stroke(isSelected ? Color.blue : Color.clear, lineWidth: 1)
-                )
+            WidgetStreamChipLabel(
+                flag: stream.flag,
+                isSelected: stream.languageCode == currentLanguageCode,
+                style: .flagOnly,
+                expandsToFill: expandsToFill
+            )
         }
         .buttonStyle(.plain)
     }
@@ -503,19 +452,7 @@ struct MediumWidgetView: View {
     var body: some View {
         if shouldShowPassiveTapToOpen() {
             HStack {
-                VStack(spacing: 8) {
-                    Image(systemName: "radio")
-                        .font(.largeTitle)
-                        .foregroundColor(.secondary)
-                    Text(String(localized: "tap_to_open", table: "Localizable"))
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .foregroundColor(.primary)
-                    Text(String(localized: "open_app_first", table: "Localizable"))
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                .frame(maxWidth: .infinity)
+                WidgetPassiveTapToOpenChrome(style: .medium)
             }
             .padding()
             .widgetURL(URL(string: "lutheranradio://open"))
@@ -561,7 +498,15 @@ struct MediumWidgetView: View {
                 if availableStreams.count > 1 {
                     HStack(spacing: 6) {
                         ForEach(availableStreams, id: \.languageCode) { stream in
-                            mediumWidgetStreamFlagButton(for: stream)
+                            Button(intent: SwitchStreamIntent(streamLanguageCode: stream.languageCode)) {
+                                WidgetStreamChipLabel(
+                                    flag: stream.flag,
+                                    isSelected: stream.languageCode == currentLanguageCode,
+                                    style: .flagOnly,
+                                    expandsToFill: true
+                                )
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
                 }
@@ -569,25 +514,6 @@ struct MediumWidgetView: View {
             .frame(maxHeight: .infinity, alignment: .top)
             .padding(10)
         }
-    }
-
-    @ViewBuilder
-    private func mediumWidgetStreamFlagButton(for stream: DirectStreamingPlayer.Stream) -> some View {
-        let isSelected = stream.languageCode == currentLanguageCode
-
-        Button(intent: SwitchStreamIntent(streamLanguageCode: stream.languageCode)) {
-            Text(stream.flag)
-                .font(.subheadline)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 4)
-                .background(isSelected ? Color.blue.opacity(0.2) : Color.gray.opacity(0.08))
-                .cornerRadius(6)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6)
-                        .stroke(isSelected ? Color.blue : Color.clear, lineWidth: 1)
-                )
-        }
-        .buttonStyle(.plain)
     }
 }
 
@@ -610,22 +536,9 @@ struct LargeWidgetView: View {
 
     var body: some View {
         if shouldShowPassiveTapToOpen() {
-            VStack(spacing: 16) {
-                Spacer()
-                Image(systemName: "radio")
-                    .font(.system(size: 60))
-                    .foregroundColor(.secondary)
-                Text(String(localized: "tap_to_open", table: "Localizable"))
-                    .font(.title3)
-                    .fontWeight(.medium)
-                    .foregroundColor(.primary)
-                Text(String(localized: "open_app_first", table: "Localizable"))
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                Spacer()
-            }
-            .padding()
-            .widgetURL(URL(string: "lutheranradio://open"))
+            WidgetPassiveTapToOpenChrome(style: .large)
+                .padding()
+                .widgetURL(URL(string: "lutheranradio://open"))
         } else {
             // Consume pre-derived narrow surfaces from the snapshot (SimpleEntry).
             // Derivation happened once in the Provider. Equivalent to how
@@ -664,30 +577,17 @@ struct LargeWidgetView: View {
 
                 // 3-column grid on large. With the current 5 streams this yields a balanced
                 // 3 + 2 layout; scales cleanly to larger sets (e.g. 21).
-                // isSelected now uses the same robust languageCode check as small/medium.
                 LazyVGrid(
                     columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3),
                     spacing: 8
                 ) {
                     ForEach(availableStreams, id: \.languageCode) { stream in
-                        let isSelected = stream.languageCode == currentLanguageCode
-
                         Button(intent: SwitchStreamIntent(streamLanguageCode: stream.languageCode)) {
-                            HStack(spacing: 4) {
-                                Text(stream.flag)
-                                    .font(.caption)
-                                Text(stream.language)
-                                    .font(.caption)
-                                    .fontWeight(isSelected ? .semibold : .regular)
-                                    .lineLimit(1)
-                            }
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 6) // slightly more generous for labeled buttons on large
-                            .background(isSelected ? Color.blue.opacity(0.2) : Color.gray.opacity(0.1))
-                            .cornerRadius(6)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 6)
-                                    .stroke(isSelected ? Color.blue : Color.clear, lineWidth: 1)
+                            WidgetStreamChipLabel(
+                                flag: stream.flag,
+                                languageName: stream.language,
+                                isSelected: stream.languageCode == currentLanguageCode,
+                                style: .labeled
                             )
                         }
                         .buttonStyle(.plain)
@@ -848,14 +748,11 @@ private func makePreviewEntry(
 
     return SimpleEntry(
         date: Date(),
-        visualState: visualState,
         currentStation: station,
         currentLanguageCode: currentLanguageCode,
-        statusMessage: pres.text,
         statusPresentation: pres,
         controlPresentation: controlPres,
         widgetNowPlayingDisplayModel: metaModel,
-        streamMetadata: metadata,
         availableStreams: streams,
         configuration: RadioWidgetConfiguration()
     )
