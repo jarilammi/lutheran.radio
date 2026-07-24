@@ -232,7 +232,7 @@ After cleaning, retry the build and test steps above.
 
 - Allow the test process sufficient time (often well beyond 5 minutes on first runs). The fixes in commit `10e0e46f` (cheap sanitization in test setUp, deferral of `observeExistingActivities`, `withTaskGroup`-bounded collection from live streams, and UITestMode short-circuits) were designed so waits are bounded and the expensive paths are avoided.
 - Prematurely terminating and restarting the process frequently makes the *next* run slower because more stale state accumulates.
-- See the full agent guidance in [`CODING_AGENT.md`](CODING_AGENT.md) (section "Test Execution Patience and Fast, Reliable Test Patterns") and the reference implementations in `SharedPlayerManagerEventTests.swift` (the `collectEvents` helper and setUp) plus `RadioLiveActivityManager.swift`.
+- See the full agent guidance in [`CODING_AGENT.md`](CODING_AGENT.md) (section "Test Execution Patience and Fast, Reliable Test Patterns") and the reference implementations in `PlayerEventTestSupport.swift` / `SharedPlayerManagerEventTests.swift` (collectors + emission/replay usage) plus `RadioLiveActivityManager.swift`.
 
 # Security Implementation
 
@@ -539,7 +539,7 @@ Player-domain transitions are expressed through typed `PlayerEvent` notification
 
 **Non-forcing rule:** Event emission and observation are additive. Engine mutation, snapshot writes, and widget optimistic `persistOptimisticWidgetSnapshot` remain primary for state. Main-app **mutation-path** home-widget reloads are driven by the Tier 2 observer (`WidgetRefreshTrigger.playerEvent`); imperative `refreshIfNeeded` remains for lifecycle, teardown, extension optimistic, and optional media-surface coordination. Dual-path inventory: [`docs/Event-Driven-Refactor-Roadmap.md`](docs/Event-Driven-Refactor-Roadmap.md) Tier 4 §2. Widget extension processes never originate authoritative `PlayerEvent` yields.
 
-Canonical architecture detail: ``<doc:Architecture>`` ("Event-Driven Player Architecture (Outside `Core/`)"). Backlog and protected test contracts: [`docs/Event-Driven-Refactor-Roadmap.md`](docs/Event-Driven-Refactor-Roadmap.md). Widget/Live Activity presentation flow: [`docs/Widget-Presentation-Dataflow.md`](docs/Widget-Presentation-Dataflow.md). Canonical test files: `Lutheran RadioTests/SharedPlayerManagerEventTests.swift`, `WidgetRefreshManagerEventTests.swift`, `PlayerEventSubscriberEventTests.swift`, `WidgetEventObserverTests.swift`, plus extension-profile `LutheranRadioWidgetTests/` and pure `WidgetSurfaceTests/`.
+Canonical architecture detail: ``<doc:Architecture>`` ("Event-Driven Player Architecture (Outside `Core/`)"). Backlog and protected test contracts: [`docs/Event-Driven-Refactor-Roadmap.md`](docs/Event-Driven-Refactor-Roadmap.md). Widget/Live Activity presentation flow: [`docs/Widget-Presentation-Dataflow.md`](docs/Widget-Presentation-Dataflow.md). Canonical test files: `Lutheran RadioTests/SharedPlayerManagerEventTests.swift` (emission/replay) with media-surface / cold-launch / latency sibling suites, `WidgetRefreshManagerEventTests.swift`, `PlayerEventSubscriberEventTests.swift`, `WidgetEventObserverTests.swift`, plus extension-profile `LutheranRadioWidgetTests/` (thin presentation smoke) and pure `WidgetSurfaceTests/` (full presentation matrices).
 
 **Widget & Live Activity presentation surfaces**
 
