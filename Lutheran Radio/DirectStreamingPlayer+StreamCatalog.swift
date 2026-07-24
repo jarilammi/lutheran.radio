@@ -4,21 +4,93 @@
 //
 //  Created by Jari Lammi on 23.7.2026.
 //
-//  Stream list, language lookup helpers, and secure stream URL construction inputs
-//  for the main-app DirectStreamingPlayer. Mechanical extraction — no behavior change.
+//  Stream catalog domain: language list, pure region/slug helpers, and secure stream
+//  URL construction inputs for the main-app DirectStreamingPlayer façade.
 //
-//  Widget-extension stream list parity lives in DirectStreamingPlayer+WidgetStub.swift
-//  (display/lookup only; no security_model URL construction).
+//  Preferred end-state: Stream + URL builder inputs live here as a value-oriented
+//  catalog surface; server selection / latency live in +ServerSelection. Widget-extension
+//  list parity remains in DirectStreamingPlayer+WidgetStub.swift (display only; no
+//  security_model URL construction).
 //
 //  SECURITY: URL construction embeds SecurityConfiguration.current.expectedSecurityModel.
 //  Do not duplicate this outside Core + this main-app surface.
 //
-//  - SeeAlso: DirectStreamingPlayer.swift, Core/Configuration/SecurityConfiguration.swift,
-//    CODING_AGENT.md.
+//  - SeeAlso: DirectStreamingPlayer.swift, DirectStreamingPlayer+ServerSelection.swift,
+//    Core/Configuration/SecurityConfiguration.swift, CODING_AGENT.md.
 //
 
 import Foundation
 import Core
+
+// MARK: - Pure stream catalog helpers (value types)
+
+/// Pure stream-catalog helpers with no AVPlayer or attach state.
+///
+/// Region detection and language-slug mapping are side-effect free. URL construction
+/// still injects ``SecurityConfiguration/current``'s expected security model so the
+/// query string stays aligned with Core policy (never hard-code the model name here).
+///
+/// - SeeAlso: ``DirectStreamingPlayer/Stream``, ``DirectStreamingPlayer/urlWithOptimalServer(for:)``,
+///   Core/Configuration/SecurityConfiguration.swift.
+enum StreamCatalog: Sendable {
+    /// EU vs US cluster subdomain used in stream hostnames.
+    enum Region: String, Sendable {
+        case eu = "eu"
+        case us = "us"
+    }
+
+    /// Maps device timezone to the preferred streaming cluster.
+    ///
+    /// - Parameter timeZoneIdentifier: Time zone id (defaults to `TimeZone.current`).
+    /// - Returns: `.eu` for Europe/Atlantic identifiers, otherwise `.us` (higher capacity default).
+    static func region(for timeZoneIdentifier: String = TimeZone.current.identifier) -> Region {
+        let tz = timeZoneIdentifier
+        if tz.hasPrefix("Europe/") ||
+            ["GMT", "UTC", "WET", "CET", "EET", "Atlantic/Reykjavik", "Atlantic/Faroe"].contains(where: tz.hasPrefix) {
+            return .eu
+        }
+        if tz.hasPrefix("America/") || tz.hasPrefix("US/") || tz.hasPrefix("Canada/") ||
+            ["EST", "CST", "MST", "PST"].contains(where: tz.hasPrefix) {
+            return .us
+        }
+        return .us
+    }
+
+    /// Maps a radio language code to the hostname language slug.
+    static func languageSlug(for code: String) -> String {
+        switch code {
+        case "en": return "english"
+        case "de": return "german"
+        case "fi": return "finnish"
+        case "sv": return "swedish"
+        case "et": return "estonian"
+        default: return "english"
+        }
+    }
+
+    /// Builds the HTTPS stream URL for a language + region without reading player state.
+    ///
+    /// - Parameters:
+    ///   - languageCode: ISO stream language code (e.g. `"fi"`).
+    ///   - region: Cluster subdomain (`eu` / `us`).
+    ///   - securityModel: Must be ``SecurityConfiguration/expectedSecurityModel`` in production.
+    /// - Returns: Absolute HTTPS URL for progressive MP3 with `security_model` query.
+    static func streamURL(
+        languageCode: String,
+        region: String,
+        securityModel: String = SecurityConfiguration.current.expectedSecurityModel
+    ) -> URL {
+        let languageSlug = languageSlug(for: languageCode)
+        var components = URLComponents()
+        components.scheme = "https"
+        components.host = "\(languageSlug)-\(region).lutheran.radio"
+        components.path = "/lutheranradio.mp3"
+        components.queryItems = [
+            URLQueryItem(name: "security_model", value: securityModel)
+        ]
+        return components.url ?? DirectStreamingPlayer.makeURL("https://livestream.lutheran.radio")
+    }
+}
 
 extension DirectStreamingPlayer {
     // MARK: - Stream URL Construction Rules
@@ -28,15 +100,8 @@ extension DirectStreamingPlayer {
     //   https://<language-slug>-<region>.lutheran.radio/lutheranradio.mp3?security_model=<model>
     //
     // Breakdown:
-    // • <language-slug>  → hardcoded mapping from language code:
-    //     "en" → "english"   | "de" → "german"   | "fi" → "finnish"
-    //     "sv" → "swedish"   | "et" → "estonian" | others → fallback to "english"
-    //
-    // • <region> → determined at runtime via TimeZone.current:
-    //     - Europe/, GMT/UTC/WET/CET/EET/Atlantic/Reykjavik/Faroe → "eu"
-    //     - America/, US/, Canada/, EST/CST/MST/PST → "us"
-    //     - Everything else → "us" (US cluster has higher capacity)
-    //
+    // • <language-slug>  → StreamCatalog.languageSlug(for:)
+    // • <region> → currentSelectedServer.subdomain (optimal server selection)
     // • Port is always 443 (TLS on standard port)
     // • Path is always "/lutheranradio.mp3"
     // • Query parameter "security_model" = current expected security model (from SecurityConfiguration)
@@ -53,69 +118,25 @@ extension DirectStreamingPlayer {
     // 4. Ship the app update → users on the new version will validate against the new model
     //
     // DO NOT reuse old codenames — see the history table in README.md to avoid collisions.
-    private enum RegionDetector {
-        static var currentRegion: Region {
-            let tz = TimeZone.current.identifier
-            
-            if tz.hasPrefix("Europe/") ||
-                ["GMT", "UTC", "WET", "CET", "EET", "Atlantic/Reykjavik", "Atlantic/Faroe"].contains(where: tz.hasPrefix) {
-                return .eu
-            }
-            
-            if tz.hasPrefix("America/") || tz.hasPrefix("US/") || tz.hasPrefix("Canada/") ||
-                ["EST", "CST", "MST", "PST"].contains(where: tz.hasPrefix) {
-                return .us
-            }
-            
-            return .us // safe default – US cluster has higher capacity
-        }
-        
-        enum Region: String {
-            case eu = "eu"
-            case us = "us"
+
+    /// Builds stream URLs using the pure ``StreamCatalog`` helpers plus the live selected server.
+    private enum StreamURLBuilder {
+        static func url(
+            for languageCode: String,
+            region: String = DirectStreamingPlayer.shared.currentSelectedServer.subdomain
+        ) -> URL {
+            StreamCatalog.streamURL(languageCode: languageCode, region: region)
         }
     }
-    
-    private struct LanguageSlugMapper {
-        static func slug(for code: String) -> String {
-            switch code {
-            case "en": return "english"
-            case "de": return "german"
-            case "fi": return "finnish"
-            case "sv": return "swedish"
-            case "et": return "estonian"
-            default: return "english"
-            }
-        }
-    }
-    
-    private struct StreamURLBuilder {
-        static func url(for languageCode: String,
-                        region: String = DirectStreamingPlayer.shared.currentSelectedServer.subdomain) -> URL {
-            
-            let languageSlug = LanguageSlugMapper.slug(for: languageCode)
-            
-            var components = URLComponents()
-            components.scheme = "https"
-            components.host = "\(languageSlug)-\(region).lutheran.radio"
-            components.path = "/lutheranradio.mp3"
-            components.queryItems = [
-                URLQueryItem(name: "security_model", value: SecurityConfiguration.current.expectedSecurityModel)
-            ]
-            
-            // This construction is guaranteed to succeed with valid inputs.
-            // We use a helper so we have a single place for all hardcoded URL fallbacks.
-            return components.url ?? makeURL("https://livestream.lutheran.radio")
-        }
-    }
-    
-    // MARK: - Server and Stream Structs
+
+    // MARK: - Stream model + catalog list
+
     /// A radio stream configuration.
     /// - Example: `Stream(title: "English", language: "English", languageCode: "en", flag: "🇺🇸")
     struct Stream {
         /// Display title (localized).
         let title: String
-        /// Streaming URL (HTTPS required).
+        /// Streaming URL (HTTPS required). Host reflects the currently selected optimal server.
         var url: URL {
             StreamURLBuilder.url(for: languageCode)
         }
@@ -126,7 +147,7 @@ extension DirectStreamingPlayer {
         /// Emoji flag for UI.
         let flag: String
     }
-    
+
     /// Available streams by language.
     /// - Note: Static array; URLs must be HTTPS for security.
     static let availableStreams = [
