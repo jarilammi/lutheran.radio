@@ -37,6 +37,7 @@ This document defines the **required security invariants** of the Lutheran Radio
 - Comparison uses ``CertificateFingerprint/constantTimeMatches(_:)``; runtime code must not compare colon-hex strings.
 - App Transport Security (ATS) SPKI pinning in `Info.plist` provides the baseline. The runtime validator adds a second, independent layer.
 - ``SecurityConfiguration/pinnedLeafFingerprintDigest`` is the authoritative pin; ``pinnedLeafFingerprint`` and ``pinnedFingerprints`` are derived colon-hex views for operators and docs only. Never duplicate or override digest values elsewhere.
+- Successful runtime pin results are cached for exactly ``SecurityConfiguration/certificateValidationCacheDuration`` (**10 minutes** / 600 s). This duration is **independent** of the DNS TXT model success cache (``modelCacheDuration`` = 1 hour). Call sites (including the streaming engine’s periodic HEAD timer) must read the configuration constant rather than hard-coding 600.
 
 ## Invariant 4: Transition Window & Time-Skew Protection
 
@@ -57,7 +58,8 @@ All of the following values exist **only** inside ``SecurityConfiguration`` and 
 - `pinnedLeafFingerprint` / `pinnedFingerprints` (derived colon-hex; operator and README parity only)
 - `transitionWindowStart` / `transitionWindowEnd`
 - `maxAllowedTimeSkew`
-- `modelCacheDuration`
+- `modelCacheDuration` (DNS TXT success cache only — 1 hour)
+- `certificateValidationCacheDuration` (runtime pin-result cache — 10 minutes; never reuse `modelCacheDuration`)
 - Domain list (`securityModelDomains`)
 
 ## Invariant 6: No Bypass Paths

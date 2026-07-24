@@ -77,9 +77,9 @@ An `actor` that:
 
 - Implements `URLSessionTaskDelegate` for modern async challenge handling.
 - Performs full SHA-256 DER leaf certificate digest validation against ``SecurityConfiguration/pinnedFingerprintDigests``.
-- Maintains a 10-minute validation cache.
+- Maintains a successful-result cache for ``SecurityConfiguration/certificateValidationCacheDuration`` (**10 minutes**). This constant is separate from ``SecurityConfiguration/modelCacheDuration`` (DNS TXT success cache = 1 hour).
 - Implements the transition window + device/server time-skew protection logic.
-- Can be driven either via `validateServerTrust(_:)` (during live challenges) or `validateServerCertificate(for:)` (periodic HEAD checks).
+- Can be driven either via `validateServerTrust(_:)` (during live challenges) or `validateServerCertificate(for:)` (periodic HEAD checks on the same 10-minute cadence).
 
 ## Integration Points
 

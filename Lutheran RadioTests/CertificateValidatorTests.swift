@@ -13,6 +13,18 @@ import Security
 @Suite("CertificateValidator Tests")
 struct CertificateValidatorTests {
     
+    // MARK: - Cache policy SSOT
+    
+    /// Successful pin-result reuse must use ``certificateValidationCacheDuration``
+    /// (10 minutes), not the DNS TXT ``modelCacheDuration`` (1 hour).
+    @Test("certificate pin-result cache duration is 10 minutes and distinct from model cache")
+    func certificateValidationCacheDurationPolicy() {
+        let policy = SecurityConfiguration.current
+        #expect(policy.certificateValidationCacheDuration == 600)
+        #expect(policy.modelCacheDuration == 3_600)
+        #expect(policy.certificateValidationCacheDuration < policy.modelCacheDuration)
+    }
+    
     // MARK: - Fingerprint Computation
     
     @Test("computeCertificateFingerprint returns correct SHA-256 fingerprint")

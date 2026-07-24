@@ -26,4 +26,16 @@ struct CoreTests {
         #expect(SecurityConfiguration.hostRequiresDNSSECValidation("example.com") == false)
     }
 
+    /// Protects the invariant that DNS TXT success caching and runtime certificate
+    /// pin-result caching use distinct durations (1 hour vs 10 minutes).
+    ///
+    /// Coupling them previously caused `CertificateValidator` to reuse successes for
+    /// 3600 s while permanent docs and the streaming periodic HEAD timer specified 600 s.
+    @Test func securityConfigurationCertificateAndModelCacheDurationsAreDistinct() {
+        let policy = SecurityConfiguration.current
+        #expect(policy.certificateValidationCacheDuration == 600)
+        #expect(policy.modelCacheDuration == 3_600)
+        #expect(policy.certificateValidationCacheDuration != policy.modelCacheDuration)
+    }
+
 }

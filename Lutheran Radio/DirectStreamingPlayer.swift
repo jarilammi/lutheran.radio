@@ -1530,9 +1530,16 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// (automatically follows server selection changes – if the app switches to a better cluster,
     /// the next validation will check the new cluster’s cert. Since both clusters use the same cert,
     /// this is safe and gives us early detection if one cluster ever diverges).
+    ///
+    /// Cadence matches ``SecurityConfiguration/certificateValidationCacheDuration`` so proactive
+    /// HEAD checks stay aligned with the runtime pin-result cache (not the 1-hour DNS model cache).
+    ///
+    /// - SeeAlso: ``CertificateValidator/validateServerCertificate(for:)``,
+    ///   ``SecurityConfiguration/certificateValidationCacheDuration``
     func startPeriodicValidation() {
         certificateValidationTimer?.invalidate()
-        certificateValidationTimer = Timer.scheduledTimer(withTimeInterval: 600, repeats: true) { [weak self] _ in
+        let interval = SecurityConfiguration.current.certificateValidationCacheDuration
+        certificateValidationTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             guard let self else { return }
             
             let urlToValidate = self.selectedStream.url   // always valid, includes current server + security_model

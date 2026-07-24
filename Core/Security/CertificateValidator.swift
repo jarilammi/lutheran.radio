@@ -17,7 +17,9 @@ import Foundation
 /// ## Key Responsibilities
 /// - Performs system trust evaluation (includes ATS SPKI pinning and chain validation).
 /// - Verifies the leaf certificate's full DER SHA-256 fingerprint.
-/// - Implements a 1-hour validation cache.
+/// - Caches **successful** pin results for ``SecurityConfiguration/certificateValidationCacheDuration``
+///   (10 minutes). This is intentionally separate from the 1-hour DNS TXT model cache
+///   (``SecurityConfiguration/modelCacheDuration``).
 /// - Enforces the certificate transition window with device/server time-skew protection
 ///   (see ``<doc:Security-Invariants>``).
 ///
@@ -45,9 +47,13 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
     /// Timestamp of the last validation attempt.
     private var lastValidationTime: Date?
     
-    /// Interval for caching validation results.
+    /// How long a successful pin result may be reused without re-evaluation.
+    ///
+    /// AGENT NOTE: Single source of truth is
+    /// ``SecurityConfiguration/certificateValidationCacheDuration``. Never point this at
+    /// ``SecurityConfiguration/modelCacheDuration`` (DNS TXT only).
     private var validationInterval: TimeInterval {
-        SecurityConfiguration.current.modelCacheDuration
+        SecurityConfiguration.current.certificateValidationCacheDuration
     }
     
     /// Cached result of the last validation.
@@ -100,13 +106,14 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
     /// It performs the full security evaluation (system trust + fingerprint pinning)
     /// while respecting the current transition window and time-skew policy.
     ///
-    /// Results are cached for 1 hour. The method is safe to call from any context;
-    /// all state access is actor-isolated.
+    /// Results that succeed are cached for ``SecurityConfiguration/certificateValidationCacheDuration``
+    /// (10 minutes). The method is safe to call from any context; all state access is actor-isolated.
     ///
     /// - Parameter serverTrust: The `SecTrust` from an `NSURLAuthenticationMethodServerTrust` challenge.
     /// - Returns: `true` if the server should be trusted, `false` if the connection must be rejected.
     ///
-    /// - SeeAlso: ``validateServerCertificate(for:)``, ``<doc:Security-Invariants>``
+    /// - SeeAlso: ``validateServerCertificate(for:)``, ``<doc:Security-Invariants>``,
+    ///   ``SecurityConfiguration/certificateValidationCacheDuration``
     public func validateServerTrust(_ serverTrust: SecTrust) async -> Bool {
         if let lastTime = lastValidationTime,
            Date().timeIntervalSince(lastTime) < validationInterval,
@@ -172,7 +179,8 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
     /// Performs proactive certificate validation for a stream URL using a HEAD request.
     ///
     /// This method is used by `DirectStreamingPlayer` for initial validation before playback
-    /// and for periodic re-validation (approximately every 1 hour).
+    /// and for periodic re-validation on the cadence of
+    /// ``SecurityConfiguration/certificateValidationCacheDuration`` (10 minutes).
     ///
     /// It obtains a secure `URLSessionConfiguration` (via ``SecurityConfiguration/makeSecureEphemeralConfiguration()``)
     /// that enforces ``SecurityConfiguration/requiresDNSSECValidationForStreaming`` for the resolution step,
@@ -186,7 +194,9 @@ public actor CertificateValidator: NSObject, URLSessionTaskDelegate {
     /// - Parameter url: The HTTPS URL of the audio stream (must use HTTPS).
     /// - Returns: `true` if the server certificate is acceptable under current policy.
     ///
-    /// - SeeAlso: ``validateServerTrust(_:)``, ``<doc:Security-Invariants>``, ``SecurityConfiguration/applySecureNetworkingRequirements(to:)``
+    /// - SeeAlso: ``validateServerTrust(_:)``, ``<doc:Security-Invariants>``,
+    ///   ``SecurityConfiguration/applySecureNetworkingRequirements(to:)``,
+    ///   ``SecurityConfiguration/certificateValidationCacheDuration``
     public func validateServerCertificate(for url: URL) async -> Bool {
         // Apple 2026 non-main delegate queue (utility QoS + serial for strict concurrency)
         // This is the exact pattern used in Music/Podcasts 2026 betas for async delegates.

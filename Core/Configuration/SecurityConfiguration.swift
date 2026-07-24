@@ -8,13 +8,15 @@
 //  - The embedded `expectedSecurityModel` ("dallas")
 //  - Authoritative certificate fingerprints (DER digest form)
 //  - Transition window + time-skew parameters
+//  - Distinct cache durations: `modelCacheDuration` (DNS TXT success, 1 h) and
+//    `certificateValidationCacheDuration` (runtime pin-result success, 10 min)
 //  - DNSSEC streaming policy (`requiresDNSSECValidationForStreaming`)
 //  - The factory `makeSecureEphemeralConfiguration()` used by all streaming paths
 //
 //  AGENT NOTE: Any new security constant, DNS policy knob, or secure-session
 //  helper must be added here (never duplicated in DirectStreamingPlayer or elsewhere).
 //  Consumers obtain policy exclusively via `SecurityConfiguration.current` or
-//  the static factory methods.
+//  the static factory methods. Never point certificate caching at `modelCacheDuration`.
 //
 //  - SeeAlso: <doc:Security-Invariants>, <doc:Architecture>, SecurityModelValidator,
 //    CertificateValidator, DirectStreamingPlayer (urlWithOptimalServer + resource loader)
@@ -53,12 +55,33 @@ public struct SecurityConfiguration: Sendable {
         ]
     }
     
-    /// Cache duration for successful security model validation results.
-    /// After this interval, re-query the TXT record.
+    /// Cache duration for **successful** DNS TXT security-model validation only.
+    ///
+    /// After this interval, ``SecurityModelValidator`` re-queries the TXT record.
+    /// Failures are never cached. This value must **not** be reused for certificate
+    /// validation — use ``certificateValidationCacheDuration`` instead.
+    ///
+    /// - Important: Distinct from runtime certificate pin-result caching. Coupling the
+    ///   two previously caused a 1-hour cert cache while permanent docs specified 10 minutes.
+    /// - SeeAlso: ``SecurityModelValidator``, ``certificateValidationCacheDuration``,
+    ///   ``<doc:Security-Invariants>``
     let modelCacheDuration: TimeInterval = 3_600  // 1 hour
     
     
     // MARK: - Certificate Pinning (runtime full-chain validation)
+    
+    /// How long a **successful** runtime full-certificate pin result may be reused.
+    ///
+    /// ``CertificateValidator`` returns the cached success for this interval without
+    /// re-evaluating trust / leaf digest. Failures are not treated as long-lived success.
+    /// Periodic HEAD revalidation in the streaming engine (``DirectStreamingPlayer``)
+    /// uses the same duration so proactive checks and challenge-path caching stay aligned.
+    ///
+    /// - Note: Independent of ``modelCacheDuration`` (DNS TXT success cache = 1 hour).
+    /// - Important: Never hard-code 600 / 10 minutes at call sites; read this constant.
+    /// - SeeAlso: ``CertificateValidator``, ``modelCacheDuration``, ``<doc:Security-Invariants>``,
+    ///   ``<doc:Architecture>``
+    public let certificateValidationCacheDuration: TimeInterval = 600  // 10 minutes
     
     /// OpenSSL-style leaf fingerprint (README / operator tooling parity only).
     private static let pinnedLeafFingerprintHex =
