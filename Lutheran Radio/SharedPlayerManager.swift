@@ -1075,13 +1075,17 @@ actor SharedPlayerManager {
         if refreshWidgets {
             let visual = widgetVisualState ?? currentVisualState
             let shared = loadSharedState()
+            // Imperative **teardown** path: gate just released; no PlayerEvent covers
+            // full privacy / factory-reset reload. May dual-fire with late observer
+            // events; debounce absorbs duplicates (see WidgetRefreshTrigger).
             await MainActor.run {
                 WidgetCenter.shared.reloadAllTimelines()
                 WidgetRefreshManager.shared.refreshIfNeeded(
                     visualState: visual,
                     currentLanguage: shared.currentLanguage,
                     hasError: shared.hasError,
-                    immediate: true
+                    immediate: true,
+                    trigger: .teardown
                 )
             }
         }
@@ -1096,8 +1100,12 @@ actor SharedPlayerManager {
     /// Keeps home-screen widgets and Control Center in sync with the sticky `.userPaused` lock while
     /// preserving the Live Activity paused presentation.
     ///
+    /// Imperative **teardown** path: complements the Tier 2 observer reaction to stop
+    /// emissions with an immediate ``reloadAllTimelines`` + sticky pause visual. Dual-fire
+    /// with ``PlayerEvent`` is expected and soft-logged under DEBUG.
+    ///
     /// - SeeAlso: ``stop()``, ``performSessionAndWidgetTeardown(includeFactoryReset:liveActivityTeardown:refreshWidgets:widgetVisualState:staleLiveness:)``,
-    ///   docs/Event-Driven-Refactor-Roadmap.md.
+    ///   ``WidgetRefreshTrigger``, docs/Event-Driven-Refactor-Roadmap.md.
     func performPostStopWidgetHygiene() async {
         guard !isRunningInWidget() else { return }
 
@@ -1108,7 +1116,8 @@ actor SharedPlayerManager {
                 visualState: .userPaused,
                 currentLanguage: shared.currentLanguage,
                 hasError: shared.hasError,
-                immediate: true
+                immediate: true,
+                trigger: .teardown
             )
         }
 
@@ -1121,10 +1130,11 @@ actor SharedPlayerManager {
     /// `sceneDidDisconnect`) where async actor work may not complete before exit.
     ///
     /// - Important: Metadata clear is the critical privacy step; widget reload is best-effort on the
-    ///   main thread before the process dies.
+    ///   main thread before the process dies. Imperative **teardown** — no event stream at exit.
     ///
     /// - SeeAlso: ``performSessionAndWidgetTeardown(includeFactoryReset:liveActivityTeardown:refreshWidgets:widgetVisualState:staleLiveness:)``,
-    ///   ``clearSystemNowPlayingMetadataSynchronously()``, AppDelegate.applicationWillTerminate,
+    ///   ``clearSystemNowPlayingMetadataSynchronously()``, ``WidgetRefreshTrigger``,
+    ///   AppDelegate.applicationWillTerminate,
     ///   SceneDelegate.sceneDidDisconnect, docs/Event-Driven-Refactor-Roadmap.md.
     nonisolated static func performSessionTeardownSynchronouslyForTermination() {
         forceStaleLivenessTimestampForTermination()
@@ -1137,7 +1147,8 @@ actor SharedPlayerManager {
                 visualState: .prePlay,
                 currentLanguage: preferredWidgetLanguage(),
                 hasError: false,
-                immediate: true
+                immediate: true,
+                trigger: .teardown
             )
         }
         clearSystemNowPlayingMetadataSynchronously()

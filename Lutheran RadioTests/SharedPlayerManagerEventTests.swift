@@ -3093,7 +3093,8 @@ final class SharedPlayerManagerEventTests: XCTestCase {
     /// Live Activity ContentState must still carry the stream attach language so Lock Screen
     /// flag/name chrome match the playing stream.
     func testMainAppLiveActivityLanguageCodeTracksSelectedStream() async {
-        let streams = await manager.availableStreams
+        // `availableStreams` is a nonisolated sync property; no await required.
+        let streams = manager.availableStreams
         guard let finnish = streams.first(where: { $0.languageCode == "fi" }) else {
             XCTFail("Expected Finnish stream in catalog")
             return

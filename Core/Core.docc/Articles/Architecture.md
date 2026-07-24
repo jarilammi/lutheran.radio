@@ -209,7 +209,7 @@ Tier 2 observers consume events additively. Imperative snapshot and refresh path
 
 | Consumer | Observes | Behavior |
 |----------|----------|----------|
-| `WidgetRefreshManager` | `SharedPlayerManager.events` (main app only) | Derives refresh parameters from carried events or persisted SSOT; routes through existing `refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)` |
+| `WidgetRefreshManager` | `SharedPlayerManager.events` (main app only) | Sole mutation-path timeline driver; derives refresh parameters and routes through `refreshIfNeeded(..., trigger: .playerEvent)`. Imperative triggers use other ``WidgetRefreshTrigger`` cases. |
 | `PlayerEventSubscriber` | `makeEventsStreamWithReplay()` in `RadioPlayerView` | UI-only observable state (`eventCount`, `lastObservedIntent`); does not replace `@Bindable` view model bindings |
 | `RadioLiveActivityManager` | `Activity.contentUpdates` (attribute events) | Aligns `lastPushedContent`, diff-suppresses redundant `update(using:)`, self-heals on dismissal |
 | `WidgetEventObserver` | Generic `AsyncSequence` helper | Shared cancel-before-start, main-actor handoff, and task lifetime for both `PlayerEvent` and Live Activity attribute streams |
@@ -228,7 +228,7 @@ Cross-process presentation therefore relies on snapshot reads plus main-app-driv
 
 ### Relationship to Imperative Paths
 
-Direct mutation, snapshot writes, and lifecycle refresh calls coexist with the event path. Consolidation candidates (imperative `refreshIfNeeded` call sites, coordinator eager sync) are inventoried in `docs/Event-Driven-Refactor-Roadmap.md` under Tier 4. Imperative paths remain primary until the event path proves reliable on device. Permanent cross-process surfaces include ``persistOptimisticWidgetSnapshot(_:language:)`` for optimistic widget writes and `forceStaleLivenessTimestampForTermination()` for the termination liveness sentinel.
+Direct mutation and snapshot writes remain primary for engine and App Group state. **Main-app mutation-path widget timeline reloads** are driven by the Tier 2 ``PlayerEvent`` observer (``WidgetRefreshTrigger/playerEvent``). **Imperative** ``refreshIfNeeded`` remains for lifecycle (foreground), teardown/post-stop/termination, widget-extension optimistic intents, and optional ``refreshAllMediaSurfaces(widgetRefresh:)`` — surfaces without a usable event stream. Both families share the public ``refreshIfNeeded`` surface and its privacy/teardown/debounce gates; dual fire is expected at some edges and soft-observed under DEBUG. Full dual-path inventory: `docs/Event-Driven-Refactor-Roadmap.md` Tier 4 §2 and `docs/Widget-Functionality-Roadmap.md` Tier 3. Permanent cross-process surfaces include ``persistOptimisticWidgetSnapshot(_:language:)`` for optimistic widget writes and `forceStaleLivenessTimestampForTermination()` for the termination liveness sentinel.
 
 ### Cross-Target Shared Sources
 

@@ -63,6 +63,7 @@ It serves as both the project backlog for remaining work and a self-contained re
 - Tier 5 documentation (README SSOT, 2026-07-09): `README.md` Single Sources of Truth section extended with "Event-driven player state (outside `Core/`)" — `PlayerEvent` vocabulary, `SharedPlayerManager` emission surfaces (`emit(_:)`, `events`, `currentState`, `makeEventsStreamWithReplay()`), consumers, non-forcing rule, cross-process reality, and cross-links to ``<doc:Architecture>``, widget dataflow doc, and canonical test files. Tier 5 backlog closed. See Tier 5 and Update Log.
 - Widget Tier 3 refresh dedup (2026-07-13, cross-roadmap): Main-app mutation-path ``refreshIfNeeded`` consolidation completed per [`docs/Widget-Functionality-Roadmap.md`](Widget-Functionality-Roadmap.md) Tier 3 — ``performActualSave``, ``didUpdateStreamMetadata``, and ``RadioPlayerCoordinator/updateUserDefaultsLanguage`` imperative calls removed; Tier 2 observer is the sole mutation-path driver with ``refreshUsesImmediateDelivery(for:hasError:)`` urgency parity. Lifecycle, foreground, and widget-extension optimistic paths retained. SeeAlso: Tier 4 inventory §2 below.
 - Joined optimistic→drain refresh observation (2026-07-17, cross-roadmap): `WidgetIntentContractTests.testOptimisticPlayDrainRequestsWidgetRefreshPassingGuards` exercises the Tier 2 ``WidgetRefreshManager`` event observer after main-app pending-action drain (UITestMode observer begin + gate-outcome recording; no WidgetCenter IPC). See [`docs/Widget-Functionality-Roadmap.md`](Widget-Functionality-Roadmap.md) Tier 2 joined contracts and Tier 5 joined-round-trip index.
+- Dual-path refresh inventory + DEBUG dual-fire observation (2026-07-24): ``WidgetRefreshTrigger`` on every ``refreshIfNeeded`` call site (lifecycle / teardown / extensionOptimistic / mediaSurface / playerEvent / test). Soft `[WidgetRefreshDualTrigger]` log + white-box dual-fire log when event and imperative families cross within ~150 ms (not a product failure; hard assert opt-in only). Permanent inventory in Tier 4 §2 and Widget Functionality Roadmap Tier 3. Tests: `testDualRefreshTriggerObservationRecordsEventAndImperativePair`, `testSameFamilyRefreshTriggersDoNotRecordDualFire`.
 
 **Architecture Status**
 - `SharedPlayerManager` is the single source of truth for emitting player events. It owns the canonical `PlayerEvent` vocabulary and the long-lived `events` `AsyncStream`.
@@ -165,21 +166,32 @@ This subsection records the authoritative inventory of direct "force", refresh, 
   Call sites: Every widget Provider entry point (`LutheranRadioWidget`, `LutheranRadioWidgetControl`), `RadioPlayerCoordinator.performColdLaunchPlaybackIfAllowed` and related paths, ViewController cold-launch / foreground guards, and defensive spots inside `SharedPlayerManager`.  
   Note: Widget extension processes have no access to `SharedPlayerManager.events`. These read-refresh surfaces remain for extension hygiene.
 
-**2. Imperative `refreshIfNeeded` call sites (primary path; event observer already parallels them)**
+**2. Dual-path `refreshIfNeeded` inventory (event mutation vs imperative lifecycle — present tense)**
 
-`WidgetRefreshManager.refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)` is invoked directly from many surfaces in addition to the internal Tier 2 `PlayerEvent` observer (which routes through the identical public surface):
+Both families call the same public surface:
 
-- Inside SharedPlayerManager (performActualSave, saveCurrentState, saveCombinedWidgetState, language switch handling, post-mutation sites ~2121, 2157, 3190, 3424).
-- AppDelegate (foreground / launch paths ~80, 118).
-- SceneDelegate (becomeActive, termination cleanup ~67, 90).
-- RadioPlayerCoordinator (updateUserDefaultsLanguage after saveCombined ~860; other resume/switch paths).
-- SharedPlayerManager+NowPlaying.swift (~149).
-- ViewController (post-clear, hasActive re-detect ~493, 1446).
-- Widget providers themselves for optimistic cases (LutheranRadioWidget.swift ~749, 800; LutheranRadioWidgetControl.swift ~78).
+```swift
+WidgetRefreshManager.refreshIfNeeded(
+  visualState:currentLanguage:hasError:immediate:trigger:
+)
+```
 
-The internal observer in WidgetRefreshManager already demonstrates the parallel non-forcing path. Deduplication, coalescing, regress guards, and privacy gating all live inside `refreshIfNeeded`, so duplicate triggers are harmless today.
+``WidgetRefreshTrigger`` classifies each site. Dual event+imperative fire within ~150 ms is soft-logged under DEBUG (`[WidgetRefreshDualTrigger]`) and may be recorded via white-box seams — **not** a product failure. Debounce/coalesce/privacy/teardown gates still absorb duplicates.
 
-**Mutation-path dedup (complete 2026-07-13):** Imperative ``refreshIfNeeded`` inside ``performActualSave``, ``didUpdateStreamMetadata``, and ``RadioPlayerCoordinator/updateUserDefaultsLanguage`` removed. The Tier 2 observer is the sole driver for main-app mutation-path timeline reloads; ``refreshUsesImmediateDelivery(for:hasError:)`` carries sticky-pause and error urgency formerly owned only by ``performActualSave``. Lifecycle, foreground, teardown, and widget-extension optimistic callers remain imperative. Full inventory: [`docs/Widget-Functionality-Roadmap.md`](Widget-Functionality-Roadmap.md) Tier 3.
+| Trigger | Path family | Role | Call sites |
+|---------|-------------|------|------------|
+| ``.playerEvent`` | **Event (mutation)** | Sole main-app driver after in-process mutations | ``handlePlayerEvent(_:)`` via Tier 2 observer |
+| ``.lifecycle`` | Imperative | Process re-entry with no PlayerEvent | `AppDelegate.applicationWillEnterForeground` |
+| ``.teardown`` | Imperative | Session end / sticky post-stop / termination | ``performSessionAndWidgetTeardown``, ``performPostStopWidgetHygiene``, ``performSessionTeardownSynchronouslyForTermination`` |
+| ``.extensionOptimistic`` | Imperative | Extension process cannot emit PlayerEvent | ``WidgetIntentExecution/executeOptimisticToggle``, ``executeHomeWidgetStreamSwitch``, ``handleWidgetPlay`` / ``handleWidgetStop`` delayed refresh |
+| ``.mediaSurface`` | Imperative | Opt-in widget reload beside NP/LA | ``refreshAllMediaSurfaces(widgetRefresh: true)`` (default `false`) |
+| ``.test`` | Imperative (test) | White-box / unit tests | Default parameter; XCTest call sites |
+
+**Removed mutation-path imperative sites (2026-07-13):** ``performActualSave``, ``didUpdateStreamMetadata``, ``RadioPlayerCoordinator/updateUserDefaultsLanguage`` — observer + ``refreshUsesImmediateDelivery(for:hasError:)`` owns urgency.
+
+**Not refresh call sites (related surfaces):** SceneDelegate drain hooks (no direct ``refreshIfNeeded``); provider ``refreshVisualStateFromPersistence`` (read hygiene, not timeline reload); coordinator language save (emit only).
+
+**Later consolidation (requires explicit product decision):** pick one primary main-app mutation path only after device-proven parity; do **not** delete lifecycle/teardown/extension optimistic paths casually. Full table also in [`docs/Widget-Functionality-Roadmap.md`](Widget-Functionality-Roadmap.md) Tier 3.
 
 **3. Widget / Control Provider state resolution (repeated persistence refresh + snapshot reads)**
 
@@ -339,6 +351,7 @@ Keep a short chronological log of major milestones:
 - Twenty-fifth focused Tier 5 micro-step (2026-07-09): `testLiveEventsStreamDeliversStreamDidStartFromSetPlaying` protects live ``events`` delivery of `PlayerEvent.streamDidStart` from ``setPlaying()`` (subscribe-before-action on the authoritative AsyncStream, no DEBUG notification seam). Production XCTest isolation: ``WidgetRefreshManager`` suppresses Tier 2 observation at ``init()`` under ``isRunningInUITestMode``; ``_test_resetEventsStreamForIsolation()`` and ``_test_beginObservingPlayerEventsForTests()`` support emitter vs consumer test paths. Complements seam-based order tests and the hybrid live-or-seam smoke test; closes the remaining emitter live-stream gap for the start verb.
 - Tier 5 documentation complete (2026-07-09): `README.md` SSOT section extended with "Event-driven player state (outside `Core/`)" — authoritative emitter surfaces, consumer table, non-forcing rule, cross-process reality, and cross-links. Tier 5 backlog closed; only Tier 4 consolidation remains (device-proven gate).
 - Widget Tier 3 refresh dedup (2026-07-13): mutation-path imperative ``refreshIfNeeded`` removed from ``performActualSave``, ``didUpdateStreamMetadata``, ``updateUserDefaultsLanguage``; event-path urgency extended. Cross-link: [`docs/Widget-Functionality-Roadmap.md`](Widget-Functionality-Roadmap.md).
+- Dual-path refresh inventory + DEBUG dual-fire observation (2026-07-24): ``WidgetRefreshTrigger`` + ``WidgetRefreshPathFamily`` on ``refreshIfNeeded``; production call sites annotated lifecycle/teardown/extensionOptimistic/mediaSurface/playerEvent; soft dual-fire log + test seams (`_test_setRecordDualRefreshTriggers`, `DualRefreshTriggerObservation`); permanent inventory in Tier 4 §2. Tests in `WidgetRefreshManagerEventTests`. No deletion of either path; non-forcing dual architecture remains intentional.
 - Joined optimistic→drain refresh observation (2026-07-17): `testOptimisticPlayDrainRequestsWidgetRefreshPassingGuards` indexes the post-drain Tier 2 observer path (gate-outcome recording, no WidgetCenter IPC). Cross-link: [`docs/Widget-Functionality-Roadmap.md`](Widget-Functionality-Roadmap.md) Tier 5 joined-round-trip index. Docs-only; no production behavior change.
 - Live Activity language chrome gap recorded (2026-07-18): language not on `ContentState`; extension re-derivation via ``preferredWidgetLanguage()`` defaults to English under memory-only session + no home widgets while LA remains active. Not an event-emission gap; full implementation contract lives in Widget Functionality Roadmap. Cross-process section and micro-step guidance updated so agents do not mis-route this into Tier 4 consolidation or `PlayerEvent` streaming.
 - Live Activity language chrome SSOT shipped (2026-07-19): `ContentState.currentLanguage` + durable language mirror + chrome from `context.state`; ``mainAppLiveActivityLanguageCode()`` from stream attach; optimistic language via ``languageForLiveActivityOrWidgetOptimistic()``. Home-widget privacy write suppression unchanged.

@@ -457,7 +457,8 @@ extension SharedPlayerManager {
             // (``.visualStateDidChange``, ``.persistedWidgetStateDidUpdate``, stream verbs, etc.)
             // which routes through ``WidgetRefreshManager/handlePlayerEvent(_:)`` with urgency
             // parity via ``refreshUsesImmediateDelivery(for:hasError:)``. Imperative
-            // ``refreshIfNeeded`` here was removed in Tier 3 — duplicate with the observer.
+            // Imperative ``refreshIfNeeded`` removed: mutation-path reloads are driven solely by
+            // the Tier 2 observer (``handlePlayerEvent`` / ``WidgetRefreshTrigger/playerEvent``).
 
             // Live Activity refresh (parallel to widget timeline reload).
             // The call goes through the manager's change detection (lastPushedContent).

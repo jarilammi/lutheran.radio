@@ -105,7 +105,7 @@ Drain rules that keep chrome trustworthy:
 
 ### Widgets
 
-Mutation-path timeline reloads are driven by the Tier 2 ``PlayerEvent`` observer in ``WidgetRefreshManager`` (debounce + coalesce). Imperative ``refreshIfNeeded`` remains for lifecycle, teardown, extension optimistic intents, and optional ``refreshAllMediaSurfaces(widgetRefresh: true)`` call sites.
+Mutation-path timeline reloads are driven by the Tier 2 ``PlayerEvent`` observer in ``WidgetRefreshManager`` (``WidgetRefreshTrigger/playerEvent``; debounce + coalesce). Imperative ``refreshIfNeeded`` remains for lifecycle (``.lifecycle``), teardown/post-stop (``.teardown``), extension optimistic intents (``.extensionOptimistic``), and optional ``refreshAllMediaSurfaces(widgetRefresh: true)`` (``.mediaSurface``). Dual-path inventory and DEBUG dual-fire soft log: `docs/Event-Driven-Refactor-Roadmap.md` Tier 4 §2.
 
 ### DEBUG media-transport latency timeline
 

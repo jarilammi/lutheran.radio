@@ -70,7 +70,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     ///   - sceneSessions: The set of discarded scene sessions.
     func application(_ application: UIApplication, didDiscardSceneSessions sceneSessions: Set<UISceneSession>) {}
     
-    // Foreground refresh — use the centralized manager (respects debouncing + SSOT)
+    // Imperative **lifecycle** path: foreground re-entry has no PlayerEvent.
+    // Mutation-path reloads stay on the Tier 2 observer; this only re-syncs
+    // timelines after suspension (see WidgetRefreshTrigger.lifecycle).
     func applicationWillEnterForeground(_ application: UIApplication) {
         Task { @MainActor in
             let manager = SharedPlayerManager.shared
@@ -81,7 +83,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
                 visualState: vs,
                 currentLanguage: st.currentLanguage,
                 hasError: st.hasError,
-                immediate: true
+                immediate: true,
+                trigger: .lifecycle
             )
         }
 

@@ -1176,9 +1176,9 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
             // simulator (fast scheduling) but produced the "pause → language change → resume"
             // failures on physical devices and TestFlight builds.
             //
-            // Widget timeline reload is driven by ``.persistedWidgetStateDidUpdate`` on the Tier 2
-            // observer path. ``WidgetRefreshManager/refreshIfNeeded`` always bypasses debounce on
-            // language changes (Tier 3 dedup removed the redundant imperative call here).
+            // Mutation path: language snapshot emit → ``.persistedWidgetStateDidUpdate`` →
+            // Tier 2 observer (``WidgetRefreshTrigger/playerEvent``). Imperative refresh was
+            // removed; language-change urgency still bypasses debounce inside ``refreshIfNeeded``.
             //
             // See: SharedPlayerManager.swift (handleWidgetSwitch, signalWidgetSwitchAction,
             // loadPersistedVisualStateDirect, setUserIntentToPlay, ensureVisualStateLoaded

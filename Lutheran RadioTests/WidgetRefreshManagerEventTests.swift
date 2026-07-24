@@ -73,6 +73,9 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
         WidgetRefreshManager._test_setRecordHandlePlayerEventImmediate(false)
         WidgetRefreshManager._test_setBypassUITestModeForDebounceObservation(false)
         WidgetRefreshManager._test_setRecordDebounceOutcomes(false)
+        WidgetRefreshManager._test_setRecordDualRefreshTriggers(false)
+        WidgetRefreshManager._test_setHardAssertOnDualRefreshTrigger(false)
+        WidgetRefreshManager._test_resetRefreshTriggerObservationState()
         sanitizeLiveActivityLocalState()
 
         try await super.tearDown()
@@ -531,6 +534,81 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
             WidgetRefreshManager._test_lastHandlePlayerEventImmediate(),
             true,
             "Permanent-error chrome must bypass coalesce deferral on the event path"
+        )
+    }
+
+    // MARK: - Dual-path trigger inventory
+
+    /// Verifies soft dual-fire observation records event+imperative pairs within the
+    /// dual-trigger window without treating dual fire as a product failure.
+    ///
+    /// Protects the dual-path inventory contract: lifecycle (imperative) and
+    /// ``playerEvent`` (mutation) both reach ``refreshIfNeeded``; close succession is
+    /// expected and only soft-logged. Hard assert remains opt-in and disabled here.
+    ///
+    /// - SeeAlso: ``WidgetRefreshTrigger``, ``WidgetRefreshManager/DualRefreshTriggerObservation``,
+    ///   ``WidgetRefreshManager/_test_dualRefreshTriggerLog()``,
+    ///   docs/Event-Driven-Refactor-Roadmap.md (dual-path inventory).
+    func testDualRefreshTriggerObservationRecordsEventAndImperativePair() async {
+        WidgetRefreshManager._test_resetRefreshTriggerObservationState()
+        WidgetRefreshManager._test_setRecordDualRefreshTriggers(true)
+        WidgetRefreshManager._test_setHardAssertOnDualRefreshTrigger(false)
+        enableRefreshGateObservation()
+
+        // Seed previous trigger as event family.
+        refreshManager.refreshIfNeeded(
+            visualState: .userPaused,
+            currentLanguage: "fi",
+            hasError: false,
+            immediate: true,
+            trigger: .playerEvent
+        )
+        // Immediate imperative lifecycle follow-up within the dual-fire window.
+        refreshManager.refreshIfNeeded(
+            visualState: .userPaused,
+            currentLanguage: "fi",
+            hasError: false,
+            immediate: true,
+            trigger: .lifecycle
+        )
+
+        let log = WidgetRefreshManager._test_dualRefreshTriggerLog()
+        XCTAssertEqual(log.count, 1, "Expected one dual-fire observation; log: \(log)")
+        XCTAssertEqual(log.first?.previous, .playerEvent)
+        XCTAssertEqual(log.first?.current, .lifecycle)
+        XCTAssertLessThanOrEqual(log.first?.intervalSeconds ?? 1, 0.15)
+    }
+
+    /// Verifies same-family back-to-back refreshes do not produce dual-fire observations.
+    ///
+    /// Debounce/coalesce may still run; dual-fire inventory only cares about event vs
+    /// imperative family crossings.
+    ///
+    /// - SeeAlso: ``WidgetRefreshTrigger/pathFamily``,
+    ///   docs/Event-Driven-Refactor-Roadmap.md (dual-path inventory).
+    func testSameFamilyRefreshTriggersDoNotRecordDualFire() async {
+        WidgetRefreshManager._test_resetRefreshTriggerObservationState()
+        WidgetRefreshManager._test_setRecordDualRefreshTriggers(true)
+        enableRefreshGateObservation()
+
+        refreshManager.refreshIfNeeded(
+            visualState: .playing,
+            currentLanguage: "en",
+            hasError: false,
+            immediate: true,
+            trigger: .teardown
+        )
+        refreshManager.refreshIfNeeded(
+            visualState: .prePlay,
+            currentLanguage: "en",
+            hasError: false,
+            immediate: true,
+            trigger: .lifecycle
+        )
+
+        XCTAssertTrue(
+            WidgetRefreshManager._test_dualRefreshTriggerLog().isEmpty,
+            "Imperative→imperative must not record dual-fire; log: \(WidgetRefreshManager._test_dualRefreshTriggerLog())"
         )
     }
 

@@ -1396,16 +1396,18 @@ extension SharedPlayerManager {
         scheduleWidgetAction(action: "play")
         notifyMainApp(action: "play")
         
-        // Small delay + optimistic widget refresh using the modern API
+        // Imperative **extensionOptimistic** path: widget process has no PlayerEvent
+        // stream; delayed refresh reloads timelines after optimistic snapshot write.
         Task {
             try? await Task.sleep(for: .seconds(0.5))
             let language = Self.languageForLiveActivityOrWidgetOptimistic()
             
             await WidgetRefreshManager.shared.refreshIfNeeded(
-                visualState: .playing,           // ← modern path
+                visualState: .playing,
                 currentLanguage: language,
                 hasError: false,
-                immediate: true
+                immediate: true,
+                trigger: .extensionOptimistic
             )
             
             saveFireAndForget()
@@ -1433,7 +1435,7 @@ extension SharedPlayerManager {
         scheduleWidgetAction(action: "pause")
         notifyMainApp(action: "pause")
         
-        // Small delay + optimistic widget refresh using the modern API
+        // Imperative **extensionOptimistic** path (no PlayerEvent emission in extension).
         Task {
             try? await Task.sleep(for: .seconds(0.5))
             let language = Self.languageForLiveActivityOrWidgetOptimistic()
@@ -1442,7 +1444,8 @@ extension SharedPlayerManager {
                 visualState: currentVisualState,   // already .userPaused
                 currentLanguage: language,
                 hasError: false,
-                immediate: true
+                immediate: true,
+                trigger: .extensionOptimistic
             )
         }
     }

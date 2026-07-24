@@ -296,18 +296,18 @@ Ordered by increasing risk and decreasing isolation. Earlier items are safer.
 
 **Safe direct-read rule:** Code that reads **only** ``loadPersistedWidgetState()`` / ``resolveFromSnapshot()`` and never ``currentVisualState`` could skip the actor hop in theory; Providers keep the hop as permanent extension hygiene until device-proven otherwise.
 
-#### Imperative `refreshIfNeeded` inventory post-dedup
+#### Dual-path `refreshIfNeeded` inventory (with ``WidgetRefreshTrigger``)
 
-| Caller | Status | Reason |
-|--------|--------|--------|
-| ``WidgetRefreshManager/handlePlayerEvent`` | **Primary** (mutation path) | Tier 2 observer; urgency via ``refreshUsesImmediateDelivery`` |
-| ``performActualSave`` | Removed (2026-07-13) | Duplicate with observer + ``cancelPendingRefresh`` retained |
-| ``didUpdateStreamMetadata`` | Removed (2026-07-13) | ``metadataDidUpdate`` + ``persistedWidgetStateDidUpdate`` |
-| ``updateUserDefaultsLanguage`` | Removed (2026-07-13) | ``persistedWidgetStateDidUpdate``; language branch in ``refreshIfNeeded`` |
-| ``performSessionAndWidgetTeardown`` / ``performPostStopWidgetHygiene`` / termination | Retained | Lifecycle + explicit ``reloadAllTimelines`` |
-| `AppDelegate.applicationWillEnterForeground` | Retained | Foreground liveness; no ``PlayerEvent`` |
-| Widget extension intents | Retained | Cross-process optimistic; no event emission in extension |
-| Widget-process ``handleWidgetPlay``/``handleWidgetStop`` | Retained | Extension-only; ``emit`` guarded |
+Every production call passes an explicit ``WidgetRefreshTrigger``. DEBUG dual-fire observation soft-logs event+imperative pairs within ~150 ms (`[WidgetRefreshDualTrigger]`); not a product failure. Canonical detail: [`docs/Event-Driven-Refactor-Roadmap.md`](Event-Driven-Refactor-Roadmap.md) Tier 4 §2.
+
+| Trigger | Caller | Status | Role |
+|---------|--------|--------|------|
+| ``.playerEvent`` | ``handlePlayerEvent`` | **Sole mutation-path driver** | Tier 2 observer; urgency via ``refreshUsesImmediateDelivery`` |
+| ``.lifecycle`` | `AppDelegate.applicationWillEnterForeground` | Retained | Foreground re-sync; no ``PlayerEvent`` |
+| ``.teardown`` | ``performSessionAndWidgetTeardown`` / ``performPostStopWidgetHygiene`` / termination | Retained | Privacy/teardown + sticky post-stop; may dual-fire with stop emissions |
+| ``.extensionOptimistic`` | ``WidgetIntentExecution`` optimistic toggle/switch; ``handleWidgetPlay``/``handleWidgetStop`` | Retained | Extension cannot emit; immediate optimistic reload |
+| ``.mediaSurface`` | ``refreshAllMediaSurfaces(widgetRefresh: true)`` | Opt-in (default `false`) | Explicit NP/LA + widget coordination |
+| — | ``performActualSave`` / ``didUpdateStreamMetadata`` / ``updateUserDefaultsLanguage`` | **Removed** (2026-07-13) | Observer owns mutation-path reloads |
 
 ### Tier 4 – Media Surface Coordination (Cross-Cutting)
 
@@ -356,9 +356,9 @@ Authoritative inventory (no behavior change until device-proven). Mirrors Event-
 - `forceStaleLivenessTimestampForTermination` — process-lifecycle sentinel; not a player event.
 - `refreshVisualStateFromPersistence` / `syncVisualStateFromPersistence` — extension hygiene; expected to remain.
 
-**2. Imperative `refreshIfNeeded` call sites (parallel to event observer)**
+**2. Dual-path `refreshIfNeeded` (event mutation + imperative lifecycle)**
 
-SharedPlayerManager saves, AppDelegate, SceneDelegate, RadioPlayerCoordinator, ViewController, widget intents, Now Playing shim. See Event-Driven Roadmap Tier 4 §2 for full call-site list.
+Classified by ``WidgetRefreshTrigger``; inventory in Tier 3 table above and Event-Driven Roadmap Tier 4 §2. Deleting either family requires an explicit product decision after device-proven parity.
 
 **3. Provider persistence refresh on every timeline request**
 

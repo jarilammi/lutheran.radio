@@ -514,8 +514,10 @@ extension SharedPlayerManager {
     ///
     /// - Parameters:
     ///   - liveActivity: How to refresh the Live Activity. Default ``MediaSurfaceLiveActivityMode/updateIfActive``.
-    ///   - widgetRefresh: When `true`, imperatively schedules ``WidgetRefreshManager/refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)``.
-    ///     Default `false` because mutation paths already emit ``PlayerEvent``s consumed by the Tier 2 observer.
+    ///   - widgetRefresh: When `true`, imperatively schedules
+    ///     ``WidgetRefreshManager/refreshIfNeeded(visualState:currentLanguage:hasError:immediate:trigger:)``
+    ///     with ``WidgetRefreshTrigger/mediaSurface``. Default `false` because mutation paths
+    ///     already emit ``PlayerEvent``s consumed by the Tier 2 observer.
     ///   - widgetRefreshImmediate: Urgency when `widgetRefresh` is `true`.
     ///
     /// - Precondition: Main-app ``SharedPlayerManager`` actor only. No-op in the widget extension
@@ -528,11 +530,15 @@ extension SharedPlayerManager {
     ///   widget persist). Use there only for the shared formatter via ``updateNowPlayingInfo()``.
     /// - Note: Live Activity pushes are diff-suppressed by ``RadioLiveActivityManager/lastPushedContent``;
     ///   redundant calls are cheap. Now Playing coalesces frequent updates at the system layer.
+    ///   Prefer `widgetRefresh: false` so home-widget reloads stay on the event path; enable only
+    ///   when an explicit imperative widget reload is required alongside NP/LA coordination.
     ///
     /// - SeeAlso: ``updateNowPlayingInfo()``, ``didUpdateStreamMetadata(_:)``, ``setPlaying()``, ``stop()``,
     ///   ``RadioLiveActivityManager/startActivity()``, ``RadioLiveActivityManager/updateCurrentActivity()``,
-    ///   ``WidgetRefreshManager/refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)``,
+    ///   ``WidgetRefreshManager/refreshIfNeeded(visualState:currentLanguage:hasError:immediate:trigger:)``,
+    ///   ``WidgetRefreshTrigger/mediaSurface``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md, docs/Widget-Presentation-Dataflow.md,
+    ///   docs/Event-Driven-Refactor-Roadmap.md (dual-path inventory),
     ///   CODING_AGENT.md (Single Source of Truth Principles).
     ///
     /// AGENT NOTE: Prefer this wrapper over ad-hoc ``updateNowPlayingInfo()`` + detached
@@ -596,12 +602,15 @@ extension SharedPlayerManager {
         }
 
         if widgetRefresh {
+            // Imperative **mediaSurface** path (opt-in). Default production call sites leave
+            // widgetRefresh false so mutation-path reloads stay on the Tier 2 observer.
             let shared = loadSharedState()
             await WidgetRefreshManager.shared.refreshIfNeeded(
                 visualState: currentVisualState,
                 currentLanguage: shared.currentLanguage,
                 hasError: shared.hasError,
-                immediate: widgetRefreshImmediate
+                immediate: widgetRefreshImmediate,
+                trigger: .mediaSurface
             )
             #if DEBUG
             Self._test_recordMediaSurfaceCoordinationStep(.widgetRefresh)

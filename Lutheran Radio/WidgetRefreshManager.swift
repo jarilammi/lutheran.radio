@@ -7,18 +7,22 @@
 //  Prevents excessive widget refreshes through debouncing and change detection.
 //  Fully aligned with PlayerVisualState as the Single Source of Truth (SSOT).
 //
-//  In the final architecture, WidgetRefreshManager is both the debouncing
-//  coordinator for imperative `refreshIfNeeded` calls (the primary path from
-//  SharedPlayerManager saves, AppDelegate, coordinators, widget intents, etc.)
-//  *and* a lightweight internal consumer of the `SharedPlayerManager.events`
-//  `AsyncStream`. Relevant `PlayerEvent` cases (visual changes, persisted state
-//  updates, stream transitions) trigger timeline reloads by routing through the
-//  identical public `refreshIfNeeded` surface. All snapshot derivation, debouncing,
-//  coalescing, regress guards, and privacy gating remain 100% intact and primary.
+//  Dual-path architecture (non-forcing; intentional):
+//  - Mutation path (main app): the Tier 2 `PlayerEvent` observer is the sole
+//    driver of timeline reloads after in-process state mutations (saves, stream
+//    transitions, language updates emit events; imperative refresh was removed).
+//  - Imperative path: lifecycle (foreground), teardown / post-stop hygiene,
+//    termination, widget-extension optimistic intents, and optional
+//    `refreshAllMediaSurfaces(widgetRefresh:)` — surfaces that have no
+//    corresponding PlayerEvent or run outside the main-app event stream.
+//  Both paths converge on the public `refreshIfNeeded` surface with the same
+//  debouncing, coalescing, regress guards, privacy gate, and session-teardown
+//  suppression. Duplicate triggers are expected at some edges (e.g. post-stop
+//  hygiene + stop emissions) and are deduplicated inside that surface.
 //
-//  Event-driven triggering is strictly additive and non-forcing: direct calls
-//  continue exactly as before; the observer provides a parallel, decoupled
-//  notification path. No behavior is altered for existing callers.
+//  Each call site passes ``WidgetRefreshTrigger`` so dual-path inventory and
+//  DEBUG dual-fire observation stay honest. See docs/Event-Driven-Refactor-Roadmap.md
+//  (imperative refresh inventory) and docs/Widget-Functionality-Roadmap.md.
 //
 
 // SHARED: Cross-target source (main app + LutheranRadioWidgetExtension)
@@ -37,46 +41,100 @@
 //   `WidgetRefreshManager` + `SharedPlayerManager`) to suppress writes when no
 //   Lutheran widgets are installed.
 // - Coalesces `.prePlay` → `.playing` and dedupes sticky states.
-// - The internal `PlayerEvent` observer (started only in the main app process)
-//   is additive only. Imperative snapshot + refresh paths are never removed,
-//   bypassed, or made secondary.
+// - Main-app mutation-path reloads are driven by the `PlayerEvent` observer;
+//   imperative callers remain for lifecycle, teardown, extension optimistic,
+//   and optional media-surface coordination only (non-forcing dual path).
 // - This file contains *no* security logic. Security decisions live only in
 //   `Core/` (see CODING_AGENT.md "Core Framework Surface Area").
 //
 // - SeeAlso: `SharedPlayerManager` (authoritative emitter of `PlayerEvent` via
-//   ``events`` and direct calls to `refreshIfNeeded`), `PlayerVisualState`,
-//   `PlayerEvent`, `PersistedWidgetState`, `WidgetEventObserver`,
+//   ``events``; imperative lifecycle/teardown refresh callers), `PlayerVisualState`,
+//   `PlayerEvent`, `PersistedWidgetState`, `WidgetEventObserver`, ``WidgetRefreshTrigger``,
 //   CODING_AGENT.md (Single Source of Truth Principles + "Cross-target shared
 //   source files (non-Core)" + event-driven non-forcing direction + Documentation
 //   & Comment Standards),
-//   docs/Event-Driven-Refactor-Roadmap.md (Tier 2 – First Consumers),
+//   docs/Event-Driven-Refactor-Roadmap.md (Tier 2 consumers + dual-path inventory),
+//   docs/Widget-Functionality-Roadmap.md (refresh inventory),
 //   <doc:Architecture>, README.md.
 
 import Foundation
 import WidgetKit
 import WidgetSurface
 
+/// Classifies why ``WidgetRefreshManager/refreshIfNeeded(visualState:currentLanguage:hasError:immediate:trigger:)``
+/// was invoked.
+///
+/// Dual-path inventory (non-forcing architecture):
+/// - **Event family** (``.playerEvent``): main-app mutation-path sole driver after
+///   in-process state mutations emit ``PlayerEvent``.
+/// - **Imperative family** (all other cases): lifecycle, teardown, extension optimistic,
+///   optional media-surface coordination — no PlayerEvent stream or extension cannot emit.
+///
+/// Call sites must pass the matching case so DEBUG dual-fire observation and permanent
+/// docs stay aligned. Duplicate event+imperative triggers within a short window are
+/// expected at some edges and are deduplicated by debounce/coalesce inside ``refreshIfNeeded``.
+///
+/// - SeeAlso: ``WidgetRefreshManager/refreshIfNeeded(visualState:currentLanguage:hasError:immediate:trigger:)``,
+///   ``WidgetRefreshManager/handlePlayerEvent(_:)``,
+///   docs/Event-Driven-Refactor-Roadmap.md (dual-path inventory),
+///   docs/Widget-Functionality-Roadmap.md (refresh inventory).
+enum WidgetRefreshTrigger: String, Equatable, Sendable {
+    /// Tier 2 ``PlayerEvent`` observer (``handlePlayerEvent(_:)``). Mutation path.
+    case playerEvent
+    /// Process/scene lifecycle with no corresponding ``PlayerEvent`` (e.g. foreground).
+    case lifecycle
+    /// Session teardown, post-stop hygiene, termination, factory-reset widget reload.
+    case teardown
+    /// Widget-extension optimistic intent or extension-process ``handleWidgetPlay`` / ``handleWidgetStop``.
+    case extensionOptimistic
+    /// ``SharedPlayerManager/refreshAllMediaSurfaces(liveActivity:widgetRefresh:widgetRefreshImmediate:)``
+    /// when `widgetRefresh` is `true` (optional; default `false` prefers the event path).
+    case mediaSurface
+    /// Unit tests and DEBUG white-box seams that do not model a production caller.
+    case test
+
+    /// Whether this trigger belongs to the event observer family or an imperative caller.
+    var pathFamily: WidgetRefreshPathFamily {
+        switch self {
+        case .playerEvent:
+            return .event
+        case .lifecycle, .teardown, .extensionOptimistic, .mediaSurface, .test:
+            return .imperative
+        }
+    }
+}
+
+/// Coarse dual-path family for DEBUG dual-fire observation.
+///
+/// - SeeAlso: ``WidgetRefreshTrigger``, ``WidgetRefreshManager``.
+enum WidgetRefreshPathFamily: String, Equatable, Sendable {
+    /// ``WidgetRefreshTrigger/playerEvent`` — Tier 2 observer.
+    case event
+    /// Lifecycle, teardown, extension optimistic, media-surface, or test.
+    case imperative
+}
+
 /// WidgetRefreshManager prevents excessive WidgetKit reloads through debouncing,
 /// change detection, and adaptive intervals.
 ///
-/// It is 100% driven by `PlayerVisualState` (the SSOT). In addition to being
-/// invoked directly by imperative callers (the primary mechanism), it maintains
-/// a lightweight internal observer over `SharedPlayerManager.events`. Selected
-/// `PlayerEvent` cases cause `refreshIfNeeded` to be called using the same
-/// derivation surfaces (`loadPersistedWidgetState`, `loadSharedState`) that the
-/// snapshot paths use. The two mechanisms run in parallel; existing snapshot +
-/// direct-refresh logic is untouched and remains authoritative for behavior.
+/// It is 100% driven by `PlayerVisualState` (the SSOT). Main-app **mutation-path**
+/// timeline reloads are driven by the internal observer over `SharedPlayerManager.events`
+/// (``handlePlayerEvent(_:)`` → ``refreshIfNeeded``). **Imperative** callers remain for
+/// lifecycle, teardown/post-stop, termination, widget-extension optimistic intents, and
+/// optional ``refreshAllMediaSurfaces`` widget refresh — surfaces without a usable
+/// PlayerEvent stream. Both families share derivation surfaces (`loadPersistedWidgetState`,
+/// `loadSharedState`) and the same public ``refreshIfNeeded`` guards.
 ///
 /// `SharedPlayerManager.currentState` and `makeEventsStreamWithReplay()` are
 /// available for any observer (including future widget paths) that requires
 /// replay of state present before subscription.
 ///
-/// - SeeAlso: `refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)`,
-///   `SharedPlayerManager.events`, `SharedPlayerManager.currentState`,
+/// - SeeAlso: `refreshIfNeeded(visualState:currentLanguage:hasError:immediate:trigger:)`,
+///   ``WidgetRefreshTrigger``, `SharedPlayerManager.events`, `SharedPlayerManager.currentState`,
 ///   `SharedPlayerManager.makeEventsStreamWithReplay()`, `PlayerEvent`,
 ///   `PlayerCurrentState`, ``beginObservingPlayerEvents()``,
 ///   `WidgetEventObserver`,
-///   docs/Event-Driven-Refactor-Roadmap.md (Tier 2 first consumer + Tier 3 replay),
+///   docs/Event-Driven-Refactor-Roadmap.md (Tier 2 consumer + dual-path inventory),
 ///   CODING_AGENT.md, <doc:Architecture>.
 @MainActor
 final class WidgetRefreshManager: @unchecked Sendable {
@@ -266,22 +324,43 @@ final class WidgetRefreshManager: @unchecked Sendable {
         cancelCoalescedPrePlayRefresh()
     }
     
-    /// Recommended call site: pass the real visual state directly.
-    /// All widget intents, SharedPlayerManager, and Live Activities now use this.
+    /// Single public surface for all widget timeline reload decisions.
     ///
-    /// This entry point remains the single public surface for all widget timeline
-    /// reload decisions. It is invoked both by the long-standing imperative/snapshot
-    /// paths (primary) *and* by the internal `PlayerEvent` observer (additive,
-    /// non-forcing parallel path introduced in Tier 2).
+    /// Invoked by:
+    /// - **Mutation path (main app):** ``handlePlayerEvent(_:)`` with ``WidgetRefreshTrigger/playerEvent``
+    /// - **Imperative path:** lifecycle, teardown, extension optimistic, optional media-surface
+    ///   coordination — each call site passes an explicit ``WidgetRefreshTrigger``
     ///
-    /// - SeeAlso: ``handlePlayerEvent(_:)``, `SharedPlayerManager.events`,
-    ///   docs/Event-Driven-Refactor-Roadmap.md.
+    /// - Parameters:
+    ///   - visualState: Target ``PlayerVisualState`` for the timeline entry.
+    ///   - currentLanguage: Stream language code for the entry.
+    ///   - hasError: Permanent-error chrome flag from shared state.
+    ///   - immediate: When `true`, bypasses prePlay coalesce deferral and adaptive debounce.
+    ///   - trigger: Why this call was made (dual-path inventory + DEBUG dual-fire observation).
+    ///     Defaults to ``WidgetRefreshTrigger/test`` for white-box tests; production callers
+    ///     must pass the matching case.
+    ///
+    /// - SeeAlso: ``handlePlayerEvent(_:)``, ``WidgetRefreshTrigger``, `SharedPlayerManager.events`,
+    ///   docs/Event-Driven-Refactor-Roadmap.md (dual-path inventory),
+    ///   docs/Widget-Functionality-Roadmap.md (refresh inventory).
     func refreshIfNeeded(
         visualState: PlayerVisualState,
         currentLanguage: String,
         hasError: Bool,
-        immediate: Bool = false
+        immediate: Bool = false,
+        trigger: WidgetRefreshTrigger = .test
     ) {
+        #if DEBUG
+        // Soft dual-fire observation (not a product failure): event family + imperative
+        // family within the dual-trigger window is expected at some edges and is only
+        // logged / recorded for inventory. Hard assert is opt-in via test seam.
+        Self.recordRefreshTriggerObservation(trigger)
+        #else
+        // Trigger is retained on the public surface for dual-path inventory honesty;
+        // dual-fire observation is DEBUG-only.
+        _ = trigger
+        #endif
+
         #if DEBUG
         // White-box gate observation for session-teardown orchestration tests.
         // Bypasses UITestMode and WidgetCenter IPC while preserving the teardown
@@ -319,12 +398,11 @@ final class WidgetRefreshManager: @unchecked Sendable {
             return
         }
 
-        // AGENT NOTE: Both the imperative callers (SharedPlayerManager.save*,
-        // AppDelegate, RadioPlayerCoordinator, widget intent handlers, etc.) and
-        // the internal event observer (`handlePlayerEvent`) converge here. All
-        // logic below (coalescing, debouncing, regress detection, privacy gate)
-        // applies uniformly regardless of trigger source. The observer path is
-        // intentionally non-special and never bypasses any check.
+        // AGENT NOTE: Imperative callers (lifecycle, teardown, extension optimistic,
+        // media-surface) and the event observer (`handlePlayerEvent` / `.playerEvent`)
+        // converge here. All logic below (coalescing, debouncing, regress detection,
+        // privacy gate) applies uniformly regardless of trigger source. The observer
+        // path is intentionally non-special and never bypasses any check.
 
         let newState = WidgetState(
             from: visualState,
@@ -606,21 +684,18 @@ final class WidgetRefreshManager: @unchecked Sendable {
     /// The observer is started from `init` and runs for the lifetime of the
     /// singleton in the main app process. On each yielded `PlayerEvent` it calls
     /// `handlePlayerEvent(_:)` which in turn invokes the public `refreshIfNeeded`
-    /// surface using data derived from the same SSOT facades used by all
-    /// imperative paths.
+    /// surface using data derived from the same SSOT facades used by imperative callers.
     ///
-    /// - Important: This is the first consumer of the event stream (see
-    ///   docs/Event-Driven-Refactor-Roadmap.md Tier 2). It does **not** replace,
-    ///   short-circuit, or condition any existing call to `refreshIfNeeded`,
-    ///   `performRefresh`, `savePersistedWidgetState`, or snapshot writes. Those
-    ///   paths remain the primary and only source of truth for timing and
-    ///   suppression decisions.
+    /// - Important: Sole driver of main-app **mutation-path** timeline reloads.
+    ///   Imperative lifecycle, teardown, extension optimistic, and optional
+    ///   media-surface callers remain; they do not replace this observer.
     /// - Precondition: Must be called on the main actor. Called exactly once.
     /// - Note: The `isWidgetProcess()` guard ensures the task is not created in
     ///   the widget extension (where `emit` is a no-op).
     /// - SeeAlso: ``handlePlayerEvent(_:)``, `SharedPlayerManager.events`,
     ///   ``emit(_:)`` (in SharedPlayerManager), `PlayerEvent`,
-    ///   `refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)`,
+    ///   `refreshIfNeeded(visualState:currentLanguage:hasError:immediate:trigger:)`,
+    ///   ``WidgetRefreshTrigger``,
     ///   CODING_AGENT.md (event-driven direction, "additive only", Documentation
     ///   & Comment Standards), docs/Event-Driven-Refactor-Roadmap.md,
     ///   <doc:Architecture>.
@@ -655,36 +730,33 @@ final class WidgetRefreshManager: @unchecked Sendable {
     }
 
     /// Reacts to a `PlayerEvent` by deriving current state via SSOT readers and
-    /// calling the unchanged `refreshIfNeeded` entry point.
+    /// calling ``refreshIfNeeded`` with ``WidgetRefreshTrigger/playerEvent``.
     ///
     /// Derivation prefers `loadPersistedWidgetState()` (for visual + language)
     /// and `loadSharedState()` (for `hasError`) — exactly the surfaces used by
-    /// direct callers in `SharedPlayerManager`, coordinators, and intents. For
-    /// events that carry a `PlayerVisualState` the carried value is preferred
-    /// when fresher.
+    /// imperative callers. For events that carry a `PlayerVisualState` the carried
+    /// value is preferred when fresher.
     ///
-    /// The call always goes through the full existing implementation of
-    /// `refreshIfNeeded` (language-change urgency, prePlay coalescing, adaptive
-    /// debounce, regress checks against persisted snapshot, UITestMode short,
-    /// privacy gate, etc.). Derived `.prePlay` and `.cleared` visuals request
-    /// `immediate: true` so factory-reset and privacy-clear presentations are not
-    /// deferred behind the coalesce window (parity with imperative teardown callers).
+    /// The call always goes through the full implementation of `refreshIfNeeded`
+    /// (language-change urgency, prePlay coalescing, adaptive debounce, regress
+    /// checks, UITestMode short, privacy gate, etc.). Derived `.prePlay` and
+    /// `.cleared` visuals request `immediate: true` so factory-reset and privacy-clear
+    /// presentations are not deferred behind the coalesce window (parity with
+    /// imperative teardown callers).
     ///
     /// - Parameter event: The domain event emitted by `SharedPlayerManager`
     ///   after a corresponding state mutation.
     /// - Postcondition: If the derived state warrants a timeline reload,
     ///   `WidgetCenter.reloadTimelines` may be scheduled (subject to all
     ///   existing guards and coalescing). No other side effects.
-    /// - Important: Strictly additive and non-forcing. Direct snapshot-driven
-    ///   calls from `performActualSave` and other sites remain the primary path.
-    ///   Duplicate triggers are expected and are deduplicated by the existing
-    ///   debouncing logic inside `refreshIfNeeded`.
-    /// - Note: Reacts to the high-signal cases that historically drove widget
-    ///   refreshes. Error and recovery conditions are expressed through the
-    ///   existing `streamDidFail(DirectStreamingPlayer.StreamErrorType)` classification
-    ///   together with subsequent `streamDidStart` events and `hasError` derived from
-    ///   the SSOT. The observer surface is complete for these transitions.
-    /// - SeeAlso: ``beginObservingPlayerEvents()``, `refreshIfNeeded`,
+    /// - Important: Sole main-app **mutation-path** refresh driver. Imperative
+    ///   lifecycle/teardown/extension callers may dual-fire near the same edge;
+    ///   debounce/coalesce inside ``refreshIfNeeded`` absorbs duplicates. DEBUG
+    ///   dual-fire observation records event+imperative pairs within the dual-trigger
+    ///   window (soft log; not a product failure).
+    /// - SeeAlso: ``beginObservingPlayerEvents()``,
+    ///   ``refreshIfNeeded(visualState:currentLanguage:hasError:immediate:trigger:)``,
+    ///   ``WidgetRefreshTrigger``,
     ///   `SharedPlayerManager.loadPersistedWidgetState`,
     ///   `SharedPlayerManager.loadSharedState`, `PlayerEvent`,
     ///   `WidgetEventObserver`,
@@ -695,7 +767,6 @@ final class WidgetRefreshManager: @unchecked Sendable {
     /// Extraction keeps the derivation contract testable without exercising WidgetCenter
     /// or debounce timers. Both ``handlePlayerEvent(_:)`` and the DEBUG white-box seams
     /// route through this helper so production and test observation share one code path.
-    /// Parameters derived from a ``PlayerEvent`` for ``refreshIfNeeded`` (internal for DEBUG test support).
     struct RefreshDerivation: Equatable, Sendable {
         let visualState: PlayerVisualState
         let currentLanguage: String
@@ -711,7 +782,8 @@ final class WidgetRefreshManager: @unchecked Sendable {
     ///   preferred even when the persisted snapshot is stale. All other cases — including
     ///   stream verbs, intent changes, metadata updates, and persist signals — fall back
     ///   to ``SharedPlayerManager/loadPersistedWidgetState()`` (or `.prePlay` when absent).
-    /// - SeeAlso: ``handlePlayerEvent(_:)``, ``refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)``,
+    /// - SeeAlso: ``handlePlayerEvent(_:)``,
+    ///   ``refreshIfNeeded(visualState:currentLanguage:hasError:immediate:trigger:)``,
     ///   `SharedPlayerManager.loadSharedState`, docs/Event-Driven-Refactor-Roadmap.md.
     func deriveRefreshParameters(for event: PlayerEvent) -> RefreshDerivation {
         let persisted = SharedPlayerManager.loadPersistedWidgetState()
@@ -751,7 +823,7 @@ final class WidgetRefreshManager: @unchecked Sendable {
     ///   - visualState: The visual derived from the ``PlayerEvent`` payload or SSOT readers.
     ///   - hasError: Permanent-error flag from ``SharedPlayerManager/loadSharedState()``.
     /// - Returns: `true` when the derived refresh must execute immediately.
-    /// - SeeAlso: ``refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)``,
+    /// - SeeAlso: ``refreshIfNeeded(visualState:currentLanguage:hasError:immediate:trigger:)``,
     ///   ``handlePlayerEvent(_:)``, ``SharedPlayerManager/performActualSave(_:widgetState:at:)``,
     ///   docs/Widget-Functionality-Roadmap.md (Tier 3), docs/Event-Driven-Refactor-Roadmap.md.
     func refreshUsesImmediateDelivery(
@@ -797,16 +869,28 @@ final class WidgetRefreshManager: @unchecked Sendable {
         }
         #endif
 
-        // Route through the public surface exactly as every other caller does.
-        // All debouncing, coalescing, privacy, regress, and immediate logic applies.
-        // This is the canonical non-forcing trigger site for Tier 2.
+        // Mutation-path sole driver: route through the public surface with
+        // ``WidgetRefreshTrigger/playerEvent``. Debounce/coalesce/privacy apply identically
+        // to imperative callers; dual-fire with lifecycle/teardown is expected and soft-logged.
         refreshIfNeeded(
             visualState: derived.visualState,
             currentLanguage: derived.currentLanguage,
             hasError: derived.hasError,
-            immediate: immediate
+            immediate: immediate,
+            trigger: .playerEvent
         )
     }
+
+    #if DEBUG
+    /// Soft dual-fire inventory hook (DEBUG only). Implementation lives in
+    /// ``WidgetRefreshManager+TestSupport`` as ``DualRefreshTriggerInventory`` so this
+    /// production file stays free of DEBUG mutable storage and strict-memory-safety noise.
+    ///
+    /// - SeeAlso: ``DualRefreshTriggerInventory/record(_:)``, ``WidgetRefreshTrigger``.
+    private static func recordRefreshTriggerObservation(_ trigger: WidgetRefreshTrigger) {
+        DualRefreshTriggerInventory.record(trigger)
+    }
+    #endif
 }
 
 

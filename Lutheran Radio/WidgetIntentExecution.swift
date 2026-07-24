@@ -293,9 +293,14 @@ enum WidgetIntentExecution {
 
     /// Optimistic snapshot + pending action + immediate widget refresh for play/pause toggles.
     ///
+    /// Imperative **extensionOptimistic** path: the extension process cannot emit
+    /// ``PlayerEvent``; immediate ``refreshIfNeeded`` is the only cross-process reload lever
+    /// until the main app drains the pending action.
+    ///
     /// - Parameters:
     ///   - plan: Home-widget or Control-widget toggle plan.
     ///   - language: Language code from ``WidgetIntentCoordinators/languageForOptimisticUpdate(persistedLanguage:preferredLanguage:)``.
+    /// - SeeAlso: ``WidgetRefreshTrigger/extensionOptimistic``, docs/Event-Driven-Refactor-Roadmap.md.
     static func executeOptimisticToggle(plan: WidgetToggleActionPlan, language: String) async {
         guard plan.shouldExecutePendingAction else { return }
         let manager = SharedPlayerManager.shared
@@ -309,13 +314,17 @@ enum WidgetIntentExecution {
             visualState: plan.targetVisualState,
             currentLanguage: language,
             hasError: state.hasError,
-            immediate: true
+            immediate: true,
+            trigger: .extensionOptimistic
         )
     }
 
     /// Home-widget stream switch: optimistic path through ``SharedPlayerManager/switchToStream(_:)`` + refresh.
     ///
+    /// Imperative **extensionOptimistic** path (no PlayerEvent emission in the extension process).
+    ///
     /// - Parameter languageCode: Target stream BCP-47-style code from ``SwitchStreamIntent``.
+    /// - SeeAlso: ``WidgetRefreshTrigger/extensionOptimistic``.
     static func executeHomeWidgetStreamSwitch(languageCode: String) async {
         Task { @MainActor in WidgetRefreshManager.setHasActiveLutheranWidgets(true) }
 
@@ -332,7 +341,8 @@ enum WidgetIntentExecution {
             visualState: visualState,
             currentLanguage: languageCode,
             hasError: state.hasError,
-            immediate: true
+            immediate: true,
+            trigger: .extensionOptimistic
         )
     }
 

@@ -108,6 +108,143 @@ extension WidgetRefreshManager {
         unsafe _test_refreshGateOutcomeLog = []
     }
 
+    /// Enables append-only recording of soft dual-fire observations (event family +
+    /// imperative family within the dual-trigger window).
+    ///
+    /// Dual fire is expected under the non-forcing architecture (e.g. post-stop hygiene
+    /// + stop emissions). Recording is inventory only — never a product failure.
+    ///
+    /// - Parameter enabled: Whether each dual-fire observation appends to
+    ///   ``_test_dualRefreshTriggerLog()``.
+    /// - SeeAlso: ``WidgetRefreshTrigger``, ``DualRefreshTriggerObservation``,
+    ///   ``DualRefreshTriggerInventory``, ``_test_setHardAssertOnDualRefreshTrigger(_:)``,
+    ///   docs/Event-Driven-Refactor-Roadmap.md (dual-path inventory).
+    @MainActor
+    static func _test_setRecordDualRefreshTriggers(_ enabled: Bool) {
+        DualRefreshTriggerInventory.recordEnabled = enabled
+        if !enabled {
+            DualRefreshTriggerInventory.observations = []
+        }
+    }
+
+    /// Returns dual-fire observations captured since the last clear or disable.
+    @MainActor
+    static func _test_dualRefreshTriggerLog() -> [DualRefreshTriggerObservation] {
+        DualRefreshTriggerInventory.observations
+    }
+
+    /// Clears the dual-fire observation log without changing recording flags.
+    @MainActor
+    static func _test_clearDualRefreshTriggerLog() {
+        DualRefreshTriggerInventory.observations = []
+    }
+
+    /// Resets last-trigger memory so the next call starts a fresh dual-fire window.
+    @MainActor
+    static func _test_resetRefreshTriggerObservationState() {
+        DualRefreshTriggerInventory.resetWindow()
+    }
+
+    /// When `true`, dual-fire within the observation window traps via `assertionFailure`.
+    ///
+    /// Default `false` — dual fire is **not** a product failure. Enable only for
+    /// deliberately negative white-box probes.
+    ///
+    /// - Parameter enabled: Whether soft dual-fire observation becomes a hard assert.
+    @MainActor
+    static func _test_setHardAssertOnDualRefreshTrigger(_ enabled: Bool) {
+        DualRefreshTriggerInventory.hardAssertEnabled = enabled
+    }
+}
+
+// MARK: - Dual-fire inventory (DEBUG)
+
+extension WidgetRefreshManager {
+    /// One observed event+imperative dual fire within the dual-trigger window.
+    ///
+    /// Soft inventory only — never a product failure. Compiled out of Release.
+    struct DualRefreshTriggerObservation: Equatable, Sendable {
+        let previous: WidgetRefreshTrigger
+        let current: WidgetRefreshTrigger
+        let intervalSeconds: TimeInterval
+    }
+}
+
+/// Soft dual-path inventory for ``WidgetRefreshManager/refreshIfNeeded``.
+///
+/// Tracks when event-family and imperative-family ``WidgetRefreshTrigger`` values
+/// cross within a short window. Dual fire is **expected** under the non-forcing
+/// architecture and is never a product failure (hard assert is test opt-in only).
+///
+/// Isolated on the main actor; no `nonisolated(unsafe)` and no C-varargs formatting.
+///
+/// - SeeAlso: ``WidgetRefreshTrigger``, ``WidgetRefreshManager/refreshIfNeeded(visualState:currentLanguage:hasError:immediate:trigger:)``,
+///   docs/Event-Driven-Refactor-Roadmap.md (dual-path inventory).
+@MainActor
+enum DualRefreshTriggerInventory {
+    /// Window used for soft dual-fire observation (event family + imperative family).
+    static let observationWindow: TimeInterval = 0.15
+
+    static var lastTrigger: WidgetRefreshTrigger?
+    static var lastTriggerAt: Date?
+    static var recordEnabled = false
+    static var hardAssertEnabled = false
+    static var observations: [WidgetRefreshManager.DualRefreshTriggerObservation] = []
+
+    /// Clears last-trigger memory and the observation log.
+    static func resetWindow() {
+        lastTrigger = nil
+        lastTriggerAt = nil
+        observations = []
+    }
+
+    /// Records a refresh trigger; soft-logs when event and imperative families cross.
+    ///
+    /// - Parameter trigger: Caller-supplied ``WidgetRefreshTrigger`` from ``refreshIfNeeded``.
+    static func record(_ trigger: WidgetRefreshTrigger) {
+        let now = Date()
+        if let previous = lastTrigger, let previousAt = lastTriggerAt {
+            let interval = now.timeIntervalSince(previousAt)
+            let crossedFamilies =
+                previous.pathFamily != trigger.pathFamily
+                && interval >= 0
+                && interval <= observationWindow
+            // Ignore pure test↔test chatter; record only when at least one side is production.
+            let involvesProduction = previous != .test || trigger != .test
+            if crossedFamilies, involvesProduction {
+                let observation = WidgetRefreshManager.DualRefreshTriggerObservation(
+                    previous: previous,
+                    current: trigger,
+                    intervalSeconds: interval
+                )
+                // Pure Swift formatting only — `String(format:)` is flagged under
+                // SWIFT_STRICT_MEMORY_SAFETY (C varargs).
+                let windowMs = Int((observationWindow * 1000).rounded())
+                let intervalMs = (interval * 1000 * 10).rounded() / 10
+                print(
+                    "[WidgetRefreshDualTrigger] Dual path within \(windowMs)ms: "
+                        + "\(previous.rawValue) → \(trigger.rawValue) "
+                        + "(\(intervalMs)ms). "
+                        + "Expected under non-forcing dual-path architecture; "
+                        + "deduplicated inside refreshIfNeeded."
+                )
+                if recordEnabled {
+                    observations.append(observation)
+                }
+                if hardAssertEnabled {
+                    assertionFailure(
+                        "Dual refresh trigger within window: \(previous.rawValue) → \(trigger.rawValue) "
+                            + "(\(interval)s). Opt-in test assert only — not a product failure."
+                    )
+                }
+            }
+        }
+        lastTrigger = trigger
+        lastTriggerAt = now
+    }
+}
+
+extension WidgetRefreshManager {
     /// Bypasses the UITestMode early return so ``refreshIfNeeded`` runs debouncing and
     /// coalescing heuristics while ``performRefresh`` records ``refreshExecuted`` without
     /// WidgetCenter IPC.
@@ -359,7 +496,8 @@ extension WidgetRefreshManager {
             visualState: derived.visualState,
             currentLanguage: derived.currentLanguage,
             hasError: derived.hasError,
-            immediate: immediate
+            immediate: immediate,
+            trigger: .playerEvent
         )
     }
 
