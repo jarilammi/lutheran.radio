@@ -8,14 +8,16 @@
 //  the visual/intent SSOT.
 //
 //  Owns: background image layer, single UIHostingController for RadioPlayerView, retained
-//  system observers still on the host (interruption / route / Darwin notify),
+//  system observers still on the host (interruption / route / Darwin notify — host work is
+//  tuning chrome + intent-gated resume only; engine owns rate pause without sticky user-pause),
 //  cellular permission *presentation* (decision + ternary prefs in CellularPermissionManager;
 //  path samples observed from DirectStreamingPlayer — host does not own NWPathMonitor),
 //  and public SceneDelegate / URL / Siri shims that forward to RadioPlayerCoordinator or SPM.
 //
 //  Does not own:
-//  - AVPlayer / attach / recovery → DirectStreamingPlayer
+//  - AVPlayer / attach / recovery / interruption rate pause → DirectStreamingPlayer
 //  - PlayerVisualState / PlaybackIntent / PlayerEvent / widget snapshots → SharedPlayerManager
+//  - Host-local playback bool (never reintroduce `isPlaying` shadow on this type)
 //  - Stream switch, pending-action drain, sleep-timer glue, haptics, visual distribution →
 //    RadioPlayerCoordinator
 //  - Security model / certificates → Core only
@@ -40,7 +42,10 @@
 /// - Observation of the engine path monitor (`DirectStreamingPlayer.onNetworkPathChange`) for
 ///   cellular expensive-path prompt presentation and SPM reconnect/stop chrome — **not** a
 ///   second `NWPathMonitor` or HTTP probe timer. `CellularPermissionManager` owns ternary prefs.
-/// - Audio interruption / route observers that still branch through this type
+/// - Audio interruption / route **observers** (tuning chrome stop + resume gate via SPM visual
+///   intent). Playback pause on interruption/route is **not** host-owned — engine observers in
+///   `DirectStreamingPlayer+AudioSessionInterruption` own rate pause without sticky user-pause.
+///   There is **no** host-local `isPlaying` shadow.
 /// - Darwin widget-notify install + launch-burst scheduling for pending-action drain
 /// - Public shims: `handlePlayAction`, URL schemes, SceneDelegate entry points
 ///
@@ -74,6 +79,9 @@ import WidgetSurface
 ///
 /// **Not owned by this type (SSOT / engine boundary):**
 /// - AVPlayer attach, recovery, secured media, streaming path retries → ``DirectStreamingPlayer``
+/// - In-session "is audio flowing" truth → ``DirectStreamingPlayer/isPlaying`` (rate + ready item);
+///   host must not keep a parallel `isPlaying` bool
+/// - Sticky visual/intent pause vs resume gates → ``SharedPlayerManager`` / ``PlayerVisualState``
 /// - `PlayerVisualState`, `PlaybackIntent`, `PlayerEvent`, widget/LA session snapshots → ``SharedPlayerManager``
 /// - Security model / certificate / DNS policy → Core only
 ///
@@ -198,18 +206,14 @@ class ViewController: UIViewController {
     private let audioQueue = DispatchQueue(label: "radio.lutheran.audio", qos: .userInitiated)
 
     private let appLaunchTime = Date()
-    private var isPlaying = false
-    // All decision logic, guards, and resurrection control now live exclusively in SharedPlayerManager.currentPlaybackIntent.
+    // Playback authority (do not reintroduce a host-local `isPlaying` bool):
+    // - Engine rate reality → ``DirectStreamingPlayer/isPlaying``
+    // - Visual / sticky intent → ``SharedPlayerManager`` / ``PlayerVisualState``
+    // - Resumption gates → `currentPlaybackIntent` / `shouldAutoPlayOrResume` / `canProceedWithPlayback`
     // Reachability SSOT: DirectStreamingPlayer.hasInternetConnection (engine-owned path monitor).
     // Host never owns NWPathMonitor / connectivity probe timer — see observeEngineNetworkPath().
     private var isDeallocating = false // Flag to prevent operations during deallocation
 
-    // Testable accessors
-    @objc var isPlayingState: Bool {
-        get { isPlaying }
-        set { isPlaying = newValue } // Add setter for testing
-    }
-    
     /// Mirrors the engine reachability flag for tests and legacy call sites.
     ///
     /// Reads/writes ``DirectStreamingPlayer/hasInternetConnection`` — the host does not
@@ -797,7 +801,24 @@ class ViewController: UIViewController {
     private func setupInterruptionHandling() {
         NotificationCenter.default.addObserver(self, selector: #selector(handleInterruption), name: AVAudioSession.interruptionNotification, object: nil)
     }
-    
+
+    /// Host-side AVAudioSession interruption observer (UIKit lifecycle surface).
+    ///
+    /// **Ownership split (do not collapse casually):**
+    /// - **Engine** (`DirectStreamingPlayer+AudioSessionInterruption`): graceful `AVPlayer`
+    ///   pause/resume from rate truth (`DirectStreamingPlayer.isPlaying`) **without** sticky
+    ///   ``PlayerVisualState/userPaused``. That is the playback-surface owner for interruptions.
+    /// - **Host (this method):** stop local tuning chrome on `.began`; on `.ended` +
+    ///   `.shouldResume`, reconfigure the session and run the SPM technical recovery path only
+    ///   when visual intent allows (`shouldAutoPlayOrResume`).
+    ///
+    /// **Why there is no host `isPlaying` bool:** A parallel host flag desynced from engine
+    /// rate and SPM visual SSOT. Calling ``stopPlayback()`` (→ ``SharedPlayerManager/stop()``)
+    /// on interruption would sticky-pause and block legitimate post-call resume — never reintroduce
+    /// that branch here.
+    ///
+    /// - SeeAlso: ``DirectStreamingPlayer/isPlaying``, ``PlayerVisualState/shouldAutoPlayOrResume``,
+    ///   `DirectStreamingPlayer+AudioSessionInterruption`, ``reconfigureAudioSession()``
     @objc private func handleInterruption(_ notification: Notification) {
         guard !isDeallocating else {
             #if DEBUG
@@ -813,11 +834,10 @@ class ViewController: UIViewController {
         switch type {
         case .began:
             #if DEBUG
-            print("[ViewController] AVAudioSession interruption began (isPlaying=\(isPlaying))")
+            // Engine rate truth for diagnostics only — not a host playback store.
+            print("[ViewController] AVAudioSession interruption began (engineIsPlaying=\(streamingPlayer.isPlaying))")
             #endif
-            if isPlaying {
-                stopPlayback()
-            }
+            // Playback pause: engine observer (rate → pause, non-sticky). Host: tuning chrome only.
             radioPlayerCoordinator.stopTuningSound()
             
         case .ended:
@@ -890,6 +910,15 @@ class ViewController: UIViewController {
         _ = await streamingPlayer.configureAudioSessionAsync()
     }
 
+    /// Host-side AVAudioSession route-change observer.
+    ///
+    /// **Ownership:** Engine route observer pauses when `player.rate > 0` without sticky
+    /// user-pause. Host does **not** mirror that with a local `isPlaying` flag or
+    /// ``stopPlayback()`` (sticky). Host work here is session reconfiguration + intent-gated
+    /// recovery play on ``newDeviceAvailable``.
+    ///
+    /// - SeeAlso: `DirectStreamingPlayer+AudioSessionInterruption` (route observer),
+    ///   ``SharedPlayerManager/canProceedWithPlayback()``, ``reconfigureAudioSession()``
     @objc private func handleRouteChange(_ notification: Notification) {
         guard !isDeallocating else {
             #if DEBUG
@@ -902,7 +931,12 @@ class ViewController: UIViewController {
               let reason = AVAudioSession.RouteChangeReason(rawValue: reasonValue) else { return }
         switch reason {
         case .oldDeviceUnavailable:
-            if isPlaying { stopPlayback() }
+            // Engine owns rate-based pause when the output route disappears.
+            // Do not call stopPlayback() here — that would sticky-mark .userPaused.
+            #if DEBUG
+            print("[ViewController] Route oldDeviceUnavailable (engineIsPlaying=\(streamingPlayer.isPlaying)); engine owns pause")
+            #endif
+            break
         case .newDeviceAvailable:
             // Consolidated via `reconfigureAudioSession()` → player's async helper.
             // Await config before recovery play (preferred over fire-and-forget).
@@ -1029,7 +1063,8 @@ class ViewController: UIViewController {
     /// It reads the current `PlayerVisualState` from `SharedPlayerManager`, decides whether to call
     /// `stop()` or `userRequestedPlay()`, then forces a full UI + now-playing + widget refresh.
     ///
-    /// This is the only place that is allowed to mutate `isPlaying` in response to a user intent.
+    /// Host retains this method only as a thin forwarder for `@objc` / public shims — no
+    /// host-local playback bool is updated here (visual/intent SSOT is SPM; rate truth is engine).
     ///
     /// - SeeAlso: `togglePlayback()`, `handlePlayAction()`, `handlePauseAction()`, `handleTogglePlayback()`, `updateUI(for:)`
     @MainActor

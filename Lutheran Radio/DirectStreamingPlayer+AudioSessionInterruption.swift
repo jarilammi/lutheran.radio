@@ -9,11 +9,19 @@
 //  Behavior-preserving domain split from DirectStreamingPlayer.swift.
 //  DirectStreamingPlayer remains the public façade; this file owns one domain.
 //
+//  Ownership vs ViewController host observers:
+//  - Engine (this file): rate-truth pause/resume on interruption and route loss without sticky
+//    PlayerVisualState.userPaused. Uses `isPlaying` (rate + ready item) and visual resurrection
+//    gates via SharedPlayerManager.
+//  - Host (ViewController): stops tuning chrome on interruption began; on interruption ended
+//    + shouldResume runs intent-gated SPM.play recovery. Host must not keep a parallel isPlaying
+//    shadow or call sticky stop on interruption/route.
+//
 //  AGENT NOTE: Members used across files are `internal` (Swift `private` is
 //  file-scoped). Prefer this domain file over re-implementing attach / recovery
 //  / catalog logic in call sites.
 //
-//  - SeeAlso: DirectStreamingPlayer.swift,
+//  - SeeAlso: DirectStreamingPlayer.swift, ViewController handleInterruption/handleRouteChange,
 //    CODING_AGENT.md (Single Source of Truth Principles).
 //
 
