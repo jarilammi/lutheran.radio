@@ -24,9 +24,10 @@
 //  - SeeAlso: SharedPlayerManager, PlaybackPlayDecision, CellularPermissionManager,
 //    DirectStreamingPlayer+StreamCatalog.swift, DirectStreamingPlayer+ServerSelection.swift,
 //    DirectStreamingPlayer+NetworkPath.swift, DirectStreamingPlayer+AudioSession.swift,
-//    DirectStreamingPlayer+PlaybackAttach.swift, DirectStreamingPlayer+PlayerItemRecovery.swift,
-//    DirectStreamingPlayer+ResourceLoader.swift, DirectStreamingPlayer+PlayerVisualState.swift,
-//    StreamingSessionDelegate.swift, <doc:Architecture>, CODING_AGENT.md.
+//    DirectStreamingPlayer+LocalClipPlayer.swift, DirectStreamingPlayer+PlaybackAttach.swift,
+//    DirectStreamingPlayer+PlayerItemRecovery.swift, DirectStreamingPlayer+ResourceLoader.swift,
+//    DirectStreamingPlayer+PlayerVisualState.swift, StreamingSessionDelegate.swift,
+//    <doc:Architecture>, CODING_AGENT.md.
 //
 
 import Foundation
@@ -216,6 +217,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     // | Server selection | DirectStreamingPlayer+ServerSelection.swift | Server / PingResult, latency, urlWithOptimalServer |
     // | Network path | DirectStreamingPlayer+NetworkPath.swift | Path status types, NWPathMonitorAdapter, setupNetworkMonitoring |
     // | Audio session | DirectStreamingPlayer+AudioSession.swift | Category + async activate/deactivate (configure / setup / deactivate) |
+    // | Local clip player | DirectStreamingPlayer+LocalClipPlayer.swift | Tuning/special bundled clip start (`startLocalClipPlayer`) |
     // | Playback attach | DirectStreamingPlayer+PlaybackAttach.swift | Generation, soft-pause, silence, prepareStreamChoice / attachAndPlay / startPlayback |
     // | Item recovery | DirectStreamingPlayer+PlayerItemRecovery.swift | Startup safety net, early ICY recreate, secured recreate |
     // | Observers | DirectStreamingPlayer+Observers.swift | Player/item KVO, buffer timers |
@@ -242,8 +244,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     // - nonisolated stop entry may hop to MainActor for generation bump / teardown guard.
     // - connectionQueue isolates SSL ConnectionInfo dictionary.
     // - @unchecked Sendable documents historical engine sharing; prefer MainActor hops for new work.
-    // - Remaining façade bulk candidates: local clip player, public play/stop cluster,
-    //   thermal/energy observers, system media session teardown (peel one domain per session).
+    // - Remaining façade bulk candidates: public play/stop cluster, thermal/energy observers,
+    //   system media session teardown (peel one domain per session).
     //
     // Network path ownership (single monitor — domain file + façade stored flags):
     // - Setup + types live in `+NetworkPath.swift`; `hasInternetConnection` / `networkMonitor` /
@@ -255,7 +257,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     // - Category + activate/deactivate live in `+AudioSession.swift`; injected `audioSession`
     //   and interruption observer flags remain on this class (stored state).
     // - Interruption/route observers: `+AudioSessionInterruption.swift` (not configure).
-    // - Never call `setCategory` / `setActive` outside `+AudioSession` (clip helper excepted).
+    // - Never call `setCategory` / `setActive` outside `+AudioSession`. Local clips call
+    //   ``configureAudioSessionAsync()`` from `+LocalClipPlayer` only (no direct setActive).
 
     var isSSLHandshakeComplete = false
     var certificateValidationTimer: Timer?
@@ -1047,88 +1050,9 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         _ = await deactivateAudioSessionAsync()
     }
 
-    // MARK: - Local clip player (tuning / special sounds)
-    // Session configure SSOT: DirectStreamingPlayer+AudioSession.swift
+    // Local clip player (tuning / special sounds): DirectStreamingPlayer+LocalClipPlayer.swift
+    // Session configure SSOT used by clips: DirectStreamingPlayer+AudioSession.swift
 
-    /// Configures the shared playback session, then constructs and starts a short local
-    /// `AVAudioPlayer` clip **off the main actor**.
-    ///
-    /// Why this exists: ``configureAudioSessionAsync()`` already activates the session without
-    /// blocking the main thread, but `AVAudioPlayer.prepareToPlay()` / `play()` can still
-    /// perform an implicit session activation on the **calling** thread. Creating and starting
-    /// the clip on a background queue keeps that implicit work off `@MainActor`, eliminating
-    /// the SessionCore "UI unresponsiveness if called on the main thread" diagnostic on
-    /// cold-launch special tuning and stream-switch tuning paths.
-    ///
-    /// AGENT NOTE: Single source of truth for local file-clip start after session config.
-    /// Do not construct `AVAudioPlayer` + `prepareToPlay`/`play` on `@MainActor` for tuning
-    /// delight. Never call `setActive` outside ``configureAudioSessionAsync()`` /
-    /// ``deactivateAudioSessionAsync()``.
-    ///
-    /// - Parameters:
-    ///   - url: File URL of a bundled clip (typically WAV).
-    ///   - volume: Linear gain applied before start (`0...1`).
-    ///   - numberOfLoops: `0` for one-shot (default).
-    /// - Returns: The player plus whether `play()` returned true, or `nil` when skipped under
-    ///   `isTesting` / widget extension. Callers must retain the player until finish/stop and
-    ///   may assign `AVAudioPlayerDelegate` on the main actor after return.
-    /// - Throws: Errors from `AVAudioPlayer(contentsOf:)`.
-    /// - Precondition: Call from `@MainActor`. The returned player is delivered on the main
-    ///   actor for retention and optional delegate assignment.
-    /// - Postcondition: When non-`nil` and `didStart == true`, audio is already playing;
-    ///   caller owns the strong reference.
-    /// - SeeAlso: ``configureAudioSessionAsync()``,
-    ///   `RadioPlayerCoordinator.playSpecialTuningSound(completion:)`,
-    ///   `RadioPlayerCoordinator.playTuningSound(animateNeedleTo:)`, `TuningSoundCoordinator`.
-    @MainActor
-    func startLocalClipPlayer(
-        contentsOf url: URL,
-        volume: Float = 1.0,
-        numberOfLoops: Int = 0
-    ) async throws -> (player: AVAudioPlayer, didStart: Bool)? {
-        if Bundle.main.bundleURL.pathExtension == "appex" {
-            return nil
-        }
-        guard !isTesting else {
-            #if DEBUG
-            print("[DirectStreamingPlayer] startLocalClipPlayer — isTesting, skipping local clip")
-            #endif
-            return nil
-        }
-
-        // Explicit session SSOT first (async / off-main activate). Local clip start below
-        // must not re-enter setActive on the main actor.
-        _ = await configureAudioSessionAsync()
-
-        let clipURL = url
-        let clipVolume = volume
-        let clipLoops = numberOfLoops
-
-        // SAFETY: `AVAudioPlayer` is not `Sendable`. Construction, prepare, and play run on a
-        // background queue so any implicit session activation stays off the main thread; the
-        // instance is then handed back only via the main queue continuation resume (same
-        // ownership hand-off pattern as historical main-thread construction, without the
-        // main-thread activation cost). A safer typed API is not available from AVFoundation.
-        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<(player: AVAudioPlayer, didStart: Bool)?, Error>) in
-            DispatchQueue.global(qos: .userInitiated).async {
-                do {
-                    let player = try AVAudioPlayer(contentsOf: clipURL)
-                    player.volume = clipVolume
-                    player.numberOfLoops = clipLoops
-                    player.prepareToPlay()
-                    let didStart = player.play()
-                    DispatchQueue.main.async {
-                        continuation.resume(returning: (player: player, didStart: didStart))
-                    }
-                } catch {
-                    DispatchQueue.main.async {
-                        continuation.resume(throwing: error)
-                    }
-                }
-            }
-        }
-    }
-    
     /// Starts periodic certificate validation against the *currently preferred* URL
     /// (automatically follows server selection changes – if the app switches to a better cluster,
     /// the next validation will check the new cluster’s cert. Since both clusters use the same cert,

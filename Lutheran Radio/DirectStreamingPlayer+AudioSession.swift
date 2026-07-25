@@ -15,8 +15,8 @@
 //  - This domain owns **category + activate/deactivate** for the shared `.playback` session
 //    (``configureAudioSessionAsync()``, ``setupAudioSession()``, ``deactivateAudioSessionAsync()``).
 //  - Interruption / route *observers* live in `+AudioSessionInterruption.swift` (separate domain).
-//  - Local file-clip construction (`startLocalClipPlayer`) remains on the façade until a later
-//    peel; it must still call ``configureAudioSessionAsync()`` and never `setActive` on MainActor.
+//  - Local file-clip construction lives in `+LocalClipPlayer.swift`; it calls
+//    ``configureAudioSessionAsync()`` and never `setActive` on MainActor.
 //  - Host may re-enter via `ViewController.reconfigureAudioSession()` → configure only.
 //  - Stored `audioSession` injection and interruption flags live on the façade class body
 //    (extensions cannot declare stored state).
@@ -25,15 +25,15 @@
 //  - No-op under UITestMode (`isTesting` / `SharedPlayerManager.isRunningInUITestMode`).
 //  - No-op in widget/extension (`.appex` path) — primary protection is membership exclusion;
 //    path guard is defense-in-depth.
-//  - Never call `setCategory` / `setActive` outside this domain (or the documented clip helper).
+//  - Never call `setCategory` / `setActive` outside this domain.
 //
 //  AGENT NOTE: Members used across files are `internal` (Swift `private` is
 //  file-scoped). Prefer this domain file over re-implementing session activation in call sites.
 //  Dynamic IMP dispatch for iOS 27 async activate/deactivate must remain dual-Xcode-26/27 compatible.
 //
 //  - SeeAlso: DirectStreamingPlayer.swift, DirectStreamingPlayer+AudioSessionInterruption.swift,
-//    ViewController.reconfigureAudioSession, TuningSoundCoordinator,
-//    CODING_AGENT.md (Single Source of Truth Principles).
+//    DirectStreamingPlayer+LocalClipPlayer.swift, ViewController.reconfigureAudioSession,
+//    TuningSoundCoordinator, CODING_AGENT.md (Single Source of Truth Principles).
 //
 
 import Foundation
