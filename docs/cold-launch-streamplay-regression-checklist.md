@@ -213,6 +213,14 @@ End with security impact, build status, localization needed.
 
 ## 12. Log capture and verification
 
+Console capture helper (Debug Simulator `print()` only — not UI automation):
+
+```bash
+./Scripts/capture-debug-console.sh --short              # cold launch → initial-streamplay-start.txt
+./Scripts/capture-debug-console.sh --manual             # you drive the sim → manual-streamplay-session.log
+./Scripts/capture-debug-console.sh --analyze [logfile]  # acceptance greps on an existing capture
+```
+
 ### 12.1 Commands
 
 ```bash
@@ -226,7 +234,7 @@ xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.5 \
 ### 12.2 Happy-path log markers (must still appear)
 
 ```
-[DirectStreamingPlayer] Stream model updated (no player item) for …
+[DirectStreamingPlayer] Stream model updated and secured AVPlayerItem prepared for …
 [ViewController] Tuning sound finished playing, success: true
 [TuningSoundCoordinator] Tuning sound wait completed
 [SharedPlayerManager] Visual state set to .playing before setStreamAndPlay
@@ -243,7 +251,9 @@ xcodebuild -scheme "Lutheran Radio" -sdk iphonesimulator26.5 \
 [SharedPlayerManager] resetStateToClearedForPrivacy — in-memory SSOT reset to .prePlay + .cleared intent (no persist; .cleared blocks recovery until explicit play)
 ```
 
-### 12.3 Stream-failure switch verification (manual  `long-test-txt.log`)
+### 12.3 Stream-failure switch verification (manual `manual-streamplay-session.log`)
+
+Capture with `./Scripts/capture-debug-console.sh --manual` while driving the Simulator (the script records console only; it does not inject widget actions).
 
 Session: cold launch → play sv → wait for item failed / `status_stream_unavailable` → widget switch de **without** play tap.
 
@@ -259,8 +269,9 @@ Session: cold launch → play sv → wait for item failed / `status_stream_unava
 
 | File | Purpose |
 |------|---------|
-| `initial-streamplay-start.txt` | Primary happy-path regression (1137-line capture, 2026-06-08) |
-| `long-test-txt.log` | Widget pause/play churn and playing-path switch delivery |
+| `initial-streamplay-start.txt` | Cold-launch happy path (`./Scripts/capture-debug-console.sh --short`) |
+| `manual-streamplay-session.log` | Widget pause/play churn and switch delivery (`./Scripts/capture-debug-console.sh --manual`) |
+| `long-test-txt.log` | Legacy manual captures (still accepted by `--analyze` if present) |
 
 ### 12.5 Play-path DEBUG labels
 
