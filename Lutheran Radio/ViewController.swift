@@ -128,29 +128,46 @@ class ViewController: UIViewController {
 
     /// Background image + Core Image processing (owned here for layout + energy efficiency hooks).
     /// The actual visual presentation of the player now lives in the hosted `RadioPlayerView`.
-    let backgroundImageController = BackgroundImageController()
+    ///
+    /// Assigned in both designated initializers (shared local with ``radioPlayerCoordinator``)
+    /// so the coordinator can be constructed before `super.init` without reading `self`.
+    let backgroundImageController: BackgroundImageController
 
-    /// @Observable model for SwiftUI composed views (LanguageSelector, Controls, Metadata).
-    /// Coordinator pushes visualState / selectedStreamIndex / currentMetadata into it.
-    var playerViewModel: PlayerViewModel!
+    /// Observable model for SwiftUI composed views (LanguageSelector, Controls, Metadata).
+    ///
+    /// Definite value from construction — never an IUO. Coordinator pushes
+    /// `visualState` / `selectedStreamIndex` / `currentMetadata` into it during
+    /// ``RadioPlayerCoordinator/wireAndInitialSetup()``.
+    ///
+    /// - SeeAlso: ``PlayerViewModel``, ``RadioPlayerCoordinator``
+    let playerViewModel = PlayerViewModel()
 
     /// Single UIHostingController for the entire player screen.
     ///
     /// Replaces the previous three separate hosting controllers + manual layout of
     /// UIKit title/volume/airplay pieces. The composed `RadioPlayerView` owns the
     /// vertical arrangement of the three modern SwiftUI subviews plus volume row.
+    /// Uses the host's real ``playerViewModel`` from first materialization (no mock swap).
     private lazy var playerHostingController = UIHostingController(
         rootView: RadioPlayerView(
-            viewModel: PlayerViewModel.makeMock(),
+            viewModel: playerViewModel,
             onClearLocalStateTapped: { [weak self] in
                 // Privacy path: coordinator double-confirmation (UIAlert) + clearAllLocalState.
-                self?.radioPlayerCoordinator?.confirmAndClearLocalState()
+                self?.radioPlayerCoordinator.confirmAndClearLocalState()
             }
         )
     )
 
-    /// Lightweight RadioPlayerCoordinator (wiring + full stream selection flow + visual distribution + sleep glue + haptics + initial sequencing).
-    var radioPlayerCoordinator: RadioPlayerCoordinator!
+    /// Orchestration owner (stream selection, visual distribution, sleep glue, haptics, pending drain).
+    ///
+    /// Definite non-optional type constructed in every designated initializer. Tests may
+    /// replace the instance after `ViewController()` for drain isolation; production
+    /// ``viewDidLoad`` only wires cross-references and calls `wireAndInitialSetup()`.
+    ///
+    /// - Important: Never reintroduce `RadioPlayerCoordinator!` — lifecycle order must not
+    ///   trap on an unset IUO. Prefer reassignment of a real instance over optional storage.
+    /// - SeeAlso: ``RadioPlayerCoordinator``, CODING_AGENT.md (defensive Swift / force-unwraps)
+    var radioPlayerCoordinator: RadioPlayerCoordinator
 
     // AGENT NOTE: AirPlay is **not** constructed here.
     //
@@ -200,15 +217,35 @@ class ViewController: UIViewController {
     }
     
     // MARK: - Initialization
-    // Add initializer for testing
+
+    /// Designated initializer for production scene host and unit tests.
+    ///
+    /// Builds ``backgroundImageController`` and ``radioPlayerCoordinator`` before
+    /// `super.init` from a shared local so neither property is an IUO and the
+    /// coordinator never reads partially-initialized `self`.
+    ///
+    /// - Parameter streamingPlayer: Engine façade (default shared production instance).
+    /// - SeeAlso: ``RadioPlayerCoordinator``, ``PlayerViewModel``
     init(streamingPlayer: DirectStreamingPlayer = DirectStreamingPlayer.shared) {
         self.streamingPlayer = streamingPlayer
+        let background = BackgroundImageController()
+        self.backgroundImageController = background
+        self.radioPlayerCoordinator = RadioPlayerCoordinator(
+            backgroundImageController: background,
+            streamingPlayer: streamingPlayer
+        )
         super.init(nibName: nil, bundle: nil)
         self.streamingPlayer.setDelegate(self)
     }
 
     required init?(coder: NSCoder) {
         self.streamingPlayer = DirectStreamingPlayer.shared
+        let background = BackgroundImageController()
+        self.backgroundImageController = background
+        self.radioPlayerCoordinator = RadioPlayerCoordinator(
+            backgroundImageController: background,
+            streamingPlayer: streamingPlayer
+        )
         super.init(coder: coder)
         self.streamingPlayer.setDelegate(self)
     }
@@ -254,26 +291,11 @@ class ViewController: UIViewController {
         setupDarwinNotificationListener()
         setupUI()
         
-        // Create + wire coordinator after hierarchy is built.
-        radioPlayerCoordinator = RadioPlayerCoordinator(
-            backgroundImageController: backgroundImageController,
-            streamingPlayer: streamingPlayer
-        )
-        // Create the observable VM and attach it so the coordinator can drive SwiftUI state.
+        // Wire the init-time coordinator + VM after hierarchy is built.
+        // Both are definite non-optionals from designated init (not created here).
         // Action closures are wired inside wireAndInitialSetup.
-        playerViewModel = PlayerViewModel()
+        // Hosted root already uses ``playerViewModel`` (lazy hosting controller); no mock swap.
         radioPlayerCoordinator.viewModel = playerViewModel
-
-        // Replace the hosted root view with the real (non-mock) composed RadioPlayerView.
-        // This is the single source of the player UI surface going forward.
-        playerHostingController.rootView = RadioPlayerView(
-            viewModel: playerViewModel,
-            onClearLocalStateTapped: { [weak self] in
-                // Sleep-timer dialog "Clear local state" → coordinator (UIAlert + clearAllLocalState).
-                self?.radioPlayerCoordinator?.confirmAndClearLocalState()
-            }
-        )
-
         radioPlayerCoordinator.viewController = self
         // Always defer the actual present(...) for coordinator-driven UIAlertControllers.
         // This protects against "Unable to simultaneously satisfy constraints" (320pt autoresizing
@@ -421,7 +443,7 @@ class ViewController: UIViewController {
             
             // Special cold-launch clip: coordinator owns clip + TuningSoundCoordinator gate.
             // SharedPlayerManager.play() awaits the same gate after this returns.
-            await self.radioPlayerCoordinator?.playSpecialTuningSound()
+            await self.radioPlayerCoordinator.playSpecialTuningSound()
             
             // Re-fetch after tuning: persistence refresh and thermal sanitization may have
             // updated in-memory state while the tuning clip played.
@@ -462,7 +484,7 @@ class ViewController: UIViewController {
                 await WidgetRefreshManager.shared.refreshHasActiveWidgets()
             }
 
-            radioPlayerCoordinator?.updateUserDefaultsLanguage(initialStream.languageCode)
+            radioPlayerCoordinator.updateUserDefaultsLanguage(initialStream.languageCode)
             
             #if DEBUG
             print("[ViewController] Starting initial stream playback after tuning (single source)")
@@ -487,7 +509,7 @@ class ViewController: UIViewController {
         // Only react to *width* changes. Height-only shifts (e.g. long metadata pushing
         // the contentStackView taller) must not retrigger needle positioning.
         // SwiftUI LanguageSelectorView uses matchedGeometryEffect; no manual notify needed.
-        radioPlayerCoordinator?.notifyLayoutChange()
+        radioPlayerCoordinator.notifyLayoutChange()
     }
     
     /// Sets `DirectStreamingPlayer` relative gain to 1.0 after stream attach.
@@ -585,7 +607,7 @@ class ViewController: UIViewController {
             }
 
             // Sleep timer display sync (and now dialog-driven set/cancel) performed via coordinator + VM.
-            await self.radioPlayerCoordinator?.viewDidAppearResurrectionCheck()
+            await self.radioPlayerCoordinator.viewDidAppearResurrectionCheck()
         }
     }
     
@@ -694,13 +716,13 @@ class ViewController: UIViewController {
                     #if DEBUG
                     print("[ViewController] Network monitor detected reconnection")
                     #endif
-                    self.radioPlayerCoordinator?.stopTuningSound()
+                    self.radioPlayerCoordinator.stopTuningSound()
                     self.handleNetworkReconnection()
                 } else if !isConnected && wasConnected {
                     #if DEBUG
                     print("[ViewController] Network disconnected - stopping playback and tuning sound")
                     #endif
-                    self.radioPlayerCoordinator?.stopTuningSound()
+                    self.radioPlayerCoordinator.stopTuningSound()
                     self.stopPlayback()
                     self.updateUIForNoInternet()
                     // Playback intent (userPaused / securityLocked) is now authoritative in SharedPlayerManager.
@@ -770,7 +792,7 @@ class ViewController: UIViewController {
             if isPlaying {
                 stopPlayback()
             }
-            radioPlayerCoordinator?.stopTuningSound()
+            radioPlayerCoordinator.stopTuningSound()
             
         case .ended:
             guard let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt else { return }
@@ -1058,15 +1080,15 @@ class ViewController: UIViewController {
     private func handleUserTogglePlayback() async {
         // Single implementation lives in RadioPlayerCoordinator (orchestration owner).
         // VC retains the method for the @objc togglePlayback + public handleTogglePlayback call sites.
-        await radioPlayerCoordinator?.handleUserTogglePlayback()
+        await radioPlayerCoordinator.handleUserTogglePlayback()
     }
     
     private func updateNowPlayingInfo(title: String? = nil) {
-        radioPlayerCoordinator?.updateNowPlayingInfo(title: title)
+        radioPlayerCoordinator.updateNowPlayingInfo(title: title)
     }
     
     private func updateUIForNoInternet() {
-        radioPlayerCoordinator?.updateUIForNoInternet()
+        radioPlayerCoordinator.updateUIForNoInternet()
     }
     
     // MARK: - Playback Control Methods
@@ -1075,20 +1097,20 @@ class ViewController: UIViewController {
     /// - Note: Sets manual pause flag and routes through SharedPlayerManager to ensure .userPaused state is set.
     private func pausePlayback() {
         // Implementation in coordinator.
-        radioPlayerCoordinator?.pausePlayback()
+        radioPlayerCoordinator.pausePlayback()
     }
     
     // MARK: - Manual Pause (user tap)
     private func stopPlayback() {
         // Implementation in coordinator.
-        radioPlayerCoordinator?.stopPlayback()
+        radioPlayerCoordinator.stopPlayback()
     }
     
     @MainActor
     private func updateUI(for visualState: PlayerVisualState) {
         // The skip-last + distribution + security alert side-effect logic lives in coordinator (single owner).
         // VC keeps a 1-line forwarder for the remaining call sites in host-owned paths (network, interruptions, legacy widget action).
-        radioPlayerCoordinator?.updateUI(for: visualState)
+        radioPlayerCoordinator.updateUI(for: visualState)
     }
     
     private func setupUI() {
@@ -1192,7 +1214,7 @@ class ViewController: UIViewController {
     /// Handles widget-initiated stream switching to a specific language without playing tuning sounds.
     public func handleWidgetSwitchToLanguage(_ languageCode: String, actionId: String) {
         // Full implementation (processed guard, workItem, stop/set/play flow, intent checks) lives in RadioPlayerCoordinator.
-        radioPlayerCoordinator?.handleWidgetSwitchToLanguage(languageCode, actionId: actionId)
+        radioPlayerCoordinator.handleWidgetSwitchToLanguage(languageCode, actionId: actionId)
     }
     
     // MARK: - Widget and URL Scheme Handling
@@ -1207,7 +1229,7 @@ class ViewController: UIViewController {
     /// - SeeAlso: ``RadioPlayerCoordinator/checkForPendingWidgetActions()``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md
     public func checkForPendingWidgetActions() {
-        radioPlayerCoordinator?.checkForPendingWidgetActions()
+        radioPlayerCoordinator.checkForPendingWidgetActions()
     }
     
 }
@@ -1226,7 +1248,7 @@ extension ViewController {
     ///   CODING_AGENT.md.
     public func handlePlayAction() {
         // Thin delegate (coordinator shim owns the forward to userRequestedPlay).
-        radioPlayerCoordinator?.handlePlayAction()
+        radioPlayerCoordinator.handlePlayAction()
     }
 
     /// Public method to pause playback (callable from SceneDelegate)
@@ -1235,14 +1257,14 @@ extension ViewController {
     /// path that immediately sets .userPaused + persists + refreshes widgets).
     public func handlePauseAction() {
         // Thin delegate.
-        radioPlayerCoordinator?.handlePauseAction()
+        radioPlayerCoordinator.handlePauseAction()
     }
 
     /// Public method to switch to a specific language stream (callable from SceneDelegate).
     /// - Parameter languageCode: The ISO language code to switch to (e.g., "en", "de", "fi", "sv", "et").
     public func handleSwitchToLanguage(_ languageCode: String) {
         // Full external switch orchestration (stop + tuning + setStream + userDefaults + reset + play sequencing + UI) lives in RadioPlayerCoordinator.
-        radioPlayerCoordinator?.handleSwitchToLanguage(languageCode)
+        radioPlayerCoordinator.handleSwitchToLanguage(languageCode)
     }
 
     /// Public method to toggle play/pause state
@@ -1253,7 +1275,7 @@ extension ViewController {
     /// flow through the single authoritative intent decision path.
     public func handleTogglePlayback() {
         // Thin delegate (both the coordinator shim and the internal handleUserTogglePlayback forward are covered by this).
-        radioPlayerCoordinator?.handleTogglePlayback()
+        radioPlayerCoordinator.handleTogglePlayback()
     }
 
     /// Public method called when the user taps the Live Activity (Lock Screen or Dynamic Island)
@@ -1264,7 +1286,7 @@ extension ViewController {
     /// No new playback intent is created here — this is pure navigation / surface activation.
     public func handleOpenFromLiveActivity() {
         Task { @MainActor in
-            await radioPlayerCoordinator?.viewDidAppearResurrectionCheck()
+            await radioPlayerCoordinator.viewDidAppearResurrectionCheck()
         }
     }
 }
@@ -1300,7 +1322,7 @@ extension ViewController {
     }
     
     // playHapticFeedback (and the companion startHapticEngine) removed from VC.
-    // All call sites updated to radioPlayerCoordinator?.playHapticFeedback(...) or removed with the deleted bodies.
+    // All call sites updated to radioPlayerCoordinator.playHapticFeedback(...) or removed with the deleted bodies.
     // Single implementation + engine live in RadioPlayerCoordinator.
     
     private func safeUpdateStatusLabel(text: String, backgroundColor: UIColor, textColor: UIColor, isPermanentError: Bool) {
@@ -1347,7 +1369,7 @@ extension ViewController: StreamingPlayerDelegate {
     nonisolated func onStatusChange(_ status: PlayerStatus, reasonKey: String?) {
         Task { @MainActor [weak self] in
             // Forward heavy work to coordinator (distribution, haptics, background flush, corrections).
-            await self?.radioPlayerCoordinator?.handleStatusChange(status, reasonKey: reasonKey)
+            await self?.radioPlayerCoordinator.handleStatusChange(status, reasonKey: reasonKey)
             // Old body removed in the minimal diff (forward to coordinator is the active path; behavior preserved).
         }
     }
@@ -1445,9 +1467,9 @@ extension ViewController {
         RadioPlayerCoordinator._test_setBypassUITestModeForPendingActionProcessing(bypass)
     }
 
-    /// Forwards debounce reset to the coordinator (no-op if coordinator is not yet assigned).
+    /// Forwards debounce reset to the coordinator (always present after designated init).
     func _test_resetWidgetActionDebounceForTests() {
-        radioPlayerCoordinator?._test_resetWidgetActionDebounceForTests()
+        radioPlayerCoordinator._test_resetWidgetActionDebounceForTests()
     }
 }
 #endif

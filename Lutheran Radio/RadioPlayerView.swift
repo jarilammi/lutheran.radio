@@ -307,7 +307,7 @@ struct RadioPlayerView: View {
 
     /// Called when the user selects the destructive "Clear local state" option inside the
     /// sleep timer `.confirmationDialog` (`PlaybackControlsView`).
-    /// Wired from ViewController to `radioPlayerCoordinator?.confirmAndClearLocalState()`.
+    /// Wired from ViewController to `radioPlayerCoordinator.confirmAndClearLocalState()`.
     /// The coordinator shows a secondary confirmation UIAlert then calls the SSOT
     /// `SharedPlayerManager.clearAllLocalState()`.
     ///

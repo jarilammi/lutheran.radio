@@ -70,9 +70,10 @@ final class WidgetIntentContractTests: XCTestCase {
 
     /// Builds a host with a real ``RadioPlayerCoordinator`` (single pending-action drain owner).
     ///
-    /// Drain lives on the coordinator; a bare `ViewController()` without wiring is a no-op shim
-    /// and must not be used for drain contracts. Set `bypassUITestMode` false to exercise the
-    /// production UITestMode clear-without-execute path.
+    /// `ViewController()` already constructs a definite coordinator in designated init.
+    /// Drain contracts reassign a fresh coordinator for isolation; they do not call
+    /// `viewDidLoad` / `wireAndInitialSetup` (shims still forward to the assigned instance).
+    /// Set `bypassUITestMode` false to exercise the production UITestMode clear-without-execute path.
     ///
     /// - Parameter bypassUITestMode: When true, allows real play/pause/switch execution under the
     ///   XCTest host (`isRunningInUITestMode`).
