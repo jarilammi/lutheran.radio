@@ -385,7 +385,15 @@ class RadioLiveActivityManagerTests: XCTestCase {
 
     /// Verifies termination self-healing clears stale tracking when observation ends
     /// while an activity reference is still considered active.
+    ///
+    /// **Also protects:** durable LA visual + language App Group mirrors are cleared with
+    /// local tracking so a cold extension cannot plan from a system-dismissed surface.
     func testAttributeObservationTerminationClearsStaleTrackingWhenActivityPresent() async {
+        SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(.playing)
+        SharedPlayerManager.persistLiveActivityLanguageMirror("et")
+        XCTAssertEqual(SharedPlayerManager.loadLiveActivityToggleVisualStateMirror(), .playing)
+        XCTAssertEqual(SharedPlayerManager.loadLiveActivityLanguageMirror(), "et")
+
         let content = makeActivityContent(visualState: .playing)
         var continuation: AsyncStream<ActivityContent<LutheranRadioLiveActivityAttributes.ContentState>>.Continuation?
         let stream = AsyncStream { continuation = $0 }
@@ -406,11 +414,31 @@ class RadioLiveActivityManagerTests: XCTestCase {
             "Termination hygiene must clear lastPushedContent when activity tracking was active"
         )
         XCTAssertNil(manager.currentActivity)
+        XCTAssertNil(
+            SharedPlayerManager.loadLiveActivityToggleVisualStateMirror(),
+            "Observation end hygiene must clear liveActivityToggleVisualState"
+        )
+        XCTAssertNil(
+            SharedPlayerManager.loadLiveActivityLanguageMirror(),
+            "Observation end hygiene must clear liveActivityCurrentLanguage"
+        )
     }
 
     /// Verifies that ``endActivity()`` cancels attribute-events observation and clears
     /// ``activityObservationTask`` without ActivityKit IPC under test isolation.
+    ///
+    /// **Also protects:** durable LA toggle visual + language mirrors are dropped on every
+    /// end path (including UITestMode / under-test early returns) so residual plan signals
+    /// do not survive LA dismissal, privacy clear, or termination orchestration.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/clearLiveActivityToggleVisualStateMirror()``,
+    ///   ``SharedPlayerManager/clearLiveActivityLanguageMirror()``.
     func testEndActivityCancelsAttributeObservationTask() async {
+        SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(.userPaused)
+        SharedPlayerManager.persistLiveActivityLanguageMirror("nb")
+        XCTAssertEqual(SharedPlayerManager.loadLiveActivityToggleVisualStateMirror(), .userPaused)
+        XCTAssertEqual(SharedPlayerManager.loadLiveActivityLanguageMirror(), "nb")
+
         let stream = AsyncStream<ActivityContent<LutheranRadioLiveActivityAttributes.ContentState>> { _ in }
         manager._test_beginObservingSyntheticContentUpdates(stream)
         XCTAssertNotNil(manager.activityObservationTask, "Precondition: observation task must be live")
@@ -420,6 +448,14 @@ class RadioLiveActivityManagerTests: XCTestCase {
         XCTAssertNil(manager.activityObservationTask, "endActivity must cancel attribute-events observation")
         XCTAssertNil(manager.lastPushedContent, "endActivity must clear lastPushedContent under test isolation")
         XCTAssertNil(manager.currentActivity)
+        XCTAssertNil(
+            SharedPlayerManager.loadLiveActivityToggleVisualStateMirror(),
+            "endActivity must clear liveActivityToggleVisualState"
+        )
+        XCTAssertNil(
+            SharedPlayerManager.loadLiveActivityLanguageMirror(),
+            "endActivity must clear liveActivityCurrentLanguage"
+        )
     }
 
     /// Verifies restart semantics: a second synthetic stream cancels the prior observation

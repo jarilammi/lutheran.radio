@@ -23,14 +23,20 @@ import WidgetSurface
 /// Unit tests for cold-launch factory reset and system Now Playing hygiene.
 ///
 /// Protects purge-only visual-state disk cleanup, termination / language SSOT rules,
+/// Live Activity durable mirror clear completeness (visual + language App Group keys),
 /// and Live Activity language tracking independent of privacy-gated preferred widget
 /// language. Emission and media-surface suites are separate files.
 ///
 /// - SeeAlso: ``SharedPlayerManager/resetToFactoryDefaultsOnLaunch()``,
 ///   ``SharedPlayerManager/teardownNowPlayingSession()``,
+///   ``SharedPlayerManager/forceStaleLivenessTimestampForTermination()``,
+///   ``SharedPlayerManager/clearAllLocalState()``,
 ///   ``SharedPlayerManager/preferredWidgetLanguage()``,
 ///   ``SharedPlayerManager/mainAppLiveActivityLanguageCode()``,
-///   docs/Event-Driven-Refactor-Roadmap.md.
+///   ``SharedPlayerManager/clearLiveActivityToggleVisualStateMirror()``,
+///   ``SharedPlayerManager/clearLiveActivityLanguageMirror()``,
+///   docs/Event-Driven-Refactor-Roadmap.md,
+///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
 final class SharedPlayerManagerColdLaunchHygieneTests: XCTestCase {
 
     private let manager = SharedPlayerManager.shared
@@ -193,5 +199,122 @@ final class SharedPlayerManagerColdLaunchHygieneTests: XCTestCase {
             "fi",
             "LA ContentState language source must follow stream attach language"
         )
+    }
+
+    // MARK: - Live Activity durable mirror clear completeness
+
+    /// Termination hygiene must clear both durable LA mirrors so a cold extension cannot
+    /// plan play/pause or stamp language chrome against a dead Lock Screen surface.
+    ///
+    /// **Invariant protected:** ``forceStaleLivenessTimestampForTermination()`` (called from
+    /// ``performSessionTeardownSynchronouslyForTermination()`` and session teardown with
+    /// `staleLiveness: true`) drops ``liveActivityToggleVisualState`` and
+    /// ``liveActivityCurrentLanguage`` while writing the liveness sentinel. Snapshot keys are
+    /// intentionally retained on this path (contrast privacy clear).
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/forceStaleLivenessTimestampForTermination()``,
+    ///   ``SharedPlayerManager/performSessionTeardownSynchronouslyForTermination()``,
+    ///   AppDelegate.applicationWillTerminate.
+    func testForceStaleLivenessClearsLiveActivityDurableMirrors() {
+        SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(.playing)
+        SharedPlayerManager.persistLiveActivityLanguageMirror("sv")
+        XCTAssertEqual(SharedPlayerManager.loadLiveActivityToggleVisualStateMirror(), .playing)
+        XCTAssertEqual(SharedPlayerManager.loadLiveActivityLanguageMirror(), "sv")
+
+        SharedPlayerManager.forceStaleLivenessTimestampForTermination()
+
+        XCTAssertNil(
+            SharedPlayerManager.loadLiveActivityToggleVisualStateMirror(),
+            "Termination must clear liveActivityToggleVisualState"
+        )
+        XCTAssertNil(
+            SharedPlayerManager.loadLiveActivityLanguageMirror(),
+            "Termination must clear liveActivityCurrentLanguage"
+        )
+        XCTAssertTrue(
+            SharedPlayerManager.hasExplicitTerminationSentinel(),
+            "Precondition of termination path: liveness sentinel must be written"
+        )
+    }
+
+    /// Full privacy clear must remove both durable LA mirrors (and not leave plan signals
+    /// after the user explicitly clears local playback state).
+    ///
+    /// **Invariant protected:** ``clearAllLocalState()`` → ``removeAllLocalPlaybackKeys()``
+    /// clears ``liveActivityToggleVisualState`` and ``liveActivityCurrentLanguage``. Security
+    /// DNS cache on the standard suite is never touched.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/clearAllLocalState()``,
+    ///   ``SharedPlayerManager/removeAllLocalPlaybackKeys()``.
+    func testClearAllLocalStateClearsLiveActivityDurableMirrors() async {
+        SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(.userPaused)
+        SharedPlayerManager.persistLiveActivityLanguageMirror("de")
+        XCTAssertEqual(SharedPlayerManager.loadLiveActivityToggleVisualStateMirror(), .userPaused)
+        XCTAssertEqual(SharedPlayerManager.loadLiveActivityLanguageMirror(), "de")
+
+        let securityKey = "lastSecurityValidation"
+        let securityMarker = "la-mirror-privacy-clear-\(UUID().uuidString)"
+        UserDefaults.standard.set(securityMarker, forKey: securityKey)
+        defer { UserDefaults.standard.removeObject(forKey: securityKey) }
+
+        await SharedPlayerManager.clearAllLocalState()
+
+        XCTAssertNil(
+            SharedPlayerManager.loadLiveActivityToggleVisualStateMirror(),
+            "Privacy clear must clear liveActivityToggleVisualState"
+        )
+        XCTAssertNil(
+            SharedPlayerManager.loadLiveActivityLanguageMirror(),
+            "Privacy clear must clear liveActivityCurrentLanguage"
+        )
+        XCTAssertEqual(
+            UserDefaults.standard.string(forKey: securityKey),
+            securityMarker,
+            "Privacy clear must never touch lastSecurityValidation"
+        )
+    }
+
+    /// Closing the home-widget privacy gate alone must **not** clear durable LA mirrors.
+    ///
+    /// **Invariant protected:** Mirrors are intentionally **not** gated by `hasActiveWidgets`.
+    /// LA-only sessions (no home widgets) still need durable plan + language signals until
+    /// LA end, termination, factory reset, or full privacy clear. Residual liveness/instant
+    /// keys are cleared; LA mirrors are not.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/clearHomeWidgetLivenessAndInstantFeedbackResiduals()``,
+    ///   ``WidgetRefreshManager/setHasActiveLutheranWidgets(_:)``,
+    ///   App Group SSOT table (`liveActivityToggleVisualState` / `liveActivityCurrentLanguage`).
+    func testClosingHomeWidgetPrivacyGateDoesNotClearLiveActivityDurableMirrors() async {
+        await MainActor.run {
+            WidgetRefreshManager.setHasActiveLutheranWidgets(true)
+        }
+        SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(.playing)
+        SharedPlayerManager.persistLiveActivityLanguageMirror("fi")
+        SharedPlayerManager.bumpWidgetLivenessTimestamp(policy: .immediate)
+        SharedPlayerManager.writeInstantFeedback(language: "fi")
+
+        await MainActor.run {
+            WidgetRefreshManager.setHasActiveLutheranWidgets(false)
+        }
+
+        XCTAssertEqual(
+            SharedPlayerManager.loadLiveActivityToggleVisualStateMirror(),
+            .playing,
+            "Home-widget gate close must not clear liveActivityToggleVisualState"
+        )
+        XCTAssertEqual(
+            SharedPlayerManager.loadLiveActivityLanguageMirror(),
+            "fi",
+            "Home-widget gate close must not clear liveActivityCurrentLanguage"
+        )
+
+        // Residual home-widget signals still drop (orthogonal contract).
+        let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared")
+        XCTAssertNil(defaults?.object(forKey: "lastUpdateTime"))
+        XCTAssertNil(defaults?.object(forKey: "isInstantFeedback"))
+
+        // Leave a clean App Group for sibling suites.
+        SharedPlayerManager.clearLiveActivityToggleVisualStateMirror()
+        SharedPlayerManager.clearLiveActivityLanguageMirror()
     }
 }
