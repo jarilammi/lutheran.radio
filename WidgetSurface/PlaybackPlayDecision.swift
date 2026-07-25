@@ -4,20 +4,22 @@
 //
 //  Created by Jari Lammi on 24.7.2026.
 //
-//  Pure play-entry decision surfaces for SharedPlayerManager.play() early gates.
+//  Pure play-entry decision surfaces for SharedPlayerManager.play() phases.
 //
 //  WidgetSurface framework — presentation/policy vocabulary only (no security logic,
 //  no App Group I/O, no engine side effects). Side effects remain in SharedPlayerManager.
 //
 //  Ownership:
 //  - Decision tables are pure and table-testable here.
-//  - SharedPlayerManager.play() applies outcomes (pipeline flags, security, attach).
+//  - SharedPlayerManager.play() is a thin phase pipeline that applies outcomes:
+//    preflight (early gates) → security validation → post-security surfaces → engine attach.
 //
 //  - SeeAlso: ``PlaybackIntent``, ``PlaybackAttachContext``, ``PlayerVisualState``,
 //    SharedPlayerManager.play(), SharedPlayerManager.userRequestedPlay(),
 //    CODING_AGENT.md (Single Source of Truth Principles).
-//  - AGENT NOTE: Any change to early-gate ordering must keep sticky pause, termination
-//    sentinel, already-audible idempotency, and UITest isolation semantics unchanged.
+//  - AGENT NOTE: Any change to early-gate ordering or connecting-chrome policy must keep
+//    sticky pause, termination sentinel, already-audible idempotency, hold-prePlay stream
+//    switch, and UITest isolation semantics unchanged.
 //
 
 import Foundation
@@ -195,6 +197,29 @@ public enum PlaybackPlayDecision {
         case .trueColdLaunch:
             return .coldLaunch
         }
+    }
+
+    /// Whether play should stamp connecting (``.prePlay``) chrome after security and before
+    /// soft-resume / engine attach.
+    ///
+    /// Does **not** force chrome when already ``.prePlay`` (including stream-switch hold) or
+    /// already ``.playing``. Only active playback intent receives connecting chrome.
+    ///
+    /// - Parameters:
+    ///   - visualState: Current ``PlayerVisualState``.
+    ///   - isActivePlaybackIntent: Whether intent is actively requesting play.
+    /// - Returns: `true` when the actor should `applyVisualState(.prePlay)`.
+    /// - Important: Authoritative ``.playing`` still arrives only from engine soft-resume or
+    ///   readyToPlay first-play kick — never from this decision alone.
+    /// - SeeAlso: SharedPlayerManager.play() post-security surfaces phase,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (connecting until audible).
+    public static func shouldApplyConnectingPrePlayChrome(
+        visualState: PlayerVisualState,
+        isActivePlaybackIntent: Bool
+    ) -> Bool {
+        visualState != .prePlay
+            && visualState != .playing
+            && isActivePlaybackIntent
     }
 
     /// Evaluates early play gates in production order. Side-effect free.

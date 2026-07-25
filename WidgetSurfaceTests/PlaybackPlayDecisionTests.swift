@@ -182,4 +182,33 @@ struct PlaybackPlayDecisionTests {
         )
         #expect(decision.outcome == .blockStickyPauseOrLock)
     }
+
+    // MARK: - Connecting chrome (post-security)
+
+    @Test func connectingPrePlayChromeOnlyWhenActiveAndNotAlreadyConnectingOrPlaying() {
+        #expect(
+            PlaybackPlayDecision.shouldApplyConnectingPrePlayChrome(
+                visualState: .userPaused,
+                isActivePlaybackIntent: true
+            )
+        )
+        #expect(
+            !PlaybackPlayDecision.shouldApplyConnectingPrePlayChrome(
+                visualState: .prePlay,
+                isActivePlaybackIntent: true
+            )
+        )
+        #expect(
+            !PlaybackPlayDecision.shouldApplyConnectingPrePlayChrome(
+                visualState: .playing,
+                isActivePlaybackIntent: true
+            )
+        )
+        #expect(
+            !PlaybackPlayDecision.shouldApplyConnectingPrePlayChrome(
+                visualState: .userPaused,
+                isActivePlaybackIntent: false
+            )
+        )
+    }
 }
