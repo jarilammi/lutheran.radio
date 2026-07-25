@@ -24,10 +24,10 @@
 //  - SeeAlso: SharedPlayerManager, PlaybackPlayDecision, CellularPermissionManager,
 //    DirectStreamingPlayer+StreamCatalog.swift, DirectStreamingPlayer+ServerSelection.swift,
 //    DirectStreamingPlayer+NetworkPath.swift, DirectStreamingPlayer+AudioSession.swift,
-//    DirectStreamingPlayer+LocalClipPlayer.swift, DirectStreamingPlayer+PlaybackAttach.swift,
-//    DirectStreamingPlayer+PlayerItemRecovery.swift, DirectStreamingPlayer+ResourceLoader.swift,
-//    DirectStreamingPlayer+PlayerVisualState.swift, StreamingSessionDelegate.swift,
-//    <doc:Architecture>, CODING_AGENT.md.
+//    DirectStreamingPlayer+LocalClipPlayer.swift, DirectStreamingPlayer+ThermalProtection.swift,
+//    DirectStreamingPlayer+PlaybackAttach.swift, DirectStreamingPlayer+PlayerItemRecovery.swift,
+//    DirectStreamingPlayer+ResourceLoader.swift, DirectStreamingPlayer+PlayerVisualState.swift,
+//    StreamingSessionDelegate.swift, <doc:Architecture>, CODING_AGENT.md.
 //
 
 import Foundation
@@ -218,6 +218,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     // | Network path | DirectStreamingPlayer+NetworkPath.swift | Path status types, NWPathMonitorAdapter, setupNetworkMonitoring |
     // | Audio session | DirectStreamingPlayer+AudioSession.swift | Category + async activate/deactivate (configure / setup / deactivate) |
     // | Local clip player | DirectStreamingPlayer+LocalClipPlayer.swift | Tuning/special bundled clip start (`startLocalClipPlayer`) |
+    // | Thermal protection | DirectStreamingPlayer+ThermalProtection.swift | Thermal pause/resume + Low Power Mode observation (`setupThermalProtection` / energy) |
     // | Playback attach | DirectStreamingPlayer+PlaybackAttach.swift | Generation, soft-pause, silence, prepareStreamChoice / attachAndPlay / startPlayback |
     // | Item recovery | DirectStreamingPlayer+PlayerItemRecovery.swift | Startup safety net, early ICY recreate, secured recreate |
     // | Observers | DirectStreamingPlayer+Observers.swift | Player/item KVO, buffer timers |
@@ -244,8 +245,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     // - nonisolated stop entry may hop to MainActor for generation bump / teardown guard.
     // - connectionQueue isolates SSL ConnectionInfo dictionary.
     // - @unchecked Sendable documents historical engine sharing; prefer MainActor hops for new work.
-    // - Remaining façade bulk candidates: public play/stop cluster, thermal/energy observers,
-    //   system media session teardown (peel one domain per session).
+    // - Remaining façade bulk candidates: public play/stop cluster, system media session
+    //   teardown (peel one domain per session). Thermal / energy observation already peeled.
     //
     // Network path ownership (single monitor — domain file + façade stored flags):
     // - Setup + types live in `+NetworkPath.swift`; `hasInternetConnection` / `networkMonitor` /
@@ -259,6 +260,11 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     // - Interruption/route observers: `+AudioSessionInterruption.swift` (not configure).
     // - Never call `setCategory` / `setActive` outside `+AudioSession`. Local clips call
     //   ``configureAudioSessionAsync()`` from `+LocalClipPlayer` only (no direct setActive).
+    //
+    // Thermal / energy ownership (domain file + façade stored token + computed flag):
+    // - Observers + teardown live in `+ThermalProtection.swift`; `thermalObserver` and
+    //   ``isLowEfficiencyMode`` remain on this class (stored / computed state).
+    // - Visual `.thermalPaused` SSOT remains SharedPlayerManager; this engine only sets it.
 
     var isSSLHandshakeComplete = false
     var certificateValidationTimer: Timer?
@@ -352,13 +358,16 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
 
 
     
-    // MARK: - Energy Efficiency (Battery Optimization)
+    // MARK: - Thermal / energy stored state
+    // Observers + teardown: +ThermalProtection.swift. Visual `.thermalPaused` SSOT: SharedPlayerManager.
     /// Detects if the device is in Low Power Mode to throttle non-essential tasks (e.g., retry intervals) and extend battery life during streaming.
     /// Builds on thermal state handling; queried dynamically in retry/fallback logic.
     /// Reference: iOS ProcessInfo.isLowPowerModeEnabled (available since iOS 9).
+    /// - SeeAlso: ``setupEnergyEfficiencyObservation()``, DirectStreamingPlayer+ThermalProtection.swift
     var isLowEfficiencyMode: Bool {
         ProcessInfo.processInfo.isLowPowerModeEnabled
     }
+    /// Token for `ProcessInfo.thermalStateDidChangeNotification` (owned by thermal domain setup/teardown).
     var thermalObserver: NSObjectProtocol?
     
     // Public accessors for ViewController
@@ -880,6 +889,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         // delegate → widget / Live Activity pipeline and contributing to renderer wake + audio side effects.
         // The hard guard in safeOnStatusChange + this structure ensures no init-time emissions.
         
+        // Thermal pause/resume: ``setupThermalProtection()`` in +ThermalProtection.swift
         setupThermalProtection()
         
         // Clear dedup state so the first real post-init status always emits.
@@ -905,46 +915,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     
     // Network path setup: ``setupNetworkMonitoring()`` lives in
     // DirectStreamingPlayer+NetworkPath.swift (sole free-running monitor ownership).
-
-    func setupThermalProtection() {
-        thermalObserver = NotificationCenter.default.addObserver(
-            forName: ProcessInfo.thermalStateDidChangeNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            guard let self else { return }
-            
-            let thermalState = ProcessInfo.processInfo.thermalState
-            
-            // ── Device overheating ─────────────────────────────────────
-            if thermalState == .serious || thermalState == .critical {
-                if self.isPlaying {
-                    Task { @MainActor in
-                        self.stop()                                 // sync
-                        await SharedPlayerManager.shared.setVisualState(.thermalPaused)
-                    }
-                }
-                return
-            }
-            
-            // ── Device cooled down again ───────────────────────────────
-            if thermalState == .nominal || thermalState == .fair {
-                Task { @MainActor in
-                    // Must await actor-isolated property (Swift 6 rule)
-                    if await SharedPlayerManager.shared.currentVisualState.shouldAutoResumeOnThermalRecovery {
-                        // Set visual state *before* play() so UI turns green immediately
-                        await SharedPlayerManager.shared.setVisualState(.playing)
-                        
-                        let success = await self.play()
-                        
-                        if !success {
-                            await SharedPlayerManager.shared.setVisualState(.userPaused)
-                        }
-                    }
-                }
-            }
-        }
-    }
+    // Thermal / energy observers: DirectStreamingPlayer+ThermalProtection.swift
     
     init(audioSession: AVAudioSession = .sharedInstance(), pathMonitor: NetworkPathMonitoring = NWPathMonitorAdapter()) {
         self.audioSession = audioSession
@@ -966,13 +937,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         }
         setupNetworkMonitoring()
         
-        // Observe Low Power Mode changes to dynamically adjust optimizations
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(energyEfficiencyChanged),
-            name: Notification.Name("NSProcessInfoPowerStateDidChangeNotification"),
-            object: nil
-        )
+        // Low Power Mode observation: +ThermalProtection.swift (no immediate playback action)
+        setupEnergyEfficiencyObservation()
         
         #if DEBUG
         print("[DirectStreamingPlayer] Player initialized, starting validation")
@@ -1007,16 +973,6 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         // which fed the delegate → UI → widget / Live Activity pipeline before any test code ran.
         // We must emit *zero* status from init when isTesting (sourced from the SSOT).
         // The hard guard inside safeOnStatusChange provides defense-in-depth for any other call sites.
-    }
-    
-    /// Handles changes to Low Power Mode state.
-    /// No immediate actions here; optimizations (e.g., longer retry intervals) are applied dynamically via isLowEfficiencyMode checks.
-    /// This reduces unnecessary work in low-battery scenarios without interrupting core streaming.
-    @objc private func energyEfficiencyChanged() {
-        // No immediate action needed; the isLowEfficiencyMode property will be queried dynamically in retry/fallback spots
-        #if DEBUG
-        print("[DirectStreamingPlayer] Low Power Mode changed to: \(isLowEfficiencyMode ? "Enabled" : "Disabled")")
-        #endif
     }
 
     // MARK: - System media session teardown (Now Playing hygiene)
@@ -1796,13 +1752,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         serverFailureCount.removeAll()
         lastFailedServerName = nil
         
-        // Cleanup thermal observer
-        if let observer = thermalObserver {
-            NotificationCenter.default.removeObserver(observer)
-        }
-        
-        // Clean up Low Power Mode observer to prevent memory leaks.
-        NotificationCenter.default.removeObserver(self, name: Notification.Name("NSProcessInfoPowerStateDidChangeNotification"), object: nil)
+        // Thermal + Low Power Mode observers: +ThermalProtection.swift
+        teardownThermalAndEnergyObservers()
         
         // MARK: - Additional Deinit Cleanup
         removeAudioSessionObservers()
