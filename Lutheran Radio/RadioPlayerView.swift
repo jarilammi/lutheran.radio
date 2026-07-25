@@ -80,9 +80,10 @@ import WidgetSurface
 ///
 /// Sleep timer: sole presentation is a native `.confirmationDialog` (15/30/45/60 + conditional
 /// Cancel + Clear local state) in `PlaybackControlsView`. Timer choices go through
-/// `PlayerViewModel.selectSleepTimer` / `cancelSleepTimer` into coordinator handlers; privacy
-/// clear uses `onClearLocalStateTapped` → `confirmAndClearLocalState`. Countdown Task,
-/// notifications, `syncSleepTimerToViewModel`, and interaction settle windows stay on the coordinator.
+/// `PlayerViewModel.selectSleepTimer` / `cancelSleepTimer` into coordinator handlers
+/// (`RadioPlayerCoordinator+SleepTimer`); privacy clear uses `onClearLocalStateTapped` →
+/// `confirmAndClearLocalState`. Countdown Task, notifications, `syncSleepTimerToViewModel`,
+/// and interaction settle windows live on that sleep-timer domain.
 ///
 /// String revival note: `sleep_timer_sheet_title` is materialized here (and also used directly
 /// in the dialog) to keep the localization entry live across all 21 languages.

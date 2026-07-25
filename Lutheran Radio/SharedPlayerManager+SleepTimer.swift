@@ -6,8 +6,9 @@
 //  Main app target only (no widget / Live Activity countdown in v1).
 //
 //  UI: SwiftUI `.confirmationDialog` in PlaybackControlsView is the sole presentation;
-//  presets/cancel route through PlayerViewModel into RadioPlayerCoordinator. Actor-side
-//  setSleepTimer / cancelSleepTimer + countdown task + SleepTimerNotification are unchanged.
+//  presets/cancel route through PlayerViewModel into RadioPlayerCoordinator+SleepTimer.
+//  Actor-side setSleepTimer / cancelSleepTimer + countdown task + SleepTimerNotification
+//  remain the timer authority; the coordinator extension owns display glue only.
 //
 //  Created by Jari Lammi on 5.6.2026.
 //
@@ -17,7 +18,8 @@ import Foundation
 import WidgetSurface
 
 /// In-process sleep-timer state broadcasts (main app only).
-/// `RadioPlayerCoordinator` owns local countdown display; these avoid polling the actor every second.
+/// `RadioPlayerCoordinator` (+SleepTimer domain) owns local countdown display; these avoid
+/// polling the actor every second.
 enum SleepTimerNotification {
     static let stateDidChange = Notification.Name("SleepTimerStateDidChange")
 
@@ -44,7 +46,8 @@ extension SharedPlayerManager {
     ///
     /// Replaces any existing timer. `duration` is in seconds (e.g. `30 * 60` for 30 minutes).
     /// `sleepTimerRemainingSeconds` is written once at schedule (for one-shot UI sync on foreground).
-    /// The countdown loop does not mutate actor state every second — ViewController decrements locally.
+    /// The countdown loop does not mutate actor state every second — coordinator UI glue
+    /// (`RadioPlayerCoordinator+SleepTimer`) decrements locally.
     /// Best-effort while backgrounded (actor task may suspend with the app).
     @discardableResult
     func setSleepTimer(duration: TimeInterval) async -> Int? {

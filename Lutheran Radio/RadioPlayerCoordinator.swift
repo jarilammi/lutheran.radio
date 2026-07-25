@@ -7,24 +7,27 @@
 //  Lightweight @MainActor orchestration layer (introduced during ViewController decomposition).
 //  Owns wiring of the extracted presentational components (LanguageSelectorView, BackgroundImageController,
 //  PlaybackControlsView, NowPlayingMetadataView), the full stream-selection flows, distribution of every
-//  visual/metadata/background update, sleep-timer UI state machine glue (notification observer + sync +
-//  countdown Task + preset/cancel handling + sync to VM), haptics triggering, and initial-setup sequencing.
-//
-//  Sleep timer: sole presentation is SwiftUI `.confirmationDialog` in PlaybackControlsView
-//  (presets + conditional Cancel + always-present "Clear local state" privacy action).
-//  Timer business logic (handleSleepTimer*, begin/stop display, settle windows, VM sync,
-//  confirmAndClearLocalState) stays here. No UIKit UIMenu builder.
+//  visual/metadata/background update, haptics triggering, privacy clear UI, and initial-setup sequencing.
 //
 //  Domain extensions (same type, mechanical splits — public entry points unchanged):
 //  - RadioPlayerCoordinator+PendingActions.swift — App Group pending-action drain, play/pause
 //    debounce, UITestMode drain-without-execute, widget play/pause helpers + DEBUG seams.
+//  - RadioPlayerCoordinator+SleepTimer.swift — sleep-timer UI glue (dialog settle windows,
+//    preset/cancel handlers, local countdown Task + VM sync, SleepTimerNotification observer,
+//    interaction window that defers Now Playing title apply). SPM remains timer authority.
+//
+//  Sleep timer presentation: sole surface is SwiftUI `.confirmationDialog` in PlaybackControlsView
+//  (presets + conditional Cancel + always-present "Clear local state" privacy action).
+//  Privacy clear (`confirmAndClearLocalState`) stays on this file; timer glue is +SleepTimer.
+//  No UIKit UIMenu builder.
 //
 //  ViewController remains the thin lifecycle host + view hierarchy builder + public intent shims
 //  (for SceneDelegate, widgets, remote commands) + hard-to-move observers (interruptions, route,
 //  Darwin listener setup, deinit CF cleanup). Orchestration owned here (not on VC):
 //  - Pending-action drain (see +PendingActions; VC/SceneDelegate call thin shims only)
 //  - selectedStreamIndex + language selection / stream-switch
-//  - Sleep-timer interaction window + deferred ICY metadata apply
+//  - Sleep-timer interaction window + deferred ICY metadata apply (see +SleepTimer; metadata
+//    registration here consults the interaction flag)
 //  - DirectStreamingPlayer.onMetadataChange registration
 //  - Cold-launch special tuning (TuningSoundCoordinator gate) + stream-switch tuning delight
 //  VC / SceneDelegate only call thin public shims after lifecycle or Darwin notify.
@@ -56,23 +59,28 @@ import WidgetSurface
 /// clears without executing unless the DEBUG bypass is set. Lifecycle hosts call
 /// ``checkForPendingWidgetActions()`` only — they do not reimplement debounce or mailbox enqueue.
 ///
+/// **Sleep-timer UI glue:** Dialog settle windows, preset/cancel handlers, local countdown Task,
+/// VM remaining sync, and `SleepTimerNotification` observation live in
+/// `RadioPlayerCoordinator+SleepTimer.swift` (same type). SharedPlayerManager remains the timer
+/// authority (`setSleepTimer` / `cancelSleepTimer` / `applySleepTimerElapsedPause`). SwiftUI
+/// (`PlaybackControlsView`) owns only the `.confirmationDialog` presentation and calls back via
+/// `PlayerViewModel` closures. Wire via ``wireSleepTimerUIGlue()`` from ``wireAndInitialSetup()``.
+///
 /// **Stream index:** Single owner of `selectedStreamIndex` (wired to `PlayerViewModel` and all
 /// language / widget / stream-switch paths). The host does not mirror this value.
 ///
 /// **Metadata:** Registers `DirectStreamingPlayer.onMetadataChange` in ``wireAndInitialSetup()`` and
-/// owns the sleep-timer interaction window that defers Now Playing title apply during modal settle.
+/// consults the sleep-timer interaction window (owned by +SleepTimer) that defers Now Playing
+/// title apply during modal settle.
 ///
 /// **Special tuning:** Production cold-launch clip is ``playSpecialTuningSound(completion:)`` here —
 /// session/clip start via ``DirectStreamingPlayer/startLocalClipPlayer``, finish via
 /// `AVAudioPlayerDelegate` → ``TuningSoundCoordinator``. Stream-switch delight uses
 /// ``playTuningSound(animateNeedleTo:)`` (duration-based; no main-stream gate).
 ///
-/// Sleep timer note: coordinator is the single owner of timer logic (set/cancel + countdown glue +
-/// interaction windows + VM sync). SwiftUI (`PlaybackControlsView`) owns only the
-/// `.confirmationDialog` presentation and calls back via `PlayerViewModel` closures.
-///
 /// - SeeAlso: ``SharedPlayerManager/signalWidgetPendingAction(visualState:action:language:)``,
 ///   ``SharedPlayerManager/submitMediaTransportCommandAndWait(_:)``,
+///   ``SharedPlayerManager/setSleepTimer(duration:)``,
 ///   `TuningSoundCoordinator`, docs/Live-Activity-Stacking-and-Media-Surfaces.md,
 ///   docs/Widget-Functionality-Roadmap.md, CODING_AGENT.md (Single Source of Truth Principles).
 @MainActor
@@ -82,7 +90,9 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
     // LanguageSelectorView, PlaybackControlsView, NowPlayingMetadataView are now pure SwiftUI
     // and driven exclusively via the PlayerViewModel (pushed here, actions forwarded).
     // Background and streaming remain.
-    private let backgroundImageController: BackgroundImageController
+    // Internal: +SleepTimer needs modal deferral (cancelDeferredForModalInteraction /
+    // rescheduleDeferredAfterModalIfNeeded) during dialog settle windows.
+    let backgroundImageController: BackgroundImageController
     private let hapticsController = HapticsController()
     nonisolated private let streamingPlayer: DirectStreamingPlayer
 
@@ -126,17 +136,19 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
     private var lastStreamSwitchTime: Date?
     private let streamSwitchDebounceInterval: TimeInterval = 1.0
 
-    // Sleep timer UI glue state + Task (verbatim; deep coupling to SharedPlayerManager + SleepTimer remains)
-    private var sleepTimerDisplayTask: Task<Void, Never>?
-    private var cachedSleepTimerRemaining: Int?
+    // Sleep timer UI glue state + Task (owned by +SleepTimer; deep coupling to SharedPlayerManager
+    // + SleepTimerNotification remains). Internal access so the extension file and the metadata
+    // registration / deinit / privacy-clear paths on this file can share the same stamps.
+    var sleepTimerDisplayTask: Task<Void, Never>?
+    var cachedSleepTimerRemaining: Int?
     /// True while sleep-timer dialog settle is in flight; defers Now Playing title apply.
-    private var isSleepTimerInteractionActive = false
+    var isSleepTimerInteractionActive = false
     /// Metadata stashed during the interaction window; applied in ``finishSleepTimerInteraction``.
-    private var pendingMetadataVisualRefresh: String?
+    var pendingMetadataVisualRefresh: String?
     /// Settle delay after the SwiftUI confirmationDialog dismisses before applying timer work.
-    private static let sleepTimerDialogSettleNs: UInt64 = 250_000_000
-    private static let sleepTimerPostScheduleUISettleNs: UInt64 = 300_000_000
-    private static let sleepTimerDeferredVisualSettleNs: UInt64 = 500_000_000
+    static let sleepTimerDialogSettleNs: UInt64 = 250_000_000
+    static let sleepTimerPostScheduleUISettleNs: UInt64 = 300_000_000
+    static let sleepTimerDeferredVisualSettleNs: UInt64 = 500_000_000
 
     // Widget switch work item + last-switch stamp (actionId dedup uses processedActionIds below).
     // `pendingWidgetSwitchWorkItem` / `processedActionIds` are internal so +PendingActions can
@@ -185,14 +197,6 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
             vm.onLanguageSelected = { [weak self] index in
                 self?.handleLanguageSelection(at: index)
             }
-            // Wire sleep timer actions. The SwiftUI .confirmationDialog in PlaybackControlsView
-            // calls these; the coordinator owns the full preset/cancel + settle + display + SPM logic.
-            vm.onSleepTimerPresetSelected = { [weak self] minutes in
-                self?.handleSleepTimerPresetSelected(minutes: minutes)
-            }
-            vm.onSleepTimerCancelSelected = { [weak self] in
-                self?.handleSleepTimerCancelSelected()
-            }
         }
 
         // Initial index from SSOT (PersistedWidgetState or bestInitialLanguageCode).
@@ -206,13 +210,8 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
         // Haptics early init (if hardware supports) — now delegated to tiny controller (P5+ extraction)
         hapticsController.prepareIfSupported()
 
-        // Sleep timer observer (glue)
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(sleepTimerStateDidChange(_:)),
-            name: SleepTimerNotification.stateDidChange,
-            object: nil
-        )
+        // Sleep-timer VM closures + SleepTimerNotification observer (+SleepTimer domain).
+        wireSleepTimerUIGlue()
 
         // ICY metadata → VM + Now Playing (single owner; sleep interaction defers title apply).
         // Status chrome still arrives via StreamingPlayerDelegate → handleStatusChange.
@@ -1172,13 +1171,6 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
         viewModel?.isSwitchingStream = value
     }
 
-    /// Pushes the remaining sleep timer seconds into the VM (if wired).
-    /// The UIKit controls continue to be updated via the existing applySleepTimerButtonAppearance path.
-    @MainActor
-    func syncSleepTimerToViewModel(remaining: Int?) {
-        viewModel?.sleepTimerRemaining = remaining.map { TimeInterval($0) }
-    }
-
     /// Pushes parsed metadata into the observable model (coordinator or VC call sites can use this).
     @MainActor
     func syncMetadataToViewModel(_ raw: String?) {
@@ -1530,168 +1522,6 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
         #if DEBUG
         print("[RadioPlayerCoordinator] Tuning sound stopped")
         #endif
-    }
-
-    // MARK: - Sleep timer UI glue
-    //
-    // Presentation: sole surface is SwiftUI `.confirmationDialog` in PlaybackControlsView
-    // (15/30/45/60 presets + conditional Cancel + always-present Clear local state).
-    // Choices arrive via PlayerViewModel action closures into the handle* methods below.
-    //
-    // This type owns timer business logic, settle timing, interaction flags, local
-    // countdown Task, VM sync, and SharedPlayerManager set/cancel calls.
-
-    @MainActor
-    private func handleSleepTimerPresetSelected(minutes: Int) {
-        isSleepTimerInteractionActive = true
-        backgroundImageController.cancelDeferredForModalInteraction()
-
-        let totalSeconds = max(1, minutes * 60)
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            await Task.yield()
-            try? await Task.sleep(nanoseconds: Self.sleepTimerDialogSettleNs)
-            let confirmed = await SharedPlayerManager.shared.setSleepTimer(
-                duration: TimeInterval(totalSeconds)
-            )
-            guard let confirmed else {
-                self.finishSleepTimerInteraction(applyDeferredVisuals: false)
-                return
-            }
-            try? await Task.sleep(nanoseconds: Self.sleepTimerPostScheduleUISettleNs)
-            guard !Task.isCancelled else { return }
-            self.beginLocalSleepTimerDisplay(remaining: confirmed)
-            try? await Task.sleep(nanoseconds: Self.sleepTimerDeferredVisualSettleNs)
-            guard !Task.isCancelled else { return }
-            self.finishSleepTimerInteraction(applyDeferredVisuals: true)
-            self.backgroundImageController.rescheduleDeferredAfterModalIfNeeded()
-        }
-    }
-
-    @MainActor
-    private func handleSleepTimerCancelSelected() {
-        isSleepTimerInteractionActive = true
-        backgroundImageController.cancelDeferredForModalInteraction()
-
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            await Task.yield()
-            self.stopLocalSleepTimerDisplay()
-            await SharedPlayerManager.shared.cancelSleepTimer()
-            self.finishSleepTimerInteraction(applyDeferredVisuals: true)
-            self.backgroundImageController.rescheduleDeferredAfterModalIfNeeded()
-        }
-    }
-
-    @MainActor
-    private func finishSleepTimerInteraction(applyDeferredVisuals: Bool) {
-        isSleepTimerInteractionActive = false
-        guard applyDeferredVisuals, let metadata = pendingMetadataVisualRefresh else { return }
-        pendingMetadataVisualRefresh = nil
-        updateNowPlayingInfo(title: metadata)
-        // SwiftUI photo logic reacts to VM metadata change.
-    }
-
-    /// Receives broadcasts from SleepTimerNotification when a sleep timer is scheduled,
-    /// ticks (first value only), or becomes inactive (elapsed or cancelled).
-    ///
-    /// - Important: This observer is the **main-app-only** channel that reconciles the
-    ///   authoritative `currentVisualState` (from SharedPlayerManager SSOT) into the live
-    ///   in-app UI after an internal sleep-timer pause. Widget/Live Activity consumers use
-    ///   the persisted snapshot written by `applySleepTimerElapsedPause`; the main app
-    ///   does not receive a status callback or actionable Darwin "pause" for this path.
-    ///
-    /// When the timer elapses:
-    /// - `applySleepTimerElapsedPause` forces `currentVisualState = .userPaused` (so
-    ///   widgets show paused) while leaving `playbackIntent = .sleepTimer` (non-sticky
-    ///   so resurrection logic and clearUserPausedLockIfNeeded can distinguish it).
-    /// - Direct stop uses `reason: .interruption` (effectiveSilent + teardown guard
-    ///   suppresses KVO/status callbacks).
-    /// - The self-posted Darwin pause is suppressed by `DarwinSelfEchoGuard`.
-    /// - Therefore this observer must explicitly pull `currentVisualState` and call
-    ///   `updateUI(for:)` so the main app chrome (VM → SwiftUI controls tint/glyph,
-    ///   colors, pill) leaves the stale `.playing` (green) state.
-    ///
-    /// The `lastAppliedVisualState` guard inside `updateUI` makes the call a cheap no-op
-    /// on cancel paths where visual state did not change.
-    ///
-    /// - SeeAlso: ``SharedPlayerManager/applySleepTimerElapsedPause()``,
-    ///   `PlaybackIntent.sleepTimer`, `SleepTimerNotification`,
-    ///   `handleStatusChange(_:reasonKey:)`, CODING_AGENT.md (Single Source of Truth Principles),
-    ///   SharedPlayerManager.swift (resurrection table + applySleepTimerElapsedPause).
-    ///
-    /// - Note: Only the first remaining-seconds value seeds the local countdown to avoid
-    ///   per-second actor hops; the coordinator owns decrementing locally.
-    @objc private func sleepTimerStateDidChange(_ notification: Notification) {
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            let isActive = notification.userInfo?[SleepTimerNotification.Key.isActive] as? Bool ?? false
-            if !isActive {
-                self.stopLocalSleepTimerDisplay()
-
-                // AGENT NOTE (sleep timer visual SSOT sync):
-                // The main-app UI (green playing state) can diverge from the PersistedWidgetState
-                // snapshot after sleep fire because the stop is silent and the Darwin pause is
-                // intentionally suppressed as a self-echo. We must re-read the actor SSOT here
-                // and drive updateUI so the in-app controls, VM, and chrome match .userPaused.
-                // Widgets are already correct via the snapshot write + WidgetRefreshManager.
-                // This is the designated place for the main-app side effect of timer completion.
-                let visualState = await SharedPlayerManager.shared.currentVisualState
-                self.updateUI(for: visualState)
-                return
-            }
-            if let remaining = notification.userInfo?[SleepTimerNotification.Key.remainingSeconds] as? Int,
-               remaining > 0,
-               self.cachedSleepTimerRemaining == nil {
-                self.beginLocalSleepTimerDisplay(remaining: remaining)
-                self.syncSleepTimerToViewModel(remaining: remaining)
-            }
-        }
-    }
-
-    @MainActor
-    func syncSleepTimerDisplayFromActorIfNeeded() async {
-        let remaining = await SharedPlayerManager.shared.sleepTimerRemainingSeconds
-        if let remaining, remaining > 0 {
-            beginLocalSleepTimerDisplay(remaining: remaining)
-            syncSleepTimerToViewModel(remaining: remaining)
-        } else if cachedSleepTimerRemaining != nil {
-            stopLocalSleepTimerDisplay()
-        }
-    }
-
-    @MainActor
-    private func beginLocalSleepTimerDisplay(remaining: Int) {
-        cachedSleepTimerRemaining = remaining
-        // Drive SwiftUI VM countdown (moon glyph + accessibility value observe sleepTimerRemaining).
-        syncSleepTimerToViewModel(remaining: remaining)
-
-        sleepTimerDisplayTask?.cancel()
-        sleepTimerDisplayTask = Task { @MainActor [weak self] in
-            guard let self, !Task.isCancelled else { return }
-            var remainingSeconds = self.cachedSleepTimerRemaining ?? 0
-
-            while remainingSeconds > 0, !Task.isCancelled {
-                do {
-                    try await Task.sleep(for: .seconds(1))
-                } catch {
-                    return
-                }
-                guard !Task.isCancelled else { return }
-
-                remainingSeconds -= 1
-                self.cachedSleepTimerRemaining = remainingSeconds > 0 ? remainingSeconds : nil
-                // SwiftUI observes sleepTimerRemaining on VM; countdown Task only mutates cache.
-            }
-        }
-    }
-
-    @MainActor
-    private func stopLocalSleepTimerDisplay() {
-        sleepTimerDisplayTask?.cancel()
-        sleepTimerDisplayTask = nil
-        cachedSleepTimerRemaining = nil
-        syncSleepTimerToViewModel(remaining: nil)
     }
 
     // MARK: - Privacy clear (Clear local playback state)

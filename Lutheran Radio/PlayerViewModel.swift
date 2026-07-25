@@ -344,8 +344,9 @@ final class PlayerViewModel {
 
     /// Remaining sleep timer duration in seconds. Nil when no timer is active.
     ///
-    /// Updated by the coordinator's local countdown (beginLocalSleepTimerDisplay / Task)
-    /// which also drives sync + icon state in PlaybackControlsView.
+    /// Updated by the coordinator sleep-timer domain's local countdown
+    /// (`beginLocalSleepTimerDisplay` / Task) which also drives sync + icon state in
+    /// `PlaybackControlsView`.
     /// The SwiftUI confirmationDialog reads this to decide whether to show the Cancel action.
     ///
     /// Derived presentation: `sleepTimerAccessibilityValue` consumes this to produce the
@@ -380,13 +381,14 @@ final class PlayerViewModel {
     /// Coordinator wires this to its full `handleLanguageSelection` + debounce + completeStreamSwitch path.
     var onLanguageSelected: ((Int) -> Void)?
 
-    /// Injected to request a sleep timer preset (minutes). Routed by coordinator to
-    /// handleSleepTimerPresetSelected + full interaction glue (flags, settles, display task,
-    /// SharedPlayerManager.setSleepTimer, sync, notifications).
+    /// Injected to request a sleep timer preset (minutes). Routed by the coordinator
+    /// sleep-timer domain to `handleSleepTimerPresetSelected` + full interaction glue
+    /// (flags, settles, display task, SharedPlayerManager.setSleepTimer, sync, notifications).
     var onSleepTimerPresetSelected: ((Int) -> Void)?
 
-    /// Injected to request cancellation of an active sleep timer. Routed to coordinator's
-    /// handleSleepTimerCancelSelected (preserves all existing stop + restore + UI sync paths).
+    /// Injected to request cancellation of an active sleep timer. Routed to the coordinator
+    /// sleep-timer domain's `handleSleepTimerCancelSelected` (preserves all existing stop +
+    /// restore + UI sync paths).
     var onSleepTimerCancelSelected: (() -> Void)?
 
     // MARK: - Public convenience API (callable from SwiftUI)
@@ -418,9 +420,9 @@ final class PlayerViewModel {
     }
 
     /// Request a sleep timer preset (e.g. 15, 30, 45 or 60 minutes).
-    /// Forwards to the injected closure so coordinator retains ownership of setSleepTimer,
-    /// isSleepTimerInteractionActive, background deferral, beginLocalSleepTimerDisplay,
-    /// and syncSleepTimerToViewModel.
+    /// Forwards to the injected closure so the coordinator sleep-timer domain retains ownership
+    /// of setSleepTimer glue, isSleepTimerInteractionActive, background deferral,
+    /// beginLocalSleepTimerDisplay, and syncSleepTimerToViewModel.
     ///
     /// - Parameter minutes: Duration in minutes for the timer.
     /// - SeeAlso: ``onSleepTimerPresetSelected``.
