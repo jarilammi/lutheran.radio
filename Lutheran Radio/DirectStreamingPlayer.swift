@@ -4,19 +4,28 @@
 //
 //  Created by Jari Lammi on 25.2.2025.
 //
-//  Public façade for the secure streaming engine. Domain behavior is file-split:
-//  catalog, server selection, playback attach, item recovery, observers, metadata,
-//  audio interruption, resource loader, SSL protection, error classification, and
-//  visual-state bridge. See the isolation map on the class for the SSOT table.
+//  Public façade for the secure streaming engine (AVPlayer attach, recovery, network path,
+//  resource loader, SSL). Domain behavior is file-split — see the isolation map on the class.
+//
+//  Ownership boundary (do not invert):
+//  - This type owns engine runtime: AVPlayer, attach generation, soft silence, stream catalog
+//    inputs, server selection, path monitoring for streaming retries, permanent/transient
+//    stream errors, validation-state gates that block attach.
+//  - SharedPlayerManager owns visual/intent SSOT (PlayerVisualState, PlaybackIntent),
+//    PlayerEvent emission, and widget/LA session snapshot writes (saveCurrentState /
+//    performActualSave / persistWidgetSnapshot). Engine paths call into the actor; they are
+//    not the visual SSOT and do not “always” persist after every engine mutation.
+//  - Cellular ternary preference → CellularPermissionManager (migration-only legacy bool).
+//  - DNS / certificate / security-model policy → Core/ only.
 //
 //  Security invariant: all media items via makeSecuredPlayerItem → resource loader →
 //  StreamingSessionDelegate → SecurityConfiguration.makeSecureEphemeralConfiguration().
-//  DNS / certificate / model policy stay in Core/ only.
 //
-//  - SeeAlso: DirectStreamingPlayer+StreamCatalog.swift, DirectStreamingPlayer+ServerSelection.swift,
+//  - SeeAlso: SharedPlayerManager, PlaybackPlayDecision, CellularPermissionManager,
+//    DirectStreamingPlayer+StreamCatalog.swift, DirectStreamingPlayer+ServerSelection.swift,
 //    DirectStreamingPlayer+PlaybackAttach.swift, DirectStreamingPlayer+PlayerItemRecovery.swift,
-//    DirectStreamingPlayer+ResourceLoader.swift, StreamingSessionDelegate.swift,
-//    <doc:Architecture>, CODING_AGENT.md.
+//    DirectStreamingPlayer+ResourceLoader.swift, DirectStreamingPlayer+PlayerVisualState.swift,
+//    StreamingSessionDelegate.swift, <doc:Architecture>, CODING_AGENT.md.
 //
 
 import Foundation
@@ -43,20 +52,55 @@ protocol StreamingPlayerDelegate: AnyObject {
 
 /// - Article: Core Streaming and Privacy Architecture
 ///
-/// `DirectStreamingPlayer` is the heart of audio streaming, using AVFoundation for direct HTTPS playback with runtime SSL validation. It integrates with `CertificateValidator.swift` for certificate pinning and supports a transition period for rotations (July-August 2026).
+/// `DirectStreamingPlayer` is the secure audio **engine façade**: AVFoundation HTTPS playback with
+/// custom resource loading (`StreamingSessionDelegate`), runtime leaf-certificate digest pinning
+/// via Core (`CertificateValidator` / `SecurityConfiguration`), and adaptive network retries.
+/// Transition-window certificate leniency (device/server time-skew protected) is policy in Core only.
 ///
-/// **Single source of truth for state**: `DirectStreamingPlayer` now owns all mutations to `isPlaying`, `selectedStream`, `hasPermanentError`, `validationState`, etc. It calls `SharedPlayerManager.shared.saveCurrentState()` immediately after every mutation (play, stop, setStream, status observers, server fallback, validation callbacks). This keeps widget and Live Activity state aligned.
+/// ## Ownership and single sources of truth (read carefully)
+///
+/// **Engine owns (this type + domain extensions):**
+/// - AVPlayer lifecycle, attach generation, soft silence / soft-pause attach, item recovery
+/// - Stream catalog + `urlWithOptimalServer(for:)` server selection
+/// - Engine-side flags used for attach and retries (`isPlaying` rate reality, `selectedStream`,
+///   `hasPermanentError`, security-validation gate state that blocks media attach)
+/// - Network path monitoring that drives **streaming** reconnect / expensive-path timing
+/// - Secured media construction: always `makeSecuredPlayerItem` → resource loader → Core config
+///
+/// **SharedPlayerManager owns (not this type):**
+/// - Visual chrome SSOT (`PlayerVisualState`) and sticky resurrection rules
+/// - Playback intent SSOT (`PlaybackIntent` / `currentPlaybackIntent`)
+/// - `PlayerEvent` emission and in-process event streams
+/// - Authoritative widget / Live Activity session snapshot writes via `saveCurrentState()` →
+///   `performActualSave` / privacy-gated `persistWidgetSnapshot`
+///
+/// **Related pure helpers (not engine storage):** `PlaybackPlayDecision` in WidgetSurface
+/// classifies early play gates; the SPM play pipeline consumes it.
+///
+/// **AGENT NOTE:** Do **not** treat the engine as visual or intent SSOT. Do **not** assume every
+/// engine mutation immediately calls `saveCurrentState()`. Persistence is intentional: SPM
+/// orchestration paths, selected status/observer edges, and interruption handlers call save when
+/// the cross-process snapshot must update; many engine-internal steps do not. Widget optimistic
+/// paths use separate instant-feedback / snapshot helpers under privacy write suppression.
+///
+/// **Cellular preference SSOT:** ternary `cellularDataPermission` via `CellularPermissionManager`
+/// on `UserDefaults.standard` (legacy dismiss bool is migration-read only). Not App Group.
+///
+/// **Security SSOT:** DNS TXT model validation, pinned digests, ATS SPKI pins, and time-skew
+/// policy live exclusively under `Core/` (`SecurityModelValidator`, `CertificateValidator`,
+/// `SecurityConfiguration`). This façade consumes them; it never redefines them.
 ///
 /// Workflow:
-/// 1. **Initialization/Setup**: Queries DNS for access authorization; sets up AVPlayer with custom resource loading (`StreamingSessionDelegate.swift`).
-/// 2. **Playback Control**: `play()`/`stop()` manage state; adaptive retries handle network issues (cellular-aware timeouts via `NetworkPathMonitoring`).
-/// 3. **Error Handling**: Tracks transient/permanent errors; now guarantees persistence via `saveCurrentState()`.
-/// 4. **Privacy Safeguards**: No metadata tracking; minimal network footprint; excludes features like push notifications (see excluded features list above).
+/// 1. **Setup**: Security-model validation (Core) before trusted attach; AVPlayer + custom resource loading.
+/// 2. **Playback control**: Public `play`/`stop` and attach pipeline; adaptive retries (path monitor).
+/// 3. **Error handling**: Transient vs permanent stream errors; permanent failures feed SPM sticky
+///    `.securityLocked` / stop paths rather than inventing a second visual store.
+/// 4. **Host chrome**: Status via `StreamingPlayerDelegate` → `RadioPlayerCoordinator.handleStatusChange`;
+///    ICY metadata via `onMetadataChange` registered by the coordinator.
+/// 5. **Privacy**: No tracking SDKs; minimal network footprint (see excluded features below).
 ///
-/// iOS 26 Optimizations: Low-power mode reduces retry aggressiveness. UI status chrome routes through
-/// `StreamingPlayerDelegate` → `RadioPlayerCoordinator.handleStatusChange`; ICY metadata through
-/// `onMetadataChange` registered by the coordinator. Shared via `SharedPlayerManager.shared` for widgets.
-/// `DirectStreamingPlayer` manages audio streaming, security validation, and network monitoring for the Lutheran Radio app.
+/// Shared process access for the main app: `DirectStreamingPlayer.shared`. Cross-process widget
+/// state is never written by inventing a parallel SSOT here — always SPM.
 ///
 /// The Lutheran Radio app prioritizes user privacy and security to protect individuals, particularly in regions where religious content consumption may be monitored or restricted. This design ensures safe, anonymous access to Lutheran content without compromising personal data.
 ///
@@ -107,18 +151,17 @@ protocol StreamingPlayerDelegate: AnyObject {
 ///   - Provides authenticated DNS before TLS + runtime certificate pinning.
 ///   - Lookup failures (including "DNSSEC unavailable from resolver") are transient.
 /// - **Privacy-Safe Data Management**:
-///   - Streaming state stored only in memory during use.
-///   - No persistent traces of listening activity.
-///   - Only stores an anonymous preference (mobile data notification dismissed).
+///   - Streaming runtime state is in-memory on the engine; durable visual chrome is **not**
+///     restored from disk across cold launch (memory-only visual policy on `SharedPlayerManager`).
+///   - No listening history or user-identifiable analytics.
 /// - **Minimal Network Footprint**:
-///   - Connects only to streaming servers.
-///   - No telemetry or reporting endpoints.
-///   - No unnecessary background network activity.
+///   - Connects to streaming servers + security model DNS/validation paths required for access control.
+///   - No telemetry or third-party reporting endpoints.
 /// - **Minimal Anonymous Preferences**:
-///   - Stores the user's cellular data permission preference (ternary: ask/alwaysAllow/sessionAllow) + legacy compat flag (migration only from prior boolean).
-///   - Cannot be used for user identification or tracking.
-///   - Enhances user experience without compromising privacy.
-///   - Fully deleted when the app is removed.
+///   - Cellular data permission is a ternary preference (`ask` / `alwaysAllow` / `sessionAllow`)
+///     owned by `CellularPermissionManager` on standard `UserDefaults` — not dual-written with the
+///     retired legacy bool (migration-read only when ternary is absent).
+///   - Cannot be used for user identification or tracking; removed when the app is deleted.
 ///
 /// ## Why This Matters
 /// Religious freedom includes the right to private worship and study. This design ensures users worldwide can access Lutheran content safely, especially in regions where:
@@ -214,13 +257,21 @@ final class NWPathMonitorAdapter: NetworkPathMonitoring, @unchecked Sendable {
 }
 
 
-/// Manages direct audio streaming, security validation, network monitoring, and privacy protections for the Lutheran Radio app.
+/// Secure streaming engine façade: AVPlayer, attach/recovery, path monitoring, and Core-backed media security.
+///
+/// Does **not** own visual/intent SSOT, `PlayerEvent` emission, or widget snapshot policy —
+/// those belong to ``SharedPlayerManager``. See the module article and isolation map below.
+///
+/// - SeeAlso: ``SharedPlayerManager``, `PlaybackPlayDecision`, `CellularPermissionManager`,
+///   Core `SecurityConfiguration` / `CertificateValidator` / `SecurityModelValidator`,
+///   CODING_AGENT.md (Single Source of Truth Principles), <doc:Architecture>.
 final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
 
     // MARK: - Isolation map (domain split)
     //
-    // DirectStreamingPlayer is the public façade (`@unchecked Sendable`). Mutable engine
-    // state is concentrated here; domain behavior lives in extension files:
+    // DirectStreamingPlayer is the public engine façade (`@unchecked Sendable`). Mutable
+    // *engine* state is concentrated here; domain behavior lives in extension files.
+    // Visual/intent/widget snapshot SSOT is *not* in this map — see SharedPlayerManager.
     //
     // | Domain | File | Responsibility |
     // |--------|------|----------------|
@@ -234,8 +285,14 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     // | Resource loader | DirectStreamingPlayer+ResourceLoader.swift | AVAssetResourceLoaderDelegate + Icecast + load timeout |
     // | SSL protection | DirectStreamingPlayer+SSLProtection.swift | Adaptive handshake timers |
     // | Error classification | DirectStreamingPlayer+StreamErrorClassification.swift | StreamErrorType.from |
-    // | Visual state bridge | DirectStreamingPlayer+PlayerVisualState.swift | markAsUserPaused / markAsPlaying |
+    // | Visual state bridge | DirectStreamingPlayer+PlayerVisualState.swift | Thin façade → SPM setUserPaused / publish playing (not SSOT storage) |
     // | Widget stub | DirectStreamingPlayer+WidgetStub.swift | Extension-only type surface (`#if !LUTHERAN_MAIN_APP`) |
+    //
+    // Cross-layer owners (do not re-home into this façade):
+    // - PlayerVisualState / PlaybackIntent / PlayerEvent / session snapshots → SharedPlayerManager
+    // - Early play gate pure decision → PlaybackPlayDecision (WidgetSurface) + SPM play pipeline
+    // - Cellular ternary preference → CellularPermissionManager
+    // - DNS TXT / cert digests / ATS SPKI → Core only
     //
     // Security invariant: media items always via makeSecuredPlayerItem → resource loader →
     // StreamingSessionDelegate → SecurityConfiguration.makeSecureEphemeralConfiguration().
@@ -246,6 +303,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     // - nonisolated stop entry may hop to MainActor for generation bump / teardown guard.
     // - connectionQueue isolates SSL ConnectionInfo dictionary.
     // - @unchecked Sendable documents historical engine sharing; prefer MainActor hops for new work.
+    // - Dual host/engine path monitors for UI connectivity remain a structural follow-up; engine
+    //   path remains authoritative for streaming retries regardless of host chrome.
 
     var isSSLHandshakeComplete = false
     var certificateValidationTimer: Timer?

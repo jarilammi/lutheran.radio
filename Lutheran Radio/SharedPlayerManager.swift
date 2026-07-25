@@ -93,10 +93,14 @@ import WidgetKit
 /// widget snapshot writes remain fully supported for compatibility and instant feedback.
 ///
 /// **Division of responsibilities (Single Source of Truth)**:
-/// - `DirectStreamingPlayer` owns actual playback state, stream selection, error state,
-///   and all mutations to the AVPlayer.
-/// - `SharedPlayerManager` owns the **visual/intent state** (`currentVisualState` of type
-///   `PlayerVisualState`) **and** is the sole emitter of `PlayerEvent`.
+/// - `DirectStreamingPlayer` owns the **engine**: AVPlayer mutations, attach/recovery,
+///   stream catalog + server selection, streaming path monitoring, and engine-side
+///   error/validation gates that block attach. It is **not** the visual or intent SSOT and
+///   does not claim “persist after every mutation” — selected paths call into this actor.
+/// - `SharedPlayerManager` owns **visual/intent state** (`currentVisualState` /
+///   `PlayerVisualState`, `currentPlaybackIntent`), is the sole emitter of `PlayerEvent`,
+///   and owns authoritative widget/LA session snapshot writes (`saveCurrentState` /
+///   `performActualSave` / privacy-gated `persistWidgetSnapshot`).
 ///
 /// Core responsibilities:
 /// - **Visual State + Intent SSOT**: `PlayerVisualState` + `currentPlaybackIntent`

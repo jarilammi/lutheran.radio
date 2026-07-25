@@ -4,16 +4,18 @@
 //
 //  Created by Jari Lammi on 24.7.2026.
 //
-//  Thin façade over SharedPlayerManager playback intent for auto-resume and pause/playing marks.
+//  Thin bridge from the streaming engine into SharedPlayerManager for auto-resume checks
+//  and pause/playing marks. This file does **not** store visual or intent SSOT — it only
+//  forwards to the actor (`setUserPaused`, publish-playing helpers, `canProceedWithPlayback`).
 //
 //  Behavior-preserving domain split from DirectStreamingPlayer.swift.
-//  DirectStreamingPlayer remains the public façade; this file owns one domain.
+//  DirectStreamingPlayer remains the public engine façade; this file owns one domain.
 //
 //  AGENT NOTE: Members used across files are `internal` (Swift `private` is
 //  file-scoped). Prefer this domain file over re-implementing attach / recovery
-//  / catalog logic in call sites.
+//  / catalog logic in call sites. Never treat these helpers as a second visual store.
 //
-//  - SeeAlso: DirectStreamingPlayer.swift,
+//  - SeeAlso: DirectStreamingPlayer.swift, SharedPlayerManager,
 //    CODING_AGENT.md (Single Source of Truth Principles).
 //
 

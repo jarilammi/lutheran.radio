@@ -4,38 +4,53 @@
 //
 //  Created by Jari Lammi on 26.10.2024.
 //
+//  Thin UIKit host + lifecycle owner (SwiftUI migration). Not the streaming engine and not
+//  the visual/intent SSOT.
+//
+//  Owns: background image layer, single UIHostingController for RadioPlayerView, retained
+//  system observers still on the host (network path / interruption / route / Darwin notify),
+//  cellular permission *presentation* (decision + ternary prefs in CellularPermissionManager),
+//  and public SceneDelegate / URL / Siri shims that forward to RadioPlayerCoordinator or SPM.
+//
+//  Does not own:
+//  - AVPlayer / attach / recovery → DirectStreamingPlayer
+//  - PlayerVisualState / PlaybackIntent / PlayerEvent / widget snapshots → SharedPlayerManager
+//  - Stream switch, pending-action drain, sleep-timer glue, haptics, visual distribution →
+//    RadioPlayerCoordinator
+//  - Security model / certificates → Core only
+//
+//  - SeeAlso: RadioPlayerCoordinator, RadioPlayerView, PlayerViewModel, DirectStreamingPlayer,
+//    SharedPlayerManager, CellularPermissionManager, CODING_AGENT.md, <doc:Architecture>.
+//
 
-/// The main view controller for the Lutheran Radio app, handling UI, audio streaming, language selection, and background playback.
+/// - Article: Main UI host and interaction flow
 ///
-/// This class manages the app's core functionality, including:
-/// - Streaming radio content in multiple languages (English, German, Finnish, Swedish, Estonian).
-/// - UI elements for playback control, volume, metadata display, and AirPlay.
-/// - Network monitoring, audio session management, and widget integration.
-/// - iOS 26-specific optimizations like low-power mode handling and haptics.
+/// `ViewController` is the **thin host**: it installs the SwiftUI player tree and keeps a small
+/// set of lifecycle / system-observer responsibilities that are hard to move off UIKit. Primary
+/// chrome lives in `RadioPlayerView` + `PlayerViewModel`; orchestration lives in
+/// `RadioPlayerCoordinator`.
 ///
-/// Flow: viewDidLoad initializes UI/audio; user interactions trigger playback/stream switches; callbacks handle status/metadata updates.
+/// **Not owned here (common historical confusion):**
+/// - Secure streaming engine → ``DirectStreamingPlayer``
+/// - Visual/intent SSOT, events, App Group session writes → ``SharedPlayerManager``
+/// - Catalog covers **21** stream languages (see README language table), not a five-language subset
 ///
-/// Key dependencies: AVFoundation for audio, UIKit for UI, CoreHaptics for feedback.
+/// **Still on the host today:**
+/// - Network path monitor + cellular expensive-path prompt presentation (`CellularPermissionManager`
+///   owns ternary preference persistence; host presents alerts)
+/// - Audio interruption / route observers that still branch through this type
+/// - Darwin widget-notify install + launch-burst scheduling for pending-action drain
+/// - Public shims: `handlePlayAction`, URL schemes, SceneDelegate entry points
 ///
-/// - Note: This app is iOS 26+ only, leveraging features like ProcessInfo.isLowPowerModeEnabled. All user-facing strings are localized.
-/// - SeeAlso: `DirectStreamingPlayer` for streaming logic, `SharedPlayerManager` for widget sharing.
-
-/// - Article: Main UI and User Interaction Flow
+/// **Background / terminate:** `SceneDelegate` + `AppDelegate` forward to
+/// `RadioLiveActivityManager` and `SharedPlayerManager` (widgets + liveness). Authoritative LA
+/// ContentState updates ride SPM save paths and the coordinator — not a parallel host store.
 ///
-/// `ViewController` orchestrates the app's interface: title, language selector (`LanguageCell.swift`), play/pause controls, volume, and metadata display. It handles iOS 26 features like parallax effects, haptics, and low-power mode (`updateForEnergyEfficiency()`).
-/// - Stream Switching: Uses `DirectStreamingPlayer.isSwitchingStream` to suppress "stopped" status updates during language switches, preventing UI flicker and ensuring a seamless user experience.
-/// - Haptics: Provides tactile feedback for play/pause and stream switching using `CHHapticEngine` with a fallback to `UIImpactFeedbackGenerator`. Skips haptics in Low Power Mode to conserve battery.
-/// - Low Power Mode: Optimizes UI and processing (e.g., removes parallax, reduces image quality) when `ProcessInfo.processInfo.isLowPowerModeEnabled` is true.
+/// Volume and AirPlay chrome are SwiftUI-owned (`VolumeAndAirPlayRow` / `AirPlayButton`); do not
+/// reintroduce eager `AVRoutePickerView` construction on this type (launch-watchdog history).
 ///
-/// Key Interactions:
-/// - **Language Switching**: Uses `UICollectionView` with flags; updates stream in `DirectStreamingPlayer.swift` and saves to UserDefaults for widgets.
-/// - **Playback**: Toggles via `togglePlayback()`; monitors network (`NWPathMonitor`) and shows the 3-choice cellular data permission prompt on expensive networks (decision + persistence extracted to CellularPermissionManager).
-/// - **Background Handling**: Delegates background/foreground/terminate to `SceneDelegate` + `AppDelegate`,
-///   which now forward to `RadioLiveActivityManager` (LA) and `SharedPlayerManager` (widgets + liveness).
-///   The actual LA drive lives in SPM save paths + the coordinator.
-/// - **Widget/URL Handling**: Public methods like `handlePlayAction()` process schemes from `SceneDelegate.swift`.
-///
-/// Accessibility: VoiceOver announcements for status/metadata; hyphenation for long text. For lifecycle events, see `SceneDelegate.swift` and `AppDelegate.swift`.
+/// Accessibility and low-power UI tweaks remain host/background-image concerns where still wired.
+/// Lifecycle details: `SceneDelegate.swift`, `AppDelegate.swift`.
 import UIKit
 import SwiftUI
 @unsafe @preconcurrency import AVFoundation
@@ -46,16 +61,19 @@ import WidgetKit
 import Core
 import WidgetSurface
 
-/// The main view controller for the Lutheran Radio app.
-///
-/// Thin host + lifecycle owner during the SwiftUI migration.
+/// Thin UIKit host for the Lutheran Radio main scene (SwiftUI migration).
 ///
 /// Responsibilities that remain here:
 /// - Hosting the background image layer (`BackgroundImageController`)
 /// - Owning the single `UIHostingController` that presents `RadioPlayerView`
 /// - Retaining a few hard-to-move observers (network, interruptions, route, Darwin widget notify)
 /// - Public entry points for SceneDelegate, widgets, Siri, and URL schemes (thin shims to coordinator / SPM)
-/// - Cellular permission prompt presentation (decision logic in `CellularPermissionManager`)
+/// - Cellular permission **prompt presentation** (ternary decision + persistence in `CellularPermissionManager`)
+///
+/// **Not owned by this type (SSOT / engine boundary):**
+/// - AVPlayer attach, recovery, secured media, streaming path retries → ``DirectStreamingPlayer``
+/// - `PlayerVisualState`, `PlaybackIntent`, `PlayerEvent`, widget/LA session snapshots → ``SharedPlayerManager``
+/// - Security model / certificate / DNS policy → Core only
 ///
 /// **Orchestration owned by ``RadioPlayerCoordinator`` (not this type):**
 /// - Pending-action drain (App Group `pendingAction*` → play/pause/switch)
@@ -65,14 +83,13 @@ import WidgetSurface
 /// - Cold-launch special tuning clip + stream-switch tuning delight (`TuningSoundCoordinator` gate)
 /// - Visual distribution, haptics, stream-switch debounce
 ///
-/// This type only installs the Darwin observer, schedules the launch burst, and exposes a
+/// This type installs the Darwin observer, schedules the launch burst, and exposes a
 /// one-line public shim so SceneDelegate and tests can call drain without holding a
 /// coordinator reference.
 ///
-/// The primary player UI has been extracted into pure SwiftUI:
-/// `RadioPlayerView` (composition root) + `NowPlayingMetadataView` + `LanguageSelectorView` +
-/// `PlaybackControlsView` + `VolumeAndAirPlayRow`. All visual state is driven by `PlayerViewModel`,
-/// with orchestration remaining in `RadioPlayerCoordinator`.
+/// Primary player UI is SwiftUI: `RadioPlayerView` (composition root) +
+/// `NowPlayingMetadataView` + `LanguageSelectorView` + `PlaybackControlsView` +
+/// `VolumeAndAirPlayRow`. Leaf chrome is driven by `PlayerViewModel`.
 ///
 /// Volume chrome is **not** owned by this host: system volume is SSOT via SwiftUI
 /// `VolumeAndAirPlayRow` / `MPVolumeView` (identifier `volumeSlider` for UI tests).
@@ -81,13 +98,15 @@ import WidgetSurface
 /// Eager UIKit `AVRoutePickerView` on this type previously ran during scene-create and could
 /// hit the launch watchdog under cold load — do not reintroduce it.
 ///
-/// All playback user intents ultimately route through `userRequestedPlay()` or
-/// `handleUserTogglePlayback()` (see SSOT comments).
+/// Playback user intents ultimately route through `userRequestedPlay()` or
+/// `handleUserTogglePlayback()` into coordinator / SPM / engine — never a host-local
+/// parallel playback store as SSOT.
 ///
 /// - Note: iOS 26.2+ only. See `RadioPlayerView` and the coordinator for the modern layout.
 /// - SeeAlso: `RadioPlayerView`, `AirPlayButton`, `VolumeAndAirPlayRow`, `PlayerViewModel`,
 ///   `RadioPlayerCoordinator`, `TuningSoundCoordinator`, `DirectStreamingPlayer`,
-///   `SharedPlayerManager`, CODING_AGENT.md, <doc:Architecture>.
+///   `SharedPlayerManager`, `CellularPermissionManager`, `PlaybackPlayDecision`,
+///   CODING_AGENT.md, <doc:Architecture>.
 @MainActor
 class ViewController: UIViewController {
     // MARK: - Private Properties and Constants
