@@ -64,7 +64,8 @@ protocol StreamingPlayerDelegate: AnyObject {
 /// - Stream catalog + `urlWithOptimalServer(for:)` server selection
 /// - Engine-side flags used for attach and retries (`isPlaying` rate reality, `selectedStream`,
 ///   `hasPermanentError`, security-validation gate state that blocks media attach)
-/// - Network path monitoring that drives **streaming** reconnect / expensive-path timing
+/// - **Sole** free-running network path monitor (`hasInternetConnection` + publish via
+///   `onNetworkPathChange` for host chrome / cellular prompt; no second monitor on VC)
 /// - Secured media construction: always `makeSecuredPlayerItem` → resource loader → Core config
 ///
 /// **SharedPlayerManager owns (not this type):**
@@ -200,25 +201,47 @@ enum NetworkPathStatus: Sendable {
     case requiresConnection
 }
 
+/// Single published path sample from the engine-owned monitor.
+///
+/// Carries both reachability status and expensive/metered classification so host chrome
+/// (cellular prompt presentation) can observe the engine without a second `NWPathMonitor`.
+///
+/// - SeeAlso: ``NetworkPathMonitoring``, ``DirectStreamingPlayer/setupNetworkMonitoring()``,
+///   `CellularPermissionManager`, ViewController path observation.
+struct NetworkPathUpdate: Sendable {
+    /// Mapped `NWPath.Status` (satisfied / unsatisfied / requiresConnection).
+    let status: NetworkPathStatus
+    /// `NWPath.isExpensive` — cellular / personal-hotspot style metered paths.
+    let isExpensive: Bool
+}
+
 /// Protocol for monitoring network path changes.
+///
+/// Production uses a single `NWPathMonitor` via ``NWPathMonitorAdapter`` owned by
+/// ``DirectStreamingPlayer``. Host UI must **observe** path updates (via
+/// ``DirectStreamingPlayer/onNetworkPathChange``) rather than start a second monitor.
+///
 /// - Note: Abstracts NWPathMonitor for testability; use `NWPathMonitorAdapter` in production.
+/// - SeeAlso: ``NetworkPathUpdate``, ``DirectStreamingPlayer/hasInternetConnection``
 protocol NetworkPathMonitoring: AnyObject, Sendable {
-    /// Handler for network path updates.
-    /// - Parameter status: The updated status (e.g., .satisfied).
-    var pathUpdateHandler: (@Sendable (NetworkPathStatus) -> Void)? { get set }
+    /// Handler for network path updates (status + expensive flag in one sample).
+    var pathUpdateHandler: (@Sendable (NetworkPathUpdate) -> Void)? { get set }
     /// Starts monitoring on a specified queue.
     func start(queue: DispatchQueue)
     /// Cancels monitoring.
     func cancel()
-    /// Current network path for checks like isExpensive (metered).
+    /// Current network path for checks like isExpensive (metered) between updates.
     var currentPath: NWPath? { get }
 }
 
 /// Adapts `NWPathMonitor` to the `NetworkPathMonitoring` protocol.
+///
+/// Sole production adapter for the engine path monitor. Delivers ``NetworkPathUpdate`` so
+/// expensive-path classification travels with status (no second monitor for cellular UI).
 final class NWPathMonitorAdapter: NetworkPathMonitoring, @unchecked Sendable {
     let monitor: NWPathMonitor
     
-    var pathUpdateHandler: (@Sendable (NetworkPathStatus) -> Void)? {
+    var pathUpdateHandler: (@Sendable (NetworkPathUpdate) -> Void)? {
         didSet {
             monitor.pathUpdateHandler = { [weak self] path in
                 guard let self = self else { return }
@@ -233,7 +256,7 @@ final class NWPathMonitorAdapter: NetworkPathMonitoring, @unchecked Sendable {
                 @unknown default:
                     status = .unsatisfied
                 }
-                self.pathUpdateHandler?(status)
+                self.pathUpdateHandler?(NetworkPathUpdate(status: status, isExpensive: path.isExpensive))
             }
         }
     }
@@ -303,8 +326,12 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     // - nonisolated stop entry may hop to MainActor for generation bump / teardown guard.
     // - connectionQueue isolates SSL ConnectionInfo dictionary.
     // - @unchecked Sendable documents historical engine sharing; prefer MainActor hops for new work.
-    // - Dual host/engine path monitors for UI connectivity remain a structural follow-up; engine
-    //   path remains authoritative for streaming retries regardless of host chrome.
+    //
+    // Network path ownership (single monitor):
+    // - This façade owns the sole production `NWPathMonitor` (`setupNetworkMonitoring` +
+    //   `hasInternetConnection`). Streaming reconnect / disconnect / server-cache work runs here.
+    // - Host chrome (cellular expensive-path prompt, SPM stop/reconnect surfaces) observes via
+    //   `onNetworkPathChange` — never a second free-running monitor or HTTP probe timer on VC.
 
     var isSSLHandshakeComplete = false
     var certificateValidationTimer: Timer?
@@ -327,7 +354,25 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     // Single declaration (no DEBUG/release duplication) for the few members that historically
     // needed relaxed visibility for test/diagnostic inspection. All other state is now declared once.
     internal var networkMonitor: NetworkPathMonitoring?
+    /// Authoritative process reachability flag driven by the engine-owned path monitor.
+    ///
+    /// Host UI and cold-launch guards must read this (or observe ``onNetworkPathChange``)
+    /// rather than maintaining a parallel `hasInternetConnection` on `ViewController`.
+    /// - SeeAlso: ``setupNetworkMonitoring()``, ``onNetworkPathChange``
     internal var hasInternetConnection = true
+    /// Host chrome observer for path transitions (cellular prompt + SPM reconnect/stop surfaces).
+    ///
+    /// Published from the **single** engine path monitor so the host never starts a second
+    /// `NWPathMonitor` or 5 s HTTP connectivity probe. Parameters:
+    /// - `isConnected`: `status == .satisfied` after this update
+    /// - `isExpensive`: metered/cellular path for ``CellularPermissionManager`` prompt gates
+    /// - `wasConnected`: prior ``hasInternetConnection`` before this update (edge detection)
+    ///
+    /// Invoked on the main queue. Cleared by the host on teardown. No-op under UITestMode
+    /// because ``setupNetworkMonitoring()`` does not start the monitor when `isTesting`.
+    ///
+    /// - SeeAlso: ViewController path observation, ``CellularPermissionManager``
+    var onNetworkPathChange: (@Sendable (_ isConnected: Bool, _ isExpensive: Bool, _ wasConnected: Bool) -> Void)?
     var serverFailureCount: [String: Int] = [:]
     var lastFailedServerName: String?
     /// Active cluster selection used by stream URL construction (see DirectStreamingPlayer+StreamCatalog).
@@ -930,10 +975,25 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         }
     }
     
-    /// Sets up NWPathMonitor for network reachability changes.
-    /// Single implementation (no DEBUG/release duplication).
-    /// Uses `internal` visibility so `@testable` test targets can reach it when needed,
-    /// while keeping the production surface minimal. All `#if DEBUG` is confined to logging.
+    /// Starts the **sole** production `NWPathMonitor` for process reachability.
+    ///
+    /// Ownership story (do not reintroduce a host-side monitor):
+    /// 1. This method is the only free-running path-monitor start in the main app
+    ///    (aside from short-lived SSL cellular detection in `+SSLProtection`).
+    /// 2. ``hasInternetConnection`` is updated here and is the authoritative flag for
+    ///    streaming retries, cold-launch guards, and host mirrors.
+    /// 3. ``onNetworkPathChange`` publishes the same sample to host chrome (cellular
+    ///    expensive-path prompt, SPM stop/reconnect) so UI never needs a second clock
+    ///    or HTTP probe timer.
+    ///
+    /// UI Test isolation: does not start under `isTesting` (sourced from
+    /// `SharedPlayerManager.isRunningInUITestMode`) so reconnect cannot auto-play
+    /// or fire security work in the test host.
+    ///
+    /// - SeeAlso: ``onNetworkPathChange``, ``NetworkPathUpdate``, ``hasInternetConnection``,
+    ///   ViewController path observation (observer only), CODING_AGENT.md (SSOT)
+    /// - Important: Do not add a parallel `NWPathMonitor` on `ViewController` or a 5 s
+    ///   `URLSession` connectivity poll — path updates already cover reconnect edges.
     internal func setupNetworkMonitoring() {
         // UI Test isolation: do not start network monitoring under test.
         // This prevents reconnect handlers from calling play() or triggering any
@@ -946,7 +1006,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         }
 
         networkMonitor = pathMonitor
-        networkMonitor?.pathUpdateHandler = { [weak self] status in
+        networkMonitor?.pathUpdateHandler = { [weak self] update in
             guard let self else {
                 #if DEBUG
                 print("[DirectStreamingPlayer] [Network] Skipped path update: self is nil")
@@ -955,14 +1015,24 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             }
 
             let wasConnected = self.hasInternetConnection
-            self.hasInternetConnection = status == .satisfied
+            let isConnected = update.status == .satisfied
+            self.hasInternetConnection = isConnected
+            let isExpensive = update.isExpensive
 
             #if DEBUG
-            print("[DirectStreamingPlayer] [Network] Status: \(self.hasInternetConnection ? "Connected" : "Disconnected")")
+            print("[DirectStreamingPlayer] [Network] Status: \(isConnected ? "Connected" : "Disconnected") expensive=\(isExpensive)")
             #endif
 
-            if self.hasInternetConnection && !wasConnected {
-                // ── Reconnect case ──
+            // Publish once for host chrome (cellular + SPM surfaces). Main queue so
+            // alert presentation and coordinator calls stay on the UI actor.
+            if let onNetworkPathChange = self.onNetworkPathChange {
+                DispatchQueue.main.async {
+                    onNetworkPathChange(isConnected, isExpensive, wasConnected)
+                }
+            }
+
+            if isConnected && !wasConnected {
+                // ── Reconnect case (engine streaming recovery) ──
                 #if DEBUG
                 print("[DirectStreamingPlayer] [Network] Connection restored, previous server: \(self.currentSelectedServer.name)")
                 print("[DirectStreamingPlayer] [Network] Cleared server selection cache + failure counts")
@@ -997,7 +1067,9 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                             )
                         }
                     } else if self.player?.rate ?? 0 == 0, !self.hasPermanentError {
-                        // Auto-replay if previously playing / ready
+                        // Auto-replay if previously playing / ready (engine.play already
+                        // consults canProceedWithPlayback). Host also routes SPM.play via
+                        // onNetworkPathChange for full visual/widget surfaces.
                         Task { @MainActor in
                             let success = await self.play()
 
@@ -1024,8 +1096,8 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
                     // Any additional post-selection logic here if needed
                 }
             }
-            else if !self.hasInternetConnection && wasConnected {
-                // ── Disconnect case ──
+            else if !isConnected && wasConnected {
+                // ── Disconnect case (engine status chrome) ──
                 #if DEBUG
                 print("[DirectStreamingPlayer] [Network] Connection lost")
                 #endif
@@ -2293,6 +2365,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     func clearCallbacks() {
         onStatusChange = nil
         onMetadataChange = nil
+        onNetworkPathChange = nil
         delegate = nil
     }
     

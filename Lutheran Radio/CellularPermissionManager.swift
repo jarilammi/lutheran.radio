@@ -29,13 +29,15 @@ import Foundation
 ///   `hasDismissedDataUsageNotification == true`, seeds `.alwaysAllow` (one way), writes the
 ///   ternary key, then removes the legacy key.
 /// - Durable writes always target the ternary key only — never re-write the legacy bool.
-/// - No security, streaming, or URL logic here. UI presentation of the alert remains in the ViewController
-///   network host surface (per decomposition guardrails).
+/// - No security, streaming, or URL logic here. UI presentation of the alert remains on the
+///   host (`ViewController`), which observes expensive-path samples from
+///   `DirectStreamingPlayer.onNetworkPathChange` (engine owns the sole free-running path monitor).
 ///
 /// - Important: Do not reintroduce dual-writes of `hasDismissedDataUsageNotification`. Keep the
 ///   migration **read** as a cheap one-way path for older App Store install bases that still
 ///   only have the boolean.
-/// - SeeAlso: ViewController network / expensive-path prompt presentation;
+/// - SeeAlso: `ViewController` path observation / expensive-path prompt presentation;
+///   `DirectStreamingPlayer.onNetworkPathChange`;
 ///   `CODING_AGENT.md` (canonical citations — use production key/method names only).
 @MainActor
 final class CellularPermissionManager {

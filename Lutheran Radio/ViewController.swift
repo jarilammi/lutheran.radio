@@ -8,8 +8,9 @@
 //  the visual/intent SSOT.
 //
 //  Owns: background image layer, single UIHostingController for RadioPlayerView, retained
-//  system observers still on the host (network path / interruption / route / Darwin notify),
-//  cellular permission *presentation* (decision + ternary prefs in CellularPermissionManager),
+//  system observers still on the host (interruption / route / Darwin notify),
+//  cellular permission *presentation* (decision + ternary prefs in CellularPermissionManager;
+//  path samples observed from DirectStreamingPlayer — host does not own NWPathMonitor),
 //  and public SceneDelegate / URL / Siri shims that forward to RadioPlayerCoordinator or SPM.
 //
 //  Does not own:
@@ -36,8 +37,9 @@
 /// - Catalog covers **21** stream languages (see README language table), not a five-language subset
 ///
 /// **Still on the host today:**
-/// - Network path monitor + cellular expensive-path prompt presentation (`CellularPermissionManager`
-///   owns ternary preference persistence; host presents alerts)
+/// - Observation of the engine path monitor (`DirectStreamingPlayer.onNetworkPathChange`) for
+///   cellular expensive-path prompt presentation and SPM reconnect/stop chrome — **not** a
+///   second `NWPathMonitor` or HTTP probe timer. `CellularPermissionManager` owns ternary prefs.
 /// - Audio interruption / route observers that still branch through this type
 /// - Darwin widget-notify install + launch-burst scheduling for pending-action drain
 /// - Public shims: `handlePlayAction`, URL schemes, SceneDelegate entry points
@@ -54,7 +56,6 @@
 import UIKit
 import SwiftUI
 @unsafe @preconcurrency import AVFoundation
-import Network
 import CoreImage
 import CoreHaptics
 import WidgetKit
@@ -66,7 +67,8 @@ import WidgetSurface
 /// Responsibilities that remain here:
 /// - Hosting the background image layer (`BackgroundImageController`)
 /// - Owning the single `UIHostingController` that presents `RadioPlayerView`
-/// - Retaining a few hard-to-move observers (network, interruptions, route, Darwin widget notify)
+/// - Retaining a few hard-to-move observers (interruptions, route, Darwin widget notify)
+/// - Observing engine path updates for cellular prompt + reconnect/stop surfaces (no host monitor)
 /// - Public entry points for SceneDelegate, widgets, Siri, and URL schemes (thin shims to coordinator / SPM)
 /// - Cellular permission **prompt presentation** (ternary decision + persistence in `CellularPermissionManager`)
 ///
@@ -113,11 +115,11 @@ class ViewController: UIViewController {
     
     // Orchestration state (selectedStreamIndex, sleep interaction, tuning clips, visual
     // distribution, pending-action drain, metadata callbacks) lives exclusively in
-    // RadioPlayerCoordinator. This host keeps only lifecycle, network, and thin public shims.
+    // RadioPlayerCoordinator. This host keeps only lifecycle, path observation, and thin public shims.
     
     // Cellular permission state + migration + per-launch prompting is fully extracted to CellularPermissionManager
-    // (owned here because the network path handler + alert presentation remain in the retained thin host surface
-    // per decomposition guardrails; the manager contains no security or streaming logic).
+    // (alert presentation remains on the host; path *samples* come from DirectStreamingPlayer's sole
+    // NWPathMonitor via onNetworkPathChange — the host never starts a second monitor).
     private let cellularPermissionManager = CellularPermissionManager()
     
     /// Dedup set for legacy `lutheranradio://widget-action` URL path only (`handleWidgetAction`).
@@ -198,11 +200,8 @@ class ViewController: UIViewController {
     private let appLaunchTime = Date()
     private var isPlaying = false
     // All decision logic, guards, and resurrection control now live exclusively in SharedPlayerManager.currentPlaybackIntent.
-    private var networkMonitor: NWPathMonitor?
-    private var networkMonitorHandler: (@Sendable (NWPath) -> Void)? // Store handler to clear it
-    private var hasInternetConnection = true
-    private var connectivityCheckTimer: Timer?
-    private var lastConnectionAttemptTime: Date?
+    // Reachability SSOT: DirectStreamingPlayer.hasInternetConnection (engine-owned path monitor).
+    // Host never owns NWPathMonitor / connectivity probe timer — see observeEngineNetworkPath().
     private var isDeallocating = false // Flag to prevent operations during deallocation
 
     // Testable accessors
@@ -211,9 +210,13 @@ class ViewController: UIViewController {
         set { isPlaying = newValue } // Add setter for testing
     }
     
+    /// Mirrors the engine reachability flag for tests and legacy call sites.
+    ///
+    /// Reads/writes ``DirectStreamingPlayer/hasInternetConnection`` — the host does not
+    /// keep a parallel connectivity bool.
     @objc var hasInternet: Bool {
-        get { hasInternetConnection }
-        set { hasInternetConnection = newValue } // Allow setting for test setup
+        get { streamingPlayer.hasInternetConnection }
+        set { streamingPlayer.hasInternetConnection = newValue }
     }
     
     // MARK: - Initialization
@@ -317,11 +320,12 @@ class ViewController: UIViewController {
         let languageCode = SharedPlayerManager.preferredMainAppInitialLanguageCode()
         
         setupControls()
-        // Reset per-launch cellular permission flags early (before network monitoring can fire the expensive path).
+        // Reset per-launch cellular permission flags early (before path observation can fire the expensive path).
         // The manager itself seeds the persisted permission + does legacy migration on init.
         cellularPermissionManager.resetPerLaunchFlags()
+        // Single path monitor lives on DirectStreamingPlayer; host only observes.
         if !SharedPlayerManager.isRunningInUITestMode {
-            setupNetworkMonitoring()
+            observeEngineNetworkPath()
         }
         setupInterruptionHandling()
         setupRouteChangeHandling()
@@ -475,7 +479,7 @@ class ViewController: UIViewController {
                 #endif
             }
             
-            guard self.hasInternetConnection else { return }
+            guard self.streamingPlayer.hasInternetConnection else { return }
             
             // In-session widget refresh only (no on-disk visual persistence). Re-query widget
             // presence so saveCurrentState / performActualSave can update the in-memory session
@@ -669,70 +673,92 @@ class ViewController: UIViewController {
         // Timer business logic remains on RadioPlayerCoordinator.
     }
     
-    // MARK: - Network and Interruption Handling
-    private func setupNetworkMonitoring() {
+    // MARK: - Network observation and interruption handling
+
+    /// Observes the engine-owned path monitor for host chrome only.
+    ///
+    /// **Ownership:** ``DirectStreamingPlayer/setupNetworkMonitoring()`` owns the sole
+    /// free-running `NWPathMonitor` and ``DirectStreamingPlayer/hasInternetConnection``.
+    /// This host must not start a second monitor or a periodic HTTP connectivity probe.
+    ///
+    /// On each published sample (main queue):
+    /// 1. Cellular expensive-path prompt via ``CellularPermissionManager`` (presentation only).
+    /// 2. Reconnect edge → technical recovery via ``handleNetworkReconnection()`` (SPM.play).
+    /// 3. Disconnect edge → SPM stop + no-internet chrome (intent preserved on actor).
+    ///
+    /// - Precondition: Not called under UITestMode (caller guards).
+    /// - SeeAlso: ``DirectStreamingPlayer/onNetworkPathChange``, ``handleNetworkReconnection()``,
+    ///   ``CellularPermissionManager``, CODING_AGENT.md (SSOT)
+    private func observeEngineNetworkPath() {
         if SharedPlayerManager.isRunningInUITestMode {
             #if DEBUG
-            print("[ViewController] UITestMode — skipping network monitoring setup (prevents any connecting/reconnect logic or timers in test host)")
+            print("[ViewController] UITestMode — skipping engine path observation")
             #endif
             return
         }
-        networkMonitor?.cancel()
-        networkMonitor = nil
-        networkMonitor = NWPathMonitor()
         #if DEBUG
-        print("[ViewController] Setting up network monitoring")
+        print("[ViewController] Observing engine network path (no host NWPathMonitor)")
         #endif
-        networkMonitorHandler = { [weak self] path in
-            guard let self = self else {
-                #if DEBUG
-                print("[ViewController] pathUpdateHandler: ViewController is nil, skipping callback")
-                #endif
-                return
-            }
-            let isConnected = path.status == .satisfied
-            let isExpensive = path.isExpensive
-            DispatchQueue.main.async {
-                // Smarter cellular / metered data permission prompt (replaces the prior binary "don't show again" once-per-launch alert).
-                // Decision, persistence, migration, and per-launch guards live in the extracted CellularPermissionManager.
-                // The prompt is shown only on the isExpensive branch; security reconnection / validation logic below is untouched.
-                if self.cellularPermissionManager.shouldShowPrompt(isConnected: isConnected, isExpensive: isExpensive) {
-                    self.showCellularDataAlert()
-                    self.cellularPermissionManager.markPromptedThisLaunch()
-                }
-
-                // Existing network status handling
-                let wasConnected = self.hasInternetConnection
-                self.hasInternetConnection = isConnected
-                #if DEBUG
-                print("[ViewController] Network path update: status=\(path.status), isExpensive=\(path.isExpensive), isConstrained=\(path.isConstrained)")
-                #endif
-                if isConnected != wasConnected {
-                    #if DEBUG
-                    print("[ViewController] Network status changed: \(isConnected ? "Connected" : "Disconnected")")
-                    #endif
-                }
-                if isConnected && !wasConnected {
-                    #if DEBUG
-                    print("[ViewController] Network monitor detected reconnection")
-                    #endif
-                    self.radioPlayerCoordinator.stopTuningSound()
-                    self.handleNetworkReconnection()
-                } else if !isConnected && wasConnected {
-                    #if DEBUG
-                    print("[ViewController] Network disconnected - stopping playback and tuning sound")
-                    #endif
-                    self.radioPlayerCoordinator.stopTuningSound()
-                    self.stopPlayback()
-                    self.updateUIForNoInternet()
-                    // Playback intent (userPaused / securityLocked) is now authoritative in SharedPlayerManager.
-                }
+        streamingPlayer.onNetworkPathChange = { [weak self] isConnected, isExpensive, wasConnected in
+            // Engine publishes on the main queue; hop to @MainActor for host state / alerts.
+            Task { @MainActor [weak self] in
+                self?.handleEngineNetworkPathUpdate(
+                    isConnected: isConnected,
+                    isExpensive: isExpensive,
+                    wasConnected: wasConnected
+                )
             }
         }
-        networkMonitor?.pathUpdateHandler = networkMonitorHandler
-        let monitorQueue = DispatchQueue(label: "NetworkMonitor", qos: .utility)
-        networkMonitor?.start(queue: monitorQueue)
-        setupConnectivityCheckTimer()
+
+        // Engine monitor starts at façade init (before this host exists). Deliver one
+        // non-edge snapshot so the cellular expensive-path prompt can still fire when
+        // launch is already on a metered path without waiting for a path flap.
+        let isConnected = streamingPlayer.hasInternetConnection
+        let isExpensive = streamingPlayer.networkMonitor?.currentPath?.isExpensive
+            ?? streamingPlayer.pathMonitor.currentPath?.isExpensive
+            ?? false
+        handleEngineNetworkPathUpdate(
+            isConnected: isConnected,
+            isExpensive: isExpensive,
+            wasConnected: isConnected
+        )
+    }
+
+    /// Applies one path sample for cellular prompt + reconnect/disconnect host chrome.
+    ///
+    /// - Parameters:
+    ///   - isConnected: Current engine reachability (`status == .satisfied`).
+    ///   - isExpensive: Metered/cellular path for ``CellularPermissionManager`` gates.
+    ///   - wasConnected: Prior connected flag; equal to `isConnected` for non-edge snapshots
+    ///     (initial attach) so reconnect/stop edges do not fire spuriously.
+    /// - SeeAlso: ``observeEngineNetworkPath()``, ``DirectStreamingPlayer/onNetworkPathChange``
+    private func handleEngineNetworkPathUpdate(isConnected: Bool, isExpensive: Bool, wasConnected: Bool) {
+        guard !isDeallocating else { return }
+
+        // Cellular / metered data permission prompt (ternary prefs in CellularPermissionManager).
+        if cellularPermissionManager.shouldShowPrompt(isConnected: isConnected, isExpensive: isExpensive) {
+            showCellularDataAlert()
+            cellularPermissionManager.markPromptedThisLaunch()
+        }
+
+        #if DEBUG
+        print("[ViewController] Engine path update: connected=\(isConnected) expensive=\(isExpensive) wasConnected=\(wasConnected)")
+        #endif
+
+        if isConnected && !wasConnected {
+            #if DEBUG
+            print("[ViewController] Engine path reconnection — SPM technical recovery")
+            #endif
+            radioPlayerCoordinator.stopTuningSound()
+            handleNetworkReconnection()
+        } else if !isConnected && wasConnected {
+            #if DEBUG
+            print("[ViewController] Engine path disconnect — stop playback + no-internet chrome")
+            #endif
+            radioPlayerCoordinator.stopTuningSound()
+            stopPlayback()
+            updateUIForNoInternet()
+        }
     }
     
     private func showCellularDataAlert() {
@@ -899,120 +925,50 @@ class ViewController: UIViewController {
         }
     }
     
-    private func setupConnectivityCheckTimer() {
-        if SharedPlayerManager.isRunningInUITestMode {
-            #if DEBUG
-            print("[ViewController] UITestMode — skipping connectivity check timer")
-            #endif
-            return
-        }
-        connectivityCheckTimer?.invalidate()
-        guard !isDeallocating else { return }
-        connectivityCheckTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                guard let self = self else {
-                    #if DEBUG
-                    print("[ViewController] connectivityCheckTimer: ViewController is nil, skipping callback")
-                    #endif
-                    return
-                }
-                self.performActiveConnectivityCheck()
-            }
-        }
-    }
-    
-    private func performActiveConnectivityCheck() {
-        if SharedPlayerManager.isRunningInUITestMode {
-            return
-        }
-        guard !hasInternetConnection else { return }
-        
-        if let lastAttempt = lastConnectionAttemptTime,
-           Date().timeIntervalSince(lastAttempt) < 10.0 {
-            return
-        }
-        
-        lastConnectionAttemptTime = Date()
-        
-        let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForResource = 5.0
-        let session = URLSession(configuration: config)
-        
-        // Use our makeURL helper for consistency and safety
-        let url = DirectStreamingPlayer.makeURL("https://www.apple.com/library/test/success.html")
-        
-        let task = session.dataTask(with: url) { [weak self] data, response, error in
-            guard let self = self else {
-                #if DEBUG
-                print("[ViewController] performActiveConnectivityCheck: ViewController is nil, skipping callback")
-                #endif
-                return
-            }
-            
-            let success = error == nil && (response as? HTTPURLResponse)?.statusCode == 200
-            
-            DispatchQueue.main.async {
-                if success && !self.hasInternetConnection {
-                    #if DEBUG
-                    print("[ViewController] Active check detected internet connection")
-                    #endif
-                    self.hasInternetConnection = true
-                    self.handleNetworkReconnection()
-                }
-            }
-        }
-        task.resume()
-    }
-    
-    /// Handles network reconnection (and active connectivity poll success) by re-validating
-    /// the security model and conditionally resuming playback.
+    /// Handles network reconnection by re-validating the security model and conditionally resuming playback.
     ///
-    /// This is invoked from the `NWPathMonitor` `pathUpdateHandler` when `isConnected && !wasConnected`,
-    /// and from `performActiveConnectivityCheck` when a live probe succeeds while
-    /// `hasInternetConnection` was previously false.
+    /// Invoked from ``observeEngineNetworkPath()`` when the engine publishes
+    /// `isConnected && !wasConnected` (sole free-running path monitor on
+    /// ``DirectStreamingPlayer``). There is no host-side HTTP probe fallback.
     ///
     /// Flow:
-    /// 1. Force `hasInternetConnection = true`.
+    /// 1. Align engine ``hasInternetConnection`` to true (edge already set by path handler).
     /// 2. Reset transient streaming errors on the engine.
-    /// 3. Perform explicit security re-validation via `SecurityModelValidator`.
+    /// 3. Perform explicit security re-validation via named reconnect intent (Core policy).
     /// 4. On success **and** only if `currentPlaybackIntent` permits (`canProceedWithPlayback`),
-    ///    call `SharedPlayerManager.play()` (technical recovery path).
+    ///    call `SharedPlayerManager.play()` (technical recovery path for full visual/widget surfaces).
     /// 5. On validation failure, present a one-time security alert (if none is already shown).
     ///
     /// - Important: Reconnection is a **technical recovery**, not an explicit user play/resume.
     ///   It must never call `userRequestedPlay()`. Doing so would invoke `setUserIntentToPlay()`,
     ///   clearing any `.userPaused`, `.cleared`, or similar sticky lock and violating the
     ///   resurrection protection contract.
-    /// - Precondition: Called only on the main actor (enforced by the Task { @MainActor } and
-    ///   the NWPathMonitor dispatch).
+    /// - Precondition: Called only on the main actor (engine path publish + host observer).
     /// - Postcondition: If playback resumes, it does so through the authoritative SPM path
     ///   (visual state, persistence, Now Playing, and widget/LA snapshots are updated by `play()`).
     ///   If intent is `.userPaused` / `.securityLocked` / `.cleared`, no playback is started.
-    /// - Note: The explicit `validateSecurityModel()` success check is the preserved
-    ///   reconnection trigger condition. `SPM.play()` will validate again internally (safe).
+    /// - Note: The explicit validation success check is the preserved reconnection trigger.
+    ///   `SPM.play()` will validate again internally (safe). Engine-side reconnect may also
+    ///   call `DirectStreamingPlayer.play()` when rate is zero; both paths honor `canProceed`.
     /// - SeeAlso: ``SharedPlayerManager/play()``, ``SharedPlayerManager/userRequestedPlay()``,
     ///   ``SharedPlayerManager/canProceedWithPlayback()``, ``SharedPlayerManager/currentPlaybackIntent``,
-    ///   `DirectStreamingPlayer.resetTransientErrors()`, `SecurityModelValidator.validateSecurityModel()`,
-    ///   `setupNetworkMonitoring()`, `performActiveConnectivityCheck()`,
-    ///   RadioPlayerCoordinator (other recovery patterns: interruption, route change, cold launch),
+    ///   `DirectStreamingPlayer.resetTransientErrors()`, ``DirectStreamingPlayer/onNetworkPathChange``,
+    ///   ``observeEngineNetworkPath()``, RadioPlayerCoordinator recovery patterns,
     ///   <doc:Architecture>, CODING_AGENT.md (Single Source of Truth Principles + permitted `play()` cases).
     ///
     /// AGENT NOTE: Prior to the intent model, this method performed the direct low-level call
     /// `_ = await self.streamingPlayer.play()` inside the `if isValid` block. That bypassed
     /// `currentPlaybackIntent`, `canProceedWithPlayback`, `setPlaying` / visual updates,
     /// `saveCurrentState` (widgets, Live Activities, Now Playing), and the single source of truth
-    /// for resurrection. Even after engine guards were added, the call site itself was not
-    /// authoritative. The current pattern (`canProceed ? SPM.play() : nothing`) is the correct
-    /// technical-recovery usage of the permitted direct `play()` case. It matches the style used
-    /// for route-change recovery and guarded interruption `.shouldResume`. `userRequestedPlay()`
+    /// for resurrection. The current pattern (`canProceed ? SPM.play() : nothing`) is the correct
+    /// technical-recovery usage of the permitted direct `play()` case. `userRequestedPlay()`
     /// is deliberately reserved for button taps, widget play actions, remote commands, Siri, etc.
-    ///
-    /// This path no longer bypasses the playback intent model.
     private func handleNetworkReconnection() {
         if SharedPlayerManager.isRunningInUITestMode {
             return
         }
-        hasInternetConnection = true
+        // Path handler already set the flag; keep explicit align for defensive consistency.
+        streamingPlayer.hasInternetConnection = true
         
         #if DEBUG
         print("[ViewController] Network reconnected - checking validation state")
@@ -1192,6 +1148,9 @@ class ViewController: UIViewController {
     /// - Note: Sets `isDeallocating` to avoid operations during teardown.
     deinit {
         isDeallocating = true
+        // Drop host path observer so a recreated scene does not leave a dangling callback
+        // on the shared engine (monitor itself stays engine-owned for process lifetime).
+        streamingPlayer.onNetworkPathChange = nil
         // Sleep notif observer remove: no longer added by VC; coordinator manages its own.
         
         #if DEBUG

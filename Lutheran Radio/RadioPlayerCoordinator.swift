@@ -306,9 +306,8 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
             #endif
         }
 
-        // VC still owns hasInternetConnection flag for this guard (network observer stays in host for now)
-        // The caller (VC) performs the hasInternetConnection check before invoking this.
-        // We simply drive the play here.
+        // Reachability SSOT is DirectStreamingPlayer.hasInternetConnection (engine path monitor).
+        // Caller (VC cold-launch path) gates on that flag before invoking this; we drive play only.
 
         streamingPlayer.cancelPendingSSLProtection()
         streamingPlayer.resetTransientErrors()
