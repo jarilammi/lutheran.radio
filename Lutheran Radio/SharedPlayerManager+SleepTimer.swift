@@ -5,9 +5,9 @@
 //  Sleep timer: schedules automatic pause via SharedPlayerManager.stop().
 //  Main app target only (no widget / Live Activity countdown in v1).
 //
-//  UI: SwiftUI confirmationDialog in PlaybackControlsView drives presets/cancel via
-//  coordinator. The core setSleepTimer / cancelSleepTimer + actor task + notifications
-//  are unchanged.
+//  UI: SwiftUI `.confirmationDialog` in PlaybackControlsView is the sole presentation;
+//  presets/cancel route through PlayerViewModel into RadioPlayerCoordinator. Actor-side
+//  setSleepTimer / cancelSleepTimer + countdown task + SleepTimerNotification are unchanged.
 //
 //  Created by Jari Lammi on 5.6.2026.
 //
@@ -17,7 +17,7 @@ import Foundation
 import WidgetSurface
 
 /// In-process sleep-timer state broadcasts (main app only).
-/// ViewController owns countdown UI locally; these avoid polling the actor every second.
+/// `RadioPlayerCoordinator` owns local countdown display; these avoid polling the actor every second.
 enum SleepTimerNotification {
     static let stateDidChange = Notification.Name("SleepTimerStateDidChange")
 
@@ -26,7 +26,7 @@ enum SleepTimerNotification {
         static let remainingSeconds = "remainingSeconds"
     }
 
-    /// Posts on MainActor — ViewController's observer is MainActor-isolated; posting from
+    /// Posts on MainActor — coordinator observer is MainActor-isolated; posting from
     /// SharedPlayerManager's actor executor traps under Swift 6 strict concurrency.
     @MainActor
     static func postStateChange(isActive: Bool, remainingSeconds: Int? = nil) {

@@ -8,11 +8,10 @@
 //  visual/metadata/background update, sleep-timer UI state machine glue (notification observer + sync +
 //  countdown Task + preset/cancel handling + sync to VM), haptics triggering, and initial-setup sequencing.
 //
-//  Sleep timer: presentation migrated to SwiftUI .confirmationDialog in PlaybackControlsView.
-//  Dialog now includes presets + conditional Cancel + always-present "Clear local state" (privacy).
-//  All logic (handleSleepTimer*, confirmAndClearLocalState, begin/stop display, etc.) stays here.
-//  The legacy configureSleepTimerButtonMenu UIMenu builder is intentionally preserved (still called
-//  from glue paths) per requirements; it no longer drives visible UI.
+//  Sleep timer: sole presentation is SwiftUI `.confirmationDialog` in PlaybackControlsView
+//  (presets + conditional Cancel + always-present "Clear local state" privacy action).
+//  Timer business logic (handleSleepTimer*, begin/stop display, settle windows, VM sync,
+//  confirmAndClearLocalState) stays here. No UIKit UIMenu builder.
 //
 //  ViewController remains the thin lifecycle host + view hierarchy builder + public intent shims
 //  (for SceneDelegate, widgets, remote commands) + hard-to-move observers (network, interruptions, route,
@@ -64,8 +63,8 @@ import WidgetSurface
 /// ``playTuningSound(animateNeedleTo:)`` (duration-based; no main-stream gate).
 ///
 /// Sleep timer note: coordinator is the single owner of timer logic (set/cancel + countdown glue +
-/// interaction windows + VM sync). SwiftUI (PlaybackControlsView) owns only the .confirmationDialog
-/// presentation and calls back via PlayerViewModel closures. configureSleepTimerButtonMenu is retained.
+/// interaction windows + VM sync). SwiftUI (`PlaybackControlsView`) owns only the
+/// `.confirmationDialog` presentation and calls back via `PlayerViewModel` closures.
 ///
 /// - SeeAlso: ``SharedPlayerManager/signalWidgetPendingAction(visualState:action:language:)``,
 ///   ``SharedPlayerManager/submitMediaTransportCommandAndWait(_:)``,
@@ -95,15 +94,6 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
     // a SwiftUI .confirmationDialog action while other main-thread layout (widgets, background
     // images, etc.) is occurring. All uses of presentAlert? benefit from this protection.
     var presentAlert: ((UIAlertController) -> Void)?
-
-    /// Optional hook for the SwiftUI sleep timer button tap.
-    ///
-    /// Primary path: `PlaybackControlsView` presents its own `.confirmationDialog`; choices
-    /// arrive via `PlayerViewModel` action closures (`onSleepTimerPresetSelected` /
-    /// `onSleepTimerCancelSelected`) wired to `handleSleepTimerPresetSelected` /
-    /// `handleSleepTimerCancelSelected`. When set, `RadioPlayerView` may also call
-    /// `configureSleepTimerButtonMenu()` through this hook for menu configuration.
-    var onSleepTimerButtonTapped: (() -> Void)?
 
     // MARK: - SwiftUI observation bridge (optional, non-breaking)
     /// When non-nil, the coordinator drives this @Observable model in addition to the
@@ -138,7 +128,8 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
     private var isSleepTimerInteractionActive = false
     /// Metadata stashed during the interaction window; applied in ``finishSleepTimerInteraction``.
     private var pendingMetadataVisualRefresh: String?
-    private static let sleepTimerMenuSettleNs: UInt64 = 250_000_000
+    /// Settle delay after the SwiftUI confirmationDialog dismisses before applying timer work.
+    private static let sleepTimerDialogSettleNs: UInt64 = 250_000_000
     private static let sleepTimerPostScheduleUISettleNs: UInt64 = 300_000_000
     private static let sleepTimerDeferredVisualSettleNs: UInt64 = 500_000_000
 
@@ -1826,61 +1817,14 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
         #endif
     }
 
-    // MARK: - Sleep timer UI glue (moved verbatim)
+    // MARK: - Sleep timer UI glue
     //
-    // IMPORTANT (SwiftUI migration):
-    // The primary presentation of sleep timer options is now a native SwiftUI
-    // `.confirmationDialog` inside PlaybackControlsView. It offers the same presets
-    // (15/30/45/60) + conditional Cancel and routes choices through PlayerViewModel
-    // action closures directly into the handle* methods below.
+    // Presentation: sole surface is SwiftUI `.confirmationDialog` in PlaybackControlsView
+    // (15/30/45/60 presets + conditional Cancel + always-present Clear local state).
+    // Choices arrive via PlayerViewModel action closures into the handle* methods below.
     //
-    // `configureSleepTimerButtonMenu()` is retained (never removed per requirements)
-    // and is still invoked from beginLocalSleepTimerDisplay, stopLocalSleepTimerDisplay,
-    // handleCancelSelected, localStateCleared, confirmAndClearLocalState, and
-    // view setup for any legacy/compatibility side-effects. Its UIMenu construction
-    // currently has no attached presenter so produces no visible UI.
-    //
-    // All timer *business logic*, timing (settle constants), interaction flags,
-    // countdown Task, sync to VM, and SharedPlayerManager calls remain here unchanged.
-    func configureSleepTimerButtonMenu() {
-        var children: [UIMenuElement] = []
-
-        if cachedSleepTimerRemaining != nil {
-            children.append(UIAction(
-                title: String(localized: "sleep_timer_cancel_timer", table: "Localizable"),
-                attributes: .destructive
-            ) { [weak self] _ in
-                self?.handleSleepTimerCancelSelected()
-            })
-        }
-
-        let presets: [(minutes: Int, title: String)] = [
-            (15, String(localized: "sleep_timer_preset_15_min", table: "Localizable")),
-            (30, String(localized: "sleep_timer_preset_30_min", table: "Localizable")),
-            (45, String(localized: "sleep_timer_preset_45_min", table: "Localizable")),
-            (60, String(localized: "sleep_timer_preset_60_min", table: "Localizable"))
-        ]
-
-        for preset in presets {
-            children.append(UIAction(title: preset.title) { [weak self] _ in
-                self?.handleSleepTimerPresetSelected(minutes: preset.minutes)
-            })
-        }
-
-        // "Clear local playback state" (destructive action in sleep timer menu).
-        // Clears recent playback/widget/Live Activity state from the App Group.
-        // Does not touch any security or Core data.
-        children.append(UIAction(
-            title: String(localized: "clear_local_state_title", table: "Localizable"),
-            image: UIImage(systemName: "trash"),
-            attributes: .destructive
-        ) { [weak self] _ in
-            self?.confirmAndClearLocalState()
-        })
-
-        // (Modern SwiftUI path: presentation lives in PlaybackControlsView.confirmationDialog.
-        // This builder is kept only for compatibility and internal re-sync calls.)
-    }
+    // This type owns timer business logic, settle timing, interaction flags, local
+    // countdown Task, VM sync, and SharedPlayerManager set/cancel calls.
 
     @MainActor
     private func handleSleepTimerPresetSelected(minutes: Int) {
@@ -1891,7 +1835,7 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
         Task { @MainActor [weak self] in
             guard let self else { return }
             await Task.yield()
-            try? await Task.sleep(nanoseconds: Self.sleepTimerMenuSettleNs)
+            try? await Task.sleep(nanoseconds: Self.sleepTimerDialogSettleNs)
             let confirmed = await SharedPlayerManager.shared.setSleepTimer(
                 duration: TimeInterval(totalSeconds)
             )
@@ -1901,10 +1845,9 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
             }
             try? await Task.sleep(nanoseconds: Self.sleepTimerPostScheduleUISettleNs)
             guard !Task.isCancelled else { return }
-            self.beginLocalSleepTimerDisplay(remaining: confirmed, deferImageSwap: true)
+            self.beginLocalSleepTimerDisplay(remaining: confirmed)
             try? await Task.sleep(nanoseconds: Self.sleepTimerDeferredVisualSettleNs)
             guard !Task.isCancelled else { return }
-            // playbackControlsView.applySleepTimerButtonAppearance(remaining: confirmed, deferImageSwap: false)
             self.finishSleepTimerInteraction(applyDeferredVisuals: true)
             self.backgroundImageController.rescheduleDeferredAfterModalIfNeeded()
         }
@@ -1920,7 +1863,6 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
             await Task.yield()
             self.stopLocalSleepTimerDisplay()
             await SharedPlayerManager.shared.cancelSleepTimer()
-            self.configureSleepTimerButtonMenu()
             self.finishSleepTimerInteraction(applyDeferredVisuals: true)
             self.backgroundImageController.rescheduleDeferredAfterModalIfNeeded()
         }
@@ -2004,12 +1946,9 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
     }
 
     @MainActor
-    private func beginLocalSleepTimerDisplay(remaining: Int, deferImageSwap: Bool = false) {
+    private func beginLocalSleepTimerDisplay(remaining: Int) {
         cachedSleepTimerRemaining = remaining
-        // playbackControlsView.applySleepTimerButtonAppearance(remaining: remaining, deferImageSwap: deferImageSwap)
-        configureSleepTimerButtonMenu()
-
-        // Drive SwiftUI VM countdown surface (non-breaking; UIKit path unchanged).
+        // Drive SwiftUI VM countdown (moon glyph + accessibility value observe sleepTimerRemaining).
         syncSleepTimerToViewModel(remaining: remaining)
 
         sleepTimerDisplayTask?.cancel()
@@ -2027,7 +1966,7 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
 
                 remainingSeconds -= 1
                 self.cachedSleepTimerRemaining = remainingSeconds > 0 ? remainingSeconds : nil
-                // self. (SwiftUI observes sleepTimerRemaining on VM)
+                // SwiftUI observes sleepTimerRemaining on VM; countdown Task only mutates cache.
             }
         }
     }
@@ -2037,41 +1976,30 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
         sleepTimerDisplayTask?.cancel()
         sleepTimerDisplayTask = nil
         cachedSleepTimerRemaining = nil
-        // playbackControlsView.applySleepTimerButtonAppearance(remaining: nil)
-        configureSleepTimerButtonMenu()
-
-        // Clear VM surface too.
         syncSleepTimerToViewModel(remaining: nil)
     }
 
     // MARK: - Privacy clear (Clear local playback state)
-    // Wired from the destructive item in the (legacy UIMenu or SwiftUI .confirmationDialog).
-    // The SwiftUI path arrives via onClearLocalStateTapped (PlaybackControlsView).
-    // Uses the SSOT clearAllLocalState (engine stop + reset to .cleared visual + .cleared intent
-    // without persist, removes all local UD keys, ends LA, forces no-widgets gate, posts notification).
-    // We drive the UI to .cleared (blue pill showing clear_local_state_done) + reseed language selector
-    // (device locale fallback) + rebuild menu.
-    // The dedicated .cleared visual gives sighted confirmation the reset succeeded (fixing the prior
-    // "status_connecting yellow after clear" visual issue). Post-clear cold launches behave like fresh
-    // installs (no snapshot persisted => .prePlay path).
-    // Recently deleted data is not re-created by this action or the immediate post-clear launch
-    // setup; it is only (re)created on explicit play or the successful post-clear cold-start play path.
+    // Wired from the destructive action in PlaybackControlsView's sleep-timer `.confirmationDialog`
+    // via `onClearLocalStateTapped`. Uses SSOT `clearAllLocalState` (engine stop + .cleared visual/
+    // intent without persist, removes local UD keys, ends LA, forces no-widgets gate, posts
+    // notification). Drives UI to .cleared (blue pill + clear_local_state_done) + reseeds language.
+    // Post-clear cold launches behave like fresh installs (no snapshot => .prePlay path).
 
     @MainActor
     /// Triggers the privacy "Clear local state" flow.
     ///
-    /// Shows a confirmation UIAlert (using "clear_local_state_*" strings), then on confirm:
-    /// calls `SharedPlayerManager.clearAllLocalState()`, resets UI to .cleared (the visual that
-    /// surfaces "clear_local_state_done" + blue), reseeds language, plays haptic, rebuilds menu,
-    /// and posts VO announcement to keep "clear_local_state_done" live in the catalog.
+    /// Shows a confirmation UIAlert (using `clear_local_state_*` strings), then on confirm:
+    /// calls `SharedPlayerManager.clearAllLocalState()`, resets UI to `.cleared` (the visual that
+    /// surfaces `clear_local_state_done` + blue), reseeds language, plays haptic, and posts a
+    /// VoiceOver announcement so `clear_local_state_done` stays live in the localization catalog.
     ///
-    /// Called from:
-    /// - The legacy UIMenu action inside `configureSleepTimerButtonMenu()`
-    /// - The SwiftUI path: `onClearLocalStateTapped` closure (PlaybackControlsView via RadioPlayerView/VC)
+    /// Called from the SwiftUI sleep-timer dialog: `onClearLocalStateTapped`
+    /// (`PlaybackControlsView` → `RadioPlayerView` → `ViewController`).
     ///
     /// - Note: Visibility is internal (not private) to support the SwiftUI wiring from ViewController.
-    /// - SeeAlso: `configureSleepTimerButtonMenu()`, PlaybackControlsView (the dialog button),
-    ///   SharedPlayerManager.clearAllLocalState, localStateCleared(_:).
+    /// - SeeAlso: `PlaybackControlsView` (dialog destructive action),
+    ///   `SharedPlayerManager.clearAllLocalState`, `localStateCleared(_:)`.
     func confirmAndClearLocalState() {
         let alert = UIAlertController(
             title: String(localized: "clear_local_state_title", table: "Localizable"),
@@ -2099,14 +2027,10 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
                 // The VO announcement is still posted for a11y catalog + non-sighted users.
                 await self.resetLanguageSelectorToInitialLocale()
                 self.playHapticFeedback(style: .heavy)
-                self.configureSleepTimerButtonMenu()
 
-                // Revive the stale "clear_local_state_done" string (was only used from the old
-                // UIKit post-clear path that was deleted during SwiftUI foundation migration).
-                // We post it as a VoiceOver announcement so the entry stays active in the catalog
-                // for all 21 languages and users who trigger the action still receive confirmation
-                // feedback. Sighted users continue to see the clean .prePlay state (no new banner).
-                // Matches the revive pattern used for "switched_to_language %@" elsewhere in this file.
+                // Post clear_local_state_done as a VoiceOver announcement so the entry stays
+                // active in the catalog for all 21 languages and non-sighted users receive
+                // confirmation. Sighted users see the .cleared status pill.
                 // SAFETY: UIAccessibility.post is the established announcement mechanism (same
                 // usage and @preconcurrency handling as announceSwitchedToLanguage).
                 let doneMessage = String(localized: "clear_local_state_done", table: "Localizable")
@@ -2132,10 +2056,9 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
     @objc private func localStateCleared(_ notification: Notification) {
         Task { @MainActor [weak self] in
             guard let self else { return }
-            // Keep menu and local timer display in sync (mirrors sleepTimerStateDidChange pattern).
-            // Primary UI reset + language reseed for the explicit menu path lives in confirmAndClearLocalState.
+            // Keep local countdown display in sync (mirrors sleepTimerStateDidChange cancel path).
+            // Primary UI reset + language reseed for the explicit dialog path lives in confirmAndClearLocalState.
             stopLocalSleepTimerDisplay()
-            configureSleepTimerButtonMenu()
         }
     }
 

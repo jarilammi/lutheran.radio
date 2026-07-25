@@ -78,14 +78,11 @@ import WidgetSurface
 /// parallax, energy-efficiency paths, CI filtering, and deferral logic without risk during
 /// the incremental SwiftUI migration.
 ///
-/// Sleep timer: The tap closure is forwarded for compatibility (it still reaches
-/// `configureSleepTimerButtonMenu`). The actual presentation is a native
-/// `.confirmationDialog` (15/30/45/60 + conditional Cancel + Clear local state) implemented inside
-/// `PlaybackControlsView`. Timer choices are delivered via `PlayerViewModel.selectSleepTimer` /
-/// `cancelSleepTimer` closures; the privacy clear action is delivered via the `onClearLocalStateTapped`
-/// closure (both wired by the coordinator/VC). This preserves the complete existing timer logic,
-/// countdown Task, notifications, `syncSleepTimerToViewModel`, interaction flags, and the
-/// `confirmAndClearLocalState` flow unchanged.
+/// Sleep timer: sole presentation is a native `.confirmationDialog` (15/30/45/60 + conditional
+/// Cancel + Clear local state) in `PlaybackControlsView`. Timer choices go through
+/// `PlayerViewModel.selectSleepTimer` / `cancelSleepTimer` into coordinator handlers; privacy
+/// clear uses `onClearLocalStateTapped` → `confirmAndClearLocalState`. Countdown Task,
+/// notifications, `syncSleepTimerToViewModel`, and interaction settle windows stay on the coordinator.
 ///
 /// String revival note: `sleep_timer_sheet_title` is materialized here (and also used directly
 /// in the dialog) to keep the localization entry live across all 21 languages.
@@ -93,7 +90,7 @@ import WidgetSurface
 /// - SeeAlso: ``PlayerViewModel``, `PlaybackControlsView`, `LanguageSelectorView`,
 ///   `NowPlayingMetadataView`, `VolumeAndAirPlayRow`, `ViewController`,
 ///   `RadioPlayerCoordinator`, `BackgroundImageController`,
-///   `configureSleepTimerButtonMenu()`, `confirmAndClearLocalState()`, CODING_AGENT.md (Single Source of Truth Principles + Cross-target shared files),
+///   `RadioPlayerCoordinator.confirmAndClearLocalState()`, CODING_AGENT.md (Single Source of Truth Principles + Cross-target shared files),
 ///   <doc:Architecture>.
 // MARK: - PlayerEventSubscriber (lightweight UI-layer observer)
 
@@ -308,22 +305,14 @@ final class PlayerEventSubscriber {
 struct RadioPlayerView: View {
     @Bindable var viewModel: PlayerViewModel
 
-    /// Called when the user taps the sleep timer button (compatibility / side-effect path).
-    /// Primary presentation and choice handling for sleep timer now lives in
-    /// `PlaybackControlsView` (`.confirmationDialog`) + `PlayerViewModel` action closures
-    /// (wired to coordinator business logic). The closure is still invoked on tap so that
-    /// `configureSleepTimerButtonMenu` call sites remain exercised.
-    var onSleepTimerTapped: (() -> Void)? = nil
-
     /// Called when the user selects the destructive "Clear local state" option inside the
-    /// sleep timer `.confirmationDialog` (PlaybackControlsView).
+    /// sleep timer `.confirmationDialog` (`PlaybackControlsView`).
     /// Wired from ViewController to `radioPlayerCoordinator?.confirmAndClearLocalState()`.
-    /// This restores the privacy feature lost in the UIMenu → confirmationDialog migration.
-    /// The coordinator method shows a secondary confirmation and then calls the SSOT
+    /// The coordinator shows a secondary confirmation UIAlert then calls the SSOT
     /// `SharedPlayerManager.clearAllLocalState()`.
     ///
-    /// - SeeAlso: PlaybackControlsView.onClearLocalStateTapped, RadioPlayerCoordinator.confirmAndClearLocalState,
-    ///   CODING_AGENT.md.
+    /// - SeeAlso: `PlaybackControlsView.onClearLocalStateTapped`,
+    ///   `RadioPlayerCoordinator.confirmAndClearLocalState`, CODING_AGENT.md.
     var onClearLocalStateTapped: (() -> Void)? = nil
 
     /// Keeps the previously stale "sleep_timer_sheet_title" string active in the localization
@@ -364,7 +353,6 @@ struct RadioPlayerView: View {
                     onPause: viewModel.pause,
                     onSelectSleepTimer: { minutes in viewModel.selectSleepTimer(minutes: minutes) },
                     onCancelSleepTimer: { viewModel.cancelSleepTimer() },
-                    onSleepTimerTapped: onSleepTimerTapped,
                     onClearLocalStateTapped: onClearLocalStateTapped
                 )
                 .padding(.horizontal, 24)

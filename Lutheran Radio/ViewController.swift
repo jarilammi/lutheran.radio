@@ -123,13 +123,8 @@ class ViewController: UIViewController {
     private lazy var playerHostingController = UIHostingController(
         rootView: RadioPlayerView(
             viewModel: PlayerViewModel.makeMock(),
-            onSleepTimerTapped: { [weak self] in
-                // Compatibility path only (see real wiring below).
-                self?.radioPlayerCoordinator?.configureSleepTimerButtonMenu()
-            },
             onClearLocalStateTapped: { [weak self] in
-                // Privacy path: forwards to coordinator which performs double-confirmation
-                // (UIAlert) + SharedPlayerManager.clearAllLocalState(). Restores the lost UIMenu action.
+                // Privacy path: coordinator double-confirmation (UIAlert) + clearAllLocalState.
                 self?.radioPlayerCoordinator?.confirmAndClearLocalState()
             }
         )
@@ -254,16 +249,8 @@ class ViewController: UIViewController {
         // This is the single source of the player UI surface going forward.
         playerHostingController.rootView = RadioPlayerView(
             viewModel: playerViewModel,
-            onSleepTimerTapped: { [weak self] in
-                // Compatibility path: still exercises configureSleepTimerButtonMenu (retained).
-                // Primary sleep timer UI is now the .confirmationDialog inside PlaybackControlsView;
-                // choices are delivered to coordinator via PlayerViewModel action closures.
-                self?.radioPlayerCoordinator?.configureSleepTimerButtonMenu()
-            },
             onClearLocalStateTapped: { [weak self] in
-                // Compatibility + primary path for the restored privacy action.
-                // Taps in the SwiftUI dialog land here and trigger the coordinator flow
-                // (secondary UIAlert confirmation then clearAllLocalState + UI reset).
+                // Sleep-timer dialog "Clear local state" → coordinator (UIAlert + clearAllLocalState).
                 self?.radioPlayerCoordinator?.confirmAndClearLocalState()
             }
         )
@@ -310,9 +297,9 @@ class ViewController: UIViewController {
         setupFastWidgetActionChecking()
         isInitialSetupComplete = true
 
-        // Sleep timer notification observer + initial sync + preset/cancel + clear-local-state handling owned exclusively by RadioPlayerCoordinator.
-        // (added in wireAndInitialSetup). SwiftUI dialog (presets/Cancel/clear) calls back via PlayerViewModel or onClearLocalStateTapped; legacy onSleepTimerTapped still calls configure.
-        // VC no longer observes or syncs the sleep UI glue.
+        // Sleep timer observer + preset/cancel + clear-local-state owned by RadioPlayerCoordinator
+        // (wireAndInitialSetup + PlayerViewModel closures). Presentation is SwiftUI
+        // `.confirmationDialog` in PlaybackControlsView; privacy clear via onClearLocalStateTapped.
         
         // Energy Efficiency Optimizations (iOS 26) — now owned by BackgroundImageController.
         // The controller self-registers for power state notifications and reacts using its last stream.
@@ -635,11 +622,10 @@ class ViewController: UIViewController {
     // showSecurityModelAlert + showSSLTransitionAlert: coordinator presentAlert hook.
     
     private func setupControls() {
-        // SwiftUI PlaybackControlsView owns buttons/taps (wired to viewModel).
-        // Sleep timer presentation is native .confirmationDialog in PlaybackControlsView.
-        // configureSleepTimerButtonMenu retained for compatibility re-sync; all timer logic is on coordinator.
-        // Volume + AirPlay chrome: SwiftUI VolumeAndAirPlayRow / AirPlayButton only (no UIKit residual).
-        radioPlayerCoordinator?.configureSleepTimerButtonMenu()
+        // Play/pause + sleep timer live in SwiftUI PlaybackControlsView (PlayerViewModel closures).
+        // Sleep timer presentation is the sole `.confirmationDialog` in PlaybackControlsView.
+        // Volume + AirPlay chrome: SwiftUI VolumeAndAirPlayRow / AirPlayButton only.
+        // Timer business logic remains on RadioPlayerCoordinator.
     }
     
     // MARK: - Network and Interruption Handling
@@ -1157,11 +1143,8 @@ class ViewController: UIViewController {
         // sleepTimerDisplayTask cancel owned by coordinator deinit + its stopLocal.
     }
 
-    // Entire sleep timer UI glue (preset/cancel handlers + finish + stateDidChange + sync + begin/stopLocal display + the 3 *Settle consts + instance vars + interaction flags)
-    // lives in RadioPlayerCoordinator (wired in wireAndInitialSetup + VM action closures).
-    // Presentation is SwiftUI .confirmationDialog (PlaybackControlsView). configureSleepTimerButtonMenu()
-    // is retained and still invoked from coordinator glue paths + setupControls for compatibility.
-    // All timer business logic untouched.
+    // Sleep timer UI glue lives in RadioPlayerCoordinator (wireAndInitialSetup + VM action closures).
+    // Sole presentation: SwiftUI `.confirmationDialog` in PlaybackControlsView.
 
     // MARK: - Lifecycle (deinit)
     /// Cleans up resources, observers, and audio players to prevent leaks.

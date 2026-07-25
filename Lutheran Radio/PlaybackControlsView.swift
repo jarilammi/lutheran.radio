@@ -14,8 +14,8 @@
 //    and the named `toggle_playback` custom action.
 //
 //  Sleep timer:
-//  - Uses a native `.confirmationDialog` with duration presets, conditional "Cancel timer",
-//    and the destructive "Clear local state" privacy action.
+//  - Sole presentation is a native `.confirmationDialog` with duration presets,
+//    conditional "Cancel timer", and the destructive "Clear local state" privacy action.
 //  - Accessibility value (when active) comes from the pre-derived
 //    `sleepTimerAccessibilityValue` (derived on the model, not inside the view body).
 //
@@ -23,9 +23,6 @@
 //  `statusPresentation`) + action closures. No `PlayerViewModel`.
 //  All complex timing, orchestration, and privacy confirmation logic remains in
 //  `RadioPlayerCoordinator`.
-//
-//  Note: `configureSleepTimerButtonMenu()` is still called from several glue paths for
-//  compatibility, even though the primary UI now uses `.confirmationDialog`.
 //
 //  Created by Jari Lammi on 13.6.2026.
 //
@@ -87,21 +84,15 @@ struct PlaybackControlsView: View {
     var onSelectSleepTimer: ((Int) -> Void)? = nil
     var onCancelSleepTimer: (() -> Void)? = nil
 
-    // Legacy tap forwarding (still called on button press for compatibility).
-    // The complex menu / countdown Task / preset handling logic remains exclusively
-    // in the coordinator; SwiftUI only owns the .confirmationDialog presentation.
-    var onSleepTimerTapped: (() -> Void)? = nil
-
     /// Optional closure for the privacy "Clear local state" destructive action.
     /// When provided (wired from RadioPlayerView / ViewController), tapping the button
     /// inside the dialog invokes this, which reaches `RadioPlayerCoordinator.confirmAndClearLocalState()`.
-    /// This restores the privacy feature that was present in the legacy UIMenu (always shown,
-    /// after the presets, regardless of active timer state).
+    /// Always shown after the presets (regardless of active timer state).
     ///
     /// - Note: The action itself shows a secondary confirmation UIAlertController (title + message + destructive confirm).
     ///   The clear performs `SharedPlayerManager.clearAllLocalState()` and related resets.
-    /// - SeeAlso: RadioPlayerCoordinator.confirmAndClearLocalState, SharedPlayerManager.clearAllLocalState,
-    ///   PlaybackControlsView (the .confirmationDialog), CODING_AGENT.md (Single Source of Truth Principles).
+    /// - SeeAlso: `RadioPlayerCoordinator.confirmAndClearLocalState`, `SharedPlayerManager.clearAllLocalState`,
+    ///   CODING_AGENT.md (Single Source of Truth Principles).
     var onClearLocalStateTapped: (() -> Void)? = nil
 
     // Local presentation state for the SwiftUI-native sleep timer options dialog.
@@ -152,14 +143,11 @@ struct PlaybackControlsView: View {
                 }
             }
 
-            // Sleep timer button (native SwiftUI).
-            // Tapping shows a .confirmationDialog with the 4 duration presets + conditional Cancel
-            // + (always) the destructive "Clear local state" privacy action.
-            // The legacy onSleepTimerTapped is still invoked (keeps configureSleepTimerButtonMenu
-            // call sites exercised for compatibility and any internal side-effects).
-            // Dialog actions for presets/cancel use the injected closures; clear uses its direct closure.
+            // Sleep timer: moon button opens sole presentation surface — `.confirmationDialog`
+            // with 15/30/45/60 presets, conditional Cancel, and always-visible Clear local state.
+            // Preset/cancel closures reach coordinator handlers via PlayerViewModel; clear uses
+            // onClearLocalStateTapped → confirmAndClearLocalState (secondary UIAlert).
             Button {
-                onSleepTimerTapped?()
                 isShowingSleepTimerDialog = true
             } label: {
                 let active = (sleepTimerRemaining ?? 0) > 0
@@ -180,8 +168,6 @@ struct PlaybackControlsView: View {
                 isPresented: $isShowingSleepTimerDialog,
                 titleVisibility: .visible
             ) {
-                // 15 / 30 / 45 / 60 minute presets (identical to prior UIMenu).
-                // These call the narrow closure supplied by the composition root.
                 Button(String(localized: "sleep_timer_preset_15_min", table: "Localizable")) {
                     onSelectSleepTimer?(15)
                 }
@@ -195,7 +181,7 @@ struct PlaybackControlsView: View {
                     onSelectSleepTimer?(60)
                 }
 
-                // Cancel only when a timer is currently active (matches the old UIMenu conditional).
+                // Cancel only when a timer is currently active.
                 if let remaining = sleepTimerRemaining, remaining > 0 {
                     Button(
                         String(localized: "sleep_timer_cancel_timer", table: "Localizable"),
@@ -205,19 +191,9 @@ struct PlaybackControlsView: View {
                     }
                 }
 
-                // "Clear local state" privacy / destructive action.
-                // Restored from the legacy UIMenu built in configureSleepTimerButtonMenu()
-                // (which unconditionally appended it after the presets, even when a timer was active).
-                // Always visible here to match original behavior.
-                // Label uses the existing localized key (no new localization strings added).
-                // Tapping this calls the injected closure (wired to coordinator.confirmAndClearLocalState),
-                // which presents its own UIAlertController for confirmation before calling
-                // SharedPlayerManager.clearAllLocalState(). This is the privacy feature for clearing
-                // recent playback/widget/Live Activity state from the App Group (does not affect
-                // security/Core data).
-                //
-                // - SeeAlso: RadioPlayerCoordinator.configureSleepTimerButtonMenu, confirmAndClearLocalState,
-                //   <doc:Architecture>, CODING_AGENT.md.
+                // Privacy: clear recent playback/widget/Live Activity App Group state (not Core security data).
+                // Secondary UIAlert lives on RadioPlayerCoordinator.confirmAndClearLocalState.
+                // - SeeAlso: SharedPlayerManager.clearAllLocalState, <doc:Architecture>, CODING_AGENT.md.
                 Button(
                     String(localized: "clear_local_state_title", table: "Localizable"),
                     role: .destructive
