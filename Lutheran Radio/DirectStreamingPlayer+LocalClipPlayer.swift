@@ -16,7 +16,7 @@
 //    (``startLocalClipPlayer(contentsOf:volume:numberOfLoops:)``).
 //  - Session category / activate / deactivate remain in `+AudioSession.swift` — never call
 //    `setCategory` / `setActive` from this file.
-//  - Callers (RadioPlayerCoordinator tuning paths) retain the returned player and assign
+//  - Callers (`RadioPlayerCoordinator+Tuning`) retain the returned player and assign
 //    `AVAudioPlayerDelegate` on the main actor after return.
 //  - No stored state lives here (extensions cannot declare stored properties).
 //
@@ -29,8 +29,8 @@
 //  Do not construct `AVAudioPlayer` + `prepareToPlay`/`play` on `@MainActor` for tuning
 //  delight. Members used across files are `internal` (Swift `private` is file-scoped).
 //
-//  - SeeAlso: DirectStreamingPlayer.swift, DirectStreamingPlayer+AudioSession.swift,
-//    DirectStreamingPlayer+WidgetStub.swift, RadioPlayerCoordinator tuning paths,
+//  - SeeAlso: DirectStreamingPlayer.swift (isolation map), DirectStreamingPlayer+AudioSession.swift,
+//    DirectStreamingPlayer+WidgetStub.swift, RadioPlayerCoordinator+Tuning.swift,
 //    TuningSoundCoordinator, CODING_AGENT.md (Single Source of Truth Principles).
 //
 
@@ -69,8 +69,9 @@ extension DirectStreamingPlayer {
     /// - Postcondition: When non-`nil` and `didStart == true`, audio is already playing;
     ///   caller owns the strong reference.
     /// - SeeAlso: ``configureAudioSessionAsync()``,
-    ///   `RadioPlayerCoordinator.playSpecialTuningSound(completion:)`,
-    ///   `RadioPlayerCoordinator.playTuningSound(animateNeedleTo:)`, `TuningSoundCoordinator`.
+    ///   ``RadioPlayerCoordinator/playSpecialTuningSound(completion:)``,
+    ///   ``RadioPlayerCoordinator/playTuningSound(animateNeedleTo:)``,
+    ///   `RadioPlayerCoordinator+Tuning.swift`, `TuningSoundCoordinator`.
     @MainActor
     func startLocalClipPlayer(
         contentsOf url: URL,

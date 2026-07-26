@@ -222,7 +222,7 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     // | Server selection | DirectStreamingPlayer+ServerSelection.swift | Server / PingResult, latency, urlWithOptimalServer |
     // | Network path | DirectStreamingPlayer+NetworkPath.swift | Path status types, NWPathMonitorAdapter, setupNetworkMonitoring |
     // | Audio session | DirectStreamingPlayer+AudioSession.swift | Category + async activate/deactivate (configure / setup / deactivate) |
-    // | Local clip player | DirectStreamingPlayer+LocalClipPlayer.swift | Tuning/special bundled clip start (`startLocalClipPlayer`) |
+    // | Local clip player | DirectStreamingPlayer+LocalClipPlayer.swift | Tuning/special bundled clip start (`startLocalClipPlayer`); coordinator callers live in `RadioPlayerCoordinator+Tuning` |
     // | Thermal protection | DirectStreamingPlayer+ThermalProtection.swift | Thermal pause/resume + Low Power Mode observation (`setupThermalProtection` / energy) |
     // | Playback control | DirectStreamingPlayer+PlaybackControl.swift | Public play/stop entry (`play`, `createAndStartPlayer`, soft/hard stop paths) |
     // | Secured player item | DirectStreamingPlayer+SecuredPlayerItem.swift | makeSecuredPlayerItem + preparePlayerItem (Core-backed resource loader path) |

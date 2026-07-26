@@ -13,8 +13,8 @@
 //
 //  Does not own: mailbox key names or writers (SharedPlayerManager / WidgetIntentExecution),
 //  engine attach (DirectStreamingPlayer), security validation (Core), or widget switch
-//  orchestration (`handleWidgetSwitchToLanguage` / `switchToStreamFromWidget` remain on
-//  the main coordinator file).
+//  orchestration (`handleWidgetSwitchToLanguage` / `switchToStreamFromWidget` live in
+//  `RadioPlayerCoordinator+StreamSwitch.swift`).
 //
 //  Public entry stays ``RadioPlayerCoordinator/checkForPendingWidgetActions()``. Lifecycle
 //  hosts (ViewController Darwin listener, SceneDelegate) call thin shims only.
