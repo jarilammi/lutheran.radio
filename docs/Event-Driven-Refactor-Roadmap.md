@@ -187,11 +187,15 @@ WidgetRefreshManager.refreshIfNeeded(
 | ``.mediaSurface`` | Imperative | Opt-in widget reload beside NP/LA | ``refreshAllMediaSurfaces(widgetRefresh: true)`` (default `false`) |
 | ``.test`` | Imperative (test) | White-box / unit tests | Default parameter; XCTest call sites |
 
-**Removed mutation-path imperative sites (2026-07-13):** ``performActualSave``, ``didUpdateStreamMetadata``, ``RadioPlayerCoordinator/updateUserDefaultsLanguage`` — observer + ``refreshUsesImmediateDelivery(for:hasError:)`` owns urgency.
+**Already consolidated (not open delete targets):**
+
+| Former imperative site | Status |
+|------------------------|--------|
+| ``performActualSave`` / ``didUpdateStreamMetadata`` / ``RadioPlayerCoordinator/updateUserDefaultsLanguage`` → ``refreshIfNeeded`` | **Removed 2026-07-13.** Mutation-path timeline reloads are sole via Tier 2 ``handlePlayerEvent`` + ``refreshUsesImmediateDelivery(for:hasError:)``. Do not reintroduce dual mutation-path refresh. |
 
 **Not refresh call sites (related surfaces):** SceneDelegate drain hooks (no direct ``refreshIfNeeded``); provider ``refreshVisualStateFromPersistence`` (read hygiene, not timeline reload); coordinator language save (emit only).
 
-**Later consolidation (requires explicit product decision):** pick one primary main-app mutation path only after device-proven parity; do **not** delete lifecycle/teardown/extension optimistic paths casually. Full table also in [`docs/Widget-Functionality-Roadmap.md`](Widget-Functionality-Roadmap.md) Tier 3.
+**Later consolidation (requires explicit product decision):** further main-app imperative deletion only after device-proven parity; do **not** delete lifecycle/teardown/extension optimistic paths casually. Full table also in [`docs/Widget-Functionality-Roadmap.md`](Widget-Functionality-Roadmap.md) Tier 3.
 
 **3. Widget / Control Provider state resolution (repeated persistence refresh + snapshot reads)**
 
@@ -208,12 +212,21 @@ This is WidgetKit-driven (not a CPU poll loop), but it is an explicit "force rea
 
 Future direction (very late): Rely more heavily on main-app-driven `WidgetCenter.reloadTimelines` (already the dominant mechanism) so providers see fresh snapshots without the refresh call on every execution. The read-refresh guard will likely stay for safety.
 
-**4. Fallback / lifecycle timers that duplicate or guard event-driven surfaces**
+**4. Fallback / lifecycle timers (present-tense inventory)**
 
-- ViewController.setupWidgetActionPolling() (ViewController.swift:589): 30 s repeating `Timer` that calls `checkForPendingWidgetActions()`. Complements the primary Darwin notification listener (`setupDarwinNotificationListener`) and `setupFastWidgetActionChecking`. Widget actions are also delivered via URL schemes and the coordinator.
-- ViewController.setupConnectivityCheckTimer() (ViewController.swift:960): 5 s repeating connectivity probe (unrelated to player visual state but touches recovery paths).
-- RadioLiveActivityManager.updateTimer (RadioLiveActivityManager.swift): 10–30 s fallback heartbeat. Explicitly demoted in production docs and tests ("NoFallbackTimerStartedByDefault", "timer demoted"). Primary updates come from `contentUpdates` attribute events + `PlayerEvent` routed through `WidgetEventObserver`.
-- DirectStreamingPlayer timers (certificateValidationTimer 10 min, bufferingTimer, etc.): Internal to the streaming engine; they drive `saveCurrentState()` which in turn emits events. Not candidates for removal.
+**Already removed — not candidates; do not reintroduce:**
+
+| Former surface | Status |
+|----------------|--------|
+| `ViewController.setupWidgetActionPolling()` (30 s pending-action timer) | **Removed 2026-07-13.** Pending actions use Darwin notify + launch 1…5 s drain burst (`ViewController+DarwinWidgetNotify`) + `SceneDelegate` become-active/foreground drain shims + URL schemes. Background repeating timers are unreliable while suspended. See [`docs/Widget-Functionality-Roadmap.md`](Widget-Functionality-Roadmap.md). |
+| Host `setupConnectivityCheckTimer()` / host `NWPathMonitor` / parallel host `hasInternetConnection` | **Removed.** Engine owns the sole free-running path monitor (`DirectStreamingPlayer+NetworkPath`); host observes ``onNetworkPathChange`` for cellular prompt + reconnect (`ViewController+NetworkPathObservation`). Short-lived SSL cellular probe in `+SSLProtection` is unrelated and remains. |
+
+**Still present (not open Tier 4 deletes without a separate decision):**
+
+- `RadioLiveActivityManager.updateTimer` / ``startLocalUpdateTimer()``: demoted fallback only. Production start/resume paths **do not** start it; primary freshness is `contentUpdates` + explicit `updateCurrentActivity()` at mutation sites. Retained as an internal testing seam and rare manual fallback. Tests: `NoFallbackTimerStartedByDefault`, `startLocalUpdateTimer` / `stopLocalUpdateTimer` white-box.
+- DirectStreamingPlayer timers (`certificateValidationTimer` 10 min, `bufferingTimer`, etc.): engine-internal; they drive state that eventually emits via `SharedPlayerManager`. Not candidates for event-path consolidation.
+
+Pending-action delivery SSOT (after polling removal): Darwin CF notify → coordinator drain; cold-launch burst; scene foreground/become-active shims. Do not restore a host polling timer “for safety.”
 
 The sleep-timer countdown (`SharedPlayerManager+SleepTimer.swift`) uses an internal `Task.sleep` loop + `SleepTimerNotification` (NotificationCenter) precisely "to avoid polling the actor every second". It already produces `playbackIntentChanged` and `visualStateDidChange` events via the normal surfaces.
 
@@ -360,6 +373,7 @@ Keep a short chronological log of major milestones:
 - Retired App Group key purge hygiene (2026-07-22): removed `migrateLegacyIsPlayingIfNeeded` alias; ``clearPersistedVisualStateKeysFromDisk()`` is the sole purge entry point (includes bare `currentLanguage`). App Group SSOT table documents `isPlaying` / bare `currentLanguage` as purged only. ``preferredWidgetLanguage()`` no longer falls back to bare `currentLanguage`. Gates: `testColdLaunchFactoryResetClearsDiskVisualStateAndReturnsPrePlay`, `testPreferredWidgetLanguageIgnoresRetiredBareCurrentLanguageKey`. Canonical: `SharedPlayerManager.swift` App Group table + ``preferredWidgetLanguage()``.
 - Retired App Group operational orphans (2026-07-23): no writers for `preferredVolume` or `lastUserPauseTime`; both purged by ``clearPersistedVisualStateKeysFromDisk()``. Pause recovery via in-actor ``wasRecentlyUserPaused(within:)``; volume via system `MPVolumeView`. Gate: extended factory-reset test. Canonical: `SharedPlayerManager.swift` App Group table.
 - Home-widget privacy residual hygiene (2026-07-23): main-app liveness writes only via privacy-gated ``bumpWidgetLivenessTimestamp``; residual `lastUpdateTime` + instant-feedback keys cleared when the home-widget gate closes and on privacy clear (``clearHomeWidgetLivenessAndInstantFeedbackResiduals()``). Security cache untouched. Gates: privacy residual tests in `SharedPlayerManagerPlaybackIntentTests`. Canonical: `SharedPlayerManager.swift` App Group table.
+- Tier 4 inventory hygiene (2026-07-26): §2 and §4 rewritten to present tense so agents do not treat already-shipped removals as open delete targets. Documents **removed** mutation-path ``refreshIfNeeded`` sites (2026-07-13), **removed** `setupWidgetActionPolling` (2026-07-13), and **removed** host connectivity timer / dual path monitor (engine sole monitor + host observation). Retains demoted LA fallback timer and engine-internal timers as non-candidates. Docs-only; no production behavior change.
 
 ---
 
