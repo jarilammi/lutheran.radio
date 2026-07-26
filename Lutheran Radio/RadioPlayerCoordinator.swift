@@ -129,7 +129,8 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
     // - PlayerVisualState / PlaybackIntent / PlayerEvent / session snapshots → SharedPlayerManager
     // - Timer duration authority / elapsed pause → SharedPlayerManager sleep-timer APIs
     // - DNS TXT / cert digests / ATS SPKI → Core only
-    // - Thin host lifecycle + Darwin install + interruption/route observers → ViewController
+    // - Thin host lifecycle + Darwin install → ViewController; interruption/route observers →
+    //   ViewController+AudioSessionObservers (host chrome only; engine owns rate pause)
     //
     // Stored-state rule: extensions cannot declare stored properties. Domain files mutate
     // internal stamps declared below (PendingActions / SleepTimer / Tuning / StreamSwitch /

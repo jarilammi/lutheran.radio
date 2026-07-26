@@ -5,14 +5,17 @@
 //  Created by Jari Lammi on 26.10.2024.
 //
 //  Thin UIKit host + lifecycle owner (SwiftUI migration). Not the streaming engine and not
-//  the visual/intent SSOT.
+//  the visual/intent SSOT. Domain behavior is file-split — see the isolation map on the class.
 //
-//  Owns: background image layer, single UIHostingController for RadioPlayerView, retained
-//  system observers still on the host (interruption / route / Darwin notify — host work is
-//  tuning chrome + intent-gated resume only; engine owns rate pause without sticky user-pause),
-//  cellular permission *presentation* (decision + ternary prefs in CellularPermissionManager;
-//  path samples observed from DirectStreamingPlayer — host does not own NWPathMonitor),
-//  and public SceneDelegate / URL / Siri shims that forward to RadioPlayerCoordinator or SPM.
+//  Owns: retained system observers and layout install in domain files (interruption / route in
+//  `ViewController+AudioSessionObservers` — host work is tuning chrome + intent-gated resume
+//  only; engine owns rate pause without sticky user-pause; Darwin widget notify + launch drain
+//  burst in `ViewController+DarwinWidgetNotify`; engine path observation + cellular prompt
+//  presentation in `ViewController+NetworkPathObservation` — path samples from
+//  DirectStreamingPlayer; host does not own NWPathMonitor; ternary prefs in
+//  CellularPermissionManager; layout hosting install + layout-pass forward in
+//  `ViewController+LayoutHosting` — single UIHostingController + background insert), and
+//  public SceneDelegate / URL / Siri shims that forward to RadioPlayerCoordinator or SPM.
 //
 //  Does not own:
 //  - AVPlayer / attach / recovery / interruption rate pause → DirectStreamingPlayer
@@ -38,15 +41,17 @@
 /// - Visual/intent SSOT, events, App Group session writes → ``SharedPlayerManager``
 /// - Catalog covers **21** stream languages (see README language table), not a five-language subset
 ///
-/// **Still on the host today:**
-/// - Observation of the engine path monitor (`DirectStreamingPlayer.onNetworkPathChange`) for
-///   cellular expensive-path prompt presentation and SPM reconnect/stop chrome — **not** a
-///   second `NWPathMonitor` or HTTP probe timer. `CellularPermissionManager` owns ternary prefs.
-/// - Audio interruption / route **observers** (tuning chrome stop + resume gate via SPM visual
-///   intent). Playback pause on interruption/route is **not** host-owned — engine observers in
-///   `DirectStreamingPlayer+AudioSessionInterruption` own rate pause without sticky user-pause.
-///   There is **no** host-local `isPlaying` shadow.
-/// - Darwin widget-notify install + launch-burst scheduling for pending-action drain
+/// **Still on the host today (domain files where peeled):**
+/// - Engine path observation (`ViewController+NetworkPathObservation`) for cellular expensive-path
+///   prompt presentation and SPM reconnect/stop chrome — **not** a second `NWPathMonitor` or
+///   HTTP probe timer. `CellularPermissionManager` owns ternary prefs.
+/// - Audio interruption / route **observers** (`ViewController+AudioSessionObservers` — tuning
+///   chrome stop + resume gate via SPM visual intent). Playback pause on interruption/route is
+///   **not** host-owned — engine observers in `DirectStreamingPlayer+AudioSessionInterruption`
+///   own rate pause without sticky user-pause. There is **no** host-local `isPlaying` shadow.
+/// - Darwin widget-notify install + launch-burst scheduling (`ViewController+DarwinWidgetNotify`)
+/// - Layout hosting install + layout-pass forward (`ViewController+LayoutHosting` — single
+///   `UIHostingController` for `RadioPlayerView` + background layer insert; never eager AirPlay)
 /// - Public shims: `handlePlayAction`, URL schemes, SceneDelegate entry points
 ///
 /// **Background / terminate:** `SceneDelegate` + `AppDelegate` forward to
@@ -70,12 +75,14 @@ import WidgetSurface
 /// Thin UIKit host for the Lutheran Radio main scene (SwiftUI migration).
 ///
 /// Responsibilities that remain here:
-/// - Hosting the background image layer (`BackgroundImageController`)
-/// - Owning the single `UIHostingController` that presents `RadioPlayerView`
-/// - Retaining a few hard-to-move observers (interruptions, route, Darwin widget notify)
-/// - Observing engine path updates for cellular prompt + reconnect/stop surfaces (no host monitor)
+/// - Owning stored layout stamps (`BackgroundImageController`, hosting controller) and cold-launch lifecycle
+/// - Retaining hard-to-move work in domain extensions:
+///   - Interruptions/route → `ViewController+AudioSessionObservers`
+///   - Darwin widget notify + launch drain burst → `ViewController+DarwinWidgetNotify`
+///   - Engine path observation + cellular prompt presentation → `ViewController+NetworkPathObservation`
+///     (no host monitor; ternary prefs in `CellularPermissionManager`)
+///   - Layout hosting install + layout-pass forward → `ViewController+LayoutHosting`
 /// - Public entry points for SceneDelegate, widgets, Siri, and URL schemes (thin shims to coordinator / SPM)
-/// - Cellular permission **prompt presentation** (ternary decision + persistence in `CellularPermissionManager`)
 ///
 /// **Not owned by this type (SSOT / engine boundary):**
 /// - AVPlayer attach, recovery, secured media, streaming path retries → ``DirectStreamingPlayer``
@@ -93,9 +100,9 @@ import WidgetSurface
 /// - Cold-launch special tuning clip + stream-switch tuning delight (`TuningSoundCoordinator` gate)
 /// - Visual distribution, haptics, stream-switch debounce
 ///
-/// This type installs the Darwin observer, schedules the launch burst, and exposes a
-/// one-line public shim so SceneDelegate and tests can call drain without holding a
-/// coordinator reference.
+/// Darwin observer install + launch burst live in `ViewController+DarwinWidgetNotify`.
+/// This type still exposes a one-line public drain shim so SceneDelegate and tests can
+/// call drain without holding a coordinator reference.
 ///
 /// Primary player UI is SwiftUI: `RadioPlayerView` (composition root) +
 /// `NowPlayingMetadataView` + `LanguageSelectorView` + `PlaybackControlsView` +
@@ -119,6 +126,45 @@ import WidgetSurface
 ///   CODING_AGENT.md, <doc:Architecture>.
 @MainActor
 class ViewController: UIViewController {
+
+    // MARK: - Isolation map (domain split)
+    //
+    // ViewController is the @MainActor thin UIKit host. Mutable host flags live on this
+    // primary type body; domain behavior lives in extension files where peeled.
+    // Engine attach / security / widget snapshot SSOT / orchestration are *not* in this map —
+    // see DirectStreamingPlayer, Core, SharedPlayerManager, and RadioPlayerCoordinator.
+    //
+    // | Domain | File | Responsibility |
+    // |--------|------|----------------|
+    // | Audio session observers | ViewController+AudioSessionObservers.swift | Interruption + route NotificationCenter install/handlers; ``reconfigureAudioSession`` → engine configure; intent-gated recovery play; tuning chrome stop on began |
+    // | Darwin widget notify | ViewController+DarwinWidgetNotify.swift | CF Darwin observer install/teardown; launch 1…5 s drain burst; pause self-echo guard hop |
+    // | Engine path observation | ViewController+NetworkPathObservation.swift | ``observeEngineNetworkPath`` / sample handler / cellular alert presentation / ``handleNetworkReconnection`` / path-callback clear; no host monitor |
+    // | Layout hosting | ViewController+LayoutHosting.swift | ``setupUI`` hosting controller + background insert; ``viewDidLayoutSubviews`` → coordinator ``notifyLayoutChange`` |
+    // | Cold launch / lifecycle | (this file) | viewDidLoad Task (UITestMode, resurrection, special tuning, first play); viewDidAppear resurrection |
+    // | Public shims | (this file) | SceneDelegate / URL / Siri / widget-action entry → coordinator or SPM |
+    // | DEBUG test seams | (this file) | Drain bypass forwarders for WidgetIntentContractTests |
+    //
+    // Cross-layer owners (do not re-home into this host):
+    // - AVPlayer / attach / recovery / rate pause on interruption → DirectStreamingPlayer
+    // - Sole free-running NWPathMonitor + hasInternetConnection → DirectStreamingPlayer (+NetworkPath)
+    // - PlayerVisualState / PlaybackIntent / PlayerEvent / session snapshots → SharedPlayerManager
+    // - Stream switch / drain / sleep / chrome distribution / tuning clips → RadioPlayerCoordinator
+    // - Ternary cellular prefs + migration → CellularPermissionManager
+    // - DNS TXT / cert digests / ATS SPKI → Core only
+    // - Audio session category / setActive → DirectStreamingPlayer+AudioSession
+    // - Pending-action drain / mailbox keys → RadioPlayerCoordinator+PendingActions
+    // - SwiftUI leaf chrome composition → RadioPlayerView / PlayerViewModel
+    // - Background image CI / energy / deferral → BackgroundImageController
+    //
+    // Stored-state rule: extensions cannot declare stored properties. Domain files mutate
+    // internal stamps declared below (`isDeallocating`, `streamingPlayer`,
+    // `cellularPermissionManager`, `playerHostingController`, etc.).
+    //
+    // AGENT NOTE: Optional further peels are cold-launch Task bulk only if the primary host
+    // is next touched for size — one cohesive domain per change. Public SceneDelegate/test
+    // API must stay stable. Never reintroduce host `isPlaying` or a second NWPathMonitor.
+    // Never reintroduce eager UIKit `AVRoutePickerView` on this type.
+
     // MARK: - Private Properties and Constants
     
     // Orchestration state (selectedStreamIndex, sleep interaction, tuning clips, visual
@@ -126,9 +172,10 @@ class ViewController: UIViewController {
     // RadioPlayerCoordinator. This host keeps only lifecycle, path observation, and thin public shims.
     
     // Cellular permission state + migration + per-launch prompting is fully extracted to CellularPermissionManager
-    // (alert presentation remains on the host; path *samples* come from DirectStreamingPlayer's sole
-    // NWPathMonitor via onNetworkPathChange — the host never starts a second monitor).
-    private let cellularPermissionManager = CellularPermissionManager()
+    // (alert presentation lives in ViewController+NetworkPathObservation; path *samples* come from
+    // DirectStreamingPlayer's sole NWPathMonitor via onNetworkPathChange — the host never starts a
+    // second monitor). `internal` so the path-observation domain can present + mark prompts.
+    let cellularPermissionManager = CellularPermissionManager()
     
     /// Dedup set for legacy `lutheranradio://widget-action` URL path only (`handleWidgetAction`).
     /// Pending-action drain and silent switch use the coordinator's set.
@@ -158,7 +205,13 @@ class ViewController: UIViewController {
     /// UIKit title/volume/airplay pieces. The composed `RadioPlayerView` owns the
     /// vertical arrangement of the three modern SwiftUI subviews plus volume row.
     /// Uses the host's real ``playerViewModel`` from first materialization (no mock swap).
-    private lazy var playerHostingController = UIHostingController(
+    ///
+    /// Stored on the primary type body (`internal` for `ViewController+LayoutHosting`
+    /// install). Hierarchy install lives in ``setupUI()`` — do not add sibling hosting
+    /// controllers or construct AirPlay here.
+    ///
+    /// - SeeAlso: ``setupUI()``, ViewController+LayoutHosting, ``RadioPlayerView``
+    lazy var playerHostingController = UIHostingController(
         rootView: RadioPlayerView(
             viewModel: playerViewModel,
             onClearLocalStateTapped: { [weak self] in
@@ -202,7 +255,10 @@ class ViewController: UIViewController {
     
     // MARK: - Audio and Streaming
     // Streaming engine is shared; orchestration (status chrome, metadata, tuning) is on the coordinator.
-    nonisolated private let streamingPlayer: DirectStreamingPlayer
+    // `internal` so domain extension files (`+AudioSessionObservers`, `+DarwinWidgetNotify`,
+    // `+NetworkPathObservation`, `+LayoutHosting`) can call in; Swift `private` is file-scoped
+    // and would break cross-file host domains.
+    nonisolated let streamingPlayer: DirectStreamingPlayer
     private let audioQueue = DispatchQueue(label: "radio.lutheran.audio", qos: .userInitiated)
 
     private let appLaunchTime = Date()
@@ -211,8 +267,13 @@ class ViewController: UIViewController {
     // - Visual / sticky intent → ``SharedPlayerManager`` / ``PlayerVisualState``
     // - Resumption gates → `currentPlaybackIntent` / `shouldAutoPlayOrResume` / `canProceedWithPlayback`
     // Reachability SSOT: DirectStreamingPlayer.hasInternetConnection (engine-owned path monitor).
-    // Host never owns NWPathMonitor / connectivity probe timer — see observeEngineNetworkPath().
-    private var isDeallocating = false // Flag to prevent operations during deallocation
+    // Host never owns NWPathMonitor / connectivity probe timer — see
+    // ViewController+NetworkPathObservation (``observeEngineNetworkPath``).
+    /// Teardown guard for observers that may fire after `deinit` begins.
+    ///
+    /// `internal` so domain extensions (`+AudioSessionObservers`, `+NetworkPathObservation`) can
+    /// short-circuit safely without a second host flag.
+    var isDeallocating = false
 
     /// Mirrors the engine reachability flag for tests and legacy call sites.
     ///
@@ -322,10 +383,12 @@ class ViewController: UIViewController {
         // RadioPlayerCoordinator.wireAndInitialSetup (preferredMainAppInitialLanguageCode SSOT).
         // Host only needs the language code for the cold-launch stream model attach below.
         let languageCode = SharedPlayerManager.preferredMainAppInitialLanguageCode()
-        
-        setupControls()
+
+        // Play/pause + sleep timer + volume/AirPlay chrome live in SwiftUI
+        // (PlaybackControlsView / VolumeAndAirPlayRow / AirPlayButton); no host UIKit control install.
         // Reset per-launch cellular permission flags early (before path observation can fire the expensive path).
         // The manager itself seeds the persisted permission + does legacy migration on init.
+        // Path observation + cellular alert presentation: ViewController+NetworkPathObservation.
         cellularPermissionManager.resetPerLaunchFlags()
         // Single path monitor lives on DirectStreamingPlayer; host only observes.
         if !SharedPlayerManager.isRunningInUITestMode {
@@ -512,14 +575,8 @@ class ViewController: UIViewController {
         }
     }
     
-    override func viewDidLayoutSubviews() {
-        super.viewDidLayoutSubviews()
-        // Only react to *width* changes. Height-only shifts (e.g. long metadata pushing
-        // the contentStackView taller) must not retrigger needle positioning.
-        // SwiftUI LanguageSelectorView uses matchedGeometryEffect; no manual notify needed.
-        radioPlayerCoordinator.notifyLayoutChange()
-    }
-    
+    // viewDidLayoutSubviews + setupUI: ViewController+LayoutHosting.swift
+
     /// Sets `DirectStreamingPlayer` relative gain to 1.0 after stream attach.
     ///
     /// System output level is owned by iOS (`MPVolumeView` / hardware buttons). This path
@@ -530,45 +587,9 @@ class ViewController: UIViewController {
     private func restoreEngineVolumeToUnity() {
         streamingPlayer.setVolume(1.0)
     }
-    
-    func setupDarwinNotificationListener() {
-        let notificationName = "radio.lutheran.widget.action"
-        let center = CFNotificationCenterGetDarwinNotifyCenter()
-        
-        // Use a simpler approach without context pointer
-        unsafe CFNotificationCenterAddObserver(
-            center,
-            Unmanaged.passUnretained(self).toOpaque(),
-            { (_, observer, _, _, _) in
-                guard let observer = unsafe observer else { return }
-                let vc = unsafe Unmanaged<ViewController>.fromOpaque(observer).takeUnretainedValue()
-                DispatchQueue.main.async {
-                    #if LUTHERAN_MAIN_APP
-                    let hasPendingAction = SharedPlayerManager.shared.hasPendingWidgetAction()
-                    if DarwinSelfEchoGuard.shouldSuppressPauseEcho(hasPendingAction: hasPendingAction) {
-                        #if DEBUG
-                        print("[ViewController] Ignoring self-posted Darwin pause notification echo")
-                        #endif
-                        return
-                    }
-                    #endif
 
-                    #if DEBUG
-                    print("[ViewController] Received Darwin notification for widget action")
-                    #endif
-                    // Thin lifecycle shim → coordinator owns drain + debounce + mailbox enqueue.
-                    vc.checkForPendingWidgetActions()
-                }
-            },
-            notificationName as CFString,
-            nil,
-            .deliverImmediately
-        )
-        
-        #if DEBUG
-        print("[ViewController] Darwin notification listener setup complete")
-        #endif
-    }
+    // Darwin widget notify install + launch 1…5 s drain burst live in
+    // ViewController+DarwinWidgetNotify.swift (isolation map: Darwin widget notify).
     
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
@@ -633,424 +654,16 @@ class ViewController: UIViewController {
         }
     }
 
-    private func setupFastWidgetActionChecking() {
-        // Widget-action delivery does not use a repeating foreground poll timer (Tier 3).
-        // Primary path: Darwin notify → coordinator drain (via checkForPendingWidgetActions shim).
-        // Defense-in-depth: this 1…5 s burst after launch, SceneDelegate sceneDidBecomeActive /
-        // sceneWillEnterForeground.
-        //
-        // UITestMode: skip entirely. The checker would only risk picking up stale pendings
-        // from prior killed sessions and turning them into "user input". The guard inside
-        // RadioPlayerCoordinator.checkForPendingWidgetActions is defense-in-depth; skipping
-        // the schedule avoids the "Fast widget action checking completed" timing marker during
-        // unit tests and reduces scheduler noise in the test host.
-        if SharedPlayerManager.isRunningInUITestMode {
-            #if DEBUG
-            print("[ViewController] UITestMode — skipping fast widget action checking schedule")
-            #endif
-            return
-        }
+    // setupFastWidgetActionChecking: ViewController+DarwinWidgetNotify.swift
+    // Engine path observation + cellular alert + reconnect: ViewController+NetworkPathObservation.swift
+    // Audio session interruption / route + reconfigure: ViewController+AudioSessionObservers.swift
+    // setupUI + viewDidLayoutSubviews: ViewController+LayoutHosting.swift
 
-        // Check for widget actions every second for the first 5 seconds after app starts
-        // This ensures fast processing of widget actions when app becomes active.
-        // Uses repeated asyncAfter (no Timer, no mutable counter, no Sendable data-race issues).
-        for i in 1...5 {
-            DispatchQueue.main.asyncAfter(deadline: .now() + Double(i)) { [weak self] in
-                self?.checkForPendingWidgetActions()
-                if i == 5 {
-                    #if DEBUG
-                    print("[ViewController] Fast widget action checking completed")
-                    #endif
-                }
-            }
-        }
-    }
-    
     // Status changes: StreamingPlayerDelegate.onStatusChange → coordinator handleStatusChange.
     // ICY metadata: coordinator registers DirectStreamingPlayer.onMetadataChange in wireAndInitialSetup.
     // showSecurityModelAlert + showSSLTransitionAlert: coordinator presentAlert hook.
-    
-    private func setupControls() {
-        // Play/pause + sleep timer live in SwiftUI PlaybackControlsView (PlayerViewModel closures).
-        // Sleep timer presentation is the sole `.confirmationDialog` in PlaybackControlsView.
-        // Volume + AirPlay chrome: SwiftUI VolumeAndAirPlayRow / AirPlayButton only.
-        // Timer business logic remains on RadioPlayerCoordinator.
-    }
-    
-    // MARK: - Network observation and interruption handling
-
-    /// Observes the engine-owned path monitor for host chrome only.
-    ///
-    /// **Ownership:** ``DirectStreamingPlayer/setupNetworkMonitoring()`` owns the sole
-    /// free-running `NWPathMonitor` and ``DirectStreamingPlayer/hasInternetConnection``.
-    /// This host must not start a second monitor or a periodic HTTP connectivity probe.
-    ///
-    /// On each published sample (main queue):
-    /// 1. Cellular expensive-path prompt via ``CellularPermissionManager`` (presentation only).
-    /// 2. Reconnect edge → technical recovery via ``handleNetworkReconnection()`` (SPM.play).
-    /// 3. Disconnect edge → SPM stop + no-internet chrome (intent preserved on actor).
-    ///
-    /// - Precondition: Not called under UITestMode (caller guards).
-    /// - SeeAlso: ``DirectStreamingPlayer/onNetworkPathChange``, ``handleNetworkReconnection()``,
-    ///   ``CellularPermissionManager``, CODING_AGENT.md (SSOT)
-    private func observeEngineNetworkPath() {
-        if SharedPlayerManager.isRunningInUITestMode {
-            #if DEBUG
-            print("[ViewController] UITestMode — skipping engine path observation")
-            #endif
-            return
-        }
-        #if DEBUG
-        print("[ViewController] Observing engine network path (no host NWPathMonitor)")
-        #endif
-        streamingPlayer.onNetworkPathChange = { [weak self] isConnected, isExpensive, wasConnected in
-            // Engine publishes on the main queue; hop to @MainActor for host state / alerts.
-            Task { @MainActor [weak self] in
-                self?.handleEngineNetworkPathUpdate(
-                    isConnected: isConnected,
-                    isExpensive: isExpensive,
-                    wasConnected: wasConnected
-                )
-            }
-        }
-
-        // Engine monitor starts at façade init (before this host exists). Deliver one
-        // non-edge snapshot so the cellular expensive-path prompt can still fire when
-        // launch is already on a metered path without waiting for a path flap.
-        let isConnected = streamingPlayer.hasInternetConnection
-        let isExpensive = streamingPlayer.networkMonitor?.currentPath?.isExpensive
-            ?? streamingPlayer.pathMonitor.currentPath?.isExpensive
-            ?? false
-        handleEngineNetworkPathUpdate(
-            isConnected: isConnected,
-            isExpensive: isExpensive,
-            wasConnected: isConnected
-        )
-    }
-
-    /// Applies one path sample for cellular prompt + reconnect/disconnect host chrome.
-    ///
-    /// - Parameters:
-    ///   - isConnected: Current engine reachability (`status == .satisfied`).
-    ///   - isExpensive: Metered/cellular path for ``CellularPermissionManager`` gates.
-    ///   - wasConnected: Prior connected flag; equal to `isConnected` for non-edge snapshots
-    ///     (initial attach) so reconnect/stop edges do not fire spuriously.
-    /// - SeeAlso: ``observeEngineNetworkPath()``, ``DirectStreamingPlayer/onNetworkPathChange``
-    private func handleEngineNetworkPathUpdate(isConnected: Bool, isExpensive: Bool, wasConnected: Bool) {
-        guard !isDeallocating else { return }
-
-        // Cellular / metered data permission prompt (ternary prefs in CellularPermissionManager).
-        if cellularPermissionManager.shouldShowPrompt(isConnected: isConnected, isExpensive: isExpensive) {
-            showCellularDataAlert()
-            cellularPermissionManager.markPromptedThisLaunch()
-        }
-
-        #if DEBUG
-        print("[ViewController] Engine path update: connected=\(isConnected) expensive=\(isExpensive) wasConnected=\(wasConnected)")
-        #endif
-
-        if isConnected && !wasConnected {
-            #if DEBUG
-            print("[ViewController] Engine path reconnection — SPM technical recovery")
-            #endif
-            radioPlayerCoordinator.stopTuningSound()
-            handleNetworkReconnection()
-        } else if !isConnected && wasConnected {
-            #if DEBUG
-            print("[ViewController] Engine path disconnect — stop playback + no-internet chrome")
-            #endif
-            radioPlayerCoordinator.stopTuningSound()
-            stopPlayback()
-            updateUIForNoInternet()
-        }
-    }
-    
-    private func showCellularDataAlert() {
-        let alert = UIAlertController(
-            title: String(localized: "mobile_data_usage_title", table: "Localizable"),
-            message: String(localized: "mobile_data_usage_message", table: "Localizable"),
-            preferredStyle: .alert
-        )
-
-        // "Always Allow" — persist .alwaysAllow (also writes legacy compat flag) and allow playback on cellular.
-        alert.addAction(UIAlertAction(title: String(localized: "cellular_always_allow", table: "Localizable"), style: .default) { [weak self] _ in
-            guard let self else { return }
-            self.cellularPermissionManager.setAlwaysAllow()
-            self.cellularPermissionManager.markPromptedThisLaunch()
-        })
-
-        // "Allow for This Session" — in-memory only until next launch; no permanent write beyond the session flag.
-        alert.addAction(UIAlertAction(title: String(localized: "cellular_allow_this_session", table: "Localizable"), style: .default) { [weak self] _ in
-            guard let self else { return }
-            self.cellularPermissionManager.setSessionAllow()
-            self.cellularPermissionManager.markPromptedThisLaunch()
-        })
-
-        // "Not Now" — treat as explicit user pause for this launch on cellular; stop via SSOT so intent becomes .userPaused,
-        // widgets/Live Activities update, and no auto-resurrection until next explicit user play. Prompt will re-appear on next launch for .ask.
-        alert.addAction(UIAlertAction(title: String(localized: "cellular_not_now", table: "Localizable"), style: .cancel) { [weak self] _ in
-            guard let self else { return }
-            self.cellularPermissionManager.setAsk()
-            self.cellularPermissionManager.markPromptedThisLaunch()
-            self.stopPlayback()
-        })
-
-        present(alert, animated: true, completion: nil)
-    }
-    
-    private func setupInterruptionHandling() {
-        NotificationCenter.default.addObserver(self, selector: #selector(handleInterruption), name: AVAudioSession.interruptionNotification, object: nil)
-    }
-
-    /// Host-side AVAudioSession interruption observer (UIKit lifecycle surface).
-    ///
-    /// **Ownership split (do not collapse casually):**
-    /// - **Engine** (`DirectStreamingPlayer+AudioSessionInterruption`): graceful `AVPlayer`
-    ///   pause/resume from rate truth (`DirectStreamingPlayer.isPlaying`) **without** sticky
-    ///   ``PlayerVisualState/userPaused``. That is the playback-surface owner for interruptions.
-    /// - **Host (this method):** stop local tuning chrome on `.began`; on `.ended` +
-    ///   `.shouldResume`, reconfigure the session and run the SPM technical recovery path only
-    ///   when visual intent allows (`shouldAutoPlayOrResume`).
-    ///
-    /// **Why there is no host `isPlaying` bool:** A parallel host flag desynced from engine
-    /// rate and SPM visual SSOT. Calling ``stopPlayback()`` (→ ``SharedPlayerManager/stop()``)
-    /// on interruption would sticky-pause and block legitimate post-call resume — never reintroduce
-    /// that branch here.
-    ///
-    /// - SeeAlso: ``DirectStreamingPlayer/isPlaying``, ``PlayerVisualState/shouldAutoPlayOrResume``,
-    ///   `DirectStreamingPlayer+AudioSessionInterruption`, ``reconfigureAudioSession()``
-    @objc private func handleInterruption(_ notification: Notification) {
-        guard !isDeallocating else {
-            #if DEBUG
-            print("[ViewController] handleInterruption: ViewController is deallocating, skipping")
-            #endif
-            return
-        }
-        
-        guard let userInfo = notification.userInfo,
-              let typeValue = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
-              let type = AVAudioSession.InterruptionType(rawValue: typeValue) else { return }
-        
-        switch type {
-        case .began:
-            #if DEBUG
-            // Engine rate truth for diagnostics only — not a host playback store.
-            print("[ViewController] AVAudioSession interruption began (engineIsPlaying=\(streamingPlayer.isPlaying))")
-            #endif
-            // Playback pause: engine observer (rate → pause, non-sticky). Host: tuning chrome only.
-            radioPlayerCoordinator.stopTuningSound()
-            
-        case .ended:
-            guard let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt else { return }
-            let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
-            
-            // Consolidated via `reconfigureAudioSession()` → player's async helper.
-            Task { @MainActor in
-                await self.reconfigureAudioSession()
-            }
-            
-            // === Important guard: Respect PlayerVisualState user intent ===
-            // This prevents the most common "play-on-pause resurrection" after phone calls, Siri, etc.
-            if options.contains(.shouldResume) {
-                Task { @MainActor in
-                    guard await streamingPlayer.shouldAutoPlayOrResume else {
-                        #if DEBUG
-                        print("🚫 [Interruption Guard] Blocked auto-resume after interruption — currentVisualState is .userPaused")
-                        #endif
-                        
-                        updateUI(for: .userPaused)
-                        return
-                    }
-                    
-                    #if DEBUG
-                    print("[ViewController] ▶ [Interruption Guard] Allowed resume after interruption")
-                    #endif
-                    
-                    // Recovery path after AV interruption .shouldResume (guard already verified
-                    // canProceed / !sticky via shouldAutoPlayOrResume). Direct SPM.play() is
-                    // permitted here (recovery + intent already known active per the
-                    // userRequestedPlay Precondition).
-                    await SharedPlayerManager.shared.play()
-                }
-            }
-            
-        @unknown default:
-            break
-        }
-    }
-    
-    private func setupRouteChangeHandling() {
-        NotificationCenter.default.addObserver(self, selector: #selector(handleRouteChange), name: AVAudioSession.routeChangeNotification, object: nil)
-    }
-
-    /// Consolidated entry point for audio session (re)activation from ViewController surfaces.
-    ///
-    /// All activation calls originating in ViewController (interruption recovery, route change,
-    /// and category change) route through this method so that activation logic stays in one
-    /// place and always uses the async helper (`configureAudioSessionAsync` is the player SSOT).
-    ///
-    /// The underlying implementation guarantees that `setActive` is never invoked directly
-    /// on the main thread (iOS 27+ uses framework async; 26.x uses off-main dispatch).
-    ///
-    /// Bundled tuning clips must not use this alone and then construct `AVAudioPlayer` on
-    /// `@MainActor` — use ``DirectStreamingPlayer/startLocalClipPlayer(contentsOf:volume:numberOfLoops:)``
-    /// so prepare/play (and any implicit activation) stay off the main actor.
-    ///
-    /// Playback entry points inside the player call `configureAudioSessionAsync()` (or the
-    /// thin `setupAudioSession()` wrapper) directly.
-    ///
-    /// - SeeAlso: ``DirectStreamingPlayer/configureAudioSessionAsync()``,
-    ///   ``DirectStreamingPlayer/deactivateAudioSessionAsync()``,
-    ///   ``DirectStreamingPlayer/setupAudioSession()``,
-    ///   ``DirectStreamingPlayer/startLocalClipPlayer(contentsOf:volume:numberOfLoops:)``,
-    ///   `handleInterruption(_:)`, `handleRouteChange(_:)`,
-    ///   `RadioPlayerCoordinator.playSpecialTuningSound(completion:)`.
-    @MainActor
-    private func reconfigureAudioSession() async {
-        _ = await streamingPlayer.configureAudioSessionAsync()
-    }
-
-    /// Host-side AVAudioSession route-change observer.
-    ///
-    /// **Ownership:** Engine route observer pauses when `player.rate > 0` without sticky
-    /// user-pause. Host does **not** mirror that with a local `isPlaying` flag or
-    /// ``stopPlayback()`` (sticky). Host work here is session reconfiguration + intent-gated
-    /// recovery play on ``newDeviceAvailable``.
-    ///
-    /// - SeeAlso: `DirectStreamingPlayer+AudioSessionInterruption` (route observer),
-    ///   ``SharedPlayerManager/canProceedWithPlayback()``, ``reconfigureAudioSession()``
-    @objc private func handleRouteChange(_ notification: Notification) {
-        guard !isDeallocating else {
-            #if DEBUG
-            print("[ViewController] handleRouteChange: ViewController is deallocating, skipping")
-            #endif
-            return
-        }
-        guard let userInfo = notification.userInfo,
-              let reasonValue = userInfo[AVAudioSessionRouteChangeReasonKey] as? UInt,
-              let reason = AVAudioSession.RouteChangeReason(rawValue: reasonValue) else { return }
-        switch reason {
-        case .oldDeviceUnavailable:
-            // Engine owns rate-based pause when the output route disappears.
-            // Do not call stopPlayback() here — that would sticky-mark .userPaused.
-            #if DEBUG
-            print("[ViewController] Route oldDeviceUnavailable (engineIsPlaying=\(streamingPlayer.isPlaying)); engine owns pause")
-            #endif
-            break
-        case .newDeviceAvailable:
-            // Consolidated via `reconfigureAudioSession()` → player's async helper.
-            // Await config before recovery play (preferred over fire-and-forget).
-            Task { @MainActor in
-                await self.reconfigureAudioSession()
-                // Route-change recovery: only proceed if intent permits (defensive; SPM.play
-                // would also block). This is a technical recovery path, not explicit user play.
-                // (See userRequestedPlay Precondition for permitted direct play() cases.)
-                if await SharedPlayerManager.shared.canProceedWithPlayback() {
-                    await SharedPlayerManager.shared.play()
-                }
-            }
-        case .categoryChange:
-            // Consolidated via `reconfigureAudioSession()`.
-            Task { @MainActor in
-                await self.reconfigureAudioSession()
-            }
-        default:
-            break
-        }
-    }
-    
-    /// Handles network reconnection by re-validating the security model and conditionally resuming playback.
-    ///
-    /// Invoked from ``observeEngineNetworkPath()`` when the engine publishes
-    /// `isConnected && !wasConnected` (sole free-running path monitor on
-    /// ``DirectStreamingPlayer``). There is no host-side HTTP probe fallback.
-    ///
-    /// Flow:
-    /// 1. Align engine ``hasInternetConnection`` to true (edge already set by path handler).
-    /// 2. Reset transient streaming errors on the engine.
-    /// 3. Perform explicit security re-validation via named reconnect intent (Core policy).
-    /// 4. On success **and** only if `currentPlaybackIntent` permits (`canProceedWithPlayback`),
-    ///    call `SharedPlayerManager.play()` (technical recovery path for full visual/widget surfaces).
-    /// 5. On validation failure, present a one-time security alert (if none is already shown).
-    ///
-    /// - Important: Reconnection is a **technical recovery**, not an explicit user play/resume.
-    ///   It must never call `userRequestedPlay()`. Doing so would invoke `setUserIntentToPlay()`,
-    ///   clearing any `.userPaused`, `.cleared`, or similar sticky lock and violating the
-    ///   resurrection protection contract.
-    /// - Precondition: Called only on the main actor (engine path publish + host observer).
-    /// - Postcondition: If playback resumes, it does so through the authoritative SPM path
-    ///   (visual state, persistence, Now Playing, and widget/LA snapshots are updated by `play()`).
-    ///   If intent is `.userPaused` / `.securityLocked` / `.cleared`, no playback is started.
-    /// - Note: The explicit validation success check is the preserved reconnection trigger.
-    ///   `SPM.play()` will validate again internally (safe). Engine-side reconnect may also
-    ///   call `DirectStreamingPlayer.play()` when rate is zero; both paths honor `canProceed`.
-    /// - SeeAlso: ``SharedPlayerManager/play()``, ``SharedPlayerManager/userRequestedPlay()``,
-    ///   ``SharedPlayerManager/canProceedWithPlayback()``, ``SharedPlayerManager/currentPlaybackIntent``,
-    ///   `DirectStreamingPlayer.resetTransientErrors()`, ``DirectStreamingPlayer/onNetworkPathChange``,
-    ///   ``observeEngineNetworkPath()``, RadioPlayerCoordinator recovery patterns,
-    ///   <doc:Architecture>, CODING_AGENT.md (Single Source of Truth Principles + permitted `play()` cases).
-    ///
-    /// AGENT NOTE: Prior to the intent model, this method performed the direct low-level call
-    /// `_ = await self.streamingPlayer.play()` inside the `if isValid` block. That bypassed
-    /// `currentPlaybackIntent`, `canProceedWithPlayback`, `setPlaying` / visual updates,
-    /// `saveCurrentState` (widgets, Live Activities, Now Playing), and the single source of truth
-    /// for resurrection. The current pattern (`canProceed ? SPM.play() : nothing`) is the correct
-    /// technical-recovery usage of the permitted direct `play()` case. `userRequestedPlay()`
-    /// is deliberately reserved for button taps, widget play actions, remote commands, Siri, etc.
-    private func handleNetworkReconnection() {
-        if SharedPlayerManager.isRunningInUITestMode {
-            return
-        }
-        // Path handler already set the flag; keep explicit align for defensive consistency.
-        streamingPlayer.hasInternetConnection = true
-        
-        #if DEBUG
-        print("[ViewController] Network reconnected - checking validation state")
-        #endif
-        
-        Task { @MainActor in
-            // 1. Reset transient failures
-            self.streamingPlayer.resetTransientErrors()
-            
-            // 2. Re-validate via named reconnect intent (Core policy unchanged).
-            //    Success remains the preserved trigger for reconnection playback.
-            let isValid = await SecurityValidationFacade.validate(.onReconnect)
-            
-            if isValid {
-                #if DEBUG
-                print("[ViewController] Validation succeeded after reconnection - attempting playback (via SPM.play for intent consistency)")
-                #endif
-                
-                // Recovery after network: call through SPM.play() (permitted technical recovery path)
-                // rather than raw engine play(). The canProceed guard ensures we only proceed for
-                // active intents (.shouldBePlaying); sticky states (.userPaused, .securityLocked,
-                // .cleared) cause an early return here and we never reach clearUserPausedLockIfNeeded
-                // inside play().
-                //
-                // Contrast with userRequestedPlay(), which always does setUserIntentToPlay() first.
-                // Using that here would incorrectly resurrect after an explicit user pause.
-                if await SharedPlayerManager.shared.canProceedWithPlayback() {
-                    await SharedPlayerManager.shared.play()
-                }
-                
-            } else {
-                #if DEBUG
-                print("[ViewController] Security model validation failed after reconnection")
-                #endif
-                
-                // Show alert only if not already presenting one (security error path unchanged)
-                if presentedViewController == nil {
-                    let alert = UIAlertController(
-                        title: String(localized: "security_model_error_title", table: "Localizable"),
-                        message: String(localized: "security_model_error_message", table: "Localizable"),
-                        preferredStyle: .alert
-                    )
-                    alert.addAction(UIAlertAction(title: String(localized: "ok", table: "Localizable"), style: .default))
-                    present(alert, animated: true)
-                }
-            }
-        }
-    }
+    // Status chrome VoiceOver + no-internet side effects: coordinator
+    // ``RadioPlayerCoordinator/safeUpdateStatusLabel`` / ``updateUIForNoInternet`` (not host duplicates).
     
     // MARK: - User-Initiated Playback (single source of truth)
     // All in-app buttons, lockscreen, Control Center, handleTogglePlayback(), widgets, etc. now go through here.
@@ -1078,82 +691,28 @@ class ViewController: UIViewController {
         radioPlayerCoordinator.updateNowPlayingInfo(title: title)
     }
     
-    private func updateUIForNoInternet() {
-        radioPlayerCoordinator.updateUIForNoInternet()
-    }
-    
     // MARK: - Playback Control Methods
-    
-    /// Pauses playback and updates UI/status.
-    /// - Note: Sets manual pause flag and routes through SharedPlayerManager to ensure .userPaused state is set.
-    private func pausePlayback() {
-        // Implementation in coordinator.
-        radioPlayerCoordinator.pausePlayback()
-    }
-    
-    // MARK: - Manual Pause (user tap)
-    private func stopPlayback() {
-        // Implementation in coordinator.
-        radioPlayerCoordinator.stopPlayback()
-    }
-    
+    // pausePlayback / stopPlayback orchestration live on RadioPlayerCoordinator public shims.
+    // Path-observation disconnect and cellular "Not Now" call the coordinator directly
+    // (ViewController+NetworkPathObservation). Public host handlePauseAction / toggle still go
+    // through coordinator via handleUserTogglePlayback.
+
+    /// Thin chrome forwarder for host-owned paths (interruption recovery, legacy widget).
+    ///
+    /// Distribution + security-alert side effects live in ``RadioPlayerCoordinator/updateUI(for:)``.
+    /// `internal` so `ViewController+AudioSessionObservers` can refresh chrome after a blocked resume.
+    /// Path-observation disconnect chrome calls the coordinator directly
+    /// (``RadioPlayerCoordinator/updateUIForNoInternet()`` / ``stopPlayback()``).
+    ///
+    /// - Parameter visualState: Sticky or transient visual to push into the coordinator.
+    /// - SeeAlso: ``RadioPlayerCoordinator/updateUI(for:)``, ViewController+AudioSessionObservers,
+    ///   ViewController+NetworkPathObservation
     @MainActor
-    private func updateUI(for visualState: PlayerVisualState) {
-        // The skip-last + distribution + security alert side-effect logic lives in coordinator (single owner).
-        // VC keeps a 1-line forwarder for the remaining call sites in host-owned paths (network, interruptions, legacy widget action).
+    func updateUI(for visualState: PlayerVisualState) {
         radioPlayerCoordinator.updateUI(for: visualState)
     }
-    
-    private func setupUI() {
-        view.backgroundColor = .systemBackground
 
-        // Single SwiftUI player view (composes NowPlayingMetadataView + LanguageSelectorView
-        // + PlaybackControlsView + VolumeAndAirPlayRow). This replaces the previous three
-        // separate UIHostingControllers + manual interleaving of UIKit chrome.
-        //
-        // IMPORTANT LAYERING ORDER (background visibility fix):
-        // 1. Add the playerHostingController (and its view) FIRST. At this moment it becomes
-        //    the only (or top) subview and owns the safe-area content area.
-        // 2. Explicitly clear its background so the decorative layer can show through.
-        // 3. THEN insert the backgroundImageView at index 0. This places the full-bleed
-        //    background BEHIND the hosting view in the subview list. zPosition = -1 is
-        //    retained as a CALayer stacking belt-and-suspenders.
-        // Why insert *after* adding the host but *at 0*? Adding host first gives it a stable
-        // position in the hierarchy; insert(at:0) reliably pushes it above the background
-        // without relying on later addSubview order or zPosition alone. RadioPlayerView
-        // already uses Color.clear; the hosting view's opaque default was the obscurer.
-        addChild(playerHostingController)
-        view.addSubview(playerHostingController.view)
-        playerHostingController.view.backgroundColor = .clear
-        playerHostingController.view.translatesAutoresizingMaskIntoConstraints = false
-        playerHostingController.didMove(toParent: self)
-
-        NSLayoutConstraint.activate([
-            playerHostingController.view.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
-            playerHostingController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            playerHostingController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            playerHostingController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor)
-        ])
-
-        // Background image layer (full-bleed with parallax insets). Remains UIKit-owned
-        // for the duration of the incremental SwiftUI migration (energy efficiency, CI pipeline,
-        // deferral, etc. live in BackgroundImageController).
-        //
-        // Inserted at 0 (bottom) after the hosting controller so the SwiftUI content
-        // renders in front. Constraints use view anchors (not safeArea) for true full-bleed.
-        // updateForEnergyEfficiency(), scheduleDeferredForStreamSwitch(), and memory warning
-        // handling are untouched; this is only the add/insert sequence.
-        let bgView = backgroundImageController.backgroundImageView
-        view.insertSubview(bgView, at: 0)
-        bgView.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            bgView.topAnchor.constraint(equalTo: view.topAnchor),
-            bgView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            bgView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            bgView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
-        ])
-        bgView.layer.zPosition = -1
-    }
+    // setupUI: ViewController+LayoutHosting.swift (isolation map: Layout hosting).
     
     @objc private func handleMemoryWarning() {
         #if DEBUG
@@ -1169,32 +728,26 @@ class ViewController: UIViewController {
     
     // Special cold-launch tuning + AVAudioPlayerDelegate finish path live on RadioPlayerCoordinator
     // (playSpecialTuningSound + TuningSoundCoordinator gate). Host only invokes the coordinator method.
-    
-    override func viewWillDisappear(_ animated: Bool) {
-        super.viewWillDisappear(animated)
-        // sleepTimerDisplayTask cancel owned by coordinator deinit + its stopLocal.
-    }
-
     // Sleep timer UI glue lives in RadioPlayerCoordinator (wireAndInitialSetup + VM action closures).
     // Sole presentation: SwiftUI `.confirmationDialog` in PlaybackControlsView.
+    // No host viewWillDisappear teardown (sleep cancel is coordinator-owned).
 
     // MARK: - Lifecycle (deinit)
     /// Cleans up resources, observers, and audio players to prevent leaks.
     /// - Note: Sets `isDeallocating` to avoid operations during teardown.
     deinit {
         isDeallocating = true
-        // Drop host path observer so a recreated scene does not leave a dangling callback
-        // on the shared engine (monitor itself stays engine-owned for process lifetime).
-        streamingPlayer.onNetworkPathChange = nil
         // Sleep notif observer remove: no longer added by VC; coordinator manages its own.
         
         #if DEBUG
         print("[ViewController] deinit starting")
         #endif
         
-        // ONLY this is allowed in deinit (CF + Unmanaged is explicitly permitted)
-        let center = CFNotificationCenterGetDarwinNotifyCenter()
-        unsafe CFNotificationCenterRemoveEveryObserver(center, Unmanaged.passUnretained(self).toOpaque())
+        // Path callback clear: ViewController+NetworkPathObservation (monitor stays engine-owned).
+        // Darwin CF observer remove: ViewController+DarwinWidgetNotify (same Unmanaged identity
+        // as install). Swift `deinit` must stay on the primary type body.
+        clearEngineNetworkPathObservation()
+        removeDarwinNotificationObserver()
         
         #if DEBUG
         print("[ViewController] deinit completed")
@@ -1217,8 +770,8 @@ class ViewController: UIViewController {
     ///
     /// Ownership of debounce, UITestMode drain-without-execute, mailbox enqueue, and
     /// switch work-item cancel is ``RadioPlayerCoordinator/checkForPendingWidgetActions()``.
-    /// Darwin notify, SceneDelegate become-active / foreground, and the launch 1…5 s burst
-    /// call this shim only.
+    /// Darwin notify + launch burst (`ViewController+DarwinWidgetNotify`) and SceneDelegate
+    /// become-active / foreground call this shim only.
     ///
     /// - SeeAlso: ``RadioPlayerCoordinator/checkForPendingWidgetActions()``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md
@@ -1286,68 +839,20 @@ extension ViewController {
 }
 
 extension ViewController {
-    func updateStatusLabel(text: String, backgroundColor: UIColor, textColor: UIColor) {
-        // Status now rendered inside SwiftUI PlaybackControlsView (driven by VM.visualState)
-        // playbackControlsView.setStatus was UIKit path.
-        
-        // Announce status changes to VoiceOver only for play/pause states (kept in owner per original)
-        if text == String(localized: "status_playing", table: "Localizable") || text == String(localized: "status_paused", table: "Localizable") {
-            unsafe UIAccessibility.post(notification: .announcement, argument: text)
-        }
-    }
-    
-    // MARK: - Accessibility and Haptic Helpers
-    // startHapticEngine removed (no local engine; coordinator owns haptics).
-    
     // MARK: - Toggle Playback
-    /// Primary @objc entry point for user-initiated play/pause (button tap + remote commands).
+    /// Primary `@objc` entry for user-initiated play/pause (legacy remote / selector paths).
     ///
-    /// Performs instant visual press feedback, rate-limits rapid taps, then delegates to
-    /// `handleUserTogglePlayback()` (the internal SSOT). This keeps all playback decisions
-    /// in one place while still giving immediate tactile response to the user.
+    /// Delegates to ``handleUserTogglePlayback()`` → coordinator. SwiftUI
+    /// `PlaybackControlsView` owns in-app press feedback; haptics live on the coordinator.
+    /// Status chrome VoiceOver is **not** host-owned — see
+    /// ``RadioPlayerCoordinator/safeUpdateStatusLabel(text:backgroundColor:textColor:isPermanentError:)``.
     ///
-    /// - SeeAlso: `handleUserTogglePlayback()`, `handleTogglePlayback()` (public wrapper for SceneDelegate)
+    /// - SeeAlso: `handleUserTogglePlayback()`, `handleTogglePlayback()` (public SceneDelegate wrapper)
     @objc private func togglePlayback() {
         // SwiftUI PlaybackControlsView provides its own press feedback via Button.
         // Rapid-tap guard is handled inside the VM/coordinator paths if needed.
         Task { @MainActor in
             await self.handleUserTogglePlayback()
-        }
-    }
-    
-    // playHapticFeedback (and the companion startHapticEngine) removed from VC.
-    // All call sites updated to radioPlayerCoordinator.playHapticFeedback(...) or removed with the deleted bodies.
-    // Single implementation + engine live in RadioPlayerCoordinator.
-    
-    private func safeUpdateStatusLabel(text: String, backgroundColor: UIColor, textColor: UIColor, isPermanentError: Bool) {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            // Status updated via VM.visualState -> SwiftUI PlaybackControlsView
-            // (no direct setStatus on hosted view).
-            
-            // Permanent error state is now driven by SecurityModelValidator.isPermanentlyInvalid + intent.
-            
-            if text != String(localized: "status_playing", table: "Localizable") {
-                self.saveStateForWidget()
-            }
-            
-            // Announce ALL important status changes
-            let importantStatuses: Set<String> = [
-                String(localized: "status_connecting", table: "Localizable"),
-                String(localized: "status_playing", table: "Localizable"),
-                String(localized: "status_paused", table: "Localizable"),
-                String(localized: "status_paused_call", table: "Localizable"),
-                String(localized: "status_no_internet", table: "Localizable"),
-                String(localized: "status_stream_unavailable", table: "Localizable"),
-                String(localized: "status_failed", table: "Localizable"),
-                String(localized: "status_security_failed", table: "Localizable"),
-                String(localized: "status_stopped", table: "Localizable"),
-                String(localized: "status_ssl_transition", table: "Localizable")
-            ]
-            
-            if importantStatuses.contains(text) {
-                unsafe UIAccessibility.post(notification: .announcement, argument: text)
-            }
         }
     }
 }
