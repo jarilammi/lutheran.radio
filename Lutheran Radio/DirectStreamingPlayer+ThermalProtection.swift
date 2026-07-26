@@ -27,7 +27,8 @@
 //    ``PlayerVisualState/shouldAutoResumeOnThermalRecovery`` on the actor.
 //  - Low Power Mode changes do not interrupt playback; they only affect dynamically
 //    queried delays (server selection, recovery, buffer timers).
-//  - Teardown via ``teardownThermalAndEnergyObservers()`` from façade `deinit` only.
+//  - Teardown via ``teardownThermalAndEnergyObservers()`` from
+//    ``performDeinitCleanup()`` (façade `deinit` path) only.
 //
 //  AGENT NOTE: Members used across files are `internal` (Swift `private` is
 //  file-scoped). Prefer this domain file over re-implementing ProcessInfo observers
@@ -52,7 +53,7 @@ extension DirectStreamingPlayer {
     /// calls ``play()`` (falling back to `.userPaused` if attach fails).
     ///
     /// Stored token: ``thermalObserver`` on the façade. Pair with
-    /// ``teardownThermalAndEnergyObservers()`` in `deinit`.
+    /// ``teardownThermalAndEnergyObservers()`` via ``performDeinitCleanup()``.
     ///
     /// - SeeAlso: ``PlayerVisualState/shouldAutoResumeOnThermalRecovery``,
     ///   `SharedPlayerManager.isDeviceThermallyStressed()`
@@ -125,9 +126,10 @@ extension DirectStreamingPlayer {
         #endif
     }
 
-    /// Removes thermal and Low Power Mode observers. Call only from façade `deinit`.
+    /// Removes thermal and Low Power Mode observers. Call only from ``performDeinitCleanup()``.
     ///
     /// - Postcondition: ``thermalObserver`` is nil; LPM selector observer detached.
+    /// - SeeAlso: ``performDeinitCleanup()`` in `DirectStreamingPlayer+DeinitHygiene.swift`.
     func teardownThermalAndEnergyObservers() {
         if let observer = thermalObserver {
             NotificationCenter.default.removeObserver(observer)

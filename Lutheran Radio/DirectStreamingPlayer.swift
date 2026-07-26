@@ -25,9 +25,14 @@
 //    DirectStreamingPlayer+StreamCatalog.swift, DirectStreamingPlayer+ServerSelection.swift,
 //    DirectStreamingPlayer+NetworkPath.swift, DirectStreamingPlayer+AudioSession.swift,
 //    DirectStreamingPlayer+LocalClipPlayer.swift, DirectStreamingPlayer+ThermalProtection.swift,
-//    DirectStreamingPlayer+PlaybackAttach.swift, DirectStreamingPlayer+PlayerItemRecovery.swift,
-//    DirectStreamingPlayer+ResourceLoader.swift, DirectStreamingPlayer+PlayerVisualState.swift,
-//    StreamingSessionDelegate.swift, <doc:Architecture>, CODING_AGENT.md.
+//    DirectStreamingPlayer+PlaybackControl.swift, DirectStreamingPlayer+SecuredPlayerItem.swift,
+//    DirectStreamingPlayer+SystemMediaSession.swift, DirectStreamingPlayer+DeinitHygiene.swift,
+//    DirectStreamingPlayer+StatusCallbackDelivery.swift,
+//    DirectStreamingPlayer+PeriodicCertificateValidation.swift,
+//    DirectStreamingPlayer+PlaybackAttach.swift,
+//    DirectStreamingPlayer+PlayerItemRecovery.swift, DirectStreamingPlayer+ResourceLoader.swift,
+//    DirectStreamingPlayer+PlayerVisualState.swift, StreamingSessionDelegate.swift,
+//    <doc:Architecture>, CODING_AGENT.md.
 //
 
 import Foundation
@@ -219,6 +224,12 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     // | Audio session | DirectStreamingPlayer+AudioSession.swift | Category + async activate/deactivate (configure / setup / deactivate) |
     // | Local clip player | DirectStreamingPlayer+LocalClipPlayer.swift | Tuning/special bundled clip start (`startLocalClipPlayer`) |
     // | Thermal protection | DirectStreamingPlayer+ThermalProtection.swift | Thermal pause/resume + Low Power Mode observation (`setupThermalProtection` / energy) |
+    // | Playback control | DirectStreamingPlayer+PlaybackControl.swift | Public play/stop entry (`play`, `createAndStartPlayer`, soft/hard stop paths) |
+    // | Secured player item | DirectStreamingPlayer+SecuredPlayerItem.swift | makeSecuredPlayerItem + preparePlayerItem (Core-backed resource loader path) |
+    // | System media session | DirectStreamingPlayer+SystemMediaSession.swift | Privacy/factory-reset hard detach (`teardownSystemMediaSession*`) + session deactivate |
+    // | Deinit hygiene | DirectStreamingPlayer+DeinitHygiene.swift | `clearCallbacks` + ordered `performDeinitCleanup` (façade `deinit` stays on primary type) |
+    // | Status callback delivery | DirectStreamingPlayer+StatusCallbackDelivery.swift | `safeOnStatusChange` / deliver / invoke + transient KVO suppress + metadata hop |
+    // | Periodic certificate validation | DirectStreamingPlayer+PeriodicCertificateValidation.swift | `startPeriodicValidation` / `stopPeriodicCertificateValidation` (Core pin HEAD cadence) |
     // | Playback attach | DirectStreamingPlayer+PlaybackAttach.swift | Generation, soft-pause, silence, prepareStreamChoice / attachAndPlay / startPlayback |
     // | Item recovery | DirectStreamingPlayer+PlayerItemRecovery.swift | Startup safety net, early ICY recreate, secured recreate |
     // | Observers | DirectStreamingPlayer+Observers.swift | Player/item KVO, buffer timers |
@@ -245,8 +256,9 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     // - nonisolated stop entry may hop to MainActor for generation bump / teardown guard.
     // - connectionQueue isolates SSL ConnectionInfo dictionary.
     // - @unchecked Sendable documents historical engine sharing; prefer MainActor hops for new work.
-    // - Remaining façade bulk candidates: public play/stop cluster, system media session
-    //   teardown (peel one domain per session). Thermal / energy observation already peeled.
+    // - Deinit hygiene helpers live in `+DeinitHygiene.swift`; Swift `deinit` itself remains
+    //   on this primary type body (language requirement) and only sets `isDeallocating` then
+    //   calls ``performDeinitCleanup()``.
     //
     // Network path ownership (single monitor — domain file + façade stored flags):
     // - Setup + types live in `+NetworkPath.swift`; `hasInternetConnection` / `networkMonitor` /
@@ -265,8 +277,52 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     // - Observers + teardown live in `+ThermalProtection.swift`; `thermalObserver` and
     //   ``isLowEfficiencyMode`` remain on this class (stored / computed state).
     // - Visual `.thermalPaused` SSOT remains SharedPlayerManager; this engine only sets it.
+    //
+    // Playback control ownership (domain file + façade stored attach flags):
+    // - Public `play` / `stop` / soft-hard teardown live in `+PlaybackControl.swift`.
+    // - Attach generation, soft-pause flags, and `isCurrentlyAttemptingPlayback` remain on
+    //   this class (stored state); attach helpers live in `+PlaybackAttach.swift`.
+    //
+    // Secured player item ownership (domain file + façade buffer constant + player storage):
+    // - ``makeSecuredPlayerItem(for:)`` / ``preparePlayerItem(for:)`` live in
+    //   `+SecuredPlayerItem.swift` so attach, recovery, and control share one Core-backed path.
+    // - Never construct a bare `AVURLAsset` without the resource-loader delegate.
+    //
+    // System media session ownership (domain file + façade player/item + soft-pause storage):
+    // - Privacy / factory-reset hard detach lives in `+SystemMediaSession.swift`
+    //   (``teardownSystemMediaSessionSynchronously`` / ``teardownSystemMediaSession``).
+    // - Complements SPM ``teardownNowPlayingSession()`` (MPNowPlayingInfoCenter clear only).
+    // - Playback soft/hard stop remains in `+PlaybackControl.swift`; do not re-home stop here.
+    // - Audio session deactivate is called only via ``deactivateAudioSessionAsync()``.
+    //
+    // Deinit hygiene ownership (domain file + façade stored teardown flags / maps):
+    // - ``clearCallbacks()`` / ``performDeinitCleanup()`` live in `+DeinitHygiene.swift`.
+    // - Swift `deinit` remains on this primary type body: set ``isDeallocating`` then call
+    //   ``performDeinitCleanup()`` only — never expand cleanup inline again.
+    // - Cleanup is fully synchronous; stop / thermal / interruption / SSL handshake /
+    //   periodic certificate validation teardown are invoked as helpers, not re-implemented here.
+    //
+    // Status callback delivery ownership (domain file + façade stored callbacks / dedup):
+    // - ``safeOnStatusChange`` / ``deliverStatusChange`` / ``invokeStatusCallbacks`` /
+    //   transient suppress gates / ``safeOnMetadataChange`` live in
+    //   `+StatusCallbackDelivery.swift`.
+    // - Stored `onStatusChange`, `onMetadataChange`, `delegate`, `isInitializing`,
+    //   `pendingStatusChanges`, `lastEmittedStatus` remain on this class (stored state).
+    // - Visual SSOT + widget persist remain SharedPlayerManager; this domain only invokes
+    //   ``saveCurrentState()`` / ``updateNowPlayingInfo()`` after real emissions.
+    // - Status *producers* (observers, recovery, path, play/stop, attach) call
+    //   ``safeOnStatusChange`` only — never re-implement MainActor hops or suppress gates.
+    //
+    // Periodic certificate validation ownership (domain file + façade timer storage):
+    // - ``startPeriodicValidation()`` / ``stopPeriodicCertificateValidation()`` live in
+    //   `+PeriodicCertificateValidation.swift`.
+    // - ``certificateValidationTimer`` remains on this class (stored state).
+    // - Cadence = ``SecurityConfiguration/certificateValidationCacheDuration`` (not DNS model cache).
+    // - Validation policy stays in Core `CertificateValidator`; this engine only schedules + reacts.
+    // - SSL handshake timers remain in `+SSLProtection.swift` (distinct domain).
 
     var isSSLHandshakeComplete = false
+    /// Periodic Core pin revalidation timer storage (lifecycle: `+PeriodicCertificateValidation.swift`).
     var certificateValidationTimer: Timer?
     var hasStartedPlaying = false
     /// True while cold launch / stream-switch attach waits for `.readyToPlay` before the first audible kick.
@@ -608,171 +664,13 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     var onStatusChange: ((Bool, String) -> Void)?
     var onMetadataChange: ((String?) -> Void)?
     internal var currentMetadata: String?
-    
-    // MARK: - Safe callbacks to MainActor (Swift 6 fix)
 
-    /// AVPlayer KVO (`timeControlStatus`, buffer empty, etc.) can emit `status_stopped` /
-    /// `status_buffering` for sub-second ICY/Fig glitches while `PlayerVisualState` is still `.playing`.
-    /// Suppresses the full delegate → UI → widget pipeline and re-asserts Now Playing playback rate
-    /// so Control Center / lock screen do not flash an extra pause.
-    @MainActor
-    func shouldSuppressTransientKVOStatus(isPlaying: Bool, reasonKey: String?) async -> Bool {
-        guard !isPlaying, let reasonKey else { return false }
-        switch reasonKey {
-        case "status_stopped", "status_buffering":
-            break
-        default:
-            return false
-        }
-        return await SharedPlayerManager.shared.currentVisualState.isActivelyPlaying
-    }
+    // MARK: - Status / metadata callback delivery (see DirectStreamingPlayer+StatusCallbackDelivery.swift)
+    // safeOnStatusChange / deliverStatusChange / invokeStatusCallbacks + transient KVO suppress
+    // gates + safeOnMetadataChange. Stored callbacks / dedup / init-queue stay on this class.
 
-    /// Returns true when a stable connect/buffer status should not trigger widget persistence:
-    /// `isPlaying` is false but `currentVisualState` is already `.prePlay` or `.playing`.
-    @MainActor
-    func shouldSkipWidgetSaveForTransientConnectOrBuffer(
-        isPlaying: Bool,
-        reasonKey: String?
-    ) async -> Bool {
-        guard !isPlaying, let reasonKey else { return false }
-        switch reasonKey {
-        case "status_connecting", "status_buffering":
-            break
-        default:
-            return false
-        }
-        let visual = await SharedPlayerManager.shared.currentVisualState
-        return visual == .prePlay || visual == .playing
-    }
-
-    @MainActor
-    func deliverStatusChange(isPlaying: Bool, reasonKey: String?) {
-        let didEmit = invokeStatusCallbacks(isPlaying: isPlaying, reasonKey: reasonKey)
-
-        // Uses exact keys from Localizable.xcstrings. Only force a widget save on real emissions.
-        if didEmit {
-            let isStableState = isPlaying ||
-            reasonKey == "status_playing" ||
-            reasonKey == "status_paused" ||
-            reasonKey == "status_stopped" ||
-            reasonKey == "status_paused_call" ||
-            reasonKey == "status_thermal_paused" ||
-            reasonKey == "status_no_internet" ||
-            reasonKey == "status_security_failed" ||
-            reasonKey == "status_stream_unavailable" ||
-            reasonKey == "status_connecting" ||
-            reasonKey == "status_ssl_transition" ||
-            reasonKey == "status_buffering" ||
-            reasonKey == "status_failed"
-
-            if isStableState {
-                Task {
-                    if await self.shouldSkipWidgetSaveForTransientConnectOrBuffer(
-                        isPlaying: isPlaying,
-                        reasonKey: reasonKey
-                    ) {
-                        #if DEBUG
-                        print("[DirectStreamingPlayer] safeOnStatusChange: transient \(reasonKey ?? "nil") — skipping widget save (visual SSOT prePlay/playing)")
-                        #endif
-                        return
-                    }
-                    let vis = await SharedPlayerManager.shared.currentVisualState
-                    if vis.mustSuppressResurrection {
-                        #if DEBUG
-                        print("[DirectStreamingPlayer] safeOnStatusChange: stable stopped (isPlaying=\(isPlaying), key='\(reasonKey ?? "nil")') while sticky pause — skipping force save (explicit stop path already persisted correct visual+lang)")
-                        #endif
-                    } else {
-                        #if DEBUG
-                        print("[DirectStreamingPlayer] safeOnStatusChange: STABLE final state (isPlaying=\(isPlaying), key='\(reasonKey ?? "nil")') → forcing widget save")
-                        #endif
-                        await SharedPlayerManager.shared.saveCurrentState()
-                    }
-                }
-            } else {
-                #if DEBUG
-                print("[DirectStreamingPlayer] safeOnStatusChange: transient state (isPlaying=\(isPlaying), key='\(reasonKey ?? "nil")') → skipping widget save")
-                #endif
-            }
-        }
-    }
-
-    func safeOnStatusChange(isPlaying: Bool, reasonKey: String?) {
-        // SAFETY: Never feed status into the delegate → UI → widget / Live Activity / Now Playing pipeline
-        // when running under UI test mode. This is the root cause of:
-        //   • audible radio stream before tests execute
-        //   • WidgetRenderer_Activities 0x8BADF00D watchdog crash (Chrono renderer woken at launch)
-        //
-        // Why both checks:
-        //   • `isTesting` delegates to SharedPlayerManager.isRunningInUITestMode (the SSOT)
-        //   • Direct check on the SSOT is defense-in-depth in case isTesting is read before
-        //     the first access or during early static/coordinator construction.
-        // The SSOT itself prefers the explicit "-UITestMode" launch argument.
-        //
-        // See: SharedPlayerManager.isRunningInUITestMode, ViewController cold-launch guard,
-        // CODING_AGENT.md (test isolation requirements).
-        if isTesting || SharedPlayerManager.isRunningInUITestMode {
-            return
-        }
-
-        DispatchQueue.main.async {
-            if self.isInitializing {
-                self.pendingStatusChanges.append((isPlaying, reasonKey))
-            } else {
-                Task { @MainActor in
-                    if await self.shouldSuppressTransientKVOStatus(isPlaying: isPlaying, reasonKey: reasonKey) {
-                        #if DEBUG
-                        print("[DirectStreamingPlayer] safeOnStatusChange: transient \(reasonKey ?? "nil") while visualState .playing → suppress pipeline")
-                        #endif
-                        #if LUTHERAN_MAIN_APP
-                        await SharedPlayerManager.shared.updateNowPlayingInfo()
-                        #endif
-                        return
-                    }
-                    self.deliverStatusChange(isPlaying: isPlaying, reasonKey: reasonKey)
-                }
-            }
-        }
-    }
-    
-    /// Returns true if the status was actually emitted (not a duplicate).
-    @discardableResult
-    func invokeStatusCallbacks(isPlaying: Bool, reasonKey: String?) -> Bool {
-        // Simple last-value dedup: identical consecutive tuples are a no-op.
-        // This prevents KVO jitter and duplicate callback storms from re-driving
-        // the entire delegate → UI → widget pipeline.
-        let incoming = (isPlaying, reasonKey)
-        if lastEmittedStatus?.isPlaying == isPlaying && lastEmittedStatus?.reasonKey == reasonKey {
-            return false
-        }
-        lastEmittedStatus = incoming
-        
-        // Compute localized string once for UI / logs / delegate (backward compatible)
-        let localizedStatus = reasonKey.map { String(localized: String.LocalizationValue($0), table: "Localizable") } ?? ""
-        
-        onStatusChange?(isPlaying, localizedStatus)
-        
-        // Pass the raw key to the delegate (ViewController expects the key, not the translated text)
-        delegate?.onStatusChange(isPlaying ? .playing : .stopped, reasonKey: reasonKey)
-        
-        #if DEBUG
-        print("[DirectStreamingPlayer] invokeStatusCallbacks → isPlaying=\(isPlaying), reasonKey='\(reasonKey ?? "nil")', localized='\(localizedStatus)'")
-        #endif
-        return true
-    }
-    
-    func safeOnMetadataChange(metadata: String?) {
-        #if LUTHERAN_MAIN_APP
-        Task {
-            await SharedPlayerManager.shared.didUpdateStreamMetadata(metadata)
-        }
-        #endif
-        Task { @MainActor [weak self] in
-            self?.onMetadataChange?(metadata)
-        }
-    }
-    
     weak var delegate: StreamingPlayerDelegate?
-    
+
     /// Sets the delegate for callbacks (e.g., status updates).
     func setDelegate(_ delegate: StreamingPlayerDelegate?) {
         self.delegate = delegate
@@ -975,353 +873,26 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         // The hard guard inside safeOnStatusChange provides defense-in-depth for any other call sites.
     }
 
-    // MARK: - System media session teardown (Now Playing hygiene)
-    // Audio session category/activate/deactivate: see DirectStreamingPlayer+AudioSession.swift
-
-    /// Hard-detaches the secured `AVPlayerItem` for privacy / cold-launch factory reset.
-    ///
-    /// Complements ``SharedPlayerManager/teardownNowPlayingSession()`` which clears
-    /// `MPNowPlayingInfoCenter`. Safe when playback is already stopped or during privacy clear.
-    ///
-    /// - Postcondition: Player paused, current item nil, soft-pause stash cleared.
-    /// - SeeAlso: ``teardownSystemMediaSession()``, ``deactivateAudioSessionAsync()``.
-    @MainActor
-    func teardownSystemMediaSessionSynchronously() {
-        guard !isTesting else { return }
-
-        player?.pause()
-        player?.rate = 0.0
-        player?.replaceCurrentItem(with: nil)
-        playerItem = nil
-        clearAttachedItemBinding()
-        isSoftPaused = false
-    }
-
-    /// Full async teardown: synchronous player detach plus audio session deactivation.
-    ///
-    /// - SeeAlso: ``SharedPlayerManager/teardownNowPlayingSession()``.
-    @MainActor
-    func teardownSystemMediaSession() async {
-        teardownSystemMediaSessionSynchronously()
-        _ = await deactivateAudioSessionAsync()
-    }
+    // MARK: - System media session (see DirectStreamingPlayer+SystemMediaSession.swift)
+    // Privacy / factory-reset hard detach: teardownSystemMediaSessionSynchronously /
+    // teardownSystemMediaSession. Complements SPM teardownNowPlayingSession (metadata only).
+    // Audio session deactivate: +AudioSession.swift. Playback stop: +PlaybackControl.swift.
 
     // Local clip player (tuning / special sounds): DirectStreamingPlayer+LocalClipPlayer.swift
     // Session configure SSOT used by clips: DirectStreamingPlayer+AudioSession.swift
 
-    /// Starts periodic certificate validation against the *currently preferred* URL
-    /// (automatically follows server selection changes – if the app switches to a better cluster,
-    /// the next validation will check the new cluster’s cert. Since both clusters use the same cert,
-    /// this is safe and gives us early detection if one cluster ever diverges).
-    ///
-    /// Cadence matches ``SecurityConfiguration/certificateValidationCacheDuration`` so proactive
-    /// HEAD checks stay aligned with the runtime pin-result cache (not the 1-hour DNS model cache).
-    ///
-    /// - SeeAlso: ``CertificateValidator/validateServerCertificate(for:)``,
-    ///   ``SecurityConfiguration/certificateValidationCacheDuration``
-    func startPeriodicValidation() {
-        certificateValidationTimer?.invalidate()
-        let interval = SecurityConfiguration.current.certificateValidationCacheDuration
-        certificateValidationTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
-            guard let self else { return }
-            
-            let urlToValidate = self.selectedStream.url   // always valid, includes current server + security_model
-            
-            // 2026 concurrency model: fire-and-forget background validation
-            // Playback continues optimistically; we only stop if validation later fails.
-            Task {
-                let isValid = await CertificateValidator.shared.validateServerCertificate(for: urlToValidate)
-                
-                guard !isValid else { return }
-                
-                await MainActor.run {
-                    self.stop()
-                    self.safeOnStatusChange(isPlaying: false, reasonKey: "status_security_failed")  // ← fixed
-                }
-                
-                #if DEBUG
-                print("[DirectStreamingPlayer] [Periodic Validation] Certificate validation failed → stopping stream for URL: \(urlToValidate)")
-                #endif
-            }
-        }
-    }
-    
-    // MARK: - Playback Control Methods
+    // MARK: - Periodic certificate validation (see DirectStreamingPlayer+PeriodicCertificateValidation.swift)
+    // startPeriodicValidation / stopPeriodicCertificateValidation — Core pin HEAD cadence
+    // via CertificateValidator; timer storage (certificateValidationTimer) stays on this class.
+    // Distinct from SSL handshake timers in +SSLProtection.swift.
 
-    /// Starts or resumes playback after validation and server selection.
-    ///
-    /// User pause during this method (security validation, server selection, or attach) advances
-    /// ``playbackAttachGeneration`` via ``stop(reason:completion:silent:)``. This method re-checks
-    /// generation + intent after every significant `await` and discards without audible start.
-    ///
-    /// - Returns: `true` if playback was successfully *initiated* (item replaced + play() called).
-    ///            Note: Actual audio may start slightly later when the item becomes readyToPlay.
-    /// - Throws: Only critical unrecoverable errors (rare).
-    /// - SeeAlso: ``shouldContinueInFlightAttach(startedAt:)``, ``setStreamAndPlay(to:context:)``,
-    ///   ``SharedPlayerManager/canProceedWithPlayback()``.
-    @MainActor
-    func play() async -> Bool {
-        // UI Test isolation (defense-in-depth).
-        // Even if a recovery or network-restore path reaches here, never start real playback.
-        // Visual state for assertions is driven exclusively through SharedPlayerManager.
-        guard !isTesting else {
-            #if DEBUG
-            print("[DirectStreamingPlayer] play() — isTesting, early return (no AVPlayer, no audio session, no network)")
-            #endif
-            return false
-        }
+    // MARK: - Playback control (see DirectStreamingPlayer+PlaybackControl.swift)
+    // Public play / stop entry surface: play(), createAndStartPlayer(for:attachGeneration:),
+    // stop / stopAndWait / performActualStop / stopSynchronously / performStopCleanup.
 
-        // === Important guard : Driven by authoritative playback intent ===
-        // This is the first execution-engine site wired to `currentPlaybackIntent` via
-        // the new `canProceedWithPlayback()` helper. It replaces the prior ad-hoc visualState
-        // derivation for this narrow top-level path.
-        //
-        // Sticky `.userPaused` / `.securityLocked` behavior is preserved exactly (the helper
-        // returns false for those states, matching the old `shouldAutoPlayOrResume` rules).
-        // This prevents "play-on-pause resurrection" after explicit user pause.
-        guard await SharedPlayerManager.shared.canProceedWithPlayback() else {
-            #if DEBUG
-            print("🚫 [Play Guard] Blocked by playbackIntent = \(await SharedPlayerManager.shared.currentPlaybackIntent)")
-            #endif
-            safeOnStatusChange(isPlaying: false, reasonKey: "status_paused")   // ← changed
-            return false
-        }
-        
-        guard !isCurrentlyAttemptingPlayback else {
-            #if DEBUG
-            print("[DirectStreamingPlayer] [Playback Guard] Already attempting playback — ignoring duplicate call")
-            #endif
-            return false
-        }
-        
-        let attachGeneration = beginInFlightPlaybackAttach()
-        defer { endInFlightPlaybackAttach() }
-        
-        safeOnStatusChange(isPlaying: true, reasonKey: "status_connecting")   // ← changed
-        SharedPlayerManager.shared.saveFireAndForget()
-        
-        let isValid = await SecurityValidationFacade.validate(.recoveryValidityCheck)
-        // User may have paused (lock screen / Live Activity / Now Playing) during validation.
-        guard await shouldContinueInFlightAttach(startedAt: attachGeneration) else {
-            enforceSilenceAfterDiscardedAttach()
-            return false
-        }
-        guard isValid else {
-            let isPermanent = await SecurityValidationFacade.isPermanentlyInvalid()
-            guard await shouldContinueInFlightAttach(startedAt: attachGeneration) else {
-                enforceSilenceAfterDiscardedAttach()
-                return false
-            }
-            let statusKey = isPermanent ? "status_security_failed" : "status_no_internet"
-            safeOnStatusChange(isPlaying: false, reasonKey: statusKey)       // ← changed
-            SharedPlayerManager.shared.saveFireAndForget()
-            return false
-        }
-        
-        #if DEBUG
-        print("[DirectStreamingPlayer] Security validation passed — creating player for \(selectedStream.languageCode)")
-        #endif
-        
-        let streamURL = await urlWithOptimalServer(for: selectedStream)
-        guard await shouldContinueInFlightAttach(startedAt: attachGeneration) else {
-            enforceSilenceAfterDiscardedAttach()
-            return false
-        }
-        await createAndStartPlayer(for: streamURL, attachGeneration: attachGeneration)
-        guard await shouldContinueInFlightAttach(startedAt: attachGeneration) else {
-            enforceSilenceAfterDiscardedAttach()
-            return false
-        }
-
-        await SharedPlayerManager.shared.saveCurrentState()
-        return true
-    }
-    
-    // MARK: - Main-Actor-Bound Player Creation (Swift 6 safe)
-
-    /// Creates the secured player item and starts AVPlayer when the attach generation is still live.
-    ///
-    /// - Parameters:
-    ///   - url: Stream URL from ``urlWithOptimalServer(for:)``.
-    ///   - attachGeneration: Snapshot from ``beginInFlightPlaybackAttach()`` for post-await discard.
-    /// - Important: Re-checks generation + intent after audio-session activation so user pause
-    ///   during that `await` cannot leave a late `player.play()` audible.
-    @MainActor
-    func createAndStartPlayer(for url: URL, attachGeneration: UInt64) async {
-        // UI Test isolation (defense-in-depth). play() already guards, but this protects
-        // any future direct caller of the private helper.
-        guard !isTesting else {
-            #if DEBUG
-            print("[DirectStreamingPlayer] createAndStartPlayer — isTesting, no-op")
-            #endif
-            return
-        }
-
-        // === Playback intent + generation guard ===
-        // Catches internal/resume paths and races where stop advanced generation while this
-        // attach was suspended (security validation, server selection).
-        // Sticky .userPaused / .securityLocked / .cleared (privacy clear) behavior preserved exactly.
-        guard await shouldContinueInFlightAttach(startedAt: attachGeneration) else {
-            #if DEBUG
-            print("🚫 [Deep Play Guard] Blocked — in-flight attach discarded before item create")
-            #endif
-            enforceSilenceAfterDiscardedAttach()
-            return
-        }
-        
-        let playerItem = makeSecuredPlayerItem(for: url)
-        self.playerItem = playerItem
-        bindAttachedItemToSelectedStream()
-        clearPlaybackTeardownGuard()
-        
-        if self.player == nil {
-            self.player = AVPlayer(playerItem: playerItem)
-        } else {
-            self.player?.replaceCurrentItem(with: playerItem)
-        }
-        // === Important: Activate the audio session before playback (async, main-thread safe) ===
-        let audioSessionOK = await configureAudioSessionAsync()
-        #if DEBUG
-        if audioSessionOK {
-            print("[DirectStreamingPlayer] [MainActor] AVAudioSession activated successfully (.playback)")
-        } else {
-            print("[DirectStreamingPlayer] [MainActor] Failed to activate AVAudioSession")
-        }
-        #endif
-        // User pause during session activation must not reach player.play().
-        guard await shouldContinueInFlightAttach(startedAt: attachGeneration) else {
-            enforceSilenceAfterDiscardedAttach()
-            return
-        }
-        // ========================================================
-        
-        self.player?.play()
-
-        #if DEBUG
-        print("[DirectStreamingPlayer] ▶ [MainActor] AVPlayer created + play() called for \(url.lastPathComponent)")
-        #endif
-
-        // Do NOT call notifyMainApp here — let SharedPlayerManager do it
-    }
-
-    /// Builds a secured live `AVPlayerItem` for lutheran.radio HTTPS streaming.
-    ///
-    /// Every attach path (cold launch, stream switch, and silent transient recovery) must
-    /// create items through this helper so media bytes always load via
-    /// `AVAssetResourceLoaderDelegate` → `StreamingSessionDelegate` →
-    /// ``SecurityConfiguration/makeSecureEphemeralConfiguration()`` (DNSSEC + runtime
-    /// certificate digest validation). A bare `AVURLAsset(url:)` without the resource-loader
-    /// delegate would bypass that pipeline.
-    ///
-    /// - Parameter url: Absolute HTTPS stream URL from ``urlWithOptimalServer(for:)`` (or the
-    ///   current item’s URL during in-place recovery).
-    /// - Returns: An `AVPlayerItem` with the resource loader wired and live buffer preference set.
-    /// - SeeAlso: `preparePlayerItem(for:)`, `recreatePlayerItem()`,
-    ///   `resourceLoader(_:shouldWaitForLoadingOfRequestedResource:)`,
-    ///   `Core/Configuration/SecurityConfiguration.swift`, CODING_AGENT.md (Core surface area).
-    @MainActor
-    func makeSecuredPlayerItem(for url: URL) -> AVPlayerItem {
-        let asset = AVURLAsset(url: url)
-        asset.resourceLoader.setDelegate(self, queue: .main)
-        let item = AVPlayerItem(asset: asset)
-        item.preferredForwardBufferDuration = preferredLiveForwardBufferDuration
-        return item
-    }
-    
-    @MainActor
-    func preparePlayerItem(for url: URL) async {
-        let playerItem = makeSecuredPlayerItem(for: url)
-        
-        if self.player == nil {
-            self.player = AVPlayer(playerItem: playerItem)
-        } else {
-            self.player?.replaceCurrentItem(with: playerItem)
-        }
-        self.playerItem = playerItem
-        bindAttachedItemToSelectedStream()
-        clearPlaybackTeardownGuard()
-        
-        setupPlaybackObservers()
-        
-        #if DEBUG
-        print("[DirectStreamingPlayer] [MainActor] Player item prepared (no auto-play) for \(url.lastPathComponent)")
-        #endif
-    }
-
-    // MARK: - Playback Setup (MainActor preferred path)
-
-    @MainActor
-    func performOptimalServerSelectionAndFullPlaybackSetup() async -> Bool {
-        guard !isTesting else {
-            #if DEBUG
-            print("[DirectStreamingPlayer] performOptimalServerSelectionAndFullPlaybackSetup — isTesting, no-op")
-            #endif
-            return false
-        }
-
-        #if DEBUG
-        print("[DirectStreamingPlayer] [Playback Setup] Starting server selection + asset creation")
-        #endif
-
-        return await withCheckedContinuation { continuation in
-            selectOptimalServer { [weak self] _ in
-                guard let self else {
-                    continuation.resume(returning: false)
-                    return
-                }
-
-                let streamURL = self.selectedStream.url
-
-                #if DEBUG
-                print("[DirectStreamingPlayer] [Playback Setup] Selected URL: \(streamURL)")
-                #endif
-
-                // Everything that touches AVPlayer must run on MainActor
-                Task { @MainActor [weak self] in
-                    guard let self else {
-                        continuation.resume(returning: false)
-                        return
-                    }
-
-                    // 1. Audio Session (critical!) — now async to avoid main thread warnings
-                    let audioOK = await configureAudioSessionAsync()
-                    if !audioOK {
-                        #if DEBUG
-                        print("[DirectStreamingPlayer] AudioSession failed")
-                        #endif
-                        continuation.resume(returning: false)
-                        return
-                    }
-
-                    // 2. Secured asset + resource loader (DNSSEC + cert validation path)
-                    let playerItem = self.makeSecuredPlayerItem(for: streamURL)
-
-                    if self.player == nil {
-                        self.player = AVPlayer()
-                    }
-
-                    self.player?.replaceCurrentItem(with: playerItem)
-                    self.playerItem = playerItem
-                    self.bindAttachedItemToSelectedStream()
-                    self.clearPlaybackTeardownGuard()
-
-                    // 3. Setup observers — BEFORE play()
-                    self.setupPlaybackObservers()
-
-                    // 4. Explicit play() — guaranteed on MainActor
-                    self.player?.play()
-
-                    #if DEBUG
-                    print("[DirectStreamingPlayer] ▶ [Playback Setup] replaceCurrentItem + play() called on main actor")
-                    #endif
-
-                    // We consider initiation successful here.
-                    continuation.resume(returning: true)
-                }
-            }
-        }
-    }
-
+    // MARK: - Secured player item (see DirectStreamingPlayer+SecuredPlayerItem.swift)
+    // makeSecuredPlayerItem(for:) + preparePlayerItem(for:) — sole Core-backed construction
+    // path for attach / recovery / control. Never bare AVURLAsset without resource loader.
 
     // MARK: - Stream choice / attach (see DirectStreamingPlayer+PlaybackAttach.swift)
     // prepareStreamChoice, attachAndPlay, switchToStream, startPlayback, generation, soft-pause.
@@ -1348,422 +919,16 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             return ()
         }, completion: { _ in })
     }
-    
-    // FIXED: Simplified + robust status observer (works with security isolation + MainActor)
 
-    
-    /// Stops playback and cleans up resources.
-    ///
-    /// User pause during connect / first-play / reattach **must** complete: sticky `.userPaused` is
-    /// already locked by ``SharedPlayerManager/stop()`` (when that is the entry), generation is advanced
-    /// here so in-flight attach discards after its next `await`, and soft pause (or hard teardown)
-    /// silences any partially attached player. There is **no** early return that leaves attach free
-    /// to call `playImmediately` after paused chrome is shown.
-    ///
-    /// **Engine-complete ordering:** Soft pause applies `player.pause()` + `rate = 0` (and sets
-    /// ``isSoftPaused``) on the MainActor **before** invoking `completion`. Callers that refresh
-    /// Now Playing / Live Activity must await that completion (prefer ``stopAndWait(reason:silent:applyUserPauseVisualLock:)``)
-    /// so glyphs and system rate cannot flip while audio is still audible.
-    ///
-    /// **Visual-lock ownership:** When ``SharedPlayerManager/stop()`` already locked sticky
-    /// `.userPaused`, pass `applyUserPauseVisualLock: false` so this path does not re-enter
-    /// ``markAsUserPaused()`` / ``setUserPaused()`` (avoids a second `refreshAllMediaSurfaces`
-    /// storm and a spurious `streamDidPause` after `streamDidStop`). Direct engine stops that do
-    /// not go through SPM still use the default `true` and apply the visual lock **after** silence.
-    ///
-    /// - Parameters:
-    ///   - reason: Why we are stopping. This is now the single source of truth for user intent.
-    ///             `.userAction` → sticky `.userPaused` when `applyUserPauseVisualLock` is true
-    ///             `.streamSwitch`, `.interruption`, `.error` → preserve play intent
-    ///   - completion: Optional MainActor handler invoked after soft silence (or hard-teardown
-    ///                 scheduling reaches its documented completion points). Always called once.
-    ///   - silent: If `true`, skips status updates / UI flicker (exactly as it behaved in recent commits).
-    ///   - applyUserPauseVisualLock: When `true` (default) and `reason == .userAction && !silent`,
-    ///     applies sticky pause via ``markAsUserPaused()`` **after** engine silence. Pass `false`
-    ///     when the caller already owns the sticky lock and will refresh media surfaces once.
-    /// - SeeAlso: ``stopAndWait(reason:silent:applyUserPauseVisualLock:)``,
-    ///   ``invalidateInFlightPlaybackAttach()``, ``shouldContinueInFlightAttach(startedAt:)``,
-    ///   ``shouldAllowAudiblePlaybackKick()``, ``SharedPlayerManager/stop()``,
-    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (user pause / transport coordination).
-    func stop(
-        reason: StopReason = .userAction,
-        completion: (@MainActor @Sendable () -> Void)? = nil,
-        silent: Bool = false,
-        applyUserPauseVisualLock: Bool = true
-    ) {
-        
-        #if DEBUG
-        print("[DirectStreamingPlayer] FORCE STOPPING ALL PLAYBACK - reason: \(reason), silent: \(silent), applyUserPauseVisualLock: \(applyUserPauseVisualLock), attemptingPlayback: \(isCurrentlyAttemptingPlayback)")
-        #endif
+    // MARK: - Callback / deinit hygiene (see DirectStreamingPlayer+DeinitHygiene.swift)
+    // clearCallbacks() + performDeinitCleanup(). Swift `deinit` must stay on this primary
+    // type body: set isDeallocating, then call the ordered cleanup helper only.
 
-        // Always invalidate in-flight attach first. User pause (or any stop) that races security
-        // validation / server selection / session activation must win: post-await start paths
-        // re-check generation + canProceedWithPlayback and discard without audible output.
-        invalidateInFlightPlaybackAttach()
-
-        if isCurrentlyAttemptingPlayback {
-            #if DEBUG
-            print("[DirectStreamingPlayer] [Stop] User/engine stop during in-flight attach — generation invalidated; soft-silence will run (no early skip)")
-            #endif
-        }
-
-        let usesSoftPause = reason == .userAction && !silent
-        if !usesSoftPause {
-            // Activate before any async work so stale KVO / debounced recreate cannot race teardown.
-            activatePlaybackTeardownGuardFromStop()
-        }
-        
-        loadingTimeoutWorkItem?.cancel()
-        currentLoadingDelegate?.loadingRequest.finishLoading(with: URLError(.cancelled))
-        currentLoadingDelegate = nil
-        
-        removeAudioSessionObservers()
-        clearAllSSLProtectionTimers()
-        retryWorkItem?.cancel()
-        fallbackWorkItem?.cancel()
-        fallbackWorkItem = nil
-        pendingPlaybackWorkItem?.cancel()
-        pendingPlaybackWorkItem = nil
-        
-        // Soft silence first, then optional sticky visual lock. Outer `completion` fires only after
-        // engine silence so SPM can refresh media surfaces without "paused chrome + audible stream".
-        // Soft silence is applied on this MainActor task (no nested CheckedContinuation resume on the
-        // same stack). Hard teardown still uses a continuation bridged from audioQueue → main.
-        Task { @MainActor [weak self, reason, silent, applyUserPauseVisualLock, completion] in
-            guard let self else {
-                completion?()
-                return
-            }
-
-            await self.performActualStop(reason: reason, silent: silent)
-
-            // .streamSwitch / .interruption / .error intentionally skip markAsUserPaused().
-            // SharedPlayerManager.stop already owns sticky lock + single surface refresh — skip here.
-            if applyUserPauseVisualLock && reason == .userAction && !silent {
-                await self.markAsUserPaused()
-                #if DEBUG
-                print("[DirectStreamingPlayer] markAsUserPaused() after soft silence – visualState set to .userPaused")
-                #endif
-            }
-
-            // Silent stops (privacy clear, stream-switch teardown) must not re-persist a snapshot
-            // after ``SharedPlayerManager/clearAllLocalState()`` has removed it.
-            if !silent {
-                await SharedPlayerManager.shared.saveCurrentState()
-            }
-
-            completion?()
-        }
-    }
-
-    /// Awaits engine stop completion (soft silence or hard-teardown completion).
-    ///
-    /// Prefer this over fire-and-forget ``stop(reason:completion:silent:applyUserPauseVisualLock:)``
-    /// whenever the caller will update Now Playing / Live Activity or treat the stop as
-    /// engine-complete. Soft pause guarantees `player.rate == 0` and ``isSoftPaused`` before return.
-    ///
-    /// - Parameters:
-    ///   - reason: Stop reason (see ``stop(reason:completion:silent:applyUserPauseVisualLock:)``).
-    ///   - silent: Skips status flicker when `true`.
-    ///   - applyUserPauseVisualLock: Pass `false` when ``SharedPlayerManager/stop()`` already
-    ///     locked sticky `.userPaused` and will perform the single media-surface refresh.
-    /// - SeeAlso: ``stop(reason:completion:silent:applyUserPauseVisualLock:)``,
-    ///   ``SharedPlayerManager/stop()``, docs/Live-Activity-Stacking-and-Media-Surfaces.md,
-    ///   ``MediaTransportLatencyTimeline`` (DEBUG soft-silence milestone).
-    func stopAndWait(
-        reason: StopReason = .userAction,
-        silent: Bool = false,
-        applyUserPauseVisualLock: Bool = true
-    ) async {
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            stop(
-                reason: reason,
-                completion: { continuation.resume() },
-                silent: silent,
-                applyUserPauseVisualLock: applyUserPauseVisualLock
-            )
-        }
-        #if DEBUG
-        // Engine-complete: soft pause has rate 0 / hard path finished before this resumes.
-        MediaTransportLatencyTimeline.mark(
-            .softSilenceComplete,
-            detail: "reason=\(reason) silent=\(silent) applyVisualLock=\(applyUserPauseVisualLock)"
-        )
-        #endif
-    }
-
-    /// Performs the actual stop operation (MainActor entry from ``stop``’s isolation task).
-    ///
-    /// Soft pause (user action, non-silent) applies silence on the MainActor **before** return —
-    /// no intermediate `audioQueue` hop — so awaiters observe a silent engine.
-    /// Hard teardown schedules cleanup on `audioQueue` and resumes only after rate is zeroed /
-    /// status emitted on the MainActor.
-    ///
-    /// - Parameters:
-    ///   - silent: If `true`, skips all status updates to avoid UI flicker.
-    /// - Note: Combines `silent` and non-user reasons into `effectiveSilent`.
-    @MainActor
-    func performActualStop(
-        reason: StopReason,
-        silent: Bool = false
-    ) async {
-        // Derive effectiveSilent exactly as before, but now driven by reason
-        // (preserves all recent-commit behaviour for silent + stream switches)
-        let effectiveSilent = silent || (reason != .userAction)
-        let usesSoftPause = reason == .userAction && !effectiveSilent
-
-        if !usesSoftPause {
-            activatePlaybackTeardownGuardFromStop()
-        }
-        clearSSLProtectionTimer()
-        isSSLHandshakeComplete = true
-        hasStartedPlaying = false
-        isDeferringFirstPlayKick = false
-        
-        if isDeallocating {
-            stopSynchronously()
-            return
-        }
-
-        // Soft pause: silence on MainActor immediately (no audioQueue hop). Return only after
-        // rate == 0 and isSoftPaused so surface refresh cannot race audible audio.
-        if usesSoftPause {
-            cancelStartupSafetyNet()
-            cancelEarlyICYDropRecreate()
-            player?.pause()
-            player?.rate = 0.0
-            isSoftPaused = true
-            lastEmittedStatus = nil
-            lastObservedTimeControl = nil
-            lastObservedItemStatus = nil
-            safeOnStatusChange(isPlaying: false, reasonKey: "status_stopped")
-            #if DEBUG
-            print("[DirectStreamingPlayer] Soft pause complete — rate 0, secured AVPlayerItem retained for same-stream resume")
-            #endif
-            return
-        }
-
-        // Hard teardown: bridge audioQueue work with a single continuation resume on MainActor.
-        // Resume is always scheduled via main.async so it never runs on the same stack as
-        // withCheckedContinuation’s body.
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            audioQueue.async { [weak self] in
-                guard let self, !self.isDeallocating else {
-                    DispatchQueue.main.async {
-                        continuation.resume()
-                    }
-                    return
-                }
-
-                #if DEBUG
-                print("[DirectStreamingPlayer] Stopping playback (reason: \(reason), effectiveSilent: \(effectiveSilent))")
-                #endif
-
-                DispatchQueue.main.async {
-                    MainActor.assumeIsolated {
-                        self.isSoftPaused = false
-                    }
-                }
-
-                guard self.player != nil || self.playerItem != nil else {
-                    if !effectiveSilent {
-                        DispatchQueue.main.async {
-                            MainActor.assumeIsolated {
-                                self.safeOnStatusChange(isPlaying: false, reasonKey: "status_stopped")
-                            }
-                            continuation.resume()
-                        }
-                    } else {
-                        DispatchQueue.main.async {
-                            continuation.resume()
-                        }
-                    }
-                    #if DEBUG
-                    print("[DirectStreamingPlayer] Playback already stopped, skipping cleanup (reason: \(reason))")
-                    #endif
-                    return
-                }
-
-                // Pause + cleanup
-                self.executeAudioOperation({
-                    self.player?.pause()
-                    self.player?.rate = 0.0
-                    return ""
-                }, completion: { _ in })
-
-                self.activeResourceLoaders.forEach { (_, delegate) in
-                    delegate.cancel()
-                }
-                self.activeResourceLoaders.removeAll()
-
-                if let metadataOutput = self.metadataOutput, let playerItem = self.playerItem {
-                    if playerItem.outputs.contains(metadataOutput) {
-                        playerItem.remove(metadataOutput)
-                        #if DEBUG
-                        print("[DirectStreamingPlayer] Removed metadata output from playerItem in stop")
-                        #endif
-                    }
-                }
-                self.metadataOutput = nil
-
-                self.playerItemObservations.forEach { $0.invalidate() }
-                self.playerItemObservations.removeAll()
-                self.removeObserversImplementation()
-                self.playerItem = nil
-                DispatchQueue.main.async {
-                    MainActor.assumeIsolated {
-                        self.clearAttachedItemBinding()
-                    }
-                }
-
-                if !effectiveSilent {
-                    // A real terminal stop is a context change — clear dedup so the
-                    // "status_stopped" we are about to emit (and any subsequent play) is not suppressed.
-                    lastEmittedStatus = nil
-                    lastObservedTimeControl = nil
-                    lastObservedItemStatus = nil
-
-                    DispatchQueue.main.async {
-                        MainActor.assumeIsolated {
-                            self.safeOnStatusChange(isPlaying: false, reasonKey: "status_stopped")
-                        }
-                        continuation.resume()
-                    }
-                } else {
-                    DispatchQueue.main.async {
-                        continuation.resume()
-                    }
-                }
-
-                self.stopBufferingTimer()
-
-                #if DEBUG
-                print("[DirectStreamingPlayer] Playback stopped, playerItem and resource loaders cleared (reason: \(reason))")
-                #endif
-            }
-        }
-    }
-    
-    func stopSynchronously() {
-        // Perform all cleanup on main thread
-        if Thread.isMainThread {
-            player?.pause()
-            player?.rate = 0.0
-        } else {
-            DispatchQueue.main.sync {
-                player?.pause()
-                player?.rate = 0.0
-            }
-        }
-        
-        // Cancel active resource loaders
-        activeResourceLoaders.forEach { (_: AVAssetResourceLoadingRequest, delegate: StreamingSessionDelegate) in
-            delegate.cancel()
-        }
-        activeResourceLoaders.removeAll()
-        
-        // Remove metadata output
-        if let metadataOutput = self.metadataOutput, let playerItem = self.playerItem {
-            if playerItem.outputs.contains(metadataOutput) {
-                playerItem.remove(metadataOutput)
-            }
-        }
-        self.metadataOutput = nil
-        
-        // Remove observers synchronously
-        removeObserversSynchronously()
-        
-        // Clear playerItem
-        playerItem = nil
-        if Thread.isMainThread {
-            MainActor.assumeIsolated { clearAttachedItemBinding() }
-        }
-        
-        // Stop buffering timer
-        bufferingTimer?.invalidate()
-        bufferingTimer = nil
-    }
-    
-    func performStopCleanup() {
-        // Original stop logic without weak references
-        guard player != nil || playerItem != nil else {
-            return
-        }
-        
-        player?.pause()
-        player?.rate = 0.0
-        
-        activeResourceLoaders.forEach { (_: AVAssetResourceLoadingRequest, delegate: StreamingSessionDelegate) in
-            delegate.cancel()
-        }
-        activeResourceLoaders.removeAll()
-        
-        if let metadataOutput = self.metadataOutput, let playerItem = self.playerItem {
-            if playerItem.outputs.contains(metadataOutput) {
-                playerItem.remove(metadataOutput)
-            }
-        }
-        self.metadataOutput = nil
-        
-        removeObserversImplementation()
-        playerItem = nil
-        if Thread.isMainThread {
-            MainActor.assumeIsolated { clearAttachedItemBinding() }
-        }
-        stopBufferingTimer()
-    }
-    
-    
-    func clearCallbacks() {
-        onStatusChange = nil
-        onMetadataChange = nil
-        onNetworkPathChange = nil
-        delegate = nil
-    }
-    
     deinit {
         isDeallocating = true
-        
-        // Cancel pending work items that exist
-        serverSelectionWorkItem?.cancel()
-        retryWorkItem?.cancel()
-        
-        #if DEBUG
-        print("[DirectStreamingPlayer] [Deinit] Cancelled pending work items")
-        #endif
-        
-        // Stop synchronously to avoid async cleanup during deallocation
-        stopSynchronously()
-        
-        playerItemObservations.forEach { $0.invalidate() }
-        playerItemObservations.removeAll()
-        
-        // Clear all callbacks to prevent retention cycles
-        clearCallbacks()
-        
-        // Cancel network monitoring
-        networkMonitor?.cancel()
-        networkMonitor = nil
-        
-        // Clear metadata output
-        metadataOutput = nil
-        
-        // Clear server failure tracking
-        serverFailureCount.removeAll()
-        lastFailedServerName = nil
-        
-        // Thermal + Low Power Mode observers: +ThermalProtection.swift
-        teardownThermalAndEnergyObservers()
-        
-        // MARK: - Additional Deinit Cleanup
-        removeAudioSessionObservers()
-        clearAllSSLProtectionTimers()  // Ensure existing SSL cleanup runs
-        
-        #if DEBUG
-        print("[DirectStreamingPlayer] deinit completed")
-        #endif
+        performDeinitCleanup()
     }
-    
+
 }
 
 

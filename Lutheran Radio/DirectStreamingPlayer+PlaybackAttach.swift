@@ -13,7 +13,8 @@
 //  file-scoped). Prefer this domain file over re-implementing attach / recovery
 //  / catalog logic in call sites.
 //
-//  - SeeAlso: DirectStreamingPlayer.swift, PlaybackAttachState, SharedPlayerManager.play(), DirectStreamingPlayer+PlayerItemRecovery.swift,
+//  - SeeAlso: DirectStreamingPlayer.swift, PlaybackAttachState, SharedPlayerManager.play(),
+//    DirectStreamingPlayer+SecuredPlayerItem.swift, DirectStreamingPlayer+PlayerItemRecovery.swift,
 //    CODING_AGENT.md (Single Source of Truth Principles).
 //
 

@@ -13,8 +13,10 @@
 //  file-scoped). Prefer this domain file over re-implementing attach / recovery
 //  / catalog logic in call sites.
 //
-//  - SeeAlso: DirectStreamingPlayer.swift, makeSecuredPlayerItem(for:), StreamErrorType.from(error:), DirectStreamingPlayer+PlaybackAttach.swift,
-//    CODING_AGENT.md (Single Source of Truth Principles).
+//  - SeeAlso: DirectStreamingPlayer.swift, DirectStreamingPlayer+SecuredPlayerItem.swift
+//    (``makeSecuredPlayerItem(for:)``), StreamErrorType.from(error:),
+//    DirectStreamingPlayer+PlaybackAttach.swift, CODING_AGENT.md
+//    (Single Source of Truth Principles).
 //
 
 import Foundation
