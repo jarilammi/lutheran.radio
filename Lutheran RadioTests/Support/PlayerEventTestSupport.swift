@@ -505,12 +505,19 @@ func assertEvents(
 /// or DEBUG transport latency.
 ///
 /// Order is intentional: Live Activity local nil → clearAllLocalState → enable
-/// widgets-active privacy gate for observability → cancel replay forwarding →
-/// suspend Tier 2 observation → pre-warm ``events``.
+/// widgets-active privacy gate for observability → suspend Tier 2 observation →
+/// recreate the shared ``events`` stream (cancels residual replay iterators) →
+/// pre-warm ``events``.
+///
+/// Recreating the live stream avoids cross-suite pollution: ``AsyncStream`` admits one
+/// iterator, and cancelled collectors from a prior XCTest class can leave buffered
+/// yields that break emptiness / order assertions on the next class (sibling emission
+/// suites run alphabetically and share the process singleton).
 ///
 /// - Parameters:
 ///   - manager: Actor under test (defaults to the process singleton).
 /// - SeeAlso: ``sanitizeLiveActivityLocalState()``,
+///   ``SharedPlayerManager/_test_resetEventsStreamForIsolation()``,
 ///   CODING_AGENT.md (Test Execution Patience and Fast, Reliable Test Patterns).
 func prepareSharedPlayerManagerEventTestIsolation(
     manager: SharedPlayerManager = .shared
@@ -526,11 +533,12 @@ func prepareSharedPlayerManagerEventTestIsolation(
         WidgetRefreshManager.setHasActiveLutheranWidgets(true)
     }
 
-    await manager.cancelReplayForwarding()
     await MainActor.run {
         WidgetRefreshManager._test_setSuppressPlayerEventObservation(true)
         WidgetRefreshManager.shared._test_suspendPlayerEventObservation()
     }
+    // Finish residual iterators + recreate before any new collector attaches.
+    await manager._test_resetEventsStreamForIsolation()
     await Task.yield()
     await Task.yield()
     try? await Task.sleep(for: .milliseconds(150))
@@ -578,4 +586,31 @@ func targetStreamDifferentFromCurrent(
         let current = DirectStreamingPlayer.shared.selectedStream.languageCode
         return streams.first { $0.languageCode != current } ?? streams[1]
     }
+}
+
+
+// MARK: - Mid-test contrast reset
+
+/// Re-establishes the same non-blocked starting state as suite ``setUp`` for a second
+/// emission scenario inside a single test method (e.g. explicit-pause vs failure contrast).
+///
+/// - Parameters:
+///   - manager: Actor under test (defaults to the process singleton).
+/// - SeeAlso: ``prepareSharedPlayerManagerEventTestIsolation(manager:)``,
+///   ``sanitizeLiveActivityLocalState()``.
+func resetSharedPlayerManagerEventContrastPhase(
+    manager: SharedPlayerManager = .shared
+) async {
+    await MainActor.run {
+        sanitizeLiveActivityLocalState()
+    }
+
+    await SharedPlayerManager.clearAllLocalState()
+    await manager.setUserIntentToPlay()
+
+    await MainActor.run {
+        WidgetRefreshManager.setHasActiveLutheranWidgets(true)
+    }
+
+    _ = await manager.events
 }

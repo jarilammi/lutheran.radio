@@ -539,7 +539,7 @@ Player-domain transitions are expressed through typed `PlayerEvent` notification
 
 **Non-forcing rule:** Event emission and observation are additive. Engine mutation, snapshot writes, and widget optimistic `persistOptimisticWidgetSnapshot` remain primary for state. Main-app **mutation-path** home-widget reloads are driven by the Tier 2 observer (`WidgetRefreshTrigger.playerEvent`); imperative `refreshIfNeeded` remains for lifecycle, teardown, extension optimistic, and optional media-surface coordination. Dual-path inventory: [`docs/Event-Driven-Refactor-Roadmap.md`](docs/Event-Driven-Refactor-Roadmap.md) Tier 4 §2. Widget extension processes never originate authoritative `PlayerEvent` yields.
 
-Canonical architecture detail: ``<doc:Architecture>`` ("Event-Driven Player Architecture (Outside `Core/`)"). Backlog and protected test contracts: [`docs/Event-Driven-Refactor-Roadmap.md`](docs/Event-Driven-Refactor-Roadmap.md). Widget/Live Activity presentation flow: [`docs/Widget-Presentation-Dataflow.md`](docs/Widget-Presentation-Dataflow.md). Canonical test files: `Lutheran RadioTests/SharedPlayerManagerEventTests.swift` (emission/replay) with media-surface / cold-launch / latency sibling suites, `WidgetRefreshManagerEventTests.swift`, `PlayerEventSubscriberEventTests.swift`, `WidgetEventObserverTests.swift`, plus extension-profile `LutheranRadioWidgetTests/` (thin presentation smoke) and pure `WidgetSurfaceTests/` (full presentation matrices).
+Canonical architecture detail: ``<doc:Architecture>`` ("Event-Driven Player Architecture (Outside `Core/`)"). Backlog and protected test contracts: [`docs/Event-Driven-Refactor-Roadmap.md`](docs/Event-Driven-Refactor-Roadmap.md). Widget/Live Activity presentation flow: [`docs/Widget-Presentation-Dataflow.md`](docs/Widget-Presentation-Dataflow.md). Canonical test files: `Lutheran RadioTests/SharedPlayerManagerEventTests.swift` (core emission/replay) with failure / mutation-order / stream-switch / media-surface / cold-launch / latency sibling suites, `WidgetRefreshManagerEventTests.swift`, `PlayerEventSubscriberEventTests.swift`, `WidgetEventObserverTests.swift`, plus extension-profile `LutheranRadioWidgetTests/` (thin presentation smoke) and pure `WidgetSurfaceTests/` (full presentation matrices).
 
 **Widget & Live Activity presentation surfaces**
 
@@ -565,7 +565,7 @@ See [docs/Widget-Presentation-Dataflow.md](docs/Widget-Presentation-Dataflow.md)
 | Provider snapshot hygiene (SPM-coupled) | `WidgetProviderSnapshotResolver` in membership-exception `WidgetDisplayModels.swift` |
 | Now Playing + LA stacking, start policy, metadata push cost | [docs/Live-Activity-Stacking-and-Media-Surfaces.md](docs/Live-Activity-Stacking-and-Media-Surfaces.md) |
 | Media surface refresh wrapper | `SharedPlayerManager.refreshAllMediaSurfaces(liveActivity:widgetRefresh:widgetRefreshImmediate:)` |
-| Intent + snapshot contract tests (main-app host) | `WidgetIntentContractTests.swift`, `WidgetDisplayModelsTests.swift` |
+| Intent + snapshot contract tests (main-app host) | `WidgetIntentContractTests.swift`, `WidgetIntentPendingDrainTests.swift`, `WidgetIntentJoinedRoundTripTests.swift`, `WidgetDisplayModelsTests.swift` |
 | Extension-profile widget tests | `LutheranRadioWidgetTests/` (no `LUTHERAN_MAIN_APP`) |
 | Pure `WidgetSurface` tests | `WidgetSurfaceTests/` |
 | LA diff suppression tests | `RadioLiveActivityManagerTests.swift` |
