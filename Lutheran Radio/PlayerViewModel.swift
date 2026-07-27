@@ -58,6 +58,13 @@
 import Foundation
 import Observation
 import SwiftUI
+import WidgetSurface
+// WidgetSurface supplies ``PlayerVisualState``, ``PlayerStatusPresentation``,
+// ``PlayerControlPresentation``, and ``StreamProgramMetadata`` used on this model.
+// AGENT NOTE: Keep this import at file scope (not only under `#if DEBUG`). Archive /
+// Release builds omit DEBUG preview scaffolding at the bottom of this file; without a
+// non-DEBUG import the Observation macro cannot resolve tracked property types
+// (e.g. `controlPresentation: PlayerControlPresentation`).
 
 // MARK: - Main Player Presentation Dataflow
 //
@@ -588,8 +595,8 @@ extension PlayerViewModel {
 // self-documenting.
 
 #if DEBUG
-import SwiftUI
-import WidgetSurface
+// SwiftUI + WidgetSurface are imported at file scope (required for Release/archive
+// Observation macro expansion of this type). Preview-only scaffolding follows.
 
 /// Lightweight SwiftUI preview surface that exercises the observable PlayerViewModel.
 ///

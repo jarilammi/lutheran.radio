@@ -542,9 +542,21 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         return (player?.rate ?? 0) > 0 && player?.currentItem?.status == .readyToPlay
     }
     
-    // Relaxed visibility in Debug builds only — for test / diagnostic inspection.
-    // (See the playerItem/metadataOutput block below for the complete list of intentional visibility differences.)
-    #if DEBUG
+    /// Currently selected stream model (engine attach language / title SSOT).
+    ///
+    /// Module-internal setter so domain extensions (notably ``DirectStreamingPlayer+PlaybackAttach``)
+    /// can update the model under Release / archive WMO. `private(set)` is **not** viable here:
+    /// Swift `private` is file-scoped, and attach/switch prep live in a separate file — Archive
+    /// (Release) would fail with "setter is inaccessible" while Debug often still type-checked
+    /// against a relaxed `var` declaration.
+    ///
+    /// External orchestration must not assign this property directly; use
+    /// ``prepareStreamChoice(_:preparation:)``, ``attachAndPlay(to:context:)``, or
+    /// ``prepareSecuredPlayerItem(for:)`` so stop / item / generation invariants stay coherent.
+    /// Unit tests with `@testable import` may assign for isolation when needed.
+    ///
+    /// - SeeAlso: DirectStreamingPlayer+PlaybackAttach.swift, ``StreamChoicePreparation``,
+    ///   CODING_AGENT.md (engine vs SharedPlayerManager ownership).
     var selectedStream: Stream {
         didSet {
             if delegate != nil {
@@ -552,15 +564,6 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
             }
         }
     }
-    #else
-    private(set) var selectedStream: Stream {
-        didSet {
-            if delegate != nil {
-                safeOnMetadataChange(metadata: selectedStream.title)
-            }
-        }
-    }
-    #endif
     
     // MARK: - Public State Accessors
     var currentPlayerRate: Float {
@@ -595,16 +598,11 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     let playbackQueue = DispatchQueue(label: "radio.lutheran.playback", qos: .userInteractive)
 
     // MARK: - Playback Engine (player, queues, observers, resource loaders)
-    #if DEBUG
-    // Relaxed visibility in Debug builds only — for test / diagnostic inspection of the streaming engine.
-    // playerItem and metadataOutput (together with selectedStream above) are the only stored properties
-    // that intentionally differ in visibility between DEBUG and release.
+    // Module-internal (same visibility Debug and Release). Domain extensions and
+    // @testable unit tests inspect/update these; external product code must go through
+    // the façade attach / stop / recovery APIs rather than swapping items ad hoc.
     var playerItem: AVPlayerItem?
     var metadataOutput: AVPlayerItemMetadataOutput?
-    #else
-    var playerItem: AVPlayerItem?
-    var metadataOutput: AVPlayerItemMetadataOutput?
-    #endif
     var needsImmediateMetadataPush = false   // replaces time heuristic
     
     // MARK: - Queue Priority Management
