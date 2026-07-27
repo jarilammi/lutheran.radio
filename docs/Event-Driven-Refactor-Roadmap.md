@@ -158,8 +158,9 @@ This subsection records the authoritative inventory of direct "force", refresh, 
 - `SharedPlayerManager.forceStaleLivenessTimestampForTermination()`.  
   Writes the `lastUpdateTime = 0` sentinel.  
   Call sites: AppDelegate.applicationWillTerminate, SceneDelegate.sceneDidDisconnect, tests.  
-  Purpose: Forces passive "tap to open" presentation in widgets/Live Activities after the main process is gone.  
-  Relation to events: Not a player-domain visual or intent transition; it is a process-lifecycle signal. Remains a direct, explicit lifecycle API.
+  Purpose: Forces passive "tap to open" presentation in widgets after the main process is gone; also clears durable LA mirrors for extension distrust.  
+  Relation to events: Not a player-domain visual or intent transition; it is a process-lifecycle **presentation** signal. Remains a direct, explicit lifecycle API.  
+  **Not** a main-app play / cold-launch / resurrection gate (process isolation — sticky intent + factory reset own play status).
 
 - `refreshVisualStateFromPersistence()` / `syncVisualStateFromPersistence()`.  
   Read-side helpers that reset the one-shot `hasLoadedVisualStateFromPersistence` guard so long-lived widget extension processes see the latest main-app or ``persistOptimisticWidgetSnapshot`` writes.  

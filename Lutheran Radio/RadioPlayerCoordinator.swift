@@ -341,23 +341,26 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
     }
 
     /// Called from the async portion of VC viewDidLoad Task after tuning sound + model-only set.
-    /// Owns the resurrection guard + SharedPlayerManager.play() launch for cold start (prePlay path).
+    /// Owns the sticky-intent guard + SharedPlayerManager.play() launch for cold start (prePlay path).
+    ///
+    /// Process isolation: only this-process sticky intent blocks. Prior-process termination
+    /// liveness is presentation-only and is never consulted here.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/play()``, ViewController cold-launch Task,
+    ///   ``SharedPlayerManager/hasExplicitTerminationSentinel()`` (widget chrome only).
     func performColdLaunchPlaybackIfAllowed(initialStream: DirectStreamingPlayer.Stream) async {
         // Ensure snapshot + intent are authoritative before deciding cold auto-play.
         await SharedPlayerManager.shared.refreshVisualStateFromPersistence()
         let visualState = await SharedPlayerManager.shared.currentVisualState
         let intent = await SharedPlayerManager.shared.currentPlaybackIntent
-        let postTerm = SharedPlayerManager.hasExplicitTerminationSentinel()
         #if DEBUG
-        print("[RadioPlayerCoordinator] performColdLaunch... visual=\(visualState), intent=\(intent), postTerm=\(postTerm)")
+        print("[RadioPlayerCoordinator] performColdLaunch... visual=\(visualState), intent=\(intent)")
         #endif
 
-        // Hard blocker: sticky intent OR explicit termination sentinel (lastUpdateTime==0).
-        // This is the combined policy that must hold on every wake / LA-visible / power-up path.
-        // Widgets/Live Activities may show last-known or passive UI; no DirectStreamingPlayer side effects.
-        if intent.isStickyPauseOrLock || postTerm {
+        // Hard blocker: this-process sticky intent only.
+        if intent.isStickyPauseOrLock {
             #if DEBUG
-            print("[RadioPlayerCoordinator] Blocked cold-launch playback — \(postTerm ? "termination sentinel" : "sticky intent")")
+            print("[RadioPlayerCoordinator] Blocked cold-launch playback — sticky intent")
             #endif
             return
         }

@@ -14,12 +14,17 @@
 //  - SharedPlayerManager.play() is a thin phase pipeline that applies outcomes:
 //    preflight (early gates) → security validation → post-security surfaces → engine attach.
 //
+//  Process isolation: early gates use only in-process sticky intent, pipeline flags, and
+//  engine-truth inputs. App Group termination liveness (`lastUpdateTime == 0`) is a widget
+//  passive-chrome heuristic only and must never appear in this table.
+//
 //  - SeeAlso: ``PlaybackIntent``, ``PlaybackAttachContext``, ``PlayerVisualState``,
 //    SharedPlayerManager.play(), SharedPlayerManager.userRequestedPlay(),
 //    CODING_AGENT.md (Single Source of Truth Principles).
 //  - AGENT NOTE: Any change to early-gate ordering or connecting-chrome policy must keep
-//    sticky pause, termination sentinel, already-audible idempotency, hold-prePlay stream
-//    switch, and UITest isolation semantics unchanged.
+//    sticky pause, already-audible idempotency, hold-prePlay stream switch, and UITest
+//    isolation semantics unchanged. Do not reintroduce prior-process App Group keys as
+//    play gates (memory-only visual / process-isolation policy).
 //
 
 import Foundation
@@ -43,11 +48,12 @@ import Foundation
 /// Pure early-gate result for ``SharedPlayerManager/play()`` before security / attach.
 ///
 /// Order is fixed and must match the actor implementation:
-/// termination sentinel → sticky → duplicate pipeline → already audible → prePlay one-shot
+/// sticky → duplicate pipeline → already audible → prePlay one-shot
 /// → activate pipeline → UITest vs production security path.
+///
+/// - Important: Prior-process termination liveness is **not** a play outcome. Widget passive
+///   chrome uses ``SharedPlayerManager/hasExplicitTerminationSentinel()`` separately.
 @frozen public enum PlaybackPlayEarlyOutcome: Sendable, Equatable {
-    /// Post-termination wake without an explicit user play this launch.
-    case blockTerminationSentinel
     /// Sticky `.userPaused` / `.securityLocked` / `.cleared` — resurrection blocked.
     case blockStickyPauseOrLock
     /// Start pipeline already active (Connecting); keep in-flight work.
@@ -75,7 +81,7 @@ public struct PlaybackPlayEarlyDecision: Sendable, Equatable {
         switch outcome {
         case .enterUITestIsolation, .proceedToSecurityValidation:
             return true
-        case .blockTerminationSentinel, .blockStickyPauseOrLock,
+        case .blockStickyPauseOrLock,
              .skipDuplicateStartPipeline, .skipAlreadyAudible,
              .skipDuplicateAutomaticPrePlay:
             return false
@@ -112,9 +118,10 @@ public struct PlaybackPlayEarlyDecision: Sendable, Equatable {
 ///
 /// Engine-truth for already-audible is computed by the actor (`shouldNoOpPlayWhileAlreadyAudible`)
 /// and passed in — the pure table never reaches AVPlayer.
+///
+/// - Important: Inputs are **this-process only**. Do not add App Group termination liveness
+///   or other prior-process keys here (see memory-only visual policy).
 public struct PlaybackPlayDecisionInputs: Sendable, Equatable {
-    public var hasTerminationSentinel: Bool
-    public var hasProcessedExplicitUserPlayRequest: Bool
     public var isStickyPauseOrLock: Bool
     public var isPlaybackStartPipelineActive: Bool
     public var alreadyAudibleMatchingSelection: Bool
@@ -125,8 +132,6 @@ public struct PlaybackPlayDecisionInputs: Sendable, Equatable {
     public var isUITestMode: Bool
 
     public init(
-        hasTerminationSentinel: Bool,
-        hasProcessedExplicitUserPlayRequest: Bool,
         isStickyPauseOrLock: Bool,
         isPlaybackStartPipelineActive: Bool,
         alreadyAudibleMatchingSelection: Bool,
@@ -136,8 +141,6 @@ public struct PlaybackPlayDecisionInputs: Sendable, Equatable {
         isTrueColdLaunchPlay: Bool,
         isUITestMode: Bool
     ) {
-        self.hasTerminationSentinel = hasTerminationSentinel
-        self.hasProcessedExplicitUserPlayRequest = hasProcessedExplicitUserPlayRequest
         self.isStickyPauseOrLock = isStickyPauseOrLock
         self.isPlaybackStartPipelineActive = isPlaybackStartPipelineActive
         self.alreadyAudibleMatchingSelection = alreadyAudibleMatchingSelection
@@ -228,30 +231,28 @@ public enum PlaybackPlayDecision {
     /// - Returns: Outcome plus optional one-shot flag mutations for the actor to apply.
     /// - Important: Sticky pause always wins over cold-launch relaxed resurrection.
     ///   Already-audible is independent of the cold-launch window (passed in as a bool).
+    ///   Prior-process App Group liveness is never consulted.
+    /// - SeeAlso: SharedPlayerManager.resetToFactoryDefaultsOnLaunch(),
+    ///   SharedPlayerManager.hasExplicitTerminationSentinel() (widget presentation only).
     public static func evaluateEarlyGates(
         _ inputs: PlaybackPlayDecisionInputs
     ) -> PlaybackPlayEarlyDecision {
-        // 1. Post-termination sentinel without explicit user play this launch.
-        if inputs.hasTerminationSentinel && !inputs.hasProcessedExplicitUserPlayRequest {
-            return PlaybackPlayEarlyDecision(outcome: .blockTerminationSentinel)
-        }
-
-        // 2. Sticky pause / security lock / privacy clear — never bypass.
+        // 1. Sticky pause / security lock / privacy clear — never bypass.
         if inputs.isStickyPauseOrLock {
             return PlaybackPlayEarlyDecision(outcome: .blockStickyPauseOrLock)
         }
 
-        // 3. Duplicate entry while Connecting / start pipeline active.
+        // 2. Duplicate entry while Connecting / start pipeline active.
         if inputs.isPlaybackStartPipelineActive {
             return PlaybackPlayEarlyDecision(outcome: .skipDuplicateStartPipeline)
         }
 
-        // 4. Already audibly playing matching selection (engine-truth from actor).
+        // 3. Already audibly playing matching selection (engine-truth from actor).
         if inputs.alreadyAudibleMatchingSelection {
             return PlaybackPlayEarlyDecision(outcome: .skipAlreadyAudible)
         }
 
-        // 5. Automatic prePlay one-shot (active intent re-opens the gate).
+        // 4. Automatic prePlay one-shot (active intent re-opens the gate).
         var setInitial: Bool?
         var markCold = false
         if inputs.isPrePlayVisual {
@@ -268,7 +269,7 @@ public enum PlaybackPlayDecision {
             }
         }
 
-        // 6. Pipeline activates; UITest vs production security path.
+        // 5. Pipeline activates; UITest vs production security path.
         if inputs.isUITestMode {
             return PlaybackPlayEarlyDecision(
                 outcome: .enterUITestIsolation,

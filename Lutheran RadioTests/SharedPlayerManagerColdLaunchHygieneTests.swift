@@ -203,6 +203,59 @@ final class SharedPlayerManagerColdLaunchHygieneTests: XCTestCase {
 
     // MARK: - Live Activity durable mirror clear completeness
 
+    /// Prior-process termination liveness must not block this-process `play()` when intent is active.
+    ///
+    /// **Invariant protected (process isolation):** ``hasExplicitTerminationSentinel()`` is a
+    /// widget passive-chrome / durable-mirror-distrust marker only. After factory reset to
+    /// `.prePlay` + active intent, ``play()`` proceeds (UITest isolation path under XCTest)
+    /// even when `lastUpdateTime == 0` is present (prior quit). Sticky this-process intent
+    /// remains the sole hard play blocker.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/play()``, ``PlaybackPlayDecision/evaluateEarlyGates(_:)``,
+    ///   ``SharedPlayerManager/hasExplicitTerminationSentinel()``,
+    ///   ViewController cold-launch guard, SharedPlayerManager resurrection table.
+    func testTerminationSentinelDoesNotBlockPlayWhenIntentActive() async {
+        let suite = "group.radio.lutheran.shared"
+        let defaults = UserDefaults(suiteName: suite)
+        defer {
+            defaults?.removeObject(forKey: "lastUpdateTime")
+        }
+
+        // Clean this-process play status first (mirrors cold launch factory reset).
+        await manager.resetToFactoryDefaultsOnLaunch()
+        let visualAfterReset = await manager.currentVisualState
+        let intentAfterReset = await manager.currentPlaybackIntent
+        XCTAssertEqual(visualAfterReset, .prePlay)
+        XCTAssertTrue(
+            intentAfterReset.isActivePlaybackIntent,
+            "Factory reset must restore active intent so cold play remains viable"
+        )
+
+        // Model a leftover prior-process quit marker still present in the App Group.
+        // (Privacy residual cleanup may remove liveness keys when no widgets are configured;
+        // re-stamp after reset so the play gate is exercised against a live sentinel.)
+        SharedPlayerManager.forceStaleLivenessTimestampForTermination()
+        XCTAssertTrue(
+            SharedPlayerManager.hasExplicitTerminationSentinel(),
+            "Precondition: prior-process quit marker must be present"
+        )
+
+        await manager.play()
+
+        let visualAfterPlay = await manager.currentVisualState
+        let intentAfterPlay = await manager.currentPlaybackIntent
+        XCTAssertTrue(intentAfterPlay.isActivePlaybackIntent)
+        XCTAssertEqual(
+            visualAfterPlay,
+            .playing,
+            "play() must not no-op solely because lastUpdateTime is the termination sentinel"
+        )
+        XCTAssertTrue(
+            SharedPlayerManager.hasExplicitTerminationSentinel(),
+            "play() must not require clearing presentation sentinel to proceed"
+        )
+    }
+
     /// Termination hygiene must clear both durable LA mirrors so a cold extension cannot
     /// plan play/pause or stamp language chrome against a dead Lock Screen surface.
     ///

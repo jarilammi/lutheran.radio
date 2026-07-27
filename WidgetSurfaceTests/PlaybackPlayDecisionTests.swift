@@ -79,8 +79,6 @@ struct PlaybackPlayDecisionTests {
     // MARK: - Early gates (table)
 
     private func baseInputs(
-        sentinel: Bool = false,
-        explicitPlay: Bool = true,
         sticky: Bool = false,
         pipeline: Bool = false,
         alreadyAudible: Bool = false,
@@ -91,8 +89,6 @@ struct PlaybackPlayDecisionTests {
         uiTest: Bool = false
     ) -> PlaybackPlayDecisionInputs {
         PlaybackPlayDecisionInputs(
-            hasTerminationSentinel: sentinel,
-            hasProcessedExplicitUserPlayRequest: explicitPlay,
             isStickyPauseOrLock: sticky,
             isPlaybackStartPipelineActive: pipeline,
             alreadyAudibleMatchingSelection: alreadyAudible,
@@ -104,22 +100,8 @@ struct PlaybackPlayDecisionTests {
         )
     }
 
-    @Test func blocksTerminationSentinelWithoutExplicitPlay() {
-        let decision = PlaybackPlayDecision.evaluateEarlyGates(
-            baseInputs(sentinel: true, explicitPlay: false)
-        )
-        #expect(decision.outcome == .blockTerminationSentinel)
-        #expect(!decision.shouldActivateStartPipeline)
-    }
-
-    @Test func allowsTerminationSentinelWhenExplicitPlayProcessed() {
-        let decision = PlaybackPlayDecision.evaluateEarlyGates(
-            baseInputs(sentinel: true, explicitPlay: true)
-        )
-        #expect(decision.outcome == .proceedToSecurityValidation)
-        #expect(decision.shouldActivateStartPipeline)
-    }
-
+    /// Prior-process termination liveness is not an input to pure play gates.
+    /// Sticky intent remains the only hard blocker at this table layer.
     @Test func stickyPauseBlocksBeforePipeline() {
         let decision = PlaybackPlayDecision.evaluateEarlyGates(
             baseInputs(sticky: true, pipeline: true, alreadyAudible: true)
@@ -181,6 +163,16 @@ struct PlaybackPlayDecisionTests {
             baseInputs(sticky: true, alreadyAudible: true, uiTest: true)
         )
         #expect(decision.outcome == .blockStickyPauseOrLock)
+    }
+
+    /// Active intent + clean prePlay must proceed even when a prior process left termination
+    /// liveness in the App Group — that key is intentionally not an early-gate input.
+    @Test func processIsolation_activePrePlayProceedsWithoutPriorProcessKeys() {
+        let decision = PlaybackPlayDecision.evaluateEarlyGates(
+            baseInputs(prePlay: true, initialRun: false, activeIntent: true, trueCold: true)
+        )
+        #expect(decision.outcome == .proceedToSecurityValidation)
+        #expect(decision.shouldActivateStartPipeline)
     }
 
     // MARK: - Connecting chrome (post-security)

@@ -78,6 +78,7 @@ Never derive presentation inside leaf view `body` for the three canonical surfac
 
 ### How Termination Achieves Passive State
 - **Liveness heuristic (SSOT)**: `SharedPlayerManager.isMainAppProcessRecentlyActive()` (backed by the `lastUpdateTime` key + explicit `0` sentinel). Widget family views delegate the passive-branch decision to ``WidgetLivenessPresentation/shouldShowPassiveTapToOpen(isMainAppRecentlyActive:)`` (`WidgetSurface/WidgetLivenessPresentation.swift`) to render either full interactive controls + status + metadata or the "tap_to_open" prompt.
+- **Process isolation**: the termination sentinel is **presentation / extension only**. Main-app cold launch, `play()`, resurrection, and restore use in-process sticky intent after ``resetToFactoryDefaultsOnLaunch()`` — never `lastUpdateTime == 0` as a play gate. Play status does not survive process death.
 - **On observed termination** (AppDelegate `applicationWillTerminate`, SceneDelegate `sceneDidDisconnect`, `UIApplication.willTerminateNotification`):
   - `SharedPlayerManager.forceStaleLivenessTimestampForTermination()` writes the sentinel `0` (and clears instant-feedback transients). Any subsequent Provider run immediately sees the passive path.
   - `RadioLiveActivityManager.handleAppWillTerminate()` ends the activity with `.immediate` dismissal after a final `.userPaused` push.
@@ -108,7 +109,8 @@ Never derive presentation inside leaf view `body` for the three canonical surfac
 | Concern                        | Single Source of Truth                  | Write Path                                      | Read for Live Activity                  | Disk I/O on hot path? |
 |--------------------------------|-----------------------------------------|-------------------------------------------------|-----------------------------------------|-----------------------|
 | Widgets + Control widgets      | `PersistedWidgetState` (snapshot)       | `persistWidgetSnapshot`, `performActualSave`, `saveCombinedWidgetState`, widget intents via ``persistOptimisticWidgetSnapshot`` | `loadPersistedWidgetState()` (providers) | Yes (required) |
-| App relaunch / resurrection    | `PersistedWidgetState` + liveness (`lastUpdateTime` + sentinel 0) | Same as above + `bumpWidgetLivenessTimestamp`   | Same + `isMainAppProcessRecentlyActive` | Yes (required) |
+| Widget passive chrome after quit | Liveness (`lastUpdateTime` + sentinel `0`) | `bumpWidgetLivenessTimestamp`, `forceStaleLivenessTimestampForTermination` | `isMainAppProcessRecentlyActive` / ``WidgetLivenessPresentation`` | Yes (providers) |
+| App relaunch / main-app play   | In-process visual + `PlaybackIntent` after ``resetToFactoryDefaultsOnLaunch()`` | Factory reset + sticky intent SSOT; **not** termination sentinel | Cold-launch / `play()` / resurrection | No prior-process play gate |
 | Live Activity (transient UI)   | In-memory `currentVisualState` + `currentStreamMetadata` + stream language (`liveActivityLanguageCodeForContentPush` — attach via `mainAppLiveActivityLanguageCode` / `selectedStream`, or destination language during stream-switch Connecting hold) | None for LA itself. Visual/metadata/language mutations + direct notify; durable LA language App Group mirror warmed on push | `await manager.currentVisualState` / `currentStreamMetadata` + language for `ContentState.currentLanguage` | **No** (in-memory compare + conditional `Activity.update`) |
 
 ### How Event-Driven Updates Work

@@ -464,49 +464,42 @@ class ViewController: UIViewController {
             backgroundImageController.scheduleDeferredForStreamSwitch(initialStream)
             
             // ─────────────────────────────────────────────────────────────────────────
-            // Resurrection / wake guard — MUST run before any tuning sound or play().
+            // Cold-launch play guard — MUST run before any tuning sound or play().
             //
-            // Loads in-session visual + intent (memory-only; cold launch is always .prePlay).
+            // Loads in-session visual + intent (memory-only; cold launch is always .prePlay
+            // after ``resetToFactoryDefaultsOnLaunch()`` above).
             //
-            // The combination `intent.isStickyPauseOrLock || hasExplicitTerminationSentinel()`
-            // is the hard blocker required by policy:
-            // - Prior .userPaused / .cleared / .securityLocked must never auto-start.
-            // - Explicit termination (lastUpdateTime == 0) means the prior session is over;
-            //   device power-up / wake (even with visible Lock Screen Live Activity) must
-            //   produce zero side-effects into DirectStreamingPlayer.
+            // Process isolation: only **this-process** sticky intent blocks auto-start
+            // (`.userPaused` / `.cleared` / `.securityLocked`). Prior-process App Group
+            // termination liveness (`lastUpdateTime == 0`) is **not** consulted — that
+            // key is widget passive chrome / durable-mirror distrust only. Play status
+            // never survives process death.
             //
-            // Only explicit user actions (button, widget pending "play", LA controls,
-            // Siri, etc.) go through `userRequestedPlay` → flag + `setUserIntentToPlay`
-            // and are allowed to proceed.
-            //
-            // Tuning sound is deliberately *after* this gate so that a sticky or
-            // post-termination launch never emits the "radio tuning / connection sound".
+            // Tuning sound is deliberately *after* this gate so a sticky launch never
+            // emits the connection clip.
             //
             // - Precondition: UITest short-circuit already returned above.
-            // - Postcondition (blocked path): UI reflects loaded snapshot visual; no
-            //   tuning, no persist seed, no player.play(), no network.
-            // - SeeAlso: SharedPlayerManager.hasExplicitTerminationSentinel,
-            //   SharedPlayerManager.play (the parallel early return), restore*,
-            //   CODING_AGENT.md (SSOT resurrection, currentPlaybackIntent + liveness),
+            // - Postcondition (blocked path): UI reflects loaded visual; no tuning, no play.
+            // - SeeAlso: SharedPlayerManager.play (parallel sticky early return),
+            //   SharedPlayerManager.hasExplicitTerminationSentinel (presentation only),
+            //   CODING_AGENT.md (SSOT resurrection, currentPlaybackIntent),
             //   RadioPlayerCoordinator.performColdLaunchPlaybackIfAllowed.
             // ─────────────────────────────────────────────────────────────────────────
             await SharedPlayerManager.shared.refreshVisualStateFromPersistence()
             let visualState = await SharedPlayerManager.shared.currentVisualState
             let intent = await SharedPlayerManager.shared.currentPlaybackIntent
-            let postTerm = SharedPlayerManager.hasExplicitTerminationSentinel()
             
-            if intent.isStickyPauseOrLock || postTerm {
+            if intent.isStickyPauseOrLock {
                 #if DEBUG
-                print("[ViewController] Blocked cold-launch tuning + playback — \(postTerm ? "post-termination sentinel (0)" : "sticky playbackIntent") (respects user pause / term + visible LA on wake)")
+                print("[ViewController] Blocked cold-launch tuning + playback — sticky playbackIntent (this process)")
                 #endif
-                // Show the correct persisted visual (e.g. grey paused, or last-known)
-                // rather than forcing .prePlay. LA/widget already use the snapshot.
+                // Show the correct visual (e.g. grey paused) rather than forcing .prePlay.
                 self.updateUI(for: visualState)
                 return
             }
             
             #if DEBUG
-            print("[ViewController] Cold launch proceeding to tuning (no sticky, no termination sentinel)")
+            print("[ViewController] Cold launch proceeding to tuning (no sticky intent)")
             #endif
             
             // Early UI to .prePlay for needle/selector positioning (matches prior behavior for allowed cold launches).
@@ -526,8 +519,8 @@ class ViewController: UIViewController {
             #endif
             
             // Post-clear (or normal first) cold launch first play.
-            // The early sentinel+sticky guard above already returned for .userPaused/.cleared-intent/
-            // security/terminated cases (see resurrection policy). Reaching here means we are
+            // The early sticky guard above already returned for .userPaused/.cleared-intent/
+            // security cases (see resurrection policy). Reaching here means we are
             // in the permitted .prePlay / .cleared visual path for a clean launch.
             //
             // Identifying writes (snapshot seed + lastUpdateTime bump) happen only on this

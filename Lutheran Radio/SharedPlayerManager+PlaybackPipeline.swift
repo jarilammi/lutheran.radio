@@ -308,10 +308,10 @@ extension SharedPlayerManager {
         #endif
 
         let alreadyAudible = await shouldNoOpPlayWhileAlreadyAudible()
+        // Process isolation: early gates use only in-process sticky intent / pipeline / engine
+        // truth. App Group termination liveness is never a play input (widget passive chrome only).
         let earlyDecision = PlaybackPlayDecision.evaluateEarlyGates(
             PlaybackPlayDecisionInputs(
-                hasTerminationSentinel: Self.hasExplicitTerminationSentinel(),
-                hasProcessedExplicitUserPlayRequest: hasProcessedExplicitUserPlayRequest,
                 isStickyPauseOrLock: currentPlaybackIntent.isStickyPauseOrLock,
                 isPlaybackStartPipelineActive: isPlaybackStartPipelineActive,
                 alreadyAudibleMatchingSelection: alreadyAudible,
@@ -331,12 +331,6 @@ extension SharedPlayerManager {
         }
 
         switch earlyDecision.outcome {
-        case .blockTerminationSentinel:
-            #if DEBUG
-            print("[SharedPlayerManager] play() BLOCKED — hasExplicitTerminationSentinel() && !hasProcessedExplicitUserPlayRequest (device wake / LA visible / power-up protection)")
-            #endif
-            return nil
-
         case .blockStickyPauseOrLock:
             #if DEBUG
             print("[SharedPlayerManager] play() blocked — explicit \(currentPlaybackIntent) (resurrection bypass ignored)")
@@ -602,8 +596,11 @@ extension SharedPlayerManager {
     /// The old visualState guard has been removed as part of collapsing parallel checks.
     /// All sticky transitions flow through `updatePlaybackIntent(to:)`.
     ///
-    /// Also blocks on `hasExplicitTerminationSentinel()` so that post-termination
-    /// wakes never auto-resume even via recovery nudges.
+    /// Process isolation: does **not** consult App Group termination liveness. Prior-process
+    /// quit markers are presentation-only; this-process sticky intent is the hard blocker.
+    ///
+    /// - SeeAlso: ``currentPlaybackIntent``, ``play()``,
+    ///   ``hasExplicitTerminationSentinel()`` (widget / mirror distrust only).
     func attemptResurrectionIfAllowed() async {
         // UI Test isolation (SSOT): never poke the real AVPlayer or start audio from recovery paths.
         if Self.isRunningInUITestMode {
@@ -616,14 +613,12 @@ extension SharedPlayerManager {
         print("[SharedPlayerManager] SharedPlayerManager.attemptResurrectionIfAllowed() – currentPlaybackIntent = \(currentPlaybackIntent), currentVisualState = \(currentVisualState)")
         #endif
 
-        // Block explicit user pause, elapsed sleep timer, permanent security lock,
-        // or post-termination launch (sentinel). The sentinel + sticky combination is the
-        // required hard blocker on all auto-resume paths (see CODING_AGENT.md).
+        // Block explicit user pause, elapsed sleep timer, permanent security lock.
+        // Sticky / this-process intent only — never prior-process App Group keys.
         if currentPlaybackIntent.isStickyPauseOrLock
-            || (currentPlaybackIntent == .sleepTimer && currentVisualState != .playing)
-            || Self.hasExplicitTerminationSentinel() {
+            || (currentPlaybackIntent == .sleepTimer && currentVisualState != .playing) {
             #if DEBUG
-            print("[SharedPlayerManager] resurrection BLOCKED by playbackIntent or termination sentinel")
+            print("[SharedPlayerManager] resurrection BLOCKED by playbackIntent")
             #endif
             return
         }
@@ -1316,22 +1311,21 @@ extension SharedPlayerManager {
     /// - Widget timeline reload
     /// - Any other system resume signal
     ///
-    /// Primary signal is now `currentPlaybackIntent`. The method is
-    /// intentionally simple because most resurrection complexity has been collapsed
-    /// Resurrection complexity lives in `currentPlaybackIntent`.
+    /// Primary signal is `currentPlaybackIntent` (this process only). Prior-process
+    /// termination liveness is never a blocker here — cold launch factory-resets play
+    /// status; App Group sentinel remains widget passive chrome only.
+    ///
+    /// - SeeAlso: ``currentPlaybackIntent``, ``attemptResurrectionIfAllowed()``,
+    ///   ``hasExplicitTerminationSentinel()``.
     func restoreVisualStateRespectingUserIntent() async {
         ensureVisualStateLoaded()
         
-        // Combined blocker: sticky intent OR post-termination sentinel.
-        // Prevents foreground / interruption.ended / wake paths from resurrecting playback
-        // when the prior session ended via termination or the user had paused.
-        // Widgets/Live Activities may still render from PersistedWidgetState; only the
-        // player is blocked.
+        // Sticky / this-process intent only. Foreground and interruption.ended must not
+        // resurrect after user pause / security lock / privacy clear / sleep-timer pause.
         if currentPlaybackIntent.isStickyPauseOrLock
-            || (currentPlaybackIntent == .sleepTimer && currentVisualState != .playing)
-            || Self.hasExplicitTerminationSentinel() {
+            || (currentPlaybackIntent == .sleepTimer && currentVisualState != .playing) {
             #if DEBUG
-            print("[SharedPlayerManager] restoreVisualStateRespectingUserIntent BLOCKED by playbackIntent or termination sentinel")
+            print("[SharedPlayerManager] restoreVisualStateRespectingUserIntent BLOCKED by playbackIntent")
             #endif
             return
         }

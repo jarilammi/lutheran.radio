@@ -183,16 +183,20 @@ import WidgetKit
 /// **Playback intent**: `currentPlaybackIntent` (owned exclusively by this actor via
 /// `updatePlaybackIntent(to:)`) is the primary decision signal in the main resurrection paths:
 ///
-/// - `play()` (top rule, central non-cold protection, one-shot simplification; now also
-///   guards on `hasExplicitTerminationSentinel()` + explicit-play flag)
+/// - `play()` (sticky / one-shot / pipeline early gates via ``PlaybackPlayDecision``)
 /// - `attemptResurrectionIfAllowed()`
 /// - `restoreVisualStateRespectingUserIntent()`
 ///
-/// The combination of `isStickyPauseOrLock` **plus** the post-termination liveness sentinel
-/// (`lastUpdateTime == 0`) is the hard, reliable blocker on *every* auto-resume /
-/// state-restore / wake path (including device power-up with a visible Live Activity).
-/// Widgets and Live Activities may only perform optimistic UI, persist snapshots,
-/// schedule pending actions, and post Darwin notifications — zero player side effects.
+/// **Process isolation (play status):** Sticky ``PlaybackIntent.isStickyPauseOrLock`` is the
+/// hard blocker on auto-resume / restore / recovery paths. It is **this-process only**.
+/// Prior-process App Group termination liveness (`lastUpdateTime == 0` via
+/// ``hasExplicitTerminationSentinel()``) is **not** a play gate — it drives widget passive
+/// chrome and durable LA mirror distrust only. Cold launch factory-resets visual + intent;
+/// play status never survives process death.
+///
+/// Widgets and Live Activities may perform optimistic UI, persist snapshots, schedule
+/// pending actions, and post Darwin notifications — zero player side effects from extension
+/// code alone.
 ///
 /// The old overlapping visualState guards have been collapsed in the decision logic while
 /// preserving (and making explicit) sticky `.userPaused` / `.securityLocked` resurrection
@@ -212,8 +216,8 @@ import WidgetKit
 /// | .playing        | AV interruption, stall, or thermal event          | `attemptResurrectionIfAllowed()` or player recovery nudges      | .playing        | Only proceeds if `shouldAutoPlayOrResume` |
 /// | any             | Security validation failure (DNS/403/cert)        | Inside `play()` guard or StreamingSessionDelegate 403 handler   | .securityLocked | Permanent until explicit successful play |
 /// | .thermalPaused  | Device cools sufficiently                         | DirectStreamingPlayer thermal recovery logic                    | .playing        | Only via `shouldAutoResumeOnThermalRecovery` |
-/// | any             | App foreground, interruption.ended(.shouldResume) | `restoreVisualStateRespectingUserIntent()`                      | (unchanged or forced .userPaused) | Applies inline resurrection suppression (if mustSuppressResurrection → .userPaused). Sentinel also blocks. |
-/// | any (post-term) | Device wake / power-up with Lock Screen LA visible | All auto paths (play/restore/attemptResurrection) | (no playback) | `hasExplicitTerminationSentinel()` + !explicit-this-launch is hard blocker (even for prior .playing snapshot) |
+/// | any             | App foreground, interruption.ended(.shouldResume) | `restoreVisualStateRespectingUserIntent()`                      | (unchanged or forced .userPaused) | Applies inline resurrection suppression (if mustSuppressResurrection → .userPaused). Sticky intent only — no prior-process App Group play gate. |
+/// | cold launch     | New process after quit / terminate                | `resetToFactoryDefaultsOnLaunch()` then cold-play path          | .prePlay → .playing (when allowed) | Factory reset clears play status; termination sentinel remains widget passive chrome only; does **not** block main-app cold auto-play |
 ///
 /// ### App Group Keys & Memory-Only Visual Policy (group.radio.lutheran.shared)
 ///
@@ -248,7 +252,7 @@ import WidgetKit
 /// | isPlaying               | Bool                  | (Retired — purged on launch, never written)                  | (none) | Retired playback bool. In-session playback chrome is derived only from the memory snapshot (`visualState.isActivelyPlaying`) and short-lived instant-feedback keys — never from this App Group bool. | Purged only |
 /// | currentLanguage         | String (languageCode) | (Retired — purged on launch, never written)                  | (none) | Retired bare language key. Language SSOT is in-process `PersistedWidgetState.currentLanguage` plus ``preferredWidgetLanguage()`` (snapshot → `bestInitialLanguageCode()` when widgets active → hard `"en"` when not). | Purged only |
 /// | hasError                | Bool                  | (Inside in-process snapshot only; retired App Group bool purged) | `loadSharedState` (from `PersistedWidgetState.hasError`), widgets   | Permanent error flag for UI chrome. Lives inside the in-process session snapshot. Retired standalone App Group bool is purged only. | In-session snapshot; set on security or unrecoverable network failures |
-/// | lastUpdateTime          | Double (epoch)        | ``bumpWidgetLivenessTimestamp(policy:minInterval:)`` (canonical; ``WidgetLivenessWritePolicy``), `performActualSave` / `saveCombinedWidgetState` when home widgets active, widget-process optimistic handlers | Widget providers (`isMainAppProcessRecentlyActive` 60 s check) | Liveness heartbeat — bumped on saves and throttled unchanged-snapshot skips | Kept only while home/Control widgets are relevant; removed by privacy clear and when ``WidgetRefreshManager/hasActiveLutheranWidgets`` closes |
+/// | lastUpdateTime          | Double (epoch)        | ``bumpWidgetLivenessTimestamp(policy:minInterval:)`` (canonical; ``WidgetLivenessWritePolicy``), `performActualSave` / `saveCombinedWidgetState` when home widgets active, widget-process optimistic handlers; terminate writes sentinel `0` | Widget providers (`isMainAppProcessRecentlyActive` 60 s check); ``hasExplicitTerminationSentinel()`` for presentation / LA mirror distrust | Liveness heartbeat + termination passive-chrome marker. **Never** a main-app play gate. | Kept only while home/Control widgets are relevant; removed by privacy clear and when ``WidgetRefreshManager/hasActiveLutheranWidgets`` closes; terminate sets `0` |
 /// | lastUserPauseTime | Double (epoch) | (Retired — purged on launch, never written) | (none) | Was App Group pause barrier. Recovery uses in-actor ``lastUserPauseTimestamp`` / ``wasRecentlyUserPaused(within:)`` only. | Purged only |
 /// | isInstantFeedback       | Bool                  | Widget handlers (`writeInstantFeedback` / switch path)       | `loadSharedState` (checked first)                                    | Signals that a widget action just occurred (optimistic UI)   | Short-lived; cleared after 15s, next authoritative save, privacy clear, or when the home-widget privacy gate closes |
 /// | instantFeedbackTime     | Double (epoch)        | Widget handlers                                              | `loadSharedState`                                                    | Timestamp for the instant feedback validity window           | Same lifetime as `isInstantFeedback` |
@@ -462,9 +466,8 @@ actor SharedPlayerManager {
     internal var hasCompletedTrueColdLaunchPlay = false
 
     /// Set only by explicit user play surfaces (`userRequestedPlay`, `setUserIntentToPlay`).
-    /// Combined with `hasExplicitTerminationSentinel()` this makes post-termination
-    /// launches require a fresh user gesture before any `DirectStreamingPlayer` work.
-    /// See play() and the cold-launch guard in ViewController.
+    /// Process-local bookkeeping that an explicit play gesture occurred this lifetime.
+    /// Not a play gate (termination liveness is presentation-only; sticky intent is the SSOT).
     internal var hasProcessedExplicitUserPlayRequest = false
     
     // MARK: - Recent user pause (in-actor barrier for recovery paths)

@@ -232,27 +232,21 @@ extension SharedPlayerManager {
     /// - Note: Brand-new installs (missing key) and normal idle (positive timestamp, even if >60 s)
     ///   return `false`. Only the deliberate termination marker returns `true`.
     ///
-    /// This is the **post-termination liveness heuristic** used in combination with
-    /// `currentPlaybackIntent.isStickyPauseOrLock` to provide a hard blocker against
-    /// unwanted auto-play / tuning sound on device power-up or wake while a Live Activity
-    /// (or widget surface) remains visible on the Lock Screen.
+    /// **Presentation / extension scope only.** This is the post-termination liveness marker
+    /// for:
+    /// - home-widget passive chrome via ``isMainAppProcessRecentlyActive()``
+    /// - durable Live Activity mirror distrust via ``shouldDistrustDurableMirrorPlayPlanning()``
     ///
-    /// **Why this exists**: Termination of the main process (even if a paused or playing LA
-    /// was present) must be treated as the end of any prior playback intent. Subsequent
-    /// wakes must not cause `DirectStreamingPlayer` side effects. Widgets/LAs may still
-    /// render last-known visuals or passive "tap to open", and may schedule pending actions
-    /// or post Darwin notifications, but they (and launch paths) must never start audio.
+    /// It must **never** gate main-app `play()`, cold-launch auto-play, resurrection, or
+    /// restore paths. Play status is process-local (factory reset + sticky intent SSOT).
     ///
-    /// - Precondition: Callers combine this with intent checks or the explicit-play flag
-    ///   (see `hasProcessedExplicitUserPlayRequest`).
     /// - SeeAlso: ``isMainAppProcessRecentlyActive()``, ``forceStaleLivenessTimestampForTermination()``,
-    ///   ``play()``, ``restoreVisualStateRespectingUserIntent()``, ``attemptResurrectionIfAllowed()``,
-    ///   ViewController (cold-launch guard before tuning), CODING_AGENT.md (SSOT + resurrection),
-    ///   <doc:Architecture>.
+    ///   ``shouldDistrustDurableMirrorPlayPlanning()``,
+    ///   CODING_AGENT.md (SSOT + memory-only visual policy),
+    ///   docs/Widget-Presentation-Dataflow.md.
     ///
-    /// AGENT NOTE: This + sticky intent is the required combined blocker on *every*
-    /// auto-resume / state-restore / wake path. Update all such sites + the resurrection
-    /// table when changing. Never bypass for LA-visible cases.
+    /// AGENT NOTE: Do not reintroduce this as a play / cold-launch / resurrection gate.
+    /// Update widget presentation + mirror-distrust call sites only when changing semantics.
     nonisolated static func hasExplicitTerminationSentinel() -> Bool {
         guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return false }
         guard let lastUpdate = defaults.object(forKey: "lastUpdateTime") as? Double else { return false }
@@ -261,17 +255,19 @@ extension SharedPlayerManager {
 
     /// Forces the widget liveness timestamp to the explicit termination sentinel (0).
     ///
-    /// **Legacy termination surface** (liveness heuristic only). Call this from main-app
+    /// **Presentation termination surface** (liveness heuristic only). Call this from main-app
     /// termination paths only. It makes ``isMainAppProcessRecentlyActive()`` return false
     /// on the next widget provider execution so all surfaces render the passive,
     /// launch-only UI ("tap to open") immediately rather than showing stale active controls.
     ///
     /// Also clears short-lived instant-feedback keys so no "just acted" optimistic state
-    /// survives the quit visually.
+    /// survives the quit visually, and clears durable LA mirrors so extension planning cannot
+    /// invent play from a dead surface.
     ///
-    /// This heuristic is separate from the `PlayerEvent` emission model. Event subscribers
-    /// learn about termination via process lifetime; widgets use the sentinel for their
-    /// render decision.
+    /// This heuristic is separate from the `PlayerEvent` emission model and from main-app
+    /// playback decisions. Event subscribers learn about termination via process lifetime;
+    /// widgets use the sentinel for their render decision. The next cold launch factory-resets
+    /// play status independently of this key.
     ///
     /// **Cleanup Invariant**: After this call (on any observed termination), widget timelines
     /// and Live Activity (which we also end) must not present interactive controls or cause
@@ -283,10 +279,11 @@ extension SharedPlayerManager {
     /// - Note: Does **not** remove `persistedWidgetState` (last-known visual + language +
     ///   metadata remain for providers that fall back and for clean relaunch). Contrast with
     ///   `removeAllLocalPlaybackKeys` (privacy clear).
-    /// - SeeAlso: ``isMainAppProcessRecentlyActive()``, AppDelegate.applicationWillTerminate,
-    ///   SceneDelegate.sceneDidDisconnect, RadioLiveActivityManager.handleAppWillTerminate,
+    /// - SeeAlso: ``isMainAppProcessRecentlyActive()``, ``hasExplicitTerminationSentinel()``,
+    ///   AppDelegate.applicationWillTerminate, SceneDelegate.sceneDidDisconnect,
+    ///   RadioLiveActivityManager.handleAppWillTerminate,
     ///   ``removeAllLocalPlaybackKeys()``,
-    ///   docs/Event-Driven-Refactor-Roadmap.md.
+    ///   docs/Event-Driven-Refactor-Roadmap.md, docs/Widget-Presentation-Dataflow.md.
     nonisolated static func forceStaleLivenessTimestampForTermination() {
         guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return }
         defaults.set(0.0, forKey: "lastUpdateTime")
