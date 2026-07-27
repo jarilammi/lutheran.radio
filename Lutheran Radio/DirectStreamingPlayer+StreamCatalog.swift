@@ -12,8 +12,9 @@
 //  list parity remains in DirectStreamingPlayer+WidgetStub.swift (display only; no
 //  security_model URL construction).
 //
-//  SECURITY: URL construction embeds SecurityConfiguration.current.expectedSecurityModel.
-//  Do not duplicate this outside Core + this main-app surface.
+//  SECURITY: URL construction embeds SecurityConfiguration.current.expectedSecurityModel
+//  and the preferred streaming apex from preferredStreamingDomainSuffix (today siikkari.net).
+//  Do not hard-code apex strings or the model name outside Core + this main-app surface.
 //
 //  - SeeAlso: DirectStreamingPlayer.swift, DirectStreamingPlayer+ServerSelection.swift,
 //    Core/Configuration/SecurityConfiguration.swift, CODING_AGENT.md.
@@ -27,10 +28,13 @@ import Core
 /// Pure stream-catalog helpers with no AVPlayer or attach state.
 ///
 /// Region detection and language-slug mapping are side-effect free. URL construction
-/// still injects ``SecurityConfiguration/current``'s expected security model so the
-/// query string stays aligned with Core policy (never hard-code the model name here).
+/// injects ``SecurityConfiguration/current``'s expected security model and preferred
+/// streaming apex so hosts and the query string stay aligned with Core policy
+/// (never hard-code the model name or apex here).
 ///
 /// - SeeAlso: ``DirectStreamingPlayer/Stream``, ``DirectStreamingPlayer/urlWithOptimalServer(for:)``,
+///   ``SecurityConfiguration/preferredStreamingDomainSuffix``,
+///   ``SecurityConfiguration/streamingHostCandidates(leadingLabel:)``,
 ///   Core/Configuration/SecurityConfiguration.swift.
 enum StreamCatalog: Sendable {
     /// EU vs US cluster subdomain used in stream hostnames.
@@ -70,46 +74,67 @@ enum StreamCatalog: Sendable {
 
     /// Builds the HTTPS stream URL for a language + region without reading player state.
     ///
+    /// Host form: `<languageSlug>-<region>.<preferredStreamingDomainSuffix>`
+    /// (today e.g. `finnish-eu.siikkari.net`). Apex is always read from
+    /// ``SecurityConfiguration/preferredStreamingDomainSuffix`` — never hard-coded.
+    ///
     /// - Parameters:
     ///   - languageCode: ISO stream language code (e.g. `"fi"`).
     ///   - region: Cluster subdomain (`eu` / `us`).
     ///   - securityModel: Must be ``SecurityConfiguration/expectedSecurityModel`` in production.
     /// - Returns: Absolute HTTPS URL for progressive MP3 with `security_model` query.
+    /// - SeeAlso: ``SecurityConfiguration/preferredStreamingDomainSuffixes``,
+    ///   ``DirectStreamingPlayer/urlWithOptimalServer(for:)``
     static func streamURL(
         languageCode: String,
         region: String,
         securityModel: String = SecurityConfiguration.current.expectedSecurityModel
     ) -> URL {
         let languageSlug = languageSlug(for: languageCode)
+        let apex = SecurityConfiguration.current.preferredStreamingDomainSuffix
+        let leadingLabel = "\(languageSlug)-\(region)"
+        // Sole media apex from Core SSOT (today siikkari.net).
+        let host = SecurityConfiguration.current.streamingHostCandidates(leadingLabel: leadingLabel).first
+            ?? "\(leadingLabel).\(apex)"
         var components = URLComponents()
         components.scheme = "https"
-        components.host = "\(languageSlug)-\(region).lutheran.radio"
+        components.host = host
         components.path = "/lutheranradio.mp3"
         components.queryItems = [
             URLQueryItem(name: "security_model", value: securityModel)
         ]
-        return components.url ?? DirectStreamingPlayer.makeURL("https://livestream.lutheran.radio")
+        let fallbackHost = SecurityConfiguration.current.streamingHostCandidates(leadingLabel: "livestream").first
+            ?? "livestream.\(apex)"
+        return components.url ?? DirectStreamingPlayer.makeURL("https://\(fallbackHost)")
     }
 }
 
 extension DirectStreamingPlayer {
     // MARK: - Stream URL Construction Rules
     //
-    // All stream URLs follow this exact pattern:
+    // All stream URLs follow this exact pattern (apex from Core preference):
     //
-    //   https://<language-slug>-<region>.lutheran.radio/lutheranradio.mp3?security_model=<model>
+    //   https://<language-slug>-<region>.<preferredStreamingDomainSuffix>/lutheranradio.mp3?security_model=<model>
+    //
+    // Today preferredStreamingDomainSuffix == "siikkari.net", so e.g.:
+    //   https://finnish-eu.siikkari.net/lutheranradio.mp3?security_model=dallas
     //
     // Breakdown:
     // • <language-slug>  → StreamCatalog.languageSlug(for:)
     // • <region> → currentSelectedServer.subdomain (optimal server selection)
+    // • Apex → SecurityConfiguration.current.preferredStreamingDomainSuffix (SSOT)
     // • Port is always 443 (TLS on standard port)
     // • Path is always "/lutheranradio.mp3"
     // • Query parameter "security_model" = current expected security model (from SecurityConfiguration)
+    //
+    // Cluster latency pings use european.<apex> and livestream.<apex>
+    // (see DirectStreamingPlayer+ServerSelection.swift).
     //
     // This design achieves:
     // 1. Geographic load distribution (lower latency)
     // 2. Simple automatic failover (if one cluster is down, the other is used next launch)
     // 3. Future-proof version gating via DNS TXT record
+    // 4. Media apex SSOT lives only in Core (preferredStreamingDomainSuffixes)
     //
     // WHEN RELEASING A NEW SECURITY MODEL (certificate rotation, etc.):
     // 1. Update `expectedSecurityModel` in `Core/Configuration/SecurityConfiguration.swift`

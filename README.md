@@ -85,7 +85,7 @@ When performing work that touches security, certificates, DNS validation, stream
 **Agent checklist before any security-related edit:**
 - Run: `find . -name "CertificateFingerprint.swift" -o -name "CertificateValidator.swift" -o -name "SecurityConfiguration.swift" -o -name "SecurityModelValidator.swift" | head -5` and confirm every result is under `./Core/`.
 - Re-confirm current values via `SecurityConfiguration.current` (never hard-code).
-- Use exact symbols: `expectedSecurityModel`, `pinnedLeafFingerprintDigest`, `pinnedFingerprintDigests`, `isInTransitionWindow`, `pinnedLeafFingerprint`, `SecurityConfiguration.current`, `SecurityModelValidator`, `CertificateValidator`.
+- Use exact symbols: `expectedSecurityModel`, `pinnedLeafFingerprintDigest`, `pinnedSiikkariLeafFingerprintDigest`, `pinnedFingerprintDigests`, `isInTransitionWindow`, `pinnedLeafFingerprint`, `pinnedSiikkariLeafFingerprint`, `preferredStreamingDomainSuffixes`, `securityModelDomains`, `SecurityConfiguration.current`, `SecurityModelValidator`, `CertificateValidator`.
 - After the change, the edited files (including docs) must be strictly more self-contained, with stronger "Why", explicit invariants, and cross-links than before.
 - Run the clean build + test gates (see below) and include status in the PR.
 
@@ -106,24 +106,35 @@ Expected: All four results must be under `./Core/`. If not, stop and ask.
 **2. Fetch current live security models (cross-check against snapshot and `expectedSecurityModel`):**
 
 ```bash
-# Current active models (primary domain)
+# Primary TXT host (may be empty until fully published — transient fallback applies)
+dig +short +dnssec TXT securitymodels.siikkari.net
+
+# Secondary (current live allow-list while primary is not yet populated)
 dig +short +dnssec TXT securitymodels.lutheran.radio
 
-# Full response with DNSSEC details and RRSIG
+# Full response with DNSSEC details and RRSIG (secondary)
 dig +dnssec TXT securitymodels.lutheran.radio | grep -E "(^securitymodels|flags:|AD:|RRSIG)"
 ```
 
 **3. Verify pinned certificate material (SPKI for ATS + leaf for runtime parity):**
 
 ```bash
-# SPKI (matches Info.plist NSPinnedLeafIdentities)
-openssl s_client -connect livestream.lutheran.radio:443 -servername livestream.lutheran.radio < /dev/null 2>/dev/null \
+# SPKI (matches Info.plist NSPinnedLeafIdentities for siikkari.net)
+openssl s_client -connect livestream.siikkari.net:443 -servername livestream.siikkari.net < /dev/null 2>/dev/null \
 | openssl x509 -pubkey -noout \
 | openssl pkey -pubin -inform pem -outform der \
 | openssl dgst -sha256 -binary \
 | base64
+# Expected (live *.siikkari.net leaf SPKI): 7J4okayjKUOwgtAfSzN/iLvm/cUyoajGABocw7CkRWE=
 
-# Note: The authoritative runtime pin is the DER SHA-256 digest in SecurityConfiguration (see snapshot above). Colon-hex is for docs only.
+# Leaf DER SHA-256 (matches pinnedSiikkariLeafFingerprintDigest — openssl lowercase hex)
+openssl s_client -connect livestream.siikkari.net:443 -servername livestream.siikkari.net < /dev/null 2>/dev/null \
+| openssl x509 -outform DER \
+| openssl dgst -sha256
+# Expected: 32825e978cf71ff10cf6809d2d15c81daa856528f467d6e51b6f7a5fb21870cd
+# (colon-hex form in SecurityConfiguration: 32:82:5E:97:…:70:CD)
+
+# Note: The authoritative runtime pin list is pinnedFingerprintDigests in SecurityConfiguration (see snapshot above). Colon-hex is for docs only.
 ```
 
 **4. Run the mandatory build & test gates (execute sequentially; see CODING_AGENT.md for mechanical-work exceptions):**
@@ -251,28 +262,50 @@ After cleaning, retry the build and test steps above.
 | Item                          | Value / Note                                                                                                                                                                                                 | Source (always use via `Core/`)                                                    |
 |-------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------|
 | `expectedSecurityModel`       | `"dallas"` (must be present in the live TXT for streaming to be allowed)                                                                                                                                    | `SecurityConfiguration.swift` (via `SecurityConfiguration.current`)                |
-| Live active models (DNS TXT)  | `houston,starbase,fredericksburg,brenham,dallas`                                                                                                                                                             | `dig +short +dnssec TXT securitymodels.lutheran.radio` (primary + backup fallback) |
-| Runtime leaf pin (authoritative) | `CertificateFingerprint` (raw 32-byte SHA-256 DER digest). Never compare hex strings at runtime.                                                                                                          | `pinnedLeafFingerprintDigest`                                                      |
-| Operator/docs view of pin     | Colon-hex (uppercase): `CC:F7:8E:09:EF:F3:3D:9A:5D:8B:B0:5C:74:28:0D:F6:BE:14:1C:C4:47:F9:69:C2:90:2C:43:97:66:8B:3D:CC`                                                                                     | `pinnedLeafFingerprint` (derived)                                                  |
-| Acceptable digests for validator | `pinnedFingerprintDigests` (list form; currently contains only the leaf)                                                                                                                                  | `SecurityConfiguration.current`                                                    |
-| Transition window             | 2026-07-27 00:00:00 GMT through 2026-08-26 23:59:59 GMT (`isInTransitionWindow`)                                                                                                                             | `transitionWindowStart` / `transitionWindowEnd`                                    |
+| Live active models (DNS TXT)  | `houston,starbase,fredericksburg,brenham,dallas` (served today from secondary until primary TXT is live)                                                                                                      | `dig +short +dnssec TXT securitymodels.lutheran.radio`                             |
+| Streaming media apex          | Sole apex: `siikkari.net` (`european.siikkari.net`, `livestream.siikkari.net`, language hosts). Use `preferredStreamingDomainSuffixes` / `streamingHostCandidates(leadingLabel:)` — never hard-code. | `SecurityConfiguration.current`                                                    |
+| DNS TXT model hosts (order)   | `securitymodels.siikkari.net` → `securitymodels.lutheran.radio` → `securitymodels.lutheranradio.sk` (ordered host walk: authoritative answer stops; only transient advances — see Security Model Validation) | `securityModelDomains`                                                             |
+| Runtime leaf pins (authoritative) | `CertificateFingerprint` digests (raw 32-byte SHA-256 of leaf DER). Never compare hex strings at runtime. Validator accepts **any** entry in the list.                                                     | `pinnedFingerprintDigests`                                                         |
+| Primary / historical pin      | Colon-hex: `CC:F7:8E:09:EF:F3:3D:9A:5D:8B:B0:5C:74:28:0D:F6:BE:14:1C:C4:47:F9:69:C2:90:2C:43:97:66:8B:3D:CC`                                                                                                  | `pinnedLeafFingerprintDigest` / `pinnedLeafFingerprint`                            |
+| Live preferred-apex pin (`*.siikkari.net`) | Colon-hex: `32:82:5E:97:8C:F7:1F:F1:0C:F6:80:9D:2D:15:C8:1D:AA:85:65:28:F4:67:D6:E5:1B:6F:7A:5F:B2:18:70:CD` (same leaf on `european` / `livestream`)                                              | `pinnedSiikkariLeafFingerprintDigest` / `pinnedSiikkariLeafFingerprint`            |
+| Acceptable digests for validator | `pinnedFingerprintDigests` = primary + live siikkari (rotation-overlap list)                                                                                                                                  | `SecurityConfiguration.current`                                                    |
+| Transition window             | **2027-01-01 00:00:00 GMT** through **2027-02-10 23:59:59 GMT** (`isInTransitionWindow`). End = live `*.siikkari.net` leaf `notAfter`; start is a deliberate calendar lead-in (not a strict 30-day window). | `transitionWindowStart` / `transitionWindowEnd`                                    |
 | Time-skew protection          | `maxAllowedTimeSkew = 300` seconds. Any device vs. server `Date` header skew > 5 min disables leniency even inside the window.                                                                               | `SecurityConfiguration`                                                            |
 | Model validation cache        | 1 hour (3600 s), success-only, in `UserDefaults` (`modelCacheDuration`). Failures always re-query. Distinct from certificate pin-result caching.                                                              | `SecurityConfiguration` + `SecurityModelValidator`                                 |
 | Certificate validation cache  | 10 minutes (600 s), success reuse in `CertificateValidator` (`certificateValidationCacheDuration`). Periodic HEAD revalidation in `DirectStreamingPlayer` uses the same constant.                             | `SecurityConfiguration` + `CertificateValidator`                                   |
 
 **AGENT NOTE:** Obtain everything via `SecurityConfiguration.current`. Before editing any file listed in the "Single Sources of Truth" table below (or touching DNS TXT / certificate logic), re-run the `find` command from the AI checklist above and confirm results are inside `./Core/`. The dallas row in the history table is the current model (previous models are retained for the historical record and to prevent name reuse).
 
-See also: ``<doc:Security-Invariants>``, ``<doc:Architecture>``, [`CODING_AGENT.md`](CODING_AGENT.md#documentation--comment-standards-for-ai-coding-agents) (Documentation Standards).
+### Media Apex Cutover & SSL Certificate Rotation (siikkari.net)
+
+This build completes the **production data-plane cutover** from the former media apex `lutheran.radio` to **`siikkari.net`**, with a matching **SSL leaf + ATS SPKI** rotation. Media vs DNS-TXT hosts remain separate SSOTs.
+
+| Surface | Before | After (this build) |
+|---------|--------|--------------------|
+| Streaming / ping / HEAD hosts | `*.lutheran.radio` (and dual-apex preference in older builds) | **Sole media apex** `siikkari.net` via `preferredStreamingDomainSuffixes` (`european`, `livestream`, language hosts) |
+| ATS `NSPinnedDomains` | `lutheran.radio` SPKI pin(s) | **`siikkari.net`** SPKI: `7J4okayjKUOwgtAfSzN/iLvm/cUyoajGABocw7CkRWE=` |
+| Runtime leaf pins | Single historical DER digest | **`pinnedFingerprintDigests`** = historical `CC:F7:…:3D:CC` **+** live `*.siikkari.net` `32:82:…:70:CD` |
+| DNS TXT allow-list order | `securitymodels.lutheran.radio` → `.lutheranradio.sk` | `securitymodels.siikkari.net` → **`securitymodels.lutheran.radio`** (live allow-list today) → `.lutheranradio.sk` |
+
+**Why dual runtime pins:** The historical primary pin is retained for docs/CODING_AGENT citation stability and rotation-overlap membership. The live preferred-apex pin is required so full-certificate validation succeeds on `*.siikkari.net` without depending only on transition-window ATS leniency.
+
+**Why TXT still falls back to `lutheran.radio`:** Primary TXT (`securitymodels.siikkari.net`) may be empty until fully published; when no **authoritative** answer is obtained, the ordered host walk advances (Invariant 1). Streaming never uses retired `lutheran.radio` media hosts.
+
+**Operational verify (copy-paste):** SPKI + leaf DER commands under [Agent Verification Commands](#agent-verification-commands); live models via secondary `dig` until primary TXT is populated.
+
+See also: ``<doc:Security-Invariants>`` (media vs TXT separation), ``<doc:Architecture>``, [`CODING_AGENT.md`](CODING_AGENT.md#documentation--comment-standards-for-ai-coding-agents) (Documentation Standards).
 
 ## Certificate Pinning
 
-**Security Invariant:** Runtime full-certificate pinning is performed exclusively by `CertificateValidator` (in `Core/Security/`) against `SecurityConfiguration.pinnedFingerprintDigests` (via `pinnedLeafFingerprintDigest`). Comparison uses constant-time `CertificateFingerprint.constantTimeMatches`. ATS SPKI pinning in `Info.plist` provides the baseline; the runtime layer adds defense-in-depth. Colon-hex values are never used for runtime decisions.
+**Security Invariant:** Runtime full-certificate pinning is performed exclusively by `CertificateValidator` (in `Core/Security/`) against `SecurityConfiguration.pinnedFingerprintDigests` (primary historical leaf plus live preferred-apex `*.siikkari.net` leaf). Comparison uses constant-time `CertificateFingerprint.constantTimeMatches`. ATS SPKI pinning in `Info.plist` provides the baseline; the runtime layer adds defense-in-depth. Colon-hex values are never used for runtime decisions.
 
 The app implements certificate pinning to prevent man-in-the-middle (MITM) attacks. Key details:
 
-1. **Domain:** ```lutheran.radio``` (including subdomains)
-2. **Pinned Value (runtime):** SHA-256 digest of the leaf certificate DER (32 bytes), stored as ```CertificateFingerprint``` in ```Core/Configuration/SecurityConfiguration.swift``` as ```pinnedLeafFingerprintDigest```
-3. **Pinned Value (operator / docs):** OpenSSL-style colon-hex (uppercase), derived from the digest — ```CC:F7:8E:09:EF:F3:3D:9A:5D:8B:B0:5C:74:28:0D:F6:BE:14:1C:C4:47:F9:69:C2:90:2C:43:97:66:8B:3D:CC```
+1. **Domains:** Streaming hosts under ``preferredStreamingDomainSuffixes`` (sole apex ``siikkari.net``, including subdomains such as `european` / `livestream` / language hosts). ATS SPKI in `Info.plist` must cover every apex that is actively used for TLS; DNSSEC host policy matches via ``hostRequiresDNSSECValidation(_:)``. DNS TXT allow-list hosts are ordered separately (`securitymodels.siikkari.net` primary, then established fallbacks).
+2. **Pinned Values (runtime):** SHA-256 digests of acceptable leaf certificate DERs (32 bytes each), stored as ```CertificateFingerprint``` values in ```Core/Configuration/SecurityConfiguration.swift``` as ```pinnedFingerprintDigests``` (includes ```pinnedLeafFingerprintDigest``` and ```pinnedSiikkariLeafFingerprintDigest```)
+3. **Pinned Values (operator / docs):** OpenSSL-style colon-hex (uppercase), derived from the digests —
+   - Primary / historical: ```CC:F7:8E:09:EF:F3:3D:9A:5D:8B:B0:5C:74:28:0D:F6:BE:14:1C:C4:47:F9:69:C2:90:2C:43:97:66:8B:3D:CC```
+   - Live `*.siikkari.net`: ```32:82:5E:97:8C:F7:1F:F1:0C:F6:80:9D:2D:15:C8:1D:AA:85:65:28:F4:67:D6:E5:1B:6F:7A:5F:B2:18:70:CD```
 4. **Location:** SPKI in ```Info.plist``` (```NSAppTransportSecurity > NSPinnedDomains```); runtime digest policy in ```SecurityConfiguration```; comparison in ```Core/Security/CertificateValidator.swift``` via ```Core/Security/CertificateFingerprint.swift```
 
 See also: ``<doc:Security-Invariants>`` (Invariant 2), the "Current Security Snapshot" table, "Single Sources of Truth" table, and [`CODING_AGENT.md`](CODING_AGENT.md) (pinned fingerprint rules + never bypass full-certificate pinning).
@@ -283,20 +316,22 @@ For enhanced security, the app uses two complementary pinning approaches:
 
 1. **SPKI Pinning (via Info.plist - Primary ATS Enforcement)**:
    - Pins the SHA-256 fingerprint of the certificate's public key (SPKI) in Base64 format.
-   - Enforced by App Transport Security (ATS) for all connections to `lutheran.radio` (including subdomains).
+   - Enforced by App Transport Security (ATS) for every apex listed under `NSAppTransportSecurity > NSPinnedDomains` (subdomains included when `NSIncludesSubdomains` is true).
+   - Sole media apex (`siikkari.net`) is pinned so the production data plane stays defendable at the TLS layer.
    - Allows certificate rotations without app updates, as long as the public key remains consistent.
-   - Current Pinned SPKI Fingerprints (from `Info.plist` under `NSAppTransportSecurity > NSPinnedDomains > lutheran.radio > NSPinnedLeafIdentities`):
-     - `fwp4KADDyKqDa3qN5vy6UUJlffXBnjzrei3QTuYofYY=`
-     - `XuAdGZ5Hy28pa2OHHMOry/fzpW8XyA5AV5bEDwSX2Ys=`
-   - Verification: Use `openssl s_client -connect livestream.lutheran.radio:443 -servername livestream.lutheran.radio < /dev/null | openssl x509 -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | base64` and match against these values.
+   - Current Pinned SPKI Fingerprints (from `Info.plist`):
+     - `siikkari.net` (streaming; includes `european.siikkari.net`, `livestream.siikkari.net`, language hosts):
+       - `7J4okayjKUOwgtAfSzN/iLvm/cUyoajGABocw7CkRWE=`
+   - Verification: Use `openssl s_client -connect livestream.siikkari.net:443 -servername livestream.siikkari.net < /dev/null | openssl x509 -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | base64` and match against the `siikkari.net` pin above.
 
 2. **Full Certificate Fingerprint Pinning (via Core/Security/ - Runtime Validation)**:
-   - Authoritative pin: ```SecurityConfiguration.pinnedLeafFingerprintDigest``` (32-byte ```CertificateFingerprint```).
-   - ```CertificateValidator``` hashes the leaf DER with stack-local storage and compares digests using constant-time equality (no runtime hex string comparison).
-   - Colon-hex views (```pinnedLeafFingerprint```, ```pinnedFingerprints```) exist for README, tests, and ```openssl``` parity only.
+   - Authoritative acceptance list: ```SecurityConfiguration.pinnedFingerprintDigests``` (array of 32-byte ```CertificateFingerprint``` values).
+   - Includes the primary historical pin (```pinnedLeafFingerprintDigest```) and the live preferred-apex pin (```pinnedSiikkariLeafFingerprintDigest``` for `*.siikkari.net`).
+   - ```CertificateValidator``` hashes the leaf DER with stack-local storage and compares digests using constant-time equality against **any** list entry (no runtime hex string comparison).
+   - Colon-hex views (```pinnedLeafFingerprint```, ```pinnedSiikkariLeafFingerprint```, ```pinnedFingerprints```) exist for README, tests, and ```openssl``` parity only.
    - Performed at runtime with caching (10 minutes) and transition support; complements SPKI with exact DER matches, with ATS fallback during the transition period.
 
-This dual approach provides defense-in-depth: SPKI handles baseline TLS security and rotations, while full pinning adds runtime enforcement. During the transition period (July 27–August 26, 2026), runtime validation allows pinning mismatches to the known alternate key (trusting ATS/SPKI) to prevent disruptions from certificate updates.
+This dual approach provides defense-in-depth: SPKI handles baseline TLS security and rotations, while full pinning adds runtime enforcement. During the transition period (**2027-01-01 through 2027-02-10 GMT**, keyed to the live `*.siikkari.net` leaf expiry), runtime validation may allow pinning mismatches to fall back to ATS/SPKI (subject to time-skew protection) so a coordinated leaf rotation can complete without hard-stopping streams.
 
 The app also detects potential device time manipulation by comparing the device time with the server's Date header during validation. If a significant discrepancy (beyond 5 minutes) is detected, or if the device is in the transition period but the server is not, transition leniency is disabled. This mitigates risks of exploiting the transition window through time manipulation, ensuring stricter enforcement when anomalies are present.
 
@@ -308,10 +343,17 @@ See also: ``<doc:Security-Invariants>`` (Invariant 3 — Transition Window & Tim
 
 To ensure uninterrupted service during SSL certificate renewals, the app includes a strategic transition system:
 
-- **Transition Period:** One month before certificate expiry
+- **Transition Period:** Lead-in before preferred-apex leaf expiry. Current window: **2027-01-01 00:00:00 GMT → 2027-02-10 23:59:59 GMT** (`notAfter` of live `CN=*.siikkari.net` on `livestream.siikkari.net` / `european.siikkari.net`; start deliberately on calendar **2027-01-01** rather than a strict T−30d). See snapshot table.
 - **User Experience:** During the transition period, the app trusts ATS validation if the pinned fingerprint fails, allowing streaming to continue with a debug warning (visible in DEBUG builds)
 - **Security Protection:** Transition support is automatically enabled during the defined period, with strict enforcement of the pinned fingerprint outside this window
 - **Implementation:** Controlled via `Core/Security/CertificateValidator.swift` with predefined transition start and expiry dates (exposed via `isInTransitionWindow` on `SecurityConfiguration.current`)
+- **Rotation-overlap list:** Prefer appending the new leaf to `pinnedFingerprintDigests` (keep the prior pin) and updating ATS SPKI for the active media apex (`siikkari.net`) before cutting over hosts. See [Media Apex Cutover & SSL Certificate Rotation](#media-apex-cutover--ssl-certificate-rotation-siikkarinet).
+- **Operator re-verify before each rotation:**
+  ```bash
+  openssl s_client -connect livestream.siikkari.net:443 -servername livestream.siikkari.net < /dev/null 2>/dev/null \
+  | openssl x509 -noout -dates -subject
+  ```
+  Align `transitionWindowEnd` with the reported `notAfter` and set `transitionWindowStart` for the planned lead-in.
 
 This approach prevents service disruption during certificate updates while maintaining security through continued ATS enforcement and time-bounded operation.
 
@@ -325,17 +367,31 @@ See also: the "Current Security Snapshot" (exact window dates) and ``<doc:Securi
 
 ### Verifying the Certificate Fingerprint
 
-To check or update the pinned fingerprint:
+To check or update pinned material for the live media apex (`*.siikkari.net`):
+
+**SPKI** (ATS / `Info.plist`):
 
 ```bash
-openssl s_client -connect livestream.lutheran.radio:443 -servername livestream.lutheran.radio < /dev/null 2>/dev/null \
+openssl s_client -connect livestream.siikkari.net:443 -servername livestream.siikkari.net < /dev/null 2>/dev/null \
 | openssl x509 -pubkey -noout \
 | openssl pkey -pubin -inform pem -outform der \
 | openssl dgst -sha256 -binary \
 | base64
 ```
 
-Match the output against the ```SPKI-SHA256-BASE64``` value in ```Info.plist```. Update if necessary.
+Match against the ```SPKI-SHA256-BASE64``` value for `siikkari.net` in ```Info.plist``` (currently `7J4okayjKUOwgtAfSzN/iLvm/cUyoajGABocw7CkRWE=`).
+
+**Leaf DER SHA-256** (runtime / `pinnedSiikkariLeafFingerprintDigest`):
+
+```bash
+openssl s_client -connect livestream.siikkari.net:443 -servername livestream.siikkari.net < /dev/null 2>/dev/null \
+| openssl x509 -outform DER \
+| openssl dgst -sha256
+```
+
+Match the lowercase hex against ```pinnedSiikkariLeafFingerprintDigest``` (colon-hex in the snapshot table: `32:82:5E:97:…:70:CD`). When rotating, update **both** the SPKI in `Info.plist` and the digest(s) in `SecurityConfiguration.pinnedFingerprintDigests` in the same change, then re-run CoreTests pin membership tests.
+
+Also verify `european.siikkari.net` presents the same leaf when the cert is a shared wildcard (`CN=*.siikkari.net`).
 
 ## Memory Safety (Compile-Time and Runtime)
 
@@ -355,33 +411,41 @@ See also: [`CODING_AGENT.md`](CODING_AGENT.md) (Strict Memory Safety (SE-0458) +
 
 ## Security Model Validation
 
-**Security Invariant:** The app **must** successfully validate that its embedded `expectedSecurityModel` (from `SecurityConfiguration.current`) appears in the comma-separated TXT record returned by `securitymodels.lutheran.radio` (or the backup) **before any streaming is allowed**. Validation is performed exclusively by `SecurityModelValidator` (an actor). Permanent failure (model absent) disables streaming for the lifetime of the process. Successful validations are cached for exactly 1 hour (success-only).
+**Security Invariant:** The app **must** successfully validate that its embedded `expectedSecurityModel` (from `SecurityConfiguration.current`) appears in the comma-separated TXT record returned by a host in `securityModelDomains` **before any streaming is allowed**. Validation is performed exclusively by `SecurityModelValidator` (an actor). Successful validations are cached for exactly 1 hour (success-only).
+
+**Ordered host walk** (`securityModelDomains` — canonical detail in ``<doc:Security-Invariants>`` Invariant 1):
+
+1. **Authoritative answer** = DNSSEC-validated TXT rdata accepted by the callback (including empty set).
+2. **Contains expected model** → success; **stop** (later hosts not queried).
+3. **Does not contain it** → permanent fail; **stop** (no fall-through).
+4. **Transient** (error, timeout, no validate bit, etc.) → next host; that host is **fully trusted** if it returns an authoritative allow-list containing the expected model.
 
 The app performs security model validation to confirm that the version in use matches an approved security implementation before streaming content. This protects against compromised or obsolete app versions.
 
-1. **Primary domain:** `securitymodels.lutheran.radio`
-   **Backup domain:** `securitymodels.lutheranradio.sk` (smart fallback)
-2. **Mechanism:** Queries DNS TXT records (via `DNSServiceQueryRecord` + `kDNSServiceFlagsValidate`) from the ordered list of domains. On success (**DNSSEC-validated response** *and* expected model present), caches result for 1 hour. Permanent failure (model absent from validated record) aborts immediately; transient errors (network, no validation bit, timeout) trigger fallback to the backup domain only.
+1. **Primary domain:** `securitymodels.siikkari.net`
+   **Secondary domain:** `securitymodels.lutheran.radio` (established allow-list; used while primary TXT is not yet published)
+   **Backup domain:** `securitymodels.lutheranradio.sk` (final transient fallback)
+2. **Mechanism:** Queries DNS TXT records (via `DNSServiceQueryRecord` + `kDNSServiceFlagsValidate`) from the ordered list of domains, applying the ordered host walk above.
 3. **Pinned Value:** Defined in `Core/Configuration/SecurityConfiguration.swift` as `expectedSecurityModel` (currently `"dallas"`, always read via `SecurityConfiguration.current`)
 4. **Location:** Enforced by the actor `Core/Actors/SecurityModelValidator.swift` (single source of truth for validation — see the Key Files table)
-5. **Behavior:** If the app’s security model isn’t in the TXT record, playback is permanently disabled with a user-facing error message
+5. **Behavior:** If the app’s security model isn’t in an **authoritative** TXT set from a responding host, playback is permanently disabled with a user-facing error message (no fall-through).
 
 See also: "Current Security Snapshot", "Agent Verification Commands", ``<doc:Security-Invariants>`` (Invariant 1), and [`CODING_AGENT.md`](CODING_AGENT.md) (Security Model + DNS TXT Validation Specifics).
 
 ### Why DNS TXT Records?
 
-The app uses a DNS TXT record on `securitymodels.lutheran.radio` for lightweight, dynamic security model validation. This mechanism allows central updating of approved security models without requiring an immediate App Store update for every user.
+The app uses DNS TXT records on the ordered `securityModelDomains` list for lightweight, dynamic security model validation (primary `securitymodels.siikkari.net`, with secondary/backup hosts for transient failure). This mechanism allows central updating of approved security models without requiring an immediate App Store update for every user.
 
 **DNSSEC Protection**
 
-The `lutheran.radio` zone, including the `securitymodels` subdomain, is protected by **DNSSEC with signed delegation**. The zone is properly signed (visible RRSIG records) and the chain of trust is established from the `.radio` TLD upward.
+DNS TXT hosts on the ordered `securityModelDomains` list are expected to be under **DNSSEC-signed** zones. Today the **operational** allow-list is still served from **`securitymodels.lutheran.radio`** (secondary): that zone uses DNSSEC with signed delegation (visible RRSIG records; chain of trust from the `.radio` TLD). The primary host `securitymodels.siikkari.net` is first in the query order; until it publishes a live TXT, failures there remain **transient** and the validator continues to the secondary.
 
-When queried with the DO (DNSSEC OK) bit set (e.g. `dig +dnssec`), the response includes:
+When the secondary is queried with the DO (DNSSEC OK) bit set (e.g. `dig +dnssec`), the response includes:
 - The TXT record containing the comma-separated list of valid models:
   `"houston,starbase,fredericksburg,brenham,dallas"`
 - An accompanying **RRSIG** signature.
 
-In the current observed responses, the **AD (Authenticated Data)** flag is **not** set (`;; flags: qr rd ra`), indicating that the recursive resolver did not perform (or did not assert) full DNSSEC validation when answering the query.
+In the current observed responses for the secondary, the **AD (Authenticated Data)** flag is **not** set (`;; flags: qr rd ra`), indicating that the recursive resolver did not perform (or did not assert) full DNSSEC validation when answering the query. Re-check both primary and secondary with the Agent Verification Commands after any DNS publish.
 
 **Current Validation Behavior (DNSSEC-hardened)**
 
@@ -400,7 +464,7 @@ See also: ``<doc:Security-Invariants>`` (Invariant 1), [`CODING_AGENT.md`](CODIN
 
 In addition to the hardened TXT lookup for the security model allow-list, the app requires DNSSEC-validated DNS answers for all actual streaming, certificate-probing, and server-selection traffic:
 
-- Every `URLSession` that talks to `*.lutheran.radio` hosts (livestream, european, language-specific subdomains, etc.) is created from `SecurityConfiguration.makeSecureEphemeralConfiguration()`.
+- Every `URLSession` that talks to protected streaming hosts under any apex in `preferredStreamingDomainSuffixes` (today `*.siikkari.net` — livestream / european / language-specific subdomains) is created from `SecurityConfiguration.makeSecureEphemeralConfiguration()`.
 - This sets `URLSessionConfiguration.requiresDNSSECValidation = true` (session level).
 - The actual media bytes, HEAD probes used by `CertificateValidator`, and latency pings therefore obtain authenticated name-to-IP mappings before TLS + full-certificate pinning.
 - If the client's resolver cannot supply a validated answer, the request fails at the URLSession layer. These failures are classified as **transient** by `DirectStreamingPlayer.StreamErrorType` (allowing recreate + cluster fallback) so that the feature remains safe on networks where full DNSSEC validation is not yet available from the recursive resolver.
@@ -416,31 +480,34 @@ See ``<doc:Security-Invariants>`` (new Invariant 2) and `Core/Configuration/Secu
 To check the current TXT record and DNSSEC-related information:
 
 ```bash
-# Full response with flags and signatures
-dig +dnssec TXT securitymodels.lutheran.radio | grep -E "(^securitymodels|flags:|AD:|RRSIG)"
+# Primary (may be empty until published — transient fallback applies)
+dig +short +dnssec TXT securitymodels.siikkari.net
+dig +dnssec TXT securitymodels.siikkari.net | grep -E "(^securitymodels|flags:|AD:|RRSIG)"
 
-# Short version (TXT + RRSIG)
+# Secondary — current live allow-list while primary is not yet populated
 dig +short +dnssec TXT securitymodels.lutheran.radio
+dig +dnssec TXT securitymodels.lutheran.radio | grep -E "(^securitymodels|flags:|AD:|RRSIG)"
 ```
 
 Look for the **AD** flag (Authenticated Data) in the `;; flags:` line (useful diagnostic). For the app, success is determined by the `kDNSServiceFlagsValidate` bit returned to the `DNSServiceQueryRecord` callback (checked in `SecurityModelValidator.dnsQueryCallback`), not solely by the AD bit in `dig` output. The system resolver behavior controls whether the bit is set.
 
 ### Verifying the Security Model
 
-To check the current valid security models:
+To check the current valid security models (query both primary and secondary):
 
 ```bash
+dig +short +dnssec TXT securitymodels.siikkari.net
 dig +short +dnssec TXT securitymodels.lutheran.radio
 ```
 
-Example output (captured live; always re-verify with `dig` before relying on it):
+Example secondary output (captured live; always re-verify with `dig` before relying on it):
 
 ```
 "houston,starbase,fredericksburg,brenham,dallas"
-TXT 13 3 600 20260624194857 20260622174857 34505 lutheran.radio. C9XoaKK97ftWW9H86LM8+a3fEyBbNnQCh60q8BrvIeyCSVG8dTerIS1w ei0hZS/M5qB9YEBfqLWFMMR6TTT4Ng==
+TXT 13 3 600 20260728124521 20260726104521 34505 lutheran.radio. Pao+xo933TYptYj8hQ2P1wGkGjwToXOmw8B8nD9UCJ0hUexSuHuRWq+Z TxB440SiHahCcw4tSQy2iqcBuog+gg==
 ```
 
-Compare this output to ```expectedSecurityModel``` in ```Core/Configuration/SecurityConfiguration.swift``` (currently ```dallas```, obtained via `SecurityConfiguration.current`). If the app’s model isn’t listed, validation fails permanently. To update the list, modify the TXT record for ```securitymodels.lutheran.radio``` through the DNS management interface for the ```lutheran.radio``` domain.
+Compare this output to ```expectedSecurityModel``` in ```Core/Configuration/SecurityConfiguration.swift``` (currently ```dallas```, obtained via `SecurityConfiguration.current`). If the app’s model isn’t listed on a **validated** responding host, validation fails permanently for that host (no fall-through on permanent absence). To update the allow-list: publish / update the TXT on ```securitymodels.siikkari.net``` (primary) and keep secondary/backup (```securitymodels.lutheran.radio```, ```securitymodels.lutheranradio.sk```) consistent.
 
 See also: ``<doc:Security-Invariants>`` (Invariant 1), [`CODING_AGENT.md`](CODING_AGENT.md) (Security Model rules).
 
@@ -478,8 +545,8 @@ This feature enhances availability while maintaining the app's privacy-first pri
 
 | File / Symbol                                              | Responsibility                                                                 | Important notes for agents |
 |------------------------------------------------------------|--------------------------------------------------------------------------------|----------------------------|
-| `Core/Configuration/SecurityConfiguration.swift`           | Single source of truth for all policy and constants (`expectedSecurityModel`, `pinnedLeafFingerprintDigest`, `pinnedFingerprintDigests`, `isInTransitionWindow`, `transitionWindow*`, `maxAllowedTimeSkew`, `modelCacheDuration`, `certificateValidationCacheDuration`, `securityModelDomains`, `requiresDNSSECValidationForStreaming`, `makeSecureEphemeralConfiguration`, `current`) | Never duplicate these values elsewhere. Colon-hex views (`pinnedLeafFingerprint`, `pinnedFingerprints`) are for README/openssl parity only. DNS model cache (1 h) and certificate pin-result cache (10 min) are **distinct** constants. The secure session factory is the central point for `requiresDNSSECValidation` + cache hardening on streaming sessions. |
-| `Core/Actors/SecurityModelValidator.swift`                 | Actor-isolated DNS TXT security model validation against `securitymodels.lutheran.radio` (and backup) | Uses `kDNSServiceFlagsValidate` + explicit callback bit check for DNSSEC (strict). `Span<UInt8>` / `UTF8Span` zero-copy rdata borrow in `dns_sd` callback. 1-hour success-only cache via `modelCacheDuration`. Permanent vs. transient failures. Entry point: `validateSecurityModel()`. The **only** place DNS TXT logic is allowed. |
+| `Core/Configuration/SecurityConfiguration.swift`           | Single source of truth for all policy and constants (`expectedSecurityModel`, `pinnedLeafFingerprintDigest`, `pinnedSiikkariLeafFingerprintDigest`, `pinnedFingerprintDigests`, `isInTransitionWindow`, `transitionWindow*`, `maxAllowedTimeSkew`, `modelCacheDuration`, `certificateValidationCacheDuration`, `securityModelDomains`, `preferredStreamingDomainSuffixes`, `streamingHostCandidates(leadingLabel:)`, `hostRequiresDNSSECValidation`, `requiresDNSSECValidationForStreaming`, `makeSecureEphemeralConfiguration`, `current`) | Never duplicate these values elsewhere. Colon-hex views (`pinnedLeafFingerprint`, `pinnedSiikkariLeafFingerprint`, `pinnedFingerprints`) are for README/openssl parity only. DNS model cache (1 h) and certificate pin-result cache (10 min) are **distinct** constants. Streaming media apex (`siikkari.net` only) is **independent** of DNS TXT host order. The secure session factory is the central point for `requiresDNSSECValidation` + cache hardening on streaming sessions. |
+| `Core/Actors/SecurityModelValidator.swift`                 | Actor-isolated DNS TXT security model validation against ordered `securityModelDomains` (`siikkari.net` primary → `lutheran.radio` → `lutheranradio.sk`) | Uses `kDNSServiceFlagsValidate` + explicit callback bit check for DNSSEC (strict). `Span<UInt8>` / `UTF8Span` zero-copy rdata borrow in `dns_sd` callback. 1-hour success-only cache via `modelCacheDuration`. Four-point ordered host walk (authoritative answer stops; only transient advances). Entry point: `validateSecurityModel()`. The **only** place DNS TXT logic is allowed. |
 | `Core/Security/CertificateFingerprint.swift`               | 32-byte SHA-256 DER digest type + stack-local hashing via `Data.span` + constant-time `constantTimeMatches` | Runtime code must never compare hex strings. Materializes colon-hex only for docs/tooling. |
 | `Core/Security/CertificateValidator.swift`                 | Runtime full-certificate (DER) pinning + 10-minute success cache (`certificateValidationCacheDuration`) + transition window + device/server time-skew protection | Complements (does not replace) ATS SPKI pinning from `Info.plist`. Uses `pinnedFingerprintDigests`. Must **not** read `modelCacheDuration`. Time skew > 5 min permanently disables leniency for the process. |
 | `DirectStreamingPlayer.swift` (+ domain extensions; streaming delegates) | Main audio engine façade; embeds security model in stream URLs; domain files own catalog, server selection, attach, recovery, resource loader, SSL; consumes validators; resource-loader sessions via the Core secure factory | Consumes the Core single sources of truth (including DNSSEC-enabled sessions). No policy duplication. Error classification treats DNSSEC-unavailable cases as transient. Isolation map on the façade documents domain ownership. |
@@ -613,7 +680,7 @@ When introducing a new security model (requires security review + documentation 
 
 1. Choose a unique name not listed in the table (e.g., a distinct city or codename). Confirm it has never been used.
 2. Update `expectedSecurityModel` in `Core/Configuration/SecurityConfiguration.swift` (the only allowed location).
-3. Add the new name to the DNS TXT record for `securitymodels.lutheran.radio` (primary) and ensure the backup is consistent.
+3. Add the new name to the DNS TXT record for `securitymodels.siikkari.net` (primary) and keep secondary/backup (`securitymodels.lutheran.radio`, `securitymodels.lutheranradio.sk`) consistent.
 4. Append a new row to the table above with the current date, app version, and name.
 5. Update the "Current Security Snapshot" and any live example outputs in this README.
 6. Improve surrounding documentation per the Documentation & Comment Standards in [`CODING_AGENT.md`](CODING_AGENT.md) (add "Why", Security Invariant callouts, cross-links to ``<doc:Security-Invariants>`` and the Architecture article, update agent checklist context if needed).

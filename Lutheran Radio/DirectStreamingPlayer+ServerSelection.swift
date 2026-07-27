@@ -13,7 +13,12 @@
 //  file-scoped). Prefer this domain file over re-implementing attach / recovery
 //  / catalog logic in call sites.
 //
-//  - SeeAlso: DirectStreamingPlayer.swift, SecurityConfiguration.makeSecureEphemeralConfiguration(), DirectStreamingPlayer+StreamCatalog.swift,
+//  Security Invariant: Cluster ping hosts and `baseHostname` come from
+//  ``SecurityConfiguration/preferredStreamingDomainSuffix`` (today `siikkari.net`).
+//  Do not hard-code apex strings here — keep EU = european.<apex>, US = livestream.<apex>.
+//
+//  - SeeAlso: DirectStreamingPlayer.swift, SecurityConfiguration.makeSecureEphemeralConfiguration(),
+//    SecurityConfiguration.streamingHostCandidates(leadingLabel:), DirectStreamingPlayer+StreamCatalog.swift,
 //    CODING_AGENT.md (Single Source of Truth Principles).
 //
 
@@ -23,6 +28,13 @@ import Core
 
 extension DirectStreamingPlayer {
     /// A radio stream server endpoint (EU or US cluster).
+    ///
+    /// - Important: `baseHostname` is the preferred streaming apex from Core policy
+    ///   (``SecurityConfiguration/preferredStreamingDomainSuffix``), not a hard-coded
+    ///   legacy domain. Stream language hosts are built as
+    ///   `<languageSlug>-<subdomain>.<baseHostname>` in ``StreamCatalog``.
+    /// - SeeAlso: ``StreamCatalog/streamURL(languageCode:region:securityModel:)``,
+    ///   ``SecurityConfiguration/preferredStreamingDomainSuffixes``
     struct Server {
         let name: String
         let pingURL: URL
@@ -30,22 +42,38 @@ extension DirectStreamingPlayer {
         let subdomain: String
     }
     
-    /// Static list of known streaming clusters.
-    /// The first entry is the default/fallback.
-    static let servers: [Server] = [
-        Server(
-            name: "EU",
-            pingURL: makeURL("https://european.lutheran.radio/ping"),
-            baseHostname: "lutheran.radio",
-            subdomain: "eu"
-        ),
-        Server(
-            name: "US",
-            pingURL: makeURL("https://livestream.lutheran.radio/ping"),
-            baseHostname: "lutheran.radio",
-            subdomain: "us"
-        )
-    ]
+    /// Static list of known streaming clusters under the preferred streaming apex.
+    ///
+    /// The first entry is the default/fallback. Hosts are derived from
+    /// ``SecurityConfiguration/preferredStreamingDomainSuffix`` so media preference
+    /// stays a single source of truth in Core (today: `european.siikkari.net` and
+    /// `livestream.siikkari.net`).
+    ///
+    /// - SeeAlso: ``SecurityConfiguration/streamingHostCandidates(leadingLabel:)``,
+    ///   ``SecurityConfiguration/preferredStreamingDomainSuffixes``,
+    ///   ``<doc:Security-Invariants>``
+    static let servers: [Server] = {
+        let apex = SecurityConfiguration.current.preferredStreamingDomainSuffix
+        // Prefer the first candidate for each leading label (preferred apex).
+        let euHost = SecurityConfiguration.current.streamingHostCandidates(leadingLabel: "european").first
+            ?? "european.\(apex)"
+        let usHost = SecurityConfiguration.current.streamingHostCandidates(leadingLabel: "livestream").first
+            ?? "livestream.\(apex)"
+        return [
+            Server(
+                name: "EU",
+                pingURL: makeURL("https://\(euHost)/ping"),
+                baseHostname: apex,
+                subdomain: "eu"
+            ),
+            Server(
+                name: "US",
+                pingURL: makeURL("https://\(usHost)/ping"),
+                baseHostname: apex,
+                subdomain: "us"
+            )
+        ]
+    }()
 
     internal static func makeURL(_ string: String) -> URL {
         guard let url = URL(string: string) else {

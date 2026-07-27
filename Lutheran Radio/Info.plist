@@ -25,7 +25,7 @@
 		<dict/>
 		<key>NSPinnedDomains</key>
 		<dict>
-			<key>lutheran.radio</key>
+			<key>siikkari.net</key>
 			<dict>
 				<key>NSIncludesSubdomains</key>
 				<true/>
@@ -33,11 +33,7 @@
 				<array>
 					<dict>
 						<key>SPKI-SHA256-BASE64</key>
-						<string>fwp4KADDyKqDa3qN5vy6UUJlffXBnjzrei3QTuYofYY=</string>
-					</dict>
-					<dict>
-						<key>SPKI-SHA256-BASE64</key>
-						<string>XuAdGZ5Hy28pa2OHHMOry/fzpW8XyA5AV5bEDwSX2Ys=</string>
+						<string>7J4okayjKUOwgtAfSzN/iLvm/cUyoajGABocw7CkRWE=</string>
 					</dict>
 				</array>
 			</dict>

@@ -4,7 +4,8 @@
 //
 //  Created by Jari Lammi on 26.7.2026.
 //
-//  Engine-owned secured AVPlayerItem construction for lutheran.radio HTTPS streaming.
+//  Engine-owned secured AVPlayerItem construction for protected streaming HTTPS hosts
+//  (preferredStreamingDomainSuffixes — today *.siikkari.net preferred).
 //  Single owner for the Core-backed resource-loader path used by cold launch, stream
 //  switch, soft recovery, and public createAndStartPlayer entrypoints.
 //
@@ -52,7 +53,7 @@ import Core
 
 extension DirectStreamingPlayer {
 
-    /// Builds a secured live `AVPlayerItem` for lutheran.radio HTTPS streaming.
+    /// Builds a secured live `AVPlayerItem` for protected streaming HTTPS hosts.
     ///
     /// Every attach path (cold launch, stream switch, and silent transient recovery) must
     /// create items through this helper so media bytes always load via

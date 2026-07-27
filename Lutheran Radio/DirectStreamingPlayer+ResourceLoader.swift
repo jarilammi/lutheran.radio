@@ -4,16 +4,21 @@
 //
 //  Created by Jari Lammi on 24.7.2026.
 //
-//  AVAssetResourceLoaderDelegate for lutheran.radio HTTPS: DNSSEC sessions, StreamingSessionDelegate, Icecast headers, and loading-request hard timeout.
+//  AVAssetResourceLoaderDelegate for protected streaming HTTPS hosts under
+//  SecurityConfiguration.preferredStreamingDomainSuffixes (today *.siikkari.net only):
+//  DNSSEC sessions, StreamingSessionDelegate, Icecast headers, and loading-request hard timeout.
 //
 //  Behavior-preserving domain split from DirectStreamingPlayer.swift.
 //  DirectStreamingPlayer remains the public façade; this file owns one domain.
 //
 //  AGENT NOTE: Members used across files are `internal` (Swift `private` is
 //  file-scoped). Prefer this domain file over re-implementing attach / recovery
-//  / catalog logic in call sites.
+//  / catalog logic in call sites. Host membership must use
+//  ``SecurityConfiguration/hostRequiresDNSSECValidation(_:)`` — never hard-code apexes.
 //
-//  - SeeAlso: DirectStreamingPlayer.swift, StreamingSessionDelegate.swift, SecurityConfiguration.makeSecureEphemeralConfiguration(),
+//  - SeeAlso: DirectStreamingPlayer.swift, StreamingSessionDelegate.swift,
+//    SecurityConfiguration.makeSecureEphemeralConfiguration(),
+//    SecurityConfiguration.hostRequiresDNSSECValidation(_:),
 //    CODING_AGENT.md (Single Source of Truth Principles).
 //
 
@@ -25,24 +30,28 @@ import WidgetSurface
 // MARK: - Extensions for Delegates and Helpers
 /// Handles custom resource loading for secure streaming.
 ///
-/// All actual data transport for lutheran.radio hosts goes through URLSessions
-/// configured via ``SecurityConfiguration/makeSecureEphemeralConfiguration()`` (DNSSEC
-/// + cache hardening). The resource loader exists to let us supply our own
-/// `URLSession` + `StreamingSessionDelegate` (which in turn uses `CertificateValidator`
-/// for the TLS challenge). This gives us full control over both DNSSEC resolution
-/// and certificate pinning for the media bytes.
+/// All actual data transport for protected streaming hosts (any apex in
+/// ``SecurityConfiguration/preferredStreamingDomainSuffixes`` — today `*.siikkari.net`
+/// only) goes through URLSessions configured via
+/// ``SecurityConfiguration/makeSecureEphemeralConfiguration()`` (DNSSEC + cache hardening).
+/// The resource loader exists to let us supply our own `URLSession` +
+/// `StreamingSessionDelegate` (which in turn uses `CertificateValidator` for the TLS
+/// challenge). This gives us full control over both DNSSEC resolution and certificate
+/// pinning for the media bytes.
 ///
 /// - Note: We do **not** use a custom URL scheme for the AVURLAsset itself
 ///   (previous attempts were removed for simplicity). The DNS resolution that
 ///   matters (the one that actually carries audio) is the one performed by the
 ///   controlled `URLSession` inside `shouldWaitForLoadingOfRequestedResource`.
+/// - SeeAlso: ``SecurityConfiguration/hostRequiresDNSSECValidation(_:)``,
+///   ``SecurityConfiguration/preferredStreamingDomainSuffixes``
 extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
     /// Determines if the loader should handle the request.
     /// - Parameters:
     ///   - resourceLoader: The requesting loader.
     ///   - loadingRequest: The resource request.
-    /// - Returns: `true` if handling (for lutheran.radio HTTPS URLs).
-    /// - Note: Enforces HTTPS and domain checks; sets up pinned + DNSSEC-protected sessions.
+    /// - Returns: `true` if handling (HTTPS URLs under preferred streaming apexes).
+    /// - Note: Enforces HTTPS and Core host membership; sets up pinned + DNSSEC-protected sessions.
     func resourceLoader(_ resourceLoader: AVAssetResourceLoader, shouldWaitForLoadingOfRequestedResource loadingRequest: AVAssetResourceLoadingRequest) -> Bool {
         guard let url = loadingRequest.request.url else {
             #if DEBUG
@@ -59,20 +68,21 @@ extension DirectStreamingPlayer: AVAssetResourceLoaderDelegate {
         print("[DirectStreamingPlayer] [Resource Loader] URL host: \(url.host ?? "nil")")
         #endif
         
-        // FIXED: Only handle HTTPS URLs for lutheran.radio domains
+        // Security Invariant: only handle HTTPS URLs for protected streaming hosts
+        // (SSOT membership via Core — sole media apex siikkari.net).
         guard url.scheme == "https",
               let host = url.host,
-              host.hasSuffix("lutheran.radio") else {
+              SecurityConfiguration.hostRequiresDNSSECValidation(host) else {
             #if DEBUG
-            print("[DirectStreamingPlayer] [Resource Loader] Not a lutheran.radio HTTPS URL, letting system handle it")
+            print("[DirectStreamingPlayer] [Resource Loader] Not a protected streaming HTTPS URL, letting system handle it")
             #endif
-            return false  // Let the system handle non-lutheran.radio URLs
+            return false  // Let the system handle non-protected hosts
         }
         
         // Store the original hostname for SSL validation
         let originalHostname = host
         #if DEBUG
-        print("[DirectStreamingPlayer] [Resource Loader] Handling lutheran.radio HTTPS URL: \(url)")
+        print("[DirectStreamingPlayer] [Resource Loader] Handling protected streaming HTTPS URL: \(url)")
         print("[DirectStreamingPlayer] [Resource Loader] Original hostname for SSL: \(originalHostname)")
         #endif
         

@@ -207,16 +207,16 @@ final class DirectStreamingPlayerMockTests: XCTestCase {
         
         // Mock data
         static let mockStreams = [
-            MockStream(title: "Lutheran Radio - English", url: URL(string: "https://english.lutheran.radio/lutheranradio.mp3")!, language: "English", languageCode: "en", flag: "🇺🇸"),
-            MockStream(title: "Lutheran Radio - German", url: URL(string: "https://german.lutheran.radio/lutheranradio.mp3")!, language: "German", languageCode: "de", flag: "🇩🇪"),
-            MockStream(title: "Lutheran Radio - Finnish", url: URL(string: "https://finnish.lutheran.radio/lutheranradio.mp3")!, language: "Finnish", languageCode: "fi", flag: "🇫🇮"),
-            MockStream(title: "Lutheran Radio - Swedish", url: URL(string: "https://swedish.lutheran.radio/lutheranradio.mp3")!, language: "Swedish", languageCode: "sv", flag: "🇸🇪"),
-            MockStream(title: "Lutheran Radio - Estonian", url: URL(string: "https://estonian.lutheran.radio/lutheranradio.mp3")!, language: "Estonian", languageCode: "et", flag: "🇪🇪")
+            MockStream(title: "Lutheran Radio - English", url: URL(string: "https://english-eu.siikkari.net/lutheranradio.mp3")!, language: "English", languageCode: "en", flag: "🇺🇸"),
+            MockStream(title: "Lutheran Radio - German", url: URL(string: "https://german-eu.siikkari.net/lutheranradio.mp3")!, language: "German", languageCode: "de", flag: "🇩🇪"),
+            MockStream(title: "Lutheran Radio - Finnish", url: URL(string: "https://finnish-eu.siikkari.net/lutheranradio.mp3")!, language: "Finnish", languageCode: "fi", flag: "🇫🇮"),
+            MockStream(title: "Lutheran Radio - Swedish", url: URL(string: "https://swedish-eu.siikkari.net/lutheranradio.mp3")!, language: "Swedish", languageCode: "sv", flag: "🇸🇪"),
+            MockStream(title: "Lutheran Radio - Estonian", url: URL(string: "https://estonian-eu.siikkari.net/lutheranradio.mp3")!, language: "Estonian", languageCode: "et", flag: "🇪🇪")
         ]
         
         static let mockServers = [
-            MockServer(name: "EU", pingURL: URL(string: "https://european.lutheran.radio/ping")!, baseHostname: "lutheran.radio", subdomain: "eu"),
-            MockServer(name: "US", pingURL: URL(string: "https://livestream.lutheran.radio/ping")!, baseHostname: "lutheran.radio", subdomain: "us")
+            MockServer(name: "EU", pingURL: URL(string: "https://european.siikkari.net/ping")!, baseHostname: "siikkari.net", subdomain: "eu"),
+            MockServer(name: "US", pingURL: URL(string: "https://livestream.siikkari.net/ping")!, baseHostname: "siikkari.net", subdomain: "us")
         ]
         
         init() {

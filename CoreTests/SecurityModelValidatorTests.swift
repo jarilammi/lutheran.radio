@@ -134,27 +134,47 @@ struct SecurityModelValidatorTests {
         await resetForDeterministicTest()
         
         await SecurityModelValidator._test_setTXTFetcher { domain in
-            if domain.contains("lutheran.radio") {
+            // Primary is securitymodels.siikkari.net
+            if domain.contains("siikkari.net") {
                 return [testExpectedSecurityModel, "other-model"]
             }
-            throw NSError(domain: "test.dns", code: -1, userInfo: [NSLocalizedDescriptionKey: "simulated primary failure"])
+            throw NSError(domain: "test.dns", code: -1, userInfo: [NSLocalizedDescriptionKey: "simulated non-primary failure"])
         }
         
         let isValid = await SecurityModelValidator.shared.validateSecurityModel()
-        #expect(isValid == true, "Should succeed when model is present")
+        #expect(isValid == true, "Should succeed when model is present on primary")
         
         let state = await SecurityModelValidator.shared.currentState
         #expect(state == .success)
     }
     
-    @Test("Success via backup when primary throws (transient)")
-    func successViaBackupAfterPrimaryTransient() async {
+    @Test("Success via secondary when primary throws (transient)")
+    func successViaSecondaryAfterPrimaryTransient() async {
         await resetForDeterministicTest()
         
         await SecurityModelValidator._test_setTXTFetcher { domain in
-            if domain.contains("lutheran.radio") {
+            // Unimplemented / empty primary remains transient → secondary serves allow-list.
+            if domain.contains("siikkari.net") {
                 throw NSError(domain: "test.dns", code: -1001, userInfo: nil)
             }
+            if domain.contains("lutheran.radio") {
+                return [testExpectedSecurityModel]
+            }
+            throw NSError(domain: "test.dns", code: -1001, userInfo: nil)
+        }
+        
+        let isValid = await SecurityModelValidator.shared.validateSecurityModel()
+        #expect(isValid == true)
+        
+        let state = await SecurityModelValidator.shared.currentState
+        #expect(state == .success)
+    }
+
+    @Test("Success via final backup when earlier hosts throw (transient)")
+    func successViaBackupAfterPrimaryAndSecondaryTransient() async {
+        await resetForDeterministicTest()
+        
+        await SecurityModelValidator._test_setTXTFetcher { domain in
             if domain.contains("lutheranradio.sk") {
                 return [testExpectedSecurityModel]
             }

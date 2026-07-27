@@ -31,7 +31,9 @@ private final class QueryContext: @unchecked Sendable {
 ///
 /// `SecurityModelValidator` is the **single source of truth** for determining whether
 /// the current app build is permitted to stream content. It queries DNS TXT records
-/// on `securitymodels.lutheran.radio` (with backup domain) and requires that
+/// in ``SecurityConfiguration/securityModelDomains`` order (today:
+/// `securitymodels.siikkari.net` → `securitymodels.lutheran.radio` →
+/// `securitymodels.lutheranradio.sk`) and requires that
 /// ``SecurityConfiguration/expectedSecurityModel`` appears in the response.
 ///
 /// ## Security Hardening
@@ -41,15 +43,20 @@ private final class QueryContext: @unchecked Sendable {
 /// integrity/authenticity for the allow-list without new dependencies.
 ///
 /// ## Behavior
-/// - Permanent failure (model not present) → streaming is permanently disabled.
-/// - Transient failure (including DNSSEC validation failure) → safe retry is allowed;
-///   the 1-hour success cache is bypassed; backup domain is tried.
+/// Ordered ``securityModelDomains`` walk (AGENT NOTE — single contract with
+/// ``<doc:Security-Invariants>`` Invariant 1):
+/// 1. **Authoritative answer** = DNSSEC-validated TXT rdata accepted by the callback (including empty set).
+/// 2. **Contains expected model** → success; **stop** (later hosts not queried).
+/// 3. **Does not contain it** → permanent fail; **stop** (no fall-through).
+/// 4. **Transient** (error, timeout, no validate bit, etc.) → next host; that host is
+///    **fully trusted** if it returns an authoritative allow-list containing the expected model.
 /// - Success (model present **and** DNSSEC-validated) → result is cached for 1 hour in `UserDefaults`.
+/// - Permanent failure → streaming is permanently disabled for the process lifetime.
 ///
 /// The actor uses strict Swift 6 isolation. All public API is `async` where mutation
 /// or cross-actor access is involved.
 ///
-/// - SeeAlso: ``<doc:Security-Invariants>`` (Invariant 1), ``<doc:Architecture>``, ``SecurityConfiguration``
+/// - SeeAlso: ``<doc:Security-Invariants>`` (Invariant 1 ordered host walk), ``<doc:Architecture>``, ``SecurityConfiguration``
 public actor SecurityModelValidator {
     /// The shared singleton validator.
     ///
@@ -93,9 +100,10 @@ public actor SecurityModelValidator {
     /// This is the primary entry point. It:
     /// 1. Returns `true` immediately if a successful validation result is still within
     ///    the 1-hour cache window.
-    /// 2. Otherwise performs DNS TXT queries (primary domain first, then backup on
-    ///    transient errors only).
-    /// 3. Returns `true` only if the expected model appears in the TXT record.
+    /// 2. Otherwise performs DNS TXT queries in ``securityModelDomains`` order
+    ///    (authoritative answer stops the walk; only transient advances — see type-level
+    ///    Behavior list and ``<doc:Security-Invariants>`` Invariant 1).
+    /// 3. Returns `true` only if the expected model appears in an authoritative TXT set.
     ///
     /// On permanent failure the validator transitions to `.failedPermanent` and
     /// will continue returning `false` until the process exits.
@@ -160,7 +168,8 @@ public actor SecurityModelValidator {
             return false
         }
 
-        // Try primary first, then backup on transient failure only
+        // Ordered host walk: authoritative answer stops; only transient advances
+        // (Security-Invariants Invariant 1 — four-point contract).
         for domain in config.securityModelDomains {
             do {
                 #if DEBUG
@@ -174,12 +183,13 @@ public actor SecurityModelValidator {
                 let validModels = try await queryTXTRecord(for: domain)
                 #endif
 
+                // Authoritative answer (validated TXT set, including empty).
                 let isValid = validModels.contains(config.expectedSecurityModel.lowercased())
 
                 let now = currentDate()
 
                 if isValid {
-                    // Success on this domain → cache and return success
+                    // Contains expected model → success; stop (later hosts not queried).
                     lastValidationTime = now
                     UserDefaults.standard.set(now, forKey: userDefaultsKey)
                     validationState = .success
@@ -190,8 +200,7 @@ public actor SecurityModelValidator {
                     
                     return true
                 } else {
-                    // Model explicitly not allowed → treat as permanent denial
-                    // Do NOT try backup (authoritative failure)
+                    // Does not contain it → permanent fail; stop (no fall-through).
                     validationState = .failedPermanent
                     
                     #if DEBUG
@@ -201,17 +210,16 @@ public actor SecurityModelValidator {
                     return false
                 }
             } catch {
-                // Transient error (network, DNS failure, timeout, etc.) → try next domain
+                // Transient (error, timeout, no validate bit, etc.) → next host.
                 #if DEBUG
                 print("[SecurityModelValidator] Transient DNS error on \(domain): \(error)")
                 #endif
                 
-                // Continue to backup domain
                 continue
             }
         }
 
-        // If we reach here, both domains failed with transient errors
+        // All hosts failed with transient errors only.
         validationState = .failedTransient
         #if DEBUG
         print("[SecurityModelValidator] All domains failed with transient errors")

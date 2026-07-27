@@ -62,8 +62,8 @@ End with security impact, build status, localization needed.
 
 ## 1. Security
 
-1. **DNS TXT validation** — `SecurityModelValidator` queries `securitymodels.lutheran.radio`; playback blocked on failure. One `validateSecurityModel() started` per session. No duplicate validation outside `Core/Actors/`.
-2. **Certificate pinning** — Full DER SHA-256 digest pinning in `CertificateValidator`; SPKI pinning in `Info.plist`. Runtime never compares colon-hex strings.
+1. **DNS TXT validation** — `SecurityModelValidator` queries ordered `securityModelDomains` (`securitymodels.siikkari.net` → `securitymodels.lutheran.radio` → `securitymodels.lutheranradio.sk`); playback blocked on permanent failure. One `validateSecurityModel() started` per session. No duplicate validation outside `Core/Actors/`.
+2. **Certificate pinning** — Full DER SHA-256 digest pinning in `CertificateValidator` against `pinnedFingerprintDigests` (historical + live `*.siikkari.net`); SPKI pinning in `Info.plist` for apex `siikkari.net`. Runtime never compares colon-hex strings. Streaming hosts use sole media apex `preferredStreamingDomainSuffixes` (`siikkari.net`).
 3. **Time skew** — Device vs server skew > 5 minutes denies transition-window leniency.
 4. **Security model** — `expectedSecurityModel` is `"dallas"` in `SecurityConfiguration.swift`; stream URLs include the security model query parameter.
 5. **MIE/EMTE** — Hardened runtime entitlements present; minimum deployment target iOS 26.2+.

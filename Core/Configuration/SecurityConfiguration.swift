@@ -10,13 +10,27 @@
 //  - Transition window + time-skew parameters
 //  - Distinct cache durations: `modelCacheDuration` (DNS TXT success, 1 h) and
 //    `certificateValidationCacheDuration` (runtime pin-result success, 10 min)
+//  - Streaming media apex list (`preferredStreamingDomainSuffixes` — sole active
+//    apex: `siikkari.net`) and DNS TXT security-model host list
 //  - DNSSEC streaming policy (`requiresDNSSECValidationForStreaming`)
 //  - The factory `makeSecureEphemeralConfiguration()` used by all streaming paths
 //
-//  AGENT NOTE: Any new security constant, DNS policy knob, or secure-session
-//  helper must be added here (never duplicated in DirectStreamingPlayer or elsewhere).
-//  Consumers obtain policy exclusively via `SecurityConfiguration.current` or
-//  the static factory methods. Never point certificate caching at `modelCacheDuration`.
+//  AGENT NOTE: Any new security constant, DNS policy knob, streaming-domain
+//  preference, or secure-session helper must be added here (never duplicated in
+//  DirectStreamingPlayer or elsewhere). Consumers obtain policy exclusively via
+//  `SecurityConfiguration.current` or the static factory methods. Never point
+//  certificate caching at `modelCacheDuration`.
+//
+//  Media vs TXT separation:
+//  - Media / ping / resource-loader hosts use preferredStreamingDomainSuffixes only
+//    (`siikkari.net`). The former dual-apex fallback (`lutheran.radio` media hosts)
+//    was removed after live confirmation that european.siikkari.net /
+//    livestream.siikkari.net and language hosts are the sole data plane.
+//  - securityModelDomains remains an independent ordered list for DNS TXT allow-list
+//    queries (`securitymodels.siikkari.net` primary, then
+//    `securitymodels.lutheran.radio`, then `securitymodels.lutheranradio.sk` backup).
+//    Transient DNS failures advance the list (existing validator policy). Streaming
+//    apex and TXT query hosts are separate SSOTs — do not assume they share apexes.
 //
 //  - SeeAlso: <doc:Security-Invariants>, <doc:Architecture>, SecurityModelValidator,
 //    CertificateValidator, DirectStreamingPlayer (urlWithOptimalServer + resource loader)
@@ -41,18 +55,131 @@ public struct SecurityConfiguration: Sendable {
     public let expectedSecurityModel: String = "dallas"
     
     /// Primary domain queried for TXT record containing valid models (comma-separated).
-    let primarySecurityModelDomain: String = "securitymodels.lutheran.radio"
+    ///
+    /// First entry in ``securityModelDomains``. Aligns with the media apex brand
+    /// (`siikkari.net`). Until this zone publishes a live TXT allow-list, DNS-SD
+    /// failure / no-record responses remain **transient** and
+    /// ``SecurityModelValidator`` continues down ``securityModelDomains`` without
+    /// any change to permanent-vs-transient semantics.
+    ///
+    /// Independent of ``preferredStreamingDomainSuffixes`` (media hosts vs TXT hosts
+    /// are separate SSOTs even when both use the siikkari brand).
+    let primarySecurityModelDomain: String = "securitymodels.siikkari.net"
     
-    /// Backup domain for redundancy (different TLD).
+    /// Secondary DNS TXT host (established production allow-list).
+    ///
+    /// Queried on **transient** failure of the primary only (existing validator
+    /// policy — no permanent failure falls through). Currently the operational
+    /// source of truth until `securitymodels.siikkari.net` is fully populated.
+    let secondarySecurityModelDomain: String = "securitymodels.lutheran.radio"
+    
+    /// Final backup domain for redundancy (different TLD / apex).
+    ///
+    /// Queried only on transient failure of earlier hosts (see ``SecurityModelValidator``).
+    /// Long-standing DNS TXT backup — not a streaming media apex.
     let backupSecurityModelDomain: String = "securitymodels.lutheranradio.sk"
     
-    /// All domains in priority order (primary → backup)
+    /// DNS TXT security-model hosts in query priority order (primary → secondary → backup).
+    ///
     /// Computed property to avoid Swift property initializer ordering issues.
+    /// This list is **not** the same as ``preferredStreamingDomainSuffixes``: TXT
+    /// validation hosts and media host preference are separate SSOTs.
+    ///
+    /// Transient DNS errors (including unimplemented / empty primary) advance to the
+    /// next entry; an authoritative “model not in TXT” on a responding domain remains
+    /// permanent and does **not** continue the list (existing validator contract).
+    ///
+    /// - SeeAlso: ``preferredStreamingDomainSuffixes``, ``SecurityModelValidator``
     var securityModelDomains: [String] {
         [
             primarySecurityModelDomain,
+            secondarySecurityModelDomain,
             backupSecurityModelDomain
         ]
+    }
+    
+    // MARK: - Streaming Domain Preference (media apex SSOT)
+    
+    /// Apex domain suffixes for media / ping / certificate-validation hosts.
+    ///
+    /// Sole active media apex (production data plane confirmed on
+    /// `european.siikkari.net`, `livestream.siikkari.net`, and language hosts):
+    /// 1. `siikkari.net` — SSL streaming apex for this app build
+    ///
+    /// The list remains ordered so a future second apex can be reintroduced as an
+    /// explicit preference without call-site rewrites. Today there is **no** media
+    /// fallback to `lutheran.radio` — that apex is not used for streaming in this
+    /// binary. DNS TXT allow-list hosts stay on ``securityModelDomains`` (still
+    /// `securitymodels.lutheran.radio` / `.lutheranradio.sk`) and are unrelated.
+    ///
+    /// **Security Invariant:** Host matching for DNSSEC session policy
+    /// (``hostRequiresDNSSECValidation(_:)`` / ``isProtectedStreamingHost(_:)``)
+    /// must cover **every** suffix in this list. Do not hard-code apex strings in
+    /// `DirectStreamingPlayer`, resource loader, or tests — read this SSOT.
+    ///
+    /// **Operational requirements** for the media apex: leaf (or multi-SAN) coverage
+    /// for `*.siikkari.net`, matching `NSPinnedDomains` SPKI for that apex in
+    /// Info.plist, and the live leaf DER in ``pinnedFingerprintDigests``.
+    ///
+    /// - SeeAlso: ``securityModelDomains``, ``hostRequiresDNSSECValidation(_:)``,
+    ///   ``streamingHostCandidates(leadingLabel:)``, ``<doc:Security-Invariants>``
+    public var preferredStreamingDomainSuffixes: [String] {
+        [
+            "siikkari.net"
+        ]
+    }
+    
+    /// Active streaming apex (first element of ``preferredStreamingDomainSuffixes``).
+    ///
+    /// Today identical to the only list entry (`siikkari.net`). Prefer
+    /// ``streamingHostCandidates(leadingLabel:)`` when building hosts so callers
+    /// stay list-driven if a second apex is ever re-added.
+    public var preferredStreamingDomainSuffix: String {
+        // SAFETY: The ordered list is a compile-time constant with ≥1 entry; first is defined.
+        preferredStreamingDomainSuffixes[0]
+    }
+    
+    /// Last entry of ``preferredStreamingDomainSuffixes`` (compatibility alias).
+    ///
+    /// Historically named for dual-apex fallback; with a single media apex this
+    /// equals ``preferredStreamingDomainSuffix``. Prefer the preferred symbol for
+    /// new call sites.
+    ///
+    /// - Returns: Last entry of ``preferredStreamingDomainSuffixes``, or `"siikkari.net"`
+    ///   if the list were ever empty (must not happen in production policy).
+    public var legacyStreamingDomainSuffix: String {
+        preferredStreamingDomainSuffixes.last ?? "siikkari.net"
+    }
+    
+    /// Whether `host` is a bare apex or subdomain under any preferred streaming suffix.
+    ///
+    /// - Parameter host: Hostname (comparison is case-insensitive).
+    /// - Returns: `true` if the host is covered by streaming DNSSEC / secure-session policy.
+    /// - SeeAlso: ``hostRequiresDNSSECValidation(_:)``, ``preferredStreamingDomainSuffixes``
+    public func isProtectedStreamingHost(_ host: String) -> Bool {
+        let h = host.lowercased()
+        for suffix in preferredStreamingDomainSuffixes {
+            if h == suffix || h.hasSuffix("." + suffix) {
+                return true
+            }
+        }
+        return false
+    }
+    
+    /// Candidate hostnames for a single leading label under each preferred apex, in order.
+    ///
+    /// Example: `leadingLabel` `"english-eu"` → `["english-eu.siikkari.net"]`.
+    ///
+    /// Use this when building stream / ping / HEAD URLs so callers stay list-driven
+    /// without hard-coding domain strings.
+    ///
+    /// - Parameter leadingLabel: Subdomain label(s) before the apex (no trailing dot).
+    /// - Returns: Host strings in ``preferredStreamingDomainSuffixes`` order.
+    /// - Precondition: `leadingLabel` is non-empty and does not include a scheme or path.
+    public func streamingHostCandidates(leadingLabel: String) -> [String] {
+        preferredStreamingDomainSuffixes.map { suffix in
+            "\(leadingLabel).\(suffix)"
+        }
     }
     
     /// Cache duration for **successful** DNS TXT security-model validation only.
@@ -83,17 +210,52 @@ public struct SecurityConfiguration: Sendable {
     ///   ``<doc:Architecture>``
     public let certificateValidationCacheDuration: TimeInterval = 600  // 10 minutes
     
-    /// OpenSSL-style leaf fingerprint (README / operator tooling parity only).
+    /// OpenSSL-style leaf fingerprint for the primary historical pin (README / operator tooling parity only).
+    ///
+    /// This remains the first entry of ``pinnedFingerprintDigests`` so existing operator docs and
+    /// ``pinnedLeafFingerprint`` stay stable. Runtime acceptance is the full digests list, which
+    /// also includes the live preferred-apex (`*.siikkari.net`) leaf.
     private static let pinnedLeafFingerprintHex =
         "CC:F7:8E:09:EF:F3:3D:9A:5D:8B:B0:5C:74:28:0D:F6:BE:14:1C:C4:47:F9:69:C2:90:2C:43:97:66:8B:3D:CC"
     
-    /// SHA-256 digest of the leaf certificate DER (authoritative runtime pin, beyond ATS SPKI).
+    /// Live leaf DER SHA-256 for the preferred streaming apex (`CN=*.siikkari.net`).
+    ///
+    /// Verified against `european.siikkari.net` and `livestream.siikkari.net` (same wildcard leaf).
+    /// Required so runtime full-certificate pinning succeeds on the preferred media path without
+    /// relying solely on transition-window ATS leniency.
+    ///
+    /// Operator verify:
+    /// ```bash
+    /// openssl s_client -connect european.siikkari.net:443 -servername european.siikkari.net < /dev/null 2>/dev/null \
+    /// | openssl x509 -outform DER | openssl dgst -sha256
+    /// ```
+    /// - SeeAlso: ``pinnedFingerprintDigests``, ``preferredStreamingDomainSuffixes``, Info.plist `NSPinnedDomains` (`siikkari.net` SPKI)
+    private static let pinnedSiikkariLeafFingerprintHex =
+        "32:82:5E:97:8C:F7:1F:F1:0C:F6:80:9D:2D:15:C8:1D:AA:85:65:28:F4:67:D6:E5:1B:6F:7A:5F:B2:18:70:CD"
+    
+    /// SHA-256 digest of the primary leaf certificate DER (historical / docs-facing pin).
     ///
     /// - Important: Never duplicate or override this value elsewhere in the codebase.
+    /// - Note: ``CertificateValidator`` accepts **any** digest in ``pinnedFingerprintDigests``
+    ///   (primary + live siikkari). Prefer that list for membership checks.
+    /// - SeeAlso: ``pinnedFingerprintDigests``, ``<doc:Security-Invariants>``
     let pinnedLeafFingerprintDigest: CertificateFingerprint = {
         // SAFETY: `pinnedLeafFingerprintHex` is a compile-time constant validated at first access.
         guard let digest = CertificateFingerprint(colonHexUppercase: pinnedLeafFingerprintHex) else {
             fatalError("Invalid pinnedLeafFingerprintHex in SecurityConfiguration")
+        }
+        return digest
+    }()
+    
+    /// SHA-256 digest of the live preferred-apex leaf (`*.siikkari.net`).
+    ///
+    /// - Important: Keep in sync with the leaf currently served on `*.siikkari.net` and the
+    ///   ATS SPKI pin for `siikkari.net` in Info.plist when the public key rotates.
+    /// - SeeAlso: ``pinnedFingerprintDigests``, ``pinnedSiikkariLeafFingerprintHex``
+    let pinnedSiikkariLeafFingerprintDigest: CertificateFingerprint = {
+        // SAFETY: compile-time constant hex validated at first access.
+        guard let digest = CertificateFingerprint(colonHexUppercase: pinnedSiikkariLeafFingerprintHex) else {
+            fatalError("Invalid pinnedSiikkariLeafFingerprintHex in SecurityConfiguration")
         }
         return digest
     }()
@@ -103,11 +265,30 @@ public struct SecurityConfiguration: Sendable {
         pinnedLeafFingerprintDigest.colonHexUppercase
     }
     
+    /// Colon-hex view of ``pinnedSiikkariLeafFingerprintDigest`` (operator / openssl parity).
+    public var pinnedSiikkariLeafFingerprint: String {
+        pinnedSiikkariLeafFingerprintDigest.colonHexUppercase
+    }
+    
     /// Acceptable leaf certificate SHA-256 digests used by ``CertificateValidator``.
     ///
-    /// Exposed as a list to support future rotation overlap without `Set` hash short-circuits.
+    /// Order is stable and intentional:
+    /// 1. ``pinnedLeafFingerprintDigest`` — primary historical pin (docs / CODING_AGENT citation)
+    /// 2. ``pinnedSiikkariLeafFingerprintDigest`` — live preferred streaming apex (`*.siikkari.net`)
+    ///
+    /// Exposed as an array (not a `Set`) so comparison walks pins without hash short-circuits
+    /// and rotation overlap can append additional digests without removing prior ones mid-window.
+    ///
+    /// **Security Invariant:** Runtime validation must succeed against this list for media hosts
+    /// under ``preferredStreamingDomainSuffixes``. Do not hard-code digests outside this file.
+    ///
+    /// - SeeAlso: ``CertificateValidator/validateServerTrust(_:)``, ``<doc:Security-Invariants>``,
+    ///   ``preferredStreamingDomainSuffixes``
     var pinnedFingerprintDigests: [CertificateFingerprint] {
-        [pinnedLeafFingerprintDigest]
+        [
+            pinnedLeafFingerprintDigest,
+            pinnedSiikkariLeafFingerprintDigest
+        ]
     }
     
     /// Colon-hex fingerprints (derived from ``pinnedFingerprintDigests``).
@@ -120,26 +301,46 @@ public struct SecurityConfiguration: Sendable {
     
     // MARK: - Certificate Transition Window
     
-    /// Start of the one-month grace period before certificate expiry/rotation.
-    /// During this window: runtime pinning failures are lenient (fall back to ATS).
+    /// Start of the grace period before the next preferred-apex leaf expiry/rotation.
+    ///
+    /// During this window: runtime pinning failures may be lenient (fall back to ATS),
+    /// subject to ``maxAllowedTimeSkew`` and ``CertificateValidator`` process flags.
+    ///
+    /// **Anchored to live `*.siikkari.net` leaf** (`CN=*.siikkari.net` on
+    /// `livestream.siikkari.net` / `european.siikkari.net`):
+    /// - `notAfter` = **2027-02-10 23:59:59 GMT** (operator verify via openssl)
+    /// - Window start is intentionally **2027-01-01 00:00:00 GMT** (calendar-month
+    ///   lead-in before expiry, slightly longer than a strict 30-day window)
+    ///
+    /// Outside this window, dual ``pinnedFingerprintDigests`` membership is the
+    /// normal acceptance path; leniency is not required for the already-pinned
+    /// live siikkari leaf.
+    ///
+    /// - SeeAlso: ``transitionWindowEnd``, ``isInTransitionWindow``, ``<doc:Security-Invariants>``,
+    ///   README “Media Apex Cutover & SSL Certificate Rotation”
     let transitionWindowStart: Date = {
         var components = DateComponents(calendar: .current, timeZone: .gmt)
-        components.year   = 2026
-        components.month  = 7
-        components.day    = 27
+        components.year   = 2027
+        components.month  = 1
+        components.day    = 1
         components.hour   = 0
         components.minute = 0
         components.second = 0
         return Calendar.current.date(from: components) ?? Date.distantFuture
     }()
     
-    /// End of the transition window (inclusive).
-    /// After this date: strict runtime pinning enforcement (no leniency).
+    /// End of the transition window (inclusive), aligned with live leaf `notAfter`.
+    ///
+    /// After this date: strict runtime pinning enforcement (no ATS leniency on pin mismatch).
+    /// Must stay in sync with the current preferred-apex certificate expiry
+    /// (`*.siikkari.net` → 2027-02-10 23:59:59 GMT until the next rotation).
+    ///
+    /// - SeeAlso: ``transitionWindowStart``, ``isInTransitionWindow``
     let transitionWindowEnd: Date = {
         var components = DateComponents(calendar: .current, timeZone: .gmt)
-        components.year   = 2026
-        components.month  = 8
-        components.day    = 26
+        components.year   = 2027
+        components.month  = 2
+        components.day    = 10
         components.hour   = 23
         components.minute = 59
         components.second = 59
@@ -149,10 +350,12 @@ public struct SecurityConfiguration: Sendable {
     /// Whether the current device date falls inside the certificate transition grace period.
     ///
     /// During this window, ``CertificateValidator`` may (under strict additional conditions)
-    /// accept a certificate whose fingerprint does not match ``pinnedFingerprints``.
+    /// accept a certificate whose fingerprint does not match ``pinnedFingerprintDigests``.
     ///
-    /// The window is defined by ``transitionWindowStart`` and ``transitionWindowEnd``.
-    /// Time-skew protection (``maxAllowedTimeSkew``) can disable leniency even inside the window.
+    /// The window is defined by ``transitionWindowStart`` and ``transitionWindowEnd``
+    /// (currently **2027-01-01** through **2027-02-10** GMT, keyed to the live
+    /// `*.siikkari.net` leaf expiry). Time-skew protection (``maxAllowedTimeSkew``)
+    /// can disable leniency even inside the window.
     ///
     /// - SeeAlso: ``<doc:Security-Invariants>``, ``CertificateValidator``
     public var isInTransitionWindow: Bool {
@@ -188,24 +391,28 @@ public struct SecurityConfiguration: Sendable {
     ///   - ATS SPKI pinning (Info.plist)
     ///   - `CertificateValidator` runtime full-DER pinning
     ///
-    /// All production sessions that talk to `*.lutheran.radio` hosts for media or validation
+    /// All production sessions that talk to protected streaming hosts
+    /// (any apex in ``preferredStreamingDomainSuffixes``) for media or validation
     /// must be configured through the helpers below.
     ///
     /// - SeeAlso: ``applySecureNetworkingRequirements(to:)``, ``makeSecureEphemeralConfiguration()``,
-    ///   ``<doc:Security-Invariants>``, DirectStreamingPlayer (resource loader + pings),
-    ///   CertificateValidator (HEAD validation path)
+    ///   ``preferredStreamingDomainSuffixes``, ``<doc:Security-Invariants>``,
+    ///   DirectStreamingPlayer (resource loader + pings), CertificateValidator (HEAD validation path)
     public let requiresDNSSECValidationForStreaming: Bool = true
     
     /// Returns whether the supplied host is covered by streaming DNSSEC policy.
     ///
     /// Used by call sites to decide whether to obtain a secure session configuration.
-    /// Matches both the bare domain and any subdomain under lutheran.radio.
+    /// Matches bare apex and any subdomain under **every** entry of
+    /// ``preferredStreamingDomainSuffixes`` (today `siikkari.net` only).
+    /// Never hard-code apex strings at call sites.
     ///
     /// - Parameter host: A hostname (case-insensitive comparison performed).
-    /// - Returns: true for hosts whose DNS answers should be required to be DNSSEC-validated.
+    /// - Returns: `true` for hosts whose DNS answers should be required to be DNSSEC-validated.
+    /// - SeeAlso: ``isProtectedStreamingHost(_:)``, ``preferredStreamingDomainSuffixes``
     public static func hostRequiresDNSSECValidation(_ host: String?) -> Bool {
-        guard let h = host?.lowercased() else { return false }
-        return h == "lutheran.radio" || h.hasSuffix(".lutheran.radio")
+        guard let h = host else { return false }
+        return current.isProtectedStreamingHost(h)
     }
     
     /// Applies the current secure networking policy (DNSSEC requirement + cache/credential hardening)

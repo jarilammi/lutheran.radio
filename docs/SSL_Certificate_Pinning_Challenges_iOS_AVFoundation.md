@@ -10,9 +10,9 @@ This document outlines the implementation of SSL certificate validation for an i
 ## Current Approach: Periodic Full Certificate Validation with Transition Period
 - **Method**: Centralized validation in `CertificateValidator` class, pinning the full certificate hash (`currentCertHash`). Used by `StreamingSessionDelegate` (per-request) and `DirectStreamingPlayer` (initial and periodic checks every 10 minutes).
 - **Transition Period**:
-  - **Dates**: July 27, 2026, to August 26, 2026 (certificate expiry). Review and update post-expiry via app release.
-  - **Behavior**: If `currentCertHash` validation fails during this period, log a warning but trust ATS's evaluation, allowing new certificates to be accepted. Transient connection issues (e.g., server reboots) should be handled as non-security errors with fallbacks to alternate servers.
-  - **Outside Transition**: Strictly enforce `currentCertHash` before transition; fail after expiry if hash doesn't match.
+  - **Dates**: 2027-01-01 00:00:00 GMT through 2027-02-10 23:59:59 GMT (end = live `*.siikkari.net` leaf `notAfter` on `livestream.siikkari.net`; start deliberately on calendar 2027-01-01). Authoritative values: `SecurityConfiguration.transitionWindowStart` / `transitionWindowEnd`. Review and update on each leaf rotation via app release.
+  - **Behavior**: If runtime pin-list validation fails during this period, log a warning but trust ATS's evaluation (when leniency is still allowed), allowing a coordinated new certificate to be accepted. Transient connection issues (e.g., server reboots) should be handled as non-security errors with fallbacks to alternate servers.
+  - **Outside Transition**: Strictly enforce `pinnedFingerprintDigests` before transition; fail after window end if the leaf is not on the pin list.
 - **Implementation**:
   - `CertificateValidator` validates the SHA-256 hash of the certificate's DER representation, caching results for 10 minutes.
   - `StreamingSessionDelegate` uses `CertificateValidator` for trust evaluation during streaming.
@@ -33,6 +33,6 @@ This document outlines the implementation of SSL certificate validation for an i
 
 ## Key Considerations
 - **Validation**: Full certificate pinning ensures exact certificate match, with ATS covering SPKI and chain validation.
-- **Transition Period**: Allows new certificates during July 20–August 20, 2025, reducing user disruption.
+- **Transition Period**: Allows coordinated new certificates during 2027-01-01 – 2027-02-10 GMT (see `SecurityConfiguration`), reducing user disruption at the next `*.siikkari.net` rotation.
 - **Performance**: Asynchronous HEAD requests and cached results minimize overhead.
 - **Maintenance**: Requires app update post-expiry with new certificate hash.

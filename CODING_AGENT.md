@@ -112,17 +112,18 @@ These rules are especially strict for anything that could affect security invari
 
 1. **Security Model**
    - Current `expectedSecurityModel = "dallas"` (Core/Configuration/SecurityConfiguration.swift)
-   - Do not change, remove, or comment out DNS TXT validation against `securitymodels.lutheran.radio`
-   - Never bypass full-certificate fingerprint pinning (`CC:F7:8E:09:EF:F3:3D:9A:5D:8B:B0:5C:74:28:0D:F6:BE:14:1C:C4:47:F9:69:C2:90:2C:43:97:66:8B:3D:CC`)
-   - Never weaken SPKI pinning in Info.plist
+   - Do not change, remove, or comment out DNS TXT validation against the ordered `securityModelDomains` list (`securitymodels.siikkari.net` → `securitymodels.lutheran.radio` → `securitymodels.lutheranradio.sk`). Ordered host walk (do not weaken): (1) authoritative answer = DNSSEC-validated TXT rdata accepted by the callback (including empty set); (2) contains expected model → success, stop; (3) does not contain it → permanent fail, stop (no fall-through); (4) transient (error, timeout, no validate bit, etc.) → next host, fully trusted if that host returns an authoritative allow-list containing the expected model.
+   - Never bypass full-certificate fingerprint pinning. Runtime acceptance is `pinnedFingerprintDigests` (primary historical `CC:F7:8E:09:EF:F3:3D:9A:5D:8B:B0:5C:74:28:0D:F6:BE:14:1C:C4:47:F9:69:C2:90:2C:43:97:66:8B:3D:CC` **and** live preferred-apex `*.siikkari.net` `32:82:5E:97:8C:F7:1F:F1:0C:F6:80:9D:2D:15:C8:1D:AA:85:65:28:F4:67:D6:E5:1B:6F:7A:5F:B2:18:70:CD`). Do not drop either entry without a coordinated rotation and security review.
+   - Never weaken SPKI pinning in Info.plist (sole media apex pin: `siikkari.net` / `7J4okayjKUOwgtAfSzN/iLvm/cUyoajGABocw7CkRWE=`)
+   - Never reintroduce hard-coded `lutheran.radio` media hosts; streaming apex SSOT is `preferredStreamingDomainSuffixes` (`siikkari.net` only). Media apex and DNS TXT hosts are **independent** lists.
    - Never disable device-time vs server-time skew check (>5 min = no leniency)
    - Never remove MIE/EMTE hardened runtime entitlements
 
    **DNS TXT Validation Specifics**
-   - The `securitymodels.lutheran.radio` zone uses DNSSEC with signed delegation (visible RRSIG records).
+   - Query order is ``securityModelDomains`` (primary `securitymodels.siikkari.net`, secondary `securitymodels.lutheran.radio`, backup `securitymodels.lutheranradio.sk`). The secondary zone currently serves the live allow-list and uses DNSSEC with signed delegation (visible RRSIG records). Primary may be empty until published — treated as transient when no authoritative answer is obtained (see ordered host walk above).
    - The app calls `DNSServiceQueryRecord` with `kDNSServiceFlagsValidate` (strict) and requires the echoed bit in the callback `flags` before trusting any TXT rdata. Unvalidated responses are transient failures.
-   - Always consult the "Why DNS TXT Records?" section in `README.md` for the latest DNSSEC status, AD flag behavior, and verification commands.
-   - Any change touching DNS validation must preserve or strengthen the documented security properties. (This change strengthened validation without altering caching, state machine, or public API.)
+   - Always consult the "Why DNS TXT Records?" and "Media Apex Cutover" sections in `README.md` for the latest DNSSEC status, AD flag behavior, and verification commands.
+   - Any change touching DNS validation must preserve or strengthen the documented security properties (including the four-point ordered host walk in ``<doc:Security-Invariants>`` Invariant 1).
 
 2. **Build & Test Gate**
    - Every single change must keep these commands green.
@@ -426,9 +427,9 @@ These guidelines exist because the cost of a force-unwrap or a data race in a ba
 |---------------------------------------------------|--------------------------------------------------------------------------------|--------------------------------------------------------------------------------|
 | `DirectStreamingPlayer.swift` (+ domain extensions) | Main audio engine façade + domain files (catalog, server selection, playback attach, item recovery, observers, metadata, interruption, resource loader, SSL, error classification) | Consumes Core security validation; isolation map on the class documents domain ownership. Public API stays on the façade. |
 | `Core/Security/CertificateFingerprint.swift`      | Raw 32-byte SHA-256 DER digest + constant-time `constantTimeMatches`         | Hex (`colonHexUppercase`) is for README/openssl only; runtime never compares strings |
-| `Core/Security/CertificateValidator.swift`        | Runtime digest pinning + transition window leniency (Jul 27 – Aug 26 2026) with device/server time-skew protection | 10-minute success cache via `certificateValidationCacheDuration` (never `modelCacheDuration`); compares via `pinnedFingerprintDigests`; SPKI is ATS-only in Info.plist |
-| `Core/Configuration/SecurityConfiguration.swift`  | Centralized security policy: expected model, `pinnedLeafFingerprintDigest`, transition dates, `modelCacheDuration` (DNS 1h), `certificateValidationCacheDuration` (cert 10m) | Authoritative digests; colon-hex (`pinnedLeafFingerprint`, `pinnedFingerprints`) is derived; model vs cert caches are distinct |
-| `Core/Actors/SecurityModelValidator.swift`        | Actor-isolated DNS TXT security model validation                               | `Span<UInt8>` / `UTF8Span` TXT parser; zero-copy `rdata` borrow (no `Data` copy, no per-label `subdata`); `dns_sd.h` + 1-hour success cache |
+| `Core/Security/CertificateValidator.swift`        | Runtime digest pinning + transition window leniency (2027-01-01 – 2027-02-10 GMT; keyed to `*.siikkari.net` leaf `notAfter`) with device/server time-skew protection | 10-minute success cache via `certificateValidationCacheDuration` (never `modelCacheDuration`); compares via `pinnedFingerprintDigests`; SPKI is ATS-only in Info.plist |
+| `Core/Configuration/SecurityConfiguration.swift`  | Centralized security policy: expected model, `pinnedLeafFingerprintDigest` + `pinnedSiikkariLeafFingerprintDigest` / `pinnedFingerprintDigests`, `preferredStreamingDomainSuffixes` (`siikkari.net`), `securityModelDomains`, transition dates, `modelCacheDuration` (DNS 1h), `certificateValidationCacheDuration` (cert 10m) | Authoritative digests; colon-hex views are derived; media apex and TXT hosts are independent SSOTs; model vs cert caches are distinct |
+| `Core/Actors/SecurityModelValidator.swift`        | Actor-isolated DNS TXT security model validation against ordered `securityModelDomains` | `Span<UInt8>` / `UTF8Span` TXT parser; zero-copy `rdata` borrow (no `Data` copy, no per-label `subdata`); `dns_sd.h` + 1-hour success cache; transient fall-through only |
 | `Core/Security/`                                  | `CertificateFingerprint` + `CertificateValidator` (Core framework)             | Security-sensitive; compiled into main app + widget extension                  |
 | `Info.plist`                                      | ATS pinning (SPKI + domain)                                                    | Never edit without updating `SecurityConfiguration` and validator              |
 | `LutheranRadioWidget/`                            | Home-screen / Control / LA SwiftUI shells + AppIntents                         | Thin delegates; presentation via `import WidgetSurface`; same `Core` security rules |
@@ -440,8 +441,8 @@ These guidelines exist because the cost of a force-unwrap or a data race in a ba
 
 The `Core` framework is the **single source of truth** for all security decisions. Its public surface consists of exactly three subdirectories:
 
-- `Core/Configuration/` — `SecurityConfiguration.swift` (constants, policy, transition dates, `pinnedLeafFingerprintDigest` / `pinnedFingerprintDigests`, expected model). Never duplicate these values elsewhere.
-- `Core/Actors/` — `SecurityModelValidator.swift` (the only place DNS TXT validation against `securitymodels.lutheran.radio` is allowed).
+- `Core/Configuration/` — `SecurityConfiguration.swift` (constants, policy, transition dates, `pinnedLeafFingerprintDigest` / `pinnedSiikkariLeafFingerprintDigest` / `pinnedFingerprintDigests`, `preferredStreamingDomainSuffixes`, `securityModelDomains`, expected model). Never duplicate these values elsewhere.
+- `Core/Actors/` — `SecurityModelValidator.swift` (the only place DNS TXT validation against ordered `securityModelDomains` is allowed).
 - `Core/Security/` — `CertificateFingerprint.swift` (digest type + hashing) and `CertificateValidator.swift` (runtime DER digest validation + transition leniency).
 
 **Rule**: Any new security logic, certificate handling, or validation must be added inside `Core/` under the appropriate subdirectory and exposed through the existing public types. Duplication in the main app, widget, or elsewhere is not permitted and will not pass security review.
@@ -496,8 +497,8 @@ Operate in full agentic mode at all times:
 - Explicitly evaluate security, localization, and build impact first.
 - If the agent supports tools (Grok tools, Claude computer use, code interpreter, browser, etc.), use them aggressively to:
   * Validate xcodebuild commands
-  * Fetch current DNS TXT record at `securitymodels.lutheran.radio`
-  * Verify certificate fingerprints (use README openssl commands)
+  * Fetch current DNS TXT records (`securitymodels.siikkari.net` primary, then `securitymodels.lutheran.radio` secondary / live allow-list)
+  * Verify certificate fingerprints against `*.siikkari.net` (use README openssl SPKI + leaf DER commands; match `pinnedFingerprintDigests`)
   * Cross-check Apple docs or Swift proposals when relevant
 - Before writing any code that touches security, certificate validation, streaming URLs, DNS validation, or the security model, run:
   `find . -name "CertificateFingerprint.swift" -o -name "CertificateValidator.swift" -o -name "SecurityConfiguration.swift" -o -name "SecurityModelValidator.swift" | head -5`

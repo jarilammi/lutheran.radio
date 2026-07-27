@@ -11,12 +11,13 @@ The `Core` module is the central, isolated foundation of **lutheran.radio**. It 
 ## Key Components
 
 ### SecurityConfiguration
-- Centralized constants and rules (expected security model, pinned certificate fingerprints, cache durations, time skew tolerance, `requiresDNSSECValidationForStreaming`, etc.).
+- Centralized constants and rules (expected security model, dual runtime leaf pins via `pinnedFingerprintDigests`, sole media apex `preferredStreamingDomainSuffixes` = `siikkari.net`, cache durations, time skew tolerance, `requiresDNSSECValidationForStreaming`, etc.).
 - The **only** place that produces secure `URLSessionConfiguration` values via `makeSecureEphemeralConfiguration()` / `applySecureNetworkingRequirements(to:)`. All streaming, validation, and ping sessions must obtain their config here so that DNSSEC + cache hardening are applied uniformly.
+- Media hosts (`siikkari.net`) and DNS TXT hosts (`securityModelDomains`) are **independent** SSOTs — do not assume they share apexes.
 - Required security parameters — any deviation from these values is treated as a validation failure.
 
 ### SecurityModelValidator
-- Actor-isolated (plain `actor` with strict Swift 6 concurrency, not `@MainActor`) responsible for DNS TXT record validation against the ordered list of security model domains (`securitymodels.lutheran.radio` primary + `securitymodels.lutheranradio.sk` backup) with smart fallback on transient errors.
+- Actor-isolated (plain `actor` with strict Swift 6 concurrency, not `@MainActor`) responsible for DNS TXT record validation against the ordered list of security model domains (`securitymodels.siikkari.net` → `securitymodels.lutheran.radio` → `securitymodels.lutheranradio.sk`) with smart fallback on **transient** errors only.
 - Handles caching (1-hour TTL), transient vs. permanent failures, and safe bridging for C callbacks.
 - Used by `DirectStreamingPlayer` and other components instead of scattered local security state.
 

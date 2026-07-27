@@ -14,9 +14,14 @@ This document defines the **required security invariants** of the Lutheran Radio
 
 ## Invariant 1: Security Model Validation (DNS TXT)
 
-- The app **must** successfully validate that its embedded `expectedSecurityModel` appears in the comma-separated TXT record returned by `securitymodels.lutheran.radio` (or the backup domain) before any streaming is allowed.
+- The app **must** successfully validate that its embedded `expectedSecurityModel` appears in the comma-separated TXT record returned by a host in ``SecurityConfiguration/securityModelDomains`` (ordered: `securitymodels.siikkari.net` → `securitymodels.lutheran.radio` → `securitymodels.lutheranradio.sk`) before any streaming is allowed.
 - The query uses `kDNSServiceFlagsValidate`; the callback in ``SecurityModelValidator`` **requires** the validation bit in the returned flags before parsing or accepting rdata. Responses without successful DNSSEC validation are treated as transient failures (never trusted).
 - Validation is performed exclusively by ``SecurityModelValidator``.
+- **Ordered host walk** (``SecurityModelValidator`` / ``securityModelDomains`` — do not weaken):
+  1. **Authoritative answer** = DNSSEC-validated TXT rdata accepted by the callback (including empty set).
+  2. **Contains expected model** → success; **stop** (later hosts not queried).
+  3. **Does not contain it** → permanent fail; **stop** (no fall-through).
+  4. **Transient** (error, timeout, no validate bit, etc.) → next host; that host is **fully trusted** if it returns an authoritative allow-list containing the expected model.
 - On **permanent failure** (model not present in a *validated* TXT record), streaming is **permanently disabled** for the lifetime of the process. The only recovery is installing a new app build with an updated model.
 - On **transient failure** (network, timeout, *or DNSSEC validation not asserted*), the app may retry, but must eventually succeed or fall back to a safe error state.
 - Successful validations (validated response + model present) are cached for exactly 1 hour in `UserDefaults` (key: `lastSecurityValidation`). The cache applies **only** to successes.
@@ -24,7 +29,8 @@ This document defines the **required security invariants** of the Lutheran Radio
 
 ## Invariant 2: DNSSEC-protected name resolution for streaming hosts
 
-- All `URLSession` instances created for contacting `*.lutheran.radio` hosts (media streaming via resource loader, proactive certificate HEAD checks, and cluster latency pings) are configured through ``SecurityConfiguration/makeSecureEphemeralConfiguration()`` (or the equivalent `applySecureNetworkingRequirements(to:)`).
+- All `URLSession` instances created for contacting protected streaming hosts under **any** apex in ``SecurityConfiguration/preferredStreamingDomainSuffixes`` (today `*.siikkari.net` only — media streaming via resource loader, proactive certificate HEAD checks, and cluster latency pings) are configured through ``SecurityConfiguration/makeSecureEphemeralConfiguration()`` (or the equivalent `applySecureNetworkingRequirements(to:)`).
+- Host membership is decided solely by ``SecurityConfiguration/hostRequiresDNSSECValidation(_:)`` / ``SecurityConfiguration/isProtectedStreamingHost(_:)``. Call sites must not hard-code apex strings.
 - When ``SecurityConfiguration/requiresDNSSECValidationForStreaming`` is true (the default), `URLSessionConfiguration.requiresDNSSECValidation` is set. This causes the system resolver to be asked for DNSSEC-validated answers; unvalidated answers cause the session task to fail.
 - DNSSEC validation failures at this layer are **transient** (see `StreamErrorType` classification and player recovery paths). This keeps the requirement "opt-in safe".
 - This layer authenticates the mapping from hostname to IP address **before** TLS is attempted and before ``CertificateValidator`` sees any server trust object.
@@ -36,12 +42,12 @@ This document defines the **required security invariants** of the Lutheran Radio
 - The validator performs **full-certificate SHA-256 DER digest pinning** against ``SecurityConfiguration/pinnedFingerprintDigests`` (``CertificateFingerprint`` values).
 - Comparison uses ``CertificateFingerprint/constantTimeMatches(_:)``; runtime code must not compare colon-hex strings.
 - App Transport Security (ATS) SPKI pinning in `Info.plist` provides the baseline. The runtime validator adds a second, independent layer.
-- ``SecurityConfiguration/pinnedLeafFingerprintDigest`` is the authoritative pin; ``pinnedLeafFingerprint`` and ``pinnedFingerprints`` are derived colon-hex views for operators and docs only. Never duplicate or override digest values elsewhere.
+- ``SecurityConfiguration/pinnedFingerprintDigests`` is the authoritative acceptance list (primary historical pin plus live preferred-apex `*.siikkari.net` leaf). ``pinnedLeafFingerprintDigest`` / ``pinnedSiikkariLeafFingerprintDigest`` are named entries in that list; ``pinnedLeafFingerprint``, ``pinnedSiikkariLeafFingerprint``, and ``pinnedFingerprints`` are derived colon-hex views for operators and docs only. Never duplicate or override digest values elsewhere.
 - Successful runtime pin results are cached for exactly ``SecurityConfiguration/certificateValidationCacheDuration`` (**10 minutes** / 600 s). This duration is **independent** of the DNS TXT model success cache (``modelCacheDuration`` = 1 hour). Call sites (including the streaming engine’s periodic HEAD timer) must read the configuration constant rather than hard-coding 600.
 
 ## Invariant 4: Transition Window & Time-Skew Protection
 
-- A one-month transition window exists (currently 2026-07-27 00:00:00 GMT through 2026-08-26 23:59:59 GMT).
+- A transition window exists before preferred-apex leaf expiry (currently **2027-01-01 00:00:00 GMT** through **2027-02-10 23:59:59 GMT**, end aligned with live `*.siikkari.net` `notAfter`; start is a deliberate calendar lead-in on 2027-01-01).
 - During the window, a fingerprint mismatch is tolerated (falls back to ATS trust) **only if**:
   - `allowTransitionLeniency` remains `true`, **and**
   - Device time vs. HTTP `Date` header skew is ≤ 5 minutes (`maxAllowedTimeSkew`).
@@ -53,14 +59,18 @@ This document defines the **required security invariants** of the Lutheran Radio
 All of the following values exist **only** inside ``SecurityConfiguration`` and are never hard-coded elsewhere:
 
 - `expectedSecurityModel` ("dallas")
-- `pinnedLeafFingerprintDigest` (authoritative 32-byte pin; ``CertificateFingerprint``)
-- `pinnedFingerprintDigests` (acceptable digests for ``CertificateValidator``)
-- `pinnedLeafFingerprint` / `pinnedFingerprints` (derived colon-hex; operator and README parity only)
+- `pinnedLeafFingerprintDigest` (primary / historical 32-byte pin; ``CertificateFingerprint``)
+- `pinnedSiikkariLeafFingerprintDigest` (live preferred-apex `*.siikkari.net` leaf pin)
+- `pinnedFingerprintDigests` (acceptable digests for ``CertificateValidator`` — primary + siikkari)
+- `pinnedLeafFingerprint` / `pinnedSiikkariLeafFingerprint` / `pinnedFingerprints` (derived colon-hex; operator and README parity only)
 - `transitionWindowStart` / `transitionWindowEnd`
 - `maxAllowedTimeSkew`
 - `modelCacheDuration` (DNS TXT success cache only — 1 hour)
 - `certificateValidationCacheDuration` (runtime pin-result cache — 10 minutes; never reuse `modelCacheDuration`)
-- Domain list (`securityModelDomains`)
+- DNS TXT host list (`securityModelDomains` — siikkari primary, lutheran.radio secondary, sk backup; independent of media preference)
+- Streaming media apex (`preferredStreamingDomainSuffixes` — sole apex `siikkari.net`; use ``streamingHostCandidates(leadingLabel:)`` for host construction)
+
+**Media vs TXT separation:** Production media uses only `siikkari.net` (`european` / `livestream` / language hosts). DNS TXT allow-list queries use ordered `securityModelDomains` (`securitymodels.siikkari.net` primary → `securitymodels.lutheran.radio` → `securitymodels.lutheranradio.sk`) and are **independent** of the media apex list. Preserve the four-point ordered host walk in Invariant 1 when reordering hosts. Retired `lutheran.radio` media hosts are not protected streaming hosts in this binary.
 
 ## Invariant 6: No Bypass Paths
 

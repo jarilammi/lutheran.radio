@@ -40,15 +40,19 @@ This design makes security review, testing, and future rotation of certificates 
 A plain `struct` (value type) that exposes only the minimal public surface required by consumers:
 
 - `expectedSecurityModel`
-- `pinnedLeafFingerprintDigest` / `pinnedFingerprintDigests` (authoritative runtime pins)
-- `pinnedLeafFingerprint` / `pinnedFingerprints` (derived colon-hex)
+- `pinnedLeafFingerprintDigest` / `pinnedSiikkariLeafFingerprintDigest` / `pinnedFingerprintDigests` (authoritative runtime pins; list includes primary + live `*.siikkari.net`)
+- `pinnedLeafFingerprint` / `pinnedSiikkariLeafFingerprint` / `pinnedFingerprints` (derived colon-hex)
 - `isInTransitionWindow`
+- `preferredStreamingDomainSuffixes` / `preferredStreamingDomainSuffix` / `legacyStreamingDomainSuffix` (sole media apex: `siikkari.net`)
+- `isProtectedStreamingHost(_:)` / `hostRequiresDNSSECValidation(_:)` / `streamingHostCandidates(leadingLabel:)` (DNSSEC host membership + host construction; no hard-coded apexes at call sites)
 - `requiresDNSSECValidationForStreaming` + `makeSecureEphemeralConfiguration()` / `applySecureNetworkingRequirements(to:)` (the single place that turns on `URLSessionConfiguration.requiresDNSSECValidation` and related hardening for streaming hosts)
 - `current` (the canonical instance)
 
+DNS TXT allow-list hosts (`securityModelDomains`) remain an **independent** ordered list (`securitymodels.siikkari.net` primary, then `securitymodels.lutheran.radio`, then `securitymodels.lutheranradio.sk`) and are not assumed to share apexes with media preference.
+
 All other properties are internal by design. The struct is deliberately not an actor because it contains only immutable policy after initialization.
 
-Callers outside Core (DirectStreamingPlayer, CertificateValidator) obtain secure `URLSessionConfiguration` values exclusively through these APIs. This is the "one place to configure secure networking".
+Callers outside Core (DirectStreamingPlayer, CertificateValidator) obtain secure `URLSessionConfiguration` values exclusively through these APIs. This is the "one place to configure secure networking". Media host strings should be derived from ``preferredStreamingDomainSuffixes`` / ``streamingHostCandidates(leadingLabel:)`` rather than literal apexes.
 
 ### SecurityModelValidator
 
@@ -57,7 +61,7 @@ An `actor` that:
 - Performs DNS-SD TXT queries with `kDNSServiceFlagsValidate` against the configured domains.
 - In the C callback: requires the validation bit before accepting any rdata (DNSSEC hardening); parses length-prefixed TXT rdata with `Span<UInt8>` and `UTF8Span` (zero-copy borrow of dns_sd `rdata`).
 - Implements a one-hour success-only cache persisted in `UserDefaults`.
-- Distinguishes **permanent** failures (model not in *validated* TXT → streaming must stay disabled) from **transient** failures (network/DNS/DNSSEC-unvalidated → safe to retry).
+- Distinguishes **permanent** failures (model not in *validated* TXT → streaming must stay disabled) from **transient** failures (network/DNS/DNSSEC-unvalidated → safe to retry). Ordered host walk is the four-point contract in ``<doc:Security-Invariants>`` Invariant 1 (authoritative answer stops; only transient advances).
 - Exposes a tiny set of test seams under `#if DEBUG` that have zero production impact.
 
 The actor uses a carefully constructed non-isolated static C callback + `Unmanaged` context to satisfy Swift 6 strict concurrency while still using the classic `dnssd` API.

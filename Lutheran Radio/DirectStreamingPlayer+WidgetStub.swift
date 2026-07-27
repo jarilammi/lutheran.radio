@@ -41,9 +41,11 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
         let flag: String
 
         var url: URL {
-            // Placeholder only. Real URL construction (security_model + optimal server)
-            // is performed exclusively inside DirectStreamingPlayer in the main target.
-            URL(string: "https://livestream.lutheran.radio")!
+            // Placeholder only. Real URL construction (security_model + optimal server
+            // under preferredStreamingDomainSuffix, today livestream.siikkari.net) is
+            // performed exclusively inside DirectStreamingPlayer in the main target.
+            // SAFETY: Compile-time constant placeholder; widget/extension never loads this URL.
+            URL(string: "https://livestream.siikkari.net")!
         }
     }
 

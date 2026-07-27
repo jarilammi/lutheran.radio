@@ -27,10 +27,12 @@ Run any command in the environment's shell (typically zsh or bash on macOS with 
 - `background` (boolean, optional): Run in background (returns PID immediately).
 - `maxOutputLength` (integer, optional): Max characters in output.
 
-**Example — Verify security model (copy-paste ready)**:
+**Example — Verify security model + live SSL pins (copy-paste ready)**:
 ```xml
-call tool bash with command is dig +short +dnssec TXT securitymodels.lutheran.radio
+call tool bash with command is dig +short +dnssec TXT securitymodels.siikkari.net; dig +short +dnssec TXT securitymodels.lutheran.radio; openssl s_client -connect livestream.siikkari.net:443 -servername livestream.siikkari.net < /dev/null 2>/dev/null | openssl x509 -outform DER | openssl dgst -sha256
 ```
+
+Primary TXT may be empty until published (transient fallback). Secondary (`securitymodels.lutheran.radio`) currently serves the live allow-list. Leaf DER SHA-256 for `*.siikkari.net` must match `pinnedSiikkariLeafFingerprintDigest` in `SecurityConfiguration` (see README "Current Security Snapshot" and "Media Apex Cutover").
 
 **Example — Clean build (canonical gate from CODING_AGENT.md — bleeding-edge for agents)**:
 ```xml

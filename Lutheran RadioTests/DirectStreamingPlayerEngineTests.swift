@@ -201,17 +201,26 @@ final class DirectStreamingPlayerEngineTests: XCTestCase {
         XCTAssertTrue(config.requiresDNSSECValidation,
                       "Streaming and validation sessions must request DNSSEC-validated resolutions")
 
-        // Protected host helper
-        XCTAssertTrue(SecurityConfiguration.hostRequiresDNSSECValidation("livestream.lutheran.radio"))
-        XCTAssertTrue(SecurityConfiguration.hostRequiresDNSSECValidation("en-eu.lutheran.radio"))
-        XCTAssertTrue(SecurityConfiguration.hostRequiresDNSSECValidation("lutheran.radio"))
+        // Protected host helper (sole media apex: siikkari.net)
+        XCTAssertTrue(SecurityConfiguration.hostRequiresDNSSECValidation("livestream.siikkari.net"))
+        XCTAssertTrue(SecurityConfiguration.hostRequiresDNSSECValidation("european.siikkari.net"))
+        XCTAssertTrue(SecurityConfiguration.hostRequiresDNSSECValidation("finnish-eu.siikkari.net"))
+        XCTAssertTrue(SecurityConfiguration.hostRequiresDNSSECValidation("siikkari.net"))
+        // Retired media apex must not be treated as a protected streaming host.
+        XCTAssertFalse(SecurityConfiguration.hostRequiresDNSSECValidation("livestream.lutheran.radio"))
+        XCTAssertFalse(SecurityConfiguration.hostRequiresDNSSECValidation("en-eu.lutheran.radio"))
+        XCTAssertFalse(SecurityConfiguration.hostRequiresDNSSECValidation("lutheran.radio"))
         XCTAssertFalse(SecurityConfiguration.hostRequiresDNSSECValidation("apple.com"))
         XCTAssertFalse(SecurityConfiguration.hostRequiresDNSSECValidation(nil))
     }
     
+    /// Cluster list must prefer Core streaming apex (`siikkari.net`) with the
+    /// operational ping hosts `european.siikkari.net` and `livestream.siikkari.net`.
     func testServerConfiguration() {
         let servers = DirectStreamingPlayer.servers
+        let apex = SecurityConfiguration.current.preferredStreamingDomainSuffix
         
+        XCTAssertEqual(apex, "siikkari.net")
         XCTAssertEqual(servers.count, 2)
         XCTAssertTrue(servers.contains { $0.name == "EU" })
         XCTAssertTrue(servers.contains { $0.name == "US" })
@@ -219,7 +228,25 @@ final class DirectStreamingPlayerEngineTests: XCTestCase {
         let euServer = servers.first { $0.name == "EU" }
         XCTAssertNotNil(euServer)
         XCTAssertEqual(euServer?.subdomain, "eu")
-        XCTAssertEqual(euServer?.baseHostname, "lutheran.radio")
+        XCTAssertEqual(euServer?.baseHostname, apex)
+        XCTAssertEqual(euServer?.pingURL.host, "european.siikkari.net")
+        XCTAssertEqual(euServer?.pingURL.path, "/ping")
+        
+        let usServer = servers.first { $0.name == "US" }
+        XCTAssertNotNil(usServer)
+        XCTAssertEqual(usServer?.subdomain, "us")
+        XCTAssertEqual(usServer?.baseHostname, apex)
+        XCTAssertEqual(usServer?.pingURL.host, "livestream.siikkari.net")
+        XCTAssertEqual(usServer?.pingURL.path, "/ping")
+    }
+
+    /// Stream catalog hosts must use preferred apex (e.g. finnish-eu.siikkari.net).
+    func testStreamCatalogPrefersSiikkariApex() {
+        let url = StreamCatalog.streamURL(languageCode: "fi", region: "eu")
+        XCTAssertEqual(url.scheme, "https")
+        XCTAssertEqual(url.host, "finnish-eu.siikkari.net")
+        XCTAssertEqual(url.path, "/lutheranradio.mp3")
+        XCTAssertTrue(url.query?.contains("security_model=\(SecurityConfiguration.current.expectedSecurityModel)") == true)
     }
     
     func testAvailableStreamsFromRealClass() {

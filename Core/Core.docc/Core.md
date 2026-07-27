@@ -8,9 +8,10 @@ The `Core` framework is the **single source of truth** for all security policy, 
 
 The framework enforces three fundamental security mechanisms:
 
-- **Security model validation** via DNS TXT records (`securitymodels.lutheran.radio`)
-- **Runtime full-certificate SHA-256 digest pinning** (``CertificateFingerprint`` + constant-time comparison) with transition support
+- **Security model validation** via DNS TXT records on ordered ``SecurityConfiguration/securityModelDomains`` (`securitymodels.siikkari.net` → `securitymodels.lutheran.radio` → `securitymodels.lutheranradio.sk`)
+- **Runtime full-certificate SHA-256 digest pinning** against ``pinnedFingerprintDigests`` (primary historical leaf + live preferred-apex `*.siikkari.net` leaf; ``CertificateFingerprint`` + constant-time comparison) with transition support
 - **Time-skew detection** to protect transition windows from clock manipulation
+- **Streaming media apex policy** via ``preferredStreamingDomainSuffixes`` (sole apex `siikkari.net`) — independent of DNS TXT host order
 
 All constants, policy, and validation logic live exclusively inside `Core/`. Duplication outside this framework is not permitted.
 
