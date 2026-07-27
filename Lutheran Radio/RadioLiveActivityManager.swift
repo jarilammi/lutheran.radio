@@ -681,12 +681,17 @@ class RadioLiveActivityManager: ObservableObject {
     ) {
         let content = ActivityContent(state: finalContentState, staleDate: nil)
         for activity in activities {
+            // Hoist Sendable identity before the ActivityKit hop so DEBUG logs never
+            // touch the nonisolated(unsafe) binding (SE-0458 / SWIFT_STRICT_MEMORY_SAFETY).
+            let activityId = activity.id
+            // SAFETY: Activity is not Sendable in the current SDK; local strong reference
+            // for update/end only (same capture pattern as updateCurrentActivity).
             nonisolated(unsafe) let safeActivity = activity
             Task {
                 unsafe await safeActivity.update(content)
                 unsafe await safeActivity.end(content, dismissalPolicy: dismissalPolicy)
                 #if DEBUG
-                print("🔴 Live Activity ended (policy: \(dismissalPolicy)) id=\(safeActivity.id)")
+                print("🔴 Live Activity ended (policy: \(dismissalPolicy)) id=\(activityId)")
                 #endif
             }
         }
@@ -700,11 +705,16 @@ class RadioLiveActivityManager: ObservableObject {
     ) async {
         let content = ActivityContent(state: finalContentState, staleDate: nil)
         for activity in activities {
+            // Hoist Sendable identity before the ActivityKit hop so DEBUG logs never
+            // touch the nonisolated(unsafe) binding (SE-0458 / SWIFT_STRICT_MEMORY_SAFETY).
+            let activityId = activity.id
+            // SAFETY: Activity is not Sendable in the current SDK; local strong reference
+            // for update/end only (same capture pattern as updateCurrentActivity).
             nonisolated(unsafe) let safeActivity = activity
             unsafe await safeActivity.update(content)
             unsafe await safeActivity.end(content, dismissalPolicy: dismissalPolicy)
             #if DEBUG
-            print("🔴 Live Activity ended (awaited, policy: \(dismissalPolicy)) id=\(safeActivity.id)")
+            print("🔴 Live Activity ended (awaited, policy: \(dismissalPolicy)) id=\(activityId)")
             #endif
         }
     }
@@ -726,13 +736,18 @@ class RadioLiveActivityManager: ObservableObject {
         let remaining = OSAllocatedUnfairLock(initialState: activities.count)
 
         for activity in activities {
+            // Hoist Sendable identity before the detached hop so DEBUG logs never
+            // touch the nonisolated(unsafe) binding (SE-0458 / SWIFT_STRICT_MEMORY_SAFETY).
+            let activityId = activity.id
+            // SAFETY: Activity is not Sendable in the current SDK; local strong reference
+            // for Task.detached update/end only (same capture pattern as updateCurrentActivity).
             nonisolated(unsafe) let safeActivity = activity
             Task.detached {
                 unsafe await safeActivity.update(content)
                 unsafe await safeActivity.end(content, dismissalPolicy: dismissalPolicy)
                 remaining.withLock { $0 = max(0, $0 - 1) }
                 #if DEBUG
-                print("🔴 Live Activity ended (termination wait, policy: \(dismissalPolicy)) id=\(safeActivity.id)")
+                print("🔴 Live Activity ended (termination wait, policy: \(dismissalPolicy)) id=\(activityId)")
                 #endif
             }
         }

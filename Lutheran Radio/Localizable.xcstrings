@@ -5082,7 +5082,8 @@
             "value" : "LIVE"
           }
         }
-      }
+      },
+      "extractionState" : "stale"
     },
     "live_activity_program_fallback" : {
       "comment" : "Live Activity / widget metadata fallback when no ICY program title is present (format: language name + live stream). Used from WidgetSurface `widgetLiveStreamFallback(languageName:)` via String(localized:table: Localizable). extractionState is manual because the catalog is owned by the main app/widget targets; the call site lives in the WidgetSurface framework and is not seen by Xcode auto-extraction.",
