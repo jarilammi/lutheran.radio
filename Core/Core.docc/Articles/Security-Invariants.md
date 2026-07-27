@@ -42,7 +42,7 @@ This document defines the **required security invariants** of the Lutheran Radio
 - The validator performs **full-certificate SHA-256 DER digest pinning** against ``SecurityConfiguration/pinnedFingerprintDigests`` (``CertificateFingerprint`` values).
 - Comparison uses ``CertificateFingerprint/constantTimeMatches(_:)``; runtime code must not compare colon-hex strings.
 - App Transport Security (ATS) SPKI pinning in `Info.plist` provides the baseline. The runtime validator adds a second, independent layer.
-- ``SecurityConfiguration/pinnedFingerprintDigests`` is the authoritative acceptance list (primary historical pin plus live preferred-apex `*.siikkari.net` leaf). ``pinnedLeafFingerprintDigest`` / ``pinnedSiikkariLeafFingerprintDigest`` are named entries in that list; ``pinnedLeafFingerprint``, ``pinnedSiikkariLeafFingerprint``, and ``pinnedFingerprints`` are derived colon-hex views for operators and docs only. Never duplicate or override digest values elsewhere.
+- ``SecurityConfiguration/pinnedFingerprintDigests`` is the authoritative acceptance list (sole production leaf: live preferred-apex `*.siikkari.net`). ``pinnedLeafFingerprintDigest`` is that digest; ``pinnedSiikkariLeafFingerprintDigest`` is an alias for the same value; ``pinnedLeafFingerprint``, ``pinnedSiikkariLeafFingerprint``, and ``pinnedFingerprints`` are derived colon-hex views for operators and docs only. Never duplicate or override digest values elsewhere. Do not leave retired pre-cutover leaves on the acceptance list — obsolete pins enlarge the set of certificates the runtime will accept.
 - Successful runtime pin results are cached for exactly ``SecurityConfiguration/certificateValidationCacheDuration`` (**10 minutes** / 600 s). This duration is **independent** of the DNS TXT model success cache (``modelCacheDuration`` = 1 hour). Call sites (including the streaming engine’s periodic HEAD timer) must read the configuration constant rather than hard-coding 600.
 
 ## Invariant 4: Transition Window & Time-Skew Protection
@@ -59,9 +59,9 @@ This document defines the **required security invariants** of the Lutheran Radio
 All of the following values exist **only** inside ``SecurityConfiguration`` and are never hard-coded elsewhere:
 
 - `expectedSecurityModel` ("dallas")
-- `pinnedLeafFingerprintDigest` (primary / historical 32-byte pin; ``CertificateFingerprint``)
-- `pinnedSiikkariLeafFingerprintDigest` (live preferred-apex `*.siikkari.net` leaf pin)
-- `pinnedFingerprintDigests` (acceptable digests for ``CertificateValidator`` — primary + siikkari)
+- `pinnedLeafFingerprintDigest` (sole production 32-byte pin — live `*.siikkari.net`; ``CertificateFingerprint``)
+- `pinnedSiikkariLeafFingerprintDigest` (alias of the sole live preferred-apex pin)
+- `pinnedFingerprintDigests` (acceptable digests for ``CertificateValidator`` — sole live siikkari leaf; append only during deliberate rotation overlap)
 - `pinnedLeafFingerprint` / `pinnedSiikkariLeafFingerprint` / `pinnedFingerprints` (derived colon-hex; operator and README parity only)
 - `transitionWindowStart` / `transitionWindowEnd`
 - `maxAllowedTimeSkew`

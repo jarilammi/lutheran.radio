@@ -94,28 +94,29 @@ struct CoreTests {
         ])
     }
 
-    /// Runtime pin list must include both the primary historical leaf and the live
-    /// `*.siikkari.net` leaf so preferred-apex streaming validates without relying only
-    /// on transition-window ATS leniency.
+    /// Runtime pin list accepts **only** the live `*.siikkari.net` leaf. The retired
+    /// pre-cutover leaf must not remain on the production acceptance list.
     ///
-    /// Protects Invariant 2 / 5: digests live only in SecurityConfiguration; validator
-    /// walks ``pinnedFingerprintDigests`` (not a single primary pin alone).
-    @Test func securityConfigurationPinnedFingerprintDigestsIncludeLiveSiikkariLeaf() {
+    /// Protects Invariant 3 / 5: digests live only in SecurityConfiguration; validator
+    /// walks ``pinnedFingerprintDigests``; production does not enlarge the MITM target
+    /// set with obsolete leaf digests after media apex cutover.
+    @Test func securityConfigurationPinnedFingerprintDigestsContainOnlyLiveSiikkariLeaf() {
         let policy = SecurityConfiguration.current
         let digests = policy.pinnedFingerprintDigests
+        let live =
+            "32:82:5E:97:8C:F7:1F:F1:0C:F6:80:9D:2D:15:C8:1D:AA:85:65:28:F4:67:D6:E5:1B:6F:7A:5F:B2:18:70:CD"
+        let retiredHistorical =
+            "CC:F7:8E:09:EF:F3:3D:9A:5D:8B:B0:5C:74:28:0D:F6:BE:14:1C:C4:47:F9:69:C2:90:2C:43:97:66:8B:3D:CC"
 
-        #expect(digests.count == 2)
+        #expect(digests.count == 1)
         #expect(digests[0].constantTimeMatches(policy.pinnedLeafFingerprintDigest))
-        #expect(digests[1].constantTimeMatches(policy.pinnedSiikkariLeafFingerprintDigest))
+        #expect(policy.pinnedLeafFingerprintDigest.constantTimeMatches(policy.pinnedSiikkariLeafFingerprintDigest))
 
-        #expect(policy.pinnedLeafFingerprint ==
-                "CC:F7:8E:09:EF:F3:3D:9A:5D:8B:B0:5C:74:28:0D:F6:BE:14:1C:C4:47:F9:69:C2:90:2C:43:97:66:8B:3D:CC")
-        #expect(policy.pinnedSiikkariLeafFingerprint ==
-                "32:82:5E:97:8C:F7:1F:F1:0C:F6:80:9D:2D:15:C8:1D:AA:85:65:28:F4:67:D6:E5:1B:6F:7A:5F:B2:18:70:CD")
+        #expect(policy.pinnedLeafFingerprint == live)
+        #expect(policy.pinnedSiikkariLeafFingerprint == live)
 
-        #expect(policy.pinnedFingerprints.contains(policy.pinnedLeafFingerprint))
-        #expect(policy.pinnedFingerprints.contains(policy.pinnedSiikkariLeafFingerprint))
-        #expect(policy.pinnedFingerprints.count == 2)
+        #expect(policy.pinnedFingerprints == [live])
+        #expect(!policy.pinnedFingerprints.contains(retiredHistorical))
     }
 
     /// Transition window for the next preferred-apex rotation is keyed to the live

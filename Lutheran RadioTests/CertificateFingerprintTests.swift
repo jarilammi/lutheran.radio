@@ -12,8 +12,9 @@ import Foundation
 @Suite("CertificateFingerprint Tests")
 struct CertificateFingerprintTests {
 
+    /// Sole production leaf pin (`*.siikkari.net`) — must match ``SecurityConfiguration``.
     private static let pinnedLeafHex =
-        "CC:F7:8E:09:EF:F3:3D:9A:5D:8B:B0:5C:74:28:0D:F6:BE:14:1C:C4:47:F9:69:C2:90:2C:43:97:66:8B:3D:CC"
+        "32:82:5E:97:8C:F7:1F:F1:0C:F6:80:9D:2D:15:C8:1D:AA:85:65:28:F4:67:D6:E5:1B:6F:7A:5F:B2:18:70:CD"
 
     @Test("constantTimeMatches returns true for identical digests")
     func constantTimeMatches_equalPins() {

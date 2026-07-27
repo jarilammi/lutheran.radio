@@ -11,7 +11,7 @@ The `Core` module is the central, isolated foundation of **lutheran.radio**. It 
 ## Key Components
 
 ### SecurityConfiguration
-- Centralized constants and rules (expected security model, dual runtime leaf pins via `pinnedFingerprintDigests`, sole media apex `preferredStreamingDomainSuffixes` = `siikkari.net`, cache durations, time skew tolerance, `requiresDNSSECValidationForStreaming`, etc.).
+- Centralized constants and rules (expected security model, sole live leaf pin via `pinnedFingerprintDigests`, sole media apex `preferredStreamingDomainSuffixes` = `siikkari.net`, cache durations, time skew tolerance, `requiresDNSSECValidationForStreaming`, etc.).
 - The **only** place that produces secure `URLSessionConfiguration` values via `makeSecureEphemeralConfiguration()` / `applySecureNetworkingRequirements(to:)`. All streaming, validation, and ping sessions must obtain their config here so that DNSSEC + cache hardening are applied uniformly.
 - Media hosts (`siikkari.net`) and DNS TXT hosts (`securityModelDomains`) are **independent** SSOTs — do not assume they share apexes.
 - Required security parameters — any deviation from these values is treated as a validation failure.

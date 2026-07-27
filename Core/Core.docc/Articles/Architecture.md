@@ -40,7 +40,7 @@ This design makes security review, testing, and future rotation of certificates 
 A plain `struct` (value type) that exposes only the minimal public surface required by consumers:
 
 - `expectedSecurityModel`
-- `pinnedLeafFingerprintDigest` / `pinnedSiikkariLeafFingerprintDigest` / `pinnedFingerprintDigests` (authoritative runtime pins; list includes primary + live `*.siikkari.net`)
+- `pinnedLeafFingerprintDigest` / `pinnedSiikkariLeafFingerprintDigest` / `pinnedFingerprintDigests` (authoritative runtime pins; sole production leaf is live `*.siikkari.net`; siikkari symbol is an alias)
 - `pinnedLeafFingerprint` / `pinnedSiikkariLeafFingerprint` / `pinnedFingerprints` (derived colon-hex)
 - `isInTransitionWindow`
 - `preferredStreamingDomainSuffixes` / `preferredStreamingDomainSuffix` / `legacyStreamingDomainSuffix` (sole media apex: `siikkari.net`)

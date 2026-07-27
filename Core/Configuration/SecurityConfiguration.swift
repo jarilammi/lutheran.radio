@@ -210,34 +210,32 @@ public struct SecurityConfiguration: Sendable {
     ///   ``<doc:Architecture>``
     public let certificateValidationCacheDuration: TimeInterval = 600  // 10 minutes
     
-    /// OpenSSL-style leaf fingerprint for the primary historical pin (README / operator tooling parity only).
-    ///
-    /// This remains the first entry of ``pinnedFingerprintDigests`` so existing operator docs and
-    /// ``pinnedLeafFingerprint`` stay stable. Runtime acceptance is the full digests list, which
-    /// also includes the live preferred-apex (`*.siikkari.net`) leaf.
-    private static let pinnedLeafFingerprintHex =
-        "CC:F7:8E:09:EF:F3:3D:9A:5D:8B:B0:5C:74:28:0D:F6:BE:14:1C:C4:47:F9:69:C2:90:2C:43:97:66:8B:3D:CC"
-    
-    /// Live leaf DER SHA-256 for the preferred streaming apex (`CN=*.siikkari.net`).
+    /// Live leaf DER SHA-256 for the sole production media apex (`CN=*.siikkari.net`).
     ///
     /// Verified against `european.siikkari.net` and `livestream.siikkari.net` (same wildcard leaf).
-    /// Required so runtime full-certificate pinning succeeds on the preferred media path without
-    /// relying solely on transition-window ATS leniency.
+    /// This is the **only** runtime full-certificate pin in production: the retired pre-cutover
+    /// leaf (`CC:F7:…:3D:CC`, former `*.lutheran.radio` era) is intentionally **not** accepted.
+    /// Keeping a retired leaf on the acceptance list would enlarge the set of valid certificates
+    /// after the media apex cutover without operational need.
     ///
     /// Operator verify:
     /// ```bash
-    /// openssl s_client -connect european.siikkari.net:443 -servername european.siikkari.net < /dev/null 2>/dev/null \
+    /// openssl s_client -connect livestream.siikkari.net:443 -servername livestream.siikkari.net < /dev/null 2>/dev/null \
     /// | openssl x509 -outform DER | openssl dgst -sha256
     /// ```
-    /// - SeeAlso: ``pinnedFingerprintDigests``, ``preferredStreamingDomainSuffixes``, Info.plist `NSPinnedDomains` (`siikkari.net` SPKI)
-    private static let pinnedSiikkariLeafFingerprintHex =
+    /// Expected lowercase hex: `32825e978cf71ff10cf6809d2d15c81daa856528f467d6e51b6f7a5fb21870cd`
+    ///
+    /// - SeeAlso: ``pinnedFingerprintDigests``, ``preferredStreamingDomainSuffixes``,
+    ///   Info.plist `NSPinnedDomains` (`siikkari.net` SPKI)
+    private static let pinnedLeafFingerprintHex =
         "32:82:5E:97:8C:F7:1F:F1:0C:F6:80:9D:2D:15:C8:1D:AA:85:65:28:F4:67:D6:E5:1B:6F:7A:5F:B2:18:70:CD"
     
-    /// SHA-256 digest of the primary leaf certificate DER (historical / docs-facing pin).
+    /// SHA-256 digest of the sole production leaf certificate DER (`*.siikkari.net`).
     ///
     /// - Important: Never duplicate or override this value elsewhere in the codebase.
-    /// - Note: ``CertificateValidator`` accepts **any** digest in ``pinnedFingerprintDigests``
-    ///   (primary + live siikkari). Prefer that list for membership checks.
+    /// - Note: ``CertificateValidator`` accepts **any** digest in ``pinnedFingerprintDigests``.
+    ///   Today the list is a single entry (this digest). Prefer that list for membership checks
+    ///   so rotation can append a new leaf without call-site rewrites.
     /// - SeeAlso: ``pinnedFingerprintDigests``, ``<doc:Security-Invariants>``
     let pinnedLeafFingerprintDigest: CertificateFingerprint = {
         // SAFETY: `pinnedLeafFingerprintHex` is a compile-time constant validated at first access.
@@ -247,18 +245,15 @@ public struct SecurityConfiguration: Sendable {
         return digest
     }()
     
-    /// SHA-256 digest of the live preferred-apex leaf (`*.siikkari.net`).
+    /// Alias for the sole live preferred-apex leaf pin (same value as ``pinnedLeafFingerprintDigest``).
     ///
-    /// - Important: Keep in sync with the leaf currently served on `*.siikkari.net` and the
-    ///   ATS SPKI pin for `siikkari.net` in Info.plist when the public key rotates.
-    /// - SeeAlso: ``pinnedFingerprintDigests``, ``pinnedSiikkariLeafFingerprintHex``
-    let pinnedSiikkariLeafFingerprintDigest: CertificateFingerprint = {
-        // SAFETY: compile-time constant hex validated at first access.
-        guard let digest = CertificateFingerprint(colonHexUppercase: pinnedSiikkariLeafFingerprintHex) else {
-            fatalError("Invalid pinnedSiikkariLeafFingerprintHex in SecurityConfiguration")
-        }
-        return digest
-    }()
+    /// Retained so operator docs and SeeAlso links that name the siikkari-specific symbol still resolve.
+    /// Do not reintroduce a second, distinct digest here without a coordinated rotation.
+    ///
+    /// - SeeAlso: ``pinnedFingerprintDigests``, ``pinnedLeafFingerprintDigest``
+    var pinnedSiikkariLeafFingerprintDigest: CertificateFingerprint {
+        pinnedLeafFingerprintDigest
+    }
     
     /// Colon-hex view of ``pinnedLeafFingerprintDigest`` (documentation / external tooling).
     public var pinnedLeafFingerprint: String {
@@ -266,18 +261,24 @@ public struct SecurityConfiguration: Sendable {
     }
     
     /// Colon-hex view of ``pinnedSiikkariLeafFingerprintDigest`` (operator / openssl parity).
+    ///
+    /// Identical to ``pinnedLeafFingerprint`` while the sole production pin is the siikkari leaf.
     public var pinnedSiikkariLeafFingerprint: String {
         pinnedSiikkariLeafFingerprintDigest.colonHexUppercase
     }
     
     /// Acceptable leaf certificate SHA-256 digests used by ``CertificateValidator``.
     ///
-    /// Order is stable and intentional:
-    /// 1. ``pinnedLeafFingerprintDigest`` — primary historical pin (docs / CODING_AGENT citation)
-    /// 2. ``pinnedSiikkariLeafFingerprintDigest`` — live preferred streaming apex (`*.siikkari.net`)
+    /// Production acceptance is **only** the live preferred streaming apex leaf
+    /// (``pinnedLeafFingerprintDigest`` / ``pinnedSiikkariLeafFingerprintDigest`` —
+    /// `*.siikkari.net`). Retired pre-cutover leaves must not remain on this list:
+    /// that would accept certificates the media plane no longer serves and expand
+    /// the MITM target set without benefit.
     ///
     /// Exposed as an array (not a `Set`) so comparison walks pins without hash short-circuits
-    /// and rotation overlap can append additional digests without removing prior ones mid-window.
+    /// and a future rotation can **append** the next leaf for a deliberate overlap window
+    /// without removing the current pin mid-cutover. Drop retired digests once the old leaf
+    /// is no longer operationally required.
     ///
     /// **Security Invariant:** Runtime validation must succeed against this list for media hosts
     /// under ``preferredStreamingDomainSuffixes``. Do not hard-code digests outside this file.
@@ -286,8 +287,7 @@ public struct SecurityConfiguration: Sendable {
     ///   ``preferredStreamingDomainSuffixes``
     var pinnedFingerprintDigests: [CertificateFingerprint] {
         [
-            pinnedLeafFingerprintDigest,
-            pinnedSiikkariLeafFingerprintDigest
+            pinnedLeafFingerprintDigest
         ]
     }
     
@@ -312,9 +312,9 @@ public struct SecurityConfiguration: Sendable {
     /// - Window start is intentionally **2027-01-01 00:00:00 GMT** (calendar-month
     ///   lead-in before expiry, slightly longer than a strict 30-day window)
     ///
-    /// Outside this window, dual ``pinnedFingerprintDigests`` membership is the
-    /// normal acceptance path; leniency is not required for the already-pinned
-    /// live siikkari leaf.
+    /// Outside this window, ``pinnedFingerprintDigests`` membership is the
+    /// normal acceptance path; leniency is only needed when rotating to a leaf
+    /// not yet on the pin list (or when ATS SPKI still matches during cutover).
     ///
     /// - SeeAlso: ``transitionWindowEnd``, ``isInTransitionWindow``, ``<doc:Security-Invariants>``,
     ///   README “Media Apex Cutover & SSL Certificate Rotation”
