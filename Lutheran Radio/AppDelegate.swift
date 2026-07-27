@@ -113,7 +113,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         //    `isMainAppProcessRecentlyActive() == false` and render the "tap_to_open" prompt
         //    (widgetURL launch only). This is the key signal that kills the "still pinging"
         //    appearance after quit.
-        // 2. End any Live Activity (final .userPaused pushed + immediate dismissal).
+        // 2. End every system-held Live Activity (final .userPaused + language-preserving
+        //    ContentState, immediate dismissal, bounded wait so ActivityKit accepts end
+        //    before process death — not a fire-and-forget Task).
         // 3. Cancel pending widget refreshes so no in-flight debounced reload can execute
         //    after the process is dead.
         //

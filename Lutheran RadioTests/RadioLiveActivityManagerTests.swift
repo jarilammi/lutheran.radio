@@ -5,15 +5,17 @@
 //  Created by Jari Lammi on 29.8.2025.
 //
 //  White-box unit tests for ``RadioLiveActivityManager`` timer demotion, change-detection
-//  guards, and Live Activity attribute-events (`contentUpdates`) observation contracts.
+//  guards, Live Activity attribute-events (`contentUpdates`) observation contracts, and
+//  termination final-ContentState / hygiene contracts.
 //
 //  Attribute-events tests consume DEBUG synthetic-stream seams on the manager
 //  (`_test_beginObservingSyntheticContentUpdates`, `_test_wouldSuppressLiveActivityUpdate`,
-//  `_test_setHarnessSimulatesActiveActivity`, `_test_cancelAttributeEventObservation`)
-//  so ActivityKit IPC is never exercised under the XCTest host.
+//  `_test_setHarnessSimulatesActiveActivity`, `_test_cancelAttributeEventObservation`,
+//  `_test_finalEndContentState`) so ActivityKit IPC is never exercised under the XCTest host.
 //
 //  - SeeAlso: ``RadioLiveActivityManager``, ``WidgetEventObserver``,
 //    docs/Event-Driven-Refactor-Roadmap.md (Tier 2 LA events / Tier 5),
+//    docs/Widget-Presentation-Dataflow.md (termination + residual reaping),
 //    CODING_AGENT.md (Test Execution Patience and Fast, Reliable Test Patterns).
 
 import XCTest
@@ -456,6 +458,86 @@ class RadioLiveActivityManagerTests: XCTestCase {
             SharedPlayerManager.loadLiveActivityLanguageMirror(),
             "endActivity must clear liveActivityCurrentLanguage"
         )
+    }
+
+    // MARK: - Termination final ContentState + hygiene
+
+    /// Protects the final-end ContentState contract used on process exit and residual reaping:
+    /// visual is forced to `.userPaused`, language chrome prefers last-pushed then activity
+    /// content, and program metadata is preserved when available so Dynamic Island / Lock
+    /// Screen never flash a contradictory live frame as the surface dismisses.
+    ///
+    /// - SeeAlso: ``RadioLiveActivityManager/_test_finalEndContentState(lastPushed:activityState:fallbackLanguage:)``,
+    ///   ``RadioLiveActivityManager/handleAppWillTerminate()``,
+    ///   docs/Widget-Presentation-Dataflow.md (termination).
+    func testFinalEndContentStatePreservesLanguageAndForcesUserPaused() {
+        let metadata = StreamProgramMetadata(programTitle: "Evening Prayer", speaker: "Reader")
+        let lastPushed = makeContentState(
+            visualState: .playing,
+            metadata: metadata,
+            currentLanguage: "fi"
+        )
+        let activityState = makeContentState(
+            visualState: .playing,
+            metadata: StreamProgramMetadata(programTitle: "Stale", speaker: nil),
+            currentLanguage: "de"
+        )
+
+        let final = manager._test_finalEndContentState(
+            lastPushed: lastPushed,
+            activityState: activityState,
+            fallbackLanguage: "en"
+        )
+
+        XCTAssertEqual(final.visualState, .userPaused, "Final end frame must never claim live audio")
+        XCTAssertEqual(final.currentLanguage, "fi", "Last-pushed language is the chrome SSOT for end")
+        XCTAssertEqual(final.streamMetadata, metadata, "Last-pushed program metadata must be preserved")
+    }
+
+    /// When last-pushed is absent, final end content falls back to activity ContentState
+    /// language/metadata, then the explicit fallback language.
+    func testFinalEndContentStateFallsBackToActivityThenFallbackLanguage() {
+        let activityState = makeContentState(
+            visualState: .playing,
+            metadata: StreamProgramMetadata(programTitle: "From Activity", speaker: nil),
+            currentLanguage: "sv"
+        )
+
+        let fromActivity = manager._test_finalEndContentState(
+            lastPushed: nil,
+            activityState: activityState,
+            fallbackLanguage: "en"
+        )
+        XCTAssertEqual(fromActivity.visualState, .userPaused)
+        XCTAssertEqual(fromActivity.currentLanguage, "sv")
+        XCTAssertEqual(fromActivity.streamMetadata?.programTitle, "From Activity")
+
+        let fromFallback = manager._test_finalEndContentState(
+            lastPushed: nil,
+            activityState: nil,
+            fallbackLanguage: "et"
+        )
+        XCTAssertEqual(fromFallback.visualState, .userPaused)
+        XCTAssertEqual(fromFallback.currentLanguage, "et")
+        XCTAssertNil(fromFallback.streamMetadata)
+    }
+
+    /// ``handleAppWillTerminate()`` must clear local tracking under test isolation without
+    /// ActivityKit IPC (same cheap path as ``endActivity``).
+    func testHandleAppWillTerminateClearsLocalTrackingUnderTestIsolation() {
+        SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(.playing)
+        SharedPlayerManager.persistLiveActivityLanguageMirror("pl")
+        let stream = AsyncStream<ActivityContent<LutheranRadioLiveActivityAttributes.ContentState>> { _ in }
+        manager._test_beginObservingSyntheticContentUpdates(stream)
+        XCTAssertNotNil(manager.activityObservationTask)
+
+        manager.handleAppWillTerminate()
+
+        XCTAssertNil(manager.activityObservationTask)
+        XCTAssertNil(manager.currentActivity)
+        XCTAssertNil(manager.lastPushedContent)
+        XCTAssertNil(SharedPlayerManager.loadLiveActivityToggleVisualStateMirror())
+        XCTAssertNil(SharedPlayerManager.loadLiveActivityLanguageMirror())
     }
 
     /// Verifies restart semantics: a second synthetic stream cancels the prior observation

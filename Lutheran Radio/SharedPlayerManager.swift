@@ -1066,15 +1066,17 @@ actor SharedPlayerManager {
             }
         }
 
-        await MainActor.run {
-            switch liveActivityTeardown {
-            case .none:
-                break
-            case .graceful:
-                RadioLiveActivityManager.shared.endActivity()
-            case .immediate:
-                RadioLiveActivityManager.shared.handleAppWillTerminate()
-            }
+        // Await ActivityKit end while the process is still alive so cold-launch /
+        // privacy-clear teardown cannot race residual reaping or a later start.
+        // Process-exit uses the sync wait path in ``performSessionTeardownSynchronouslyForTermination``
+        // → ``handleAppWillTerminate()`` (run-loop pump + detached end).
+        switch liveActivityTeardown {
+        case .none:
+            break
+        case .graceful:
+            await RadioLiveActivityManager.shared.endActivityAsync(dismissalPolicy: .default)
+        case .immediate:
+            await RadioLiveActivityManager.shared.endActivityAsync(dismissalPolicy: .immediate)
         }
 
         await teardownNowPlayingSession()
@@ -1136,13 +1138,21 @@ actor SharedPlayerManager {
     /// Best-effort synchronous session teardown for process exit (`applicationWillTerminate`,
     /// `sceneDidDisconnect`) where async actor work may not complete before exit.
     ///
-    /// - Important: Metadata clear is the critical privacy step; widget reload is best-effort on the
-    ///   main thread before the process dies. Imperative **teardown** — no event stream at exit.
+    /// Order: liveness sentinel → Live Activity waited end (``handleAppWillTerminate``) →
+    /// cancel pending widget refresh → best-effort timeline reload → Now Playing clear.
+    ///
+    /// - Important: Live Activity end uses a **bounded wait** so Dynamic Island / Lock Screen
+    ///   do not retain a stale interactive ContentState after the process dies. Force-quit
+    ///   still bypasses this path; residuals are reaped on next cold launch.
+    /// - Important: Metadata clear is the critical privacy step; widget reload is best-effort
+    ///   on the main thread before the process dies. Imperative **teardown** — no event stream at exit.
     ///
     /// - SeeAlso: ``performSessionAndWidgetTeardown(includeFactoryReset:liveActivityTeardown:refreshWidgets:widgetVisualState:staleLiveness:)``,
+    ///   ``RadioLiveActivityManager/handleAppWillTerminate()``,
     ///   ``clearSystemNowPlayingMetadataSynchronously()``, ``WidgetRefreshTrigger``,
     ///   AppDelegate.applicationWillTerminate,
-    ///   SceneDelegate.sceneDidDisconnect, docs/Event-Driven-Refactor-Roadmap.md.
+    ///   SceneDelegate.sceneDidDisconnect,
+    ///   docs/Widget-Presentation-Dataflow.md, docs/Event-Driven-Refactor-Roadmap.md.
     nonisolated static func performSessionTeardownSynchronouslyForTermination() {
         forceStaleLivenessTimestampForTermination()
         // Termination callbacks run on the main thread; assumeIsolated satisfies strict Swift 6.
@@ -1161,7 +1171,7 @@ actor SharedPlayerManager {
         clearSystemNowPlayingMetadataSynchronously()
 
         #if DEBUG
-        print("[SessionTeardown] SYNC termination teardown — liveness staled, LA ended, widgets reloaded, Now Playing cleared")
+        print("[SessionTeardown] SYNC termination teardown — liveness staled, LA ended (waited), widgets reloaded, Now Playing cleared")
         #endif
     }
     #endif

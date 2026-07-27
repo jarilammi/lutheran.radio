@@ -81,12 +81,12 @@ Never derive presentation inside leaf view `body` for the three canonical surfac
 - **Process isolation**: the termination sentinel is **presentation / extension only**. Main-app cold launch, `play()`, resurrection, and restore use in-process sticky intent after ``resetToFactoryDefaultsOnLaunch()`` — never `lastUpdateTime == 0` as a play gate. Play status does not survive process death.
 - **On observed termination** (AppDelegate `applicationWillTerminate`, SceneDelegate `sceneDidDisconnect`, `UIApplication.willTerminateNotification`):
   - `SharedPlayerManager.forceStaleLivenessTimestampForTermination()` writes the sentinel `0` (and clears instant-feedback transients). Any subsequent Provider run immediately sees the passive path.
-  - `RadioLiveActivityManager.handleAppWillTerminate()` ends the activity with `.immediate` dismissal after a final `.userPaused` push.
+  - `RadioLiveActivityManager.handleAppWillTerminate()` **sweeps all** system-held Live Activities (not only the local `currentActivity` ref), pushes a final coherent `.userPaused` ContentState that **preserves last-known language chrome** (and program metadata when available), ends with `.immediate` dismissal, and **waits** (bounded run-loop pump + detached ActivityKit work) so process death cannot race an unfinished unstructured `Task`.
   - `WidgetRefreshManager.cancelPendingRefresh()` drops in-flight debounced work.
-- **After force-quit** (notification not delivered): no further main-process saves or `reloadTimelines` occur. The 60 s window is the worst-case staleness for the heuristic; after that widgets naturally render passive. The snapshot (`PersistedWidgetState`) is deliberately left behind (last-known visual + language + metadata).
+- **After force-quit** (notification not delivered): no further main-process saves or `reloadTimelines` occur. The 60 s window is the worst-case staleness for the heuristic; after that widgets naturally render passive. The snapshot (`PersistedWidgetState`) is deliberately left behind (last-known visual + language + metadata). Any Live Activity residual is **reaped on next cold launch** by `RadioLiveActivityManager.observeExistingActivities()` (final paused frame + immediate end — never re-adopted as interactive `.playing` without a live engine).
 - **Passive presentation**:
   - Widgets show icon + localized "tap_to_open" + `widgetURL(URL(string: "lutheranradio://open"))`. Tapping performs a clean, Apple-approved launch with no side-effect playback.
-  - Live Activity is removed from the Dynamic Island / Lock Screen (no lingering interactive surface).
+  - Live Activity is removed from the Dynamic Island / Lock Screen (no lingering interactive surface after a delivered terminate path, or after residual reaping on relaunch).
 - **Launch paths that remain allowed** (and are the *only* allowed paths):
   - Widget "tap to open" area (`widgetURL`).
   - Standard Live Activity tap-to-launch (while the LA is still present, before termination cleanup).
@@ -168,7 +168,7 @@ See `RadioLiveActivityManager.swift` (``beginObservingActivityEvents(_:)``, ``ac
 - **PersistedWidgetState is never bypassed** for widget display, liveness, or relaunch decisions. All providers, `loadSharedState`, and `isMainAppProcessRecentlyActive` continue to read it.
 - Live Activity visual state can be (and is) derived from in-memory SPM values without requiring a `UserDefaults` write in the common path.
 - An `Activity.update` is sent only when `(visualState, streamMetadata)` differs from the last pushed value.
-- Termination cleanup (`handleAppWillTerminate`, `forceStaleLivenessTimestampForTermination`, `endActivity(.immediate)`) is unchanged.
+- Termination cleanup (`handleAppWillTerminate` with waited system end, `forceStaleLivenessTimestampForTermination`, cold-launch residual reaping in `observeExistingActivities`) must remain correct: no interactive LA after process death on delivered paths; residuals reaped on relaunch.
 - Widget observable behavior (timeline entries, "tap_to_open" after quit, program title in snapshots) is unchanged.
 
 ### Background Playing Considerations

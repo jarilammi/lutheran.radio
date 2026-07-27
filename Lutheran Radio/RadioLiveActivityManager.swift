@@ -9,6 +9,7 @@
 
 @unsafe @preconcurrency import ActivityKit
 import Foundation
+import os      // OSAllocatedUnfairLock for termination-path ActivityKit end wait
 import UIKit   // For UIApplication.willTerminateNotification (termination observer) and related lifecycle.
 import WidgetSurface
 
@@ -40,10 +41,11 @@ import WidgetSurface
 /// started on normal paths.
 ///
 /// In addition, the manager consumes the Live Activity attribute events
-/// streams (`contentUpdates` yielding `ActivityContent<ContentState>` and
-/// `activityStateUpdates`). On yield we align `lastPushedContent` (for
-/// stronger diff-driven suppression) and react to terminal states for
-/// self-healing lifecycle.
+/// stream (`contentUpdates` yielding `ActivityContent<ContentState>`). On
+/// yield we align `lastPushedContent` (for stronger diff-driven suppression).
+/// Stream termination triggers local self-healing hygiene. Process exit and
+/// cold-launch residual reaping are handled by ``handleAppWillTerminate()``
+/// and ``observeExistingActivities()`` respectively.
 ///
 /// See the implementation of ``beginObservingActivityEvents(_:)`` and the
 /// "Live Activity Attribute Events Observation" section in
@@ -494,64 +496,133 @@ class RadioLiveActivityManager: ObservableObject {
         #endif
     }
 
-    /// Ends the current Live Activity (if any) and stops any fallback timer.
+    /// Ends every owned / system-held Live Activity and stops any fallback timer.
     ///
-    /// The final pushed state is `.userPaused` (with no metadata) so that any transient
-    /// UI the system shows during dismissal does not claim the stream is still live.
+    /// ## Termination correctness (why this is not a fire-and-forget Task alone)
+    /// Historically `endActivity` cleared local refs then launched an unstructured
+    /// `Task { await activity.end(...) }`. On process exit (`applicationWillTerminate`,
+    /// `sceneDidDisconnect`, `willTerminateNotification`) that Task frequently never
+    /// ran before the process died, leaving Dynamic Island / Lock Screen with a stale
+    /// interactive `ContentState` (often still `.playing`). The cleanup path therefore:
+    /// 1. Sweeps **all** `Activity.activities` (not only `currentActivity`) so a nil local
+    ///    reference cannot leave system-held surfaces orphaned.
+    /// 2. Pushes a final coherent `.userPaused` ContentState that preserves last-known
+    ///    language chrome (and program metadata when available).
+    /// 3. On termination, **waits** for ActivityKit `update` + `end` via detached work
+    ///    + run-loop pumping so the system accepts dismissal before process death.
+    ///
+    /// While the main process remains alive (privacy clear, cold-launch hygiene), prefer
+    /// ``endActivityAsync(dismissalPolicy:)`` so callers can `await` completion. The
+    /// synchronous entry point remains for termination and call sites that cannot hop async.
     ///
     /// `dismissalPolicy`:
-    /// - `.default` (normal / clear paths): lets the system keep the ended activity visible
-    ///   for a grace period so the user sees the final paused state before it is removed.
-    /// - `.immediate` (termination path only): removes the activity surface right away.
+    /// - `.default` (privacy clear while process lives): system may keep the ended
+    ///   activity visible briefly so the user sees the final paused frame.
+    /// - `.immediate` (termination / cold-launch reap): removes the surface right away.
     ///
     /// **Why `.immediate` on termination (Cleanup Invariant)**:
     /// Once the main app process has exited there is no longer an in-process actor that can
     /// service `AppIntent` taps from the Live Activity or push fresh `ContentState` updates.
-    /// Leaving the LA visible would allow the ActivityKit / Chrono subsystem to continue
-    /// treating the surface as "active", potentially causing pings to the widget renderer
-    /// or presenting play controls that have no live backing process. Immediate dismissal
-    /// after the final `.userPaused` update stops that.
+    /// Leaving the LA visible would allow ActivityKit / Chrono to treat the surface as
+    /// active with no live backing process. Immediate dismissal after the final
+    /// `.userPaused` push stops that.
     ///
-    /// The user can still launch the app cleanly via home-screen widget "tap to open",
-    /// Control widget, app icon, or (while the LA is still present before termination)
+    /// The user can still launch the app via home-screen widget "tap to open", Control
+    /// widget, app icon, or (while the LA is still present before termination completes)
     /// the standard Live Activity tap-to-launch ("open") URL.
     ///
-    /// - Lifecycle: Also clears `lastPushedContent` so a future restart starts fresh.
-    /// - Note: Called on privacy clear (`clearAllLocalState`), on `applicationWillTerminate`,
-    ///   and on `willTerminateNotification`. Does **not** automatically end on user pause
-    ///   (a paused LA with a working play button is intentional for quick resume while the
-    ///   main process is alive).
-    /// - Precondition: Only the main app process calls this (widget processes never own
-    ///   the Activity instance).
-    /// - Important: Under `isRunningInUITestMode` (and DEBUG `isRunningUnderTest`) this
-    ///   performs only cheap local cleanup and nils references; the real `Activity.end`
-    ///   Task is skipped. This keeps unit tests fast even when a Live Activity was left
-    ///   behind by a prior simulator streaming session. See also the guards in
-    ///   `startActivity`, `updateCurrentActivity`, and `observeExistingActivities`.
-    /// - SeeAlso: `handleAppWillTerminate`, AppDelegate.applicationWillTerminate,
+    /// - Parameters:
+    ///   - dismissalPolicy: ActivityKit dismissal policy (default `.default`).
+    ///   - waitForSystemCompletion: When `true` (termination only), block the calling
+    ///     context briefly until ActivityKit end finishes or a short timeout elapses.
+    ///     Must not be used from paths that cannot afford run-loop pumping.
+    /// - Lifecycle: Clears `lastPushedContent`, durable LA mirrors, and observation so a
+    ///   future `startActivity` begins clean.
+    /// - Note: Does **not** end on user pause — a paused LA with a working play control
+    ///   is intentional while the main process is alive.
+    /// - Precondition: Main-app process only (widget processes never own the Activity).
+    /// - Important: Under `isRunningInUITestMode` / DEBUG `isRunningUnderTest` performs
+    ///   only cheap local cleanup; real ActivityKit IPC is skipped (test isolation).
+    /// - SeeAlso: ``endActivityAsync(dismissalPolicy:)``, ``handleAppWillTerminate()``,
+    ///   ``observeExistingActivities()``, AppDelegate.applicationWillTerminate,
     ///   SharedPlayerManager.forceStaleLivenessTimestampForTermination,
-    ///   ``isRunningUnderTest``, SharedPlayerManager.isRunningInUITestMode,
-    ///   RadioLiveActivityManagerTests, docs/Widget-Presentation-Dataflow.md (termination section + LA event-driven section).
-    func endActivity(dismissalPolicy: ActivityUIDismissalPolicy = .default) {
-        stopLocalUpdateTimer()
+    ///   SharedPlayerManager.performSessionTeardownSynchronouslyForTermination,
+    ///   RadioLiveActivityManagerTests, docs/Widget-Presentation-Dataflow.md,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    func endActivity(
+        dismissalPolicy: ActivityUIDismissalPolicy = .default,
+        waitForSystemCompletion: Bool = false
+    ) {
+        let prepared = prepareLocalLiveActivityEndState()
+        guard let prepared else { return }
 
-        // Cancel the attribute events observer (self-healing via the stream will
-        // also do this on terminal states, but explicit end must be immediate).
+        if waitForSystemCompletion {
+            endActivitiesWaitingForSystem(
+                prepared.activities,
+                finalContentState: prepared.finalContentState,
+                dismissalPolicy: dismissalPolicy
+            )
+        } else {
+            endActivitiesInBackground(
+                prepared.activities,
+                finalContentState: prepared.finalContentState,
+                dismissalPolicy: dismissalPolicy
+            )
+        }
+    }
+
+    /// Awaitable Live Activity end for session teardown while the process remains alive.
+    ///
+    /// Prefer this from ``SharedPlayerManager/performSessionAndWidgetTeardown`` (privacy
+    /// clear, cold-launch factory reset) so ActivityKit dismissal completes before later
+    /// work races with ``observeExistingActivities()`` re-query.
+    ///
+    /// - Parameter dismissalPolicy: ActivityKit dismissal policy.
+    /// - Postcondition: Local tracking cleared; every interactive system activity for this
+    ///   attribute type has been asked to end with a final coherent ContentState.
+    /// - SeeAlso: ``endActivity(dismissalPolicy:waitForSystemCompletion:)``,
+    ///   ``handleAppWillTerminate()``.
+    func endActivityAsync(dismissalPolicy: ActivityUIDismissalPolicy = .default) async {
+        let prepared = prepareLocalLiveActivityEndState()
+        guard let prepared else { return }
+
+        await endActivitiesAwaitingSystem(
+            prepared.activities,
+            finalContentState: prepared.finalContentState,
+            dismissalPolicy: dismissalPolicy
+        )
+    }
+
+    /// Local prep shared by sync/async end paths: cancel observation, build final
+    /// ContentState, clear mirrors, and collect system activities to dismiss.
+    ///
+    /// - Returns: Activities + final state when ActivityKit work must run; `nil` when
+    ///   test isolation short-circuits or there is nothing for the system to end.
+    private func prepareLocalLiveActivityEndState() -> (
+        activities: [Activity<LutheranRadioLiveActivityAttributes>],
+        finalContentState: LutheranRadioLiveActivityAttributes.ContentState
+    )? {
+        stopLocalUpdateTimer()
         activityEventObserver.cancel()
         activityObservationTask = nil
 
-        // Defense-in-depth UI test isolation.
-        // Prevents real Activity.update + .end IPCs (slow system service round-trips under LLDB
-        // when a Live Activity exists from a prior streaming session in the simulator).
-        // Matches the pattern used in startActivity / updateCurrentActivity / observe.
-        // When this fires, clear local references so any subsequent clearAllLocalState
-        // or lifecycle caller sees a no-op end (currentActivity already nil).
+        // Snapshot language + metadata *before* clearing last-pushed so the final frame
+        // cannot invent chrome or drop the stream language the user was just watching.
+        let finalLanguage =
+            lastPushedContent?.currentLanguage
+            ?? currentActivity?.content.state.currentLanguage
+            ?? SharedPlayerManager.mainAppLiveActivityLanguageCode()
+        let finalMetadata =
+            lastPushedContent?.streamMetadata
+            ?? currentActivity?.content.state.streamMetadata
+
+        // Defense-in-depth UI test isolation — no ActivityKit IPC under test hosts.
         if SharedPlayerManager.isRunningInUITestMode {
             currentActivity = nil
             lastPushedContent = nil
             SharedPlayerManager.clearLiveActivityToggleVisualStateMirror()
             SharedPlayerManager.clearLiveActivityLanguageMirror()
-            return
+            return nil
         }
 
         #if DEBUG
@@ -560,41 +631,128 @@ class RadioLiveActivityManager: ObservableObject {
             lastPushedContent = nil
             SharedPlayerManager.clearLiveActivityToggleVisualStateMirror()
             SharedPlayerManager.clearLiveActivityLanguageMirror()
-            return
+            return nil
         }
         #endif
-        
-        guard let activity = currentActivity else {
-            lastPushedContent = nil
-            SharedPlayerManager.clearLiveActivityToggleVisualStateMirror()
-            SharedPlayerManager.clearLiveActivityLanguageMirror()
-            return
-        }
-        
-        currentActivity = nil   // clear immediately while still on the calling context
-        lastPushedContent = nil // Lifecycle: next startActivity begins with a clean last-pushed record
+
+        // Sweep system-held activities even when `currentActivity` is already nil
+        // (observe race, prior partial end, force-quit residual reaped on next launch).
+        let activities = collectActivitiesToEnd()
+
+        currentActivity = nil
+        lastPushedContent = nil
         SharedPlayerManager.clearLiveActivityToggleVisualStateMirror()
         SharedPlayerManager.clearLiveActivityLanguageMirror()
-        
-        // Capture safely once (standard Live Activity pattern under Swift 6)
-        nonisolated(unsafe) let safeActivityToEnd = activity
-        
-        Task {
-            let finalContentState = LutheranRadioLiveActivityAttributes.ContentState(
-                visualState: .userPaused,
-                streamMetadata: nil,
-                currentLanguage: SharedPlayerManager.mainAppLiveActivityLanguageCode()
-            )
-            
-            // All async Live Activity work in one async context – modern SSOT pattern
-            let content = ActivityContent(state: finalContentState, staleDate: nil)
-            unsafe await safeActivityToEnd.update(content)
-            unsafe await safeActivityToEnd.end(content, dismissalPolicy: dismissalPolicy)
-            
+
+        guard !activities.isEmpty else { return nil }
+
+        // Final frame: never claim live audio after the owning process is leaving or
+        // the session is torn down. Language chrome stays consistent with the last stream.
+        let finalContentState = LutheranRadioLiveActivityAttributes.ContentState(
+            visualState: .userPaused,
+            streamMetadata: finalMetadata,
+            currentLanguage: finalLanguage
+        )
+        return (activities, finalContentState)
+    }
+
+    /// Collects unique Live Activities to dismiss: the local `currentActivity` plus every
+    /// system-held activity for this attribute type.
+    ///
+    /// - Important: Relying solely on `currentActivity` leaves orphans when the local
+    ///   reference was cleared (or never set after process death) while ActivityKit still
+    ///   shows Dynamic Island / Lock Screen chrome.
+    private func collectActivitiesToEnd() -> [Activity<LutheranRadioLiveActivityAttributes>] {
+        var byId: [String: Activity<LutheranRadioLiveActivityAttributes>] = [:]
+        if let current = currentActivity {
+            byId[current.id] = current
+        }
+        for activity in Activity<LutheranRadioLiveActivityAttributes>.activities {
+            byId[activity.id] = activity
+        }
+        return Array(byId.values)
+    }
+
+    /// Fire-and-forget ActivityKit end while the process remains alive (privacy clear).
+    private func endActivitiesInBackground(
+        _ activities: [Activity<LutheranRadioLiveActivityAttributes>],
+        finalContentState: LutheranRadioLiveActivityAttributes.ContentState,
+        dismissalPolicy: ActivityUIDismissalPolicy
+    ) {
+        let content = ActivityContent(state: finalContentState, staleDate: nil)
+        for activity in activities {
+            nonisolated(unsafe) let safeActivity = activity
+            Task {
+                unsafe await safeActivity.update(content)
+                unsafe await safeActivity.end(content, dismissalPolicy: dismissalPolicy)
+                #if DEBUG
+                print("🔴 Live Activity ended (policy: \(dismissalPolicy)) id=\(safeActivity.id)")
+                #endif
+            }
+        }
+    }
+
+    /// Awaits ActivityKit final push + end for each activity (session teardown while alive).
+    private func endActivitiesAwaitingSystem(
+        _ activities: [Activity<LutheranRadioLiveActivityAttributes>],
+        finalContentState: LutheranRadioLiveActivityAttributes.ContentState,
+        dismissalPolicy: ActivityUIDismissalPolicy
+    ) async {
+        let content = ActivityContent(state: finalContentState, staleDate: nil)
+        for activity in activities {
+            nonisolated(unsafe) let safeActivity = activity
+            unsafe await safeActivity.update(content)
+            unsafe await safeActivity.end(content, dismissalPolicy: dismissalPolicy)
             #if DEBUG
-            print("🔴 Live Activity ended (policy: \(dismissalPolicy))")
+            print("🔴 Live Activity ended (awaited, policy: \(dismissalPolicy)) id=\(safeActivity.id)")
             #endif
         }
+    }
+
+    /// Termination-path end: ActivityKit work runs off the main actor and the caller
+    /// pumps the run loop until completion or a short timeout.
+    ///
+    /// - Why not a plain MainActor `Task`: `applicationWillTerminate` returns and the
+    ///   process may exit before a main-actor-scheduled Task runs. `Task.detached`
+    ///   plus run-loop pumping keeps the process alive long enough for `end` to land.
+    /// - Timeout: best-effort; if the system is wedged we still exit rather than hang.
+    /// - SeeAlso: ``handleAppWillTerminate()``, ``endActivity(dismissalPolicy:waitForSystemCompletion:)``.
+    private func endActivitiesWaitingForSystem(
+        _ activities: [Activity<LutheranRadioLiveActivityAttributes>],
+        finalContentState: LutheranRadioLiveActivityAttributes.ContentState,
+        dismissalPolicy: ActivityUIDismissalPolicy
+    ) {
+        let content = ActivityContent(state: finalContentState, staleDate: nil)
+        let remaining = OSAllocatedUnfairLock(initialState: activities.count)
+
+        for activity in activities {
+            nonisolated(unsafe) let safeActivity = activity
+            Task.detached {
+                unsafe await safeActivity.update(content)
+                unsafe await safeActivity.end(content, dismissalPolicy: dismissalPolicy)
+                remaining.withLock { $0 = max(0, $0 - 1) }
+                #if DEBUG
+                print("🔴 Live Activity ended (termination wait, policy: \(dismissalPolicy)) id=\(safeActivity.id)")
+                #endif
+            }
+        }
+
+        // Bound wait so a stuck ActivityKit service cannot hang process exit forever.
+        let deadline = Date().addingTimeInterval(2.0)
+        while Date() < deadline {
+            let done = remaining.withLock { $0 == 0 }
+            if done { break }
+            // Pump the current run loop so detached work and any main hops can complete
+            // while we still hold the termination callback stack.
+            RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.02))
+        }
+
+        #if DEBUG
+        let leftover = remaining.withLock { $0 }
+        if leftover > 0 {
+            print("🔴 Live Activity termination wait timed out with \(leftover) activity end(s) outstanding")
+        }
+        #endif
     }
     
     // MARK: - Local-Only Update Timer (demoted fallback only)
@@ -650,25 +808,36 @@ class RadioLiveActivityManager: ObservableObject {
     
     // MARK: - Privacy-Safe Helper Methods
     
-    /// Queries for a pre-existing Live Activity at singleton creation time so that
-    /// local heartbeat timer can be resumed (e.g. after a background/foreground cycle).
+    /// Runs once after singleton init to handle Live Activities that survived process death.
+    ///
+    /// ## Process-death residual reaping (not adoption)
+    /// Earlier behavior re-attached `Activity.activities.first` as `currentActivity` and
+    /// resumed attribute-events observation. That left Dynamic Island / Lock Screen showing
+    /// a stale interactive ContentState (often `.playing`) after force-quit or a missed
+    /// termination `end`, with no live audio engine behind it.
+    ///
+    /// Ownership rule: only this process lifetime may present an interactive LA. A fresh
+    /// process must **reap** residuals (final `.userPaused` + `.immediate` end) rather than
+    /// adopt them. New activities are created exclusively via ``startActivity()`` when
+    /// playback becomes authoritative (or background auto-start while playing).
+    ///
+    /// Background audio with a living process never re-enters this path — the singleton
+    /// is already initialized and `currentActivity` is managed by start/update/end.
     ///
     /// - Important: In DEBUG builds this performs a **robust test-environment short-circuit**
-    ///   using the shared ``isRunningUnderTest`` helper. A real `Activity<...>.activities.first`
-    ///   lookup is a synchronous call into ActivityKit's system services that becomes extremely slow under LLDB when any
-    ///   Live Activity is present in the simulator (e.g. the app was streaming). The guard
+    ///   using the shared ``isRunningUnderTest`` helper. A real `Activity.activities` lookup
+    ///   is a synchronous call into ActivityKit's system services that becomes extremely
+    ///   slow under LLDB when any Live Activity is present in the simulator. The guard
     ///   prevents that cost during unit tests and guarantees `currentActivity` starts as `nil`.
     ///
     /// - Note: The four-condition detection (env var + class + two processName checks)
     ///   is required because `XCTestConfigurationFilePath` is reliable under `xcodebuild`
     ///   but often absent from Xcode GUI test runs (Product → Test / test navigator).
-    ///   `NSClassFromString("XCTestCase")` matches the detection pattern used in
-    ///   `DirectStreamingPlayer`. The same helper is used by `startActivity()` and
-    ///   `updateCurrentActivity()` for defense-in-depth.
     ///
-    /// - SeeAlso: ``RadioLiveActivityManager/init()``, ``isRunningUnderTest``,
-    ///   RadioLiveActivityManagerTests.setUp, ``startLocalUpdateTimer()``,
-    ///   ``startActivity()``, <doc:Architecture>
+    /// - SeeAlso: ``RadioLiveActivityManager/init()``, ``endActivity(dismissalPolicy:waitForSystemCompletion:)``,
+    ///   ``startActivity()``, ``isRunningUnderTest``, RadioLiveActivityManagerTests.setUp,
+    ///   docs/Widget-Presentation-Dataflow.md (termination + residual reaping),
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md, <doc:Architecture>
     private func observeExistingActivities() {
         // Defense-in-depth using the SSOT: short-circuit before any ActivityKit query
         // or timer scheduling when launched under -UITestMode. This is critical because
@@ -692,24 +861,18 @@ class RadioLiveActivityManager: ObservableObject {
         }
         #endif
 
-        currentActivity = Activity<LutheranRadioLiveActivityAttributes>.activities.first
-
-        if let activity = currentActivity {
-            // Event-driven model: do not auto-start the fallback timer on resume.
-            // Any in-flight activity will receive pushes on the next visual or metadata
-            // event (or explicit foreground correction). Starting the timer here would
-            // re-introduce the old polling-driven behavior.
-            beginObservingActivityEvents(activity)
-            // Warm durable toggle visual + language mirrors from the system-held ContentState so
-            // the first lock-screen pause / language-sensitive optimistic path after process
-            // resume does not invert when extension memory is empty.
-            let state = activity.content.state
-            SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(state.visualState)
-            SharedPlayerManager.persistLiveActivityLanguageMirror(state.currentLanguage)
+        // Never adopt a prior-process residual as a live interactive surface. Reap it.
+        // ``endActivity`` sweeps all system activities, pushes a coherent final ContentState
+        // (paused + last language), and dismisses immediately. Local `currentActivity` stays
+        // nil until ``startActivity()`` runs for this process lifetime.
+        let residualCount = Activity<LutheranRadioLiveActivityAttributes>.activities.count
+        if residualCount > 0 {
             #if DEBUG
-            print("🔴 Found existing Live Activity: \(activity.id) — timer not auto-started (event-driven)")
+            print("🔴 Reaping \(residualCount) residual Live Activity surface(s) from prior process lifetime")
             #endif
-            // If a future caller needs the fallback, it can call startLocalUpdateTimer() explicitly.
+            endActivity(dismissalPolicy: .immediate, waitForSystemCompletion: false)
+        } else {
+            currentActivity = nil
         }
     }
 
@@ -815,12 +978,45 @@ class RadioLiveActivityManager: ObservableObject {
 
     /// Cancels synthetic attribute-events observation through the consolidated observer.
     ///
-    /// Mirrors the cancellation path in ``endActivity(dismissalPolicy:)`` without
-    /// clearing ``currentActivity`` / ``lastPushedContent`` upfront so termination
+    /// Mirrors the cancellation path in ``endActivity(dismissalPolicy:waitForSystemCompletion:)``
+    /// without clearing ``currentActivity`` / ``lastPushedContent`` upfront so termination
     /// hygiene can be asserted in isolation.
     func _test_cancelAttributeEventObservation() {
         activityEventObserver.cancel()
         activityObservationTask = nil
+    }
+
+    /// Pure final-end ContentState assembly for white-box tests (no ActivityKit IPC).
+    ///
+    /// Mirrors production language/metadata snapshotting in
+    /// ``prepareLocalLiveActivityEndState()``: last-pushed wins, then activity content,
+    /// then the supplied fallback language. Visual is always `.userPaused` so the final
+    /// frame never claims live audio after the owning process leaves.
+    ///
+    /// - Parameters:
+    ///   - lastPushed: Simulated ``lastPushedContent``.
+    ///   - activityState: Simulated `currentActivity?.content.state`.
+    ///   - fallbackLanguage: Stand-in for ``SharedPlayerManager/mainAppLiveActivityLanguageCode()``.
+    /// - Returns: The ContentState that would be pushed immediately before `Activity.end`.
+    /// - SeeAlso: ``endActivity(dismissalPolicy:waitForSystemCompletion:)``,
+    ///   ``handleAppWillTerminate()``, RadioLiveActivityManagerTests.
+    func _test_finalEndContentState(
+        lastPushed: LutheranRadioLiveActivityAttributes.ContentState?,
+        activityState: LutheranRadioLiveActivityAttributes.ContentState?,
+        fallbackLanguage: String
+    ) -> LutheranRadioLiveActivityAttributes.ContentState {
+        let language =
+            lastPushed?.currentLanguage
+            ?? activityState?.currentLanguage
+            ?? fallbackLanguage
+        let metadata =
+            lastPushed?.streamMetadata
+            ?? activityState?.streamMetadata
+        return LutheranRadioLiveActivityAttributes.ContentState(
+            visualState: .userPaused,
+            streamMetadata: metadata,
+            currentLanguage: language
+        )
     }
     #endif
 
@@ -940,22 +1136,26 @@ extension RadioLiveActivityManager {
         }
     }
     
-    /// Called on process termination paths (AppDelegate + willTerminateNotification).
+    /// Called on process termination paths (AppDelegate, SceneDelegate disconnect,
+    /// and `willTerminateNotification`).
     ///
-    /// Ends the activity (with `.immediate` dismissal) so a stale "playing with buttons"
-    /// preview does not remain on the lock screen / Dynamic Island after the main app
-    /// process has been killed (normal termination or best-effort on some abrupt paths).
+    /// Ends every system-held Live Activity with `.immediate` dismissal and **waits**
+    /// (bounded) for ActivityKit to accept the final `.userPaused` ContentState + end.
+    /// Without the wait, process death races the unstructured end Task and Dynamic Island
+    /// / Lock Screen keep a stale interactive frame (often still `.playing`).
     ///
-    /// Also called indirectly via the `UIApplication.willTerminateNotification` observer
-    /// registered in init for defense-in-depth when AppDelegate is not delivered.
+    /// Force-quit and OOM still bypass this callback; residual surfaces are reaped on the
+    /// next cold launch via ``observeExistingActivities()``.
     ///
-    /// - Cleanup Invariant: After this, no Live Activity owned by this process remains
-    ///   that the ActivityKit subsystem could continue to ping or render with active
-    ///   controls. The widget surfaces fall back to their passive "last-known + tap to open"
-    ///   presentation via the staled liveness sentinel.
+    /// - Cleanup Invariant: After a delivered termination callback returns, no interactive
+    ///   Live Activity for this app should remain that ActivityKit can treat as live.
+    ///   Widgets fall back to passive "tap to open" via the staled liveness sentinel.
+    /// - SeeAlso: ``endActivity(dismissalPolicy:waitForSystemCompletion:)``,
+    ///   ``observeExistingActivities()``, AppDelegate.applicationWillTerminate,
+    ///   SceneDelegate.sceneDidDisconnect,
+    ///   SharedPlayerManager.performSessionTeardownSynchronouslyForTermination,
+    ///   docs/Widget-Presentation-Dataflow.md.
     func handleAppWillTerminate() {
-        // Clean shutdown - end Live Activity immediately (see endActivity doc for rationale).
-        // The final state pushed inside endActivity is always .userPaused.
-        endActivity(dismissalPolicy: .immediate)
+        endActivity(dismissalPolicy: .immediate, waitForSystemCompletion: true)
     }
 }
