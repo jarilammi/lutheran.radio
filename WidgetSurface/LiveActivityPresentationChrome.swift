@@ -13,6 +13,16 @@
 //  bars. Centralizing those pure layout pieces keeps sizing contracts aligned and
 //  removes non-deterministic bar heights from the presentation tree.
 //
+//  ActivityKit / Dynamic Island layout contracts (system yellow compliance overlay):
+//  - Never place `ScrollView` (or other scroll containers) inside
+//    `DynamicIslandExpandedRegion` builders. Overflowing or scrollable content is a
+//    common trigger for the OS yellow highlight + prohibition mark on expanded DI.
+//  - Keep each expanded region’s intrinsic height within the system band. Prefer
+//    single-line metadata on DI, fixed modest frames, and a non-scrolling chip row
+//    that fits the available width (cap via ``alternativeStreamCodes`` `maxCount`).
+//  - Prefer plain `HStack` / `VStack` + `Button(intent:)` over nested scroll/fixed
+//    stacks that force clipping outside the Activity presentation bounds.
+//
 //  - SeeAlso: ``WidgetNowPlayingDisplayModel``, ``alternativeStreamCodes(current:availableLanguageCodes:maxCount:fallbackCodes:)``,
 //    docs/Widget-Presentation-Dataflow.md, docs/Widget-Functionality-Roadmap.md,
 //    CODING_AGENT.md (WidgetSurface surface area).
@@ -24,40 +34,65 @@ import SwiftUI
 
 /// Size tokens for Live Activity title + speaker slots (fixed-height contract).
 ///
-/// Dynamic Island center and Lock Screen share the same min/max frame heights so
-/// ICY metadata updates never insert or remove rows. Font weight differs slightly
-/// by surface for readability inside each system card.
+/// Dynamic Island and Lock Screen share the **same structural contract** (always
+/// two text slots, no conditional row insertion) so ICY metadata updates never
+/// reflow region geometry. DI uses **tighter** single-line heights than Lock Screen
+/// so the expanded center band stays inside ActivityKit size limits (avoids the
+/// system yellow layout-compliance overlay).
+///
+/// - Important: Do not reintroduce tall multi-line title frames or `ScrollView` in
+///   Dynamic Island expanded regions — that is a primary cause of OS yellow warnings.
+/// - SeeAlso: ``LiveActivityMetadataBlock``, `LutheranRadioWidgetLiveActivity`.
 public enum LiveActivityMetadataLayout: Sendable, Equatable {
-    /// Dynamic Island expanded `.center` region.
+    /// Dynamic Island expanded `.center` region (compact, single-line title).
     case dynamicIsland
-    /// Lock Screen Live Activity card.
+    /// Lock Screen Live Activity card (slightly taller, up to two title lines).
     case lockScreen
 
-    var titleFont: Font {
+    public var titleFont: Font {
         switch self {
-        case .dynamicIsland: .system(size: 10, weight: .semibold)
+        case .dynamicIsland: .system(size: 11, weight: .semibold)
         case .lockScreen: .footnote.weight(.semibold)
         }
     }
 
-    var speakerFont: Font {
+    public var speakerFont: Font {
         switch self {
         case .dynamicIsland: .system(size: 9)
         case .lockScreen: .caption2
         }
     }
 
-    var titleMinimumScaleFactor: CGFloat {
+    public var titleMinimumScaleFactor: CGFloat {
         switch self {
-        case .dynamicIsland: 0.85
+        case .dynamicIsland: 0.8
         case .lockScreen: 0.75
         }
     }
 
-    var titleMinHeight: CGFloat { 18 }
-    var titleMaxHeight: CGFloat { 22 }
-    var speakerMinHeight: CGFloat { 12 }
-    var speakerMaxHeight: CGFloat { 14 }
+    /// Title line limit. DI stays single-line so expanded center height stays legal.
+    public var titleLineLimit: Int {
+        switch self {
+        case .dynamicIsland: 1
+        case .lockScreen: 2
+        }
+    }
+
+    /// Fixed title slot height (min == max) so ICY churn never grows the region.
+    public var titleHeight: CGFloat {
+        switch self {
+        case .dynamicIsland: 14
+        case .lockScreen: 20
+        }
+    }
+
+    /// Fixed speaker slot height (always present; opacity gates empty lines).
+    public var speakerHeight: CGFloat {
+        switch self {
+        case .dynamicIsland: 12
+        case .lockScreen: 14
+        }
+    }
 }
 
 /// Fixed-height program title + speaker lines for Live Activity surfaces.
@@ -65,8 +100,9 @@ public enum LiveActivityMetadataLayout: Sendable, Equatable {
 /// Receives a pre-derived ``WidgetNowPlayingDisplayModel`` only. Does not read
 /// `PlayerVisualState` or raw `StreamProgramMetadata`.
 ///
-/// - Important: Keep the fixed min/max frame contract. Conditional row insertion
-///   destabilizes Dynamic Island and Lock Screen layout under ICY churn.
+/// - Important: Keep the fixed-height slot contract (always two lines). Conditional
+///   row insertion destabilizes Dynamic Island and Lock Screen layout under ICY churn.
+///   DI slots are intentionally shorter than Lock Screen — see ``LiveActivityMetadataLayout``.
 /// - SeeAlso: ``WidgetNowPlayingDisplayModel``, ``LiveActivityMetadataLayout``.
 public struct LiveActivityMetadataBlock: View {
     public let model: WidgetNowPlayingDisplayModel
@@ -83,14 +119,14 @@ public struct LiveActivityMetadataBlock: View {
                 .font(layout.titleFont)
                 .foregroundStyle(.primary)
                 .multilineTextAlignment(.center)
-                .lineLimit(2)
+                .lineLimit(layout.titleLineLimit)
                 .minimumScaleFactor(layout.titleMinimumScaleFactor)
                 .truncationMode(.tail)
                 .opacity(model.emphasis.opacity)
                 .frame(
                     maxWidth: .infinity,
-                    minHeight: layout.titleMinHeight,
-                    maxHeight: layout.titleMaxHeight,
+                    minHeight: layout.titleHeight,
+                    maxHeight: layout.titleHeight,
                     alignment: .center
                 )
 
@@ -102,8 +138,8 @@ public struct LiveActivityMetadataBlock: View {
                 .opacity(model.speakerVisible ? model.emphasis.opacity : 0)
                 .frame(
                     maxWidth: .infinity,
-                    minHeight: layout.speakerMinHeight,
-                    maxHeight: layout.speakerMaxHeight,
+                    minHeight: layout.speakerHeight,
+                    maxHeight: layout.speakerHeight,
                     alignment: .center
                 )
         }
@@ -166,25 +202,48 @@ public struct LiveActivityLanguageLabel: View {
     }
 }
 
-/// Vertical flag + name chip content for Live Activity stream-switch buttons.
+/// Density for Live Activity stream-switch chip chrome.
+///
+/// - ``flagAndName``: Vertical flag + localized name (Lock Screen row).
+/// - ``flagOnly``: Flag alone for the narrow Dynamic Island expanded bottom band.
+///   Names remain available via the accessibility label on the surrounding `Button`.
+///
+/// - Important: Dynamic Island expanded regions must not host scrollable chip rows.
+///   Prefer ``flagOnly`` + a non-scrolling `HStack` capped by ``alternativeStreamCodes``
+///   so the row always fits the system width without clipping (avoids OS yellow overlay).
+public enum LiveActivityStreamSwitchChipDensity: Sendable, Equatable {
+    /// Flag above truncated language name (Lock Screen).
+    case flagAndName
+    /// Flag only (Dynamic Island expanded bottom).
+    case flagOnly
+}
+
+/// Flag (+ optional name) chip content for Live Activity stream-switch buttons.
 ///
 /// Extension views wrap this in `Button(intent: LiveActivitySwitchStreamIntent(...))`.
 /// The chip itself is presentation-only so WidgetSurface never depends on AppIntents.
+///
+/// - Important: Do not place these chips inside a `ScrollView` in Dynamic Island
+///   expanded regions. Use a width-fitting non-scrolling `HStack` instead.
+/// - SeeAlso: ``LiveActivityStreamSwitchChipDensity``, ``alternativeStreamCodes(current:availableLanguageCodes:maxCount:fallbackCodes:)``.
 public struct LiveActivityStreamSwitchChipLabel: View {
     public let flag: String
     public let name: String
     public let nameFont: Font
+    public let density: LiveActivityStreamSwitchChipDensity
     public let showsBackground: Bool
 
     public init(
         flag: String,
         name: String,
         nameFont: Font = .system(size: 8, weight: .medium),
-        showsBackground: Bool = true
+        density: LiveActivityStreamSwitchChipDensity = .flagAndName,
+        showsBackground: Bool = false
     ) {
         self.flag = flag
         self.name = name
         self.nameFont = nameFont
+        self.density = density
         self.showsBackground = showsBackground
     }
 
@@ -192,29 +251,40 @@ public struct LiveActivityStreamSwitchChipLabel: View {
         languageCode: String,
         preferredStreamLanguage: String? = nil,
         nameFont: Font = .system(size: 8, weight: .medium),
-        showsBackground: Bool = true
+        density: LiveActivityStreamSwitchChipDensity = .flagAndName,
+        showsBackground: Bool = false
     ) {
         self.init(
             flag: displayFlag(for: languageCode),
             name: displayLanguageName(for: languageCode, preferredStreamLanguage: preferredStreamLanguage),
             nameFont: nameFont,
+            density: density,
             showsBackground: showsBackground
         )
     }
 
     public var body: some View {
-        VStack(spacing: 2) {
-            Text(flag)
-                .font(.system(size: 16))
-            Text(name)
-                .font(nameFont)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
+        Group {
+            switch density {
+            case .flagAndName:
+                VStack(spacing: 2) {
+                    Text(flag)
+                        .font(.system(size: 16))
+                    Text(name)
+                        .font(nameFont)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            case .flagOnly:
+                Text(flag)
+                    .font(.system(size: 18))
+                    .accessibilityLabel(name)
+            }
         }
-        .padding(.horizontal, showsBackground ? 8 : 0)
-        .padding(.vertical, showsBackground ? 4 : 0)
-        .background(showsBackground ? Color.gray.opacity(0.1) : Color.clear)
-        .cornerRadius(showsBackground ? 8 : 0)
+        .padding(.horizontal, showsBackground ? 6 : 2)
+        .padding(.vertical, showsBackground ? 3 : 0)
+        .background(showsBackground ? Color.gray.opacity(0.12) : Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: showsBackground ? 6 : 0, style: .continuous))
     }
 }
 

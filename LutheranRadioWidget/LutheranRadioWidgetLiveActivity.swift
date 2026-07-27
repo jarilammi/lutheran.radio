@@ -96,10 +96,22 @@ import WidgetSurface
 // - ``LiveActivityMetadataBlock`` / ``LiveActivityLanguageLabel`` / ``LiveActivityStreamSwitchChipLabel``
 // - ``LiveActivityEqualizerBars`` (deterministic heights; no random)
 // - ``alternativeStreamCodes(current:availableLanguageCodes:maxCount:fallbackCodes:)``
+// - ``liveActivityDynamicIslandAlternativeStreamMaxCount`` /
+//   ``liveActivityLockScreenAlternativeStreamMaxCount``
 // - ``liveActivityLockScreenControlSystemImage(from:)``
 //
 // Language names prefer the stream catalog via the membership-exception
 // ``displayLanguageName(for:)`` wrapper; pure ``displayFlag(for:)`` is WidgetSurface-only.
+//
+// Dynamic Island expanded layout contract (ActivityKit compliance):
+// - No `ScrollView` (or other scroll containers) in any expanded region.
+// - Language chips live in expanded `.bottom` as a non-scrolling `HStack` of
+//   ``LiveActivityStreamSwitchChipDensity/flagOnly`` chips, capped by
+//   ``liveActivityDynamicIslandAlternativeStreamMaxCount``.
+// - Center is status + fixed-height metadata only (no chip row).
+// - Trailing is a single play/pause control (no stacked equalizer under the button).
+// Violating these size/hierarchy rules produces the system yellow highlight +
+// prohibition mark on the expanded island (not an app status colour).
 //
 // See the file header and docs/Widget-Presentation-Dataflow.md for the snapshot contract.
 
@@ -113,16 +125,24 @@ private func getStreamFlag(_ code: String) -> String {
     displayFlag(for: code)
 }
 
-/// Up to 4 alternative language codes for DI / Lock Screen quick-switch rows.
+/// Alternative language codes for Live Activity quick-switch rows.
 ///
 /// Pure selection via ``alternativeStreamCodes``; catalog codes come from
-/// ``SharedPlayerManager/availableStreams``.
+/// ``SharedPlayerManager/availableStreams``. `maxCount` must match the surface:
+/// Dynamic Island uses a tighter cap so a non-scrolling chip row always fits.
 ///
-/// - SeeAlso: ``alternativeStreamCodes(current:availableLanguageCodes:maxCount:fallbackCodes:)``.
-private func getAlternativeStreams(current: String) -> [String] {
+/// - Parameter maxCount: Layout cap (DI vs Lock Screen constants from WidgetSurface).
+/// - SeeAlso: ``alternativeStreamCodes(current:availableLanguageCodes:maxCount:fallbackCodes:)``,
+///   ``liveActivityDynamicIslandAlternativeStreamMaxCount``,
+///   ``liveActivityLockScreenAlternativeStreamMaxCount``.
+private func getAlternativeStreams(
+    current: String,
+    maxCount: Int = liveActivityLockScreenAlternativeStreamMaxCount
+) -> [String] {
     alternativeStreamCodes(
         current: current,
-        availableLanguageCodes: SharedPlayerManager.shared.availableStreams.map(\.languageCode)
+        availableLanguageCodes: SharedPlayerManager.shared.availableStreams.map(\.languageCode),
+        maxCount: maxCount
     )
 }
 
@@ -321,135 +341,125 @@ struct LutheranRadioLiveActivityWidget: Widget {
             // Explicit return required once the closure body contains statements (let bindings)
             // before the DynamicIsland builder expression. The multi-trailing-closure call
             // no longer qualifies as an implicit-return single-expression closure.
+            // Expanded Dynamic Island layout (ActivityKit-compliant):
+            // - leading: compact brand + current language (no stacked LIVE row)
+            // - trailing: single play/pause control (no equalizer stack under the button)
+            // - center: status + fixed-height metadata only (no chip row, no ScrollView)
+            // - bottom: non-scrolling flag-only language chips + equalizer / Local Only
+            // AGENT NOTE: Never reintroduce ScrollView, tall multi-line stacks, or more
+            // than ``liveActivityDynamicIslandAlternativeStreamMaxCount`` chips here —
+            // those trigger the OS yellow layout-compliance overlay on expanded DI.
             return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    HStack(spacing: 8) {
+                    HStack(spacing: 6) {
                         ZStack {
                             // Background tint for radio glyph: green when actively playing, gray otherwise.
                             // Uses hoisted `isPlaying` (derived once above) instead of re-reading visualState.
                             Circle()
                                 .fill(isPlaying ? Color.green.opacity(0.2) : Color.gray.opacity(0.2))
-                                .frame(width: 32, height: 32)
+                                .frame(width: 28, height: 28)
 
                             // Non-control decorative radio icon tint (per PlayerVisualState policy for
                             // buttonTintColor outside primary controls). Uses hoisted `radioIconTint`.
                             Image(systemName: "radio")
-                                .foregroundColor(radioIconTint)
-                                .font(.system(size: 16, weight: .medium))
+                                .foregroundStyle(radioIconTint)
+                                .font(.system(size: 14, weight: .medium))
                         }
 
-                        VStack(alignment: .leading, spacing: 2) {
+                        VStack(alignment: .leading, spacing: 1) {
                             Text(LocalizedStringKey("lutheran_radio_title"))
-                                .font(.caption)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.primary)
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
 
                             LiveActivityLanguageLabel(
                                 flag: getStreamFlag(currentLanguage),
-                                name: getLanguageName(currentLanguage)
+                                name: getLanguageName(currentLanguage),
+                                flagFont: .system(size: 10),
+                                nameFont: .system(size: 9, weight: .medium),
+                                spacing: 2
                             )
-
-                            // LIVE indicator presence driven by hoisted isPlaying (pure visual decision).
-                            // The actual semantic "actively streaming" flag lives on PlayerVisualState.
-                            if isPlaying {
-                                HStack(spacing: 2) {
-                                    Circle()
-                                        .fill(Color.red)
-                                        .frame(width: 4, height: 4)
-                                        .opacity(0.8)
-                                    Text(String(localized: "LIVE", defaultValue: "LIVE", table: "Localizable"))
-                                        .font(.system(size: 8, weight: .bold))
-                                        .foregroundColor(.red)
-                                        .lineLimit(1)
-                                }
-                            }
                         }
                     }
                 }
 
                 DynamicIslandExpandedRegion(.trailing) {
-                    VStack(spacing: 8) {
-                        Button(intent: LiveActivityTogglePlaybackIntent()) {
-                            ZStack {
-                                // Control button exclusively uses the once-computed narrow controlPres
-                                // (glyph + tint). This is the canonical pattern for play/pause affordances.
-                                Circle()
-                                    .fill(controlPres.tint.opacity(0.2))
-                                    .frame(width: 44, height: 44)
+                    // Single control only — stacking equalizer bars under a 44pt target
+                    // overflows the trailing band and contributes to system layout warnings.
+                    Button(intent: LiveActivityTogglePlaybackIntent()) {
+                        ZStack {
+                            // Control button exclusively uses the once-computed narrow controlPres
+                            // (glyph + tint). This is the canonical pattern for play/pause affordances.
+                            Circle()
+                                .fill(controlPres.tint.opacity(0.2))
+                                .frame(width: 36, height: 36)
 
-                                Image(systemName: controlPres.systemImage)
-                                    .font(.title3)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(controlPres.tint)
-                            }
-                        }
-                        .buttonStyle(.plain)
-
-                        // Deterministic equalizer bars (WidgetSurface); presence gated by isPlaying.
-                        if isPlaying {
-                            LiveActivityEqualizerBars(style: .expandedTrailing, isPlaying: isPlaying)
+                            Image(systemName: controlPres.systemImage)
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(controlPres.tint)
                         }
                     }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(
+                        isPlaying
+                            ? String(localized: "status_paused", defaultValue: "Paused", table: "Localizable")
+                            : String(localized: "Play", defaultValue: "Play", table: "Localizable")
+                    )
                 }
 
                 DynamicIslandExpandedRegion(.center) {
                     // statusPres and metadataModel are computed once at the outer dynamicIsland level.
-                    VStack(spacing: 6) {
-                        VStack(spacing: 2) {
-                            Text(statusPres.text)
-                                .font(.caption)
-                                .fontWeight(.medium)
-                                .foregroundStyle(statusPres.foreground)
+                    // Language chips intentionally live in `.bottom` (full width, no ScrollView).
+                    VStack(spacing: 2) {
+                        Text(statusPres.text)
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(statusPres.foreground)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
 
-                            LiveActivityMetadataBlock(model: metadataModel, layout: .dynamicIsland)
-                        }
-
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 12) {
-                                ForEach(getAlternativeStreams(current: currentLanguage), id: \.self) { langCode in
-                                    Button(intent: LiveActivitySwitchStreamIntent(languageCode: langCode)) {
-                                        LiveActivityStreamSwitchChipLabel(
-                                            flag: getStreamFlag(langCode),
-                                            name: getLanguageName(langCode),
-                                            nameFont: .system(size: 8, weight: .medium),
-                                            showsBackground: true
-                                        )
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                            }
-                            .padding(.horizontal)
-                        }
+                        LiveActivityMetadataBlock(model: metadataModel, layout: .dynamicIsland)
                     }
                 }
 
                 DynamicIslandExpandedRegion(.bottom) {
-                    HStack {
-                        // Status indicator closes over the hoisted statusPres from the outer closure.
-                        HStack(spacing: 4) {
-                            Circle()
-                                .fill(statusPres.background)
-                                .frame(width: 6, height: 6)
-                            Text(statusPres.text)
-                                .font(.system(size: 10, weight: .medium))
-                                .foregroundColor(.secondary)
+                    // Full-width non-scrolling chip row + decorative equalizer / privacy label.
+                    // Flag-only density + DI maxCount keep intrinsic width inside the island.
+                    // Why no ScrollView: ActivityKit rejects scroll containers in expanded
+                    // regions with the system yellow compliance overlay (and prohibition mark).
+                    HStack(spacing: 10) {
+                        ForEach(
+                            getAlternativeStreams(
+                                current: currentLanguage,
+                                maxCount: liveActivityDynamicIslandAlternativeStreamMaxCount
+                            ),
+                            id: \.self
+                        ) { langCode in
+                            Button(intent: LiveActivitySwitchStreamIntent(languageCode: langCode)) {
+                                LiveActivityStreamSwitchChipLabel(
+                                    flag: getStreamFlag(langCode),
+                                    name: getLanguageName(langCode),
+                                    density: .flagOnly,
+                                    showsBackground: false
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(getLanguageName(langCode))
                         }
 
-                        Spacer()
+                        Spacer(minLength: 4)
 
-                        // Animation bars (or "Local Only" privacy label) use the hoisted `isPlaying`.
-                        // This is a pure presentation decision; the bars are decorative equalizer UI.
-                        // "Local Only" appears only when not actively playing (semantic presence).
                         if isPlaying {
                             LiveActivityEqualizerBars(style: .expandedBottom, isPlaying: isPlaying)
                         } else {
                             HStack(spacing: 2) {
                                 Image(systemName: "lock.fill")
                                     .font(.system(size: 8))
-                                    .foregroundColor(.green)
+                                    .foregroundStyle(.green)
                                 Text(LocalizedStringKey("Local Only"))
                                     .font(.system(size: 8, weight: .medium))
-                                    .foregroundColor(.green)
+                                    .foregroundStyle(.green)
+                                    .lineLimit(1)
                             }
                         }
                     }
@@ -537,9 +547,9 @@ struct LutheranRadioLiveActivityWidget: Widget {
 /// Language switching and playback toggle use the two Live Activity AppIntents.
 ///
 /// - Important: Rendered inside a system card with limited vertical space above
-///   the swipe affordance. Use flexible frames, line limits, and modest min-heights
-///   to avoid clipping. (Contrast with Dynamic Island regions, which have their own
-///   sizing and already use ScrollView for the language alternatives.)
+///   the swipe affordance. Use flexible frames, line limits, and modest fixed slot
+///   heights to avoid clipping. Language alternatives use a plain non-scrolling
+///   `HStack` (same rule as Dynamic Island expanded `.bottom` — never `ScrollView`).
 ///
 /// - Note: Dimensions are intentionally smaller than the corresponding values in
 ///   `WidgetMetadataLayout` used by the large home widget.
@@ -569,9 +579,9 @@ struct LutheranRadioLiveActivityWidget: Widget {
 ///   docs/Widget-Presentation-Dataflow.md, <doc:Architecture>, `RadioLiveActivityManager`.
 ///
 /// AGENT NOTE: The shared display model must remain in use for title/speaker stability.
-/// Prefer flexible frames + `lineLimit`/`minimumScaleFactor` over tall fixed minHeight.
+/// Prefer fixed modest slot heights + `lineLimit`/`minimumScaleFactor` over tall frames.
 /// Test lock-screen presentation (not only DI or canvas previews). The language row
-/// uses plain buttons and explicit horizontal padding.
+/// uses plain non-scrolling buttons (flag+name density) with explicit horizontal padding.
 struct LockScreenLiveActivityView: View {
     let context: ActivityViewContext<LutheranRadioLiveActivityAttributes>
     
@@ -637,14 +647,22 @@ struct LockScreenLiveActivityView: View {
 
             LiveActivityMetadataBlock(model: metadataModel, layout: .lockScreen)
 
-            // Language row + play button (clean, no ScrollView, no pills)
+            // Language row + play button (non-scrolling HStack; flag+name density).
+            // Cap via ``liveActivityLockScreenAlternativeStreamMaxCount`` — never ScrollView.
             HStack(spacing: 12) {
-                ForEach(getAlternativeStreams(current: currentLanguage), id: \.self) { langCode in
+                ForEach(
+                    getAlternativeStreams(
+                        current: currentLanguage,
+                        maxCount: liveActivityLockScreenAlternativeStreamMaxCount
+                    ),
+                    id: \.self
+                ) { langCode in
                     Button(intent: LiveActivitySwitchStreamIntent(languageCode: langCode)) {
                         LiveActivityStreamSwitchChipLabel(
                             flag: getStreamFlag(langCode),
                             name: getLanguageName(langCode),
                             nameFont: .system(size: 9, weight: .medium),
+                            density: .flagAndName,
                             showsBackground: false
                         )
                     }

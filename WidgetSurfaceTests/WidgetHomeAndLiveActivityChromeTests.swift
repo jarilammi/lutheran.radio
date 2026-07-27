@@ -5,10 +5,13 @@
 //  Created by Jari Lammi on 24.7.2026.
 //
 //  Pure presentation contracts for alternative stream codes, equalizer geometry,
-//  and Lock Screen control glyph mapping. No SharedPlayerManager / AppIntents.
+//  metadata slot sizing, and Lock Screen control glyph mapping.
+//  No SharedPlayerManager / AppIntents.
 //
 //  - SeeAlso: ``alternativeStreamCodes(current:availableLanguageCodes:maxCount:fallbackCodes:)``,
-//    ``LiveActivityEqualizerStyle``, ``liveActivityLockScreenControlSystemImage(from:)``,
+//    ``liveActivityDynamicIslandAlternativeStreamMaxCount``,
+//    ``LiveActivityMetadataLayout``, ``LiveActivityEqualizerStyle``,
+//    ``liveActivityLockScreenControlSystemImage(from:)``,
 //    docs/Widget-Presentation-Dataflow.md.
 //
 
@@ -60,6 +63,41 @@ struct AlternativeStreamCodesTests {
             maxCount: 4
         )
         #expect(codes.isEmpty)
+    }
+
+    /// Dynamic Island cap stays strictly below Lock Screen so non-scrolling DI chips fit.
+    @Test func dynamicIslandMaxCountIsTighterThanLockScreen() {
+        #expect(liveActivityDynamicIslandAlternativeStreamMaxCount == 3)
+        #expect(liveActivityLockScreenAlternativeStreamMaxCount == 4)
+        #expect(
+            liveActivityDynamicIslandAlternativeStreamMaxCount
+                < liveActivityLockScreenAlternativeStreamMaxCount
+        )
+    }
+
+    /// Default maxCount matches Lock Screen constant when omitted.
+    @Test func defaultMaxCountMatchesLockScreenConstant() {
+        let codes = alternativeStreamCodes(
+            current: "en",
+            availableLanguageCodes: ["en", "de", "fi", "sv", "et", "nb", "da"]
+        )
+        #expect(codes.count == liveActivityLockScreenAlternativeStreamMaxCount)
+        #expect(codes == ["de", "fi", "sv", "et"])
+    }
+}
+
+// MARK: - Live Activity metadata slot contract
+
+struct LiveActivityMetadataLayoutTests {
+
+    /// DI uses single-line, shorter fixed slots than Lock Screen (ActivityKit height band).
+    @Test func dynamicIslandSlotsAreTighterThanLockScreen() {
+        let di = LiveActivityMetadataLayout.dynamicIsland
+        let lock = LiveActivityMetadataLayout.lockScreen
+        #expect(di.titleLineLimit == 1)
+        #expect(lock.titleLineLimit == 2)
+        #expect(di.titleHeight < lock.titleHeight)
+        #expect(di.speakerHeight <= lock.speakerHeight)
     }
 }
 

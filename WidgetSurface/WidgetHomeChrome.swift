@@ -21,6 +21,19 @@ import SwiftUI
 
 // MARK: - Alternative stream codes (pure)
 
+/// Default max alternative codes for Lock Screen Live Activity language rows.
+public let liveActivityLockScreenAlternativeStreamMaxCount: Int = 4
+
+/// Default max alternative codes for Dynamic Island expanded language chips.
+///
+/// Intentionally lower than Lock Screen: expanded DI bottom is a fixed-width
+/// non-scrolling band. More chips force overflow and trigger the OS yellow
+/// ActivityKit layout-compliance overlay.
+///
+/// - SeeAlso: ``alternativeStreamCodes(current:availableLanguageCodes:maxCount:fallbackCodes:)``,
+///   ``LiveActivityStreamSwitchChipDensity/flagOnly``.
+public let liveActivityDynamicIslandAlternativeStreamMaxCount: Int = 3
+
 /// Returns up to `maxCount` language codes for Live Activity quick-switch rows.
 ///
 /// Prefers the caller's authoritative catalog (`availableLanguageCodes`), excluding
@@ -30,15 +43,19 @@ import SwiftUI
 /// - Parameters:
 ///   - current: Active language code to exclude from the result.
 ///   - availableLanguageCodes: Catalog codes (e.g. from stream list), in display order.
-///   - maxCount: Layout cap for DI center ScrollView and Lock Screen HStack (default 4).
+///   - maxCount: Layout cap for non-scrolling chip rows. Use
+///     ``liveActivityDynamicIslandAlternativeStreamMaxCount`` for Dynamic Island and
+///     ``liveActivityLockScreenAlternativeStreamMaxCount`` for Lock Screen (default 4).
 ///   - fallbackCodes: Used only when `availableLanguageCodes` is empty.
 /// - Returns: Ordered alternative codes, length at most `maxCount`.
+/// - Important: Dynamic Island must not wrap the result in a `ScrollView`. Cap
+///   `maxCount` so a plain `HStack` always fits the expanded bottom band.
 /// - SeeAlso: ``displayFlag(for:)``, ``displayLanguageName(for:preferredStreamLanguage:)``,
 ///   docs/Widget-Functionality-Roadmap.md.
 public func alternativeStreamCodes(
     current: String,
     availableLanguageCodes: [String],
-    maxCount: Int = 4,
+    maxCount: Int = liveActivityLockScreenAlternativeStreamMaxCount,
     fallbackCodes: [String] = ["en", "de", "fi", "sv", "et"]
 ) -> [String] {
     let source = availableLanguageCodes.isEmpty ? fallbackCodes : availableLanguageCodes
