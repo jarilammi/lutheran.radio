@@ -476,7 +476,8 @@ final class WidgetIntentContractExtensionTests: XCTestCase {
         XCTAssertEqual(snapshot?.currentLanguage, target.languageCode)
     }
 
-    /// Playing snapshot: LA switch updates language without flipping to pause/prePlay.
+    /// Playing snapshot: LA switch updates language; App Group snapshot may keep `.playing`
+    /// while Live Activity ContentState uses Connecting honesty for destination chrome.
     func testPerformLiveActivityStreamSwitchFromPlayingUpdatesLanguageOnly() async {
         let streams = manager.availableStreams
         guard streams.count >= 2 else {
@@ -496,6 +497,73 @@ final class WidgetIntentContractExtensionTests: XCTestCase {
         let snapshot = SharedPlayerManager.loadPersistedWidgetState()
         XCTAssertEqual(snapshot?.visualState, .playing, "Playing visual must survive LA optimistic switch")
         XCTAssertEqual(snapshot?.currentLanguage, target.languageCode)
+    }
+
+    /// LA stream switch warms durable language mirror with destination before main-app drain.
+    ///
+    /// Protects lock-screen flag chrome: ActivityKit may be empty under test isolation, but
+    /// the language mirror (and Connecting toggle mirror when leaving play) must still advance
+    /// so extension-hosted second taps and main-app stamp paths do not fall through to a
+    /// prior-language preferredWidgetLanguage default.
+    func testPerformLiveActivityStreamSwitchWarmsLanguageMirrorAndConnectingToggleMirror() async {
+        let streams = manager.availableStreams
+        guard streams.count >= 2 else {
+            XCTFail("Stub stream list must include ≥2 languages")
+            return
+        }
+        let source = streams[0]
+        let target = streams[1]
+
+        SharedPlayerManager.removeAllLocalPlaybackKeys()
+        SharedPlayerManager.persistWidgetSnapshot(visualState: .playing, language: source.languageCode)
+        SharedPlayerManager.persistLiveActivityLanguageMirror(source.languageCode)
+        SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(.playing)
+
+        let switched = await WidgetIntentExecution.performLiveActivityStreamSwitch(
+            languageCode: target.languageCode
+        )
+        XCTAssertTrue(switched)
+
+        XCTAssertEqual(
+            SharedPlayerManager.loadLiveActivityLanguageMirror(),
+            target.languageCode,
+            "Destination language must warm durable LA language mirror at intent time"
+        )
+        XCTAssertEqual(
+            SharedPlayerManager.loadLiveActivityToggleVisualStateMirror(),
+            .prePlay,
+            "Leaving play for stream switch must pin toggle mirror to Connecting (not false playing)"
+        )
+        XCTAssertEqual(
+            SharedPlayerManager.languageForLiveActivityOrWidgetOptimistic(),
+            target.languageCode
+        )
+    }
+
+    /// Paused LA stream switch keeps pause chrome on the toggle mirror while updating language.
+    func testPerformLiveActivityStreamSwitchWhilePausedPreservesToggleMirrorPause() async {
+        let streams = manager.availableStreams
+        guard streams.count >= 2 else {
+            XCTFail("Stub stream list must include ≥2 languages")
+            return
+        }
+        let source = streams[0]
+        let target = streams[1]
+
+        SharedPlayerManager.persistWidgetSnapshot(visualState: .userPaused, language: source.languageCode)
+        SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(.userPaused)
+
+        let switched = await WidgetIntentExecution.performLiveActivityStreamSwitch(
+            languageCode: target.languageCode
+        )
+        XCTAssertTrue(switched)
+
+        XCTAssertEqual(SharedPlayerManager.loadLiveActivityLanguageMirror(), target.languageCode)
+        XCTAssertEqual(
+            SharedPlayerManager.loadLiveActivityToggleVisualStateMirror(),
+            .userPaused,
+            "Sticky pause must not invent Connecting on language-only switch"
+        )
     }
 
     /// Cold extension (empty session): known-language LA switch still succeeds.

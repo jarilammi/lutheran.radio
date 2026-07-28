@@ -53,11 +53,19 @@ import WidgetSurface
 /// reference implementation inside the shared `WidgetEventObserver`.
 ///
 /// ## Update Invariant
-/// `Activity.update(...)` occurs **iff** candidate differs from `lastPushedContent`
-/// (or force/initial). Intent-path optimistic toggles publish ContentState and align
-/// ``lastPushedContent`` first so a rapid second tap resolves from the post-toggle
-/// glyph; the sequential sticky lock / soft-silence path then converges actor state
-/// without requiring a special suppress rule that would block legitimate visual changes.
+/// `Activity.update(...)` occurs **iff** the candidate is not suppressible under
+/// ``shouldSuppressLiveActivityContentPush(lastPushed:candidate:ownedContentLanguage:)``
+/// (or force/initial). Suppress is an **optimization**, not a source of truth:
+/// owned `Activity.content.state.currentLanguage` beats optimistic / aspirational
+/// ``lastPushedContent`` — never skip a push when the candidate language is non-empty
+/// and differs from the surface the system still holds.
+///
+/// Intent-path optimistic toggles publish ContentState and align ``lastPushedContent``
+/// so a rapid second tap resolves from the post-toggle glyph; the sequential sticky
+/// lock / soft-silence path then converges actor state. Stream-switch optimistic
+/// language alignment may advance ``lastPushedContent`` before system acceptance;
+/// the owned-language gate + ``ensureAuthoritativeLanguageContentIfNeeded()`` keep
+/// lock-screen flag/name on the destination until `content.state` matches.
 ///
 /// ## Test Isolation
 /// All real Activity creation/update/timer paths are short-circuited under
@@ -96,21 +104,29 @@ class RadioLiveActivityManager: ObservableObject {
     ///   RadioLiveActivityManagerTests
     internal private(set) var updateTimer: Timer?
 
-    /// Last successfully pushed Live Activity content.
+    /// In-process suppress memory for Live Activity content pushes.
     ///
     /// Purely in-memory (main-app process only). Used to implement the
-    /// "push only when rendered content would actually change" rule.
+    /// "push only when rendered content would actually change" rule — an
+    /// **optimization**, not proof that the on-screen activity holds this state.
     ///
     /// - Lifecycle: Cleared in `endActivity` and on termination paths.
     /// - Update Invariant: Compared with the freshly derived candidate before
-    ///   every `Activity.update`. Equality uses `ContentState`'s `Hashable`/`Equatable`
-    ///   (visualState + streamMetadata + currentLanguage). Language-only stream
-    ///   switches therefore force an ActivityKit push.
+    ///   every `Activity.update`, **subject to** the owned-content language gate
+    ///   (``shouldSuppressLiveActivityContentPush``). Equality uses `ContentState`'s
+    ///   `Hashable`/`Equatable` (visualState + streamMetadata + currentLanguage).
+    /// - After a real `Activity.update`, memory is re-seeded from the activity’s
+    ///   `content.state` (system-observed), not from an unverified aspirational candidate.
+    /// - Optimistic intent paths may advance this without system acceptance; suppress
+    ///   still forces a push when `currentActivity?.content.state.currentLanguage`
+    ///   differs from the candidate language.
     /// - Never persisted as a snapshot. Widgets continue to use `PersistedWidgetState`.
     ///   Durable LA visual/language App Group mirrors are separate cross-process signals.
     ///
     /// Exposed as `internal private(set)` for white-box testing of the change-detection
     /// behavior (parallel to `updateTimer`).
+    /// - SeeAlso: ``updateCurrentActivity()``, ``ensureAuthoritativeLanguageContentIfNeeded()``,
+    ///   ``handleActivityContentUpdate(_:)``, docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     internal private(set) var lastPushedContent: LutheranRadioLiveActivityAttributes.ContentState?
 
     /// Long-lived task observing the Live Activity attribute events stream.
@@ -341,7 +357,7 @@ class RadioLiveActivityManager: ObservableObject {
     }
 
     /// Pushes the latest `PlayerVisualState` + metadata + stream language into the active
-    /// Live Activity, **but only when the rendered content would actually change**.
+    /// Live Activity, **but only when suppress policy allows**.
     ///
     /// This is the central implementation of the event-driven Live Activity model.
     /// Callers (SPM visual transitions, `didUpdateStreamMetadata`, coordinator, lifecycle,
@@ -361,20 +377,28 @@ class RadioLiveActivityManager: ObservableObject {
     /// **with the destination language** via ``resetToPrePlayForNewStream`` before `.streamSwitch`
     /// stop so language chrome does not lag one content push behind visual Connecting.
     ///
+    /// **Suppress + owned language:** Deduplication uses
+    /// ``shouldSuppressLiveActivityContentPush(lastPushed:candidate:ownedContentLanguage:)``.
+    /// Owned `content.state.currentLanguage` beats optimistic ``lastPushedContent`` so a failed
+    /// or unaccepted language push cannot stick the lock-screen flag on the prior stream.
+    ///
+    /// **Post-update suppress memory:** After `Activity.update`, ``lastPushedContent`` is
+    /// re-seeded from the activity’s observed `content.state` (not an unverified aspirational
+    /// candidate). Language still mismatched → suppress memory keeps the system-held language
+    /// so a further non-suppressed push remains eligible.
+    ///
     /// - Precondition: Must be called on the main actor (the method is `@MainActor`).
-    /// - Postcondition: If an update is sent, `lastPushedContent` holds the exact
-    ///   `ContentState` that was pushed. Durable visual + language App Group mirrors are
-    ///   warmed even when ActivityKit IPC is suppressed.
-    /// - Note: Silently no-ops if no activity is active. Duplicate content (visual +
-    ///   metadata + language) is suppressed by the `lastPushedContent` comparison.
-    /// - Update Invariant: `Activity.update` occurs **iff** the candidate differs from
-    ///   `lastPushedContent` (or the call is treated as initial). Language-only stream
-    ///   switches must not be suppressed.
+    /// - Postcondition: If an update is sent, `lastPushedContent` reflects the
+    ///   system-observed `content.state` after the await. Durable visual + language App Group
+    ///   mirrors are warmed even when ActivityKit IPC is suppressed.
+    /// - Note: Silently no-ops if no activity is active.
     /// - Important: Uses `nonisolated(unsafe)` + `unsafe` because `Activity.update` is
     ///   not Sendable in the current SDK; the capture of the Activity is done only after
     ///   we hold a strong local reference on the main actor.
     ///
-    /// - SeeAlso: `startActivity()`, `SharedPlayerManager.setPlaying`,
+    /// - SeeAlso: `startActivity()`, ``ensureAuthoritativeLanguageContentIfNeeded()``,
+    ///   ``ensureAuthoritativePlayingContentIfNeeded()``,
+    ///   `SharedPlayerManager.setPlaying`,
     ///   `SharedPlayerManager.resetToPrePlayForNewStream`,
     ///   `SharedPlayerManager.didUpdateStreamMetadata`,
     ///   `performActualSave` (the bridge call remains for widget parity),
@@ -406,21 +430,19 @@ class RadioLiveActivityManager: ObservableObject {
         // Prefer the live in-memory values (decoupled path). Persisted is only fallback
         // so that an early push before the first mutation still has something reasonable.
         // This is the key separation: LA does not *require* a PersistedWidgetState write.
-        var visualState = await manager.currentVisualState
-        // Stream-switch hold / in-flight connect: never advertise `.playing` on LA while the
-        // engine is tearing down or attaching a new secured item. Coordinators establish
-        // `.prePlay` before silent stop; this clamp is defense-in-depth against a race where
-        // language chrome updates before visual SSOT settles.
-        let streamSwitchHold = await manager.isStreamSwitchPrePlayHoldActive
-        let connecting = await manager.isConnectingPlayback
-        if (streamSwitchHold || connecting) && visualState == .playing {
-            visualState = .prePlay
-        }
+        //
+        // Metadata + language first (await hops). Visual/hold/connecting are sampled **last**
+        // so a concurrent ``setPlaying()`` cannot be overwritten by a stale Connecting publish
+        // (yellow lock-screen chrome stuck while audio is already playing — stream-switch
+        // optimistic prePlay + fire-and-forget performActualSave LA refresh race).
         let streamMetadata = await manager.currentStreamMetadata
             ?? SharedPlayerManager.loadPersistedStreamMetadata()
         // Hold-time target language advances with Connecting so the card never shows the
         // prior stream’s flag/name for one content push while the engine model is still old.
         let currentLanguage = await manager.liveActivityLanguageCodeForContentPush()
+
+        // Authoritative visual at push time — after all prior suspension points.
+        let visualState = await Self.resolveContentPushVisual(from: manager)
         
         let candidate = LutheranRadioLiveActivityAttributes.ContentState(
             visualState: visualState,
@@ -434,28 +456,250 @@ class RadioLiveActivityManager: ObservableObject {
         // extension session snapshot empty.
         SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(visualState)
         SharedPlayerManager.persistLiveActivityLanguageMirror(currentLanguage)
-        
-        // Event-driven deduplication (core of the responsiveness improvement).
-        // We only cross the ActivityKit IPC boundary when the user-visible LA content
-        // (status pill, control glyph/tint, program title/speaker, language chrome)
-        // would actually differ. Intent-path optimistic toggles pre-align ``lastPushedContent``
-        // to the same visual the actor will reach after sticky lock / setPlaying, so the
-        // engine-complete refresh commonly hits this suppress path (no thrash, no double IPC).
-        if let last = lastPushedContent, last == candidate {
+
+        // Owned surface language beats optimistic suppress memory (lock-screen flag SSOT).
+        let ownedLanguage = activity.content.state.currentLanguage
+        if Self.shouldSuppressLiveActivityContentPush(
+            lastPushed: lastPushedContent,
+            candidate: candidate,
+            ownedContentLanguage: ownedLanguage
+        ) {
             #if DEBUG
-            print("🔴 Live Activity update suppressed (content unchanged)")
+            print("🔴 Live Activity update suppressed (content unchanged; owned language=\(ownedLanguage))")
             #endif
             return
         }
-        
-        lastPushedContent = candidate
-        
+
+        // SAFETY: Activity.update is not Sendable in the current SDK; capture a local
+        // strong reference on the main actor before the await (same pattern as end paths).
         nonisolated(unsafe) let safeActivity = activity
         unsafe await safeActivity.update(.init(state: candidate, staleDate: nil))
-        
+
+        // Suppress memory from system-observed content, never unverified aspirational candidate.
+        let accepted = safeActivity.content.state
+        lastPushedContent = Self.suppressMemoryAfterActivityUpdate(
+            candidate: candidate,
+            acceptedSystemContent: accepted
+        )
+
         #if DEBUG
-        print("🔴 Live Activity updated locally: visualState=\(visualState) language=\(currentLanguage)")
+        print(
+            "🔴 Live Activity update: id=\(safeActivity.id) candidateLang=\(candidate.currentLanguage) " +
+            "contentStateLang=\(accepted.currentLanguage) visual=\(accepted.visualState) " +
+            "candidateVisual=\(candidate.visualState)"
+        )
+        if !candidate.currentLanguage.isEmpty,
+           accepted.currentLanguage != candidate.currentLanguage {
+            print(
+                "🔴 Live Activity language not yet on surface (candidate=\(candidate.currentLanguage) " +
+                "content.state=\(accepted.currentLanguage)); suppress memory kept system-held language"
+            )
+        }
         #endif
+    }
+
+    /// Whether ActivityKit IPC should be skipped for this candidate.
+    ///
+    /// Suppress is an optimization: when the candidate language is non-empty and differs
+    /// from the owned activity’s `content.state.currentLanguage`, never suppress — even if
+    /// in-process ``lastPushedContent`` already equals the candidate (optimistic stream-switch
+    /// alignment or a push that did not change the visible surface).
+    ///
+    /// - Parameters:
+    ///   - lastPushed: In-process suppress memory (may be optimistically advanced).
+    ///   - candidate: Freshly built ContentState for this push.
+    ///   - ownedContentLanguage: Owned `Activity.content.state.currentLanguage` when an
+    ///     interactive activity is tracked; pass `nil` only when unowned (gate skipped).
+    /// - Returns: `true` when the push would be a no-op against both suppress memory and
+    ///   owned language chrome.
+    /// - SeeAlso: ``updateCurrentActivity()``, ``ensureAuthoritativeLanguageContentIfNeeded()``,
+    ///   ``_test_wouldSuppressLiveActivityUpdate(visualState:streamMetadata:currentLanguage:ownedContentLanguage:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    static func shouldSuppressLiveActivityContentPush(
+        lastPushed: LutheranRadioLiveActivityAttributes.ContentState?,
+        candidate: LutheranRadioLiveActivityAttributes.ContentState,
+        ownedContentLanguage: String?
+    ) -> Bool {
+        // Language is the hard requirement for lock-screen flag/name/alt-current chrome.
+        if !candidate.currentLanguage.isEmpty,
+           let owned = ownedContentLanguage,
+           owned != candidate.currentLanguage {
+            return false
+        }
+        if let last = lastPushed, last == candidate {
+            return true
+        }
+        return false
+    }
+
+    /// Chooses suppress-memory ContentState after a real `Activity.update` await.
+    ///
+    /// Never claims the candidate language when the system-held `content.state` still
+    /// reports a different language (failed acceptance, stale handle, silent no-op).
+    ///
+    /// - Parameters:
+    ///   - candidate: Content that was submitted to ActivityKit.
+    ///   - acceptedSystemContent: Re-read `activity.content.state` after the update await.
+    /// - Returns: Value to store in ``lastPushedContent``.
+    /// - SeeAlso: ``updateCurrentActivity()``, ``shouldSuppressLiveActivityContentPush(lastPushed:candidate:ownedContentLanguage:)``.
+    static func suppressMemoryAfterActivityUpdate(
+        candidate: LutheranRadioLiveActivityAttributes.ContentState,
+        acceptedSystemContent: LutheranRadioLiveActivityAttributes.ContentState
+    ) -> LutheranRadioLiveActivityAttributes.ContentState {
+        if !candidate.currentLanguage.isEmpty,
+           acceptedSystemContent.currentLanguage != candidate.currentLanguage {
+            return acceptedSystemContent
+        }
+        // Prefer system-observed full tuple when language matched (or candidate language empty).
+        return acceptedSystemContent
+    }
+
+    /// Whether a language reconcile push is needed for an interactive Live Activity.
+    ///
+    /// - Parameters:
+    ///   - destinationLanguage: ``SharedPlayerManager/liveActivityLanguageCodeForContentPush()``.
+    ///   - ownedContentLanguage: Owned `content.state.currentLanguage`, if any.
+    ///   - lastPushedLanguage: ``lastPushedContent`` language, if any.
+    /// - Returns: `true` when destination is non-empty and either owned or last-pushed
+    ///   language does not match (or is missing).
+    /// - Note: Does not invent `.playing` — only decides whether language chrome needs a push.
+    /// - SeeAlso: ``ensureAuthoritativeLanguageContentIfNeeded()``.
+    static func shouldEnsureAuthoritativeLanguageContent(
+        destinationLanguage: String,
+        ownedContentLanguage: String?,
+        lastPushedLanguage: String?
+    ) -> Bool {
+        guard !destinationLanguage.isEmpty else { return false }
+        if ownedContentLanguage != destinationLanguage { return true }
+        if lastPushedLanguage != destinationLanguage { return true }
+        return false
+    }
+
+    /// Samples actor visual + stream-switch/connect gates into the ContentState visual for a push.
+    ///
+    /// Stream-switch hold / in-flight connect: never advertise `.playing` while the engine is
+    /// tearing down or attaching. When hold is clear and the actor is already `.playing`,
+    /// Connecting must not win (stale concurrent sampler safety).
+    ///
+    /// - Parameter manager: Main-app ``SharedPlayerManager`` instance.
+    /// - Returns: Visual to encode in the next ActivityKit candidate.
+    /// - SeeAlso: ``updateCurrentActivity()``, ``SharedPlayerManager/setPlaying()``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    private static func resolveContentPushVisual(from manager: SharedPlayerManager) async -> PlayerVisualState {
+        let visualState = await manager.currentVisualState
+        let streamSwitchHold = await manager.isStreamSwitchPrePlayHoldActive
+        let connecting = await manager.isConnectingPlayback
+        return resolveContentPushVisual(
+            visualState: visualState,
+            streamSwitchHold: streamSwitchHold,
+            isConnectingPlayback: connecting
+        )
+    }
+
+    /// Pure ContentState visual policy for Live Activity pushes (testable without ActivityKit).
+    ///
+    /// - Parameters:
+    ///   - visualState: Actor ``currentVisualState`` sample.
+    ///   - streamSwitchHold: ``isStreamSwitchPrePlayHoldActive``.
+    ///   - isConnectingPlayback: ``isConnectingPlayback`` (start pipeline without audible play).
+    /// - Returns: `.prePlay` when hold/connect would lie about playing; otherwise `visualState`.
+    /// - SeeAlso: ``updateCurrentActivity()``, ``_test_resolveContentPushVisual(visualState:streamSwitchHold:isConnectingPlayback:)``.
+    static func resolveContentPushVisual(
+        visualState: PlayerVisualState,
+        streamSwitchHold: Bool,
+        isConnectingPlayback: Bool
+    ) -> PlayerVisualState {
+        if (streamSwitchHold || isConnectingPlayback) && visualState == .playing {
+            return .prePlay
+        }
+        return visualState
+    }
+
+    /// If the actor is authoritatively playing (no hold/connect) but ``lastPushedContent`` still
+    /// shows Connecting, push again so lock-screen chrome cannot stick on yellow stream-switch
+    /// optimistic / deferred-setPlaying prePlay.
+    ///
+    /// Called from ``SharedPlayerManager/setPlaying()`` after the primary media-surface refresh.
+    ///
+    /// - SeeAlso: ``updateCurrentActivity()``, ``ensureAuthoritativeLanguageContentIfNeeded()``,
+    ///   ``recordOptimisticStreamSwitchContent(language:visualState:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    @MainActor
+    func ensureAuthoritativePlayingContentIfNeeded() async {
+        if SharedPlayerManager.isRunningInUITestMode { return }
+        #if DEBUG
+        if isRunningUnderTest { return }
+        #endif
+        guard currentActivity != nil else { return }
+
+        let manager = SharedPlayerManager.shared
+        let visual = await manager.currentVisualState
+        guard visual == .playing else { return }
+        let hold = await manager.isStreamSwitchPrePlayHoldActive
+        let connecting = await manager.isConnectingPlayback
+        guard !hold, !connecting else { return }
+
+        if lastPushedContent?.visualState == .prePlay {
+            #if DEBUG
+            print("🔴 Live Activity reconciling stale Connecting → authoritative playing")
+            #endif
+            await updateCurrentActivity()
+        }
+    }
+
+    /// Ensures interactive Live Activity `ContentState.currentLanguage` matches
+    /// ``SharedPlayerManager/liveActivityLanguageCodeForContentPush()`` when they diverge.
+    ///
+    /// Peer to ``ensureAuthoritativePlayingContentIfNeeded()`` for **language chrome**
+    /// (flag / name / alt-stream “current”). Does **not** invent `.playing` — Connecting
+    /// (``.prePlay``) remains honest during stream-switch hold; only the language field is
+    /// forced to the destination stamp / stream attach.
+    ///
+    /// Wire points (main app):
+    /// - After media-surface Live Activity update/start (``refreshAllMediaSurfaces``)
+    /// - After ``setPlaying()``’s playing reconcile
+    /// - After optimistic stream-switch ContentState when this process owns the activity
+    ///
+    /// Relies on ``shouldSuppressLiveActivityContentPush`` so optimistic ``lastPushedContent``
+    /// that already claims destination language cannot block a push when owned
+    /// `content.state.currentLanguage` is still the prior stream.
+    ///
+    /// - Precondition: Main actor; interactive ``currentActivity`` may be nil (no-op).
+    /// - Postcondition: When a push was needed, ``updateCurrentActivity()`` ran (subject to
+    ///   test isolation and ActivityKit acceptance). Cheap no-op when owned + last language
+    ///   already match destination.
+    /// - SeeAlso: ``updateCurrentActivity()``, ``shouldEnsureAuthoritativeLanguageContent(destinationLanguage:ownedContentLanguage:lastPushedLanguage:)``,
+    ///   ``recordOptimisticStreamSwitchContent(language:visualState:)``,
+    ///   ``SharedPlayerManager/liveActivityLanguageCodeForContentPush()``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
+    ///   docs/Widget-Functionality-Roadmap.md (Live Activity language chrome SSOT).
+    @MainActor
+    func ensureAuthoritativeLanguageContentIfNeeded() async {
+        if SharedPlayerManager.isRunningInUITestMode { return }
+        #if DEBUG
+        if isRunningUnderTest { return }
+        #endif
+        guard currentActivity != nil else { return }
+
+        let destination = await SharedPlayerManager.shared.liveActivityLanguageCodeForContentPush()
+        let ownedLanguage = currentActivity?.content.state.currentLanguage
+        let lastLanguage = lastPushedContent?.currentLanguage
+
+        guard Self.shouldEnsureAuthoritativeLanguageContent(
+            destinationLanguage: destination,
+            ownedContentLanguage: ownedLanguage,
+            lastPushedLanguage: lastLanguage
+        ) else {
+            return
+        }
+
+        #if DEBUG
+        print(
+            "🔴 Live Activity reconciling language chrome → destination=\(destination) " +
+            "owned=\(ownedLanguage ?? "nil") lastPushed=\(lastLanguage ?? "nil")"
+        )
+        #endif
+        await updateCurrentActivity()
     }
 
     /// Aligns in-memory ``lastPushedContent`` with an intent-path optimistic Live Activity visual.
@@ -474,7 +718,8 @@ class RadioLiveActivityManager: ObservableObject {
     ///   job (already written before this alignment).
     /// - Note: Does not call `Activity.update` — the intent path owns that IPC via
     ///   `Activity.activities` so extension-hosted and main-hosted toggles share one push site.
-    /// - SeeAlso: ``updateCurrentActivity()``, ``WidgetIntentExecution/performLiveActivityToggle()``,
+    /// - SeeAlso: ``updateCurrentActivity()``, ``recordOptimisticStreamSwitchContent(language:visualState:)``,
+    ///   ``WidgetIntentExecution/performLiveActivityToggle()``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     @MainActor
     func recordOptimisticToggleContent(visualState: PlayerVisualState) {
@@ -493,6 +738,56 @@ class RadioLiveActivityManager: ObservableObject {
         )
         #if DEBUG
         print("🔴 Live Activity lastPushedContent aligned to optimistic visual=\(visualState) language=\(language)")
+        #endif
+    }
+
+    /// Aligns in-memory ``lastPushedContent`` with an intent-path optimistic stream-language switch.
+    ///
+    /// Called from ``WidgetIntentExecution/pushOptimisticLiveActivityStreamSwitchContent(languageCode:visualState:)``
+    /// after ActivityKit content is published (or when no activity is visible). Destination
+    /// language + Connecting / preserved-pause visual match the optimistic ContentState so
+    /// main-app ``updateCurrentActivity()`` can suppress when the actor stamp **and** the
+    /// owned surface language converge to the same tuple.
+    ///
+    /// **Owned language still wins for suppress:** Aligning ``lastPushedContent`` to the
+    /// destination does **not** block a needed push when
+    /// `currentActivity?.content.state.currentLanguage` still differs — see
+    /// ``shouldSuppressLiveActivityContentPush(lastPushed:candidate:ownedContentLanguage:)``.
+    /// Callers should also invoke ``ensureAuthoritativeLanguageContentIfNeeded()`` after the
+    /// optimistic ActivityKit path when this process owns an interactive activity.
+    ///
+    /// Program metadata is cleared (same as the ActivityKit push) so a prior-stream title
+    /// cannot suppress a language-only destination push.
+    ///
+    /// - Parameters:
+    ///   - language: Destination stream language code for language chrome.
+    ///   - visualState: Optimistic control visual (typically `.prePlay` or `.userPaused`).
+    /// - Postcondition: ``lastPushedContent`` holds `visualState`, `nil` stream metadata, and
+    ///   `language` (in-process only — not proof of system acceptance).
+    /// - Note: Does not call `Activity.update` — the intent path owns ActivityKit IPC.
+    /// - SeeAlso: ``recordOptimisticToggleContent(visualState:)``, ``updateCurrentActivity()``,
+    ///   ``ensureAuthoritativeLanguageContentIfNeeded()``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
+    ///   docs/Widget-Functionality-Roadmap.md (Live Activity language chrome SSOT).
+    @MainActor
+    func recordOptimisticStreamSwitchContent(language: String, visualState: PlayerVisualState) {
+        guard !language.isEmpty else { return }
+        lastPushedContent = LutheranRadioLiveActivityAttributes.ContentState(
+            visualState: visualState,
+            streamMetadata: nil,
+            currentLanguage: language
+        )
+        #if DEBUG
+        let owned = currentActivity?.content.state.currentLanguage
+        if let owned, owned != language {
+            print(
+                "🔴 Live Activity lastPushedContent aligned to optimistic stream switch " +
+                "visual=\(visualState) language=\(language) (owned content.state still \(owned); " +
+                "suppress will not skip language reconcile)"
+            )
+        } else {
+            print("🔴 Live Activity lastPushedContent aligned to optimistic stream switch visual=\(visualState) language=\(language)")
+        }
         #endif
     }
 
@@ -1087,19 +1382,24 @@ class RadioLiveActivityManager: ObservableObject {
         publishActivityObservationTask()
     }
 
-    /// Returns whether ``updateCurrentActivity()`` would suppress an ActivityKit push because
-    /// ``lastPushedContent`` already matches the candidate. Performs no IPC.
+    /// Returns whether ``updateCurrentActivity()`` would suppress an ActivityKit push under
+    /// the production suppress policy (``lastPushedContent`` + owned language gate). Performs no IPC.
     ///
     /// - Parameters:
     ///   - visualState: Candidate visual state from the player SSOT.
     ///   - streamMetadata: Candidate ICY metadata (nil when absent).
     ///   - currentLanguage: Candidate stream language code (defaults to last-pushed language,
     ///     or ``SharedPlayerManager/mainAppLiveActivityLanguageCode()`` when unset).
-    /// - Returns: `true` when the candidate equals ``lastPushedContent``.
+    ///   - ownedContentLanguage: Simulated `currentActivity?.content.state.currentLanguage`.
+    ///     Defaults to `nil` (owned-language gate skipped — equality-only suppress).
+    /// - Returns: `true` when production would skip ActivityKit IPC for this candidate.
+    /// - SeeAlso: ``shouldSuppressLiveActivityContentPush(lastPushed:candidate:ownedContentLanguage:)``,
+    ///   ``shouldEnsureAuthoritativeLanguageContent(destinationLanguage:ownedContentLanguage:lastPushedLanguage:)``.
     func _test_wouldSuppressLiveActivityUpdate(
         visualState: PlayerVisualState,
         streamMetadata: StreamProgramMetadata?,
-        currentLanguage: String? = nil
+        currentLanguage: String? = nil,
+        ownedContentLanguage: String? = nil
     ) -> Bool {
         let language = currentLanguage
             ?? lastPushedContent?.currentLanguage
@@ -1109,10 +1409,38 @@ class RadioLiveActivityManager: ObservableObject {
             streamMetadata: streamMetadata,
             currentLanguage: language
         )
-        if let last = lastPushedContent, last == candidate {
-            return true
-        }
-        return false
+        return Self.shouldSuppressLiveActivityContentPush(
+            lastPushed: lastPushedContent,
+            candidate: candidate,
+            ownedContentLanguage: ownedContentLanguage
+        )
+    }
+
+    /// White-box seam for language-reconcile decision (no ActivityKit / no actor hop).
+    ///
+    /// - SeeAlso: ``shouldEnsureAuthoritativeLanguageContent(destinationLanguage:ownedContentLanguage:lastPushedLanguage:)``,
+    ///   ``ensureAuthoritativeLanguageContentIfNeeded()``.
+    func _test_shouldEnsureAuthoritativeLanguageContent(
+        destinationLanguage: String,
+        ownedContentLanguage: String?,
+        lastPushedLanguage: String?
+    ) -> Bool {
+        Self.shouldEnsureAuthoritativeLanguageContent(
+            destinationLanguage: destinationLanguage,
+            ownedContentLanguage: ownedContentLanguage,
+            lastPushedLanguage: lastPushedLanguage
+        )
+    }
+
+    /// White-box seam for post-update suppress-memory policy (no ActivityKit).
+    func _test_suppressMemoryAfterActivityUpdate(
+        candidate: LutheranRadioLiveActivityAttributes.ContentState,
+        acceptedSystemContent: LutheranRadioLiveActivityAttributes.ContentState
+    ) -> LutheranRadioLiveActivityAttributes.ContentState {
+        Self.suppressMemoryAfterActivityUpdate(
+            candidate: candidate,
+            acceptedSystemContent: acceptedSystemContent
+        )
     }
 
     /// Enables termination self-healing coverage in RadioLiveActivityManagerTests without

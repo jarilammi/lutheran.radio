@@ -167,6 +167,62 @@ struct WidgetSurfaceTests {
         #expect(resumed.currentLanguage == "fi")
     }
 
+    /// Optimistic stream-switch ContentState advances language and clears prior program metadata.
+    ///
+    /// Lock-screen language chips must update flag chrome without waiting for main-app attach,
+    /// and must not leave the prior stream's ICY title under the new flag.
+    @Test func contentStateReplacingStreamSwitchDestinationAdvancesLanguageAndClearsMetadata() {
+        let metadata = StreamProgramMetadata(programTitle: "Psaltaren 34", speaker: "Lutheran Radio på svenska")
+        let playing = LutheranRadioLiveActivityAttributes.ContentState(
+            visualState: .playing,
+            streamMetadata: metadata,
+            currentLanguage: "sv"
+        )
+        let connecting = playing.replacingStreamSwitchDestination(
+            language: "et",
+            visualState: .prePlay,
+            clearStreamMetadata: true
+        )
+        #expect(connecting.visualState == .prePlay)
+        #expect(connecting.currentLanguage == "et")
+        #expect(connecting.streamMetadata == nil)
+        #expect(connecting != playing)
+
+        let paused = LutheranRadioLiveActivityAttributes.ContentState(
+            visualState: .userPaused,
+            streamMetadata: metadata,
+            currentLanguage: "de"
+        )
+        let pausedSwitch = paused.replacingStreamSwitchDestination(
+            language: "fi",
+            visualState: .userPaused,
+            clearStreamMetadata: true
+        )
+        #expect(pausedSwitch.visualState == .userPaused)
+        #expect(pausedSwitch.currentLanguage == "fi")
+        #expect(pausedSwitch.streamMetadata == nil)
+    }
+
+    /// Stream-switch optimistic visual: playing → Connecting; sticky pause preserved.
+    @Test func optimisticLiveActivityVisualForStreamSwitchHonesty() {
+        #expect(
+            WidgetIntentCoordinators.optimisticLiveActivityVisualForStreamSwitch(from: .playing)
+                == .prePlay
+        )
+        #expect(
+            WidgetIntentCoordinators.optimisticLiveActivityVisualForStreamSwitch(from: .userPaused)
+                == .userPaused
+        )
+        #expect(
+            WidgetIntentCoordinators.optimisticLiveActivityVisualForStreamSwitch(from: .prePlay)
+                == .prePlay
+        )
+        #expect(
+            WidgetIntentCoordinators.optimisticLiveActivityVisualForStreamSwitch(from: .thermalPaused)
+                == .thermalPaused
+        )
+    }
+
     /// Older ActivityKit payloads without `currentLanguage` decode to `"en"` (stable default).
     @Test func contentStateDecodeDefaultsMissingLanguageToEnglish() throws {
         let metadata = StreamProgramMetadata(programTitle: "Vesper", speaker: "Cantor")

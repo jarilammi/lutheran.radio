@@ -306,4 +306,23 @@ public enum WidgetIntentCoordinators {
     ) -> String {
         persistedLanguage ?? preferredLanguage
     }
+
+    /// Optimistic Live Activity control visual for a stream-language switch.
+    ///
+    /// When the surface was actively playing, returns Connecting (``.prePlay``) so destination
+    /// language chrome can advance without claiming audible playback on the new stream (main-app
+    /// hold honesty). Sticky pause and other non-playing chrome are preserved as-is.
+    ///
+    /// - Parameter visualState: Current ContentState or session-snapshot visual.
+    /// - Returns: Visual to pair with destination language on optimistic ContentState push.
+    /// - SeeAlso: ``LutheranRadioLiveActivityAttributes/ContentState/replacingStreamSwitchDestination(language:visualState:clearStreamMetadata:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    public static func optimisticLiveActivityVisualForStreamSwitch(
+        from visualState: PlayerVisualState
+    ) -> PlayerVisualState {
+        if visualState.isActivelyPlaying {
+            return .prePlay
+        }
+        return visualState
+    }
 }

@@ -363,6 +363,250 @@ class RadioLiveActivityManagerTests: XCTestCase {
         )
     }
 
+    /// Content-push visual policy: hold/connect clamps playing → Connecting; clear hold keeps playing.
+    ///
+    /// Protects lock-screen chrome from advertising `.playing` mid stream-switch attach, and
+    /// from staying on yellow Connecting after ``setPlaying()`` cleared the hold (stale sampler).
+    func testResolveContentPushVisualHoldClampAndAuthoritativePlaying() {
+        XCTAssertEqual(
+            RadioLiveActivityManager.resolveContentPushVisual(
+                visualState: .playing,
+                streamSwitchHold: true,
+                isConnectingPlayback: false
+            ),
+            .prePlay,
+            "Stream-switch hold must force Connecting while engine may still report playing"
+        )
+        XCTAssertEqual(
+            RadioLiveActivityManager.resolveContentPushVisual(
+                visualState: .playing,
+                streamSwitchHold: false,
+                isConnectingPlayback: true
+            ),
+            .prePlay,
+            "Connect pipeline must force Connecting until audible setPlaying"
+        )
+        XCTAssertEqual(
+            RadioLiveActivityManager.resolveContentPushVisual(
+                visualState: .playing,
+                streamSwitchHold: false,
+                isConnectingPlayback: false
+            ),
+            .playing,
+            "Authoritative playing without hold/connect must publish green playing chrome"
+        )
+        XCTAssertEqual(
+            RadioLiveActivityManager.resolveContentPushVisual(
+                visualState: .prePlay,
+                streamSwitchHold: true,
+                isConnectingPlayback: false
+            ),
+            .prePlay
+        )
+        XCTAssertEqual(
+            RadioLiveActivityManager.resolveContentPushVisual(
+                visualState: .userPaused,
+                streamSwitchHold: false,
+                isConnectingPlayback: false
+            ),
+            .userPaused
+        )
+    }
+
+    /// Optimistic stream-switch alignment records destination language + Connecting and
+    /// clears program metadata so engine-complete matching candidates suppress.
+    ///
+    /// Protects lock-screen language chip latency: intent-path destination chrome must
+    /// land in ``lastPushedContent`` without requiring ActivityKit under test isolation.
+    /// When owned content language is unknown (`nil`), equality-only suppress still applies.
+    func testOptimisticStreamSwitchAlignmentRecordsDestinationAndSuppressesMatchingCandidate() async {
+        let metadata = StreamProgramMetadata(programTitle: "Psaltaren 34", speaker: "Speaker")
+        let playing = makeActivityContent(visualState: .playing, metadata: metadata, currentLanguage: "sv")
+        let stream = AsyncStream<ActivityContent<LutheranRadioLiveActivityAttributes.ContentState>> { continuation in
+            continuation.yield(playing)
+            continuation.finish()
+        }
+        manager._test_beginObservingSyntheticContentUpdates(stream)
+        let seeded = await waitUntil({ self.manager.lastPushedContent == playing.state })
+        XCTAssertTrue(seeded, "Precondition: lastPushedContent must carry playing + prior language")
+
+        manager.recordOptimisticStreamSwitchContent(language: "et", visualState: .prePlay)
+
+        XCTAssertEqual(manager.lastPushedContent?.visualState, .prePlay)
+        XCTAssertNil(
+            manager.lastPushedContent?.streamMetadata,
+            "Stream switch must clear prior-stream program metadata on optimistic alignment"
+        )
+        XCTAssertEqual(manager.lastPushedContent?.currentLanguage, "et")
+        XCTAssertTrue(
+            manager._test_wouldSuppressLiveActivityUpdate(
+                visualState: .prePlay,
+                streamMetadata: nil,
+                currentLanguage: "et"
+            ),
+            "Engine-complete Connecting + destination matching optimistic switch must suppress when owned language is unknown"
+        )
+        XCTAssertFalse(
+            manager._test_wouldSuppressLiveActivityUpdate(
+                visualState: .prePlay,
+                streamMetadata: nil,
+                currentLanguage: "sv"
+            ),
+            "Prior language must remain eligible to push (destination not yet matched)"
+        )
+    }
+
+    /// Suppress denied when owned ContentState language differs from the candidate language
+    /// even if optimistic ``lastPushedContent`` already equals the candidate.
+    ///
+    /// Protects the lock-screen flag defect class: aspirational suppress memory must not
+    /// leave the on-screen activity on the prior language when the system still holds it.
+    func testSuppressDeniedWhenOwnedContentLanguageDiffersFromCandidate() async {
+        let metadata = StreamProgramMetadata(programTitle: "Psaltaren 34", speaker: "Speaker")
+        let swedish = makeActivityContent(visualState: .playing, metadata: metadata, currentLanguage: "sv")
+        let stream = AsyncStream<ActivityContent<LutheranRadioLiveActivityAttributes.ContentState>> { continuation in
+            continuation.yield(swedish)
+            continuation.finish()
+        }
+        manager._test_beginObservingSyntheticContentUpdates(stream)
+        let seeded = await waitUntil({ self.manager.lastPushedContent == swedish.state })
+        XCTAssertTrue(seeded, "Precondition: lastPushedContent starts at prior language")
+
+        // Optimistic stream switch advances suppress memory to destination without system acceptance.
+        manager.recordOptimisticStreamSwitchContent(language: "de", visualState: .prePlay)
+        XCTAssertEqual(manager.lastPushedContent?.currentLanguage, "de")
+
+        XCTAssertFalse(
+            manager._test_wouldSuppressLiveActivityUpdate(
+                visualState: .prePlay,
+                streamMetadata: nil,
+                currentLanguage: "de",
+                ownedContentLanguage: "sv"
+            ),
+            "Owned content language still Swedish must force a non-suppressed destination push"
+        )
+        XCTAssertFalse(
+            RadioLiveActivityManager.shouldSuppressLiveActivityContentPush(
+                lastPushed: manager.lastPushedContent,
+                candidate: LutheranRadioLiveActivityAttributes.ContentState(
+                    visualState: .prePlay,
+                    streamMetadata: nil,
+                    currentLanguage: "de"
+                ),
+                ownedContentLanguage: "sv"
+            ),
+            "Pure policy: owned ≠ candidate language never suppresses"
+        )
+    }
+
+    /// Suppress allowed when owned content language, last-pushed, and candidate agree.
+    func testSuppressAllowedWhenOwnedLastPushedAndCandidateLanguageAgree() async {
+        let metadata = StreamProgramMetadata(programTitle: "Predigt", speaker: "Pastor")
+        let german = makeActivityContent(visualState: .playing, metadata: metadata, currentLanguage: "de")
+        let stream = AsyncStream<ActivityContent<LutheranRadioLiveActivityAttributes.ContentState>> { continuation in
+            continuation.yield(german)
+            continuation.finish()
+        }
+        manager._test_beginObservingSyntheticContentUpdates(stream)
+        let seeded = await waitUntil({ self.manager.lastPushedContent == german.state })
+        XCTAssertTrue(seeded)
+
+        XCTAssertTrue(
+            manager._test_wouldSuppressLiveActivityUpdate(
+                visualState: .playing,
+                streamMetadata: metadata,
+                currentLanguage: "de",
+                ownedContentLanguage: "de"
+            ),
+            "Matching owned + last + candidate language must suppress redundant IPC"
+        )
+        XCTAssertTrue(
+            RadioLiveActivityManager.shouldSuppressLiveActivityContentPush(
+                lastPushed: german.state,
+                candidate: german.state,
+                ownedContentLanguage: "de"
+            )
+        )
+    }
+
+    /// Language ensure decision pushes when destination differs from owned or last language.
+    ///
+    /// Pure harness (no ActivityKit): mirrors ``ensureAuthoritativeLanguageContentIfNeeded()``
+    /// preconditions used after stream-switch stamp / media-surface refresh / setPlaying.
+    func testLanguageEnsurePushesWhenDestinationDiffersFromOwnedOrLast() {
+        XCTAssertTrue(
+            manager._test_shouldEnsureAuthoritativeLanguageContent(
+                destinationLanguage: "de",
+                ownedContentLanguage: "sv",
+                lastPushedLanguage: "de"
+            ),
+            "Owned prior language must schedule reconcile even when lastPushed already claims destination"
+        )
+        XCTAssertTrue(
+            manager._test_shouldEnsureAuthoritativeLanguageContent(
+                destinationLanguage: "de",
+                ownedContentLanguage: "sv",
+                lastPushedLanguage: "sv"
+            ),
+            "Both owned and last on prior language must schedule reconcile"
+        )
+        XCTAssertTrue(
+            manager._test_shouldEnsureAuthoritativeLanguageContent(
+                destinationLanguage: "et",
+                ownedContentLanguage: nil,
+                lastPushedLanguage: "sv"
+            ),
+            "Missing owned language with lagging lastPushed must schedule reconcile"
+        )
+        XCTAssertFalse(
+            manager._test_shouldEnsureAuthoritativeLanguageContent(
+                destinationLanguage: "de",
+                ownedContentLanguage: "de",
+                lastPushedLanguage: "de"
+            ),
+            "Matched destination is a cheap no-op"
+        )
+        XCTAssertFalse(
+            manager._test_shouldEnsureAuthoritativeLanguageContent(
+                destinationLanguage: "",
+                ownedContentLanguage: "sv",
+                lastPushedLanguage: "sv"
+            ),
+            "Empty destination must not force a language push"
+        )
+    }
+
+    /// Post-update suppress memory must not claim candidate language when content.state still differs.
+    func testSuppressMemoryAfterUpdateKeepsSystemLanguageOnMismatch() {
+        let candidate = LutheranRadioLiveActivityAttributes.ContentState(
+            visualState: .prePlay,
+            streamMetadata: nil,
+            currentLanguage: "de"
+        )
+        let acceptedStillSwedish = LutheranRadioLiveActivityAttributes.ContentState(
+            visualState: .prePlay,
+            streamMetadata: nil,
+            currentLanguage: "sv"
+        )
+        let memory = manager._test_suppressMemoryAfterActivityUpdate(
+            candidate: candidate,
+            acceptedSystemContent: acceptedStillSwedish
+        )
+        XCTAssertEqual(
+            memory.currentLanguage,
+            "sv",
+            "Failed language acceptance must leave suppress memory on system-held language"
+        )
+        XCTAssertEqual(
+            manager._test_suppressMemoryAfterActivityUpdate(
+                candidate: candidate,
+                acceptedSystemContent: candidate
+            ).currentLanguage,
+            "de",
+            "Accepted destination language may seed suppress memory"
+        )
+    }
+
     /// Attribute-events yield warms the durable LA language mirror from ContentState.
     func testContentUpdatesObservationWarmsLanguageMirror() async {
         SharedPlayerManager.clearLiveActivityLanguageMirror()

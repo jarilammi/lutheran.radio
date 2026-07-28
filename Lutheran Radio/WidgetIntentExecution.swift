@@ -223,6 +223,7 @@ enum WidgetIntentExecution {
     ///   unit tests stay free of system-service round-trips; main-app last-pushed alignment
     ///   still runs so white-box suppression tests can exercise the thrash guard.
     /// - SeeAlso: ``performLiveActivityToggle()``,
+    ///   ``pushOptimisticLiveActivityStreamSwitchContent(languageCode:visualState:)``,
     ///   ``LutheranRadioLiveActivityAttributes/ContentState/replacingVisualState(_:)``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     static func pushOptimisticLiveActivityToggleContent(visualState: PlayerVisualState) async {
@@ -245,6 +246,107 @@ enum WidgetIntentExecution {
         #if LUTHERAN_MAIN_APP
         await MainActor.run {
             RadioLiveActivityManager.shared.recordOptimisticToggleContent(visualState: visualState)
+        }
+        #endif
+    }
+
+    /// Publishes optimistic Live Activity language chrome for lock-screen stream-language chips.
+    ///
+    /// Updates every interactive activity whose content would change under destination
+    /// language + switch visual (Connecting when leaving play, preserved pause when sticky).
+    /// Clears prior-stream program metadata by default so an old title does not ride under
+    /// the new flag. Warms the durable language mirror and, on the main app, aligns
+    /// ``RadioLiveActivityManager/lastPushedContent`` so engine-complete pushes can suppress
+    /// when they match the optimistic destination **and** owned `content.state` language.
+    ///
+    /// After each ActivityKit update, re-reads `content.state.currentLanguage`. DEBUG logs do
+    /// not claim success when the surface still holds the prior language. On the main app,
+    /// ``ensureAuthoritativeLanguageContentIfNeeded()`` forces a non-suppressed reconcile
+    /// when owned content language still differs from the destination (owned language beats
+    /// optimistic suppress memory).
+    ///
+    /// - Parameters:
+    ///   - languageCode: Destination stream language code (flag / name / alt-current).
+    ///   - visualState: Optimistic control visual from
+    ///     ``WidgetIntentCoordinators/optimisticLiveActivityVisualForStreamSwitch(from:)``.
+    /// - Note: Skips ActivityKit IPC under ``SharedPlayerManager/isRunningInUITestMode``;
+    ///   mirror + main-app last-pushed alignment still run for white-box contracts.
+    /// - SeeAlso: ``executeLiveActivityStreamSwitch(languageCode:)``,
+    ///   ``RadioLiveActivityManager/ensureAuthoritativeLanguageContentIfNeeded()``,
+    ///   ``RadioLiveActivityManager/shouldSuppressLiveActivityContentPush(lastPushed:candidate:ownedContentLanguage:)``,
+    ///   ``LutheranRadioLiveActivityAttributes/ContentState/replacingStreamSwitchDestination(language:visualState:clearStreamMetadata:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
+    ///   docs/Widget-Functionality-Roadmap.md (Live Activity language chrome SSOT).
+    static func pushOptimisticLiveActivityStreamSwitchContent(
+        languageCode: String,
+        visualState: PlayerVisualState
+    ) async {
+        guard !languageCode.isEmpty else { return }
+
+        SharedPlayerManager.persistLiveActivityLanguageMirror(languageCode)
+        // When leaving play for Connecting, keep durable toggle mirror coherent with ContentState.
+        SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(visualState)
+
+        let skipActivityKitIPC = SharedPlayerManager.isRunningInUITestMode
+        var anySurfaceAcceptedDestination = false
+
+        if !skipActivityKitIPC {
+            for activity in interactiveLiveActivities() {
+                let current = activity.content.state
+                let candidate = current.replacingStreamSwitchDestination(
+                    language: languageCode,
+                    visualState: visualState,
+                    clearStreamMetadata: true
+                )
+                if candidate == current {
+                    if current.currentLanguage == languageCode {
+                        anySurfaceAcceptedDestination = true
+                    }
+                    continue
+                }
+
+                nonisolated(unsafe) let safeActivity = activity
+                // SAFETY: Activity.update is not Sendable in the current SDK; capture is a
+                // local strong reference from Activity.activities (same pattern as
+                // RadioLiveActivityManager.updateCurrentActivity).
+                unsafe await safeActivity.update(.init(state: candidate, staleDate: nil))
+
+                let acceptedLanguage = safeActivity.content.state.currentLanguage
+                if acceptedLanguage == languageCode {
+                    anySurfaceAcceptedDestination = true
+                }
+                #if DEBUG
+                if acceptedLanguage != languageCode {
+                    print(
+                        "🔴 Optimistic LA stream-switch: content.state language still " +
+                        "\(acceptedLanguage.isEmpty ? "empty" : acceptedLanguage) " +
+                        "after update (destination=\(languageCode) id=\(safeActivity.id)); " +
+                        "not treating as accepted"
+                    )
+                } else {
+                    print(
+                        "🔴 Optimistic LA stream-switch accepted: language=\(languageCode) " +
+                        "visual=\(visualState) id=\(safeActivity.id)"
+                    )
+                }
+                #endif
+            }
+        }
+
+        #if LUTHERAN_MAIN_APP
+        await MainActor.run {
+            RadioLiveActivityManager.shared.recordOptimisticStreamSwitchContent(
+                language: languageCode,
+                visualState: visualState
+            )
+        }
+        // Owned content language beats optimistic lastPushedContent for suppress; reconcile
+        // when the surface still holds the prior stream after the intent-path push.
+        if !skipActivityKitIPC, !anySurfaceAcceptedDestination {
+            await RadioLiveActivityManager.shared.ensureAuthoritativeLanguageContentIfNeeded()
+        } else if !skipActivityKitIPC {
+            // Even when one surface accepted, owned main-app activity may still lag — cheap no-op.
+            await RadioLiveActivityManager.shared.ensureAuthoritativeLanguageContentIfNeeded()
         }
         #endif
     }
@@ -275,15 +377,22 @@ enum WidgetIntentExecution {
     /// Full Live Activity stream switch path used by ``LiveActivitySwitchStreamIntent/perform()``.
     ///
     /// Extension-profile contracts (`WidgetIntentContractExtensionTests`): unknown codes
-    /// return `false` without mutating the optimistic snapshot; known codes invoke
-    /// ``SharedPlayerManager/switchToStream(_:)`` and preserve paused/playing visual while
-    /// updating language (home-widget switch SSOT parity). Does not re-plan play/pause —
-    /// multi-source visual resolution is exclusive to ``performLiveActivityToggle()``.
+    /// return `false` without mutating the optimistic snapshot; known codes:
+    /// 1. Push optimistic ActivityKit ``ContentState`` with destination language (flag/name
+    ///    chrome) and Connecting or preserved pause visual
+    /// 2. Warm durable language mirror
+    /// 3. Invoke ``SharedPlayerManager/switchToStream(_:)`` (pending + Darwin)
+    ///
+    /// Home-widget snapshot visual may still preserve `.playing` across the optimistic
+    /// App Group write; Live Activity ContentState uses Connecting when leaving active play
+    /// so language chrome never claims audible playback on the destination stream.
     ///
     /// - Parameter languageCode: Target stream code.
     /// - Returns: `true` when a matching stream was found and the switch was invoked.
     /// - SeeAlso: ``executeLiveActivityStreamSwitch(languageCode:)``,
-    ///   ``performHomeWidgetStreamSwitch(languageCode:)``, docs/Widget-Functionality-Roadmap.md.
+    ///   ``pushOptimisticLiveActivityStreamSwitchContent(languageCode:visualState:)``,
+    ///   ``performHomeWidgetStreamSwitch(languageCode:)``, docs/Widget-Functionality-Roadmap.md,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     @discardableResult
     static func performLiveActivityStreamSwitch(languageCode: String) async -> Bool {
         await executeLiveActivityStreamSwitch(languageCode: languageCode)
@@ -322,9 +431,12 @@ enum WidgetIntentExecution {
     /// Home-widget stream switch: optimistic path through ``SharedPlayerManager/switchToStream(_:)`` + refresh.
     ///
     /// Imperative **extensionOptimistic** path (no PlayerEvent emission in the extension process).
+    /// When a Live Activity is visible in this process, also pushes destination language into
+    /// ActivityKit ContentState so lock-screen flag chrome does not lag a home-widget chip tap.
     ///
     /// - Parameter languageCode: Target stream BCP-47-style code from ``SwitchStreamIntent``.
-    /// - SeeAlso: ``WidgetRefreshTrigger/extensionOptimistic``.
+    /// - SeeAlso: ``WidgetRefreshTrigger/extensionOptimistic``,
+    ///   ``pushOptimisticLiveActivityStreamSwitchContent(languageCode:visualState:)``.
     static func executeHomeWidgetStreamSwitch(languageCode: String) async {
         Task { @MainActor in WidgetRefreshManager.setHasActiveLutheranWidgets(true) }
 
@@ -332,6 +444,9 @@ enum WidgetIntentExecution {
         guard let targetStream = manager.availableStreams.first(where: { $0.languageCode == languageCode }) else {
             return
         }
+
+        // Lock-screen LA may coexist with the home widget — advance flag chrome before drain.
+        await publishOptimisticStreamSwitchLanguageChrome(languageCode: languageCode)
 
         await manager.switchToStream(targetStream)
 
@@ -346,18 +461,48 @@ enum WidgetIntentExecution {
         )
     }
 
-    /// Live Activity stream switch via canonical ``SharedPlayerManager/switchToStream(_:)``.
+    /// Live Activity stream switch: optimistic language ContentState, then pending + Darwin.
+    ///
+    /// Publishes destination ``ContentState/currentLanguage`` (and Connecting / preserved
+    /// pause visual) **before** ``switchToStream`` so lock-screen flag/name track the chip
+    /// tap immediately. Engine attach remains main-app drain ownership.
     ///
     /// - Parameter languageCode: Target stream code from ``LiveActivitySwitchStreamIntent``.
     /// - Returns: `true` when a matching stream was found and the switch was invoked.
+    /// - SeeAlso: ``pushOptimisticLiveActivityStreamSwitchContent(languageCode:visualState:)``,
+    ///   ``WidgetIntentCoordinators/optimisticLiveActivityVisualForStreamSwitch(from:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     @discardableResult
     static func executeLiveActivityStreamSwitch(languageCode: String) async -> Bool {
         let manager = SharedPlayerManager.shared
         guard let targetStream = manager.availableStreams.first(where: { $0.languageCode == languageCode }) else {
             return false
         }
+
+        await publishOptimisticStreamSwitchLanguageChrome(languageCode: languageCode)
+
         await manager.switchToStream(targetStream)
         return true
+    }
+
+    /// Resolves optimistic switch visual and pushes Live Activity language chrome.
+    ///
+    /// Prefer ActivityKit ContentState visual (matches the glyph the user sees), then the
+    /// session snapshot. Destination language always warms the durable mirror even when no
+    /// activity is visible in this process.
+    ///
+    /// - Parameter languageCode: Destination stream language code.
+    private static func publishOptimisticStreamSwitchLanguageChrome(languageCode: String) async {
+        let contentVisual = currentLiveActivityContentVisualState()
+        let snapshotVisual = SharedPlayerManager.loadPersistedVisualStateDirect()
+        let baseVisual = contentVisual ?? snapshotVisual
+        let optimisticVisual = WidgetIntentCoordinators.optimisticLiveActivityVisualForStreamSwitch(
+            from: baseVisual
+        )
+        await pushOptimisticLiveActivityStreamSwitchContent(
+            languageCode: languageCode,
+            visualState: optimisticVisual
+        )
     }
 
     /// Live Activity play/pause toggle via actor-isolated manager APIs.

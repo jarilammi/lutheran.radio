@@ -38,6 +38,9 @@
 // planning (matches the glyph). Intent paths publish optimistic content via
 // ``ContentState/replacingVisualState(_:)`` so a rapid second tap does not re-plan
 // from stale pre-tap content. Language is preserved on control flips.
+// Stream-language chips publish optimistic content via
+// ``ContentState/replacingStreamSwitchDestination(language:visualState:clearStreamMetadata:)``
+// so flag/name/“current” chrome advances before main-app attach drains.
 // When ActivityKit does not expose activities in the intent host, a durable App
 // Group mirror of the visual (and language) is used — see
 // ``WidgetIntentCoordinators/resolveLiveActivityToggleVisualState`` and
@@ -109,6 +112,37 @@ public struct LutheranRadioLiveActivityAttributes: ActivityAttributes {
                 visualState: visualState,
                 streamMetadata: streamMetadata,
                 currentLanguage: currentLanguage
+            )
+        }
+
+        /// Builds content for an optimistic lock-screen / Dynamic Island stream-language switch.
+        ///
+        /// Language chips publish this so flag, language name, and alt-stream “current”
+        /// exclusion advance immediately in ActivityKit, without waiting for the main app
+        /// to drain the pending switch and re-push. Visual policy is supplied by the caller
+        /// (typically Connecting ``.prePlay`` when leaving active play, or preserved
+        /// ``.userPaused`` when sticky-paused — never invent audible `.playing` for a
+        /// destination stream that is not yet attached).
+        ///
+        /// - Parameters:
+        ///   - language: Destination stream language code for language chrome.
+        ///   - visualState: Control visual for the switch (Connecting or preserved pause).
+        ///   - clearStreamMetadata: When `true` (default), drops prior-stream program
+        ///     title/speaker so old ICY text does not ride under the new flag.
+        /// - Returns: A new ``ContentState`` with destination language and the supplied visual.
+        /// - SeeAlso: ``WidgetIntentCoordinators/optimisticLiveActivityVisualForStreamSwitch(from:)``,
+        ///   ``replacingVisualState(_:)``,
+        ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
+        ///   docs/Widget-Functionality-Roadmap.md (Live Activity language chrome SSOT).
+        public func replacingStreamSwitchDestination(
+            language: String,
+            visualState: PlayerVisualState,
+            clearStreamMetadata: Bool = true
+        ) -> ContentState {
+            ContentState(
+                visualState: visualState,
+                streamMetadata: clearStreamMetadata ? nil : streamMetadata,
+                currentLanguage: language
             )
         }
 

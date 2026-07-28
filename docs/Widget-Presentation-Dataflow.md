@@ -123,9 +123,9 @@ Never derive presentation inside leaf view `body` for the three canonical surfac
 
 2. **Inside `RadioLiveActivityManager`**:
    - `updateCurrentActivity()` computes a candidate `ContentState(visualState:streamMetadata:currentLanguage:)`.
-   - It compares against private `lastPushedContent` (purely in-memory, cleared on `endActivity`).
-   - Only when different (or first push) does it call `Activity.update` and record the candidate.
-   - This is the "Update Invariant": pushes happen **iff** the rendered content would change.
+   - Suppress uses ``shouldSuppressLiveActivityContentPush`` against private `lastPushedContent` **and** owned `content.state.currentLanguage` (owned language beats optimistic suppress memory).
+   - Only when not suppressed does it call `Activity.update`, then re-seeds `lastPushedContent` from the activity’s observed `content.state` (never an unverified aspirational candidate).
+   - ``ensureAuthoritativeLanguageContentIfNeeded()`` re-pushes when destination language from ``liveActivityLanguageCodeForContentPush()`` still differs from owned / last language (peer to playing ensure).
 
 3. **Lock-screen toggle optimistic ContentState** (intent path, main or extension host):
    - ``WidgetIntentExecution/performLiveActivityToggle()`` plans from multi-source resolve, then writes the durable toggle mirror and calls ``pushOptimisticLiveActivityToggleContent(visualState:)``.
@@ -157,9 +157,9 @@ for await content in contentUpdates {
 to `WidgetEventObserver.beginObserving(unsafeSequence:onElement:onTermination:)`.)
 
 - The stream (the `events` surface for `LutheranRadioLiveActivityAttributes.ContentState`) is started via ``beginObservingActivityEvents(_:)`` immediately after `Activity.request` and after resuming an existing activity in `observeExistingActivities`.
-- On every yield the manager aligns its `lastPushedContent` with the exact `ContentState` the system accepted. Subsequent diff checks in `updateCurrentActivity` therefore suppress pushes that would be no-ops against the rendered surface.
+- On every yield the manager aligns its `lastPushedContent` with the exact `ContentState` the system accepted. Subsequent suppress checks in `updateCurrentActivity` therefore skip pushes that would be no-ops against the rendered surface **unless** the candidate language still differs from owned content language.
 - Terminal states reported by ActivityKit cause immediate local cleanup of `currentActivity` and cancellation of the observer. This provides self-healing lifecycle independent of our explicit termination handlers.
-- Observation is strictly additive and non-forcing. All existing push call sites, the `lastPushedContent` dedup logic, privacy gates, and test short-circuits remain unchanged and primary. The net effect is stronger reactivity and fewer wasted `update(using:)` crossings of the ActivityKit boundary.
+- Observation is strictly additive and non-forcing. All existing push call sites, suppress policy (owned language gate), privacy gates, and test short-circuits remain primary. The net effect is stronger reactivity and fewer wasted `update(using:)` crossings of the ActivityKit boundary.
 
 See `RadioLiveActivityManager.swift` (``beginObservingActivityEvents(_:)``, ``activityObservationTask``, class header), `WidgetSurface/WidgetEventObserver.swift`, and the cross-references below. The Tier 2 Live Activity events item (plus the parallel PlayerEvent consumer in `WidgetRefreshManager`) is complete; the common observation pattern is now in one internal helper for future consumers.
 

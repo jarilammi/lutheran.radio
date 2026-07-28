@@ -574,6 +574,9 @@ extension SharedPlayerManager {
                 break
             case .updateIfActive:
                 await RadioLiveActivityManager.shared.updateCurrentActivity()
+                // Language chrome reconcile: owned ContentState language must track
+                // liveActivityLanguageCodeForContentPush (stream-switch destination stamp).
+                await RadioLiveActivityManager.shared.ensureAuthoritativeLanguageContentIfNeeded()
                 #if DEBUG
                 Self._test_recordMediaSurfaceCoordinationStep(.liveActivityUpdate)
                 #endif
@@ -594,6 +597,7 @@ extension SharedPlayerManager {
                     Self._test_recordMediaSurfaceCoordinationStep(.liveActivityUpdate)
                     #endif
                 }
+                await RadioLiveActivityManager.shared.ensureAuthoritativeLanguageContentIfNeeded()
             }
         } else if liveActivity != .none {
             #if DEBUG

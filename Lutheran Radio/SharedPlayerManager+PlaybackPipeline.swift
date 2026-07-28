@@ -1261,6 +1261,14 @@ extension SharedPlayerManager {
         await saveCurrentState()
         #if LUTHERAN_MAIN_APP
         await refreshAllMediaSurfaces(liveActivity: .startOrUpdate)
+        // Stream-switch optimistic Connecting + concurrent LA samplers can leave
+        // lastPushedContent / ActivityKit on `.prePlay` after this method has already
+        // cleared the hold. Reconcile so lock-screen never sticks on yellow Connecting
+        // while audio is authoritative playing.
+        await RadioLiveActivityManager.shared.ensureAuthoritativePlayingContentIfNeeded()
+        // Destination language chrome must stay on the switch target after audible start
+        // (owned content.state language may still lag if an earlier push was aspirational).
+        await RadioLiveActivityManager.shared.ensureAuthoritativeLanguageContentIfNeeded()
         #endif
     }
     
