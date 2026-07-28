@@ -315,19 +315,23 @@ extension SharedPlayerManager {
     /// the `loadSharedState` facade) rather than calling this.
     ///
     /// - Important: Language derivation is pure via ``PersistedLanguageResolution/resolve``:
-    ///   preferredWidgetLanguage → no-snapshot model repair → stale `"en"` repair →
-    ///   stream-switch hold prefers Direct model (already updated by switch prep).
-    ///   That closes the race that caused widget language taps to revert to the previous stream.
+    ///   hold-time destination (`streamSwitchConnectingLanguageCode`) when Connecting hold
+    ///   is active → preferredWidgetLanguage → no-snapshot model repair → stale `"en"` repair →
+    ///   hold without destination prefers Direct model (already updated by switch prep).
+    ///   Destination-on-hold keeps the App Group snapshot language aligned with Live Activity
+    ///   ``liveActivityLanguageCodeForContentPush()`` before the engine model settles.
     ///
     /// - Postcondition: If a write occurs, the in-process session snapshot contains the latest
     ///   (visualState, currentLanguage, hasError, metadata). Widget timeline reload is scheduled
     ///   by the Tier 2 ``PlayerEvent`` observer (``.persistedWidgetStateDidUpdate`` and related cases).
     ///
     /// - SeeAlso: ``PersistedLanguageResolution``, ``performActualSave(_:widgetState:at:)``,
-    ///   ``preferredWidgetLanguage()``,
+    ///   ``preferredWidgetLanguage()``, ``streamSwitchConnectingLanguageCode``,
+    ///   ``liveActivityLanguageCodeForContentPush()``,
     ///   ``persistWidgetSnapshot(visualState:language:streamMetadata:clearStreamMetadata:hasError:)``,
     ///   ``loadPersistedWidgetState()``, CODING_AGENT.md (Single Source of Truth Principles),
-    ///   the resurrection and persistence tables in this file.
+    ///   the resurrection and persistence tables in this file,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (Connecting + destination language).
     ///
     /// Actor-isolated. Callers on the main path must `await`.
     // Now async – callers must await this when they want to save
@@ -340,13 +344,16 @@ extension SharedPlayerManager {
         
         // Pure language reconciliation (table-tested in WidgetSurface). Actor only gathers inputs.
         // Privacy write suppression remains in performActualSave — resolution never decides write.
+        // Pass hold-time destination so snapshot language matches LA ContentState during Connecting
+        // (preferred/snapshot/model still lag on the prior stream until engine switch completes).
         let snapshot = Self.loadPersistedWidgetState()
         let currentLanguageCode = PersistedLanguageResolution.resolve(
             preferredLanguage: Self.preferredWidgetLanguage(),
             hasSnapshot: snapshot != nil,
             snapshotLanguage: snapshot?.currentLanguage,
             modelLanguage: DirectStreamingPlayer.shared.selectedStream.languageCode,
-            streamSwitchHoldActive: holdPrePlayVisualUntilPlayback
+            streamSwitchHoldActive: holdPrePlayVisualUntilPlayback,
+            connectingLanguageCode: streamSwitchConnectingLanguageCode
         )
 
         let isPermanentError    = await player.isLastErrorPermanent()
