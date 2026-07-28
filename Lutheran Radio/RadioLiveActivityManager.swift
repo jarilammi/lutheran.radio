@@ -596,8 +596,20 @@ class RadioLiveActivityManager: ObservableObject {
     /// Local prep shared by sync/async end paths: cancel observation, build final
     /// ContentState, clear mirrors, and collect system activities to dismiss.
     ///
+    /// Final language/metadata priority (chrome must not invent a live stream, but should
+    /// not flash the wrong language on cold-launch reaping either):
+    /// 1. ``lastPushedContent`` (this-process last accepted push)
+    /// 2. `currentActivity?.content.state` (owned Activity)
+    /// 3. Residual system activities' `content.state` (prior-process force-quit leftovers when
+    ///    local tracking is empty on cold launch)
+    /// 4. ``SharedPlayerManager/mainAppLiveActivityLanguageCode()`` (language only)
+    ///
+    /// Visual is always forced to `.userPaused` regardless of residual visual.
+    ///
     /// - Returns: Activities + final state when ActivityKit work must run; `nil` when
     ///   test isolation short-circuits or there is nothing for the system to end.
+    /// - SeeAlso: ``_test_finalEndContentState(lastPushed:activityState:residualState:fallbackLanguage:)``,
+    ///   ``observeExistingActivities()``.
     private func prepareLocalLiveActivityEndState() -> (
         activities: [Activity<LutheranRadioLiveActivityAttributes>],
         finalContentState: LutheranRadioLiveActivityAttributes.ContentState
@@ -606,13 +618,12 @@ class RadioLiveActivityManager: ObservableObject {
         activityEventObserver.cancel()
         activityObservationTask = nil
 
-        // Snapshot language + metadata *before* clearing last-pushed so the final frame
-        // cannot invent chrome or drop the stream language the user was just watching.
-        let finalLanguage =
+        // Snapshot local chrome *before* clearing tracking so an in-process end cannot
+        // invent language or drop the stream the user was just watching.
+        let languageFromLocal =
             lastPushedContent?.currentLanguage
             ?? currentActivity?.content.state.currentLanguage
-            ?? SharedPlayerManager.mainAppLiveActivityLanguageCode()
-        let finalMetadata =
+        let metadataFromLocal =
             lastPushedContent?.streamMetadata
             ?? currentActivity?.content.state.streamMetadata
 
@@ -646,6 +657,16 @@ class RadioLiveActivityManager: ObservableObject {
 
         guard !activities.isEmpty else { return nil }
 
+        // Cold-launch reaping: local tracking is empty after process death. Seed final
+        // language/metadata from residual system ContentState so the dismiss frame keeps
+        // the stream chrome the user last saw (visual still forced to .userPaused).
+        let residualChrome = Self.seedFinalEndChromeFromResidualActivities(activities)
+        let finalLanguage =
+            languageFromLocal
+            ?? residualChrome.language
+            ?? SharedPlayerManager.mainAppLiveActivityLanguageCode()
+        let finalMetadata = metadataFromLocal ?? residualChrome.metadata
+
         // Final frame: never claim live audio after the owning process is leaving or
         // the session is torn down. Language chrome stays consistent with the last stream.
         let finalContentState = LutheranRadioLiveActivityAttributes.ContentState(
@@ -654,6 +675,29 @@ class RadioLiveActivityManager: ObservableObject {
             currentLanguage: finalLanguage
         )
         return (activities, finalContentState)
+    }
+
+    /// Seeds language/metadata from residual system activities when this-process local
+    /// tracking is empty (typical cold-launch reaping after force-quit).
+    ///
+    /// - Parameter activities: System-held activities collected for end.
+    /// - Returns: First non-empty language and first non-nil program metadata found.
+    private static func seedFinalEndChromeFromResidualActivities(
+        _ activities: [Activity<LutheranRadioLiveActivityAttributes>]
+    ) -> (language: String?, metadata: StreamProgramMetadata?) {
+        var language: String?
+        var metadata: StreamProgramMetadata?
+        for activity in activities {
+            let state = activity.content.state
+            if language == nil, !state.currentLanguage.isEmpty {
+                language = state.currentLanguage
+            }
+            if metadata == nil, let meta = state.streamMetadata {
+                metadata = meta
+            }
+            if language != nil, metadata != nil { break }
+        }
+        return (language, metadata)
     }
 
     /// Collects unique Live Activities to dismiss: the local `currentActivity` plus every
@@ -836,6 +880,12 @@ class RadioLiveActivityManager: ObservableObject {
     /// adopt them. New activities are created exclusively via ``startActivity()`` when
     /// playback becomes authoritative (or background auto-start while playing).
     ///
+    /// **This-process ownership guard:** if ``currentActivity`` is already non-nil when the
+    /// deferred observe runs (``startActivity()`` raced ahead of the post-init yield), reaping
+    /// is **skipped**. Sweeping at that point would end the legitimate new Activity as if it
+    /// were a prior-process residual. Start policy still starts LA only after authoritative
+    /// `.playing`, so this is defense-in-depth rather than the happy path.
+    ///
     /// Background audio with a living process never re-enters this path — the singleton
     /// is already initialized and `currentActivity` is managed by start/update/end.
     ///
@@ -876,10 +926,20 @@ class RadioLiveActivityManager: ObservableObject {
         }
         #endif
 
+        // This-process ownership wins: if startActivity already assigned currentActivity
+        // before this deferred observe, do not sweep that Activity as a "prior residual".
+        // See ownership guard on this method's documentation.
+        if currentActivity != nil {
+            #if DEBUG
+            print("🔴 Skipping residual reaping — this process already owns currentActivity")
+            #endif
+            return
+        }
+
         // Never adopt a prior-process residual as a live interactive surface. Reap it.
         // ``endActivity`` sweeps all system activities, pushes a coherent final ContentState
-        // (paused + last language), and dismisses immediately. Local `currentActivity` stays
-        // nil until ``startActivity()`` runs for this process lifetime.
+        // (paused + residual/last language), and dismisses immediately. Local `currentActivity`
+        // stays nil until ``startActivity()`` runs for this process lifetime.
         let residualCount = Activity<LutheranRadioLiveActivityAttributes>.activities.count
         if residualCount > 0 {
             #if DEBUG
@@ -1003,35 +1063,52 @@ class RadioLiveActivityManager: ObservableObject {
 
     /// Pure final-end ContentState assembly for white-box tests (no ActivityKit IPC).
     ///
-    /// Mirrors production language/metadata snapshotting in
-    /// ``prepareLocalLiveActivityEndState()``: last-pushed wins, then activity content,
-    /// then the supplied fallback language. Visual is always `.userPaused` so the final
-    /// frame never claims live audio after the owning process leaves.
+    /// Mirrors production language/metadata priority in ``prepareLocalLiveActivityEndState()``:
+    /// last-pushed → owned activity content → residual system content (cold-launch reaping) →
+    /// fallback language. Visual is always `.userPaused` so the final frame never claims live
+    /// audio after the owning process leaves.
     ///
     /// - Parameters:
     ///   - lastPushed: Simulated ``lastPushedContent``.
     ///   - activityState: Simulated `currentActivity?.content.state`.
+    ///   - residualState: Simulated residual system `Activity.content.state` (force-quit leftover
+    ///     when local tracking is empty). Defaults to `nil`.
     ///   - fallbackLanguage: Stand-in for ``SharedPlayerManager/mainAppLiveActivityLanguageCode()``.
     /// - Returns: The ContentState that would be pushed immediately before `Activity.end`.
     /// - SeeAlso: ``endActivity(dismissalPolicy:waitForSystemCompletion:)``,
-    ///   ``handleAppWillTerminate()``, RadioLiveActivityManagerTests.
+    ///   ``handleAppWillTerminate()``, ``observeExistingActivities()``,
+    ///   RadioLiveActivityManagerTests.
     func _test_finalEndContentState(
         lastPushed: LutheranRadioLiveActivityAttributes.ContentState?,
         activityState: LutheranRadioLiveActivityAttributes.ContentState?,
+        residualState: LutheranRadioLiveActivityAttributes.ContentState? = nil,
         fallbackLanguage: String
     ) -> LutheranRadioLiveActivityAttributes.ContentState {
         let language =
             lastPushed?.currentLanguage
             ?? activityState?.currentLanguage
+            ?? residualState?.currentLanguage
             ?? fallbackLanguage
         let metadata =
             lastPushed?.streamMetadata
             ?? activityState?.streamMetadata
+            ?? residualState?.streamMetadata
         return LutheranRadioLiveActivityAttributes.ContentState(
             visualState: .userPaused,
             streamMetadata: metadata,
             currentLanguage: language
         )
+    }
+
+    /// Cold-launch residual reaping policy seam (no ActivityKit IPC).
+    ///
+    /// - Parameter hasOwnedCurrentActivity: Whether this process already holds
+    ///   ``currentActivity`` (``startActivity()`` completed before deferred observe).
+    /// - Returns: `true` when prior-process residuals should be reaped; `false` when
+    ///   reaping would risk ending a legitimate this-process Activity.
+    /// - SeeAlso: ``observeExistingActivities()``, RadioLiveActivityManagerTests.
+    func _test_shouldReapPriorProcessResiduals(hasOwnedCurrentActivity: Bool) -> Bool {
+        !hasOwnedCurrentActivity
     }
     #endif
 

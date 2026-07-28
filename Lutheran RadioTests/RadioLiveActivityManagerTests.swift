@@ -11,7 +11,8 @@
 //  Attribute-events tests consume DEBUG synthetic-stream seams on the manager
 //  (`_test_beginObservingSyntheticContentUpdates`, `_test_wouldSuppressLiveActivityUpdate`,
 //  `_test_setHarnessSimulatesActiveActivity`, `_test_cancelAttributeEventObservation`,
-//  `_test_finalEndContentState`) so ActivityKit IPC is never exercised under the XCTest host.
+//  `_test_finalEndContentState`, `_test_shouldReapPriorProcessResiduals`) so ActivityKit IPC
+//  is never exercised under the XCTest host.
 //
 //  - SeeAlso: ``RadioLiveActivityManager``, ``WidgetEventObserver``,
 //    docs/Event-Driven-Refactor-Roadmap.md (Tier 2 LA events / Tier 5),
@@ -467,7 +468,7 @@ class RadioLiveActivityManagerTests: XCTestCase {
     /// content, and program metadata is preserved when available so Dynamic Island / Lock
     /// Screen never flash a contradictory live frame as the surface dismisses.
     ///
-    /// - SeeAlso: ``RadioLiveActivityManager/_test_finalEndContentState(lastPushed:activityState:fallbackLanguage:)``,
+    /// - SeeAlso: ``RadioLiveActivityManager/_test_finalEndContentState(lastPushed:activityState:residualState:fallbackLanguage:)``,
     ///   ``RadioLiveActivityManager/handleAppWillTerminate()``,
     ///   docs/Widget-Presentation-Dataflow.md (termination).
     func testFinalEndContentStatePreservesLanguageAndForcesUserPaused() {
@@ -495,7 +496,7 @@ class RadioLiveActivityManagerTests: XCTestCase {
     }
 
     /// When last-pushed is absent, final end content falls back to activity ContentState
-    /// language/metadata, then the explicit fallback language.
+    /// language/metadata, then residual system content, then the explicit fallback language.
     func testFinalEndContentStateFallsBackToActivityThenFallbackLanguage() {
         let activityState = makeContentState(
             visualState: .playing,
@@ -515,11 +516,72 @@ class RadioLiveActivityManagerTests: XCTestCase {
         let fromFallback = manager._test_finalEndContentState(
             lastPushed: nil,
             activityState: nil,
+            residualState: nil,
             fallbackLanguage: "et"
         )
         XCTAssertEqual(fromFallback.visualState, .userPaused)
         XCTAssertEqual(fromFallback.currentLanguage, "et")
         XCTAssertNil(fromFallback.streamMetadata)
+    }
+
+    /// Cold-launch reaping: when this-process local tracking is empty, final-end chrome must
+    /// seed language and program metadata from residual system ContentState (not invent
+    /// attach-language fallback while residual still holds the prior stream chrome).
+    ///
+    /// Visual remains `.userPaused` so a force-quit leftover never dismisses as interactive
+    /// `.playing`. Last-pushed and owned activity still outrank residual when present.
+    ///
+    /// - SeeAlso: ``RadioLiveActivityManager/prepareLocalLiveActivityEndState()`` (via seam),
+    ///   ``RadioLiveActivityManager/observeExistingActivities()``,
+    ///   docs/Widget-Presentation-Dataflow.md (residual reaping).
+    func testFinalEndContentStateSeedsLanguageAndMetadataFromResidual() {
+        let residual = makeContentState(
+            visualState: .playing,
+            metadata: StreamProgramMetadata(programTitle: "Residual Program", speaker: "Prior"),
+            currentLanguage: "nb"
+        )
+
+        let fromResidual = manager._test_finalEndContentState(
+            lastPushed: nil,
+            activityState: nil,
+            residualState: residual,
+            fallbackLanguage: "en"
+        )
+        XCTAssertEqual(fromResidual.visualState, .userPaused, "Residual reaping must force paused visual")
+        XCTAssertEqual(fromResidual.currentLanguage, "nb", "Residual language must outrank fallback")
+        XCTAssertEqual(fromResidual.streamMetadata?.programTitle, "Residual Program")
+        XCTAssertEqual(fromResidual.streamMetadata?.speaker, "Prior")
+
+        // Owned activity still wins over residual when both are present.
+        let owned = makeContentState(
+            visualState: .userPaused,
+            metadata: StreamProgramMetadata(programTitle: "Owned", speaker: nil),
+            currentLanguage: "fi"
+        )
+        let ownedWins = manager._test_finalEndContentState(
+            lastPushed: nil,
+            activityState: owned,
+            residualState: residual,
+            fallbackLanguage: "en"
+        )
+        XCTAssertEqual(ownedWins.currentLanguage, "fi")
+        XCTAssertEqual(ownedWins.streamMetadata?.programTitle, "Owned")
+    }
+
+    /// Deferred observe must not reap when this process already owns ``currentActivity``
+    /// (start raced ahead of post-init yield). Pure policy seam — no ActivityKit IPC.
+    ///
+    /// - SeeAlso: ``RadioLiveActivityManager/_test_shouldReapPriorProcessResiduals(hasOwnedCurrentActivity:)``,
+    ///   ``RadioLiveActivityManager/observeExistingActivities()``.
+    func testShouldReapPriorProcessResidualsOnlyWhenNoOwnedActivity() {
+        XCTAssertTrue(
+            manager._test_shouldReapPriorProcessResiduals(hasOwnedCurrentActivity: false),
+            "Empty ownership must allow prior-process residual reaping"
+        )
+        XCTAssertFalse(
+            manager._test_shouldReapPriorProcessResiduals(hasOwnedCurrentActivity: true),
+            "This-process owned Activity must skip residual reaping"
+        )
     }
 
     /// ``handleAppWillTerminate()`` must clear local tracking under test isolation without
