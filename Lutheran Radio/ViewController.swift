@@ -548,7 +548,7 @@ class ViewController: UIViewController {
                 await WidgetRefreshManager.shared.refreshHasActiveWidgets()
             }
 
-            radioPlayerCoordinator.updateUserDefaultsLanguage(initialStream.languageCode)
+            await radioPlayerCoordinator.updateUserDefaultsLanguage(initialStream.languageCode)
             
             #if DEBUG
             print("[ViewController] Starting initial stream playback after tuning (single source)")

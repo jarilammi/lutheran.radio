@@ -441,8 +441,24 @@ extension SharedPlayerManager {
     }
     #endif
 
-    /// Public entry point for language changes. Persists visual state + language together
-    /// in the combined snapshot so widgets receive correct language without extra forcing.
+    /// Explicit destination-language snapshot write for stream/language switch paths.
+    ///
+    /// Persists **current** visual state together with the given language code so widgets and
+    /// session readers see the destination language without inventing `.prePlay` (paused switches
+    /// keep sticky `.userPaused` chrome). Privacy-gated: no write when `!hasActiveWidgets`.
+    ///
+    /// **Ordering:** Stream-switch orchestrators await this via
+    /// ``RadioPlayerCoordinator/updateUserDefaultsLanguage(_:)`` **before** media-surface refresh
+    /// or other ``saveCurrentState()`` work. Do not wrap this call in a fire-and-forget `Task` as
+    /// the sole destination-language writer — concurrent ``saveCurrentState()`` can re-resolve from
+    /// a lagging preferred/snapshot and persist the prior code last.
+    ///
+    /// - Parameter language: Destination stream language code (e.g. after `switchToStream`).
+    /// - Postcondition: When the privacy gate allows, in-process session snapshot language equals
+    ///   `language` and ``PlayerEvent/persistedWidgetStateDidUpdate`` has been emitted.
+    /// - SeeAlso: ``saveCurrentState()``, ``savePersistedWidgetState(visualState:language:streamMetadata:hasError:)``,
+    ///   ``RadioPlayerCoordinator/updateUserDefaultsLanguage(_:)``,
+    ///   ``PersistedLanguageResolution``, CODING_AGENT.md (Single Source of Truth Principles).
     func saveCombinedWidgetState(language: String) {
         guard Self.hasActiveWidgets else {
             #if DEBUG

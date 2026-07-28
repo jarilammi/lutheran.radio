@@ -323,6 +323,11 @@ extension SharedPlayerManager {
     ///   language aligned with Live Activity ``liveActivityLanguageCodeForContentPush()``
     ///   before the engine model settles.
     ///
+    /// - Important: Language is resolved **after** any suspension points in this method so a
+    ///   concurrent ``saveCombinedWidgetState(language:)`` (switch-path destination write) is
+    ///   visible before `performActualSave`. Resolving before `await` and writing after allowed
+    ///   a stale prior language to clobber the destination as the last writer.
+    ///
     /// - Postcondition: If a write occurs, the in-process session snapshot contains the latest
     ///   (visualState, currentLanguage, hasError, metadata). Widget timeline reload is scheduled
     ///   by the Tier 2 ``PlayerEvent`` observer (``.persistedWidgetStateDidUpdate`` and related cases).
@@ -330,6 +335,7 @@ extension SharedPlayerManager {
     /// - SeeAlso: ``PersistedLanguageResolution``, ``performActualSave(_:widgetState:at:)``,
     ///   ``preferredWidgetLanguage()``, ``streamSwitchConnectingLanguageCode``,
     ///   ``liveActivityLanguageCodeForContentPush()``,
+    ///   ``saveCombinedWidgetState(language:)``,
     ///   ``persistWidgetSnapshot(visualState:language:streamMetadata:clearStreamMetadata:hasError:)``,
     ///   ``loadPersistedWidgetState()``, CODING_AGENT.md (Single Source of Truth Principles),
     ///   the resurrection and persistence tables in this file,
@@ -343,11 +349,24 @@ extension SharedPlayerManager {
         let player = DirectStreamingPlayer.shared
         
         let now = Date()
-        
+
+        // Suspend before language resolve so concurrent destination snapshot writes are visible.
+        // Source the legacy "playing" bool from the authoritative visual state (SSOT),
+        // not the racy snapshot in actualPlaybackState. The snapshot frequently returns
+        // false during normal playback (KVO timing, brief buffering, rate reads) causing
+        // the "playing" UserDefaults key (used by WidgetToggleRadioIntent decision logic
+        // and loadSharedState fallbacks) to be wrong. This was the "elsewhere" causing
+        // first-widget-interaction flakiness even after the pause throttle fix.
+        let isPermanentError = await player.isLastErrorPermanent()
+        let isPlaying = currentVisualState.isActivelyPlaying
+        let hasPermanentError = player.hasPermanentError
+
         // Pure language reconciliation (table-tested in WidgetSurface). Actor only gathers inputs.
         // Privacy write suppression remains in performActualSave — resolution never decides write.
         // Pass hold-time destination so snapshot language matches LA ContentState during Connecting
         // (preferred/snapshot/model still lag on the prior stream until engine switch completes).
+        // AGENT NOTE: Resolve immediately before performActualSave — never cache language across
+        // an `await` or a concurrent saveCombinedWidgetState destination write can be clobbered.
         let snapshot = Self.loadPersistedWidgetState()
         let currentLanguageCode = PersistedLanguageResolution.resolve(
             preferredLanguage: Self.preferredWidgetLanguage(),
@@ -358,19 +377,9 @@ extension SharedPlayerManager {
             connectingLanguageCode: streamSwitchConnectingLanguageCode
         )
 
-        let isPermanentError    = await player.isLastErrorPermanent()
-        // Source the legacy "playing" bool from the authoritative visual state (SSOT),
-        // not the racy snapshot in actualPlaybackState. The snapshot frequently returns
-        // false during normal playback (KVO timing, brief buffering, rate reads) causing
-        // the "playing" UserDefaults key (used by WidgetToggleRadioIntent decision logic
-        // and loadSharedState fallbacks) to be wrong. This was the "elsewhere" causing
-        // first-widget-interaction flakiness even after the pause throttle fix.
-        let isPlaying           = currentVisualState.isActivelyPlaying
-        let hasPermanentError   = player.hasPermanentError
-        
-        // === NEW: WidgetState is now a computed view of PlayerVisualState (SSOT) ===
+        // WidgetState is a computed view of PlayerVisualState (SSOT).
         let widgetState = WidgetState(
-            from: currentVisualState,                  // ← SharedPlayerManager's SSOT
+            from: currentVisualState,
             currentLanguage: currentLanguageCode,
             hasError: hasPermanentError || isPermanentError,
             isTransitioning: false

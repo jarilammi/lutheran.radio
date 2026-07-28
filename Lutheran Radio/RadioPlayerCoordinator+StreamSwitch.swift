@@ -28,7 +28,7 @@
 //  Public/entry surfaces on the same type:
 //  - ``handleSwitchToLanguage(_:)`` — SceneDelegate / deep-link / external
 //  - ``handleWidgetSwitchToLanguage(_:actionId:)`` — widget/LA pending switch
-//  - ``updateUserDefaultsLanguage(_:)`` — session language + privacy-gated liveness
+//  - ``updateUserDefaultsLanguage(_:)`` — awaited destination language + privacy-gated liveness
 //  - ``handleLanguageSelection(at:)`` — LanguageSelectorView / PlayerViewModel
 //
 //  Canonical private orchestrators (same type, file-private):
@@ -149,7 +149,8 @@ extension RadioPlayerCoordinator {
             #endif
             await playTuningSound(animateNeedleTo: targetIndex)
 
-            updateUserDefaultsLanguage(targetStream.languageCode)
+            // Await destination language before intent/UI work that can saveCurrentState.
+            await updateUserDefaultsLanguage(targetStream.languageCode)
 
             // SwiftUI selector observes viewModel.selectedStreamIndex (matchedGeometryEffect animates)
 
@@ -349,7 +350,9 @@ extension RadioPlayerCoordinator {
         selectedStreamIndex = index
         backgroundImageController.update(for: stream)
         // Session snapshot language after engine model prep (LA language already on hold when resuming).
-        updateUserDefaultsLanguage(stream.languageCode)
+        // Must complete before media-surface refresh / any saveCurrentState so destination is not
+        // clobbered by a re-resolve from a lagging preferred/snapshot (paused path has no hold).
+        await updateUserDefaultsLanguage(stream.languageCode)
         SharedPlayerManager.persistLiveActivityLanguageMirror(stream.languageCode)
         #if LUTHERAN_MAIN_APP
         await SharedPlayerManager.shared.refreshAllMediaSurfaces(liveActivity: .updateIfActive)
@@ -484,49 +487,47 @@ extension RadioPlayerCoordinator {
     ///   ``WidgetRefreshManager/refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)``,
     ///   `PersistedWidgetState`, CODING_AGENT.md (Single Source of Truth Principles),
     ///   SharedPlayerManager.swift (handleWidgetSwitch + "pause on widget → language switch" contract).
-    /// Updates session language snapshot paths after an in-app language selection.
+    /// Awaits destination language into the session snapshot after engine stream prep.
+    ///
+    /// **Ordering invariant:** Callers on stream-switch paths **must** `await` this before
+    /// ``refreshAllMediaSurfaces``, ``saveCurrentState``, or other work that can re-resolve and
+    /// persist language. A fire-and-forget Task used to race the actor: DEBUG logged the
+    /// destination code immediately, then a concurrent ``saveCurrentState()`` re-resolved from a
+    /// still-lagging preferred/snapshot and wrote the **prior** language last (device-visible
+    /// especially on paused switches where Connecting hold does not supply
+    /// `connectingLanguageCode`).
     ///
     /// Liveness uses ``SharedPlayerManager/bumpWidgetLivenessTimestamp(policy:minInterval:)`` so the
     /// home-widget privacy gate suppresses `lastUpdateTime` when no Lutheran widgets are configured
     /// (and after privacy clear forces the gate closed). Snapshot persistence remains gated inside
     /// ``SharedPlayerManager/saveCombinedWidgetState(language:)``.
     ///
-    /// - Parameter languageCode: Stream language code to persist when the privacy gate allows.
+    /// `saveCombinedWidgetState` persists **current** visual state with the explicit destination
+    /// language (e.g. sticky `.userPaused` + new code) so pause → language change → resume keeps
+    /// correct chrome and stream alignment via ``loadPersistedVisualStateDirect()`` /
+    /// ``setUserIntentToPlay()``.
+    ///
+    /// Mutation path: language snapshot emit → ``.persistedWidgetStateDidUpdate`` → Tier 2
+    /// observer. Imperative ``refreshIfNeeded`` is not used here (language urgency lives in
+    /// ``WidgetRefreshManager``).
+    ///
+    /// - Parameter languageCode: Destination stream language code to persist when the privacy gate allows.
+    /// - Postcondition: When the privacy gate allows, the in-process session snapshot language is
+    ///   `languageCode` before this method returns (actor hop completed).
     /// - SeeAlso: ``SharedPlayerManager/bumpWidgetLivenessTimestamp(policy:minInterval:)``,
     ///   ``SharedPlayerManager/WidgetLivenessWritePolicy``,
     ///   ``SharedPlayerManager/saveCombinedWidgetState(language:)``,
+    ///   ``SharedPlayerManager/saveCurrentState()``,
     ///   ``SharedPlayerManager/clearHomeWidgetLivenessAndInstantFeedbackResiduals()``,
+    ///   ``completeStreamSwitch(stream:index:)``, ``switchToStreamFromWidget(to:index:actionId:)``,
     ///   CODING_AGENT.md (Single Source of Truth Principles).
-    func updateUserDefaultsLanguage(_ languageCode: String) {
+    func updateUserDefaultsLanguage(_ languageCode: String) async {
         // Privacy-gated liveness only — never write lastUpdateTime raw (residual after clear / no widgets).
         SharedPlayerManager.bumpWidgetLivenessTimestamp(policy: .immediate)
 
-        Task {
-            await SharedPlayerManager.shared.saveCombinedWidgetState(language: languageCode)
-
-            // Use the *actual* current visual state (e.g. .userPaused) rather than hard-coding
-            // .prePlay. Language changes performed while the stream is paused must preserve the
-            // sticky paused visual in the PersistedWidgetState snapshot so that:
-            //  - widgets render the correct grey "Ready"/paused chrome for the *new* language
-            //  - subsequent widget "play" / resume uses loadPersistedVisualStateDirect() + userRequestedPlay()
-            //    to clear the lock and start the correct stream (see setUserIntentToPlay alignment).
-            //
-            // Previous hard-coded .prePlay could race with the snapshot write (saveCombined is
-            // async) and deliver a timeline entry with the wrong visual. This was invisible on
-            // simulator (fast scheduling) but produced the "pause → language change → resume"
-            // failures on physical devices and TestFlight builds.
-            //
-            // Mutation path: language snapshot emit → ``.persistedWidgetStateDidUpdate`` →
-            // Tier 2 observer (``WidgetRefreshTrigger/playerEvent``). Imperative refresh was
-            // removed; language-change urgency still bypasses debounce inside ``refreshIfNeeded``.
-            //
-            // See: SharedPlayerManager.swift (handleWidgetSwitch, signalWidgetSwitchAction,
-            // loadPersistedVisualStateDirect, setUserIntentToPlay, ensureVisualStateLoaded
-            // anti-regression for hadStickyUserPause), switchToStreamFromWidget,
-            // completeStreamSwitch paused branch, WidgetToggleRadioIntent.perform,
-            // CODING_AGENT.md (Single Source of Truth Principles + cross-target shared files),
-            // WidgetRefreshManager (language change urgency + refreshWouldRegress).
-        }
+        // Await the actor write: destination language must land before subsequent saves re-resolve.
+        // Never detach a Task here as the sole writer of switch-path destination language.
+        await SharedPlayerManager.shared.saveCombinedWidgetState(language: languageCode)
 
         #if DEBUG
         print("[RadioPlayerCoordinator] MAIN APP: Updated UserDefaults language to: \(languageCode)")
@@ -545,8 +546,9 @@ extension RadioPlayerCoordinator {
     ///    Connecting chrome **before** engine teardown (may already be set by
     ///    `handleLanguageSelection`).
     /// 2. Engine prep via `DirectStreamingPlayer.switchToStream` (SSOT silent stop + model).
-    /// 3. Language snapshot + Live Activity language mirror + media-surface refresh
-    ///    (visual is already Connecting or sticky pause — never `.playing` mid-teardown).
+    /// 3. **Awaited** language snapshot + Live Activity language mirror + media-surface refresh
+    ///    (visual is already Connecting or sticky pause — never `.playing` mid-teardown;
+    ///    destination language must land before refresh/save re-resolve).
     /// 4. If not resuming: clear soft-pause metadata, force `.userPaused` UI, announce, return.
     /// 5. If resuming: optional tuning sound + needle animation, second guard,
     ///    conditional redundant-hold skip, then `SharedPlayerManager.play()`.
@@ -637,7 +639,8 @@ extension RadioPlayerCoordinator {
 
             // Session snapshot language after model prep (LA language already on hold when resuming).
             // Paused path: still warm language mirror + surfaces without claiming `.playing`.
-            updateUserDefaultsLanguage(stream.languageCode)
+            // Await destination before refresh/save so concurrent re-resolve cannot write prior code last.
+            await updateUserDefaultsLanguage(stream.languageCode)
             SharedPlayerManager.persistLiveActivityLanguageMirror(stream.languageCode)
             #if LUTHERAN_MAIN_APP
             await SharedPlayerManager.shared.refreshAllMediaSurfaces(liveActivity: .updateIfActive)

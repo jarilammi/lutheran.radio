@@ -963,7 +963,7 @@ extension SharedPlayerManager {
     /// old stream. Engine prep (`DirectStreamingPlayer.switchToStream`) may update the stream
     /// model after this hold is active; `saveCurrentState` / `play()` prefer the Direct model
     /// under the hold. Home-widget session language snapshot writes remain the caller’s job via
-    /// `updateUserDefaultsLanguage` → `saveCombinedWidgetState` after model prep.
+    /// awaited `updateUserDefaultsLanguage` → `saveCombinedWidgetState` after model prep.
     ///
     /// - Parameters:
     ///   - preserveActiveSleepTimer: When true, the sleep timer (if any) is left running
@@ -1021,7 +1021,7 @@ extension SharedPlayerManager {
         #endif
 
         // NOTE: Home-widget session language snapshot is still authored by callers via
-        // updateUserDefaultsLanguage() → saveCombinedWidgetState() after engine model prep.
+        // awaited updateUserDefaultsLanguage() → saveCombinedWidgetState() after engine model prep.
         
         #if DEBUG
         let languageNote = connectingLanguageCode.map { " language=\($0)" } ?? ""
