@@ -316,10 +316,12 @@ extension SharedPlayerManager {
     ///
     /// - Important: Language derivation is pure via ``PersistedLanguageResolution/resolve``:
     ///   hold-time destination (`streamSwitchConnectingLanguageCode`) when Connecting hold
-    ///   is active → preferredWidgetLanguage → no-snapshot model repair → stale `"en"` repair →
-    ///   hold without destination prefers Direct model (already updated by switch prep).
-    ///   Destination-on-hold keeps the App Group snapshot language aligned with Live Activity
-    ///   ``liveActivityLanguageCodeForContentPush()`` before the engine model settles.
+    ///   is active → preferredWidgetLanguage → no-snapshot model repair → preferred `"en"`
+    ///   disambiguation (keep intentional English when model is `"en"`; repair hard-default
+    ///   pollution only when model is non-en) → hold without destination prefers Direct model
+    ///   (already updated by switch prep). Destination-on-hold keeps the App Group snapshot
+    ///   language aligned with Live Activity ``liveActivityLanguageCodeForContentPush()``
+    ///   before the engine model settles.
     ///
     /// - Postcondition: If a write occurs, the in-process session snapshot contains the latest
     ///   (visualState, currentLanguage, hasError, metadata). Widget timeline reload is scheduled

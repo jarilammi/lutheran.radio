@@ -5,9 +5,10 @@
 //  Created by Jari Lammi on 24.7.2026.
 //
 //  Exhaustive pure language reconciliation for saveCurrentState snapshot writes.
-//  Protects: no-snapshot model seed, stale "en" repair, stream-switch hold preference,
-//  hold-time destination outranking lagging preferred/snapshot/model, and paused
-//  widget language (hold inactive → do not clobber preferred).
+//  Protects: no-snapshot model seed, intentional English vs hard-default "en" repair,
+//  stream-switch hold preference, hold-time destination outranking lagging
+//  preferred/snapshot/model, and paused widget language (hold inactive → do not
+//  clobber preferred).
 //
 //  - SeeAlso: ``PersistedLanguageResolution``, SharedPlayerManager.saveCurrentState(),
 //    SharedPlayerManager.streamSwitchConnectingLanguageCode,
@@ -42,7 +43,10 @@ struct PersistedLanguageResolutionTests {
         #expect(code == "sv")
     }
 
-    @Test func repairsStaleEnglishFromSnapshot() {
+    /// Intentional English: engine model is already `"en"`. A lagging non-en snapshot
+    /// must not clobber preferred `"en"` (historical repair treated every preferred `"en"`
+    /// as hard-default pollution and reverted to the prior snapshot language).
+    @Test func keepsIntentionalEnglishWhenModelIsEnglishDespiteLaggingSnapshot() {
         let code = PersistedLanguageResolution.resolve(
             preferredLanguage: "en",
             hasSnapshot: true,
@@ -50,10 +54,25 @@ struct PersistedLanguageResolutionTests {
             modelLanguage: "en",
             streamSwitchHoldActive: false
         )
+        #expect(code == "en")
+    }
+
+    /// Hard-default preferred `"en"` while the engine is on a non-English stream:
+    /// repair from the non-en snapshot (privacy / no-widgets pollution path).
+    @Test func repairsHardDefaultEnglishFromSnapshotWhenModelIsNonEnglish() {
+        let code = PersistedLanguageResolution.resolve(
+            preferredLanguage: "en",
+            hasSnapshot: true,
+            snapshotLanguage: "de",
+            modelLanguage: "et",
+            streamSwitchHoldActive: false
+        )
         #expect(code == "de")
     }
 
-    @Test func repairsStaleEnglishFromModelWhenSnapshotAlsoEnglish() {
+    /// Preferred and snapshot both `"en"` but engine is non-en: preferred `"en"` is
+    /// hard-default pollution — prefer the model stream language.
+    @Test func repairsHardDefaultEnglishFromModelWhenSnapshotAlsoEnglish() {
         let code = PersistedLanguageResolution.resolve(
             preferredLanguage: "en",
             hasSnapshot: true,
@@ -62,6 +81,30 @@ struct PersistedLanguageResolutionTests {
             streamSwitchHoldActive: false
         )
         #expect(code == "et")
+    }
+
+    /// Empty model + preferred hard-default `"en"` + non-en snapshot → repair from snapshot.
+    @Test func repairsHardDefaultEnglishFromSnapshotWhenModelEmpty() {
+        let code = PersistedLanguageResolution.resolve(
+            preferredLanguage: "en",
+            hasSnapshot: true,
+            snapshotLanguage: "fi",
+            modelLanguage: "",
+            streamSwitchHoldActive: false
+        )
+        #expect(code == "fi")
+    }
+
+    /// Consistent intentional English (preferred, snapshot, and model all `"en"`).
+    @Test func keepsIntentionalEnglishWhenAllInputsAgree() {
+        let code = PersistedLanguageResolution.resolve(
+            preferredLanguage: "en",
+            hasSnapshot: true,
+            snapshotLanguage: "en",
+            modelLanguage: "en",
+            streamSwitchHoldActive: false
+        )
+        #expect(code == "en")
     }
 
     @Test func keepsNonEnglishPreferredWithoutHold() {
@@ -118,6 +161,20 @@ struct PersistedLanguageResolutionTests {
         #expect(code == "et")
     }
 
+    /// Hold-time destination `"en"` must not be repaired away — intentional English switch
+    /// during Connecting before the engine model settles.
+    @Test func streamSwitchHoldConnectingEnglishOutranksLaggingNonEnglishTriad() {
+        let code = PersistedLanguageResolution.resolve(
+            preferredLanguage: "de",
+            hasSnapshot: true,
+            snapshotLanguage: "de",
+            modelLanguage: "de",
+            streamSwitchHoldActive: true,
+            connectingLanguageCode: "en"
+        )
+        #expect(code == "en")
+    }
+
     /// Connecting language is only meaningful while hold is active; ignore a stray value
     /// after hold ends so normal preferred/snapshot/model rules apply.
     @Test func connectingLanguageIgnoredWhenHoldInactive() {
@@ -148,7 +205,7 @@ struct PersistedLanguageResolutionTests {
     @Test func nonEnglishPreferredSurvivesLaggingModelWithoutHold() {
         // Paused widget language (non-en): preferred/snapshot must not be overwritten by a
         // lagging Direct model unless stream-switch hold is active. (English is special-cased
-        // by the historical stale-"en" repair — see repairsStaleEnglishFromModelWhenSnapshotAlsoEnglish.)
+        // by the intentional-vs-hard-default rules — see keepsIntentionalEnglishWhenModelIsEnglishDespiteLaggingSnapshot.)
         let code = PersistedLanguageResolution.resolve(
             preferredLanguage: "et",
             hasSnapshot: true,

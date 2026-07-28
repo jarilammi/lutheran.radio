@@ -23,6 +23,10 @@
 //    liveActivityLanguageCodeForContentPush() during Connecting hold. Snapshot
 //    resolution must use the same destination so widget timelines do not lag
 //    on the prior language while LA chrome is already correct.
+//  - AGENT NOTE: Preferred `"en"` is ambiguous — privacy hard-default vs intentional
+//    English selection. Repair hard-default pollution only when the engine model is
+//    *not* English; when model is already `"en"`, keep English even if the snapshot
+//    still holds a prior non-en code.
 //
 
 import Foundation
@@ -40,7 +44,12 @@ public enum PersistedLanguageResolution {
     ///    snapshot language chrome (mirrors Live Activity content-push policy).
     /// 2. Otherwise start from `preferredLanguage` (typically ``preferredWidgetLanguage()``).
     /// 3. No snapshot: prefer non-empty `modelLanguage` (main-app selected stream).
-    /// 4. Snapshot present and preferred is `"en"`: repair from snapshot non-en, else model non-en.
+    /// 4. Snapshot present and preferred is `"en"`:
+    ///    - If `modelLanguage == "en"`: **keep `"en"`** (intentional English confirmed
+    ///      by the engine — never clobber with a lagging non-en snapshot).
+    ///    - Else if model is a non-empty non-en code: treat preferred `"en"` as
+    ///      hard-default pollution; prefer non-en snapshot, else model.
+    ///    - Else (empty model): repair from non-en snapshot when present.
     /// 5. Stream-switch hold active without a connecting destination: when model
     ///    differs from the candidate, prefer model (orchestrated switch already
     ///    updated DirectStreamingPlayer before play).
@@ -84,10 +93,21 @@ public enum PersistedLanguageResolution {
                 code = modelLanguage
             }
         } else if code == "en" {
-            if let snapshotLanguage, snapshotLanguage != "en" {
+            // Preferred `"en"` is ambiguous: privacy hard-default vs intentional English.
+            // Engine model already on English → intentional / consistent — keep `"en"`
+            // even when the snapshot still holds a prior non-en code.
+            if modelLanguage == "en" {
+                // Keep preferred `"en"`.
+            } else if !modelLanguage.isEmpty {
+                // Engine on a non-English stream: preferred `"en"` is hard-default pollution.
+                if let snapshotLanguage, snapshotLanguage != "en" {
+                    code = snapshotLanguage
+                } else {
+                    code = modelLanguage
+                }
+            } else if let snapshotLanguage, snapshotLanguage != "en" {
+                // Empty model: repair from non-en snapshot when available.
                 code = snapshotLanguage
-            } else if modelLanguage != "en", !modelLanguage.isEmpty {
-                code = modelLanguage
             }
         }
 
