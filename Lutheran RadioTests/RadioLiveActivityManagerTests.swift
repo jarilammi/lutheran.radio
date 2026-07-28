@@ -611,10 +611,12 @@ class RadioLiveActivityManagerTests: XCTestCase {
         )
     }
 
-    /// Stalled system-held ContentState detection: prior language and pause-stuck visual after soft resume.
+    /// Stalled system-held ContentState detection: prior language, pause-stuck, and pure Connecting visual freezes.
     ///
-    /// Protects lock-screen flag/name stall and soft-resume pause glyph freeze when
-    /// ActivityKit completes `update` without advancing system-held ContentState.
+    /// Protects lock-screen flag/name stall, soft-resume pause glyph freeze, and pure
+    /// `.prePlay` vs `.playing` acceptance lag when ActivityKit completes `update` without
+    /// advancing system-held ContentState. Pure visual stalls prefer soft playing-ensure
+    /// retries; they still count toward the stalled streak for coherent recovery bookkeeping.
     func testStalledLiveActivityContentPushDetectsLanguageAndPauseVisualStall() {
         let destination = LutheranRadioLiveActivityAttributes.ContentState(
             visualState: .prePlay,
@@ -679,6 +681,118 @@ class RadioLiveActivityManagerTests: XCTestCase {
                 accepted: pausedSameLanguage
             ),
             "Intentional pause match is not stalled"
+        )
+    }
+
+    /// Pure visual stall: system-held Connecting while candidate is authoritative playing or intentional pause.
+    ///
+    /// Device residual: soft-resume / post-audible reconcile fires with `owned=prePlay` and
+    /// `candidateVisual=playing` without language mismatch — must count as stalled so soft
+    /// retries and bookkeeping stay coherent (without requiring recreation as the only path).
+    func testStalledLiveActivityContentPushDetectsPurePrePlayVisualFreeze() {
+        let playingEstonian = LutheranRadioLiveActivityAttributes.ContentState(
+            visualState: .playing,
+            streamMetadata: nil,
+            currentLanguage: "et"
+        )
+        let connectingEstonian = LutheranRadioLiveActivityAttributes.ContentState(
+            visualState: .prePlay,
+            streamMetadata: nil,
+            currentLanguage: "et"
+        )
+        XCTAssertTrue(
+            manager._test_isStalledLiveActivityContentPush(
+                candidate: playingEstonian,
+                accepted: connectingEstonian
+            ),
+            "Owned Connecting while candidate is authoritative playing must count as stalled"
+        )
+
+        let pausedEstonian = LutheranRadioLiveActivityAttributes.ContentState(
+            visualState: .userPaused,
+            streamMetadata: nil,
+            currentLanguage: "et"
+        )
+        XCTAssertTrue(
+            manager._test_isStalledLiveActivityContentPush(
+                candidate: pausedEstonian,
+                accepted: connectingEstonian
+            ),
+            "Owned Connecting while candidate is intentional pause must count as stalled"
+        )
+
+        // Intentional Connecting match (hold honesty) is not stalled.
+        XCTAssertFalse(
+            manager._test_isStalledLiveActivityContentPush(
+                candidate: connectingEstonian,
+                accepted: connectingEstonian
+            ),
+            "Matched Connecting is not stalled"
+        )
+        // Playing → Connecting would be a candidate regression (hold), not a system lag of prePlay vs playing.
+        // Accepted playing with candidate connecting is not the pure freeze class.
+        XCTAssertFalse(
+            manager._test_isStalledLiveActivityContentPush(
+                candidate: connectingEstonian,
+                accepted: playingEstonian
+            ),
+            "Candidate Connecting against accepted playing is not the pure prePlay freeze class"
+        )
+    }
+
+    /// Suppress denied when owned ContentState visual differs from the candidate visual
+    /// even if optimistic ``lastPushedContent`` already equals the candidate.
+    ///
+    /// Protects soft-resume / post-audible Connecting freeze: aspirational suppress memory
+    /// claiming `.playing` must not skip IPC while the system-held surface still shows `.prePlay`.
+    func testSuppressDeniedWhenOwnedContentVisualDiffersFromCandidate() {
+        let playingCandidate = LutheranRadioLiveActivityAttributes.ContentState(
+            visualState: .playing,
+            streamMetadata: nil,
+            currentLanguage: "et"
+        )
+        // Optimistic lastPushed already claims playing (same as candidate).
+        let optimisticLast = playingCandidate
+
+        XCTAssertFalse(
+            RadioLiveActivityManager.shouldSuppressLiveActivityContentPush(
+                lastPushed: optimisticLast,
+                candidate: playingCandidate,
+                ownedContentLanguage: "et",
+                ownedContentVisual: .prePlay
+            ),
+            "Owned Connecting while candidate is playing must force a non-suppressed push"
+        )
+        XCTAssertFalse(
+            RadioLiveActivityManager.shouldSuppressLiveActivityContentPush(
+                lastPushed: optimisticLast,
+                candidate: playingCandidate,
+                ownedContentLanguage: "et",
+                ownedContentVisual: .userPaused
+            ),
+            "Owned pause while candidate is playing must force a non-suppressed push"
+        )
+        XCTAssertTrue(
+            RadioLiveActivityManager.shouldSuppressLiveActivityContentPush(
+                lastPushed: optimisticLast,
+                candidate: playingCandidate,
+                ownedContentLanguage: "et",
+                ownedContentVisual: .playing
+            ),
+            "Matched owned + last + candidate visual may suppress redundant IPC"
+        )
+        // Seed lastPushed via optimistic record then assert seam with owned visual lag.
+        manager.recordOptimisticStreamSwitchContent(language: "et", visualState: .playing)
+        XCTAssertEqual(manager.lastPushedContent?.visualState, .playing)
+        XCTAssertFalse(
+            manager._test_wouldSuppressLiveActivityUpdate(
+                visualState: .playing,
+                streamMetadata: nil,
+                currentLanguage: "et",
+                ownedContentLanguage: "et",
+                ownedContentVisual: .prePlay
+            ),
+            "Seam: owned prePlay must deny suppress when last already claims playing"
         )
     }
 
@@ -906,6 +1020,10 @@ class RadioLiveActivityManagerTests: XCTestCase {
     }
 
     /// Playing ensure covers stale Connecting **and** soft-resume pause chrome.
+    ///
+    /// Soft-resume residual: owned `.prePlay` with optimistic last `.playing` must still
+    /// schedule reconcile (owned visual gate + ensure gate). Bounded soft retries are
+    /// production ``authoritativePlayingContentEnsureMaxAttempts`` — pure policy here.
     func testPlayingEnsureCoversConnectingAndUserPausedStalls() {
         XCTAssertTrue(
             manager._test_shouldEnsureAuthoritativePlayingContent(
@@ -937,6 +1055,16 @@ class RadioLiveActivityManagerTests: XCTestCase {
             ),
             "Optimistic lastPushed playing while owned pause must still schedule reconcile"
         )
+        XCTAssertTrue(
+            manager._test_shouldEnsureAuthoritativePlayingContent(
+                actorVisual: .playing,
+                streamSwitchHold: false,
+                isConnectingPlayback: false,
+                lastPushedVisual: .playing,
+                ownedVisual: .prePlay
+            ),
+            "Optimistic lastPushed playing while owned Connecting must still schedule soft-resume reconcile"
+        )
         XCTAssertFalse(
             manager._test_shouldEnsureAuthoritativePlayingContent(
                 actorVisual: .playing,
@@ -956,6 +1084,11 @@ class RadioLiveActivityManagerTests: XCTestCase {
                 ownedVisual: .playing
             ),
             "Matched playing chrome is a cheap no-op"
+        )
+        XCTAssertGreaterThanOrEqual(
+            RadioLiveActivityManager.authoritativePlayingContentEnsureMaxAttempts,
+            2,
+            "Soft-resume visual honesty needs more than a single push when ActivityKit lags acceptance"
         )
     }
 

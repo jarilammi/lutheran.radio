@@ -666,12 +666,17 @@ extension DirectStreamingPlayer {
     /// Publishes authoritative `.playing` chrome after the engine has started or resumed audible output.
     ///
     /// Call only after a rate kick / soft-resume `playImmediately` (or equivalent KVO observation of
-    /// live play). Skips when sticky pause/lock already won or visual is already `.playing` so
-    /// readyToPlay + timeControl KVO cannot double-emit `streamDidStart` or thrash surfaces.
+    /// live play). Skips when sticky pause/lock already won. When visual is already `.playing`,
+    /// skips actor mutation / `streamDidStart` re-emit so readyToPlay + timeControl KVO cannot
+    /// thrash surfaces — but still reconciles Live Activity owned visual via
+    /// ``RadioLiveActivityManager/ensureAuthoritativePlayingContentIfNeeded()`` so soft-resume
+    /// (or a no-op publish after an earlier setPlaying) cannot leave the lock-screen card on
+    /// Connecting while audio is live.
     ///
     /// - Important: Never call from the start of ``SharedPlayerManager/play()`` or from
     ///   ``startPlayback(context:attachGeneration:)`` while still awaiting `.readyToPlay`.
     /// - SeeAlso: ``SharedPlayerManager/setPlaying()``, ``shouldAllowAudiblePlaybackKick()``,
+    ///   ``RadioLiveActivityManager/ensureAuthoritativePlayingContentIfNeeded()``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (connecting chrome vs audible start),
     ///   ``MediaTransportLatencyTimeline`` (DEBUG first-audio milestone).
     @MainActor
@@ -695,6 +700,10 @@ extension DirectStreamingPlayer {
                 detail: "reason=alreadyPlaying"
             )
             #endif
+            // Actor chrome already playing (soft-resume after setPlaying, or KVO re-entry).
+            // Still force bounded LA playing ensure so owned ContentState visual cannot stick
+            // on `.prePlay` while audio continues — without relying on end+request recreation.
+            await RadioLiveActivityManager.shared.ensureAuthoritativePlayingContentIfNeeded()
             return
         }
         await SharedPlayerManager.shared.setPlaying()

@@ -1263,8 +1263,10 @@ extension SharedPlayerManager {
         await refreshAllMediaSurfaces(liveActivity: .startOrUpdate)
         // Stream-switch optimistic Connecting + concurrent LA samplers can leave
         // lastPushedContent / ActivityKit on `.prePlay` after this method has already
-        // cleared the hold. Reconcile so lock-screen never sticks on yellow Connecting
-        // while audio is authoritative playing.
+        // cleared the hold. Soft-resume can leave owned visual on `.prePlay` while the
+        // actor is already `.playing`. Bounded playing ensure re-reads owned content
+        // after each push so lock-screen never sticks on yellow Connecting without
+        // requiring end+request recreation for visual-only lag.
         await RadioLiveActivityManager.shared.ensureAuthoritativePlayingContentIfNeeded()
         // Destination language chrome must stay on the switch target after audible start
         // (owned content.state language may still lag if an earlier push was aspirational).
