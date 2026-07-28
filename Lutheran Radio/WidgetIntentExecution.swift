@@ -306,27 +306,30 @@ enum WidgetIntentExecution {
                 }
 
                 nonisolated(unsafe) let safeActivity = activity
-                // SAFETY: Activity.update is not Sendable in the current SDK; capture is a
-                // local strong reference from Activity.activities (same pattern as
-                // RadioLiveActivityManager.updateCurrentActivity).
+                // SAFETY: Activity.update / content.state / id are not Sendable in the current
+                // SDK; capture is a local strong reference from Activity.activities, and
+                // post-update reads use explicit `unsafe` under SWIFT_STRICT_MEMORY_SAFETY
+                // (same pattern as RadioLiveActivityManager.updateCurrentActivity).
                 unsafe await safeActivity.update(.init(state: candidate, staleDate: nil))
 
-                let acceptedLanguage = safeActivity.content.state.currentLanguage
+                let acceptedLanguage = unsafe safeActivity.content.state.currentLanguage
                 if acceptedLanguage == languageCode {
                     anySurfaceAcceptedDestination = true
                 }
                 #if DEBUG
+                // SAFETY: Activity.id on the nonisolated(unsafe) capture (DEBUG diagnostics only).
+                let activityId = unsafe safeActivity.id
                 if acceptedLanguage != languageCode {
                     print(
                         "🔴 Optimistic LA stream-switch: content.state language still " +
                         "\(acceptedLanguage.isEmpty ? "empty" : acceptedLanguage) " +
-                        "after update (destination=\(languageCode) id=\(safeActivity.id)); " +
+                        "after update (destination=\(languageCode) id=\(activityId)); " +
                         "not treating as accepted"
                     )
                 } else {
                     print(
                         "🔴 Optimistic LA stream-switch accepted: language=\(languageCode) " +
-                        "visual=\(visualState) id=\(safeActivity.id)"
+                        "visual=\(visualState) id=\(activityId)"
                     )
                 }
                 #endif

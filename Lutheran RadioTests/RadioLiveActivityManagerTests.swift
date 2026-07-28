@@ -607,6 +607,167 @@ class RadioLiveActivityManagerTests: XCTestCase {
         )
     }
 
+    /// Stalled system-held ContentState detection: prior language and pause-stuck visual after soft resume.
+    ///
+    /// Protects lock-screen flag/name stall and soft-resume pause glyph freeze when
+    /// ActivityKit completes `update` without advancing system-held ContentState.
+    func testStalledLiveActivityContentPushDetectsLanguageAndPauseVisualStall() {
+        let destination = LutheranRadioLiveActivityAttributes.ContentState(
+            visualState: .prePlay,
+            streamMetadata: nil,
+            currentLanguage: "et"
+        )
+        let stillGerman = LutheranRadioLiveActivityAttributes.ContentState(
+            visualState: .userPaused,
+            streamMetadata: nil,
+            currentLanguage: "de"
+        )
+        XCTAssertTrue(
+            manager._test_isStalledLiveActivityContentPush(
+                candidate: destination,
+                accepted: stillGerman
+            ),
+            "Destination language while system holds prior language lags (stalled)"
+        )
+
+        let playingSameLanguage = LutheranRadioLiveActivityAttributes.ContentState(
+            visualState: .playing,
+            streamMetadata: nil,
+            currentLanguage: "de"
+        )
+        let pausedSameLanguage = LutheranRadioLiveActivityAttributes.ContentState(
+            visualState: .userPaused,
+            streamMetadata: nil,
+            currentLanguage: "de"
+        )
+        XCTAssertTrue(
+            manager._test_isStalledLiveActivityContentPush(
+                candidate: playingSameLanguage,
+                accepted: pausedSameLanguage
+            ),
+            "Soft-resume playing candidate against system pause must count as stalled"
+        )
+        XCTAssertTrue(
+            manager._test_isStalledLiveActivityContentPush(
+                candidate: LutheranRadioLiveActivityAttributes.ContentState(
+                    visualState: .prePlay,
+                    streamMetadata: nil,
+                    currentLanguage: "de"
+                ),
+                accepted: pausedSameLanguage
+            ),
+            "Connecting candidate against system pause must count as stalled"
+        )
+        XCTAssertFalse(
+            manager._test_isStalledLiveActivityContentPush(
+                candidate: playingSameLanguage,
+                accepted: playingSameLanguage
+            ),
+            "Matched language + visual is not stalled"
+        )
+        XCTAssertFalse(
+            manager._test_isStalledLiveActivityContentPush(
+                candidate: LutheranRadioLiveActivityAttributes.ContentState(
+                    visualState: .userPaused,
+                    streamMetadata: nil,
+                    currentLanguage: "de"
+                ),
+                accepted: pausedSameLanguage
+            ),
+            "Intentional pause match is not stalled"
+        )
+    }
+
+    /// Recreation only after threshold and within the per-cycle recreation cap.
+    func testInteractiveRecreationDecisionUsesThresholdAndCap() {
+        XCTAssertFalse(
+            manager._test_shouldRecreateInteractiveLiveActivityAfterStalledPushes(
+                consecutiveStalled: 2,
+                recreationsAttempted: 0,
+                isRecreationInProgress: false
+            ),
+            "Brief lag below threshold must not recreate (avoids thrash on one-frame language lag)"
+        )
+        XCTAssertTrue(
+            manager._test_shouldRecreateInteractiveLiveActivityAfterStalledPushes(
+                consecutiveStalled: RadioLiveActivityManager.stalledContentPushRecreationThreshold,
+                recreationsAttempted: 0,
+                isRecreationInProgress: false
+            ),
+            "At threshold with recreation budget remaining must recreate"
+        )
+        XCTAssertFalse(
+            manager._test_shouldRecreateInteractiveLiveActivityAfterStalledPushes(
+                consecutiveStalled: 10,
+                recreationsAttempted: 0,
+                isRecreationInProgress: true
+            ),
+            "Nested push during end+start must not schedule another recreation"
+        )
+        XCTAssertFalse(
+            manager._test_shouldRecreateInteractiveLiveActivityAfterStalledPushes(
+                consecutiveStalled: 10,
+                recreationsAttempted: RadioLiveActivityManager.maxInteractiveContentRecreations,
+                isRecreationInProgress: false
+            ),
+            "Exhausted recreation budget must stop end/start loops"
+        )
+    }
+
+    /// Playing ensure covers stale Connecting **and** soft-resume pause chrome.
+    func testPlayingEnsureCoversConnectingAndUserPausedStalls() {
+        XCTAssertTrue(
+            manager._test_shouldEnsureAuthoritativePlayingContent(
+                actorVisual: .playing,
+                streamSwitchHold: false,
+                isConnectingPlayback: false,
+                lastPushedVisual: .prePlay,
+                ownedVisual: .prePlay
+            ),
+            "Stale Connecting lastPushed must schedule playing reconcile"
+        )
+        XCTAssertTrue(
+            manager._test_shouldEnsureAuthoritativePlayingContent(
+                actorVisual: .playing,
+                streamSwitchHold: false,
+                isConnectingPlayback: false,
+                lastPushedVisual: .userPaused,
+                ownedVisual: .userPaused
+            ),
+            "Soft-resume: last/owned pause while actor playing must schedule reconcile"
+        )
+        XCTAssertTrue(
+            manager._test_shouldEnsureAuthoritativePlayingContent(
+                actorVisual: .playing,
+                streamSwitchHold: false,
+                isConnectingPlayback: false,
+                lastPushedVisual: .playing,
+                ownedVisual: .userPaused
+            ),
+            "Optimistic lastPushed playing while owned pause must still schedule reconcile"
+        )
+        XCTAssertFalse(
+            manager._test_shouldEnsureAuthoritativePlayingContent(
+                actorVisual: .playing,
+                streamSwitchHold: true,
+                isConnectingPlayback: false,
+                lastPushedVisual: .userPaused,
+                ownedVisual: .userPaused
+            ),
+            "Stream-switch hold must not invent authoritative playing"
+        )
+        XCTAssertFalse(
+            manager._test_shouldEnsureAuthoritativePlayingContent(
+                actorVisual: .playing,
+                streamSwitchHold: false,
+                isConnectingPlayback: false,
+                lastPushedVisual: .playing,
+                ownedVisual: .playing
+            ),
+            "Matched playing chrome is a cheap no-op"
+        )
+    }
+
     /// Attribute-events yield warms the durable LA language mirror from ContentState.
     func testContentUpdatesObservationWarmsLanguageMirror() async {
         SharedPlayerManager.clearLiveActivityLanguageMirror()

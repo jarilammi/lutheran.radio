@@ -67,6 +67,14 @@ import WidgetSurface
 /// the owned-language gate + ``ensureAuthoritativeLanguageContentIfNeeded()`` keep
 /// lock-screen flag/name on the destination until `content.state` matches.
 ///
+/// ## Interactive recreation after stalled ActivityKit updates
+/// Soft retries cannot repair an interactive activity whose system-held
+/// `content.state` never advances (language stuck on a prior stream, or visual stuck
+/// on `.userPaused` after soft resume while audio is already playing). After a bounded
+/// streak of `Activity.update` completions that leave system-held ContentState lagging, the manager ends the frozen
+/// surface and ``startActivity()`` requests a fresh interactive activity seeded from
+/// current language chrome + visual. Recreation is capped so thrashing is impossible.
+///
 /// ## Test Isolation
 /// All real Activity creation/update/timer paths are short-circuited under
 /// `isRunningUnderTest` (and the UITestMode SSOT) so that `xcodebuild test`
@@ -128,6 +136,32 @@ class RadioLiveActivityManager: ObservableObject {
     /// - SeeAlso: ``updateCurrentActivity()``, ``ensureAuthoritativeLanguageContentIfNeeded()``,
     ///   ``handleActivityContentUpdate(_:)``, docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     internal private(set) var lastPushedContent: LutheranRadioLiveActivityAttributes.ContentState?
+
+    /// Consecutive real `Activity.update` completions where system-held content still
+    /// mismatches the submitted candidate (language and/or stuck pause visual).
+    ///
+    /// Reset when system-held chrome matches the candidate, on `contentUpdates`, end paths,
+    /// and when a recreation begins. Used only to decide bounded interactive recreation.
+    /// - SeeAlso: ``isStalledLiveActivityContentPush(candidate:accepted:)``,
+    ///   ``shouldRecreateInteractiveLiveActivityAfterStalledPushes(consecutiveStalled:recreationsAttempted:threshold:maxRecreations:isRecreationInProgress:)``.
+    private var consecutiveStalledContentPushes = 0
+
+    /// How many times this process has recreated the interactive Live Activity because
+    /// system-held ContentState lagged the candidate. Reset when a push advances chrome.
+    private var interactiveContentRecreationsAttempted = 0
+
+    /// Re-entrancy guard while ``recreateInteractiveLiveActivityAfterStalledContent()`` runs
+    /// (end + start must not schedule nested recreation from the nested initial push).
+    private var isRecreatingLiveActivityAfterStalledContent = false
+
+    /// Consecutive stalled updates required before end + ``startActivity()`` recreation.
+    ///
+    /// Allows brief lag (system still holding prior language for one or two frames) without
+    /// thrashing; real freezes after pause/stream-switch exceed this quickly.
+    static let stalledContentPushRecreationThreshold = 3
+
+    /// Cap on interactive recreation per healthy match cycle (avoids end/start loops).
+    static let maxInteractiveContentRecreations = 2
 
     /// Long-lived task observing the Live Activity attribute events stream.
     ///
@@ -380,17 +414,24 @@ class RadioLiveActivityManager: ObservableObject {
     /// **Suppress + owned language:** Deduplication uses
     /// ``shouldSuppressLiveActivityContentPush(lastPushed:candidate:ownedContentLanguage:)``.
     /// Owned `content.state.currentLanguage` beats optimistic ``lastPushedContent`` so a failed
-    /// or unaccepted language push cannot stick the lock-screen flag on the prior stream.
+    /// or a language push that never lands cannot stick the lock-screen flag on the prior stream.
     ///
     /// **Post-update suppress memory:** After `Activity.update`, ``lastPushedContent`` is
     /// re-seeded from the activity’s observed `content.state` (not an unverified aspirational
     /// candidate). Language still mismatched → suppress memory keeps the system-held language
     /// so a further non-suppressed push remains eligible.
     ///
+    /// **Stalled system-held chrome recreation:** When system-held language (or pause visual while the
+    /// candidate needs Connecting/playing) still mismatches after the await for a bounded
+    /// streak, ``recreateInteractiveLiveActivityAfterStalledContent()`` ends the frozen
+    /// activity and requests a new one with destination language + current visual. Soft
+    /// retries alone cannot repair an ActivityKit surface that never accepts content.
+    ///
     /// - Precondition: Must be called on the main actor (the method is `@MainActor`).
     /// - Postcondition: If an update is sent, `lastPushedContent` reflects the
     ///   system-observed `content.state` after the await. Durable visual + language App Group
-    ///   mirrors are warmed even when ActivityKit IPC is suppressed.
+    ///   mirrors are warmed even when ActivityKit IPC is suppressed. After stalled-push recreation threshold,
+    ///   interactive activity may be recreated once per healthy match cycle (capped).
     /// - Note: Silently no-ops if no activity is active.
     /// - Important: Uses `nonisolated(unsafe)` + `unsafe` because `Activity.update` is
     ///   not Sendable in the current SDK; the capture of the Activity is done only after
@@ -398,6 +439,7 @@ class RadioLiveActivityManager: ObservableObject {
     ///
     /// - SeeAlso: `startActivity()`, ``ensureAuthoritativeLanguageContentIfNeeded()``,
     ///   ``ensureAuthoritativePlayingContentIfNeeded()``,
+    ///   ``recreateInteractiveLiveActivityAfterStalledContent()``,
     ///   `SharedPlayerManager.setPlaying`,
     ///   `SharedPlayerManager.resetToPrePlayForNewStream`,
     ///   `SharedPlayerManager.didUpdateStreamMetadata`,
@@ -470,21 +512,38 @@ class RadioLiveActivityManager: ObservableObject {
             return
         }
 
-        // SAFETY: Activity.update is not Sendable in the current SDK; capture a local
-        // strong reference on the main actor before the await (same pattern as end paths).
+        // SAFETY: Activity.update / Activity property access are not Sendable in the current
+        // SDK; capture a local strong reference on the main actor, then read content/id only
+        // under explicit `unsafe` (same capture pattern as end paths).
         nonisolated(unsafe) let safeActivity = activity
         unsafe await safeActivity.update(.init(state: candidate, staleDate: nil))
 
         // Suppress memory from system-observed content, never unverified aspirational candidate.
-        let accepted = safeActivity.content.state
+        // SAFETY: `content.state` / `id` on the nonisolated(unsafe) Activity capture require
+        // an `unsafe` expression under SWIFT_STRICT_MEMORY_SAFETY.
+        let accepted = unsafe safeActivity.content.state
         lastPushedContent = Self.suppressMemoryAfterActivityUpdate(
             candidate: candidate,
             acceptedSystemContent: accepted
         )
 
+        let contentStalled = Self.isStalledLiveActivityContentPush(
+            candidate: candidate,
+            accepted: accepted
+        )
+        if contentStalled {
+            consecutiveStalledContentPushes += 1
+        } else {
+            // Healthy surface — clear recreation budget so a later freeze can recreate again.
+            consecutiveStalledContentPushes = 0
+            interactiveContentRecreationsAttempted = 0
+        }
+
         #if DEBUG
+        // SAFETY: Activity.id on the nonisolated(unsafe) capture (DEBUG diagnostics only).
+        let activityId = unsafe safeActivity.id
         print(
-            "🔴 Live Activity update: id=\(safeActivity.id) candidateLang=\(candidate.currentLanguage) " +
+            "🔴 Live Activity update: id=\(activityId) candidateLang=\(candidate.currentLanguage) " +
             "contentStateLang=\(accepted.currentLanguage) visual=\(accepted.visualState) " +
             "candidateVisual=\(candidate.visualState)"
         )
@@ -494,8 +553,120 @@ class RadioLiveActivityManager: ObservableObject {
                 "🔴 Live Activity language not yet on surface (candidate=\(candidate.currentLanguage) " +
                 "content.state=\(accepted.currentLanguage)); suppress memory kept system-held language"
             )
+        } else if accepted.visualState == .userPaused,
+                  candidate.visualState == .playing || candidate.visualState == .prePlay {
+            print(
+                "🔴 Live Activity visual not yet on surface (candidate=\(candidate.visualState) " +
+                "content.state=\(accepted.visualState)); suppress memory kept system-held visual"
+            )
         }
         #endif
+
+        if Self.shouldRecreateInteractiveLiveActivityAfterStalledPushes(
+            consecutiveStalled: consecutiveStalledContentPushes,
+            recreationsAttempted: interactiveContentRecreationsAttempted,
+            threshold: Self.stalledContentPushRecreationThreshold,
+            maxRecreations: Self.maxInteractiveContentRecreations,
+            isRecreationInProgress: isRecreatingLiveActivityAfterStalledContent
+        ) {
+            await recreateInteractiveLiveActivityAfterStalledContent()
+        }
+    }
+
+    /// Whether a completed `Activity.update` left the system surface on prior chrome.
+    ///
+    /// Counts as stalled (system-held chrome still lags) when:
+    /// - Candidate language is non-empty and differs from system-held language (flag/name stall), or
+    /// - System still shows `.userPaused` while the candidate needs `.prePlay` (Connecting) or
+    ///   `.playing` (soft-resume / stream-switch attach honesty after pause).
+    ///
+    /// - Parameters:
+    ///   - candidate: Content submitted to ActivityKit.
+    ///   - accepted: Re-read `activity.content.state` after the update await.
+    /// - Returns: `true` when the push should increment the stalled-push streak.
+    /// - SeeAlso: ``updateCurrentActivity()``, ``shouldRecreateInteractiveLiveActivityAfterStalledPushes(consecutiveStalled:recreationsAttempted:threshold:maxRecreations:isRecreationInProgress:)``.
+    static func isStalledLiveActivityContentPush(
+        candidate: LutheranRadioLiveActivityAttributes.ContentState,
+        accepted: LutheranRadioLiveActivityAttributes.ContentState
+    ) -> Bool {
+        if !candidate.currentLanguage.isEmpty,
+           accepted.currentLanguage != candidate.currentLanguage {
+            return true
+        }
+        // Soft-resume freeze: pause content never leaves the surface while audio plays.
+        if accepted.visualState == .userPaused,
+           candidate.visualState == .playing || candidate.visualState == .prePlay {
+            return true
+        }
+        return false
+    }
+
+    /// Whether soft retries should yield to interactive activity recreation.
+    ///
+    /// - Parameters:
+    ///   - consecutiveStalled: Streak of stalled pushes since system-held chrome last matched.
+    ///   - recreationsAttempted: Recreations already performed this healthy match cycle.
+    ///   - threshold: Minimum streak before recreation (production:
+    ///     ``stalledContentPushRecreationThreshold``).
+    ///   - maxRecreations: Cap per healthy match cycle (production:
+    ///     ``maxInteractiveContentRecreations``).
+    ///   - isRecreationInProgress: Nested push during end+start must not schedule recreation again.
+    /// - Returns: `true` when ``recreateInteractiveLiveActivityAfterStalledContent()`` should run.
+    /// - SeeAlso: ``updateCurrentActivity()``, docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    static func shouldRecreateInteractiveLiveActivityAfterStalledPushes(
+        consecutiveStalled: Int,
+        recreationsAttempted: Int,
+        threshold: Int = RadioLiveActivityManager.stalledContentPushRecreationThreshold,
+        maxRecreations: Int = RadioLiveActivityManager.maxInteractiveContentRecreations,
+        isRecreationInProgress: Bool
+    ) -> Bool {
+        guard !isRecreationInProgress else { return false }
+        guard consecutiveStalled >= threshold else { return false }
+        guard recreationsAttempted < maxRecreations else { return false }
+        return true
+    }
+
+    /// Ends the frozen interactive Live Activity and requests a fresh one with current
+    /// language chrome + visual (destination stamp / attach language via
+    /// ``SharedPlayerManager/liveActivityLanguageCodeForContentPush()``).
+    ///
+    /// **Why recreation:** Device captures show ActivityKit can stop applying
+    /// `Activity.update` on an interactive id after pause while audio and widgets advance.
+    /// Soft reconcile cannot change a system surface that never advances ContentState; a new
+    /// `Activity.request` re-seeds flag/name/control chrome.
+    ///
+    /// - Precondition: Main actor; not already inside recreation; test isolation short-circuits
+    ///   via ``endActivityAsync`` / ``startActivity()`` guards.
+    /// - Postcondition: Recreation attempt counted; stalled streak cleared; either a new
+    ///   interactive activity exists or start failed (logged in DEBUG).
+    /// - Important: Does **not** invent `.playing` — initial ContentState comes from actor
+    ///   visual + language SSOT (Connecting remains honest during stream-switch hold).
+    /// - SeeAlso: ``updateCurrentActivity()``, ``startActivity()``, ``endActivityAsync(dismissalPolicy:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    @MainActor
+    func recreateInteractiveLiveActivityAfterStalledContent() async {
+        if SharedPlayerManager.isRunningInUITestMode { return }
+        #if DEBUG
+        if isRunningUnderTest { return }
+        #endif
+        guard !isRecreatingLiveActivityAfterStalledContent else { return }
+
+        isRecreatingLiveActivityAfterStalledContent = true
+        interactiveContentRecreationsAttempted += 1
+        consecutiveStalledContentPushes = 0
+        defer { isRecreatingLiveActivityAfterStalledContent = false }
+
+        #if DEBUG
+        print(
+            "🔴 Live Activity recreating interactive surface after stalled system-held chrome " +
+            "(recreation #\(interactiveContentRecreationsAttempted))"
+        )
+        #endif
+
+        // Immediate dismissal so the frozen prior-language / pause frame does not linger
+        // beside the replacement card.
+        await endActivityAsync(dismissalPolicy: .immediate)
+        await startActivity()
     }
 
     /// Whether ActivityKit IPC should be skipped for this candidate.
@@ -615,13 +786,15 @@ class RadioLiveActivityManager: ObservableObject {
         return visualState
     }
 
-    /// If the actor is authoritatively playing (no hold/connect) but ``lastPushedContent`` still
-    /// shows Connecting, push again so lock-screen chrome cannot stick on yellow stream-switch
-    /// optimistic / deferred-setPlaying prePlay.
+    /// If the actor is authoritatively playing (no hold/connect) but suppress memory or owned
+    /// content still shows Connecting (``.prePlay``) or sticky pause (``.userPaused``), push
+    /// again so lock-screen chrome cannot stick after stream-switch deferred-setPlaying or
+    /// soft-resume from pause.
     ///
     /// Called from ``SharedPlayerManager/setPlaying()`` after the primary media-surface refresh.
     ///
-    /// - SeeAlso: ``updateCurrentActivity()``, ``ensureAuthoritativeLanguageContentIfNeeded()``,
+    /// - SeeAlso: ``updateCurrentActivity()``, ``shouldEnsureAuthoritativePlayingContent(actorVisual:streamSwitchHold:isConnectingPlayback:lastPushedVisual:ownedVisual:)``,
+    ///   ``ensureAuthoritativeLanguageContentIfNeeded()``,
     ///   ``recordOptimisticStreamSwitchContent(language:visualState:)``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     @MainActor
@@ -634,17 +807,63 @@ class RadioLiveActivityManager: ObservableObject {
 
         let manager = SharedPlayerManager.shared
         let visual = await manager.currentVisualState
-        guard visual == .playing else { return }
         let hold = await manager.isStreamSwitchPrePlayHoldActive
         let connecting = await manager.isConnectingPlayback
-        guard !hold, !connecting else { return }
+        let lastVisual = lastPushedContent?.visualState
+        let ownedVisual = currentActivity?.content.state.visualState
 
-        if lastPushedContent?.visualState == .prePlay {
-            #if DEBUG
-            print("🔴 Live Activity reconciling stale Connecting → authoritative playing")
-            #endif
-            await updateCurrentActivity()
+        guard Self.shouldEnsureAuthoritativePlayingContent(
+            actorVisual: visual,
+            streamSwitchHold: hold,
+            isConnectingPlayback: connecting,
+            lastPushedVisual: lastVisual,
+            ownedVisual: ownedVisual
+        ) else {
+            return
         }
+
+        #if DEBUG
+        print(
+            "🔴 Live Activity reconciling authoritative playing → last=\(String(describing: lastVisual)) " +
+            "owned=\(String(describing: ownedVisual))"
+        )
+        #endif
+        await updateCurrentActivity()
+    }
+
+    /// Whether playing reconcile should force a content push.
+    ///
+    /// - Parameters:
+    ///   - actorVisual: Actor ``currentVisualState``.
+    ///   - streamSwitchHold: ``isStreamSwitchPrePlayHoldActive``.
+    ///   - isConnectingPlayback: ``isConnectingPlayback``.
+    ///   - lastPushedVisual: ``lastPushedContent`` visual, if any.
+    ///   - ownedVisual: Owned `content.state.visualState`, if any.
+    /// - Returns: `true` when the actor is authoritative playing without hold/connect and
+    ///   last-pushed or owned visual is still Connecting or paused.
+    /// - Note: Does not invent play during hold/connect — those remain Connecting honesty.
+    /// - SeeAlso: ``ensureAuthoritativePlayingContentIfNeeded()``.
+    static func shouldEnsureAuthoritativePlayingContent(
+        actorVisual: PlayerVisualState,
+        streamSwitchHold: Bool,
+        isConnectingPlayback: Bool,
+        lastPushedVisual: PlayerVisualState?,
+        ownedVisual: PlayerVisualState?
+    ) -> Bool {
+        guard actorVisual == .playing else { return false }
+        guard !streamSwitchHold, !isConnectingPlayback else { return false }
+        if lastPushedVisual == .prePlay || lastPushedVisual == .userPaused {
+            return true
+        }
+        if ownedVisual == .prePlay || ownedVisual == .userPaused {
+            return true
+        }
+        // Owned still not playing while suppress memory already claims playing (extension /
+        // optimistic path advanced lastPushed without system acceptance).
+        if let ownedVisual, ownedVisual != .playing {
+            return true
+        }
+        return false
     }
 
     /// Ensures interactive Live Activity `ContentState.currentLanguage` matches
@@ -926,6 +1145,8 @@ class RadioLiveActivityManager: ObservableObject {
         if SharedPlayerManager.isRunningInUITestMode {
             currentActivity = nil
             lastPushedContent = nil
+            consecutiveStalledContentPushes = 0
+            interactiveContentRecreationsAttempted = 0
             SharedPlayerManager.clearLiveActivityToggleVisualStateMirror()
             SharedPlayerManager.clearLiveActivityLanguageMirror()
             return nil
@@ -935,6 +1156,8 @@ class RadioLiveActivityManager: ObservableObject {
         if isRunningUnderTest {
             currentActivity = nil
             lastPushedContent = nil
+            consecutiveStalledContentPushes = 0
+            interactiveContentRecreationsAttempted = 0
             SharedPlayerManager.clearLiveActivityToggleVisualStateMirror()
             SharedPlayerManager.clearLiveActivityLanguageMirror()
             return nil
@@ -947,6 +1170,12 @@ class RadioLiveActivityManager: ObservableObject {
 
         currentActivity = nil
         lastPushedContent = nil
+        consecutiveStalledContentPushes = 0
+        // Do not reset interactiveContentRecreationsAttempted here when recreation is mid-flight
+        // (end clears tracking before start). Recreation counter is owned by the recreation cycle.
+        if !isRecreatingLiveActivityAfterStalledContent {
+            interactiveContentRecreationsAttempted = 0
+        }
         SharedPlayerManager.clearLiveActivityToggleVisualStateMirror()
         SharedPlayerManager.clearLiveActivityLanguageMirror()
 
@@ -1326,6 +1555,9 @@ class RadioLiveActivityManager: ObservableObject {
         _ content: ActivityContent<LutheranRadioLiveActivityAttributes.ContentState>
     ) {
         lastPushedContent = content.state
+        // System advanced content: clear stalled streak + recreation budget.
+        consecutiveStalledContentPushes = 0
+        interactiveContentRecreationsAttempted = 0
         SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(content.state.visualState)
         SharedPlayerManager.persistLiveActivityLanguageMirror(content.state.currentLanguage)
     }
@@ -1340,6 +1572,10 @@ class RadioLiveActivityManager: ObservableObject {
             _test_harnessSimulatesActiveActivity = false
             currentActivity = nil
             lastPushedContent = nil
+            consecutiveStalledContentPushes = 0
+            if !isRecreatingLiveActivityAfterStalledContent {
+                interactiveContentRecreationsAttempted = 0
+            }
             SharedPlayerManager.clearLiveActivityToggleVisualStateMirror()
             SharedPlayerManager.clearLiveActivityLanguageMirror()
             return
@@ -1348,6 +1584,10 @@ class RadioLiveActivityManager: ObservableObject {
         guard currentActivity != nil else { return }
         currentActivity = nil
         lastPushedContent = nil
+        consecutiveStalledContentPushes = 0
+        if !isRecreatingLiveActivityAfterStalledContent {
+            interactiveContentRecreationsAttempted = 0
+        }
         SharedPlayerManager.clearLiveActivityToggleVisualStateMirror()
         SharedPlayerManager.clearLiveActivityLanguageMirror()
     }
@@ -1440,6 +1680,48 @@ class RadioLiveActivityManager: ObservableObject {
         Self.suppressMemoryAfterActivityUpdate(
             candidate: candidate,
             acceptedSystemContent: acceptedSystemContent
+        )
+    }
+
+    /// White-box seam: whether system-held content still lags the submitted candidate.
+    func _test_isStalledLiveActivityContentPush(
+        candidate: LutheranRadioLiveActivityAttributes.ContentState,
+        accepted: LutheranRadioLiveActivityAttributes.ContentState
+    ) -> Bool {
+        Self.isStalledLiveActivityContentPush(candidate: candidate, accepted: accepted)
+    }
+
+    /// White-box seam: recreate decision after a stalled content-push streak.
+    func _test_shouldRecreateInteractiveLiveActivityAfterStalledPushes(
+        consecutiveStalled: Int,
+        recreationsAttempted: Int,
+        threshold: Int = RadioLiveActivityManager.stalledContentPushRecreationThreshold,
+        maxRecreations: Int = RadioLiveActivityManager.maxInteractiveContentRecreations,
+        isRecreationInProgress: Bool
+    ) -> Bool {
+        Self.shouldRecreateInteractiveLiveActivityAfterStalledPushes(
+            consecutiveStalled: consecutiveStalled,
+            recreationsAttempted: recreationsAttempted,
+            threshold: threshold,
+            maxRecreations: maxRecreations,
+            isRecreationInProgress: isRecreationInProgress
+        )
+    }
+
+    /// White-box seam: playing reconcile decision (Connecting / pause stuck → playing).
+    func _test_shouldEnsureAuthoritativePlayingContent(
+        actorVisual: PlayerVisualState,
+        streamSwitchHold: Bool,
+        isConnectingPlayback: Bool,
+        lastPushedVisual: PlayerVisualState?,
+        ownedVisual: PlayerVisualState?
+    ) -> Bool {
+        Self.shouldEnsureAuthoritativePlayingContent(
+            actorVisual: actorVisual,
+            streamSwitchHold: streamSwitchHold,
+            isConnectingPlayback: isConnectingPlayback,
+            lastPushedVisual: lastPushedVisual,
+            ownedVisual: ownedVisual
         )
     }
 

@@ -126,6 +126,8 @@ Never derive presentation inside leaf view `body` for the three canonical surfac
    - Suppress uses ``shouldSuppressLiveActivityContentPush`` against private `lastPushedContent` **and** owned `content.state.currentLanguage` (owned language beats optimistic suppress memory).
    - Only when not suppressed does it call `Activity.update`, then re-seeds `lastPushedContent` from the activity’s observed `content.state` (never an unverified aspirational candidate).
    - ``ensureAuthoritativeLanguageContentIfNeeded()`` re-pushes when destination language from ``liveActivityLanguageCodeForContentPush()`` still differs from owned / last language (peer to playing ensure).
+   - ``ensureAuthoritativePlayingContentIfNeeded()`` re-pushes when actor is authoritative `.playing` without hold/connect but last-pushed or owned visual is still `.prePlay` or `.userPaused` (stream-switch Connecting sampler + soft-resume pause freeze).
+   - After a bounded streak of `Activity.update` results that leave system-held chrome lagging (system `content.state` language still prior, or visual stuck on `.userPaused` while candidate needs Connecting/playing), ``recreateInteractiveLiveActivityAfterStalledContent()`` ends the frozen interactive activity and ``startActivity()`` requests a fresh one seeded from current language + visual SSOTs.
 
 3. **Lock-screen toggle optimistic ContentState** (intent path, main or extension host):
    - ``WidgetIntentExecution/performLiveActivityToggle()`` plans from multi-source resolve, then writes the durable toggle mirror and calls ``pushOptimisticLiveActivityToggleContent(visualState:)``.
