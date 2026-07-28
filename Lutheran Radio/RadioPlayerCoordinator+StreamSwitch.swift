@@ -139,6 +139,21 @@ extension RadioPlayerCoordinator {
             setIsSwitchingStream(true)
             defer { setIsSwitchingStream(false) }
 
+            // Destination language before engine prep (hold when intent allows play; stamp-only
+            // when sticky pause / locked so mid-switch saves cannot re-persist the prior code).
+            let mayResume = await SharedPlayerManager.shared.canProceedWithPlayback()
+            if mayResume {
+                let intent = await SharedPlayerManager.shared.currentPlaybackIntent
+                await SharedPlayerManager.shared.resetToPrePlayForNewStream(
+                    preserveActiveSleepTimer: intent == .sleepTimer,
+                    connectingLanguageCode: targetStream.languageCode
+                )
+                updateUI(for: .prePlay)
+            } else {
+                await SharedPlayerManager.shared.stampStreamSwitchDestinationLanguage(targetStream.languageCode)
+                await updateUserDefaultsLanguage(targetStream.languageCode)
+            }
+
             #if DEBUG
             print("[RadioPlayerCoordinator] handleSwitchToLanguage — engine prep via switchToStream")
             #endif
@@ -149,19 +164,11 @@ extension RadioPlayerCoordinator {
             #endif
             await playTuningSound(animateNeedleTo: targetIndex)
 
-            // Await destination language before intent/UI work that can saveCurrentState.
+            // Await destination language before further intent/UI work that can saveCurrentState.
             await updateUserDefaultsLanguage(targetStream.languageCode)
+            SharedPlayerManager.persistLiveActivityLanguageMirror(targetStream.languageCode)
 
             // SwiftUI selector observes viewModel.selectedStreamIndex (matchedGeometryEffect animates)
-
-            if await SharedPlayerManager.shared.canProceedWithPlayback() {
-                let intent = await SharedPlayerManager.shared.currentPlaybackIntent
-                await SharedPlayerManager.shared.resetToPrePlayForNewStream(
-                    preserveActiveSleepTimer: intent == .sleepTimer,
-                    connectingLanguageCode: targetStream.languageCode
-                )
-                updateUI(for: .prePlay)
-            }
 
             if await SharedPlayerManager.shared.canProceedWithPlayback() {
                 #if DEBUG
@@ -176,6 +183,7 @@ extension RadioPlayerCoordinator {
                 print("[RadioPlayerCoordinator] ⏸ Intent blocks playback after switch (userPaused, securityLocked, or cleared)")
                 #endif
                 updateUI(for: .userPaused)
+                await SharedPlayerManager.shared.clearStreamSwitchDestinationLanguageIfNotHolding()
             }
 
             announceSwitchedToLanguage(targetStream)
@@ -265,12 +273,15 @@ extension RadioPlayerCoordinator {
     ///    (`isActivePlaybackIntent`).
     /// 2. If resuming: `resetToPrePlayForNewStream` + Connecting UI **before** engine teardown
     ///    so Live Activity never stays `.playing` mid silent stop (symmetric with
-    ///    `completeStreamSwitch`).
+    ///    `completeStreamSwitch`). If **paused**: ``stampStreamSwitchDestinationLanguage`` +
+    ///    awaited destination snapshot + media-surface refresh **without** `.prePlay` hold
+    ///    (sticky `.userPaused` chrome; language advances immediately).
     /// 3. Engine preparation exclusively via `DirectStreamingPlayer.switchToStream(_:)`
     ///    (the SSOT: model update, transient reset, awaited stop for lang change, counter reset).
     /// 4. Mirror selection + language snapshot + LA language mirror + media-surface refresh.
     /// 5. If `!shouldResumeAfterSwitch`: clear soft-pause stash, force `.userPaused` visual,
-    ///    announce, clear the `actionId`, and return (no playback started).
+    ///    clear destination stamp if not holding, announce, clear the `actionId`, and return
+    ///    (no playback started).
     /// 6. If resuming: `SharedPlayerManager.play()` (hold already active). Stream failure leaves
     ///    intent active (`.shouldBePlaying` / `.sleepTimer`), so this path auto-resumes without
     ///    an extra play tap.
@@ -313,6 +324,8 @@ extension RadioPlayerCoordinator {
     ///   ``SharedPlayerManager/play()``,
     ///   ``SharedPlayerManager/userRequestedPlay()``,
     ///   ``SharedPlayerManager/resetToPrePlayForNewStream(preserveActiveSleepTimer:)``,
+    ///   ``SharedPlayerManager/stampStreamSwitchDestinationLanguage(_:)``,
+    ///   ``SharedPlayerManager/clearStreamSwitchDestinationLanguageIfNotHolding()``,
     ///   ``SharedPlayerManager/markPlaybackStoppedByStreamFailure(_:)``,
     ///   ``SharedPlayerManager/currentPlaybackIntent``,
     ///   docs/cold-launch-streamplay-regression-checklist.md (§6.12, §10),
@@ -332,15 +345,22 @@ extension RadioPlayerCoordinator {
         let playbackIntent = await SharedPlayerManager.shared.currentPlaybackIntent
         let shouldResumeAfterSwitch = playbackIntent.isActivePlaybackIntent
 
-        // Connecting chrome **before** silent engine teardown, with destination language so Live
-        // Activity never shows `.playing` mid-switch and never shows prior-language chrome for one
-        // content push while visual is already Connecting (symmetric with completeStreamSwitch).
+        // Destination language **before** silent engine teardown so LA / snapshot never lag on
+        // the prior stream for one content push (symmetric with completeStreamSwitch).
+        // Active intent: Connecting hold + destination. Sticky pause: destination stamp only
+        // (keep `.userPaused` chrome; never auto-resume).
         if shouldResumeAfterSwitch {
             await SharedPlayerManager.shared.resetToPrePlayForNewStream(
                 preserveActiveSleepTimer: playbackIntent == .sleepTimer,
                 connectingLanguageCode: stream.languageCode
             )
             updateUI(for: .prePlay)
+        } else {
+            await SharedPlayerManager.shared.stampStreamSwitchDestinationLanguage(stream.languageCode)
+            await updateUserDefaultsLanguage(stream.languageCode)
+            #if LUTHERAN_MAIN_APP
+            await SharedPlayerManager.shared.refreshAllMediaSurfaces(liveActivity: .updateIfActive)
+            #endif
         }
 
         // Engine prep via the SSOT. Replaces all prior manual setSelected + reset + stop sites
@@ -349,9 +369,10 @@ extension RadioPlayerCoordinator {
 
         selectedStreamIndex = index
         backgroundImageController.update(for: stream)
-        // Session snapshot language after engine model prep (LA language already on hold when resuming).
-        // Must complete before media-surface refresh / any saveCurrentState so destination is not
-        // clobbered by a re-resolve from a lagging preferred/snapshot (paused path has no hold).
+        // Session snapshot language after engine model prep (destination already stamped when
+        // paused; hold-time destination when resuming). Must complete before media-surface
+        // refresh / any saveCurrentState so destination is not clobbered by a re-resolve from
+        // a lagging preferred/snapshot.
         await updateUserDefaultsLanguage(stream.languageCode)
         SharedPlayerManager.persistLiveActivityLanguageMirror(stream.languageCode)
         #if LUTHERAN_MAIN_APP
@@ -367,6 +388,8 @@ extension RadioPlayerCoordinator {
             await SharedPlayerManager.shared.clearSoftPauseMetadataStashForLanguageChange()
             viewModel?.selectedStreamIndex = index // migrated from // languageSelectorView (SwiftUI uses VM) .setSelectedIndex(index, caller: "widgetSwitch-paused")
             updateUI(for: .userPaused)
+            // Destination fully stamped (snapshot + mirror + surfaces); drop stamp without hold.
+            await SharedPlayerManager.shared.clearStreamSwitchDestinationLanguageIfNotHolding()
             announceSwitchedToLanguage(stream)
             SharedPlayerManager.shared.clearPendingAction(actionId: actionId)
             return
@@ -544,12 +567,14 @@ extension RadioPlayerCoordinator {
     /// Responsibilities (executed in order inside the debounced Task):
     /// 1. Snapshot intent; when resuming, establish `resetToPrePlayForNewStream` hold +
     ///    Connecting chrome **before** engine teardown (may already be set by
-    ///    `handleLanguageSelection`).
+    ///    `handleLanguageSelection`). When paused, ``stampStreamSwitchDestinationLanguage`` +
+    ///    awaited destination snapshot + media refresh **without** `.prePlay` hold.
     /// 2. Engine prep via `DirectStreamingPlayer.switchToStream` (SSOT silent stop + model).
     /// 3. **Awaited** language snapshot + Live Activity language mirror + media-surface refresh
     ///    (visual is already Connecting or sticky pause — never `.playing` mid-teardown;
     ///    destination language must land before refresh/save re-resolve).
-    /// 4. If not resuming: clear soft-pause metadata, force `.userPaused` UI, announce, return.
+    /// 4. If not resuming: clear soft-pause metadata, force `.userPaused` UI, clear destination
+    ///    stamp if not holding, announce, return.
     /// 5. If resuming: optional tuning sound + needle animation, second guard,
     ///    conditional redundant-hold skip, then `SharedPlayerManager.play()`.
     /// 6. Final announce.
@@ -582,6 +607,8 @@ extension RadioPlayerCoordinator {
     ///   ``SharedPlayerManager/play()``,
     ///   ``SharedPlayerManager/userRequestedPlay()``,
     ///   ``SharedPlayerManager/resetToPrePlayForNewStream(preserveActiveSleepTimer:)``,
+    ///   ``SharedPlayerManager/stampStreamSwitchDestinationLanguage(_:)``,
+    ///   ``SharedPlayerManager/clearStreamSwitchDestinationLanguageIfNotHolding()``,
     ///   ``SharedPlayerManager/currentPlaybackIntent``,
     ///   CODING_AGENT.md (Single Source of Truth Principles + "Cross-target shared source files"),
     ///   <doc:Architecture>.
@@ -612,10 +639,10 @@ extension RadioPlayerCoordinator {
 
             let shouldResumeAfterSwitch = playbackIntent.isActivePlaybackIntent
 
-            // Connecting chrome **before** silent engine teardown, with destination language so
-            // Live Activity / Now Playing never advertise `.playing` mid stream-switch stop and
-            // language chrome advances with Connecting (no prior-language one-frame lag).
-            // `handleLanguageSelection` may already have set the hold; skip a second reset.
+            // Destination language **before** silent engine teardown so Live Activity / Now
+            // Playing never advertise prior-language chrome mid switch. Active intent:
+            // Connecting hold + destination (`handleLanguageSelection` may already hold).
+            // Sticky pause: destination stamp only — keep `.userPaused`, no auto-resume.
             if shouldResumeAfterSwitch {
                 if await SharedPlayerManager.shared.isStreamSwitchPrePlayHoldActive {
                     #if DEBUG
@@ -628,6 +655,12 @@ extension RadioPlayerCoordinator {
                     )
                 }
                 self.updateUI(for: .prePlay)
+            } else {
+                await SharedPlayerManager.shared.stampStreamSwitchDestinationLanguage(stream.languageCode)
+                await updateUserDefaultsLanguage(stream.languageCode)
+                #if LUTHERAN_MAIN_APP
+                await SharedPlayerManager.shared.refreshAllMediaSurfaces(liveActivity: .updateIfActive)
+                #endif
             }
 
             // Engine preparation is performed via the SSOT for *every* user-initiated
@@ -637,9 +670,9 @@ extension RadioPlayerCoordinator {
             await streamingPlayer.switchToStream(stream)
             guard !Task.isCancelled else { return }
 
-            // Session snapshot language after model prep (LA language already on hold when resuming).
-            // Paused path: still warm language mirror + surfaces without claiming `.playing`.
-            // Await destination before refresh/save so concurrent re-resolve cannot write prior code last.
+            // Session snapshot language after model prep (destination already stamped when
+            // paused; hold-time destination when resuming). Await destination before
+            // refresh/save so concurrent re-resolve cannot write prior code last.
             await updateUserDefaultsLanguage(stream.languageCode)
             SharedPlayerManager.persistLiveActivityLanguageMirror(stream.languageCode)
             #if LUTHERAN_MAIN_APP
@@ -657,6 +690,7 @@ extension RadioPlayerCoordinator {
                 self.backgroundImageController.update(for: stream)
                 self.updateUI(for: .userPaused)
                 self.viewModel?.selectedStreamIndex = index
+                await SharedPlayerManager.shared.clearStreamSwitchDestinationLanguageIfNotHolding()
                 announceSwitchedToLanguage(stream)
                 return
             }

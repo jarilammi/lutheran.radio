@@ -25,7 +25,8 @@ import WidgetSurface
 /// Language / stream-switch emission contracts for active and paused paths.
 ///
 /// Covers ``resetToPrePlayForNewStream``, hold-time destination language mirrors,
-/// and paused switch metadata clear without visual/intent mutation.
+/// paused-path destination stamp without Connecting hold, and paused switch
+/// metadata clear without visual/intent mutation.
 ///
 /// - SeeAlso: ``SharedPlayerManagerEventTests``,
 ///   ``targetStreamDifferentFromCurrent(in:)``,
@@ -304,6 +305,95 @@ final class SharedPlayerManagerEventStreamSwitchTests: XCTestCase {
 
         let current = SharedPlayerManager.streamForLanguageCode(other.languageCode)
         XCTAssertEqual(current.languageCode, other.languageCode)
+    }
+
+    /// Sticky-paused language switch stamps destination **without** Connecting hold so
+    /// content push + snapshot resolve use the target language while visual stays
+    /// `.userPaused` and intent stays sticky (no auto-resume).
+    ///
+    /// Protects the coordinator paused branch contract:
+    /// ``stampStreamSwitchDestinationLanguage`` → engine prep → explicit language write →
+    /// ``clearStreamSwitchDestinationLanguageIfNotHolding()``. After clear, content language
+    /// follows stream attach (model already on destination).
+    ///
+    /// - SeeAlso: ``stampStreamSwitchDestinationLanguage(_:)``,
+    ///   ``clearStreamSwitchDestinationLanguageIfNotHolding()``,
+    ///   ``liveActivityLanguageCodeForContentPush()``,
+    ///   ``saveCombinedWidgetState(language:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
+    ///   CODING_AGENT.md (Test Execution Patience and Fast, Reliable Test Patterns).
+    func testPausedLanguageSwitchDestinationStampAdvancesContentLanguageWithoutHold() async {
+        let streams = manager.availableStreams
+        guard streams.count >= 2 else { return }
+        let other = await targetStreamDifferentFromCurrent(in: streams)
+        let priorLanguage = await MainActor.run {
+            DirectStreamingPlayer.shared.selectedStream.languageCode
+        }
+        XCTAssertNotEqual(
+            priorLanguage,
+            other.languageCode,
+            "Arrange: destination must differ from engine selection"
+        )
+
+        await manager.setUserPaused()
+        await MainActor.run {
+            WidgetRefreshManager.setHasActiveLutheranWidgets(true)
+        }
+
+        // Prior snapshot still on the old language (lagging preferred during a real switch).
+        await manager.saveCombinedWidgetState(language: priorLanguage)
+
+        await manager.stampStreamSwitchDestinationLanguage(other.languageCode)
+
+        let holdActive = await manager.isStreamSwitchPrePlayHoldActive
+        let contentLanguage = await manager.liveActivityLanguageCodeForContentPush()
+        let visual = await manager.currentVisualState
+        let intent = await manager.currentPlaybackIntent
+        let mirror = SharedPlayerManager.loadLiveActivityLanguageMirror()
+
+        XCTAssertFalse(holdActive, "Paused stamp must not enable Connecting hold")
+        XCTAssertEqual(visual, .userPaused, "Paused stamp must not force .prePlay")
+        XCTAssertEqual(intent, .userPaused, "Paused stamp must not change intent")
+        XCTAssertEqual(
+            contentLanguage,
+            other.languageCode,
+            "LA content language must be destination before engine model settles"
+        )
+        XCTAssertEqual(
+            mirror,
+            other.languageCode,
+            "Durable LA language mirror must warm destination on paused stamp"
+        )
+
+        // Concurrent saveCurrentState must not re-persist the prior preferred code.
+        await manager.saveCurrentState()
+        let snapshotAfterStamp = SharedPlayerManager.loadPersistedWidgetState()
+        XCTAssertEqual(
+            snapshotAfterStamp?.currentLanguage,
+            other.languageCode,
+            "Destination stamp must outrank lagging preferred/snapshot on saveCurrentState"
+        )
+        XCTAssertEqual(snapshotAfterStamp?.visualState, .userPaused)
+
+        await manager.switchToStream(other)
+        await manager.saveCombinedWidgetState(language: other.languageCode)
+        await manager.clearStreamSwitchDestinationLanguageIfNotHolding()
+
+        let contentAfterClear = await manager.liveActivityLanguageCodeForContentPush()
+        let engineAfter = SharedPlayerManager.mainAppLiveActivityLanguageCode()
+        let visualAfter = await manager.currentVisualState
+        let intentAfter = await manager.currentPlaybackIntent
+
+        XCTAssertEqual(contentAfterClear, other.languageCode)
+        XCTAssertEqual(engineAfter, other.languageCode)
+        XCTAssertEqual(visualAfter, .userPaused)
+        XCTAssertEqual(intentAfter, .userPaused)
+        let holdAfterClear = await manager.isStreamSwitchPrePlayHoldActive
+        XCTAssertFalse(holdAfterClear, "Clear after paused stamp must leave hold inactive")
+
+        await MainActor.run {
+            WidgetRefreshManager.setHasActiveLutheranWidgets(false)
+        }
     }
 
 }

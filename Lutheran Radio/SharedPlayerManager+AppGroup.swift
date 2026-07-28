@@ -315,13 +315,13 @@ extension SharedPlayerManager {
     /// the `loadSharedState` facade) rather than calling this.
     ///
     /// - Important: Language derivation is pure via ``PersistedLanguageResolution/resolve``:
-    ///   hold-time destination (`streamSwitchConnectingLanguageCode`) when Connecting hold
-    ///   is active → preferredWidgetLanguage → no-snapshot model repair → preferred `"en"`
-    ///   disambiguation (keep intentional English when model is `"en"`; repair hard-default
-    ///   pollution only when model is non-en) → hold without destination prefers Direct model
-    ///   (already updated by switch prep). Destination-on-hold keeps the App Group snapshot
-    ///   language aligned with Live Activity ``liveActivityLanguageCodeForContentPush()``
-    ///   before the engine model settles.
+    ///   non-empty destination stamp (`streamSwitchConnectingLanguageCode`) — Connecting hold
+    ///   **or** paused-path stamp — outranks preferred/snapshot/model → preferredWidgetLanguage →
+    ///   no-snapshot model repair → preferred `"en"` disambiguation (keep intentional English
+    ///   when model is `"en"`; repair hard-default pollution only when model is non-en) → hold
+    ///   without destination prefers Direct model (already updated by switch prep). Destination
+    ///   stamp keeps the session snapshot language aligned with Live Activity
+    ///   ``liveActivityLanguageCodeForContentPush()`` before preferred/model fully settle.
     ///
     /// - Important: Language is resolved **after** any suspension points in this method so a
     ///   concurrent ``saveCombinedWidgetState(language:)`` (switch-path destination write) is

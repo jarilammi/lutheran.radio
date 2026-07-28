@@ -6,12 +6,12 @@
 //
 //  Exhaustive pure language reconciliation for saveCurrentState snapshot writes.
 //  Protects: no-snapshot model seed, intentional English vs hard-default "en" repair,
-//  stream-switch hold preference, hold-time destination outranking lagging
-//  preferred/snapshot/model, and paused widget language (hold inactive → do not
-//  clobber preferred).
+//  stream-switch hold preference, destination stamp outranking lagging
+//  preferred/snapshot/model (hold active *or* paused-path stamp without hold).
 //
 //  - SeeAlso: ``PersistedLanguageResolution``, SharedPlayerManager.saveCurrentState(),
 //    SharedPlayerManager.streamSwitchConnectingLanguageCode,
+//    SharedPlayerManager.stampStreamSwitchDestinationLanguage(_:),
 //    SharedPlayerManager.liveActivityLanguageCodeForContentPush().
 //
 
@@ -175,9 +175,10 @@ struct PersistedLanguageResolutionTests {
         #expect(code == "en")
     }
 
-    /// Connecting language is only meaningful while hold is active; ignore a stray value
-    /// after hold ends so normal preferred/snapshot/model rules apply.
-    @Test func connectingLanguageIgnoredWhenHoldInactive() {
+    /// Destination stamp outranks even when Connecting hold is inactive (sticky-paused
+    /// language switch stamps destination without `.prePlay` hold so mid-switch
+    /// `saveCurrentState` cannot re-persist the prior code).
+    @Test func connectingDestinationOutranksWhenHoldInactive() {
         let code = PersistedLanguageResolution.resolve(
             preferredLanguage: "et",
             hasSnapshot: true,
@@ -185,6 +186,32 @@ struct PersistedLanguageResolutionTests {
             modelLanguage: "et",
             streamSwitchHoldActive: false,
             connectingLanguageCode: "de"
+        )
+        #expect(code == "de")
+    }
+
+    /// Paused-path intentional English stamp (hold inactive) must outrank lagging non-en triad.
+    @Test func pausedPathConnectingEnglishOutranksLaggingNonEnglishTriad() {
+        let code = PersistedLanguageResolution.resolve(
+            preferredLanguage: "de",
+            hasSnapshot: true,
+            snapshotLanguage: "de",
+            modelLanguage: "de",
+            streamSwitchHoldActive: false,
+            connectingLanguageCode: "en"
+        )
+        #expect(code == "en")
+    }
+
+    /// Empty connecting string falls through when hold inactive (same as hold-active empty).
+    @Test func emptyConnectingFallsThroughWhenHoldInactive() {
+        let code = PersistedLanguageResolution.resolve(
+            preferredLanguage: "et",
+            hasSnapshot: true,
+            snapshotLanguage: "et",
+            modelLanguage: "fi",
+            streamSwitchHoldActive: false,
+            connectingLanguageCode: ""
         )
         #expect(code == "et")
     }

@@ -16,12 +16,14 @@
 //
 //  - SeeAlso: SharedPlayerManager.saveCurrentState(), preferredWidgetLanguage(),
 //    streamSwitchConnectingLanguageCode, holdPrePlayVisualUntilPlayback,
-//    liveActivityLanguageCodeForContentPush(), CODING_AGENT.md (Single Source of Truth).
+//    stampStreamSwitchDestinationLanguage(_:), liveActivityLanguageCodeForContentPush(),
+//    CODING_AGENT.md (Single Source of Truth).
 //  - AGENT NOTE: Do not reintroduce dual ownership of language writes outside
 //    performActualSave / persist paths. This resolver only picks the code string.
 //  - AGENT NOTE: Live Activity already prefers destination via
-//    liveActivityLanguageCodeForContentPush() during Connecting hold. Snapshot
-//    resolution must use the same destination so widget timelines do not lag
+//    liveActivityLanguageCodeForContentPush() during Connecting hold *and* when a
+//    paused-path destination stamp is set without visual hold. Snapshot resolution
+//    must use the same non-empty destination stamp so widget timelines do not lag
 //    on the prior language while LA chrome is already correct.
 //  - AGENT NOTE: Preferred `"en"` is ambiguous — privacy hard-default vs intentional
 //    English selection. Repair hard-default pollution only when the engine model is
@@ -37,11 +39,11 @@ public enum PersistedLanguageResolution {
     /// Resolves the language code to persist for the current save.
     ///
     /// Precedence:
-    /// 1. Stream-switch Connecting hold with a known destination
-    ///    (`connectingLanguageCode`): **outranks** preferred, snapshot, and model.
-    ///    Before the engine model updates, preferred/snapshot/model all lag on the
-    ///    prior language; the hold-time destination is the only honest code for
-    ///    snapshot language chrome (mirrors Live Activity content-push policy).
+    /// 1. Non-empty `connectingLanguageCode` (**destination stamp**): **outranks**
+    ///    preferred, snapshot, and model whether or not Connecting hold is active.
+    ///    Used for active-intent hold **and** sticky-paused language switches so
+    ///    mid-switch `saveCurrentState` cannot re-persist the prior code while the
+    ///    engine model still lags (or after the model advanced but preferred lags).
     /// 2. Otherwise start from `preferredLanguage` (typically ``preferredWidgetLanguage()``).
     /// 3. No snapshot: prefer non-empty `modelLanguage` (main-app selected stream).
     /// 4. Snapshot present and preferred is `"en"`:
@@ -60,14 +62,17 @@ public enum PersistedLanguageResolution {
     ///   - snapshotLanguage: Snapshot `currentLanguage` when `hasSnapshot` is true.
     ///   - modelLanguage: `DirectStreamingPlayer.selectedStream.languageCode`.
     ///   - streamSwitchHoldActive: `holdPrePlayVisualUntilPlayback` on the actor.
-    ///   - connectingLanguageCode: Destination language for an active stream-switch
-    ///     Connecting hold (`streamSwitchConnectingLanguageCode`). Non-empty only
-    ///     while hold is active; ignored when hold is inactive or empty.
+    ///   - connectingLanguageCode: Destination language stamp
+    ///     (`streamSwitchConnectingLanguageCode`) for an in-flight stream switch —
+    ///     Connecting hold **or** paused-path stamp without visual hold. Non-empty
+    ///     always outranks; callers clear when destination is fully stamped (paused)
+    ///     or when hold ends (active intent).
     /// - Returns: Language code to write into the next snapshot (when privacy allows write).
     /// - Note: Privacy write suppression is enforced by the actor after resolution;
     ///   this function never decides whether to write.
     /// - SeeAlso: ``SharedPlayerManager/liveActivityLanguageCodeForContentPush()``,
     ///   ``SharedPlayerManager/streamSwitchConnectingLanguageCode``,
+    ///   ``SharedPlayerManager/stampStreamSwitchDestinationLanguage(_:)``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (Connecting + destination language).
     public static func resolve(
         preferredLanguage: String,
@@ -77,12 +82,10 @@ public enum PersistedLanguageResolution {
         streamSwitchHoldActive: Bool,
         connectingLanguageCode: String? = nil
     ) -> String {
-        // Hold-time destination outranks lagging preferred/snapshot/model so the
-        // App Group snapshot agrees with Live Activity ContentState language during
-        // Connecting (before DirectStreamingPlayer.selectedStream settles).
-        if streamSwitchHoldActive,
-           let connecting = connectingLanguageCode,
-           !connecting.isEmpty {
+        // Destination stamp outranks lagging preferred/snapshot/model so the session
+        // snapshot agrees with Live Activity ContentState language during any in-flight
+        // stream switch (Connecting hold *or* sticky-paused language change without hold).
+        if let connecting = connectingLanguageCode, !connecting.isEmpty {
             return connecting
         }
 

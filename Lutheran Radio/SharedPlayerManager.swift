@@ -575,16 +575,25 @@ actor SharedPlayerManager {
     /// inside ``setPlaying()`` / privacy reset / UITest short-circuit — not at the start of ``play()``.
     internal var holdPrePlayVisualUntilPlayback = false
 
-    /// Target stream language for Live Activity / media-surface chrome while a stream-switch
-    /// Connecting hold is active **before** ``DirectStreamingPlayer/selectedStream`` settles.
+    /// Destination stream language for Live Activity / snapshot chrome during an in-flight
+    /// stream switch — **before** ``DirectStreamingPlayer/selectedStream`` settles, or while
+    /// preferred/snapshot still lag after the model advances.
     ///
-    /// Without this, the hold-time ``refreshAllMediaSurfaces`` push can publish `.prePlay` with
-    /// the **prior** language (engine model still on the old stream), then a second push with the
-    /// new language after `switchToStream` — a one-frame wrong flag/name on Lock Screen.
-    /// Callers that know the destination language pass it to ``resetToPrePlayForNewStream``.
-    /// Cleared with the hold (``setPlaying()``, privacy reset, UITest short-circuit).
+    /// Used by:
+    /// - **Active-intent Connecting hold** via ``resetToPrePlayForNewStream(connectingLanguageCode:)``
+    ///   (visual `.prePlay` + this stamp; cleared with the hold in ``setPlaying()`` / privacy reset).
+    /// - **Sticky-paused language switch** via ``stampStreamSwitchDestinationLanguage(_:)``
+    ///   (no Connecting chrome; cleared by ``clearStreamSwitchDestinationLanguageIfNotHolding()``
+    ///   after the paused path finishes stamping snapshot + media surfaces).
     ///
-    /// - SeeAlso: ``liveActivityLanguageCodeForContentPush()``, ``resetToPrePlayForNewStream(preserveActiveSleepTimer:connectingLanguageCode:)``
+    /// Without this stamp, mid-switch ``saveCurrentState()`` / content pushes can re-persist or
+    /// publish the **prior** language. ``PersistedLanguageResolution/resolve`` and
+    /// ``liveActivityLanguageCodeForContentPush()`` both prefer a non-empty value here.
+    ///
+    /// - SeeAlso: ``liveActivityLanguageCodeForContentPush()``,
+    ///   ``stampStreamSwitchDestinationLanguage(_:)``,
+    ///   ``clearStreamSwitchDestinationLanguageIfNotHolding()``,
+    ///   ``resetToPrePlayForNewStream(preserveActiveSleepTimer:connectingLanguageCode:)``
     internal var streamSwitchConnectingLanguageCode: String?
 
     /// True while ``play()`` has passed sticky/early guards and has not yet reached authoritative
@@ -620,23 +629,62 @@ actor SharedPlayerManager {
         currentVisualState == .prePlay && holdPrePlayVisualUntilPlayback
     }
 
-    /// Clears stream-switch Connecting hold and any target-language override for LA chrome.
+    /// Clears stream-switch Connecting hold and any destination-language stamp for LA / snapshot chrome.
     ///
     /// Call only at hold-end sites (authoritative ``setPlaying()``, privacy cleared, UITest
-    /// short-circuit). Does not touch visual or intent.
+    /// short-circuit). Does not touch visual or intent. Paused-path stamps (no hold) clear via
+    /// ``clearStreamSwitchDestinationLanguageIfNotHolding()`` instead.
     internal func clearStreamSwitchPrePlayHold() {
         holdPrePlayVisualUntilPlayback = false
         streamSwitchConnectingLanguageCode = nil
     }
 
+    /// Records destination language for snapshot resolve + Live Activity content push **without**
+    /// enabling Connecting hold or mutating visual / intent.
+    ///
+    /// Sticky-paused widget / in-app language switches must call this **before** engine
+    /// ``switchToStream`` so concurrent ``saveCurrentState()`` and early media-surface pushes
+    /// cannot re-publish the prior language. Does **not** set ``holdPrePlayVisualUntilPlayback``
+    /// and does **not** apply `.prePlay` — paused chrome stays `.userPaused`.
+    ///
+    /// - Parameter languageCode: Destination stream language code (non-empty).
+    /// - Postcondition: ``streamSwitchConnectingLanguageCode`` and the durable LA language mirror
+    ///   hold `languageCode` when non-empty.
+    /// - SeeAlso: ``clearStreamSwitchDestinationLanguageIfNotHolding()``,
+    ///   ``liveActivityLanguageCodeForContentPush()``,
+    ///   ``PersistedLanguageResolution/resolve``,
+    ///   ``RadioPlayerCoordinator`` stream-switch paused branches,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    func stampStreamSwitchDestinationLanguage(_ languageCode: String) {
+        guard !languageCode.isEmpty else { return }
+        streamSwitchConnectingLanguageCode = languageCode
+        Self.persistLiveActivityLanguageMirror(languageCode)
+    }
+
+    /// Clears a paused-path destination-language stamp when Connecting hold is **not** active.
+    ///
+    /// Active-intent hold keeps ``streamSwitchConnectingLanguageCode`` until
+    /// ``clearStreamSwitchPrePlayHold()`` / ``setPlaying()``. Call after the paused switch path
+    /// has awaited destination snapshot write + media-surface refresh.
+    ///
+    /// - Postcondition: When ``holdPrePlayVisualUntilPlayback`` is false,
+    ///   ``streamSwitchConnectingLanguageCode`` is `nil`. Hold-active paths are no-ops.
+    /// - SeeAlso: ``stampStreamSwitchDestinationLanguage(_:)``, ``clearStreamSwitchPrePlayHold()``.
+    func clearStreamSwitchDestinationLanguageIfNotHolding() {
+        guard !holdPrePlayVisualUntilPlayback else { return }
+        streamSwitchConnectingLanguageCode = nil
+    }
+
     /// Language code for Live Activity `ContentState.currentLanguage` (and durable mirror warm).
     ///
-    /// Prefer ``streamSwitchConnectingLanguageCode`` while an active-intent switch hold is in
-    /// flight so Connecting chrome and language chrome advance together before the engine model
-    /// is updated. Otherwise falls back to ``mainAppLiveActivityLanguageCode()`` (stream attach).
+    /// Prefer ``streamSwitchConnectingLanguageCode`` whenever a destination stamp is present
+    /// (active-intent Connecting hold **or** sticky-paused language switch without hold) so
+    /// language chrome advances before / while the engine model and preferred snapshot settle.
+    /// Otherwise falls back to ``mainAppLiveActivityLanguageCode()`` (stream attach).
     ///
     /// - Returns: Non-empty language code for ActivityKit content.
     /// - SeeAlso: ``resetToPrePlayForNewStream(preserveActiveSleepTimer:connectingLanguageCode:)``,
+    ///   ``stampStreamSwitchDestinationLanguage(_:)``,
     ///   ``RadioLiveActivityManager/updateCurrentActivity()``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
     ///   docs/Widget-Functionality-Roadmap.md (Live Activity language chrome SSOT).
