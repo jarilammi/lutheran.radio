@@ -173,9 +173,12 @@ import WidgetKit
 /// **Key Transition Methods**:
 /// - `resetToPrePlayForNewStream()` — **only** place that intentionally sets `.prePlay`
 ///   after first launch (language/stream switches). Also clears `initialPlaybackHasRun`.
-/// - `restoreVisualStateRespectingUserIntent()` — applies inline resurrection suppression (mustSuppressResurrection ? .userPaused : current).
-/// - `attemptResurrectionIfAllowed()` — recovery path used by DirectStreamingPlayer nudges;
-///   still respects `shouldAutoPlayOrResume`.
+/// - `restoreVisualStateRespectingUserIntent()` — applies inline resurrection suppression
+///   (`mustSuppressResurrection` → keep sticky pause chrome). Does **not** start audio;
+///   interruption / host callers re-check intent or visual before engine resume.
+/// - `canProceedWithPlayback()` — live gate for engine-internal recovery (early-window
+///   recreate, KVO audible kick, buffer/safety-net paths) and host technical recovery
+///   before a permitted raw `play()`. Sticky this-process intent only.
 ///
 /// See `PlayerVisualState.swift` for `shouldAutoPlayOrResume`, `mustSuppressResurrection`,
 /// and the `from(status:isManualPause:...)` mapper.
@@ -184,8 +187,8 @@ import WidgetKit
 /// `updatePlaybackIntent(to:)`) is the primary decision signal in the main resurrection paths:
 ///
 /// - `play()` (sticky / one-shot / pipeline early gates via ``PlaybackPlayDecision``)
-/// - `attemptResurrectionIfAllowed()`
-/// - `restoreVisualStateRespectingUserIntent()`
+/// - `canProceedWithPlayback()` (engine + host recovery admission)
+/// - `restoreVisualStateRespectingUserIntent()` (foreground / interruption visual hygiene)
 ///
 /// **Process isolation (play status):** Sticky ``PlaybackIntent.isStickyPauseOrLock`` is the
 /// hard blocker on auto-resume / restore / recovery paths. It is **this-process only**.
@@ -213,10 +216,11 @@ import WidgetKit
 /// | .playing        | User taps pause/stop (any surface)                | `stop()` or `markAsUserPaused()` at top of method               | .userPaused     | Immediate sticky lock; authoritative snapshot via `saveCurrentState()` / `performActualSave` |
 /// | .playing        | Second explicit play / double-fire (same language)| `userRequestedPlay()` / `play()` — engine already audible       | .playing (unchanged) | **No-op** (optional surface reaffirm): never `setStreamAndPlay` / item rebuild; independent of cold-launch `resurrectionProtectionRelaxed` |
 /// | .playing        | User-initiated stream/language switch             | `resetToPrePlayForNewStream(connectingLanguageCode:)` (chrome + clear ICY + destination language) **before** silent engine stop, then `play()` | .prePlay → .playing | Hold prePlay through attach; never advertise `.playing` mid teardown; never prior-language chrome with Connecting; engine `setPlaying` after readyToPlay |
-/// | .playing        | AV interruption, stall, or thermal event          | `attemptResurrectionIfAllowed()` or player recovery nudges      | .playing        | Only proceeds if `shouldAutoPlayOrResume` |
+/// | .playing        | Mid-session stall / ICY drop / item transient     | `canProceedWithPlayback()` then secured `recreatePlayerItem()` / rate kick (attach generation) | .playing        | Engine-internal; does not call `play()`. Sticky pause blocks admission. |
+/// | .playing        | Host technical recovery (network reconnect, route)| `canProceedWithPlayback()` then permitted raw `play()`          | .playing / .prePlay → .playing | Not explicit user play; still process-local sticky only. |
 /// | any             | Security validation failure (DNS/403/cert)        | Inside `play()` guard or StreamingSessionDelegate 403 handler   | .securityLocked | Permanent until explicit successful play |
 /// | .thermalPaused  | Device cools sufficiently                         | DirectStreamingPlayer thermal recovery logic                    | .playing        | Only via `shouldAutoResumeOnThermalRecovery` |
-/// | any             | App foreground, interruption.ended(.shouldResume) | `restoreVisualStateRespectingUserIntent()`                      | (unchanged or forced .userPaused) | Applies inline resurrection suppression (if mustSuppressResurrection → .userPaused). Sticky intent only — no prior-process App Group play gate. |
+/// | any             | App foreground, interruption.ended(.shouldResume) | `restoreVisualStateRespectingUserIntent()` then visual/intent re-check | (unchanged or forced .userPaused) | Restore does not start audio; engine resume only when still allowed. Sticky intent only — no prior-process App Group play gate. |
 /// | cold launch     | New process after quit / terminate                | `resetToFactoryDefaultsOnLaunch()` then cold-play path          | .prePlay → .playing (when allowed) | Factory reset clears play status; termination sentinel remains widget passive chrome only; does **not** block main-app cold auto-play |
 ///
 /// ### App Group Keys & Memory-Only Visual Policy (group.radio.lutheran.shared)

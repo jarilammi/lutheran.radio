@@ -29,23 +29,30 @@ import WidgetKit
 extension SharedPlayerManager {
     // MARK: - Intent-Driven Playback Execution
 
-    /// Returns whether the player execution engine (DirectStreamingPlayer) should
-    /// be allowed to start, resume, or recover playback right now.
+    /// Returns whether the player execution engine (or host recovery) may start, resume,
+    /// or recover audible playback right now.
     ///
-    /// This is the **preferred** intent-driven check for all playback command paths.
-    /// It is driven exclusively by `currentPlaybackIntent` (the single source of truth
-    /// updated only via `updatePlaybackIntent(to:)`).
+    /// This is the **live recovery admission gate** for:
+    /// - engine-internal paths (early-window recreate, KVO audible kick, buffer/safety net)
+    /// - host technical recovery before a permitted raw ``play()`` (network reconnect, route change)
     ///
-    /// Callers (DirectStreamingPlayer) should use this instead of deriving decisions
-    /// from `currentVisualState.shouldAutoPlayOrResume` where possible.
+    /// Driven exclusively by `currentPlaybackIntent` (mutated only via ``updatePlaybackIntent(to:)``).
+    /// Prefer this over deriving decisions from `currentVisualState.shouldAutoPlayOrResume`.
     ///
-    /// Sticky rules are preserved exactly: `.userPaused`, `.securityLocked`, and `.cleared`
-    /// (privacy clear) are permanent blockers (via isStickyPauseOrLock) until an explicit user play
-    /// action clears them. For `.cleared` the visual is the dedicated .cleared (blue) so the
-    /// current session shows explicit reset confirmation; the intent alone blocks; cold-launch
-    /// (no snapshot) sees .prePlay.
-    /// `.sleepTimer` permits execution only while visual state is still `.playing`
-    /// (active countdown); after the timer fires, explicit play is required.
+    /// Sticky rules: `.userPaused`, `.securityLocked`, and `.cleared` (via `isStickyPauseOrLock`)
+    /// permanently block until an explicit user play clears them. For `.cleared` the visual is
+    /// the dedicated blue chrome in-session; cold launch (no snapshot) sees `.prePlay`.
+    /// `.sleepTimer` permits execution only while visual is still `.playing` (active countdown)
+    /// or stream-switch hold-prePlay is set; after the timer fires, explicit play is required.
+    ///
+    /// Process isolation: does **not** consult App Group termination liveness. Prior-process
+    /// quit markers are presentation-only (widget passive chrome / LA mirror distrust).
+    ///
+    /// - Returns: `true` when sticky intent allows audible work under the rules above.
+    /// - SeeAlso: ``currentPlaybackIntent``, ``play()``, ``userRequestedPlay()``,
+    ///   ``restoreVisualStateRespectingUserIntent()``,
+    ///   DirectStreamingPlayer early-window recovery / `recreatePlayerItem()`,
+    ///   resurrection table on ``SharedPlayerManager``.
     func canProceedWithPlayback() async -> Bool {
         ensureVisualStateLoaded()
         if currentPlaybackIntent.isStickyPauseOrLock { return false }
@@ -180,7 +187,7 @@ extension SharedPlayerManager {
     /// - SeeAlso: ``userRequestedPlay()``, ``setUserIntentToPlay()``,
     ///   ``PlaybackPlayDecision``, ``shouldNoOpPlayWhileAlreadyAudible()``,
     ///   ``clearUserPausedLockIfNeeded()``, ``canProceedWithPlayback()``,
-    ///   ``attemptResurrectionIfAllowed()``, ``stop()``,
+    ///   ``stop()``,
     ///   RadioPlayerCoordinator (canonical switch methods + shims),
     ///   ``isRunningInUITestMode``, ViewController.viewDidLoad,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (user pause during connect),
@@ -589,60 +596,6 @@ extension SharedPlayerManager {
         #endif
     }
     
-    /// Safe resurrection entry point used by DirectStreamingPlayer recovery logic.
-    /// Allows technical recovery (hiccups) even when visualState = .playing.
-    ///
-    /// `playbackIntent` is now the *primary* (and sole) decision signal for this path.
-    /// The old visualState guard has been removed as part of collapsing parallel checks.
-    /// All sticky transitions flow through `updatePlaybackIntent(to:)`.
-    ///
-    /// Process isolation: does **not** consult App Group termination liveness. Prior-process
-    /// quit markers are presentation-only; this-process sticky intent is the hard blocker.
-    ///
-    /// - SeeAlso: ``currentPlaybackIntent``, ``play()``,
-    ///   ``hasExplicitTerminationSentinel()`` (widget / mirror distrust only).
-    func attemptResurrectionIfAllowed() async {
-        // UI Test isolation (SSOT): never poke the real AVPlayer or start audio from recovery paths.
-        if Self.isRunningInUITestMode {
-            return
-        }
-
-        ensureVisualStateLoaded()
-        
-        #if DEBUG
-        print("[SharedPlayerManager] SharedPlayerManager.attemptResurrectionIfAllowed() – currentPlaybackIntent = \(currentPlaybackIntent), currentVisualState = \(currentVisualState)")
-        #endif
-
-        // Block explicit user pause, elapsed sleep timer, permanent security lock.
-        // Sticky / this-process intent only — never prior-process App Group keys.
-        if currentPlaybackIntent.isStickyPauseOrLock
-            || (currentPlaybackIntent == .sleepTimer && currentVisualState != .playing) {
-            #if DEBUG
-            print("[SharedPlayerManager] resurrection BLOCKED by playbackIntent")
-            #endif
-            return
-        }
-
-        // Light check — if the player is already playing, do nothing
-        if DirectStreamingPlayer.shared.isActuallyPlaying() {
-            #if DEBUG
-            print("[SharedPlayerManager] SharedPlayerManager: already actually playing — skipping redundant recovery")
-            #endif
-            return
-        }
-
-        #if DEBUG
-        print("[SharedPlayerManager] Resurrection proceeding — player is stalled, forcing light recovery")
-        #endif
-
-        // Light recovery: just force the existing player back to life (no full validation/tuning/stream switch)
-        await MainActor.run {
-            #if LUTHERAN_MAIN_APP
-            DirectStreamingPlayer.shared.player?.playImmediately(atRate: 1.0)
-            #endif
-        }
-    }
-    
     /// Called whenever the *user* explicitly requests playback start or resume
     /// (in-app button, lock screen, Control Center, home widgets via pending, Live Activity,
     /// Siri/Shortcuts, CarPlay, URL schemes, security retry, etc.).
@@ -664,10 +617,17 @@ extension SharedPlayerManager {
     ///    reaches ``DirectStreamingPlayer/resumeFromSoftPauseIfAvailable()`` (not step 3).
     ///
     /// - Precondition: Must be used for every *explicit user* "start playing" surface.
-    ///   Raw `play()` is reserved for cold-launch initial, internal continuation when
-    ///   playback intent is already active (end of the canonical switch resume paths),
-    ///   technical recovery via `attemptResurrectionIfAllowed()`, and the private widget
-    ///   branch inside `play()`.
+    ///   Raw `play()` is reserved for:
+    ///   1. cold-launch initial (after factory reset, active intent already established),
+    ///   2. internal continuation when playback intent is already active (canonical switch
+    ///      resume paths end of attach),
+    ///   3. host technical recovery that has already passed ``canProceedWithPlayback()``
+    ///      (network reconnect, route `newDeviceAvailable` — not engine-internal recreate),
+    ///   4. the private widget branch inside `play()` itself.
+    ///
+    ///   Engine-internal stall / ICY / item-failure recovery does **not** call `play()`.
+    ///   It re-checks ``canProceedWithPlayback()`` and uses secured
+    ///   `recreatePlayerItem()` / rate kicks under the current attach generation.
     ///
     /// - Postcondition: `currentPlaybackIntent` is `.shouldBePlaying` (or derived) and
     ///   (if allowed) playback proceeds or is initiated. When already audibly playing
@@ -675,7 +635,7 @@ extension SharedPlayerManager {
     ///
     /// - SeeAlso: ``play()``, ``setUserIntentToPlay()``, ``shouldNoOpPlayWhileAlreadyAudible()``,
     ///   ``clearUserPausedLockIfNeeded()``, ``currentPlaybackIntent``,
-    ///   ``attemptResurrectionIfAllowed()``,
+    ///   ``canProceedWithPlayback()``,
     ///   RadioPlayerCoordinator.completeStreamSwitch,
     ///   RadioPlayerCoordinator.switchToStreamFromWidget,
     ///   CODING_AGENT.md (Single Source of Truth Principles),
@@ -1315,8 +1275,11 @@ extension SharedPlayerManager {
     /// termination liveness is never a blocker here — cold launch factory-resets play
     /// status; App Group sentinel remains widget passive chrome only.
     ///
-    /// - SeeAlso: ``currentPlaybackIntent``, ``attemptResurrectionIfAllowed()``,
-    ///   ``hasExplicitTerminationSentinel()``.
+    /// Does **not** start audio. Callers that resume the engine (e.g. interruption
+    /// `.ended(.shouldResume)`) must re-check visual / intent after this returns.
+    ///
+    /// - SeeAlso: ``currentPlaybackIntent``, ``canProceedWithPlayback()``,
+    ///   ``hasExplicitTerminationSentinel()`` (widget / mirror distrust only).
     func restoreVisualStateRespectingUserIntent() async {
         ensureVisualStateLoaded()
         
