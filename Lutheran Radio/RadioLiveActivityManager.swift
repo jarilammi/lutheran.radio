@@ -880,11 +880,14 @@ class RadioLiveActivityManager: ObservableObject {
     /// adopt them. New activities are created exclusively via ``startActivity()`` when
     /// playback becomes authoritative (or background auto-start while playing).
     ///
-    /// **This-process ownership guard:** if ``currentActivity`` is already non-nil when the
-    /// deferred observe runs (``startActivity()`` raced ahead of the post-init yield), reaping
-    /// is **skipped**. Sweeping at that point would end the legitimate new Activity as if it
-    /// were a prior-process residual. Start policy still starts LA only after authoritative
-    /// `.playing`, so this is defense-in-depth rather than the happy path.
+    /// **This-process ownership + sibling residual reaping:** if ``currentActivity`` is already
+    /// non-nil when the deferred observe runs (``startActivity()`` raced ahead of the post-init
+    /// yield), full ``endActivity`` is **not** used — that would dismiss the legitimate owned
+    /// Activity and clear mirrors. Instead ``reapUnownedSystemResiduals(preservingOwnedActivityId:)``
+    /// ends every system-held activity whose id differs from the owned one, preserving local
+    /// tracking. This closes the hole where ownership skip alone could leave a second prior-
+    /// process residual interactive while this process owns a new surface. Happy path:
+    /// ``startActivity()`` already calls ``endActivity()`` first, so the sibling set is empty.
     ///
     /// Background audio with a living process never re-enters this path — the singleton
     /// is already initialized and `currentActivity` is managed by start/update/end.
@@ -926,20 +929,18 @@ class RadioLiveActivityManager: ObservableObject {
         }
         #endif
 
-        // This-process ownership wins: if startActivity already assigned currentActivity
-        // before this deferred observe, do not sweep that Activity as a "prior residual".
-        // See ownership guard on this method's documentation.
-        if currentActivity != nil {
-            #if DEBUG
-            print("🔴 Skipping residual reaping — this process already owns currentActivity")
-            #endif
+        // This-process ownership: never full-end the owned Activity, but still reap any
+        // sibling system residuals (ids other than currentActivity). Pure id policy lives
+        // in ``systemResidualIdsToReap(systemActivityIds:ownedActivityId:)``.
+        if let owned = currentActivity {
+            reapUnownedSystemResiduals(preservingOwnedActivityId: owned.id)
             return
         }
 
-        // Never adopt a prior-process residual as a live interactive surface. Reap it.
-        // ``endActivity`` sweeps all system activities, pushes a coherent final ContentState
-        // (paused + residual/last language), and dismisses immediately. Local `currentActivity`
-        // stays nil until ``startActivity()`` runs for this process lifetime.
+        // No local ownership: never adopt a prior-process residual as interactive. Full
+        // ``endActivity`` sweeps all system activities, pushes paused + residual language
+        // chrome, and dismisses immediately. Local `currentActivity` stays nil until
+        // ``startActivity()`` runs for this process lifetime.
         let residualCount = Activity<LutheranRadioLiveActivityAttributes>.activities.count
         if residualCount > 0 {
             #if DEBUG
@@ -949,6 +950,75 @@ class RadioLiveActivityManager: ObservableObject {
         } else {
             currentActivity = nil
         }
+    }
+
+    /// Ends system-held Live Activities that are **not** this process's owned surface.
+    ///
+    /// Used when deferred ``observeExistingActivities()`` finds ``currentActivity`` already
+    /// set (start raced ahead of post-init yield, or any future assignment site that did not
+    /// go through ``startActivity()``'s leading ``endActivity()``). Full ``endActivity`` would
+    /// clear ownership and mirrors; this path must not.
+    ///
+    /// - Parameter ownedActivityId: ``currentActivity`` id to preserve.
+    /// - Postcondition: Owned tracking, observation, and durable mirrors are unchanged.
+    ///   Sibling residuals receive final `.userPaused` ContentState and `.immediate` end.
+    /// - SeeAlso: ``systemResidualIdsToReap(systemActivityIds:ownedActivityId:)``,
+    ///   ``seedFinalEndChromeFromResidualActivities(_:)``, ``observeExistingActivities()``.
+    private func reapUnownedSystemResiduals(preservingOwnedActivityId ownedActivityId: String) {
+        let systemActivities = Activity<LutheranRadioLiveActivityAttributes>.activities
+        let siblingIds = Self.systemResidualIdsToReap(
+            systemActivityIds: systemActivities.map(\.id),
+            ownedActivityId: ownedActivityId
+        )
+        guard !siblingIds.isEmpty else {
+            #if DEBUG
+            print("🔴 No unowned system residuals — preserving owned currentActivity id=\(ownedActivityId)")
+            #endif
+            return
+        }
+
+        let siblingSet = Set(siblingIds)
+        let siblings = systemActivities.filter { siblingSet.contains($0.id) }
+        #if DEBUG
+        print("🔴 Reaping \(siblings.count) unowned residual Live Activity surface(s); preserving owned id=\(ownedActivityId)")
+        #endif
+
+        // Residual-only chrome: do not read owned lastPushedContent into the dismiss frame
+        // (owned surface keeps its live chrome). Visual still forced to .userPaused.
+        let residualChrome = Self.seedFinalEndChromeFromResidualActivities(siblings)
+        let finalLanguage =
+            residualChrome.language
+            ?? SharedPlayerManager.mainAppLiveActivityLanguageCode()
+        let finalContentState = LutheranRadioLiveActivityAttributes.ContentState(
+            visualState: .userPaused,
+            streamMetadata: residualChrome.metadata,
+            currentLanguage: finalLanguage
+        )
+        endActivitiesInBackground(
+            siblings,
+            finalContentState: finalContentState,
+            dismissalPolicy: .immediate
+        )
+    }
+
+    /// Pure residual-id policy for cold-launch / deferred observe reaping.
+    ///
+    /// - Parameters:
+    ///   - systemActivityIds: Ids from `Activity.activities` (system-held surfaces).
+    ///   - ownedActivityId: This-process ``currentActivity`` id, or `nil` when unowned.
+    /// - Returns: Ids that must be ended. When unowned, every system id. When owned, every
+    ///   system id **except** the owned one (sibling residuals only).
+    /// - Important: Never returns the owned id when `ownedActivityId` is non-nil — that
+    ///   would reintroduce the "end our new Activity as a residual" race.
+    /// - SeeAlso: ``observeExistingActivities()``, ``reapUnownedSystemResiduals(preservingOwnedActivityId:)``.
+    private static func systemResidualIdsToReap(
+        systemActivityIds: [String],
+        ownedActivityId: String?
+    ) -> [String] {
+        guard let ownedActivityId else {
+            return systemActivityIds
+        }
+        return systemActivityIds.filter { $0 != ownedActivityId }
     }
 
     // MARK: - Live Activity Attribute Events Observation
@@ -1102,12 +1172,30 @@ class RadioLiveActivityManager: ObservableObject {
 
     /// Cold-launch residual reaping policy seam (no ActivityKit IPC).
     ///
-    /// - Parameter hasOwnedCurrentActivity: Whether this process already holds
-    ///   ``currentActivity`` (``startActivity()`` completed before deferred observe).
-    /// - Returns: `true` when prior-process residuals should be reaped; `false` when
-    ///   reaping would risk ending a legitimate this-process Activity.
+    /// - Parameters:
+    ///   - systemActivityIds: Simulated `Activity.activities` ids.
+    ///   - ownedActivityId: Simulated ``currentActivity`` id, or `nil` when unowned.
+    /// - Returns: Ids production would end (all when unowned; siblings only when owned).
+    /// - SeeAlso: ``systemResidualIdsToReap(systemActivityIds:ownedActivityId:)``,
+    ///   ``observeExistingActivities()``, ``reapUnownedSystemResiduals(preservingOwnedActivityId:)``,
+    ///   RadioLiveActivityManagerTests.
+    func _test_systemResidualIdsToReap(
+        systemActivityIds: [String],
+        ownedActivityId: String?
+    ) -> [String] {
+        Self.systemResidualIdsToReap(
+            systemActivityIds: systemActivityIds,
+            ownedActivityId: ownedActivityId
+        )
+    }
+
+    /// Whether deferred observe uses full ``endActivity`` (clears ownership) vs sibling-only reaping.
+    ///
+    /// - Parameter hasOwnedCurrentActivity: Whether this process already holds ``currentActivity``.
+    /// - Returns: `true` when full residual end runs (no ownership); `false` when only unowned
+    ///   siblings are reaped while ownership is preserved.
     /// - SeeAlso: ``observeExistingActivities()``, RadioLiveActivityManagerTests.
-    func _test_shouldReapPriorProcessResiduals(hasOwnedCurrentActivity: Bool) -> Bool {
+    func _test_shouldUseFullResidualEnd(hasOwnedCurrentActivity: Bool) -> Bool {
         !hasOwnedCurrentActivity
     }
     #endif

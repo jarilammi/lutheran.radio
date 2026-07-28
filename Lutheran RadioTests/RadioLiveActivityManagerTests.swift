@@ -11,8 +11,8 @@
 //  Attribute-events tests consume DEBUG synthetic-stream seams on the manager
 //  (`_test_beginObservingSyntheticContentUpdates`, `_test_wouldSuppressLiveActivityUpdate`,
 //  `_test_setHarnessSimulatesActiveActivity`, `_test_cancelAttributeEventObservation`,
-//  `_test_finalEndContentState`, `_test_shouldReapPriorProcessResiduals`) so ActivityKit IPC
-//  is never exercised under the XCTest host.
+//  `_test_finalEndContentState`, `_test_systemResidualIdsToReap`,
+//  `_test_shouldUseFullResidualEnd`) so ActivityKit IPC is never exercised under the XCTest host.
 //
 //  - SeeAlso: ``RadioLiveActivityManager``, ``WidgetEventObserver``,
 //    docs/Event-Driven-Refactor-Roadmap.md (Tier 2 LA events / Tier 5),
@@ -568,19 +568,62 @@ class RadioLiveActivityManagerTests: XCTestCase {
         XCTAssertEqual(ownedWins.streamMetadata?.programTitle, "Owned")
     }
 
-    /// Deferred observe must not reap when this process already owns ``currentActivity``
-    /// (start raced ahead of post-init yield). Pure policy seam — no ActivityKit IPC.
+    /// Deferred observe residual-id policy: unowned → reap every system id; owned → reap
+    /// siblings only (never the owned id). Closes the hole where "skip all reaping when
+    /// owned" left a second prior-process residual interactive.
     ///
-    /// - SeeAlso: ``RadioLiveActivityManager/_test_shouldReapPriorProcessResiduals(hasOwnedCurrentActivity:)``,
-    ///   ``RadioLiveActivityManager/observeExistingActivities()``.
-    func testShouldReapPriorProcessResidualsOnlyWhenNoOwnedActivity() {
-        XCTAssertTrue(
-            manager._test_shouldReapPriorProcessResiduals(hasOwnedCurrentActivity: false),
-            "Empty ownership must allow prior-process residual reaping"
+    /// Pure policy seam — no ActivityKit IPC.
+    ///
+    /// - SeeAlso: ``RadioLiveActivityManager/_test_systemResidualIdsToReap(systemActivityIds:ownedActivityId:)``,
+    ///   ``RadioLiveActivityManager/_test_shouldUseFullResidualEnd(hasOwnedCurrentActivity:)``,
+    ///   ``RadioLiveActivityManager/observeExistingActivities()``,
+    ///   ``RadioLiveActivityManager/reapUnownedSystemResiduals(preservingOwnedActivityId:)``.
+    func testSystemResidualIdsToReapPreservesOwnedAndSweepsSiblings() {
+        let owned = "owned-la-id"
+        let siblingA = "residual-a"
+        let siblingB = "residual-b"
+        let systemIds = [owned, siblingA, siblingB]
+
+        // No ownership: full residual reaping (all system ids).
+        XCTAssertEqual(
+            manager._test_systemResidualIdsToReap(systemActivityIds: systemIds, ownedActivityId: nil),
+            systemIds,
+            "Unowned observe must target every system-held residual"
         )
+        XCTAssertTrue(
+            manager._test_shouldUseFullResidualEnd(hasOwnedCurrentActivity: false),
+            "Unowned path uses full endActivity (clears local tracking)"
+        )
+
+        // Ownership: siblings only — never the owned Activity.
+        let siblingOnly = manager._test_systemResidualIdsToReap(
+            systemActivityIds: systemIds,
+            ownedActivityId: owned
+        )
+        XCTAssertEqual(Set(siblingOnly), Set([siblingA, siblingB]))
+        XCTAssertFalse(siblingOnly.contains(owned), "Owned id must never be reaped as residual")
         XCTAssertFalse(
-            manager._test_shouldReapPriorProcessResiduals(hasOwnedCurrentActivity: true),
-            "This-process owned Activity must skip residual reaping"
+            manager._test_shouldUseFullResidualEnd(hasOwnedCurrentActivity: true),
+            "Owned path must not full-end (would clear currentActivity + mirrors)"
+        )
+
+        // Ownership with no siblings: empty reaping set (happy startActivity race).
+        XCTAssertTrue(
+            manager._test_systemResidualIdsToReap(
+                systemActivityIds: [owned],
+                ownedActivityId: owned
+            ).isEmpty,
+            "Sole owned Activity must produce an empty sibling reaping set"
+        )
+
+        // Ownership when owned id is absent from system list (stale local ref): reap all listed.
+        XCTAssertEqual(
+            Set(manager._test_systemResidualIdsToReap(
+                systemActivityIds: [siblingA, siblingB],
+                ownedActivityId: owned
+            )),
+            Set([siblingA, siblingB]),
+            "Siblings still reaped when owned id is not among system activities"
         )
     }
 
