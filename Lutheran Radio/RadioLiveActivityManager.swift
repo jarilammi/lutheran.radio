@@ -71,9 +71,15 @@ import WidgetSurface
 /// Soft retries cannot repair an interactive activity whose system-held
 /// `content.state` never advances (language stuck on a prior stream, or visual stuck
 /// on `.userPaused` after soft resume while audio is already playing). After a bounded
-/// streak of `Activity.update` completions that leave system-held ContentState lagging, the manager ends the frozen
-/// surface and ``startActivity()`` requests a fresh interactive activity seeded from
-/// current language chrome + visual. Recreation is capped so thrashing is impossible.
+/// streak of `Activity.update` completions that leave system-held ContentState lagging,
+/// the manager may end the frozen surface and ``startActivity()`` a replacement seeded
+/// from current language chrome + visual — **only when an interactive `Activity.request`
+/// is eligible** (Live Activities enabled and the application is active). When request
+/// is ineligible (lock screen / background **visibility** constraints), the existing
+/// interactive activity is **kept** and a pending ensure is recorded so the next
+/// foreground cycle can start or re-bind. Recreation is capped so thrashing is impossible.
+/// **Invariant:** never destroy the only interactive Live Activity unless a replacement
+/// can be requested or a recoverable pending ensure is guaranteed.
 ///
 /// ## Test Isolation
 /// All real Activity creation/update/timer paths are short-circuited under
@@ -152,7 +158,31 @@ class RadioLiveActivityManager: ObservableObject {
 
     /// Re-entrancy guard while ``recreateInteractiveLiveActivityAfterStalledContent()`` runs
     /// (end + start must not schedule nested recreation from the nested initial push).
+    /// While true, non-essential content pushes are skipped so concurrent updates do not
+    /// target a dying activity id.
     private var isRecreatingLiveActivityAfterStalledContent = false
+
+    /// When true, the next eligible foreground cycle should request an interactive Live
+    /// Activity if session policy still needs one and none is owned.
+    ///
+    /// Set when:
+    /// - Stalled-content recreation is deferred because `Activity.request` is not eligible, or
+    /// - An interactive start attempt fails while `currentActivity` remains nil
+    ///
+    /// Cleared when an interactive activity is successfully owned, or when session teardown
+    /// ends Live Activities without an in-flight recreation.
+    ///
+    /// - SeeAlso: ``ensureInteractiveLiveActivityIfNeeded()``, ``startActivity()``,
+    ///   ``recreateInteractiveLiveActivityAfterStalledContent()``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    private var pendingInteractiveLiveActivityEnsure = false
+
+    /// Debounce stamp for ``ensureInteractiveLiveActivityIfNeeded()`` so SceneDelegate +
+    /// AppDelegate dual foreground hooks do not double-request.
+    private var lastInteractiveLiveActivityEnsureAt: Date?
+
+    /// Minimum interval between ensure-start attempts (SceneDelegate + AppDelegate both fire).
+    private static let interactiveLiveActivityEnsureDebounceInterval: TimeInterval = 1.0
 
     /// Consecutive stalled updates required before end + ``startActivity()`` recreation.
     ///
@@ -298,15 +328,18 @@ class RadioLiveActivityManager: ObservableObject {
     /// runner alive, manifesting as "very slow tests" or "hung before establishing
     /// connection" when running `xcodebuild ... test` from the shell.
     ///
-    /// - Postcondition: If successful (non-test), `currentActivity` is non-nil and the 10 s local
-    ///   update timer is running. Initial content uses the current `PlayerVisualState` SSOT.
+    /// - Postcondition: If successful (non-test), `currentActivity` is non-nil and initial
+    ///   content uses the current `PlayerVisualState` SSOT. On request failure with no owned
+    ///   activity, ``pendingInteractiveLiveActivityEnsure`` is set for foreground recovery.
     /// - Important: Only call from main-app code (never widget extension). The caller is
     ///   responsible for ensuring we are allowed to show an activity (usually right after
-    ///   a `.playing` transition).
+    ///   a `.playing` transition). Prefer ``ensureInteractiveLiveActivityIfNeeded()`` on
+    ///   foreground when recovering after a visibility-class request failure.
     /// - Note: The test short-circuit here is the companion to the identical guard
     ///   in `observeExistingActivities()`. It is what made the prior partial fix
     ///   (commit 2af37cf) insufficient.
     /// - SeeAlso: `updateCurrentActivity()`, `SharedPlayerManager.setPlaying`,
+    ///   ``ensureInteractiveLiveActivityIfNeeded()``,
     ///   ``SharedPlayerManager/refreshAllMediaSurfaces(liveActivity:widgetRefresh:widgetRefreshImmediate:)``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (start policy),
     ///   ``isRunningUnderTest``, ``observeExistingActivities()``, <doc:Architecture>
@@ -337,6 +370,8 @@ class RadioLiveActivityManager: ObservableObject {
             #if DEBUG
             print("🔴 Live Activities are not enabled by user")
             #endif
+            // User/system disabled: no recoverable request path.
+            pendingInteractiveLiveActivityEnsure = false
             return
         }
         
@@ -369,6 +404,7 @@ class RadioLiveActivityManager: ObservableObject {
             )
             
             currentActivity = activity
+            pendingInteractiveLiveActivityEnsure = false
             beginObservingActivityEvents(activity)
 
             // Event-driven model: do NOT start the 10 s fallback timer here.
@@ -386,6 +422,38 @@ class RadioLiveActivityManager: ObservableObject {
         } catch {
             #if DEBUG
             print("🔴 Failed to start Live Activity: \(error)")
+            #endif
+            // Request failed after local end: re-bind if the system still holds a surface,
+            // otherwise mark pending ensure so the next eligible foreground cycle can recover.
+            await recoverAfterFailedInteractiveLiveActivityRequest()
+        }
+    }
+
+    /// After a failed `Activity.request`, re-bind a system-held activity if present; else mark
+    /// pending ensure for the next eligible foreground cycle.
+    ///
+    /// - Postcondition: Either `currentActivity` is non-nil (re-bound) or
+    ///   ``pendingInteractiveLiveActivityEnsure`` is true when no surface is owned.
+    /// - SeeAlso: ``startActivity()``, ``ensureInteractiveLiveActivityIfNeeded()``.
+    private func recoverAfterFailedInteractiveLiveActivityRequest() async {
+        // Prefer re-bind over a permanent blank surface (request may fail while system
+        // still holds a residual interactive for this attribute type).
+        if let existing = Activity<LutheranRadioLiveActivityAttributes>.activities.first {
+            currentActivity = existing
+            pendingInteractiveLiveActivityEnsure = false
+            beginObservingActivityEvents(existing)
+            await updateCurrentActivity()
+            #if DEBUG
+            print("🔴 Live Activity re-bound after failed request id=\(existing.id)")
+            #endif
+            return
+        }
+        if Self.shouldMarkPendingInteractiveLiveActivityEnsureAfterStartAttempt(
+            currentActivityIsNil: currentActivity == nil
+        ) {
+            pendingInteractiveLiveActivityEnsure = true
+            #if DEBUG
+            print("🔴 Live Activity pending ensure after failed request (no owned surface)")
             #endif
         }
     }
@@ -423,16 +491,18 @@ class RadioLiveActivityManager: ObservableObject {
     ///
     /// **Stalled system-held chrome recreation:** When system-held language (or pause visual while the
     /// candidate needs Connecting/playing) still mismatches after the await for a bounded
-    /// streak, ``recreateInteractiveLiveActivityAfterStalledContent()`` ends the frozen
-    /// activity and requests a new one with destination language + current visual. Soft
-    /// retries alone cannot repair an ActivityKit surface that never accepts content.
+    /// streak, recreation is considered. End + request runs **only when** interactive
+    /// `Activity.request` is eligible (activities enabled + application active). When
+    /// ineligible, the existing activity is kept and a pending ensure is recorded.
+    /// Soft retries alone cannot repair an ActivityKit surface that never accepts content,
+    /// but destroying the only card under a visibility failure is worse than a stalled flag.
     ///
     /// - Precondition: Must be called on the main actor (the method is `@MainActor`).
     /// - Postcondition: If an update is sent, `lastPushedContent` reflects the
     ///   system-observed `content.state` after the await. Durable visual + language App Group
     ///   mirrors are warmed even when ActivityKit IPC is suppressed. After stalled-push recreation threshold,
-    ///   interactive activity may be recreated once per healthy match cycle (capped).
-    /// - Note: Silently no-ops if no activity is active.
+    ///   interactive activity may be recreated once per healthy match cycle (capped) when eligible.
+    /// - Note: Silently no-ops if no activity is active or recreation is in progress.
     /// - Important: Uses `nonisolated(unsafe)` + `unsafe` because `Activity.update` is
     ///   not Sendable in the current SDK; the capture of the Activity is done only after
     ///   we hold a strong local reference on the main actor.
@@ -464,6 +534,12 @@ class RadioLiveActivityManager: ObservableObject {
             return
         }
         #endif
+
+        // While end+start recreation owns the lifecycle, skip concurrent content pushes so
+        // they do not target a dying activity id or race the replacement request.
+        if isRecreatingLiveActivityAfterStalledContent {
+            return
+        }
 
         guard let activity = currentActivity else { return }
         
@@ -562,14 +638,35 @@ class RadioLiveActivityManager: ObservableObject {
         }
         #endif
 
-        if Self.shouldRecreateInteractiveLiveActivityAfterStalledPushes(
+        let requestEligible = Self.isInteractiveLiveActivityRequestEligible(
+            areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+            isApplicationActive: UIApplication.shared.applicationState == .active
+        )
+        if Self.shouldPerformStalledContentRecreation(
+            consecutiveStalled: consecutiveStalledContentPushes,
+            recreationsAttempted: interactiveContentRecreationsAttempted,
+            isRecreationInProgress: isRecreatingLiveActivityAfterStalledContent,
+            isRequestEligible: requestEligible,
+            threshold: Self.stalledContentPushRecreationThreshold,
+            maxRecreations: Self.maxInteractiveContentRecreations
+        ) {
+            await recreateInteractiveLiveActivityAfterStalledContent()
+        } else if Self.shouldRecreateInteractiveLiveActivityAfterStalledPushes(
             consecutiveStalled: consecutiveStalledContentPushes,
             recreationsAttempted: interactiveContentRecreationsAttempted,
             threshold: Self.stalledContentPushRecreationThreshold,
             maxRecreations: Self.maxInteractiveContentRecreations,
             isRecreationInProgress: isRecreatingLiveActivityAfterStalledContent
-        ) {
-            await recreateInteractiveLiveActivityAfterStalledContent()
+        ), !requestEligible {
+            // Streak/cap would recreate, but request is not eligible — keep the existing
+            // interactive surface and recover on the next eligible foreground cycle.
+            pendingInteractiveLiveActivityEnsure = true
+            #if DEBUG
+            print(
+                "🔴 Live Activity recreation deferred — interactive request not eligible " +
+                "(keeping existing surface; pending ensure recorded)"
+            )
+            #endif
         }
     }
 
@@ -601,7 +698,12 @@ class RadioLiveActivityManager: ObservableObject {
         return false
     }
 
-    /// Whether soft retries should yield to interactive activity recreation.
+    /// Whether soft retries should yield to interactive activity recreation (streak/cap only).
+    ///
+    /// Does **not** encode request eligibility — callers must also consult
+    /// ``isInteractiveLiveActivityRequestEligible(areActivitiesEnabled:isApplicationActive:)``
+    /// via ``shouldPerformStalledContentRecreation(consecutiveStalled:recreationsAttempted:isRecreationInProgress:isRequestEligible:threshold:maxRecreations:)``
+    /// before ending the only interactive surface.
     ///
     /// - Parameters:
     ///   - consecutiveStalled: Streak of stalled pushes since system-held chrome last matched.
@@ -611,8 +713,9 @@ class RadioLiveActivityManager: ObservableObject {
     ///   - maxRecreations: Cap per healthy match cycle (production:
     ///     ``maxInteractiveContentRecreations``).
     ///   - isRecreationInProgress: Nested push during end+start must not schedule recreation again.
-    /// - Returns: `true` when ``recreateInteractiveLiveActivityAfterStalledContent()`` should run.
-    /// - SeeAlso: ``updateCurrentActivity()``, docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    /// - Returns: `true` when stalled-push bookkeeping alone would schedule recreation.
+    /// - SeeAlso: ``shouldPerformStalledContentRecreation(consecutiveStalled:recreationsAttempted:isRecreationInProgress:isRequestEligible:threshold:maxRecreations:)``,
+    ///   ``updateCurrentActivity()``, docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     static func shouldRecreateInteractiveLiveActivityAfterStalledPushes(
         consecutiveStalled: Int,
         recreationsAttempted: Int,
@@ -626,6 +729,123 @@ class RadioLiveActivityManager: ObservableObject {
         return true
     }
 
+    /// Whether an interactive `Activity.request` is eligible for this process right now.
+    ///
+    /// End + request recreation must not run when this returns `false`: destroying the only
+    /// interactive Live Activity under lock-screen / background **visibility** constraints
+    /// leaves the user with audio-only chrome until a later foreground path succeeds.
+    ///
+    /// - Parameters:
+    ///   - areActivitiesEnabled: `ActivityAuthorizationInfo().areActivitiesEnabled`.
+    ///   - isApplicationActive: `UIApplication.shared.applicationState == .active` (presentable
+    ///     for a replacement interactive request; inactive/background is not).
+    /// - Returns: `true` when both Live Activities are enabled and the app is active.
+    /// - SeeAlso: ``shouldPerformStalledContentRecreation(consecutiveStalled:recreationsAttempted:isRecreationInProgress:isRequestEligible:threshold:maxRecreations:)``,
+    ///   ``recreateInteractiveLiveActivityAfterStalledContent()``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    static func isInteractiveLiveActivityRequestEligible(
+        areActivitiesEnabled: Bool,
+        isApplicationActive: Bool
+    ) -> Bool {
+        areActivitiesEnabled && isApplicationActive
+    }
+
+    /// Full decision for end + request recreation: streak/cap **and** request eligibility.
+    ///
+    /// - Parameters:
+    ///   - consecutiveStalled: Stalled-push streak.
+    ///   - recreationsAttempted: Recreations already performed this healthy match cycle.
+    ///   - isRecreationInProgress: Nested push guard.
+    ///   - isRequestEligible: ``isInteractiveLiveActivityRequestEligible(areActivitiesEnabled:isApplicationActive:)``.
+    ///   - threshold: Production ``stalledContentPushRecreationThreshold``.
+    ///   - maxRecreations: Production ``maxInteractiveContentRecreations``.
+    /// - Returns: `true` only when bookkeeping would recreate **and** a replacement request
+    ///   is eligible (never end the only interactive surface when start cannot succeed).
+    /// - SeeAlso: ``recreateInteractiveLiveActivityAfterStalledContent()``,
+    ///   ``shouldRecreateInteractiveLiveActivityAfterStalledPushes(consecutiveStalled:recreationsAttempted:threshold:maxRecreations:isRecreationInProgress:)``.
+    static func shouldPerformStalledContentRecreation(
+        consecutiveStalled: Int,
+        recreationsAttempted: Int,
+        isRecreationInProgress: Bool,
+        isRequestEligible: Bool,
+        threshold: Int = RadioLiveActivityManager.stalledContentPushRecreationThreshold,
+        maxRecreations: Int = RadioLiveActivityManager.maxInteractiveContentRecreations
+    ) -> Bool {
+        guard isRequestEligible else { return false }
+        return shouldRecreateInteractiveLiveActivityAfterStalledPushes(
+            consecutiveStalled: consecutiveStalled,
+            recreationsAttempted: recreationsAttempted,
+            threshold: threshold,
+            maxRecreations: maxRecreations,
+            isRecreationInProgress: isRecreationInProgress
+        )
+    }
+
+    /// Whether a failed interactive start should record a pending foreground ensure.
+    ///
+    /// - Parameter currentActivityIsNil: Whether ownership is empty after the attempt.
+    /// - Returns: `true` when no interactive activity is owned (recoverable absence).
+    /// - SeeAlso: ``startActivity()``, ``ensureInteractiveLiveActivityIfNeeded()``.
+    static func shouldMarkPendingInteractiveLiveActivityEnsureAfterStartAttempt(
+        currentActivityIsNil: Bool
+    ) -> Bool {
+        currentActivityIsNil
+    }
+
+    /// Whether foreground ensure should request an interactive Live Activity.
+    ///
+    /// - Parameters:
+    ///   - pendingEnsure: ``pendingInteractiveLiveActivityEnsure`` after a deferred recreation
+    ///     or failed request.
+    ///   - hasCurrentActivity: Whether this process already owns an interactive activity.
+    ///   - sessionNeedsInteractiveLiveActivity: Playback session still needs LA chrome
+    ///     (authoritative playing / Connecting / sticky pause with live session — see
+    ///     ``sessionNeedsInteractiveLiveActivity(isPlaying:visualState:)``).
+    ///   - areActivitiesEnabled: User/system Live Activities enabled.
+    ///   - isRequestEligible: Application is active (presentable for `Activity.request`).
+    /// - Returns: `true` when start should run once (no owned activity, enabled, eligible,
+    ///   and either pending recovery or session still needs an interactive surface).
+    /// - SeeAlso: ``ensureInteractiveLiveActivityIfNeeded()``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    static func shouldEnsureInteractiveLiveActivityStart(
+        pendingEnsure: Bool,
+        hasCurrentActivity: Bool,
+        sessionNeedsInteractiveLiveActivity: Bool,
+        areActivitiesEnabled: Bool,
+        isRequestEligible: Bool
+    ) -> Bool {
+        guard areActivitiesEnabled else { return false }
+        guard isRequestEligible else { return false }
+        guard !hasCurrentActivity else { return false }
+        // Session must still need interactive chrome. Pending recovery alone after stop
+        // must not invent a Live Activity (call sites clear pending when `sessionNeeds` is false).
+        // Dual path once session needs chrome: deferred recovery (`pendingEnsure`) **or**
+        // missing surface under active session (foreground correction without a prior flag).
+        return sessionNeedsInteractiveLiveActivity
+            && (pendingEnsure || !hasCurrentActivity)
+    }
+
+    /// Session policy for whether an interactive Live Activity is still meaningful.
+    ///
+    /// Matches background auto-start intent: authoritative playing, Connecting attach, or
+    /// sticky pause while the main process still owns a live session (paused LA is intentional).
+    ///
+    /// - Parameters:
+    ///   - isPlaying: Shared snapshot / App Group `isPlaying` (background auto-start input).
+    ///   - visualState: In-memory ``PlayerVisualState``.
+    /// - Returns: `true` when start/ensure should be considered for a missing activity.
+    /// - SeeAlso: ``handleAppWillEnterBackground()``, ``ensureInteractiveLiveActivityIfNeeded()``.
+    static func sessionNeedsInteractiveLiveActivity(
+        isPlaying: Bool,
+        visualState: PlayerVisualState
+    ) -> Bool {
+        if isPlaying { return true }
+        if visualState.isActivelyPlaying { return true }
+        if visualState == .prePlay { return true }
+        if visualState == .userPaused { return true }
+        return false
+    }
+
     /// Ends the frozen interactive Live Activity and requests a fresh one with current
     /// language chrome + visual (destination stamp / attach language via
     /// ``SharedPlayerManager/liveActivityLanguageCodeForContentPush()``).
@@ -635,13 +855,21 @@ class RadioLiveActivityManager: ObservableObject {
     /// Soft reconcile cannot change a system surface that never advances ContentState; a new
     /// `Activity.request` re-seeds flag/name/control chrome.
     ///
+    /// **Eligibility gate:** Must not run when ``isInteractiveLiveActivityRequestEligible`` is
+    /// false — callers gate via ``shouldPerformStalledContentRecreation``; this method
+    /// re-checks and defers (keeps existing surface + pending ensure) if still ineligible.
+    ///
     /// - Precondition: Main actor; not already inside recreation; test isolation short-circuits
     ///   via ``endActivityAsync`` / ``startActivity()`` guards.
-    /// - Postcondition: Recreation attempt counted; stalled streak cleared; either a new
-    ///   interactive activity exists or start failed (logged in DEBUG).
+    /// - Postcondition: When eligible: recreation attempt counted; stalled streak cleared;
+    ///   either a new interactive activity exists or start failure left pending ensure.
+    ///   When ineligible: existing activity retained; pending ensure set; recreation budget
+    ///   not consumed.
     /// - Important: Does **not** invent `.playing` — initial ContentState comes from actor
     ///   visual + language SSOT (Connecting remains honest during stream-switch hold).
     /// - SeeAlso: ``updateCurrentActivity()``, ``startActivity()``, ``endActivityAsync(dismissalPolicy:)``,
+    ///   ``ensureInteractiveLiveActivityIfNeeded()``,
+    ///   ``isInteractiveLiveActivityRequestEligible(areActivitiesEnabled:isApplicationActive:)``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     @MainActor
     func recreateInteractiveLiveActivityAfterStalledContent() async {
@@ -650,6 +878,23 @@ class RadioLiveActivityManager: ObservableObject {
         if isRunningUnderTest { return }
         #endif
         guard !isRecreatingLiveActivityAfterStalledContent else { return }
+
+        let requestEligible = Self.isInteractiveLiveActivityRequestEligible(
+            areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+            isApplicationActive: UIApplication.shared.applicationState == .active
+        )
+        guard requestEligible else {
+            // Defense-in-depth: never end the only interactive surface when request cannot
+            // succeed (lock / background visibility). Soft retries + pending ensure remain.
+            pendingInteractiveLiveActivityEnsure = true
+            #if DEBUG
+            print(
+                "🔴 Live Activity recreation skipped — interactive request not eligible " +
+                "(keeping existing surface; pending ensure recorded)"
+            )
+            #endif
+            return
+        }
 
         isRecreatingLiveActivityAfterStalledContent = true
         interactiveContentRecreationsAttempted += 1
@@ -664,9 +909,10 @@ class RadioLiveActivityManager: ObservableObject {
         #endif
 
         // Immediate dismissal so the frozen prior-language / pause frame does not linger
-        // beside the replacement card.
+        // beside the replacement card. Safe only because request eligibility was verified.
         await endActivityAsync(dismissalPolicy: .immediate)
         await startActivity()
+        // startActivity sets pending ensure on failure / clears it on success.
     }
 
     /// Whether ActivityKit IPC should be skipped for this candidate.
@@ -1147,6 +1393,9 @@ class RadioLiveActivityManager: ObservableObject {
             lastPushedContent = nil
             consecutiveStalledContentPushes = 0
             interactiveContentRecreationsAttempted = 0
+            if !isRecreatingLiveActivityAfterStalledContent {
+                pendingInteractiveLiveActivityEnsure = false
+            }
             SharedPlayerManager.clearLiveActivityToggleVisualStateMirror()
             SharedPlayerManager.clearLiveActivityLanguageMirror()
             return nil
@@ -1158,6 +1407,9 @@ class RadioLiveActivityManager: ObservableObject {
             lastPushedContent = nil
             consecutiveStalledContentPushes = 0
             interactiveContentRecreationsAttempted = 0
+            if !isRecreatingLiveActivityAfterStalledContent {
+                pendingInteractiveLiveActivityEnsure = false
+            }
             SharedPlayerManager.clearLiveActivityToggleVisualStateMirror()
             SharedPlayerManager.clearLiveActivityLanguageMirror()
             return nil
@@ -1173,8 +1425,11 @@ class RadioLiveActivityManager: ObservableObject {
         consecutiveStalledContentPushes = 0
         // Do not reset interactiveContentRecreationsAttempted here when recreation is mid-flight
         // (end clears tracking before start). Recreation counter is owned by the recreation cycle.
+        // Pending ensure survives an in-flight recreation end so a failed replacement start
+        // can still recover on foreground; session teardown clears it.
         if !isRecreatingLiveActivityAfterStalledContent {
             interactiveContentRecreationsAttempted = 0
+            pendingInteractiveLiveActivityEnsure = false
         }
         SharedPlayerManager.clearLiveActivityToggleVisualStateMirror()
         SharedPlayerManager.clearLiveActivityLanguageMirror()
@@ -1691,7 +1946,7 @@ class RadioLiveActivityManager: ObservableObject {
         Self.isStalledLiveActivityContentPush(candidate: candidate, accepted: accepted)
     }
 
-    /// White-box seam: recreate decision after a stalled content-push streak.
+    /// White-box seam: recreate decision after a stalled content-push streak (streak/cap only).
     func _test_shouldRecreateInteractiveLiveActivityAfterStalledPushes(
         consecutiveStalled: Int,
         recreationsAttempted: Int,
@@ -1706,6 +1961,83 @@ class RadioLiveActivityManager: ObservableObject {
             maxRecreations: maxRecreations,
             isRecreationInProgress: isRecreationInProgress
         )
+    }
+
+    /// White-box seam: end+request only when request is eligible (never end under visibility failure).
+    func _test_shouldPerformStalledContentRecreation(
+        consecutiveStalled: Int,
+        recreationsAttempted: Int,
+        isRecreationInProgress: Bool,
+        isRequestEligible: Bool,
+        threshold: Int = RadioLiveActivityManager.stalledContentPushRecreationThreshold,
+        maxRecreations: Int = RadioLiveActivityManager.maxInteractiveContentRecreations
+    ) -> Bool {
+        Self.shouldPerformStalledContentRecreation(
+            consecutiveStalled: consecutiveStalled,
+            recreationsAttempted: recreationsAttempted,
+            isRecreationInProgress: isRecreationInProgress,
+            isRequestEligible: isRequestEligible,
+            threshold: threshold,
+            maxRecreations: maxRecreations
+        )
+    }
+
+    /// White-box seam: interactive `Activity.request` eligibility (enabled + application active).
+    func _test_isInteractiveLiveActivityRequestEligible(
+        areActivitiesEnabled: Bool,
+        isApplicationActive: Bool
+    ) -> Bool {
+        Self.isInteractiveLiveActivityRequestEligible(
+            areActivitiesEnabled: areActivitiesEnabled,
+            isApplicationActive: isApplicationActive
+        )
+    }
+
+    /// White-box seam: pending ensure after a failed start when ownership is empty.
+    func _test_shouldMarkPendingInteractiveLiveActivityEnsureAfterStartAttempt(
+        currentActivityIsNil: Bool
+    ) -> Bool {
+        Self.shouldMarkPendingInteractiveLiveActivityEnsureAfterStartAttempt(
+            currentActivityIsNil: currentActivityIsNil
+        )
+    }
+
+    /// White-box seam: foreground ensure-start policy (no ActivityKit).
+    func _test_shouldEnsureInteractiveLiveActivityStart(
+        pendingEnsure: Bool,
+        hasCurrentActivity: Bool,
+        sessionNeedsInteractiveLiveActivity: Bool,
+        areActivitiesEnabled: Bool,
+        isRequestEligible: Bool
+    ) -> Bool {
+        Self.shouldEnsureInteractiveLiveActivityStart(
+            pendingEnsure: pendingEnsure,
+            hasCurrentActivity: hasCurrentActivity,
+            sessionNeedsInteractiveLiveActivity: sessionNeedsInteractiveLiveActivity,
+            areActivitiesEnabled: areActivitiesEnabled,
+            isRequestEligible: isRequestEligible
+        )
+    }
+
+    /// White-box seam: session-needs policy for interactive LA ensure/start.
+    func _test_sessionNeedsInteractiveLiveActivity(
+        isPlaying: Bool,
+        visualState: PlayerVisualState
+    ) -> Bool {
+        Self.sessionNeedsInteractiveLiveActivity(
+            isPlaying: isPlaying,
+            visualState: visualState
+        )
+    }
+
+    /// White-box seam: read pending ensure flag (no ActivityKit).
+    func _test_pendingInteractiveLiveActivityEnsure() -> Bool {
+        pendingInteractiveLiveActivityEnsure
+    }
+
+    /// White-box seam: set pending ensure flag (no ActivityKit).
+    func _test_setPendingInteractiveLiveActivityEnsure(_ value: Bool) {
+        pendingInteractiveLiveActivityEnsure = value
     }
 
     /// White-box seam: playing reconcile decision (Connecting / pause stuck → playing).
@@ -1906,13 +2238,17 @@ extension RadioLiveActivityManager {
     
     /// Called on foreground transitions.
     ///
-    /// Immediately pushes the current SSOT visual state so that any stale LA content
-    /// (e.g. after a long background period) is corrected before the user sees it.
+    /// 1. Ensures an interactive Live Activity when pending after a deferred recreation /
+    ///    failed request, or when the session still needs chrome and none is owned.
+    /// 2. Pushes the current SSOT visual state so that any stale LA content
+    ///    (e.g. after a long background period) is corrected before the user sees it.
     ///
     /// Under DEBUG test runs we early-return to avoid even scheduling the no-op
     /// `updateCurrentActivity` Task.
     ///
-    /// - SeeAlso: ``isRunningUnderTest``, handleAppWillEnterBackground
+    /// - SeeAlso: ``isRunningUnderTest``, ``ensureInteractiveLiveActivityIfNeeded()``,
+    ///   ``handleAppWillEnterBackground()``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     func handleAppDidEnterForeground() {
         // Defense-in-depth: suppress foreground LA pushes under UITestMode.
         if SharedPlayerManager.isRunningInUITestMode { return }
@@ -1922,8 +2258,84 @@ extension RadioLiveActivityManager {
         #endif
 
         Task { @MainActor in
+            await ensureInteractiveLiveActivityIfNeeded()
             await updateCurrentActivity()
         }
+    }
+
+    /// Debounced foreground ensure: start an interactive Live Activity when session policy
+    /// needs one and none is owned (including after a deferred recreation or failed request).
+    ///
+    /// **Why:** `Activity.request` can fail with a visibility-class error while the process
+    /// remains lock-screen / background driven. Ending the only interactive surface then leaves
+    /// permanent absence until a later start succeeds. Recording
+    /// ``pendingInteractiveLiveActivityEnsure`` and retrying on become-active restores the card
+    /// without inventing playback.
+    ///
+    /// - Precondition: Main actor; not UITestMode / under-test (callers and this method guard).
+    /// - Postcondition: At most one start attempt per debounce window; pending cleared when
+    ///   ownership is restored or the session no longer needs interactive chrome.
+    /// - Important: Does not stack multiple interactive activities — ``startActivity()`` ends
+    ///   any residual before request. Does not bypass privacy write suppression.
+    /// - SeeAlso: ``startActivity()``, ``handleAppDidEnterForeground()``,
+    ///   ``shouldEnsureInteractiveLiveActivityStart(pendingEnsure:hasCurrentActivity:sessionNeedsInteractiveLiveActivity:areActivitiesEnabled:isRequestEligible:)``,
+    ///   ``sessionNeedsInteractiveLiveActivity(isPlaying:visualState:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    @MainActor
+    func ensureInteractiveLiveActivityIfNeeded() async {
+        if SharedPlayerManager.isRunningInUITestMode { return }
+        #if DEBUG
+        if isRunningUnderTest { return }
+        #endif
+
+        if let last = lastInteractiveLiveActivityEnsureAt,
+           Date().timeIntervalSince(last) < Self.interactiveLiveActivityEnsureDebounceInterval {
+            return
+        }
+
+        let activitiesEnabled = ActivityAuthorizationInfo().areActivitiesEnabled
+        let requestEligible = Self.isInteractiveLiveActivityRequestEligible(
+            areActivitiesEnabled: activitiesEnabled,
+            isApplicationActive: UIApplication.shared.applicationState == .active
+        )
+
+        if currentActivity != nil {
+            pendingInteractiveLiveActivityEnsure = false
+            return
+        }
+
+        let manager = SharedPlayerManager.shared
+        let isPlaying = manager.loadSharedState().isPlaying
+        let visualState = await manager.currentVisualState
+        let sessionNeeds = Self.sessionNeedsInteractiveLiveActivity(
+            isPlaying: isPlaying,
+            visualState: visualState
+        )
+
+        if !sessionNeeds {
+            // Stop / teardown while pending: drop the recovery flag without requesting.
+            pendingInteractiveLiveActivityEnsure = false
+            return
+        }
+
+        guard Self.shouldEnsureInteractiveLiveActivityStart(
+            pendingEnsure: pendingInteractiveLiveActivityEnsure,
+            hasCurrentActivity: currentActivity != nil,
+            sessionNeedsInteractiveLiveActivity: sessionNeeds,
+            areActivitiesEnabled: activitiesEnabled,
+            isRequestEligible: requestEligible
+        ) else {
+            return
+        }
+
+        lastInteractiveLiveActivityEnsureAt = Date()
+        #if DEBUG
+        print(
+            "🔴 Live Activity ensure-start (pending=\(pendingInteractiveLiveActivityEnsure) " +
+            "sessionNeeds=\(sessionNeeds))"
+        )
+        #endif
+        await startActivity()
     }
     
     /// Called on process termination paths (AppDelegate, SceneDelegate disconnect,

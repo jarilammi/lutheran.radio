@@ -12,7 +12,9 @@
 //  (`_test_beginObservingSyntheticContentUpdates`, `_test_wouldSuppressLiveActivityUpdate`,
 //  `_test_setHarnessSimulatesActiveActivity`, `_test_cancelAttributeEventObservation`,
 //  `_test_finalEndContentState`, `_test_systemResidualIdsToReap`,
-//  `_test_shouldUseFullResidualEnd`) so ActivityKit IPC is never exercised under the XCTest host.
+//  `_test_shouldUseFullResidualEnd`, stalled-recreation eligibility /
+//  pending-ensure / foreground-ensure policy seams) so ActivityKit IPC is never
+//  exercised under the XCTest host.
 //
 //  - SeeAlso: ``RadioLiveActivityManager``, ``WidgetEventObserver``,
 //    docs/Event-Driven-Refactor-Roadmap.md (Tier 2 LA events / Tier 5),
@@ -57,11 +59,13 @@ class RadioLiveActivityManagerTests: XCTestCase {
         // surface.
         // (internal visibility via @testable for the property itself.)
         manager.currentActivity = nil
+        manager._test_setPendingInteractiveLiveActivityEnsure(false)
     }
     
     override func tearDown() async throws {
         // Must stop the timer (if any) and cancel attribute event observation before
         // releasing. Prevents live Tasks / Timers keeping the runner alive.
+        manager?._test_setPendingInteractiveLiveActivityEnsure(false)
         manager?.stopLocalUpdateTimer()
         manager?.activityObservationTask?.cancel()
         // The seam cancel stops the work; the observer is reset on next use.
@@ -711,6 +715,193 @@ class RadioLiveActivityManagerTests: XCTestCase {
                 isRecreationInProgress: false
             ),
             "Exhausted recreation budget must stop end/start loops"
+        )
+    }
+
+    /// End+request recreation must never run when interactive request is ineligible
+    /// (lock screen / background visibility), even when the stalled streak is past threshold.
+    ///
+    /// **Invariant:** never destroy the only interactive Live Activity unless a replacement
+    /// `Activity.request` can succeed (or a recoverable pending ensure is recorded separately).
+    func testStalledContentRecreationRequiresRequestEligibility() {
+        let atThreshold = RadioLiveActivityManager.stalledContentPushRecreationThreshold
+
+        XCTAssertTrue(
+            manager._test_isInteractiveLiveActivityRequestEligible(
+                areActivitiesEnabled: true,
+                isApplicationActive: true
+            ),
+            "Enabled + active application is eligible for interactive request"
+        )
+        XCTAssertFalse(
+            manager._test_isInteractiveLiveActivityRequestEligible(
+                areActivitiesEnabled: true,
+                isApplicationActive: false
+            ),
+            "Background / inactive application is not eligible (visibility failure class)"
+        )
+        XCTAssertFalse(
+            manager._test_isInteractiveLiveActivityRequestEligible(
+                areActivitiesEnabled: false,
+                isApplicationActive: true
+            ),
+            "User/system disabled Live Activities is not eligible"
+        )
+
+        XCTAssertFalse(
+            manager._test_shouldPerformStalledContentRecreation(
+                consecutiveStalled: atThreshold,
+                recreationsAttempted: 0,
+                isRecreationInProgress: false,
+                isRequestEligible: false
+            ),
+            "Ineligible request must not end the only interactive surface even past stall threshold"
+        )
+        XCTAssertTrue(
+            manager._test_shouldPerformStalledContentRecreation(
+                consecutiveStalled: atThreshold,
+                recreationsAttempted: 0,
+                isRecreationInProgress: false,
+                isRequestEligible: true
+            ),
+            "Eligible + threshold + budget must allow end+request recreation"
+        )
+        XCTAssertFalse(
+            manager._test_shouldPerformStalledContentRecreation(
+                consecutiveStalled: atThreshold,
+                recreationsAttempted: 0,
+                isRecreationInProgress: true,
+                isRequestEligible: true
+            ),
+            "Nested recreation during end+start must remain suppressed when eligible"
+        )
+        XCTAssertFalse(
+            manager._test_shouldPerformStalledContentRecreation(
+                consecutiveStalled: 2,
+                recreationsAttempted: 0,
+                isRecreationInProgress: false,
+                isRequestEligible: true
+            ),
+            "Eligible request alone must not recreate below stall threshold"
+        )
+    }
+
+    /// Failed interactive start with empty ownership records a pending foreground ensure.
+    func testFailedStartMarksPendingInteractiveLiveActivityEnsure() {
+        XCTAssertTrue(
+            manager._test_shouldMarkPendingInteractiveLiveActivityEnsureAfterStartAttempt(
+                currentActivityIsNil: true
+            ),
+            "Nil ownership after failed request must mark pending ensure"
+        )
+        XCTAssertFalse(
+            manager._test_shouldMarkPendingInteractiveLiveActivityEnsureAfterStartAttempt(
+                currentActivityIsNil: false
+            ),
+            "Owned surface after start must not mark pending ensure"
+        )
+
+        manager._test_setPendingInteractiveLiveActivityEnsure(true)
+        XCTAssertTrue(manager._test_pendingInteractiveLiveActivityEnsure())
+        manager._test_setPendingInteractiveLiveActivityEnsure(false)
+        XCTAssertFalse(manager._test_pendingInteractiveLiveActivityEnsure())
+    }
+
+    /// Foreground ensure starts only when eligible, enabled, ownership empty, and session needs chrome.
+    func testForegroundEnsureStartPolicy() {
+        XCTAssertTrue(
+            manager._test_sessionNeedsInteractiveLiveActivity(
+                isPlaying: true,
+                visualState: .cleared
+            ),
+            "Shared isPlaying alone still needs interactive chrome (background auto-start parity)"
+        )
+        XCTAssertTrue(
+            manager._test_sessionNeedsInteractiveLiveActivity(
+                isPlaying: false,
+                visualState: .playing
+            )
+        )
+        XCTAssertTrue(
+            manager._test_sessionNeedsInteractiveLiveActivity(
+                isPlaying: false,
+                visualState: .prePlay
+            )
+        )
+        XCTAssertTrue(
+            manager._test_sessionNeedsInteractiveLiveActivity(
+                isPlaying: false,
+                visualState: .userPaused
+            ),
+            "Sticky pause while process lives keeps intentional paused LA chrome"
+        )
+        XCTAssertFalse(
+            manager._test_sessionNeedsInteractiveLiveActivity(
+                isPlaying: false,
+                visualState: .cleared
+            ),
+            "Cleared / idle session must not request interactive chrome"
+        )
+
+        XCTAssertTrue(
+            manager._test_shouldEnsureInteractiveLiveActivityStart(
+                pendingEnsure: true,
+                hasCurrentActivity: false,
+                sessionNeedsInteractiveLiveActivity: true,
+                areActivitiesEnabled: true,
+                isRequestEligible: true
+            ),
+            "Pending recovery under active session must ensure-start when eligible"
+        )
+        XCTAssertTrue(
+            manager._test_shouldEnsureInteractiveLiveActivityStart(
+                pendingEnsure: false,
+                hasCurrentActivity: false,
+                sessionNeedsInteractiveLiveActivity: true,
+                areActivitiesEnabled: true,
+                isRequestEligible: true
+            ),
+            "Missing surface under active session must ensure-start even without prior pending flag"
+        )
+        XCTAssertFalse(
+            manager._test_shouldEnsureInteractiveLiveActivityStart(
+                pendingEnsure: true,
+                hasCurrentActivity: false,
+                sessionNeedsInteractiveLiveActivity: false,
+                areActivitiesEnabled: true,
+                isRequestEligible: true
+            ),
+            "Pending after stop must not invent a Live Activity"
+        )
+        XCTAssertFalse(
+            manager._test_shouldEnsureInteractiveLiveActivityStart(
+                pendingEnsure: true,
+                hasCurrentActivity: true,
+                sessionNeedsInteractiveLiveActivity: true,
+                areActivitiesEnabled: true,
+                isRequestEligible: true
+            ),
+            "Owned activity must not request a second interactive surface"
+        )
+        XCTAssertFalse(
+            manager._test_shouldEnsureInteractiveLiveActivityStart(
+                pendingEnsure: true,
+                hasCurrentActivity: false,
+                sessionNeedsInteractiveLiveActivity: true,
+                areActivitiesEnabled: true,
+                isRequestEligible: false
+            ),
+            "Ineligible request must wait for a presentable cycle"
+        )
+        XCTAssertFalse(
+            manager._test_shouldEnsureInteractiveLiveActivityStart(
+                pendingEnsure: true,
+                hasCurrentActivity: false,
+                sessionNeedsInteractiveLiveActivity: true,
+                areActivitiesEnabled: false,
+                isRequestEligible: true
+            ),
+            "Disabled Live Activities must not ensure-start"
         )
     }
 
