@@ -8,7 +8,8 @@
 //  LutheranRadioWidgetTests). Mechanical split of SharedPlayerManager — same actor,
 //  no API renames, no behavior change.
 //
-//  Purpose: In-process PersistedWidgetState session snapshot, retired App Group key purge, and thermal visual sanitization.
+//  Purpose: In-process PersistedWidgetState session snapshot, privacy-gated home-widget
+//  program-metadata App Group mirror, retired App Group key purge, and thermal visual sanitization.
 //
 //  - SeeAlso: SharedPlayerManager.swift, CODING_AGENT.md (cross-target membership exceptions).
 //
@@ -248,6 +249,9 @@ extension SharedPlayerManager {
             streamMetadata: metadataToPersist,
             hasError: hasError
         )
+        // Cross-process program chrome: extension Providers read the privacy-gated mirror
+        // because the session snapshot is process-local (OI-1 memory-only visual policy).
+        Self.persistHomeWidgetStreamMetadataMirror(metadataToPersist)
 
         // Emission after the authoritative in-session snapshot update.
         // Only emitted on main-app actor paths that reach a real write (privacy gate passed).
@@ -341,6 +345,12 @@ extension SharedPlayerManager {
             hasError: hasError,
             clearStreamMetadata: clearStreamMetadata
         )
+        // Keep App Group program-metadata mirror aligned for extension Provider reads.
+        if clearStreamMetadata {
+            clearHomeWidgetStreamMetadataMirror()
+        } else if let streamMetadata {
+            persistHomeWidgetStreamMetadataMirror(streamMetadata)
+        }
     }
 
     /// Convenience alias to the single-source hasActiveLutheranWidgets flag (WidgetRefreshManager).
@@ -423,8 +433,92 @@ extension SharedPlayerManager {
         DirectStreamingPlayer.indexForLanguageCode(languageCode)
     }
 
+    // MARK: - Home-widget program metadata App Group mirror (privacy-gated)
+
+    /// App Group key for the latest privacy-allowed program metadata used by home/Control Providers.
+    ///
+    /// Visual / playback chrome stay **memory-only** (OI-1). Program title and speaker are pure
+    /// presentation strings from live ICY; the widget extension cannot observe main-app
+    /// `PlayerEvent` or main-app RAM, so a privacy-gated App Group blob is required for
+    /// honest medium/large program chrome after ICY parse.
+    ///
+    /// **Privacy:** Written only when ``hasActiveWidgets`` is true (or the call runs in a
+    /// widget/extension process). Cleared when the gate closes, on privacy clear, language
+    /// hygiene, and when ICY is cleared.
+    ///
+    /// - SeeAlso: ``persistHomeWidgetStreamMetadataMirror(_:)``, ``loadHomeWidgetStreamMetadataMirror()``,
+    ///   ``clearHomeWidgetStreamMetadataMirror()``, ``persistStreamMetadataForWidgets()``,
+    ///   ``WidgetProviderSnapshotResolver/resolveFromSnapshot()``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md, docs/Widget-Presentation-Dataflow.md.
+    nonisolated static let homeWidgetStreamMetadataAppGroupKey = "homeWidgetStreamMetadata"
+
+    /// Writes the privacy-gated home-widget program-metadata mirror for cross-process Providers.
+    ///
+    /// - Parameter metadata: Parsed ICY program fields, or `nil` to clear the mirror.
+    /// - Precondition: Home-widget privacy gate open **or** widget-process bypass (intent proof).
+    /// - Postcondition: When allowed, App Group holds JSON for `metadata` (or key removed when `nil`).
+    /// - SeeAlso: ``loadHomeWidgetStreamMetadataMirror()``, ``clearHomeWidgetStreamMetadataMirror()``,
+    ///   ``persistStreamMetadataForWidgets()``, ``hasActiveWidgets``.
+    nonisolated static func persistHomeWidgetStreamMetadataMirror(_ metadata: StreamProgramMetadata?) {
+        guard Self.hasActiveWidgets || Self.isWidgetProcess() else {
+            #if DEBUG
+            print("[SharedPlayerManager] Suppressing home-widget stream-metadata mirror write (no active widgets — privacy mode)")
+            #endif
+            return
+        }
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return }
+        guard let metadata, metadata.hasDisplayableContent else {
+            defaults.removeObject(forKey: homeWidgetStreamMetadataAppGroupKey)
+            return
+        }
+        do {
+            let data = try JSONEncoder().encode(metadata)
+            defaults.set(data, forKey: homeWidgetStreamMetadataAppGroupKey)
+        } catch {
+            #if DEBUG
+            print("[SharedPlayerManager] Failed to encode home-widget stream-metadata mirror: \(error.localizedDescription)")
+            #endif
+            defaults.removeObject(forKey: homeWidgetStreamMetadataAppGroupKey)
+        }
+    }
+
+    /// Reads the privacy-gated home-widget program-metadata mirror, if present and well-formed.
+    ///
+    /// - Returns: Parsed ``StreamProgramMetadata``, or `nil` when missing/invalid (treat as no program chrome).
+    /// - SeeAlso: ``persistHomeWidgetStreamMetadataMirror(_:)``,
+    ///   ``WidgetProviderSnapshotResolver/resolveFromSnapshot()``.
+    nonisolated static func loadHomeWidgetStreamMetadataMirror() -> StreamProgramMetadata? {
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared"),
+              let data = defaults.data(forKey: homeWidgetStreamMetadataAppGroupKey)
+        else {
+            return nil
+        }
+        return try? JSONDecoder().decode(StreamProgramMetadata.self, from: data)
+    }
+
+    /// Removes the home-widget program-metadata mirror (privacy gate close, privacy clear, ICY clear).
+    ///
+    /// - SeeAlso: ``persistHomeWidgetStreamMetadataMirror(_:)``,
+    ///   ``WidgetRefreshManager/setHasActiveLutheranWidgets(_:)``,
+    ///   ``removeAllLocalPlaybackKeys()``.
+    nonisolated static func clearHomeWidgetStreamMetadataMirror() {
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return }
+        defaults.removeObject(forKey: homeWidgetStreamMetadataAppGroupKey)
+        #if DEBUG
+        print("[SharedPlayerManager] Cleared home-widget stream-metadata mirror")
+        #endif
+    }
+
     #if LUTHERAN_MAIN_APP
-    /// Persists the current stream metadata into the combined widget snapshot.
+    /// Persists the current stream metadata into the combined widget snapshot **and** the
+    /// privacy-gated App Group program-metadata mirror for extension Providers.
+    ///
+    /// - Precondition: ``hasActiveWidgets`` is true (method returns early otherwise).
+    /// - Postcondition: In-process session snapshot carries ``currentStreamMetadata``; App Group
+    ///   mirror matches when the gate remains open.
+    /// - SeeAlso: ``didUpdateStreamMetadata(_:)``,
+    ///   ``restampHomeWidgetProgramMetadataAfterPrivacyGateOpenIfNeeded()``,
+    ///   ``persistHomeWidgetStreamMetadataMirror(_:)``.
     func persistStreamMetadataForWidgets() {
         guard Self.hasActiveWidgets else {
             #if DEBUG
@@ -437,7 +531,41 @@ extension SharedPlayerManager {
             language: Self.preferredWidgetLanguage(),
             streamMetadata: currentStreamMetadata
         )
+        // Explicit mirror stamp (save path also syncs) so ICY→home stays one call site.
+        Self.persistHomeWidgetStreamMetadataMirror(currentStreamMetadata)
         Self.bumpWidgetLivenessTimestamp(policy: .immediate)
+    }
+
+    /// Re-stamps in-memory ICY program metadata into the session snapshot + App Group mirror
+    /// after the home-widget privacy write gate opens (false → true).
+    ///
+    /// **Why:** ICY often arrives while `hasActiveWidgets == false` (persist suppressed). Live
+    /// Activity still receives in-memory ``updateCurrentActivity``. Identical subsequent ICY is a
+    /// no-op in ``didUpdateStreamMetadata(_:)``, so home widgets never receive program fields
+    /// unless this handoff re-stamps once when widgets appear.
+    ///
+    /// - Precondition: Caller has already opened the privacy gate (``hasActiveWidgets`` true).
+    /// - Postcondition: When ``currentStreamMetadata`` is displayable, session + mirror carry it
+    ///   and ``PlayerEvent/persistedWidgetStateDidUpdate`` is emitted; otherwise no-op.
+    /// - Important: Does **not** invent catalog titles; does **not** write when the gate is closed.
+    /// - SeeAlso: ``persistStreamMetadataForWidgets()``,
+    ///   ``WidgetRefreshManager/setHasActiveLutheranWidgets(_:)``,
+    ///   ``didUpdateStreamMetadata(_:)``, docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    ///
+    /// AGENT NOTE: Sole handoff for privacy→write program-metadata honesty. Keep gated on
+    /// ``hasActiveWidgets`` and non-nil in-memory ICY only.
+    func restampHomeWidgetProgramMetadataAfterPrivacyGateOpenIfNeeded() {
+        guard Self.hasActiveWidgets else { return }
+        guard let metadata = currentStreamMetadata, metadata.hasDisplayableContent else {
+            #if DEBUG
+            print("[SharedPlayerManager] Privacy gate open — no in-memory program metadata to re-stamp")
+            #endif
+            return
+        }
+        #if DEBUG
+        print("[SharedPlayerManager] Privacy gate open — re-stamping in-memory program metadata for home widgets")
+        #endif
+        persistStreamMetadataForWidgets()
     }
     #endif
 

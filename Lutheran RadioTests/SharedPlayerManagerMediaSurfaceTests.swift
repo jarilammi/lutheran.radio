@@ -482,6 +482,109 @@ final class SharedPlayerManagerMediaSurfaceTests: XCTestCase {
         XCTAssertEqual(display.artist, "\(language) • \(station)")
     }
 
+    /// Protects privacy write suppression for program metadata: while ``hasActiveWidgets`` is
+    /// false, ICY still mutates in-memory SSOT / Live Activity path but must **not** write the
+    /// privacy-gated home-widget App Group program-metadata mirror.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/persistStreamMetadataForWidgets()``,
+    ///   ``SharedPlayerManager/persistHomeWidgetStreamMetadataMirror(_:)``,
+    ///   ``SharedPlayerManager/loadHomeWidgetStreamMetadataMirror()``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    func testPersistStreamMetadataSuppressedWhilePrivacyGateClosed() async {
+        await MainActor.run {
+            WidgetRefreshManager.setHasActiveLutheranWidgets(false)
+        }
+        SharedPlayerManager.clearHomeWidgetStreamMetadataMirror()
+
+        let icyTitle = "Privacy Gate Speaker - Quiet Psalm"
+        await manager.didUpdateStreamMetadata(icyTitle)
+
+        let inMemory = await manager.currentStreamMetadata
+        XCTAssertEqual(
+            inMemory,
+            StreamProgramMetadata.from(rawICYMetadata: icyTitle),
+            "In-memory ICY SSOT must update even when home writes are suppressed"
+        )
+        XCTAssertNil(
+            SharedPlayerManager.loadHomeWidgetStreamMetadataMirror(),
+            "App Group program-metadata mirror must not write while the privacy gate is closed"
+        )
+    }
+
+    /// Protects privacy→write handoff: ICY that arrived under write suppression is re-stamped into
+    /// the session snapshot + App Group mirror when the home-widget gate opens, so extension
+    /// Providers can show live program chrome without waiting for a *new* ICY payload (identical
+    /// raw ICY is a no-op in ``didUpdateStreamMetadata(_:)``).
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/restampHomeWidgetProgramMetadataAfterPrivacyGateOpenIfNeeded()``,
+    ///   ``WidgetRefreshManager/setHasActiveLutheranWidgets(_:)``,
+    ///   ``WidgetProviderSnapshotResolver/resolveFromSnapshot()``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    func testPrivacyGateOpenRestampsInMemoryProgramMetadataForHomeWidgets() async {
+        await MainActor.run {
+            WidgetRefreshManager.setHasActiveLutheranWidgets(false)
+        }
+        SharedPlayerManager.clearHomeWidgetStreamMetadataMirror()
+        SharedPlayerManager.clearInMemorySessionSnapshot()
+
+        let icyTitle = "Handoff Speaker - Living Waters"
+        let expected = StreamProgramMetadata.from(rawICYMetadata: icyTitle)
+        await manager.didUpdateStreamMetadata(icyTitle)
+        XCTAssertNil(SharedPlayerManager.loadHomeWidgetStreamMetadataMirror())
+
+        // Open gate (false → true) and await the scheduled re-stamp Task.
+        await MainActor.run {
+            WidgetRefreshManager.setHasActiveLutheranWidgets(true)
+        }
+        // Allow the hop from setHasActiveLutheranWidgets → actor restamp to complete.
+        for _ in 0..<10 {
+            if SharedPlayerManager.loadHomeWidgetStreamMetadataMirror() != nil { break }
+            await Task.yield()
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+
+        XCTAssertEqual(
+            SharedPlayerManager.loadHomeWidgetStreamMetadataMirror(),
+            expected,
+            "Privacy gate open must re-stamp in-memory ICY into the App Group program-metadata mirror"
+        )
+        let fields = WidgetProviderSnapshotResolver.resolveFromSnapshot()
+        XCTAssertEqual(
+            fields.streamMetadata,
+            expected,
+            "Provider resolve must surface re-stamped program metadata for home chrome"
+        )
+        let display = widgetNowPlayingDisplayModel(
+            visualState: .playing,
+            streamMetadata: fields.streamMetadata,
+            languageName: "English"
+        )
+        XCTAssertEqual(display.programTitle, expected?.programTitle)
+        XCTAssertTrue(display.speakerVisible)
+    }
+
+    /// Protects the gate-close residual clear: closing ``hasActiveWidgets`` drops the program-
+    /// metadata mirror so residual program titles do not linger without home widgets.
+    ///
+    /// - SeeAlso: ``WidgetRefreshManager/setHasActiveLutheranWidgets(_:)``,
+    ///   ``SharedPlayerManager/clearHomeWidgetStreamMetadataMirror()``.
+    func testPrivacyGateCloseClearsHomeWidgetProgramMetadataMirror() async {
+        await MainActor.run {
+            WidgetRefreshManager.setHasActiveLutheranWidgets(true)
+        }
+        let icyTitle = "Close Gate - Residual Check"
+        await manager.didUpdateStreamMetadata(icyTitle)
+        XCTAssertNotNil(SharedPlayerManager.loadHomeWidgetStreamMetadataMirror())
+
+        await MainActor.run {
+            WidgetRefreshManager.setHasActiveLutheranWidgets(false)
+        }
+        XCTAssertNil(
+            SharedPlayerManager.loadHomeWidgetStreamMetadataMirror(),
+            "Closing the privacy gate must clear the home program-metadata mirror"
+        )
+    }
+
     /// Protects Tier 4 ``refreshAllMediaSurfaces(liveActivity:widgetRefresh:widgetRefreshImmediate:)``
     /// coordination ordering: Now Playing update precedes widget refresh; Live Activity IPC is
     /// skipped under UITestMode without blocking the NP path.

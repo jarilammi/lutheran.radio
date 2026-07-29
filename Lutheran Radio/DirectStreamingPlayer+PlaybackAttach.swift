@@ -668,14 +668,18 @@ extension DirectStreamingPlayer {
     /// Call only after a rate kick / soft-resume `playImmediately` (or equivalent KVO observation of
     /// live play). Skips when sticky pause/lock already won. When visual is already `.playing`,
     /// skips actor mutation / `streamDidStart` re-emit so readyToPlay + timeControl KVO cannot
-    /// thrash surfaces — but still reconciles Live Activity owned visual via
-    /// ``RadioLiveActivityManager/ensureAuthoritativePlayingContentIfNeeded()`` so soft-resume
-    /// (or a no-op publish after an earlier setPlaying) cannot leave the lock-screen card on
-    /// Connecting while audio is live.
+    /// thrash surfaces — but still reconciles Live Activity owned language via
+    /// ``RadioLiveActivityManager/pushSettledLanguageAcceptanceContentIfNeeded()`` and owned
+    /// visual via ``RadioLiveActivityManager/pushSettledPlayingAcceptanceContentIfNeeded()``
+    /// (plus soft playing ensure when quiet is not engaged) so soft-resume (or a no-op publish
+    /// after an earlier setPlaying) cannot leave the lock-screen card on a prior stream language
+    /// or Connecting while audio is live.
     ///
     /// - Important: Never call from the start of ``SharedPlayerManager/play()`` or from
     ///   ``startPlayback(context:attachGeneration:)`` while still awaiting `.readyToPlay`.
     /// - SeeAlso: ``SharedPlayerManager/setPlaying()``, ``shouldAllowAudiblePlaybackKick()``,
+    ///   ``RadioLiveActivityManager/pushSettledLanguageAcceptanceContentIfNeeded()``,
+    ///   ``RadioLiveActivityManager/pushSettledPlayingAcceptanceContentIfNeeded()``,
     ///   ``RadioLiveActivityManager/ensureAuthoritativePlayingContentIfNeeded()``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (connecting chrome vs audible start),
     ///   ``MediaTransportLatencyTimeline`` (DEBUG first-audio milestone).
@@ -701,10 +705,12 @@ extension DirectStreamingPlayer {
             )
             #endif
             // Actor chrome already playing (soft-resume after setPlaying, or KVO re-entry).
-            // Re-arm + bounded LA playing ensure so owned ContentState visual cannot stick
-            // on `.prePlay` while audio continues — without relying on end+request recreation.
-            // Re-arm clears prior lock-stretch quiet so soft-resume always gets a full soft budget.
-            RadioLiveActivityManager.shared.rearmPlayingEnsureQuietPending()
+            // Settled language + playing acceptance (quiet bypass once after hold clear;
+            // consume-once while ineligible) so owned ContentState language/visual cannot stick
+            // on a prior stream / `.prePlay` while audio continues — without end+request or
+            // soft-resume ensure thrash.
+            await RadioLiveActivityManager.shared.pushSettledLanguageAcceptanceContentIfNeeded()
+            await RadioLiveActivityManager.shared.pushSettledPlayingAcceptanceContentIfNeeded()
             await RadioLiveActivityManager.shared.ensureAuthoritativePlayingContentIfNeeded()
             return
         }

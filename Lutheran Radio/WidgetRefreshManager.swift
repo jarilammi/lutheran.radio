@@ -212,23 +212,42 @@ final class WidgetRefreshManager: @unchecked Sendable {
     /// Sets the home/Control widget privacy write-suppression flag.
     ///
     /// When the gate **closes** (`value == false`), also removes residual App Group liveness
-    /// (`lastUpdateTime`) and short-lived instant-feedback keys so operational signals do not
-    /// linger after privacy clear or when the user has no Lutheran widgets. Does not clear
-    /// pending-action mailbox keys, Live Activity durable mirrors, or security caches.
+    /// (`lastUpdateTime`), short-lived instant-feedback keys, and the privacy-gated program-
+    /// metadata mirror so operational / program signals do not linger after privacy clear or
+    /// when the user has no Lutheran widgets. Does not clear pending-action mailbox keys, Live
+    /// Activity durable mirrors, or security caches.
+    ///
+    /// When the gate **opens** (`value == true` after a closed state), schedules a one-shot
+    /// re-stamp of in-memory ICY program metadata into the session snapshot + App Group mirror
+    /// so home widgets receive live titles that arrived while writes were suppressed (identical
+    /// subsequent ICY is a no-op and would otherwise never re-persist).
     ///
     /// - Parameter value: `true` when at least one of our home/Control widget kinds is configured
     ///   (or a test/provider seam opens the gate); `false` forces write suppression.
     /// - SeeAlso: ``hasActiveLutheranWidgets``,
     ///   ``SharedPlayerManager/clearHomeWidgetLivenessAndInstantFeedbackResiduals()``,
+    ///   ``SharedPlayerManager/clearHomeWidgetStreamMetadataMirror()``,
+    ///   ``SharedPlayerManager/restampHomeWidgetProgramMetadataAfterPrivacyGateOpenIfNeeded()``,
     ///   ``SharedPlayerManager/bumpWidgetLivenessTimestamp(policy:minInterval:)``,
     ///   ``SharedPlayerManager/clearAllLocalState()``.
     @MainActor
     static func setHasActiveLutheranWidgets(_ value: Bool) {
+        let previous = hasActiveLutheranWidgets
         unsafe _hasActiveLutheranWidgets = value
         if !value {
             // Privacy residual: suppress future bumps via the flag, and drop any leftover
-            // heartbeat / optimistic language keys that pre-dated the closed gate.
+            // heartbeat / optimistic language keys / program-metadata mirror that pre-dated
+            // the closed gate.
             SharedPlayerManager.clearHomeWidgetLivenessAndInstantFeedbackResiduals()
+            SharedPlayerManager.clearHomeWidgetStreamMetadataMirror()
+        } else if !previous {
+            // Privacy → write handoff: ICY may already sit in main-app memory (LA path) while
+            // home persist was suppressed. Re-stamp once so Providers see program chrome.
+            #if LUTHERAN_MAIN_APP
+            Task {
+                await SharedPlayerManager.shared.restampHomeWidgetProgramMetadataAfterPrivacyGateOpenIfNeeded()
+            }
+            #endif
         }
     }
 

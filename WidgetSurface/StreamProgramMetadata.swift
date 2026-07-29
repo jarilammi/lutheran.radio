@@ -49,8 +49,9 @@ import Foundation
 
 /// Lightweight, anonymous program metadata from the active audio stream.
 ///
-/// Owned by `SharedPlayerManager` and persisted in `PersistedWidgetState` for
-/// cross-process widget / Live Activity display. Also supplies ``nowPlayingDisplayStrings(fromParsed:rawFallback:stationName:languageName:)``
+/// Owned by `SharedPlayerManager`: in-process session snapshot, privacy-gated App Group
+/// home program-metadata mirror for extension Providers, and Live Activity ContentState.
+/// Also supplies ``nowPlayingDisplayStrings(fromParsed:rawFallback:stationName:languageName:)``
 /// for the system Now Playing surface. No history or PII is retained.
 ///
 /// - Important: Presentation-only. Never place security decisions, DNS lookups, or

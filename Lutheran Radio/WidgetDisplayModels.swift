@@ -86,25 +86,36 @@ enum WidgetProviderSnapshotResolver {
     /// Resolves snapshot fields without an actor hop.
     ///
     /// Safe when the Provider consumes only static snapshot readers (`loadPersistedWidgetState`,
-    /// `preferredWidgetLanguage`, `streamForLanguageCode`) and never consults
-    /// ``SharedPlayerManager/currentVisualState``. Home-widget timeline rendering uses this
-    /// after optional hygiene because `getPendingOrCurrentState` never falls back to actor state.
+    /// `preferredWidgetLanguage`, `streamForLanguageCode`, ``loadHomeWidgetStreamMetadataMirror()``)
+    /// and never consults ``SharedPlayerManager/currentVisualState``. Home-widget timeline
+    /// rendering uses this after optional hygiene because `getPendingOrCurrentState` never falls
+    /// back to actor state.
     ///
-    /// - Returns: Authoritative session snapshot fields, or factory `.prePlay` defaults when absent.
+    /// **Program metadata:** Prefer session-snapshot `streamMetadata`, then the privacy-gated
+    /// App Group mirror. Visual chrome stays memory-only (OI-1); program title/speaker require
+    /// the mirror so extension Providers can show live ICY after main-app parse.
+    ///
+    /// - Returns: Authoritative session snapshot fields (with mirror-backed metadata when needed),
+    ///   or factory `.prePlay` defaults when absent (mirror metadata may still populate title chrome).
     nonisolated static func resolveFromSnapshot() -> WidgetProviderSnapshotFields {
+        // Program metadata: prefer in-process session snapshot, then privacy-gated App Group
+        // mirror. The mirror is required because the session snapshot is process-local (OI-1)
+        // while home Providers run in the widget extension and must still show live ICY titles
+        // after main-app parse + timeline reload.
+        let mirroredMetadata = SharedPlayerManager.loadHomeWidgetStreamMetadataMirror()
         if let combined = SharedPlayerManager.loadPersistedWidgetState() {
             return WidgetProviderSnapshotFields(
                 currentLanguage: combined.currentLanguage,
                 hasError: combined.hasError,
                 visualState: combined.visualState,
-                streamMetadata: combined.streamMetadata
+                streamMetadata: combined.streamMetadata ?? mirroredMetadata
             )
         }
         return WidgetProviderSnapshotFields(
             currentLanguage: SharedPlayerManager.preferredWidgetLanguage(),
             hasError: false,
             visualState: .prePlay,
-            streamMetadata: nil
+            streamMetadata: mirroredMetadata
         )
     }
 

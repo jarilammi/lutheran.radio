@@ -1287,14 +1287,17 @@ extension SharedPlayerManager {
         await refreshAllMediaSurfaces(liveActivity: .startOrUpdate)
         // Stream-switch optimistic Connecting + concurrent LA samplers can leave
         // lastPushedContent / ActivityKit on `.prePlay` after this method has already
-        // cleared the hold. Soft-resume can leave owned visual on `.prePlay` while the
-        // actor is already `.playing`. Serialize language then visual so one ContentState
-        // push can co-converge both axes when ActivityKit accepts; re-arm playing quiet so
-        // a prior lock-stretch thrash cannot block this high-priority audible-start cycle.
-        // Bounded ensures re-read owned content after each push — no end+request for
-        // visual-only lag; hold/connect still block inventing `.playing`.
-        await RadioLiveActivityManager.shared.ensureAuthoritativeLanguageContentIfNeeded()
-        await RadioLiveActivityManager.shared.rearmPlayingEnsureQuietPending()
+        // cleared the hold. Soft language ensure often exhausts during the attach storm and
+        // enters quiet for the destination — status-driven language pushes then defer for
+        // the rest of a lock stretch. Settled language acceptance fires **one** high-signal
+        // dual-axis push after hold clear (quiet bypass once per destination while ineligible).
+        // Soft-resume / post-attach audible can leave owned visual on `.prePlay` while the
+        // actor is already `.playing`. Settled playing acceptance is the peer: one dual-axis
+        // push with playing-quiet bypass once per play cycle while ineligible (consume-once
+        // stops soft-resume thrash). Soft playing ensure remains a secondary soft budget when
+        // quiet is not engaged; hold/connect still block inventing `.playing`. No end+request.
+        await RadioLiveActivityManager.shared.pushSettledLanguageAcceptanceContentIfNeeded()
+        await RadioLiveActivityManager.shared.pushSettledPlayingAcceptanceContentIfNeeded()
         await RadioLiveActivityManager.shared.ensureAuthoritativePlayingContentIfNeeded()
         #endif
     }

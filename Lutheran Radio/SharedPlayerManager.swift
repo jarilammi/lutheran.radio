@@ -267,6 +267,7 @@ import WidgetKit
 /// | pendingLanguage         | String                | `scheduleWidgetAction` (only for "switch")                   | `getPendingAction()`, widget providers                               | Parameter for stream switch actions                          | Only meaningful when `pendingAction == "switch"` |
 /// | liveActivityToggleVisualState | String (case name) | `RadioLiveActivityManager` on every ContentState push; optimistic LA toggle | ``loadLiveActivityToggleVisualStateMirror()`` + ``WidgetIntentExecution/performLiveActivityToggle()`` | Durable cross-process LA play/pause plan signal when extension memory snapshot is empty | Cleared on LA end, termination, **factory reset**, privacy clear; **not** gated by home-widget `hasActiveWidgets` |
 /// | liveActivityCurrentLanguage | String (languageCode) | `RadioLiveActivityManager` on every ContentState push; optimistic LA paths | ``loadLiveActivityLanguageMirror()`` + ``languageForLiveActivityOrWidgetOptimistic()`` | Durable LA language chrome / optimistic intent language when extension has no session snapshot and home-widget writes are suppressed | Same lifecycle as visual mirror; **not** gated by `hasActiveWidgets` |
+/// | homeWidgetStreamMetadata | Data (JSON ``StreamProgramMetadata``) | ``persistHomeWidgetStreamMetadataMirror(_:)`` via ``persistStreamMetadataForWidgets()`` / ``savePersistedWidgetState`` / privacy-gate open re-stamp | ``loadHomeWidgetStreamMetadataMirror()`` + ``WidgetProviderSnapshotResolver/resolveFromSnapshot()`` | Privacy-gated **program title/speaker** for home/Control Providers (extension cannot read main-app session RAM) | Written only while ``hasActiveWidgets`` (or widget-process bypass); cleared on gate close, privacy clear, ICY clear / language hygiene |
 /// | recordedSystemBootTime  | Double (epoch of boot) | ``recordCurrentSystemBootTime()`` on LA mirror write + factory reset | ``hasDeviceRebootedSinceLastRecordedBoot()`` / ``shouldDistrustDurableMirrorPlayPlanning()`` | Boot identity for post-reboot LA toggle hygiene | Lets lock-screen planning refuse durable-mirror-alone **play** after hard power-off |
 /// | preferredVolume         | Float                 | (Retired — purged on launch, never written)                  | (none) | Was UIKit App Group volume preference. User-facing level is system volume (`MPVolumeView`); engine relative gain defaults to 1.0. | Purged only |
 ///
@@ -535,6 +536,9 @@ actor SharedPlayerManager {
     internal func _clearIcyMetadataStash() {
         currentStreamMetadata = nil
         nowPlayingStreamMetadata = nil
+        // Language / stream-switch hygiene: drop privacy-gated home program chrome so the
+        // extension does not keep a prior stream's title after destination change.
+        Self.clearHomeWidgetStreamMetadataMirror()
         // Emission after metadata mutation (clear). Language-change and other stash
         // clears use this helper so a single place owns the nil + event.
         emit(.metadataDidUpdate(nil))

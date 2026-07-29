@@ -89,19 +89,33 @@ import WidgetSurface
 /// ensure enters a **quiet pending** state for that destination so status-driven media-surface
 /// refreshes do not thrash ActivityKit; re-arm on destination change, eligibility, become-active,
 /// or system `contentUpdates`. Language-only status re-pushes defer while quiet; visual mutations
-/// still push. Playing ensure has the same quiet-pending shape (``playingEnsureQuietPending``):
-/// after ``authoritativePlayingContentEnsureMaxAttempts`` without owned `.playing` while request
-/// is ineligible, visual-only status re-pushes that only repair `.playing` defer; pause
+/// still push. **Settled language acceptance:** after stream-switch hold clears (authoritative
+/// ``setPlaying`` / soft-resume audible path), ``pushSettledLanguageAcceptanceContentIfNeeded()``
+/// fires **one** high-signal dual-axis ``updateCurrentActivity()`` even when language quiet is
+/// engaged for that destination — quiet is intentionally cleared for that single settle push so
+/// the attach-storm soft budget is not the only acceptance window. Consume-once per destination
+/// while request stays ineligible prevents soft-resume no-op thrash; re-arm consume on destination
+/// change, eligibility, become-active, or `contentUpdates`.
+/// **Settled playing acceptance:** peer for owned visual — after hold/connect clear while the
+/// actor is authoritative `.playing` and owned visual still lags (``.prePlay`` / ``.userPaused``),
+/// ``pushSettledPlayingAcceptanceContentIfNeeded()`` fires **one** dual-axis high-signal push
+/// even when ``playingEnsureQuietPending`` is engaged. Consume-once while ineligible stops
+/// soft-resume no-op thrash; re-open consume on optimistic toggle / stream-switch, eligibility,
+/// become-active, or `contentUpdates`. Does **not** invent `.playing` during hold/connect.
+/// Playing ensure has the same quiet-pending shape (``playingEnsureQuietPending``): after
+/// ``authoritativePlayingContentEnsureMaxAttempts`` without owned `.playing` while request is
+/// ineligible, visual-only status re-pushes that only repair `.playing` defer; pause
 /// (``.userPaused``) and language mutations still push. Re-arm playing quiet on authoritative
-/// play mutation (``setPlaying`` / soft-resume ensure), optimistic toggle / stream-switch,
-/// eligibility, become-active, or `contentUpdates`. On foreground / become-active with an
-/// **owned** activity, soft language + playing ensure run via
-/// ``ensureAuthoritativeContentOnForegroundIfNeeded()`` (clears both quiet flags first);
-/// dual SceneDelegate hooks are debounced for the owned-surface path while still
-/// **consuming** language/playing quiet and ``pendingInteractiveLiveActivityEnsure`` on
-/// unlock (and allowing a second pass when chrome still lags after a first ineligible pass).
-/// Eligible-only recreation is a last resort after soft ensure still fails (never while request
-/// is ineligible).
+/// play mutation, optimistic toggle / stream-switch, eligibility, become-active, or
+/// `contentUpdates`. On foreground / become-active with an **owned** activity, soft language +
+/// playing ensure run via ``ensureAuthoritativeContentOnForegroundIfNeeded()`` (clears both
+/// quiet flags and settled-acceptance consume markers first); dual SceneDelegate hooks are
+/// debounced for the owned-surface path while still **consuming** language/playing quiet and
+/// ``pendingInteractiveLiveActivityEnsure`` on unlock (and allowing a second pass when chrome
+/// still lags after a first ineligible pass). Eligible-only recreation is a last resort after
+/// soft ensure still fails (never while request is ineligible). ActivityKit may still delay
+/// applying language/visual until the process is presentable; the foreground owned-surface rail
+/// remains the intentional unlock recovery path.
 ///
 /// ## Soft-ensure thrash protection (concurrent collapse + deferred announce-once)
 /// Status-driven media-surface refreshes and dual soft-ensure call sites can re-enter
@@ -292,8 +306,24 @@ class RadioLiveActivityManager: ObservableObject {
     /// - SeeAlso: ``ensureAuthoritativeLanguageContentIfNeeded()``,
     ///   ``shouldRunLanguageContentEnsureSoftPushes(needsLanguageEnsure:destinationLanguage:quietPendingDestination:isRequestEligible:)``,
     ///   ``shouldDeferRedundantLanguagePushWhileQuiet(candidateLanguage:ownedContentLanguage:ownedContentVisual:candidateVisual:quietPendingDestination:isRequestEligible:)``,
+    ///   ``pushSettledLanguageAcceptanceContentIfNeeded()``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     private var languageEnsureQuietPendingDestination: String?
+
+    /// Destination for which a post-hold **settled** language acceptance push already ran while
+    /// interactive request was ineligible.
+    ///
+    /// Soft language ensure often exhausts during the stream-switch attach storm (Connecting),
+    /// enters quiet, then never re-pushes when audible start finally clears the hold — leaving
+    /// system-held `content.state.currentLanguage` on the prior stream until unlock. Settled
+    /// acceptance consumes **one** high-signal dual-axis push per destination after hold clear;
+    /// further soft-resume no-ops stay quiet until destination change, eligibility, become-active,
+    /// or system `contentUpdates`.
+    ///
+    /// - SeeAlso: ``pushSettledLanguageAcceptanceContentIfNeeded()``,
+    ///   ``shouldPushSettledLanguageAcceptance(destinationLanguage:ownedContentLanguage:isStreamSwitchHoldActive:settledAcceptanceConsumedDestination:isRequestEligible:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    private var languageSettledAcceptanceConsumedDestination: String?
 
     /// Whether soft playing ensure exhausted while interactive request was ineligible and
     /// owned visual still lagged authoritative `.playing`.
@@ -314,8 +344,23 @@ class RadioLiveActivityManager: ObservableObject {
     /// - SeeAlso: ``ensureAuthoritativePlayingContentIfNeeded()``,
     ///   ``shouldRunPlayingContentEnsureSoftPushes(needsPlayingEnsure:quietPending:isRequestEligible:)``,
     ///   ``shouldDeferRedundantPlayingPushWhileQuiet(candidateVisual:ownedContentVisual:ownedContentLanguage:candidateLanguage:quietPending:isRequestEligible:)``,
+    ///   ``pushSettledPlayingAcceptanceContentIfNeeded()``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     private var playingEnsureQuietPending = false
+
+    /// Whether a post-hold **settled** playing acceptance push already ran while interactive
+    /// request was ineligible and owned visual still lagged authoritative `.playing`.
+    ///
+    /// Soft playing ensure often exhausts (or never runs usefully) during stream-switch hold /
+    /// attach, then quiet defers visual-only `.playing` repair for the rest of a lock stretch —
+    /// leaving Connecting chrome while audio is live. Settled acceptance consumes **one**
+    /// high-signal dual-axis push after hold clear; further soft-resume no-ops stay quiet until
+    /// optimistic toggle / stream-switch, eligibility, become-active, or system `contentUpdates`.
+    ///
+    /// - SeeAlso: ``pushSettledPlayingAcceptanceContentIfNeeded()``,
+    ///   ``shouldPushSettledPlayingAcceptance(actorVisual:ownedContentVisual:isStreamSwitchHoldActive:isConnectingPlayback:settledAcceptanceConsumed:isRequestEligible:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    private var playingSettledAcceptanceConsumed = false
 
     /// Whether a language soft-ensure push loop is already running on the main actor.
     ///
@@ -847,13 +892,19 @@ class RadioLiveActivityManager: ObservableObject {
             languageEnsureQuietPendingDestination = nil
             languageEnsureQuietSkipLogged = false
         }
-        // Owned visual converged to playing → clear playing ensure quiet.
+        // Owned visual converged to playing → clear playing ensure quiet + settled consume.
         if Self.shouldClearPlayingEnsureQuietPending(
             quietPending: playingEnsureQuietPending,
             ownedOrSystemVisual: accepted.visualState
         ) {
             playingEnsureQuietPending = false
             playingEnsureQuietSkipLogged = false
+        }
+        if Self.shouldClearPlayingSettledAcceptanceConsume(
+            settledAcceptanceConsumed: playingSettledAcceptanceConsumed,
+            ownedOrSystemVisual: accepted.visualState
+        ) {
+            playingSettledAcceptanceConsumed = false
         }
 
         let contentStalled = Self.isStalledLiveActivityContentPush(
@@ -1426,6 +1477,140 @@ class RadioLiveActivityManager: ObservableObject {
         return false
     }
 
+    /// Whether a post-hold **settled** language acceptance push should run.
+    ///
+    /// Soft language ensure often burns its budget during the stream-switch attach storm while
+    /// Connecting, then quiet-pending blocks further status-driven pushes for that destination.
+    /// When stream-switch hold clears (authoritative audible start / soft-resume), one high-signal
+    /// dual-axis ContentState push is allowed even though quiet would otherwise defer language-only
+    /// status re-pushes. Consume-once per destination while request stays ineligible prevents
+    /// soft-resume no-op thrash; eligibility re-opens the settle window (unlock recovery).
+    ///
+    /// - Parameters:
+    ///   - destinationLanguage: ``SharedPlayerManager/liveActivityLanguageCodeForContentPush()``.
+    ///   - ownedContentLanguage: Owned `content.state.currentLanguage`, if any.
+    ///   - isStreamSwitchHoldActive: ``SharedPlayerManager/isStreamSwitchPrePlayHoldActive`` —
+    ///     settle waits until hold clears (Connecting honesty preserved).
+    ///   - settledAcceptanceConsumedDestination: ``languageSettledAcceptanceConsumedDestination``.
+    ///   - isRequestEligible: ``isInteractiveLiveActivityRequestEligible(areActivitiesEnabled:isApplicationActive:)``.
+    /// - Returns: `true` when a single settle push should run.
+    /// - Note: Does **not** invent `.playing` during hold (hold gate). Does **not** end+request.
+    /// - SeeAlso: ``pushSettledLanguageAcceptanceContentIfNeeded()``,
+    ///   ``shouldDeferRedundantLanguagePushWhileQuiet(candidateLanguage:ownedContentLanguage:ownedContentVisual:candidateVisual:quietPendingDestination:isRequestEligible:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    static func shouldPushSettledLanguageAcceptance(
+        destinationLanguage: String,
+        ownedContentLanguage: String?,
+        isStreamSwitchHoldActive: Bool,
+        settledAcceptanceConsumedDestination: String?,
+        isRequestEligible: Bool
+    ) -> Bool {
+        guard !destinationLanguage.isEmpty else { return false }
+        // Hold still active — Connecting honesty window; wait for authoritative setPlaying.
+        guard !isStreamSwitchHoldActive else { return false }
+        // Already on destination — no settle work.
+        if let ownedContentLanguage, ownedContentLanguage == destinationLanguage {
+            return false
+        }
+        // Consume-once while locked / ineligible: avoid soft-resume no-op re-thrash.
+        if let consumed = settledAcceptanceConsumedDestination,
+           consumed == destinationLanguage,
+           !isRequestEligible {
+            return false
+        }
+        // Eligible (unlock / presentable): always allow settle when language still lags.
+        // Ineligible: allow when not yet consumed for this destination.
+        return true
+    }
+
+    /// Whether settled-acceptance consume should clear when destination advances or language converges.
+    ///
+    /// - Parameters:
+    ///   - settledAcceptanceConsumedDestination: Current consume marker, if any.
+    ///   - destinationLanguage: Current destination language code.
+    ///   - ownedOrSystemLanguage: Owned or system-accepted language, if any.
+    /// - Returns: `true` when consume should clear (new destination, or owned matches destination).
+    /// - SeeAlso: ``pushSettledLanguageAcceptanceContentIfNeeded()``,
+    ///   ``recordOptimisticStreamSwitchContent(language:visualState:)``.
+    static func shouldClearLanguageSettledAcceptanceConsume(
+        settledAcceptanceConsumedDestination: String?,
+        destinationLanguage: String,
+        ownedOrSystemLanguage: String?
+    ) -> Bool {
+        guard settledAcceptanceConsumedDestination != nil else { return false }
+        if let ownedOrSystemLanguage, !destinationLanguage.isEmpty,
+           ownedOrSystemLanguage == destinationLanguage {
+            return true
+        }
+        if let consumed = settledAcceptanceConsumedDestination,
+           !destinationLanguage.isEmpty,
+           consumed != destinationLanguage {
+            return true
+        }
+        return false
+    }
+
+    /// Whether a post-hold **settled** playing acceptance push should run.
+    ///
+    /// Soft playing ensure often burns its budget (or never runs usefully while hold is active)
+    /// during stream-switch attach, then quiet-pending blocks visual-only `.playing` repair for
+    /// the rest of a lock stretch. When hold/connect clear and the actor is authoritative
+    /// `.playing`, one high-signal dual-axis ContentState push is allowed even though quiet would
+    /// otherwise defer playing-only status re-pushes. Consume-once while request stays ineligible
+    /// prevents soft-resume no-op thrash; eligibility re-opens the settle window (unlock recovery).
+    ///
+    /// - Parameters:
+    ///   - actorVisual: Actor ``SharedPlayerManager/currentVisualState``.
+    ///   - ownedContentVisual: Owned `content.state.visualState`, if any.
+    ///   - isStreamSwitchHoldActive: ``SharedPlayerManager/isStreamSwitchPrePlayHoldActive``.
+    ///   - isConnectingPlayback: ``SharedPlayerManager/isConnectingPlayback``.
+    ///   - settledAcceptanceConsumed: ``playingSettledAcceptanceConsumed``.
+    ///   - isRequestEligible: ``isInteractiveLiveActivityRequestEligible(areActivitiesEnabled:isApplicationActive:)``.
+    /// - Returns: `true` when a single settle push should run.
+    /// - Note: Does **not** invent `.playing` during hold/connect. Does **not** end+request.
+    /// - SeeAlso: ``pushSettledPlayingAcceptanceContentIfNeeded()``,
+    ///   ``shouldDeferRedundantPlayingPushWhileQuiet(candidateVisual:ownedContentVisual:ownedContentLanguage:candidateLanguage:quietPending:isRequestEligible:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    static func shouldPushSettledPlayingAcceptance(
+        actorVisual: PlayerVisualState,
+        ownedContentVisual: PlayerVisualState?,
+        isStreamSwitchHoldActive: Bool,
+        isConnectingPlayback: Bool,
+        settledAcceptanceConsumed: Bool,
+        isRequestEligible: Bool
+    ) -> Bool {
+        // Only when actor is authoritative playing (no Connecting honesty window).
+        guard actorVisual == .playing else { return false }
+        guard !isStreamSwitchHoldActive, !isConnectingPlayback else { return false }
+        // Owned already playing — no settle work.
+        if ownedContentVisual == .playing { return false }
+        // Consume-once while locked / ineligible: avoid soft-resume no-op re-thrash.
+        if settledAcceptanceConsumed, !isRequestEligible {
+            return false
+        }
+        // Eligible (unlock / presentable): always allow settle when visual still lags.
+        // Ineligible: allow when not yet consumed for this play cycle.
+        return true
+    }
+
+    /// Whether settled playing-acceptance consume should clear when owned visual converges.
+    ///
+    /// - Parameters:
+    ///   - settledAcceptanceConsumed: Current consume marker.
+    ///   - ownedOrSystemVisual: Owned or system-accepted visual, if any.
+    /// - Returns: `true` when consume should clear (owned reached `.playing`).
+    /// - SeeAlso: ``pushSettledPlayingAcceptanceContentIfNeeded()``,
+    ///   ``recordOptimisticToggleContent(visualState:)``,
+    ///   ``recordOptimisticStreamSwitchContent(language:visualState:)``.
+    static func shouldClearPlayingSettledAcceptanceConsume(
+        settledAcceptanceConsumed: Bool,
+        ownedOrSystemVisual: PlayerVisualState?
+    ) -> Bool {
+        guard settledAcceptanceConsumed else { return false }
+        if ownedOrSystemVisual == .playing { return true }
+        return false
+    }
+
     /// Whether soft playing-ensure pushes should run now, or stay quiet after budget exhaustion.
     ///
     /// After ``authoritativePlayingContentEnsureMaxAttempts`` while request is ineligible,
@@ -1884,6 +2069,216 @@ class RadioLiveActivityManager: ObservableObject {
         playingEnsureQuietSkipLogged = false
     }
 
+    /// One high-signal dual-axis ContentState push after stream-switch hold has cleared.
+    ///
+    /// Soft language ensure often exhausts during the attach storm (Connecting) and enters
+    /// quiet pending for the destination. Status-driven language-only re-pushes then defer,
+    /// so system-held language can freeze for the rest of a lock stretch even after audio is
+    /// already on the destination stream. Call this from authoritative audible start
+    /// (``SharedPlayerManager/setPlaying()``) and soft-resume no-op reconcile so **one**
+    /// settle push can carry destination language + current honest visual after hold clear.
+    ///
+    /// **Quiet bypass (once):** Clears ``languageEnsureQuietPendingDestination`` so
+    /// ``shouldDeferRedundantLanguagePushWhileQuiet`` does not drop this push, then
+    /// ``updateCurrentActivity()``. Marks ``languageSettledAcceptanceConsumedDestination``
+    /// while request is ineligible so soft-resume no-ops do not re-thrash. Re-enters quiet
+    /// when owned language still mismatches after the push while ineligible.
+    ///
+    /// - Precondition: Main actor; stream-switch hold should already be cleared by the caller
+    ///   (policy also gates on hold). Interactive ``currentActivity`` may be nil (no-op).
+    /// - Postcondition: At most one ActivityKit update for this settle cycle when policy fires;
+    ///   no end+request; does not invent `.playing` during hold.
+    /// - SeeAlso: ``shouldPushSettledLanguageAcceptance(destinationLanguage:ownedContentLanguage:isStreamSwitchHoldActive:settledAcceptanceConsumedDestination:isRequestEligible:)``,
+    ///   ``ensureAuthoritativeLanguageContentIfNeeded()``,
+    ///   ``SharedPlayerManager/setPlaying()``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    @MainActor
+    func pushSettledLanguageAcceptanceContentIfNeeded() async {
+        if SharedPlayerManager.isRunningInUITestMode { return }
+        #if DEBUG
+        if isRunningUnderTest { return }
+        #endif
+        guard currentActivity != nil else { return }
+
+        let manager = SharedPlayerManager.shared
+        let destination = await manager.liveActivityLanguageCodeForContentPush()
+        let hold = await manager.isStreamSwitchPrePlayHoldActive
+        let ownedLanguage = currentActivity?.content.state.currentLanguage
+        let requestEligible = Self.isInteractiveLiveActivityRequestEligible(
+            areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+            isApplicationActive: UIApplication.shared.applicationState == .active
+        )
+
+        // Destination change or owned convergence clears a prior settle consume marker.
+        if Self.shouldClearLanguageSettledAcceptanceConsume(
+            settledAcceptanceConsumedDestination: languageSettledAcceptanceConsumedDestination,
+            destinationLanguage: destination,
+            ownedOrSystemLanguage: ownedLanguage
+        ) {
+            languageSettledAcceptanceConsumedDestination = nil
+        }
+
+        guard Self.shouldPushSettledLanguageAcceptance(
+            destinationLanguage: destination,
+            ownedContentLanguage: ownedLanguage,
+            isStreamSwitchHoldActive: hold,
+            settledAcceptanceConsumedDestination: languageSettledAcceptanceConsumedDestination,
+            isRequestEligible: requestEligible
+        ) else {
+            return
+        }
+
+        // Clear language quiet so the settle push is not dropped as a language-only defer.
+        languageEnsureQuietPendingDestination = nil
+        languageEnsureQuietSkipLogged = false
+        // Consume-once while ineligible — soft-resume no-ops must not re-open thrash.
+        if !requestEligible {
+            languageSettledAcceptanceConsumedDestination = destination
+        }
+
+        #if DEBUG
+        print(
+            "🔴 Live Activity settled language acceptance push " +
+            "(destination=\(destination) owned=\(ownedLanguage ?? "nil"); " +
+            "quiet bypass once after hold clear)"
+        )
+        #endif
+
+        await updateCurrentActivity()
+
+        let acceptedLanguage = currentActivity?.content.state.currentLanguage
+        if acceptedLanguage == destination {
+            languageEnsureQuietPendingDestination = nil
+            languageEnsureQuietSkipLogged = false
+            languageSettledAcceptanceConsumedDestination = nil
+            return
+        }
+
+        // Still lagging while locked — re-enter quiet; FG rail / contentUpdates re-arm later.
+        let eligibleAfter = Self.isInteractiveLiveActivityRequestEligible(
+            areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+            isApplicationActive: UIApplication.shared.applicationState == .active
+        )
+        if !eligibleAfter, !destination.isEmpty {
+            languageEnsureQuietPendingDestination = destination
+            languageEnsureQuietSkipLogged = false
+            pendingInteractiveLiveActivityEnsure = true
+            #if DEBUG
+            print(
+                "🔴 Live Activity settled language acceptance still lagging " +
+                "(destination=\(destination) owned=\(acceptedLanguage ?? "nil"); " +
+                "quiet re-armed; recreation remains eligibility-gated)"
+            )
+            #endif
+        }
+    }
+
+    /// One high-signal dual-axis ContentState push after stream-switch hold/connect has cleared
+    /// and the actor is authoritative `.playing` while owned visual still lags.
+    ///
+    /// Soft playing ensure often exhausts (or cannot run usefully while hold is active) during
+    /// attach, then quiet-pending defers visual-only `.playing` repair for the rest of a lock
+    /// stretch — Connecting chrome while audio is live. Call this from authoritative audible
+    /// start (``SharedPlayerManager/setPlaying()``) and soft-resume no-op reconcile so **one**
+    /// settle push can carry destination language + `.playing` visual after hold clear.
+    ///
+    /// **Quiet bypass (once):** Clears ``playingEnsureQuietPending`` so
+    /// ``shouldDeferRedundantPlayingPushWhileQuiet`` does not drop this push, then
+    /// ``updateCurrentActivity()``. Marks ``playingSettledAcceptanceConsumed`` while request is
+    /// ineligible so soft-resume no-ops do not re-thrash. Re-enters playing quiet when owned
+    /// visual still lags after the push while ineligible.
+    ///
+    /// - Precondition: Main actor; stream-switch hold should already be cleared by the caller
+    ///   (policy also gates on hold/connect). Interactive ``currentActivity`` may be nil (no-op).
+    /// - Postcondition: At most one ActivityKit update for this settle cycle when policy fires;
+    ///   no end+request; does not invent `.playing` during hold/connect.
+    /// - SeeAlso: ``shouldPushSettledPlayingAcceptance(actorVisual:ownedContentVisual:isStreamSwitchHoldActive:isConnectingPlayback:settledAcceptanceConsumed:isRequestEligible:)``,
+    ///   ``pushSettledLanguageAcceptanceContentIfNeeded()``,
+    ///   ``ensureAuthoritativePlayingContentIfNeeded()``,
+    ///   ``SharedPlayerManager/setPlaying()``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    @MainActor
+    func pushSettledPlayingAcceptanceContentIfNeeded() async {
+        if SharedPlayerManager.isRunningInUITestMode { return }
+        #if DEBUG
+        if isRunningUnderTest { return }
+        #endif
+        guard currentActivity != nil else { return }
+
+        let manager = SharedPlayerManager.shared
+        let actorVisual = await manager.currentVisualState
+        let hold = await manager.isStreamSwitchPrePlayHoldActive
+        let connecting = await manager.isConnectingPlayback
+        let ownedVisual = currentActivity?.content.state.visualState
+        let requestEligible = Self.isInteractiveLiveActivityRequestEligible(
+            areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+            isApplicationActive: UIApplication.shared.applicationState == .active
+        )
+
+        // Owned convergence clears a prior settle consume marker.
+        if Self.shouldClearPlayingSettledAcceptanceConsume(
+            settledAcceptanceConsumed: playingSettledAcceptanceConsumed,
+            ownedOrSystemVisual: ownedVisual
+        ) {
+            playingSettledAcceptanceConsumed = false
+        }
+
+        guard Self.shouldPushSettledPlayingAcceptance(
+            actorVisual: actorVisual,
+            ownedContentVisual: ownedVisual,
+            isStreamSwitchHoldActive: hold,
+            isConnectingPlayback: connecting,
+            settledAcceptanceConsumed: playingSettledAcceptanceConsumed,
+            isRequestEligible: requestEligible
+        ) else {
+            return
+        }
+
+        // Clear playing quiet so the settle push is not dropped as a playing-only defer.
+        playingEnsureQuietPending = false
+        playingEnsureQuietSkipLogged = false
+        // Consume-once while ineligible — soft-resume no-ops must not re-open thrash.
+        if !requestEligible {
+            playingSettledAcceptanceConsumed = true
+        }
+
+        #if DEBUG
+        print(
+            "🔴 Live Activity settled playing acceptance push " +
+            "(actor=\(actorVisual) owned=\(String(describing: ownedVisual)); " +
+            "quiet bypass once after hold clear)"
+        )
+        #endif
+
+        await updateCurrentActivity()
+
+        let acceptedVisual = currentActivity?.content.state.visualState
+        if acceptedVisual == .playing {
+            playingEnsureQuietPending = false
+            playingEnsureQuietSkipLogged = false
+            playingSettledAcceptanceConsumed = false
+            return
+        }
+
+        // Still lagging while locked — re-enter quiet; FG rail / contentUpdates re-arm later.
+        let eligibleAfter = Self.isInteractiveLiveActivityRequestEligible(
+            areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+            isApplicationActive: UIApplication.shared.applicationState == .active
+        )
+        if !eligibleAfter {
+            playingEnsureQuietPending = true
+            playingEnsureQuietSkipLogged = false
+            pendingInteractiveLiveActivityEnsure = true
+            #if DEBUG
+            print(
+                "🔴 Live Activity settled playing acceptance still lagging " +
+                "(owned=\(String(describing: acceptedVisual)); " +
+                "quiet re-armed; recreation remains eligibility-gated)"
+            )
+            #endif
+        }
+    }
+
     /// Whether playing reconcile should force a content push.
     ///
     /// - Parameters:
@@ -2313,9 +2708,13 @@ class RadioLiveActivityManager: ObservableObject {
         // Re-arm language + playing ensure quiet so unlock / become-active always gets a soft cycle.
         // Quiet is for lock-stretch thrash only — not a permanent freeze across presentable cycles.
         // AGENT NOTE: Both axes clear together — language-only unlock must not leave playing
-        // quiet blocking visual recovery (and the reverse).
+        // quiet blocking visual recovery (and the reverse). Also clear settled language/playing
+        // consume so presentable cycles can re-attempt high-signal acceptance if soft ensure
+        // still lags after unlock.
         languageEnsureQuietPendingDestination = nil
+        languageSettledAcceptanceConsumedDestination = nil
         playingEnsureQuietPending = false
+        playingSettledAcceptanceConsumed = false
         languageEnsureQuietSkipLogged = false
         playingEnsureQuietSkipLogged = false
         // New presentable cycle may re-announce deferred recreation if soft ensure still fails.
@@ -2399,10 +2798,12 @@ class RadioLiveActivityManager: ObservableObject {
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     @MainActor
     func recordOptimisticToggleContent(visualState: PlayerVisualState) {
-        // Control mutation re-arms playing ensure quiet so pause honesty and later soft-resume
-        // get a full soft budget even after prior lock-stretch playing thrash.
+        // Control mutation re-arms playing ensure quiet and re-opens settled playing acceptance
+        // so pause honesty and later soft-resume get a full post-hold settle window even after
+        // prior lock-stretch playing thrash.
         playingEnsureQuietPending = false
         playingEnsureQuietSkipLogged = false
+        playingSettledAcceptanceConsumed = false
         lastLoggedStalledContentDiagnosticsSignature = nil
         let metadata =
             lastPushedContent?.streamMetadata
@@ -2439,11 +2840,14 @@ class RadioLiveActivityManager: ObservableObject {
     ///
     /// **Language ensure re-arm:** A new destination clears ``languageEnsureQuietPendingDestination``
     /// when it differs so the next ensure cycle gets one high-priority soft budget for the
-    /// new language (home-widget and Live Activity stream chips share this path).
+    /// new language (home-widget and Live Activity stream chips share this path). Also clears
+    /// ``languageSettledAcceptanceConsumedDestination`` when the destination advances so the
+    /// next post-hold settle push is available for the new language.
     ///
     /// **Playing ensure re-arm:** Any stream-switch optimistic stamp clears
-    /// ``playingEnsureQuietPending`` so post-attach audible start / soft-resume can run a full
-    /// playing soft budget (Connecting honesty still gated by hold/connect).
+    /// ``playingEnsureQuietPending`` and ``playingSettledAcceptanceConsumed`` so post-attach
+    /// audible start / soft-resume get a full soft budget and one settled playing acceptance
+    /// window (Connecting honesty still gated by hold/connect).
     ///
     /// Program metadata is cleared (same as the ActivityKit push) so a prior-stream title
     /// cannot suppress a language-only destination push.
@@ -2454,10 +2858,13 @@ class RadioLiveActivityManager: ObservableObject {
     /// - Postcondition: ``lastPushedContent`` holds `visualState`, `nil` stream metadata, and
     ///   `language` (in-process only — not proof of system acceptance). Quiet language ensure
     ///   is cleared when the destination differs from the prior quiet destination; playing
-    ///   ensure quiet is always cleared for the new switch cycle.
+    ///   ensure quiet and settled playing consume are always cleared for the new switch cycle;
+    ///   settled language consume clears when destination advances.
     /// - Note: Does not call `Activity.update` — the intent path owns ActivityKit IPC.
     /// - SeeAlso: ``recordOptimisticToggleContent(visualState:)``, ``updateCurrentActivity()``,
     ///   ``ensureAuthoritativeLanguageContentIfNeeded()``,
+    ///   ``pushSettledLanguageAcceptanceContentIfNeeded()``,
+    ///   ``pushSettledPlayingAcceptanceContentIfNeeded()``,
     ///   ``ensureAuthoritativePlayingContentIfNeeded()``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
     ///   docs/Widget-Functionality-Roadmap.md (Live Activity language chrome SSOT).
@@ -2469,9 +2876,14 @@ class RadioLiveActivityManager: ObservableObject {
             languageEnsureQuietPendingDestination = nil
             languageEnsureQuietSkipLogged = false
         }
-        // New stream-switch cycle re-arms playing ensure for post-attach audible start.
+        // New destination re-opens the post-hold settled language acceptance window.
+        if languageSettledAcceptanceConsumedDestination != language {
+            languageSettledAcceptanceConsumedDestination = nil
+        }
+        // New stream-switch cycle re-arms playing ensure + settled playing acceptance.
         playingEnsureQuietPending = false
         playingEnsureQuietSkipLogged = false
+        playingSettledAcceptanceConsumed = false
         // New mutation may re-log stall diagnostics and re-announce deferred recreation once.
         lastLoggedStalledContentDiagnosticsSignature = nil
         lastPushedContent = LutheranRadioLiveActivityAttributes.ContentState(
@@ -2631,7 +3043,9 @@ class RadioLiveActivityManager: ObservableObject {
             consecutiveStalledContentPushes = 0
             interactiveContentRecreationsAttempted = 0
             languageEnsureQuietPendingDestination = nil
+            languageSettledAcceptanceConsumedDestination = nil
             playingEnsureQuietPending = false
+            playingSettledAcceptanceConsumed = false
             languageEnsureQuietSkipLogged = false
             playingEnsureQuietSkipLogged = false
             lastLoggedStalledContentDiagnosticsSignature = nil
@@ -2650,7 +3064,9 @@ class RadioLiveActivityManager: ObservableObject {
             consecutiveStalledContentPushes = 0
             interactiveContentRecreationsAttempted = 0
             languageEnsureQuietPendingDestination = nil
+            languageSettledAcceptanceConsumedDestination = nil
             playingEnsureQuietPending = false
+            playingSettledAcceptanceConsumed = false
             languageEnsureQuietSkipLogged = false
             playingEnsureQuietSkipLogged = false
             lastLoggedStalledContentDiagnosticsSignature = nil
@@ -2671,7 +3087,9 @@ class RadioLiveActivityManager: ObservableObject {
         lastPushedContent = nil
         consecutiveStalledContentPushes = 0
         languageEnsureQuietPendingDestination = nil
+        languageSettledAcceptanceConsumedDestination = nil
         playingEnsureQuietPending = false
+        playingSettledAcceptanceConsumed = false
         languageEnsureQuietSkipLogged = false
         playingEnsureQuietSkipLogged = false
         lastLoggedStalledContentDiagnosticsSignature = nil
@@ -3069,8 +3487,11 @@ class RadioLiveActivityManager: ObservableObject {
         interactiveContentRecreationsAttempted = 0
         // Any contentUpdates yield is an ActivityKit acceptance moment — drop quiet so a
         // subsequent ensure can re-evaluate (or stay a no-op if language/visual already match).
+        // Also re-open settled language/playing acceptance for a later lag.
         languageEnsureQuietPendingDestination = nil
+        languageSettledAcceptanceConsumedDestination = nil
         playingEnsureQuietPending = false
+        playingSettledAcceptanceConsumed = false
         languageEnsureQuietSkipLogged = false
         playingEnsureQuietSkipLogged = false
         lastLoggedStalledContentDiagnosticsSignature = nil
@@ -3090,7 +3511,9 @@ class RadioLiveActivityManager: ObservableObject {
             lastPushedContent = nil
             consecutiveStalledContentPushes = 0
             languageEnsureQuietPendingDestination = nil
+            languageSettledAcceptanceConsumedDestination = nil
             playingEnsureQuietPending = false
+            playingSettledAcceptanceConsumed = false
             languageEnsureQuietSkipLogged = false
             playingEnsureQuietSkipLogged = false
             lastLoggedStalledContentDiagnosticsSignature = nil
@@ -3107,7 +3530,9 @@ class RadioLiveActivityManager: ObservableObject {
         lastPushedContent = nil
         consecutiveStalledContentPushes = 0
         languageEnsureQuietPendingDestination = nil
+        languageSettledAcceptanceConsumedDestination = nil
         playingEnsureQuietPending = false
+        playingSettledAcceptanceConsumed = false
         languageEnsureQuietSkipLogged = false
         playingEnsureQuietSkipLogged = false
         lastLoggedStalledContentDiagnosticsSignature = nil
@@ -3271,6 +3696,86 @@ class RadioLiveActivityManager: ObservableObject {
     /// White-box seam: set language ensure quiet destination (no ActivityKit).
     func _test_setLanguageEnsureQuietPendingDestination(_ value: String?) {
         languageEnsureQuietPendingDestination = value
+    }
+
+    /// White-box seam: settled language acceptance policy (no ActivityKit).
+    func _test_shouldPushSettledLanguageAcceptance(
+        destinationLanguage: String,
+        ownedContentLanguage: String?,
+        isStreamSwitchHoldActive: Bool,
+        settledAcceptanceConsumedDestination: String?,
+        isRequestEligible: Bool
+    ) -> Bool {
+        Self.shouldPushSettledLanguageAcceptance(
+            destinationLanguage: destinationLanguage,
+            ownedContentLanguage: ownedContentLanguage,
+            isStreamSwitchHoldActive: isStreamSwitchHoldActive,
+            settledAcceptanceConsumedDestination: settledAcceptanceConsumedDestination,
+            isRequestEligible: isRequestEligible
+        )
+    }
+
+    /// White-box seam: clear settled language consume on destination change / convergence.
+    func _test_shouldClearLanguageSettledAcceptanceConsume(
+        settledAcceptanceConsumedDestination: String?,
+        destinationLanguage: String,
+        ownedOrSystemLanguage: String?
+    ) -> Bool {
+        Self.shouldClearLanguageSettledAcceptanceConsume(
+            settledAcceptanceConsumedDestination: settledAcceptanceConsumedDestination,
+            destinationLanguage: destinationLanguage,
+            ownedOrSystemLanguage: ownedOrSystemLanguage
+        )
+    }
+
+    /// White-box seam: read settled language acceptance consume marker (no ActivityKit).
+    func _test_languageSettledAcceptanceConsumedDestinationValue() -> String? {
+        languageSettledAcceptanceConsumedDestination
+    }
+
+    /// White-box seam: set settled language acceptance consume marker (no ActivityKit).
+    func _test_setLanguageSettledAcceptanceConsumedDestination(_ value: String?) {
+        languageSettledAcceptanceConsumedDestination = value
+    }
+
+    /// White-box seam: settled playing acceptance policy (no ActivityKit).
+    func _test_shouldPushSettledPlayingAcceptance(
+        actorVisual: PlayerVisualState,
+        ownedContentVisual: PlayerVisualState?,
+        isStreamSwitchHoldActive: Bool,
+        isConnectingPlayback: Bool,
+        settledAcceptanceConsumed: Bool,
+        isRequestEligible: Bool
+    ) -> Bool {
+        Self.shouldPushSettledPlayingAcceptance(
+            actorVisual: actorVisual,
+            ownedContentVisual: ownedContentVisual,
+            isStreamSwitchHoldActive: isStreamSwitchHoldActive,
+            isConnectingPlayback: isConnectingPlayback,
+            settledAcceptanceConsumed: settledAcceptanceConsumed,
+            isRequestEligible: isRequestEligible
+        )
+    }
+
+    /// White-box seam: clear settled playing consume on owned visual convergence.
+    func _test_shouldClearPlayingSettledAcceptanceConsume(
+        settledAcceptanceConsumed: Bool,
+        ownedOrSystemVisual: PlayerVisualState?
+    ) -> Bool {
+        Self.shouldClearPlayingSettledAcceptanceConsume(
+            settledAcceptanceConsumed: settledAcceptanceConsumed,
+            ownedOrSystemVisual: ownedOrSystemVisual
+        )
+    }
+
+    /// White-box seam: read settled playing acceptance consume marker (no ActivityKit).
+    func _test_playingSettledAcceptanceConsumedValue() -> Bool {
+        playingSettledAcceptanceConsumed
+    }
+
+    /// White-box seam: set settled playing acceptance consume marker (no ActivityKit).
+    func _test_setPlayingSettledAcceptanceConsumed(_ value: Bool) {
+        playingSettledAcceptanceConsumed = value
     }
 
     /// White-box seam: whether soft playing ensure should run (quiet / eligibility).

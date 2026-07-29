@@ -729,6 +729,277 @@ class RadioLiveActivityManagerTests: XCTestCase {
         manager._test_clearLastPushedContent()
     }
 
+    /// After soft language ensure quiet while lock/ineligible, one high-signal settle push is
+    /// allowed after stream-switch hold clears (audible start / soft-resume path).
+    ///
+    /// Protects lock-stretch language freeze: attach-storm soft budget often exhausts during
+    /// Connecting, then quiet defers language-only status re-pushes for the rest of the stretch.
+    /// Settled acceptance is consume-once per destination while ineligible; destination change
+    /// and eligibility re-open the window. Does **not** invent `.playing` during hold; does
+    /// **not** end+request while ineligible.
+    func testSettledLanguageAcceptancePushAfterHoldClearWhileQuiet() {
+        // Hold still active → wait for setPlaying (Connecting honesty).
+        XCTAssertFalse(
+            manager._test_shouldPushSettledLanguageAcceptance(
+                destinationLanguage: "de",
+                ownedContentLanguage: "sv",
+                isStreamSwitchHoldActive: true,
+                settledAcceptanceConsumedDestination: nil,
+                isRequestEligible: false
+            ),
+            "Stream-switch hold must block settled language acceptance"
+        )
+        // Hold clear + language mismatch + not consumed → fire once.
+        XCTAssertTrue(
+            manager._test_shouldPushSettledLanguageAcceptance(
+                destinationLanguage: "de",
+                ownedContentLanguage: "sv",
+                isStreamSwitchHoldActive: false,
+                settledAcceptanceConsumedDestination: nil,
+                isRequestEligible: false
+            ),
+            "Post-hold language mismatch must allow one settled acceptance push"
+        )
+        // Consume-once while still ineligible.
+        XCTAssertFalse(
+            manager._test_shouldPushSettledLanguageAcceptance(
+                destinationLanguage: "de",
+                ownedContentLanguage: "sv",
+                isStreamSwitchHoldActive: false,
+                settledAcceptanceConsumedDestination: "de",
+                isRequestEligible: false
+            ),
+            "Consumed settle for same destination while ineligible must not thrash"
+        )
+        // Eligibility re-opens settle window (unlock recovery).
+        XCTAssertTrue(
+            manager._test_shouldPushSettledLanguageAcceptance(
+                destinationLanguage: "de",
+                ownedContentLanguage: "sv",
+                isStreamSwitchHoldActive: false,
+                settledAcceptanceConsumedDestination: "de",
+                isRequestEligible: true
+            ),
+            "Eligible request must re-open settled language acceptance"
+        )
+        // Owned already matches destination → no-op.
+        XCTAssertFalse(
+            manager._test_shouldPushSettledLanguageAcceptance(
+                destinationLanguage: "de",
+                ownedContentLanguage: "de",
+                isStreamSwitchHoldActive: false,
+                settledAcceptanceConsumedDestination: nil,
+                isRequestEligible: false
+            ),
+            "Matched owned language must not schedule settled push"
+        )
+        // Empty destination → no-op.
+        XCTAssertFalse(
+            manager._test_shouldPushSettledLanguageAcceptance(
+                destinationLanguage: "",
+                ownedContentLanguage: "sv",
+                isStreamSwitchHoldActive: false,
+                settledAcceptanceConsumedDestination: nil,
+                isRequestEligible: false
+            ),
+            "Empty destination must not force settled language push"
+        )
+
+        // Clear consume when destination advances or owned converges.
+        XCTAssertTrue(
+            manager._test_shouldClearLanguageSettledAcceptanceConsume(
+                settledAcceptanceConsumedDestination: "de",
+                destinationLanguage: "fi",
+                ownedOrSystemLanguage: "de"
+            ),
+            "New destination must clear settled consume for prior language"
+        )
+        XCTAssertTrue(
+            manager._test_shouldClearLanguageSettledAcceptanceConsume(
+                settledAcceptanceConsumedDestination: "de",
+                destinationLanguage: "de",
+                ownedOrSystemLanguage: "de"
+            ),
+            "Owned convergence must clear settled consume"
+        )
+        XCTAssertFalse(
+            manager._test_shouldClearLanguageSettledAcceptanceConsume(
+                settledAcceptanceConsumedDestination: "de",
+                destinationLanguage: "de",
+                ownedOrSystemLanguage: "sv"
+            ),
+            "Still-lagging same destination must keep settled consume"
+        )
+
+        // Instance seam: optimistic stream-switch to a new language clears settle consume.
+        manager._test_setLanguageSettledAcceptanceConsumedDestination("de")
+        XCTAssertEqual(manager._test_languageSettledAcceptanceConsumedDestinationValue(), "de")
+        manager.recordOptimisticStreamSwitchContent(language: "fi", visualState: .prePlay)
+        XCTAssertNil(
+            manager._test_languageSettledAcceptanceConsumedDestinationValue(),
+            "Optimistic stream-switch to a new language must re-open settled acceptance"
+        )
+        // Same destination optimistic must not clear consume (still one settle per dest).
+        manager._test_setLanguageSettledAcceptanceConsumedDestination("fi")
+        manager.recordOptimisticStreamSwitchContent(language: "fi", visualState: .userPaused)
+        XCTAssertEqual(
+            manager._test_languageSettledAcceptanceConsumedDestinationValue(),
+            "fi",
+            "Same-destination optimistic visual flip must not clear settled consume"
+        )
+        manager._test_setLanguageSettledAcceptanceConsumedDestination(nil)
+        manager._test_setLanguageEnsureQuietPendingDestination(nil)
+        manager._test_clearLastPushedContent()
+    }
+
+    /// After soft playing ensure quiet while lock/ineligible, one high-signal settle push is
+    /// allowed after stream-switch hold/connect clears (audible start / soft-resume path).
+    ///
+    /// Protects lock-stretch visual freeze: soft budget often exhausts (or cannot run while
+    /// hold is active), then quiet defers visual-only `.playing` repair for the rest of the
+    /// stretch. Settled acceptance is consume-once while ineligible; optimistic toggle /
+    /// stream-switch and eligibility re-open the window. Does **not** invent `.playing`
+    /// during hold/connect; does **not** end+request while ineligible.
+    func testSettledPlayingAcceptancePushAfterHoldClearWhileQuiet() {
+        // Hold still active → wait for setPlaying (Connecting honesty).
+        XCTAssertFalse(
+            manager._test_shouldPushSettledPlayingAcceptance(
+                actorVisual: .playing,
+                ownedContentVisual: .prePlay,
+                isStreamSwitchHoldActive: true,
+                isConnectingPlayback: false,
+                settledAcceptanceConsumed: false,
+                isRequestEligible: false
+            ),
+            "Stream-switch hold must block settled playing acceptance"
+        )
+        // Connecting pipeline still active → wait.
+        XCTAssertFalse(
+            manager._test_shouldPushSettledPlayingAcceptance(
+                actorVisual: .playing,
+                ownedContentVisual: .prePlay,
+                isStreamSwitchHoldActive: false,
+                isConnectingPlayback: true,
+                settledAcceptanceConsumed: false,
+                isRequestEligible: false
+            ),
+            "Connecting playback must block settled playing acceptance"
+        )
+        // Actor not yet authoritative playing → no-op.
+        XCTAssertFalse(
+            manager._test_shouldPushSettledPlayingAcceptance(
+                actorVisual: .prePlay,
+                ownedContentVisual: .prePlay,
+                isStreamSwitchHoldActive: false,
+                isConnectingPlayback: false,
+                settledAcceptanceConsumed: false,
+                isRequestEligible: false
+            ),
+            "Non-playing actor must not invent settled .playing"
+        )
+        // Hold clear + owned visual lag + not consumed → fire once.
+        XCTAssertTrue(
+            manager._test_shouldPushSettledPlayingAcceptance(
+                actorVisual: .playing,
+                ownedContentVisual: .prePlay,
+                isStreamSwitchHoldActive: false,
+                isConnectingPlayback: false,
+                settledAcceptanceConsumed: false,
+                isRequestEligible: false
+            ),
+            "Post-hold owned .prePlay must allow one settled playing acceptance push"
+        )
+        // Soft-resume path: owned still userPaused after pause lag.
+        XCTAssertTrue(
+            manager._test_shouldPushSettledPlayingAcceptance(
+                actorVisual: .playing,
+                ownedContentVisual: .userPaused,
+                isStreamSwitchHoldActive: false,
+                isConnectingPlayback: false,
+                settledAcceptanceConsumed: false,
+                isRequestEligible: false
+            ),
+            "Post-hold owned .userPaused must allow settled playing acceptance"
+        )
+        // Consume-once while still ineligible.
+        XCTAssertFalse(
+            manager._test_shouldPushSettledPlayingAcceptance(
+                actorVisual: .playing,
+                ownedContentVisual: .prePlay,
+                isStreamSwitchHoldActive: false,
+                isConnectingPlayback: false,
+                settledAcceptanceConsumed: true,
+                isRequestEligible: false
+            ),
+            "Consumed settle while ineligible must not thrash"
+        )
+        // Eligibility re-opens settle window (unlock recovery).
+        XCTAssertTrue(
+            manager._test_shouldPushSettledPlayingAcceptance(
+                actorVisual: .playing,
+                ownedContentVisual: .prePlay,
+                isStreamSwitchHoldActive: false,
+                isConnectingPlayback: false,
+                settledAcceptanceConsumed: true,
+                isRequestEligible: true
+            ),
+            "Eligible request must re-open settled playing acceptance"
+        )
+        // Owned already playing → no-op.
+        XCTAssertFalse(
+            manager._test_shouldPushSettledPlayingAcceptance(
+                actorVisual: .playing,
+                ownedContentVisual: .playing,
+                isStreamSwitchHoldActive: false,
+                isConnectingPlayback: false,
+                settledAcceptanceConsumed: false,
+                isRequestEligible: false
+            ),
+            "Matched owned .playing must not schedule settled push"
+        )
+
+        // Clear consume when owned converges.
+        XCTAssertTrue(
+            manager._test_shouldClearPlayingSettledAcceptanceConsume(
+                settledAcceptanceConsumed: true,
+                ownedOrSystemVisual: .playing
+            ),
+            "Owned convergence must clear settled playing consume"
+        )
+        XCTAssertFalse(
+            manager._test_shouldClearPlayingSettledAcceptanceConsume(
+                settledAcceptanceConsumed: true,
+                ownedOrSystemVisual: .prePlay
+            ),
+            "Still-lagging Connecting must keep settled playing consume"
+        )
+        XCTAssertFalse(
+            manager._test_shouldClearPlayingSettledAcceptanceConsume(
+                settledAcceptanceConsumed: false,
+                ownedOrSystemVisual: .playing
+            ),
+            "No consume marker must not clear"
+        )
+
+        // Instance seam: optimistic toggle / stream-switch re-open settled playing consume.
+        manager._test_setPlayingSettledAcceptanceConsumed(true)
+        XCTAssertTrue(manager._test_playingSettledAcceptanceConsumedValue())
+        manager.recordOptimisticToggleContent(visualState: .userPaused)
+        XCTAssertFalse(
+            manager._test_playingSettledAcceptanceConsumedValue(),
+            "Optimistic pause toggle must re-open settled playing acceptance"
+        )
+        manager._test_setPlayingSettledAcceptanceConsumed(true)
+        manager.recordOptimisticStreamSwitchContent(language: "fi", visualState: .prePlay)
+        XCTAssertFalse(
+            manager._test_playingSettledAcceptanceConsumedValue(),
+            "Optimistic stream-switch must re-open settled playing acceptance for post-attach cycle"
+        )
+        manager._test_setPlayingSettledAcceptanceConsumed(false)
+        manager._test_setPlayingEnsureQuietPending(false)
+        manager._test_clearLastPushedContent()
+    }
+
     /// After playing soft-ensure budget exhaustion while request is ineligible, further
     /// ensure-driven soft pushes stay quiet until re-arm.
     ///

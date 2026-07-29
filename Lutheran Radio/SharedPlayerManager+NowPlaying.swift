@@ -399,7 +399,10 @@ extension SharedPlayerManager {
     ///
     /// - SeeAlso: ``emit(_:)``, `PlayerEvent.metadataDidUpdate`,
     ///   `StreamProgramMetadata.from(rawICYMetadata:)`, ``persistStreamMetadataForWidgets()``,
-    ///   CODING_AGENT.md, docs/Event-Driven-Refactor-Roadmap.md (Tier 1 metadata emission).
+    ///   ``persistHomeWidgetStreamMetadataMirror(_:)``,
+    ///   ``restampHomeWidgetProgramMetadataAfterPrivacyGateOpenIfNeeded()``,
+    ///   CODING_AGENT.md, docs/Event-Driven-Refactor-Roadmap.md (Tier 1 metadata emission),
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (ICY single-owner + home mirror).
     ///
     /// AGENT NOTE: Emission after mutation. This is the **only** SSOT update path for live
     /// program metadata. Engine ICY arrives via ``DirectStreamingPlayer/safeOnMetadataChange``;
@@ -410,6 +413,9 @@ extension SharedPlayerManager {
     ///
     /// - Important: Identical raw ICY is a no-op (no second `.metadataDidUpdate`, no second
     ///   surface push) so a miswired dual caller cannot double-fire ActivityKit / Now Playing.
+    ///   Privacy→write handoff re-stamps in-memory metadata when home widgets appear later
+    ///   (``restampHomeWidgetProgramMetadataAfterPrivacyGateOpenIfNeeded()``) because this
+    ///   no-op would otherwise leave the privacy-gated App Group mirror empty forever.
     func didUpdateStreamMetadata(_ metadata: String?) async {
         guard !isRunningInWidget() else { return }
         guard !WidgetRefreshManager.isSessionTeardownInProgress else { return }
@@ -433,10 +439,10 @@ extension SharedPlayerManager {
 
         await updateNowPlayingInfo()
 
-        // Persist for widgets (program title in snapshot) — intentionally after the
-        // LA push so that LA responsiveness is not gated on disk I/O.
-        // Widget timeline reload is driven by ``.metadataDidUpdate`` and
-        // ``.persistedWidgetStateDidUpdate`` on the Tier 2 observer path (Tier 3 dedup).
+        // Persist for home widgets: in-process session snapshot + privacy-gated App Group
+        // program-metadata mirror (extension Providers). Intentionally after the LA push so
+        // LA responsiveness is not gated on disk I/O. Timeline reload is driven by
+        // ``.metadataDidUpdate`` / ``.persistedWidgetStateDidUpdate`` on the Tier 2 path.
         persistStreamMetadataForWidgets()
     }
     

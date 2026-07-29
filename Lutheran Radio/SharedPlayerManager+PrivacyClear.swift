@@ -69,6 +69,8 @@ extension SharedPlayerManager {
         // Live Activity toggle visual + language mirrors (cross-process signals; privacy clear ends LA).
         defaults.removeObject(forKey: liveActivityToggleVisualStateAppGroupKey)
         defaults.removeObject(forKey: liveActivityCurrentLanguageAppGroupKey)
+        // Privacy-gated home program-metadata mirror (extension Provider program chrome).
+        defaults.removeObject(forKey: homeWidgetStreamMetadataAppGroupKey)
         // Boot identity used only for post-reboot LA plan distrust; drop on privacy clear.
         defaults.removeObject(forKey: recordedSystemBootTimeAppGroupKey)
 
