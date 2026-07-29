@@ -60,12 +60,18 @@ class RadioLiveActivityManagerTests: XCTestCase {
         // (internal visibility via @testable for the property itself.)
         manager.currentActivity = nil
         manager._test_setPendingInteractiveLiveActivityEnsure(false)
+        manager._test_setLanguageEnsureQuietPendingDestination(nil)
+        // Singleton suppress memory must not leak across tests (optimistic stream-switch
+        // / attribute-events cases write lastPushedContent without endActivity).
+        manager._test_clearLastPushedContent()
     }
     
     override func tearDown() async throws {
         // Must stop the timer (if any) and cancel attribute event observation before
         // releasing. Prevents live Tasks / Timers keeping the runner alive.
         manager?._test_setPendingInteractiveLiveActivityEnsure(false)
+        manager?._test_setLanguageEnsureQuietPendingDestination(nil)
+        manager?._test_clearLastPushedContent()
         manager?.stopLocalUpdateTimer()
         manager?.activityObservationTask?.cancel()
         // The seam cancel stops the work; the observer is reset on next use.
@@ -577,6 +583,220 @@ class RadioLiveActivityManagerTests: XCTestCase {
                 lastPushedLanguage: "sv"
             ),
             "Empty destination must not force a language push"
+        )
+    }
+
+    /// After language soft-ensure budget exhaustion while request is ineligible, further
+    /// ensure-driven soft pushes for the same destination stay quiet until re-arm.
+    ///
+    /// Protects lock-stretch thrash: status-driven media-surface refreshes must not re-burn
+    /// the soft-retry budget without acceptance. Re-arm on destination change, eligibility,
+    /// become-active (foreground clears quiet), or system contentUpdates.
+    /// Does **not** end+request while ineligible.
+    func testLanguageEnsureQuietPendingAfterMaxAttemptsWhileIneligible() {
+        // Enter quiet only when still mismatched and request ineligible.
+        XCTAssertEqual(
+            manager._test_quietPendingDestinationAfterLanguageEnsureExhaustion(
+                languageStillMismatches: true,
+                isRequestEligible: false,
+                destinationLanguage: "fi"
+            ),
+            "fi",
+            "Exhausted soft budget while ineligible must record quiet for destination"
+        )
+        XCTAssertNil(
+            manager._test_quietPendingDestinationAfterLanguageEnsureExhaustion(
+                languageStillMismatches: true,
+                isRequestEligible: true,
+                destinationLanguage: "fi"
+            ),
+            "Eligible request must not enter quiet (foreground soft ensure / recreation path owns recovery)"
+        )
+        XCTAssertNil(
+            manager._test_quietPendingDestinationAfterLanguageEnsureExhaustion(
+                languageStillMismatches: false,
+                isRequestEligible: false,
+                destinationLanguage: "fi"
+            ),
+            "Matched destination must not enter quiet"
+        )
+
+        // Soft pushes stay quiet for same destination while still ineligible.
+        XCTAssertFalse(
+            manager._test_shouldRunLanguageContentEnsureSoftPushes(
+                needsLanguageEnsure: true,
+                destinationLanguage: "fi",
+                quietPendingDestination: "fi",
+                isRequestEligible: false
+            ),
+            "Same destination quiet while ineligible must stop ensure soft pushes"
+        )
+        // Re-arm: destination language mutation (high-priority push for new language).
+        XCTAssertTrue(
+            manager._test_shouldRunLanguageContentEnsureSoftPushes(
+                needsLanguageEnsure: true,
+                destinationLanguage: "en",
+                quietPendingDestination: "fi",
+                isRequestEligible: false
+            ),
+            "New destination must re-arm language ensure even while quiet for prior language"
+        )
+        // Re-arm: request became eligible (unlock / presentable cycle).
+        XCTAssertTrue(
+            manager._test_shouldRunLanguageContentEnsureSoftPushes(
+                needsLanguageEnsure: true,
+                destinationLanguage: "fi",
+                quietPendingDestination: "fi",
+                isRequestEligible: true
+            ),
+            "Eligible request must re-arm language ensure despite quiet"
+        )
+        // No quiet yet → run.
+        XCTAssertTrue(
+            manager._test_shouldRunLanguageContentEnsureSoftPushes(
+                needsLanguageEnsure: true,
+                destinationLanguage: "fi",
+                quietPendingDestination: nil,
+                isRequestEligible: false
+            ),
+            "No quiet pending must allow soft pushes while ineligible"
+        )
+        // Ensure not needed → no soft pushes.
+        XCTAssertFalse(
+            manager._test_shouldRunLanguageContentEnsureSoftPushes(
+                needsLanguageEnsure: false,
+                destinationLanguage: "fi",
+                quietPendingDestination: nil,
+                isRequestEligible: false
+            ),
+            "Matched language must not schedule soft pushes"
+        )
+
+        // Instance seam: optimistic stream-switch re-arms quiet when destination changes.
+        manager._test_setLanguageEnsureQuietPendingDestination("fi")
+        XCTAssertEqual(manager._test_languageEnsureQuietPendingDestinationValue(), "fi")
+        manager.recordOptimisticStreamSwitchContent(language: "en", visualState: .prePlay)
+        XCTAssertNil(
+            manager._test_languageEnsureQuietPendingDestinationValue(),
+            "Optimistic stream-switch to a new language must clear quiet for prior destination"
+        )
+        // Same destination optimistic does not clear (still exhausted for that language).
+        manager._test_setLanguageEnsureQuietPendingDestination("en")
+        manager.recordOptimisticStreamSwitchContent(language: "en", visualState: .userPaused)
+        XCTAssertEqual(
+            manager._test_languageEnsureQuietPendingDestinationValue(),
+            "en",
+            "Same-destination optimistic visual flip must not clear language quiet"
+        )
+        manager._test_setLanguageEnsureQuietPendingDestination(nil)
+        manager._test_clearLastPushedContent()
+    }
+
+    /// Language-only status re-pushes defer while quiet; visual mutations still push.
+    ///
+    /// After soft language ensure exhausted while request ineligible, media-surface
+    /// ``updateCurrentActivity`` must not re-submit the same language candidate forever.
+    /// Pause / play / Connecting visual changes remain non-suppressed (honesty).
+    func testLanguageOnlyStatusPushDefersWhileQuietPending() {
+        XCTAssertTrue(
+            manager._test_shouldDeferRedundantLanguagePushWhileQuiet(
+                candidateLanguage: "fi",
+                ownedContentLanguage: "de",
+                ownedContentVisual: .prePlay,
+                candidateVisual: .prePlay,
+                quietPendingDestination: "fi",
+                isRequestEligible: false
+            ),
+            "Language-only stall for quiet destination while ineligible must defer ActivityKit IPC"
+        )
+        XCTAssertFalse(
+            manager._test_shouldDeferRedundantLanguagePushWhileQuiet(
+                candidateLanguage: "fi",
+                ownedContentLanguage: "de",
+                ownedContentVisual: .prePlay,
+                candidateVisual: .playing,
+                quietPendingDestination: "fi",
+                isRequestEligible: false
+            ),
+            "Visual mutation while language quiet must still push"
+        )
+        XCTAssertFalse(
+            manager._test_shouldDeferRedundantLanguagePushWhileQuiet(
+                candidateLanguage: "fi",
+                ownedContentLanguage: "de",
+                ownedContentVisual: .prePlay,
+                candidateVisual: .userPaused,
+                quietPendingDestination: "fi",
+                isRequestEligible: false
+            ),
+            "Pause visual while language quiet must still push"
+        )
+        XCTAssertFalse(
+            manager._test_shouldDeferRedundantLanguagePushWhileQuiet(
+                candidateLanguage: "en",
+                ownedContentLanguage: "de",
+                ownedContentVisual: .prePlay,
+                candidateVisual: .prePlay,
+                quietPendingDestination: "fi",
+                isRequestEligible: false
+            ),
+            "New destination language must not defer under prior quiet"
+        )
+        XCTAssertFalse(
+            manager._test_shouldDeferRedundantLanguagePushWhileQuiet(
+                candidateLanguage: "fi",
+                ownedContentLanguage: "de",
+                ownedContentVisual: .prePlay,
+                candidateVisual: .prePlay,
+                quietPendingDestination: "fi",
+                isRequestEligible: true
+            ),
+            "Eligible request must not defer language push"
+        )
+        XCTAssertFalse(
+            manager._test_shouldDeferRedundantLanguagePushWhileQuiet(
+                candidateLanguage: "fi",
+                ownedContentLanguage: "de",
+                ownedContentVisual: .prePlay,
+                candidateVisual: .prePlay,
+                quietPendingDestination: nil,
+                isRequestEligible: false
+            ),
+            "No quiet pending must not defer"
+        )
+
+        // Clear quiet when owned / system language matches destination, or destination moves.
+        XCTAssertTrue(
+            manager._test_shouldClearLanguageEnsureQuietPending(
+                quietPendingDestination: "fi",
+                destinationLanguage: "fi",
+                ownedOrSystemLanguage: "fi"
+            ),
+            "Owned/system acceptance of destination must clear quiet"
+        )
+        XCTAssertTrue(
+            manager._test_shouldClearLanguageEnsureQuietPending(
+                quietPendingDestination: "fi",
+                destinationLanguage: "en",
+                ownedOrSystemLanguage: "de"
+            ),
+            "Destination change must clear prior quiet"
+        )
+        XCTAssertFalse(
+            manager._test_shouldClearLanguageEnsureQuietPending(
+                quietPendingDestination: "fi",
+                destinationLanguage: "fi",
+                ownedOrSystemLanguage: "de"
+            ),
+            "Still-lagging same destination must keep quiet until re-arm"
+        )
+        XCTAssertFalse(
+            manager._test_shouldClearLanguageEnsureQuietPending(
+                quietPendingDestination: nil,
+                destinationLanguage: "fi",
+                ownedOrSystemLanguage: "fi"
+            ),
+            "No quiet is a no-op clear"
         )
     }
 

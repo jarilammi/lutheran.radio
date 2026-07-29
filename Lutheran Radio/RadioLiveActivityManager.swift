@@ -85,9 +85,14 @@ import WidgetSurface
 /// ``ensureAuthoritativePlayingContentIfNeeded()`` retries — not end+request — when the
 /// only lag is owned `.prePlay` vs candidate `.playing`.
 /// Language chrome prefers bounded ``ensureAuthoritativeLanguageContentIfNeeded()`` retries.
-/// On foreground / become-active with an **owned** activity, soft language + playing ensure
-/// run via ``ensureAuthoritativeContentOnForegroundIfNeeded()``; eligible-only recreation
-/// is a last resort after soft ensure still fails (never while request is ineligible).
+/// After the soft-retry budget is exhausted while interactive request is ineligible, language
+/// ensure enters a **quiet pending** state for that destination so status-driven media-surface
+/// refreshes do not thrash ActivityKit; re-arm on destination change, eligibility, become-active,
+/// or system `contentUpdates`. Language-only status re-pushes defer while quiet; visual mutations
+/// still push. On foreground / become-active with an **owned** activity, soft language + playing
+/// ensure run via ``ensureAuthoritativeContentOnForegroundIfNeeded()`` (clears quiet first);
+/// eligible-only recreation is a last resort after soft ensure still fails (never while request
+/// is ineligible).
 ///
 /// ## Test Isolation
 /// All real Activity creation/update/timer paths are short-circuited under
@@ -214,10 +219,37 @@ class RadioLiveActivityManager: ObservableObject {
     /// (ActivityKit acceptance lag after stream-switch / deferred recreation while ineligible).
     /// Prefer this over end+request; eligible-only recreation is a last resort on foreground.
     ///
+    /// After this budget is exhausted while interactive request is **ineligible**, language
+    /// soft-ensure enters a quiet-pending state for that destination (see
+    /// ``languageEnsureQuietPendingDestination``) so status-driven media-surface refreshes
+    /// do not re-run the soft-retry budget until re-arm (destination change, eligibility,
+    /// become-active, or system `contentUpdates` acceptance).
+    ///
     /// - SeeAlso: ``ensureAuthoritativeLanguageContentIfNeeded()``,
     ///   ``ensureAuthoritativeContentOnForegroundIfNeeded()``,
+    ///   ``shouldRunLanguageContentEnsureSoftPushes(needsLanguageEnsure:destinationLanguage:quietPendingDestination:isRequestEligible:)``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     static let authoritativeLanguageContentEnsureMaxAttempts = 3
+
+    /// Destination language for which soft language ensure exhausted while interactive request
+    /// was ineligible.
+    ///
+    /// When non-nil and equal to the current destination, further ensure-driven soft pushes and
+    /// **language-only** status re-pushes stay quiet until re-arm:
+    /// - Destination language changes (new stream-switch mutation)
+    /// - Interactive request becomes eligible
+    /// - Foreground / become-active owned-surface soft ensure
+    /// - System `contentUpdates` yield (acceptance moment)
+    /// - Owned language converges to destination
+    ///
+    /// Visual mutations (pause / play / Connecting) still push when owned visual differs —
+    /// quiet is language-stall thrash protection only, not a full content freeze.
+    ///
+    /// - SeeAlso: ``ensureAuthoritativeLanguageContentIfNeeded()``,
+    ///   ``shouldRunLanguageContentEnsureSoftPushes(needsLanguageEnsure:destinationLanguage:quietPendingDestination:isRequestEligible:)``,
+    ///   ``shouldDeferRedundantLanguagePushWhileQuiet(candidateLanguage:ownedContentLanguage:ownedContentVisual:candidateVisual:quietPendingDestination:isRequestEligible:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    private var languageEnsureQuietPendingDestination: String?
 
     /// Long-lived task observing the Live Activity attribute events stream.
     ///
@@ -621,6 +653,32 @@ class RadioLiveActivityManager: ObservableObject {
             return
         }
 
+        // After language soft-ensure exhausted while request is ineligible, defer language-only
+        // status re-pushes for the same destination. Durable mirrors already warmed above.
+        // Visual mutations still push. Re-arm: destination change, eligibility, become-active,
+        // or contentUpdates (see languageEnsureQuietPendingDestination).
+        let requestEligibleForQuiet = Self.isInteractiveLiveActivityRequestEligible(
+            areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+            isApplicationActive: UIApplication.shared.applicationState == .active
+        )
+        if Self.shouldDeferRedundantLanguagePushWhileQuiet(
+            candidateLanguage: candidate.currentLanguage,
+            ownedContentLanguage: ownedLanguage,
+            ownedContentVisual: ownedVisual,
+            candidateVisual: candidate.visualState,
+            quietPendingDestination: languageEnsureQuietPendingDestination,
+            isRequestEligible: requestEligibleForQuiet
+        ) {
+            #if DEBUG
+            print(
+                "🔴 Live Activity language push deferred (quiet pending destination=" +
+                "\(languageEnsureQuietPendingDestination ?? "nil"); owned language=\(ownedLanguage); " +
+                "keeping surface; wait for eligibility, become-active, or language mutation)"
+            )
+            #endif
+            return
+        }
+
         // SAFETY: Activity.update / Activity property access are not Sendable in the current
         // SDK; capture a local strong reference on the main actor, then read content/id only
         // under explicit `unsafe` (same capture pattern as end paths).
@@ -635,6 +693,15 @@ class RadioLiveActivityManager: ObservableObject {
             candidate: candidate,
             acceptedSystemContent: accepted
         )
+
+        // Owned language converged → clear language ensure quiet for this destination.
+        if Self.shouldClearLanguageEnsureQuietPending(
+            quietPendingDestination: languageEnsureQuietPendingDestination,
+            destinationLanguage: candidate.currentLanguage,
+            ownedOrSystemLanguage: accepted.currentLanguage
+        ) {
+            languageEnsureQuietPendingDestination = nil
+        }
 
         let contentStalled = Self.isStalledLiveActivityContentPush(
             candidate: candidate,
@@ -1040,7 +1107,8 @@ class RadioLiveActivityManager: ObservableObject {
     /// - Returns: `true` when destination is non-empty and either owned or last-pushed
     ///   language does not match (or is missing).
     /// - Note: Does not invent `.playing` — only decides whether language chrome needs a push.
-    /// - SeeAlso: ``ensureAuthoritativeLanguageContentIfNeeded()``.
+    /// - SeeAlso: ``ensureAuthoritativeLanguageContentIfNeeded()``,
+    ///   ``shouldRunLanguageContentEnsureSoftPushes(needsLanguageEnsure:destinationLanguage:quietPendingDestination:isRequestEligible:)``.
     static func shouldEnsureAuthoritativeLanguageContent(
         destinationLanguage: String,
         ownedContentLanguage: String?,
@@ -1049,6 +1117,127 @@ class RadioLiveActivityManager: ObservableObject {
         guard !destinationLanguage.isEmpty else { return false }
         if ownedContentLanguage != destinationLanguage { return true }
         if lastPushedLanguage != destinationLanguage { return true }
+        return false
+    }
+
+    /// Whether soft language-ensure pushes should run now, or stay quiet after budget exhaustion.
+    ///
+    /// After ``authoritativeLanguageContentEnsureMaxAttempts`` while request is ineligible,
+    /// the manager records ``languageEnsureQuietPendingDestination``. Further ensure-driven
+    /// soft pushes for the **same** destination stay quiet until re-arm so status-driven
+    /// media-surface refreshes do not re-burn the soft-retry budget without acceptance.
+    ///
+    /// **Re-arm (returns true when language ensure is still needed):**
+    /// - No quiet pending yet
+    /// - Destination language changed (new stream-switch mutation — high-priority push)
+    /// - Interactive request became eligible (presentable cycle / unlock)
+    ///
+    /// - Parameters:
+    ///   - needsLanguageEnsure: ``shouldEnsureAuthoritativeLanguageContent(destinationLanguage:ownedContentLanguage:lastPushedLanguage:)``.
+    ///   - destinationLanguage: Current ``liveActivityLanguageCodeForContentPush()``.
+    ///   - quietPendingDestination: ``languageEnsureQuietPendingDestination`` (nil when not quiet).
+    ///   - isRequestEligible: ``isInteractiveLiveActivityRequestEligible(areActivitiesEnabled:isApplicationActive:)``.
+    /// - Returns: `true` when soft language pushes should run.
+    /// - SeeAlso: ``ensureAuthoritativeLanguageContentIfNeeded()``,
+    ///   ``quietPendingDestinationAfterLanguageEnsureExhaustion(languageStillMismatches:isRequestEligible:destinationLanguage:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    static func shouldRunLanguageContentEnsureSoftPushes(
+        needsLanguageEnsure: Bool,
+        destinationLanguage: String,
+        quietPendingDestination: String?,
+        isRequestEligible: Bool
+    ) -> Bool {
+        guard needsLanguageEnsure else { return false }
+        guard !destinationLanguage.isEmpty else { return false }
+        // Re-arm when request is eligible (unlock / presentable cycle).
+        if isRequestEligible { return true }
+        // Quiet only for the same destination while still ineligible.
+        if let quiet = quietPendingDestination, quiet == destinationLanguage {
+            return false
+        }
+        // No quiet yet, or destination changed → high-priority push for the new language.
+        return true
+    }
+
+    /// Destination to store as quiet-pending after language soft-ensure budget exhaustion.
+    ///
+    /// - Parameters:
+    ///   - languageStillMismatches: Owned / last language still ≠ destination after the last attempt.
+    ///   - isRequestEligible: Whether interactive `Activity.request` could succeed now.
+    ///   - destinationLanguage: Destination that failed acceptance.
+    /// - Returns: `destinationLanguage` when quiet should engage; `nil` when request is eligible
+    ///   (keep soft ensure available / let foreground recreation path own recovery) or language matched.
+    /// - SeeAlso: ``shouldRunLanguageContentEnsureSoftPushes(needsLanguageEnsure:destinationLanguage:quietPendingDestination:isRequestEligible:)``.
+    static func quietPendingDestinationAfterLanguageEnsureExhaustion(
+        languageStillMismatches: Bool,
+        isRequestEligible: Bool,
+        destinationLanguage: String
+    ) -> String? {
+        guard languageStillMismatches else { return nil }
+        guard !isRequestEligible else { return nil }
+        guard !destinationLanguage.isEmpty else { return nil }
+        return destinationLanguage
+    }
+
+    /// Whether a status-driven `Activity.update` that is only repairing language stall should
+    /// defer while language ensure is quiet-pending for the same destination.
+    ///
+    /// Protects lock-stretch thrash: after soft language ensure exhausted while request is
+    /// ineligible, every media-surface refresh would otherwise re-submit the same language
+    /// candidate (owned-language suppress gate correctly denies suppress). Visual mutations
+    /// still push — quiet is language-only.
+    ///
+    /// - Parameters:
+    ///   - candidateLanguage: Candidate ``ContentState.currentLanguage``.
+    ///   - ownedContentLanguage: Owned `content.state.currentLanguage`.
+    ///   - ownedContentVisual: Owned `content.state.visualState`.
+    ///   - candidateVisual: Candidate visual.
+    ///   - quietPendingDestination: ``languageEnsureQuietPendingDestination``.
+    ///   - isRequestEligible: Interactive request eligibility.
+    /// - Returns: `true` when ActivityKit IPC should be skipped for this language-only stall.
+    /// - SeeAlso: ``updateCurrentActivity()``, ``shouldRunLanguageContentEnsureSoftPushes(needsLanguageEnsure:destinationLanguage:quietPendingDestination:isRequestEligible:)``.
+    static func shouldDeferRedundantLanguagePushWhileQuiet(
+        candidateLanguage: String,
+        ownedContentLanguage: String,
+        ownedContentVisual: PlayerVisualState,
+        candidateVisual: PlayerVisualState,
+        quietPendingDestination: String?,
+        isRequestEligible: Bool
+    ) -> Bool {
+        guard let quiet = quietPendingDestination else { return false }
+        guard !isRequestEligible else { return false }
+        guard quiet == candidateLanguage else { return false }
+        // Visual still differs → push (pause honesty, playing ensure, Connecting hold).
+        if ownedContentVisual != candidateVisual { return false }
+        // Language already matches → not a language stall (suppress policy handles no-op).
+        if ownedContentLanguage == candidateLanguage { return false }
+        return true
+    }
+
+    /// Whether quiet-pending language ensure should clear after a system content yield or
+    /// owned-language convergence.
+    ///
+    /// - Parameters:
+    ///   - quietPendingDestination: Current quiet destination, if any.
+    ///   - destinationLanguage: Current destination language code.
+    ///   - ownedOrSystemLanguage: Owned or system-accepted `content.state.currentLanguage`.
+    /// - Returns: `true` when quiet should clear (re-arm for a later lag, or destination advanced).
+    /// - SeeAlso: ``handleActivityContentUpdate(_:)``, ``ensureAuthoritativeLanguageContentIfNeeded()``.
+    static func shouldClearLanguageEnsureQuietPending(
+        quietPendingDestination: String?,
+        destinationLanguage: String,
+        ownedOrSystemLanguage: String?
+    ) -> Bool {
+        guard quietPendingDestination != nil else { return false }
+        // System / owned accepted destination — quiet work is done.
+        if let ownedOrSystemLanguage, ownedOrSystemLanguage == destinationLanguage {
+            return true
+        }
+        // Destination moved on — re-arm for the new language (caller also re-arms via
+        // shouldRun when quiet != destination).
+        if let quiet = quietPendingDestination, quiet != destinationLanguage {
+            return true
+        }
         return false
     }
 
@@ -1212,6 +1401,15 @@ class RadioLiveActivityManager: ObservableObject {
     /// retries first; eligible-only recreation is owned by
     /// ``ensureAuthoritativeContentOnForegroundIfNeeded()`` / the stalled-push path.
     ///
+    /// **Quiet pending while request ineligible:** After the soft-retry budget is exhausted
+    /// without owned language acceptance while ``isInteractiveLiveActivityRequestEligible``
+    /// is false, records ``languageEnsureQuietPendingDestination`` and stops re-running soft
+    /// pushes on every status callback for that destination. Re-arm when:
+    /// - Destination language changes (new mutation — one high-priority ensure cycle)
+    /// - Interactive request becomes eligible
+    /// - Foreground / become-active (``ensureAuthoritativeContentOnForegroundIfNeeded`` clears quiet)
+    /// - System `contentUpdates` yield
+    ///
     /// Wire points (main app):
     /// - After media-surface Live Activity update/start (``refreshAllMediaSurfaces``)
     /// - After ``setPlaying()``’s playing reconcile
@@ -1224,10 +1422,12 @@ class RadioLiveActivityManager: ObservableObject {
     /// `content.state.currentLanguage` is still the prior stream.
     ///
     /// - Precondition: Main actor; interactive ``currentActivity`` may be nil (no-op).
-    /// - Postcondition: When a push was needed, ``updateCurrentActivity()`` ran up to the
-    ///   soft-retry budget (subject to test isolation and ActivityKit acceptance). Cheap
-    ///   no-op when owned + last language already match destination.
+    /// - Postcondition: When a push was needed and not quiet-deferred, ``updateCurrentActivity()``
+    ///   ran up to the soft-retry budget (subject to test isolation and ActivityKit acceptance).
+    ///   Cheap no-op when owned + last language already match destination, or when quiet for
+    ///   the same destination while request remains ineligible.
     /// - SeeAlso: ``updateCurrentActivity()``, ``shouldEnsureAuthoritativeLanguageContent(destinationLanguage:ownedContentLanguage:lastPushedLanguage:)``,
+    ///   ``shouldRunLanguageContentEnsureSoftPushes(needsLanguageEnsure:destinationLanguage:quietPendingDestination:isRequestEligible:)``,
     ///   ``authoritativeLanguageContentEnsureMaxAttempts``,
     ///   ``ensureAuthoritativeContentOnForegroundIfNeeded()``,
     ///   ``recordOptimisticStreamSwitchContent(language:visualState:)``,
@@ -1242,25 +1442,72 @@ class RadioLiveActivityManager: ObservableObject {
         #endif
         guard currentActivity != nil else { return }
 
+        let destination = await SharedPlayerManager.shared.liveActivityLanguageCodeForContentPush()
+        let ownedLanguage = currentActivity?.content.state.currentLanguage
+        let lastLanguage = lastPushedContent?.currentLanguage
+        let needsEnsure = Self.shouldEnsureAuthoritativeLanguageContent(
+            destinationLanguage: destination,
+            ownedContentLanguage: ownedLanguage,
+            lastPushedLanguage: lastLanguage
+        )
+        // Destination moved on or owned converged → drop quiet for the prior destination.
+        if Self.shouldClearLanguageEnsureQuietPending(
+            quietPendingDestination: languageEnsureQuietPendingDestination,
+            destinationLanguage: destination,
+            ownedOrSystemLanguage: ownedLanguage
+        ) {
+            languageEnsureQuietPendingDestination = nil
+        }
+        guard needsEnsure else {
+            languageEnsureQuietPendingDestination = nil
+            return
+        }
+
+        let requestEligible = Self.isInteractiveLiveActivityRequestEligible(
+            areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+            isApplicationActive: UIApplication.shared.applicationState == .active
+        )
+        guard Self.shouldRunLanguageContentEnsureSoftPushes(
+            needsLanguageEnsure: true,
+            destinationLanguage: destination,
+            quietPendingDestination: languageEnsureQuietPendingDestination,
+            isRequestEligible: requestEligible
+        ) else {
+            #if DEBUG
+            print(
+                "🔴 Live Activity language ensure quiet (destination=\(destination) " +
+                "owned=\(ownedLanguage ?? "nil"); wait for eligibility, become-active, or language mutation)"
+            )
+            #endif
+            return
+        }
+
+        // Destination change re-arms: clear any prior quiet so this cycle can enter quiet
+        // for the *new* destination if it also exhausts while ineligible.
+        if let quiet = languageEnsureQuietPendingDestination, quiet != destination {
+            languageEnsureQuietPendingDestination = nil
+        }
+
         for attempt in 1...Self.authoritativeLanguageContentEnsureMaxAttempts {
             guard currentActivity != nil else { return }
 
-            let destination = await SharedPlayerManager.shared.liveActivityLanguageCodeForContentPush()
-            let ownedLanguage = currentActivity?.content.state.currentLanguage
-            let lastLanguage = lastPushedContent?.currentLanguage
+            let loopDestination = await SharedPlayerManager.shared.liveActivityLanguageCodeForContentPush()
+            let loopOwned = currentActivity?.content.state.currentLanguage
+            let loopLast = lastPushedContent?.currentLanguage
 
             guard Self.shouldEnsureAuthoritativeLanguageContent(
-                destinationLanguage: destination,
-                ownedContentLanguage: ownedLanguage,
-                lastPushedLanguage: lastLanguage
+                destinationLanguage: loopDestination,
+                ownedContentLanguage: loopOwned,
+                lastPushedLanguage: loopLast
             ) else {
+                languageEnsureQuietPendingDestination = nil
                 return
             }
 
             #if DEBUG
             print(
-                "🔴 Live Activity reconciling language chrome → destination=\(destination) " +
-                "owned=\(ownedLanguage ?? "nil") lastPushed=\(lastLanguage ?? "nil") " +
+                "🔴 Live Activity reconciling language chrome → destination=\(loopDestination) " +
+                "owned=\(loopOwned ?? "nil") lastPushed=\(loopLast ?? "nil") " +
                 "attempt=\(attempt)/\(Self.authoritativeLanguageContentEnsureMaxAttempts)"
             )
             #endif
@@ -1268,13 +1515,42 @@ class RadioLiveActivityManager: ObservableObject {
 
             // Post-update verification: owned language is the surface honesty SSOT.
             let acceptedLanguage = currentActivity?.content.state.currentLanguage
-            if acceptedLanguage == destination {
+            if acceptedLanguage == loopDestination {
+                languageEnsureQuietPendingDestination = nil
                 return
             }
             if attempt < Self.authoritativeLanguageContentEnsureMaxAttempts {
                 await Task.yield()
                 try? await Task.sleep(for: .milliseconds(50))
             }
+        }
+
+        // Soft budget exhausted without acceptance.
+        let finalDestination = await SharedPlayerManager.shared.liveActivityLanguageCodeForContentPush()
+        let finalOwned = currentActivity?.content.state.currentLanguage
+        let stillMismatches = Self.shouldEnsureAuthoritativeLanguageContent(
+            destinationLanguage: finalDestination,
+            ownedContentLanguage: finalOwned,
+            lastPushedLanguage: lastPushedContent?.currentLanguage
+        )
+        let eligibleAfter = Self.isInteractiveLiveActivityRequestEligible(
+            areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+            isApplicationActive: UIApplication.shared.applicationState == .active
+        )
+        if let quietDestination = Self.quietPendingDestinationAfterLanguageEnsureExhaustion(
+            languageStillMismatches: stillMismatches,
+            isRequestEligible: eligibleAfter,
+            destinationLanguage: finalDestination
+        ) {
+            languageEnsureQuietPendingDestination = quietDestination
+            // Keep pending ensure so become-active owned-surface path re-arms recovery.
+            pendingInteractiveLiveActivityEnsure = true
+            #if DEBUG
+            print(
+                "🔴 Live Activity language ensure quiet pending after max attempts " +
+                "(destination=\(quietDestination); recreation remains eligibility-gated)"
+            )
+            #endif
         }
     }
 
@@ -1391,6 +1667,10 @@ class RadioLiveActivityManager: ObservableObject {
         #endif
         guard currentActivity != nil else { return }
 
+        // Re-arm language ensure quiet so unlock / become-active always gets a soft cycle.
+        // Quiet is for lock-stretch thrash only — not a permanent freeze across presentable cycles.
+        languageEnsureQuietPendingDestination = nil
+
         // Soft path first — never end the only card while ActivityKit may still accept updates.
         await ensureAuthoritativeLanguageContentIfNeeded()
         await ensureAuthoritativePlayingContentIfNeeded()
@@ -1500,6 +1780,10 @@ class RadioLiveActivityManager: ObservableObject {
     /// Callers should also invoke ``ensureAuthoritativeLanguageContentIfNeeded()`` after the
     /// optimistic ActivityKit path when this process owns an interactive activity.
     ///
+    /// **Language ensure re-arm:** A new destination clears ``languageEnsureQuietPendingDestination``
+    /// when it differs so the next ensure cycle gets one high-priority soft budget for the
+    /// new language (home-widget and Live Activity stream chips share this path).
+    ///
     /// Program metadata is cleared (same as the ActivityKit push) so a prior-stream title
     /// cannot suppress a language-only destination push.
     ///
@@ -1507,7 +1791,8 @@ class RadioLiveActivityManager: ObservableObject {
     ///   - language: Destination stream language code for language chrome.
     ///   - visualState: Optimistic control visual (typically `.prePlay` or `.userPaused`).
     /// - Postcondition: ``lastPushedContent`` holds `visualState`, `nil` stream metadata, and
-    ///   `language` (in-process only — not proof of system acceptance).
+    ///   `language` (in-process only — not proof of system acceptance). Quiet language ensure
+    ///   is cleared when the destination differs from the prior quiet destination.
     /// - Note: Does not call `Activity.update` — the intent path owns ActivityKit IPC.
     /// - SeeAlso: ``recordOptimisticToggleContent(visualState:)``, ``updateCurrentActivity()``,
     ///   ``ensureAuthoritativeLanguageContentIfNeeded()``,
@@ -1516,6 +1801,10 @@ class RadioLiveActivityManager: ObservableObject {
     @MainActor
     func recordOptimisticStreamSwitchContent(language: String, visualState: PlayerVisualState) {
         guard !language.isEmpty else { return }
+        // New language mutation re-arms soft language ensure for one high-priority cycle.
+        if languageEnsureQuietPendingDestination != language {
+            languageEnsureQuietPendingDestination = nil
+        }
         lastPushedContent = LutheranRadioLiveActivityAttributes.ContentState(
             visualState: visualState,
             streamMetadata: nil,
@@ -1672,6 +1961,7 @@ class RadioLiveActivityManager: ObservableObject {
             lastPushedContent = nil
             consecutiveStalledContentPushes = 0
             interactiveContentRecreationsAttempted = 0
+            languageEnsureQuietPendingDestination = nil
             if !isRecreatingLiveActivityAfterStalledContent {
                 pendingInteractiveLiveActivityEnsure = false
             }
@@ -1686,6 +1976,7 @@ class RadioLiveActivityManager: ObservableObject {
             lastPushedContent = nil
             consecutiveStalledContentPushes = 0
             interactiveContentRecreationsAttempted = 0
+            languageEnsureQuietPendingDestination = nil
             if !isRecreatingLiveActivityAfterStalledContent {
                 pendingInteractiveLiveActivityEnsure = false
             }
@@ -1702,6 +1993,7 @@ class RadioLiveActivityManager: ObservableObject {
         currentActivity = nil
         lastPushedContent = nil
         consecutiveStalledContentPushes = 0
+        languageEnsureQuietPendingDestination = nil
         // Do not reset interactiveContentRecreationsAttempted here when recreation is mid-flight
         // (end clears tracking before start). Recreation counter is owned by the recreation cycle.
         // Pending ensure survives an in-flight recreation end so a failed replacement start
@@ -2085,13 +2377,18 @@ class RadioLiveActivityManager: ObservableObject {
     ///
     /// Keeps ``lastPushedContent`` aligned with the Live Activity surface so
     /// ``updateCurrentActivity()`` can suppress redundant `Activity.update` IPC.
+    /// Clears language-ensure quiet pending so a real acceptance moment re-arms soft
+    /// reconcile if destination still lags (or confirms convergence when it matches).
     private func handleActivityContentUpdate(
         _ content: ActivityContent<LutheranRadioLiveActivityAttributes.ContentState>
     ) {
         lastPushedContent = content.state
-        // System advanced content: clear stalled streak + recreation budget.
+        // System advanced content: clear stalled streak + recreation budget + language quiet.
         consecutiveStalledContentPushes = 0
         interactiveContentRecreationsAttempted = 0
+        // Any contentUpdates yield is an ActivityKit acceptance moment — drop quiet so a
+        // subsequent ensure can re-evaluate (or stay a no-op if language already matches).
+        languageEnsureQuietPendingDestination = nil
         SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(content.state.visualState)
         SharedPlayerManager.persistLiveActivityLanguageMirror(content.state.currentLanguage)
     }
@@ -2107,6 +2404,7 @@ class RadioLiveActivityManager: ObservableObject {
             currentActivity = nil
             lastPushedContent = nil
             consecutiveStalledContentPushes = 0
+            languageEnsureQuietPendingDestination = nil
             if !isRecreatingLiveActivityAfterStalledContent {
                 interactiveContentRecreationsAttempted = 0
             }
@@ -2119,6 +2417,7 @@ class RadioLiveActivityManager: ObservableObject {
         currentActivity = nil
         lastPushedContent = nil
         consecutiveStalledContentPushes = 0
+        languageEnsureQuietPendingDestination = nil
         if !isRecreatingLiveActivityAfterStalledContent {
             interactiveContentRecreationsAttempted = 0
         }
@@ -2209,6 +2508,81 @@ class RadioLiveActivityManager: ObservableObject {
             ownedContentLanguage: ownedContentLanguage,
             lastPushedLanguage: lastPushedLanguage
         )
+    }
+
+    /// White-box seam: whether soft language ensure should run or stay quiet (no ActivityKit).
+    func _test_shouldRunLanguageContentEnsureSoftPushes(
+        needsLanguageEnsure: Bool,
+        destinationLanguage: String,
+        quietPendingDestination: String?,
+        isRequestEligible: Bool
+    ) -> Bool {
+        Self.shouldRunLanguageContentEnsureSoftPushes(
+            needsLanguageEnsure: needsLanguageEnsure,
+            destinationLanguage: destinationLanguage,
+            quietPendingDestination: quietPendingDestination,
+            isRequestEligible: isRequestEligible
+        )
+    }
+
+    /// White-box seam: quiet destination after soft budget exhaustion while ineligible.
+    func _test_quietPendingDestinationAfterLanguageEnsureExhaustion(
+        languageStillMismatches: Bool,
+        isRequestEligible: Bool,
+        destinationLanguage: String
+    ) -> String? {
+        Self.quietPendingDestinationAfterLanguageEnsureExhaustion(
+            languageStillMismatches: languageStillMismatches,
+            isRequestEligible: isRequestEligible,
+            destinationLanguage: destinationLanguage
+        )
+    }
+
+    /// White-box seam: language-only status push defer while quiet (no ActivityKit).
+    func _test_shouldDeferRedundantLanguagePushWhileQuiet(
+        candidateLanguage: String,
+        ownedContentLanguage: String,
+        ownedContentVisual: PlayerVisualState,
+        candidateVisual: PlayerVisualState,
+        quietPendingDestination: String?,
+        isRequestEligible: Bool
+    ) -> Bool {
+        Self.shouldDeferRedundantLanguagePushWhileQuiet(
+            candidateLanguage: candidateLanguage,
+            ownedContentLanguage: ownedContentLanguage,
+            ownedContentVisual: ownedContentVisual,
+            candidateVisual: candidateVisual,
+            quietPendingDestination: quietPendingDestination,
+            isRequestEligible: isRequestEligible
+        )
+    }
+
+    /// White-box seam: clear quiet after ownership / system acceptance / destination change.
+    func _test_shouldClearLanguageEnsureQuietPending(
+        quietPendingDestination: String?,
+        destinationLanguage: String,
+        ownedOrSystemLanguage: String?
+    ) -> Bool {
+        Self.shouldClearLanguageEnsureQuietPending(
+            quietPendingDestination: quietPendingDestination,
+            destinationLanguage: destinationLanguage,
+            ownedOrSystemLanguage: ownedOrSystemLanguage
+        )
+    }
+
+    /// White-box seam: read language ensure quiet destination (no ActivityKit).
+    func _test_languageEnsureQuietPendingDestinationValue() -> String? {
+        languageEnsureQuietPendingDestination
+    }
+
+    /// White-box seam: set language ensure quiet destination (no ActivityKit).
+    func _test_setLanguageEnsureQuietPendingDestination(_ value: String?) {
+        languageEnsureQuietPendingDestination = value
+    }
+
+    /// White-box seam: clear suppress memory between tests (singleton isolation).
+    func _test_clearLastPushedContent() {
+        lastPushedContent = nil
     }
 
     /// White-box seam for post-update suppress-memory policy (no ActivityKit).
