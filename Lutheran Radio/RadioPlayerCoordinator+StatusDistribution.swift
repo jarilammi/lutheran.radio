@@ -28,6 +28,7 @@
 //  - ``handleStatusChange(_:reasonKey:)`` — StreamingPlayerDelegate hop (via host)
 //  - ``updateUIForNoInternet()`` — airplane / path-loss chrome
 //  - ``updateNowPlayingInfo(title:)`` / ``saveStateForWidget()`` — thin SPM forwarders
+//    (`title:` re-enters ICY SSOT; prefer engine ``safeOnMetadataChange`` for live StreamTitle)
 //  - ``setIsSwitchingStream(_:)`` / ``syncMetadataToViewModel(_:)`` — VM bridge
 //  - ``safeUpdateStatusLabel(text:backgroundColor:textColor:isPermanentError:)``
 //
@@ -35,8 +36,11 @@
 //  - ``RadioPlayerChromeVisualResolver`` — engine status → chrome visual (unit-tested)
 //
 //  - SeeAlso: ``DirectStreamingPlayer/safeOnStatusChange``,
+//    ``DirectStreamingPlayer/safeOnMetadataChange(metadata:)``,
 //    ``SharedPlayerManager/setPlaying()``, ``SharedPlayerManager/currentVisualState``,
+//    ``SharedPlayerManager/didUpdateStreamMetadata(_:)``,
 //    RadioPlayerCoordinator.swift (isolation map),
+//    docs/Live-Activity-Stacking-and-Media-Surfaces.md (ICY single-owner path),
 //    CODING_AGENT.md (Single Source of Truth Principles).
 //
 
@@ -166,11 +170,21 @@ extension RadioPlayerCoordinator {
         // visualState update will cause the controls to show correct glyph.
     }
 
-    // Thin now-playing + widget save (duplicated from original thin helpers; identical behavior)
+    /// Thin Now Playing refresh (and optional ICY SSOT write) for host call sites.
+    ///
+    /// - Parameter title: When non-`nil`, re-enters ``SharedPlayerManager/didUpdateStreamMetadata(_:)``.
+    ///   **Live ICY must not use this** — the engine already owns that path via
+    ///   ``DirectStreamingPlayer/safeOnMetadataChange(metadata:)``. Prefer `title: nil` (or omit)
+    ///   to refresh system Now Playing from the existing stash after language/visual mutations.
+    /// - SeeAlso: ``SharedPlayerManager/updateNowPlayingInfo()``,
+    ///   ``SharedPlayerManager/didUpdateStreamMetadata(_:)``,
+    ///   ``DirectStreamingPlayer/safeOnMetadataChange(metadata:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     func updateNowPlayingInfo(title: String? = nil) {
         #if LUTHERAN_MAIN_APP
         Task {
             if let title {
+                // Escape hatch only — not the live StreamTitle path (engine SSOT).
                 await SharedPlayerManager.shared.didUpdateStreamMetadata(title)
             } else {
                 await SharedPlayerManager.shared.updateNowPlayingInfo()

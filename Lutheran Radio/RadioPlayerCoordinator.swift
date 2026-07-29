@@ -37,7 +37,7 @@
 //  - selectedStreamIndex + language selection / stream-switch (see +StreamSwitch)
 //  - Sleep-timer interaction window + deferred ICY metadata apply (see +SleepTimer; metadata
 //    registration here consults the interaction flag)
-//  - DirectStreamingPlayer.onMetadataChange registration (forwards to +StatusDistribution helpers)
+//  - DirectStreamingPlayer.onMetadataChange registration (in-app VM only; SPM owns ICY SSOT)
 //  - Status / chrome distribution (see +StatusDistribution; host only hops StreamingPlayerDelegate)
 //  - Cold-launch special tuning + stream-switch tuning delight (see +Tuning; host only invokes)
 //  VC / SceneDelegate only call thin public shims after lifecycle or Darwin notify.
@@ -86,9 +86,10 @@ import WidgetSurface
 /// SPM remains visual/intent SSOT; this domain only paints chrome (and may lead SPM by one frame
 /// during deferred ``setPlaying()``).
 ///
-/// **Metadata:** Registers `DirectStreamingPlayer.onMetadataChange` in ``wireAndInitialSetup()`` and
-/// consults the sleep-timer interaction window (owned by +SleepTimer) that defers Now Playing
-/// title apply during modal settle. Metadata/NP apply helpers live in +StatusDistribution.
+/// **Metadata:** Registers `DirectStreamingPlayer.onMetadataChange` in ``wireAndInitialSetup()`` for
+/// **in-app ViewModel only**. Live ICY StreamTitle SSOT is ``SharedPlayerManager/didUpdateStreamMetadata(_:)``
+/// via ``DirectStreamingPlayer/safeOnMetadataChange`` — the coordinator must not re-enter that path.
+/// Sleep-timer interaction (owned by +SleepTimer) defers only VM chrome re-apply during modal settle.
 ///
 /// **Special tuning:** Production cold-launch clip is ``playSpecialTuningSound(completion:)``
 /// (implementation in `+Tuning.swift`) — session/clip start via
@@ -278,7 +279,16 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
         // Sleep-timer VM closures + SleepTimerNotification observer (+SleepTimer domain).
         wireSleepTimerUIGlue()
 
-        // ICY metadata → VM + Now Playing (single owner; sleep interaction defers title apply).
+        // ICY metadata → in-app ViewModel only.
+        //
+        // SharedPlayerManager already owns the program-metadata SSOT via
+        // ``DirectStreamingPlayer/safeOnMetadataChange`` → ``didUpdateStreamMetadata(_:)``
+        // (emit, Live Activity, Now Playing, widget snapshot). This closure must not
+        // re-enter that path — dual delivery caused duplicate `.metadataDidUpdate` and
+        // double surface pushes on every live StreamTitle.
+        //
+        // Sleep-timer interaction defers only in-app chrome re-apply (VM); SPM surfaces
+        // still update immediately through the engine SSOT path.
         // Status chrome still arrives via StreamingPlayerDelegate → handleStatusChange.
         streamingPlayer.onMetadataChange = { [weak self] metadata in
             guard let self else {
@@ -290,19 +300,16 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 if let metadata {
-                    self.syncMetadataToViewModel(metadata)
                     if self.isSleepTimerInteractionActive {
+                        // Defer in-app metadata chrome while the sleep dialog settles.
                         self.pendingMetadataVisualRefresh = metadata
                     } else {
-                        self.updateNowPlayingInfo(title: metadata)
+                        self.syncMetadataToViewModel(metadata)
                     }
                 } else {
+                    self.pendingMetadataVisualRefresh = nil
                     self.syncMetadataToViewModel(nil)
-                    if !self.isSleepTimerInteractionActive {
-                        self.updateNowPlayingInfo()
-                    }
                 }
-                self.saveStateForWidget()
             }
         }
 

@@ -401,18 +401,29 @@ extension SharedPlayerManager {
     ///   `StreamProgramMetadata.from(rawICYMetadata:)`, ``persistStreamMetadataForWidgets()``,
     ///   CODING_AGENT.md, docs/Event-Driven-Refactor-Roadmap.md (Tier 1 metadata emission).
     ///
-    /// AGENT NOTE: Emission after mutation. This is the SSOT update path for program
-    /// metadata. Clears that bypass this (e.g. language switch stash) should consider
-    /// emitting nil explicitly if observers require it.
+    /// AGENT NOTE: Emission after mutation. This is the **only** SSOT update path for live
+    /// program metadata. Engine ICY arrives via ``DirectStreamingPlayer/safeOnMetadataChange``;
+    /// host coordinators must not re-call this with the same payload (dual emission). Catalog
+    /// stream titles must never enter here — use presentation fallbacks until real ICY arrives.
+    /// Clears that bypass this (e.g. language switch stash via `_clearIcyMetadataStash`) emit
+    /// nil explicitly when observers require it.
+    ///
+    /// - Important: Identical raw ICY is a no-op (no second `.metadataDidUpdate`, no second
+    ///   surface push) so a miswired dual caller cannot double-fire ActivityKit / Now Playing.
     func didUpdateStreamMetadata(_ metadata: String?) async {
         guard !isRunningInWidget() else { return }
         guard !WidgetRefreshManager.isSessionTeardownInProgress else { return }
 
+        let parsed = StreamProgramMetadata.from(rawICYMetadata: metadata)
+        // Idempotent: same raw stash + same parsed result → skip emit / LA / NP / widget write.
+        if nowPlayingStreamMetadata == metadata && currentStreamMetadata == parsed {
+            return
+        }
+
         nowPlayingStreamMetadata = metadata
-        currentStreamMetadata = StreamProgramMetadata.from(rawICYMetadata: metadata)
+        currentStreamMetadata = parsed
 
         // Emission *after* the state mutation. Authoritative site for metadata updates.
-        // Additive: all existing LA/NowPlaying/widget paths continue unchanged.
         emit(.metadataDidUpdate(currentStreamMetadata))
 
         // Event-driven LA update (decoupled in-memory path).

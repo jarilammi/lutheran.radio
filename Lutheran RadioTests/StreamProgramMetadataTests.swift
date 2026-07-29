@@ -100,6 +100,31 @@ final class StreamProgramMetadataTests: XCTestCase {
         XCTAssertNil(StreamProgramMetadata.from(rawICYMetadata: "   "))
     }
 
+    /// Documents why catalog ``Stream/title`` ("Station - Language") must never enter the
+    /// live ICY SSOT: dash split treats the language label as `programTitle`.
+    ///
+    /// Presentation must use station/language fallbacks until a real StreamTitle arrives.
+    ///
+    /// - SeeAlso: ``DirectStreamingPlayer/selectedStream``,
+    ///   ``SharedPlayerManager/didUpdateStreamMetadata(_:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    func testCatalogShapedStationDashLanguageParsesLanguageAsProgramTitle() {
+        let station = String(localized: "lutheran_radio_title", table: "Localizable")
+        let language = String(localized: "language_german", table: "Localizable")
+        let catalogShaped = "\(station) - \(language)"
+        let metadata = StreamProgramMetadata.from(rawICYMetadata: catalogShaped)
+        XCTAssertEqual(
+            metadata?.speaker,
+            station,
+            "Catalog title dash-split promotes station name to speaker"
+        )
+        XCTAssertEqual(
+            metadata?.programTitle,
+            language,
+            "Catalog title dash-split promotes language label to programTitle — must not be fed as StreamTitle"
+        )
+    }
+
     func testHasDisplayableContentRequiresNonEmptyField() {
         XCTAssertTrue(
             StreamProgramMetadata(programTitle: "Title", speaker: nil).hasDisplayableContent

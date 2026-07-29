@@ -555,12 +555,27 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     /// ``prepareSecuredPlayerItem(for:)`` so stop / item / generation invariants stay coherent.
     /// Unit tests with `@testable import` may assign for isolation when needed.
     ///
+    /// **ICY metadata invariant:** Catalog `title` / `language` strings are presentation labels
+    /// only. They must never be pushed into the live StreamTitle SSOT
+    /// (``SharedPlayerManager/didUpdateStreamMetadata(_:)``). On language-code change this
+    /// property clears prior-stream ICY so widgets, Live Activity, and Now Playing use
+    /// station/language presentation fallbacks until a real ICY `StreamTitle` arrives.
+    ///
     /// - SeeAlso: DirectStreamingPlayer+PlaybackAttach.swift, ``StreamChoicePreparation``,
+    ///   ``safeOnMetadataChange(metadata:)``, ``SharedPlayerManager/didUpdateStreamMetadata(_:)``,
+    ///   ``StreamProgramMetadata/nowPlayingDisplayStrings(fromParsed:rawFallback:stationName:languageName:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
     ///   CODING_AGENT.md (engine vs SharedPlayerManager ownership).
     var selectedStream: Stream {
         didSet {
+            // Never feed catalog display titles into the ICY SSOT (they parse as fake program
+            // titles such as localized language names after the "Station - Language" dash split).
+            guard oldValue.languageCode != selectedStream.languageCode else { return }
+            currentMetadata = nil
+            hasReceivedLiveStreamMetadata = false
+            // Clear only when a host is wired; cold init assigns before delegate attach.
             if delegate != nil {
-                safeOnMetadataChange(metadata: selectedStream.title)
+                safeOnMetadataChange(metadata: nil)
             }
         }
     }
@@ -660,6 +675,9 @@ final class DirectStreamingPlayer: NSObject, @unchecked Sendable {
     var loadingTimeoutWorkItem: DispatchWorkItem?
     
     var onStatusChange: ((Bool, String) -> Void)?
+    /// Host presentation hook after ICY delivery (in-app ViewModel). Not the metadata SSOT —
+    /// ``safeOnMetadataChange(metadata:)`` already pushes ``SharedPlayerManager/didUpdateStreamMetadata(_:)``.
+    /// Closures must not re-enter that path with the same payload.
     var onMetadataChange: ((String?) -> Void)?
     internal var currentMetadata: String?
 

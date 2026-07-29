@@ -421,6 +421,67 @@ final class SharedPlayerManagerMediaSurfaceTests: XCTestCase {
         }
     }
 
+    /// Protects single-owner ICY SSOT: ``didUpdateStreamMetadata(_:)`` is idempotent for an
+    /// identical raw payload so dual callers cannot double-emit `.metadataDidUpdate` or re-push
+    /// Live Activity / Now Playing / widget snapshot on every StreamTitle.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/didUpdateStreamMetadata(_:)``,
+    ///   ``DirectStreamingPlayer/safeOnMetadataChange(metadata:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
+    ///   CODING_AGENT.md (Test Execution Patience and Fast, Reliable Test Patterns).
+    func testDidUpdateStreamMetadataIdenticalRawIsIdempotent() async {
+        let icyTitle = "Guest Speaker - The Good Shepherd"
+        await manager.didUpdateStreamMetadata(icyTitle)
+
+        let m = self.manager
+        let liveEmissions = await collectSeamEvents(minimumCount: 1, timeout: 3.0) {
+            await m.didUpdateStreamMetadata(icyTitle)
+            // Brief settle so a true second emission would be collected if present.
+            try? await Task.sleep(for: .milliseconds(200))
+        }
+
+        XCTAssertTrue(
+            liveEmissions.isEmpty,
+            "Identical raw ICY must not re-emit; got: \(liveEmissions)"
+        )
+
+        let state = await manager.currentState
+        XCTAssertEqual(
+            state.streamMetadata,
+            StreamProgramMetadata.from(rawICYMetadata: icyTitle),
+            "Parsed metadata must remain after the no-op second apply"
+        )
+    }
+
+    /// Protects the catalog-title hygiene invariant: language-label strings must not stick as
+    /// program titles when the SSOT is cleared (presentation uses station/language fallbacks).
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/didUpdateStreamMetadata(_:)``,
+    ///   ``StreamProgramMetadata/nowPlayingDisplayStrings(fromParsed:rawFallback:stationName:languageName:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    func testDidUpdateStreamMetadataNilClearsCatalogShapedPollution() async {
+        let station = String(localized: "lutheran_radio_title", table: "Localizable")
+        let language = String(localized: "language_estonian", table: "Localizable")
+        let catalogShaped = "\(station) - \(language)"
+
+        await manager.didUpdateStreamMetadata(catalogShaped)
+        var state = await manager.currentState
+        XCTAssertEqual(state.streamMetadata?.programTitle, language)
+
+        await manager.didUpdateStreamMetadata(nil)
+        state = await manager.currentState
+        XCTAssertNil(state.streamMetadata)
+
+        let display = StreamProgramMetadata.nowPlayingDisplayStrings(
+            fromParsed: nil,
+            rawFallback: nil,
+            stationName: station,
+            languageName: language
+        )
+        XCTAssertEqual(display.title, station)
+        XCTAssertEqual(display.artist, "\(language) • \(station)")
+    }
+
     /// Protects Tier 4 ``refreshAllMediaSurfaces(liveActivity:widgetRefresh:widgetRefreshImmediate:)``
     /// coordination ordering: Now Playing update precedes widget refresh; Live Activity IPC is
     /// skipped under UITestMode without blocking the NP path.

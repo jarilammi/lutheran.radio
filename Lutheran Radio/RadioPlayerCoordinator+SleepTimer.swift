@@ -8,12 +8,14 @@
 //
 //  Owns: SwiftUI dialog settle windows, preset/cancel handlers, local countdown
 //  Task + VM remaining sync, SleepTimerNotification observer, interaction window
-//  that defers Now Playing title apply during modal settle, and the deferred
-//  metadata apply on finish.
+//  that defers **in-app ViewModel** metadata chrome during modal settle, and the
+//  deferred VM re-apply on finish.
 //
 //  Does not own: timer duration authority or elapsed pause semantics
 //  (SharedPlayerManager.setSleepTimer / cancelSleepTimer / applySleepTimerElapsedPause),
-//  dialog presentation (PlaybackControlsView `.confirmationDialog`), privacy clear
+//  live ICY SSOT (``SharedPlayerManager/didUpdateStreamMetadata`` via engine
+//  ``safeOnMetadataChange`` — never re-entered from this domain), dialog presentation
+//  (PlaybackControlsView `.confirmationDialog`), privacy clear
 //  (`confirmAndClearLocalState` remains on the main coordinator file), or App Group keys.
 //
 //  Public/entry surfaces on the same type: wireSleepTimerUIGlue() from
@@ -23,7 +25,10 @@
 //  - SeeAlso: ``SharedPlayerManager/setSleepTimer(duration:)``,
 //    ``SharedPlayerManager/cancelSleepTimer(restorePlaybackIntent:notifyStateChange:)``,
 //    ``SharedPlayerManager/applySleepTimerElapsedPause()``,
+//    ``SharedPlayerManager/didUpdateStreamMetadata(_:)``,
+//    ``DirectStreamingPlayer/safeOnMetadataChange(metadata:)``,
 //    ``SleepTimerNotification``, ``PlayerViewModel``, `PlaybackControlsView`,
+//    docs/Live-Activity-Stacking-and-Media-Surfaces.md,
 //    CODING_AGENT.md (Single Source of Truth Principles).
 //
 
@@ -128,8 +133,9 @@ extension RadioPlayerCoordinator {
         isSleepTimerInteractionActive = false
         guard applyDeferredVisuals, let metadata = pendingMetadataVisualRefresh else { return }
         pendingMetadataVisualRefresh = nil
-        updateNowPlayingInfo(title: metadata)
-        // SwiftUI photo logic reacts to VM metadata change.
+        // In-app VM only: SPM already applied this ICY via ``safeOnMetadataChange``.
+        // Do not re-enter ``didUpdateStreamMetadata`` (would dual-emit / re-push surfaces).
+        syncMetadataToViewModel(metadata)
     }
 
     /// Receives broadcasts from SleepTimerNotification when a sleep timer is scheduled,

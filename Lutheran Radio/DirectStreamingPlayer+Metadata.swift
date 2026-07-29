@@ -9,11 +9,18 @@
 //  Behavior-preserving domain split from DirectStreamingPlayer.swift.
 //  DirectStreamingPlayer remains the public façade; this file owns one domain.
 //
+//  Live StreamTitle is delivered only through ``safeOnMetadataChange(metadata:)`` →
+//  ``SharedPlayerManager/didUpdateStreamMetadata(_:)``. Catalog ``Stream/title`` is never
+//  a StreamTitle substitute — presentation falls back to station/language until real ICY.
+//
 //  AGENT NOTE: Members used across files are `internal` (Swift `private` is
 //  file-scoped). Prefer this domain file over re-implementing attach / recovery
 //  / catalog logic in call sites.
 //
 //  - SeeAlso: DirectStreamingPlayer.swift,
+//    ``DirectStreamingPlayer/safeOnMetadataChange(metadata:)``,
+//    ``SharedPlayerManager/didUpdateStreamMetadata(_:)``,
+//    docs/Live-Activity-Stacking-and-Media-Surfaces.md,
 //    CODING_AGENT.md (Single Source of Truth Principles).
 //
 

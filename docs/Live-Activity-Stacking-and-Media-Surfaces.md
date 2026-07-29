@@ -207,6 +207,28 @@ The **dual-card layout** remains; **metadata mismatch** between cards is a bug. 
 
 ---
 
+## ICY StreamTitle Single-Owner Path
+
+Live program metadata has **one** mutation owner on the main app:
+
+| Step | Owner | Role |
+|------|--------|------|
+| Extract `StreamTitle` from `AVPlayerItemMetadataOutput` | ``DirectStreamingPlayer`` (`+Metadata`) | Real ICY only |
+| Deliver | ``safeOnMetadataChange(metadata:)`` | Pushes SSOT, then host presentation hook |
+| Mutate + emit + surfaces | ``SharedPlayerManager/didUpdateStreamMetadata(_:)`` | Sole write of raw/parsed stash; emits `.metadataDidUpdate`; LA → Now Playing → widget snapshot persist |
+| In-app chrome | `RadioPlayerCoordinator` `onMetadataChange` | **ViewModel only** (sleep-timer may defer VM apply). Must not re-enter ``didUpdateStreamMetadata`` |
+
+**Invariants:**
+
+1. **No dual delivery** — coordinator must not call ``didUpdateStreamMetadata`` / `updateNowPlayingInfo(title:)` for live ICY; that re-emits and re-pushes surfaces.
+2. **Idempotent SSOT** — identical raw ICY is a no-op inside ``didUpdateStreamMetadata`` (defense in depth).
+3. **No catalog titles as StreamTitle** — ``Stream/title`` / ``Stream/language`` are presentation labels. Feeding catalog `"Station - Language"` into the parser yields `programTitle` = language name. On language-code change, ``selectedStream`` clears prior ICY (`nil`) so surfaces use station/language fallbacks until real ICY arrives.
+4. **Clear paths** remain ``_clearIcyMetadataStash()`` / ``clearSoftPauseMetadataStashForLanguageChange()`` for paused switches and language hygiene.
+
+**SeeAlso:** ``DirectStreamingPlayer/selectedStream``, ``DirectStreamingPlayer/safeOnMetadataChange(metadata:)``, ``SharedPlayerManager/didUpdateStreamMetadata(_:)``, `StreamProgramMetadataTests`, `SharedPlayerManagerMediaSurfaceTests`.
+
+---
+
 ## User Pause During Connect / First-Play Attach
 
 When the user pauses (system Now Playing, Live Activity, headset, or in-app) while security validation or secured item attach is still in flight:

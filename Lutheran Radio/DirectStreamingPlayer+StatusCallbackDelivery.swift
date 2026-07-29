@@ -227,10 +227,21 @@ extension DirectStreamingPlayer {
         return true
     }
 
-    /// Delivers ICY / stream title metadata to SharedPlayerManager and the optional metadata closure.
+    /// Delivers ICY / stream title metadata to the SharedPlayerManager SSOT, then notifies the
+    /// optional host presentation closure.
     ///
-    /// - Parameter metadata: Stream title text, or `nil` to clear.
-    /// - SeeAlso: DirectStreamingPlayer+Metadata.swift, ``onMetadataChange``
+    /// **Single metadata owner:** ``SharedPlayerManager/didUpdateStreamMetadata(_:)`` is the only
+    /// path that mutates raw/parsed program metadata, emits ``PlayerEvent/metadataDidUpdate``,
+    /// and pushes Live Activity / Now Playing / widget snapshot. The ``onMetadataChange``
+    /// closure is presentation-only (in-app ViewModel, sleep-timer UI deferral) and must not
+    /// re-enter ``didUpdateStreamMetadata(_:)`` or invent catalog titles as StreamTitle.
+    ///
+    /// - Parameter metadata: Live ICY `StreamTitle` text, or `nil` to clear prior-stream metadata.
+    /// - Important: Call only with real ICY payloads or explicit clear (`nil`). Never pass
+    ///   ``Stream/title`` or ``Stream/language`` catalog labels.
+    /// - SeeAlso: DirectStreamingPlayer+Metadata.swift, ``onMetadataChange``,
+    ///   ``SharedPlayerManager/didUpdateStreamMetadata(_:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (ICY single-owner path).
     func safeOnMetadataChange(metadata: String?) {
         #if LUTHERAN_MAIN_APP
         Task {
