@@ -838,4 +838,300 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
         )
         XCTAssertEqual(refreshExecutedCount(), 2)
     }
+
+    // MARK: - Identical non-playing coalesce (attach / dual-path storm)
+
+    /// Pure policy: identical connecting and sticky visuals coalesce; playing and language/error
+    /// mismatches never coalesce.
+    ///
+    /// Protects attach-path storm collapse without requiring WidgetCenter IPC.
+    ///
+    /// - SeeAlso: ``WidgetRefreshManager/shouldCoalesceIdenticalNonPlayingRefresh(requestedVisual:lastKnownVisual:languageUnchanged:errorFlagsMatch:hasError:)``.
+    func testShouldCoalesceIdenticalNonPlayingRefreshPolicy() {
+        let coalesceCases: [PlayerVisualState] = [
+            .prePlay, .cleared, .userPaused, .thermalPaused, .securityLocked
+        ]
+        for visual in coalesceCases {
+            XCTAssertTrue(
+                WidgetRefreshManager.shouldCoalesceIdenticalNonPlayingRefresh(
+                    requestedVisual: visual,
+                    lastKnownVisual: visual,
+                    languageUnchanged: true,
+                    errorFlagsMatch: true,
+                    hasError: false
+                ),
+                "Identical \(visual) must coalesce when language and error flags match"
+            )
+        }
+
+        XCTAssertFalse(
+            WidgetRefreshManager.shouldCoalesceIdenticalNonPlayingRefresh(
+                requestedVisual: .playing,
+                lastKnownVisual: .playing,
+                languageUnchanged: true,
+                errorFlagsMatch: true,
+                hasError: false
+            ),
+            "Playing is rate-limited by adaptive debounce, not identity skip"
+        )
+        XCTAssertFalse(
+            WidgetRefreshManager.shouldCoalesceIdenticalNonPlayingRefresh(
+                requestedVisual: .prePlay,
+                lastKnownVisual: nil,
+                languageUnchanged: true,
+                errorFlagsMatch: true,
+                hasError: false
+            ),
+            "First connecting refresh must execute when lastKnown is absent"
+        )
+        XCTAssertFalse(
+            WidgetRefreshManager.shouldCoalesceIdenticalNonPlayingRefresh(
+                requestedVisual: .prePlay,
+                lastKnownVisual: .prePlay,
+                languageUnchanged: false,
+                errorFlagsMatch: true,
+                hasError: false
+            ),
+            "Language change must never identity-coalesce"
+        )
+        XCTAssertFalse(
+            WidgetRefreshManager.shouldCoalesceIdenticalNonPlayingRefresh(
+                requestedVisual: .userPaused,
+                lastKnownVisual: .userPaused,
+                languageUnchanged: true,
+                errorFlagsMatch: true,
+                hasError: true
+            ),
+            "Permanent-error chrome must not be identity-coalesced away"
+        )
+        XCTAssertFalse(
+            WidgetRefreshManager.shouldCoalesceIdenticalNonPlayingRefresh(
+                requestedVisual: .prePlay,
+                lastKnownVisual: .userPaused,
+                languageUnchanged: true,
+                errorFlagsMatch: true,
+                hasError: false
+            ),
+            "Visual transition must not identity-coalesce"
+        )
+    }
+
+    /// Pure policy: delayed intermediate chrome regresses against a more advanced snapshot;
+    /// matching visuals never regress.
+    ///
+    /// Stale debounced discards are intentional — timeline reload cannot invent snapshot fields.
+    ///
+    /// - SeeAlso: ``WidgetRefreshManager/refreshWouldRegressPersistedSnapshot(executing:persisted:)``.
+    func testRefreshWouldRegressPersistedSnapshotPolicy() {
+        XCTAssertFalse(
+            WidgetRefreshManager.refreshWouldRegressPersistedSnapshot(
+                executing: .playing,
+                persisted: .playing
+            )
+        )
+        XCTAssertTrue(
+            WidgetRefreshManager.refreshWouldRegressPersistedSnapshot(
+                executing: .prePlay,
+                persisted: .playing
+            ),
+            "Connecting chrome after play accepted is stale"
+        )
+        XCTAssertTrue(
+            WidgetRefreshManager.refreshWouldRegressPersistedSnapshot(
+                executing: .userPaused,
+                persisted: .playing
+            ),
+            "Debounced pause after soft-resume to playing is stale"
+        )
+        XCTAssertTrue(
+            WidgetRefreshManager.refreshWouldRegressPersistedSnapshot(
+                executing: .prePlay,
+                persisted: .userPaused
+            ),
+            "Connecting chrome after sticky pause is stale"
+        )
+        XCTAssertTrue(
+            WidgetRefreshManager.refreshWouldRegressPersistedSnapshot(
+                executing: .playing,
+                persisted: .userPaused
+            ),
+            "Playing must not reverse sticky pause via delayed refresh"
+        )
+        XCTAssertFalse(
+            WidgetRefreshManager.refreshWouldRegressPersistedSnapshot(
+                executing: .playing,
+                persisted: .prePlay
+            ),
+            "Playing may advance connecting chrome"
+        )
+        XCTAssertFalse(
+            WidgetRefreshManager.refreshWouldRegressPersistedSnapshot(
+                executing: .userPaused,
+                persisted: .prePlay
+            ),
+            "Sticky pause may advance connecting chrome"
+        )
+    }
+
+    /// Verifies that repeated immediate ``PlayerVisualState/prePlay`` refreshes (event-path
+    /// urgency) collapse after the first execution so attach storms do not spam timelines.
+    ///
+    /// - SeeAlso: ``WidgetRefreshManager/shouldCoalesceIdenticalNonPlayingRefresh(requestedVisual:lastKnownVisual:languageUnchanged:errorFlagsMatch:hasError:)``,
+    ///   ``refreshUsesImmediateDelivery(for:hasError:)``.
+    func testRefreshIfNeededCoalescesIdenticalImmediatePrePlayAttachStorm() async {
+        enableDebounceObservation()
+
+        refreshManager.refreshIfNeeded(
+            visualState: .prePlay,
+            currentLanguage: "de",
+            hasError: false,
+            immediate: true,
+            trigger: .playerEvent
+        )
+
+        let firstExecuted = await waitForDebounceOutcome(.refreshExecuted, timeout: 1.0)
+        XCTAssertTrue(
+            firstExecuted,
+            "First immediate prePlay must execute (factory-reset / attach urgency)"
+        )
+        XCTAssertEqual(refreshExecutedCount(), 1)
+
+        // Attach-path storm: many identical immediate prePlay callbacks.
+        for _ in 0..<5 {
+            refreshManager.refreshIfNeeded(
+                visualState: .prePlay,
+                currentLanguage: "de",
+                hasError: false,
+                immediate: true,
+                trigger: .playerEvent
+            )
+        }
+
+        let log = WidgetRefreshManager._test_debounceOutcomeLog()
+        XCTAssertEqual(
+            refreshExecutedCount(),
+            1,
+            "Identical immediate prePlay must not re-execute; log: \(log)"
+        )
+        XCTAssertEqual(
+            log.filter { $0 == .coalescedIdenticalNonPlaying }.count,
+            5,
+            "Each storm callback must record identity coalesce; log: \(log)"
+        )
+    }
+
+    /// Verifies sticky pause dual-path duplicates collapse after the first execution.
+    ///
+    /// Dual-path architecture (event + teardown hygiene) remains; only identical reloads drop.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/performPostStopWidgetHygiene()``,
+    ///   ``WidgetRefreshTrigger``.
+    func testRefreshIfNeededCoalescesIdenticalStickyUserPausedDualPath() async {
+        enableDebounceObservation()
+
+        refreshManager.refreshIfNeeded(
+            visualState: .userPaused,
+            currentLanguage: "fi",
+            hasError: false,
+            immediate: true,
+            trigger: .playerEvent
+        )
+        let firstExecuted = await waitForDebounceOutcome(.refreshExecuted, timeout: 1.0)
+        XCTAssertTrue(firstExecuted)
+
+        refreshManager.refreshIfNeeded(
+            visualState: .userPaused,
+            currentLanguage: "fi",
+            hasError: false,
+            immediate: true,
+            trigger: .teardown
+        )
+
+        let log = WidgetRefreshManager._test_debounceOutcomeLog()
+        XCTAssertEqual(refreshExecutedCount(), 1, "Second sticky pause must not reload; log: \(log)")
+        XCTAssertTrue(
+            log.contains(.coalescedIdenticalNonPlaying),
+            "Post-stop dual-path duplicate must identity-coalesce; log: \(log)"
+        )
+    }
+
+    /// Verifies language change still forces a reload even when visual is identical connecting chrome.
+    ///
+    /// Snapshot language is the refresh-derivation SSOT under privacy re-resolution — seed it so
+    /// caller hints are not collapsed to a hard-default when the engine stream is unset.
+    func testRefreshIfNeededDoesNotCoalesceIdenticalPrePlayWhenLanguageChanges() async {
+        SharedPlayerManager.persistWidgetSnapshot(
+            visualState: .prePlay,
+            language: "sv",
+            hasError: false
+        )
+        enableDebounceObservation()
+
+        refreshManager.refreshIfNeeded(
+            visualState: .prePlay,
+            currentLanguage: "sv",
+            hasError: false,
+            immediate: true,
+            trigger: .playerEvent
+        )
+        let firstExecuted = await waitForDebounceOutcome(.refreshExecuted, timeout: 1.0)
+        XCTAssertTrue(firstExecuted)
+        XCTAssertEqual(refreshExecutedCount(), 1)
+        XCTAssertEqual(refreshManager.lastKnownState?.currentLanguage, "sv")
+
+        SharedPlayerManager.persistWidgetSnapshot(
+            visualState: .prePlay,
+            language: "de",
+            hasError: false
+        )
+        refreshManager.refreshIfNeeded(
+            visualState: .prePlay,
+            currentLanguage: "de",
+            hasError: false,
+            immediate: true,
+            trigger: .playerEvent
+        )
+        let secondExecuted = await waitForRefreshExecutedCount(atLeast: 2, timeout: 1.0)
+        XCTAssertTrue(
+            secondExecuted,
+            "Language change must force a second reload; log: \(WidgetRefreshManager._test_debounceOutcomeLog())"
+        )
+        XCTAssertFalse(
+            WidgetRefreshManager._test_debounceOutcomeLog().contains(.coalescedIdenticalNonPlaying),
+            "Language urgency must not be identity-coalesced"
+        )
+        XCTAssertEqual(refreshManager.lastKnownState?.currentLanguage, "de")
+    }
+
+    /// Verifies non-immediate identical prePlay does not re-schedule deferral after lastKnown matches.
+    func testRefreshIfNeededSkipsPrePlayDeferralWhenLastKnownAlreadyMatches() async {
+        enableDebounceObservation()
+
+        refreshManager.refreshIfNeeded(
+            visualState: .prePlay,
+            currentLanguage: "en",
+            hasError: false,
+            immediate: false
+        )
+        let executed = await waitForDebounceOutcome(.refreshExecuted, timeout: 1.0)
+        XCTAssertTrue(executed)
+        XCTAssertEqual(refreshExecutedCount(), 1)
+
+        WidgetRefreshManager._test_clearDebounceOutcomeLog()
+
+        refreshManager.refreshIfNeeded(
+            visualState: .prePlay,
+            currentLanguage: "en",
+            hasError: false,
+            immediate: false
+        )
+
+        let log = WidgetRefreshManager._test_debounceOutcomeLog()
+        XCTAssertEqual(
+            log,
+            [.coalescedIdenticalNonPlaying],
+            "Second non-immediate prePlay must identity-coalesce without re-deferral; log: \(log)"
+        )
+        XCTAssertEqual(refreshExecutedCount(), 0)
+    }
 }

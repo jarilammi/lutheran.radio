@@ -40,7 +40,9 @@
 // - Respects the privacy gate `hasActiveLutheranWidgets` (via
 //   `WidgetRefreshManager` + `SharedPlayerManager`) to suppress writes when no
 //   Lutheran widgets are installed.
-// - Coalesces `.prePlay` → `.playing` and dedupes sticky states.
+// - Coalesces `.prePlay` → `.playing` and dedupes **identical** non-playing chrome
+//   (connecting `.prePlay`/`.cleared` + sticky pause/lock) so attach-path and dual-path
+//   storms do not re-issue `reloadTimelines` for unchanged language/visual.
 // - Main-app mutation-path reloads are driven by the `PlayerEvent` observer;
 //   imperative callers remain for lifecycle, teardown, extension optimistic,
 //   and optional media-surface coordination only (non-forcing dual path).
@@ -55,6 +57,7 @@
 //   & Comment Standards),
 //   docs/Event-Driven-Refactor-Roadmap.md (Tier 2 consumers + dual-path inventory),
 //   docs/Widget-Functionality-Roadmap.md (refresh inventory),
+//   docs/Live-Activity-Stacking-and-Media-Surfaces.md (widget refresh quiet path),
 //   <doc:Architecture>, README.md.
 
 import Foundation
@@ -437,6 +440,25 @@ final class WidgetRefreshManager: @unchecked Sendable {
             return
         }
         
+        // Identical connecting / sticky chrome: skip further reloads (attach storms + dual-path).
+        // Event path uses immediate:true for `.prePlay` (factory-reset / teardown urgency); without
+        // this gate every attach status callback re-issues `reloadTimelines` for unchanged chrome.
+        // Language already matched above; first transition into this visual still executes once.
+        if let lastState = lastKnownState,
+           Self.shouldCoalesceIdenticalNonPlayingRefresh(
+               requestedVisual: newState.visualState,
+               lastKnownVisual: lastState.visualState,
+               languageUnchanged: lastState.currentLanguage == newState.currentLanguage,
+               errorFlagsMatch: lastState.hasError == newState.hasError,
+               hasError: hasError
+           ) {
+            #if DEBUG
+            print("[WidgetRefreshManager] Widget refresh coalesced: identical \(newState.debugVisualStateLabel) unchanged — lang: \(newState.currentLanguage)")
+            recordDebounceOutcome(.coalescedIdenticalNonPlaying)
+            #endif
+            return
+        }
+        
         // Errors and non-playing visual transitions supersede a deferred .prePlay refresh.
         if hasError {
             cancelCoalescedPrePlayRefresh()
@@ -473,27 +495,13 @@ final class WidgetRefreshManager: @unchecked Sendable {
         // (.cleared is rare for widgets because clear wipes snapshot + forces hasActive false, but
         // keep symmetric so in-process main-app driven paths behave consistently.)
         // `immediate: true` bypasses deferral for session teardown follow-up and termination hygiene.
+        // Identical non-playing coalesce above already skipped when lastKnown matches.
         if !immediate, !hasError, newState.visualState == .prePlay || newState.visualState == .cleared {
             #if DEBUG
             print("[WidgetRefreshManager] Widget refresh deferred: awaiting possible .playing follow-up — lang: \(newState.currentLanguage)")
             recordDebounceOutcome(.scheduledPrePlayDeferral)
             #endif
             scheduleCoalescedPrePlayRefresh(for: newState)
-            return
-        }
-        
-        // Coalesce duplicate immediate sticky-pause refreshes (KVO bursts, widget + app paths).
-        if immediate,
-           !hasError,
-           newState.visualState.mustSuppressResurrection,
-           let lastState = lastKnownState,
-           lastState.visualState == newState.visualState,
-           lastState.currentLanguage == newState.currentLanguage,
-           lastState.hasError == newState.hasError {
-            #if DEBUG
-            print("[WidgetRefreshManager] Widget refresh coalesced: sticky \(newState.debugVisualStateLabel) unchanged")
-            recordDebounceOutcome(.coalescedStickyImmediateDuplicate)
-            #endif
             return
         }
         
@@ -552,22 +560,93 @@ final class WidgetRefreshManager: @unchecked Sendable {
         }
     }
     
-    /// Returns true if executing `requested` would regress the persisted widget snapshot.
-    private func refreshWouldRegress(
+    /// Pure policy: whether a second timeline reload for the same non-playing chrome is redundant.
+    ///
+    /// Event-path ``refreshUsesImmediateDelivery(for:hasError:)`` forces `immediate: true` for
+    /// ``PlayerVisualState/prePlay`` and sticky pause/lock (factory-reset / pause urgency).
+    /// Without this gate, attach-path status callbacks and dual-path post-stop hygiene re-issue
+    /// identical `reloadTimelines` storms while language and visual are unchanged.
+    ///
+    /// Language changes must be handled by the caller first — this helper assumes language
+    /// equality has already been evaluated (``languageUnchanged``).
+    ///
+    /// - Parameters:
+    ///   - requestedVisual: Candidate visual for the refresh.
+    ///   - lastKnownVisual: Visual from the last executed (or bookkept) refresh, if any.
+    ///   - languageUnchanged: `true` when caller language matches last-known language.
+    ///   - errorFlagsMatch: `true` when permanent-error flags match last-known.
+    ///   - hasError: Permanent-error chrome for the candidate (never coalesce error repairs away).
+    /// - Returns: `true` when the refresh should no-op.
+    /// - SeeAlso: ``refreshIfNeeded(visualState:currentLanguage:hasError:immediate:trigger:)``,
+    ///   ``refreshUsesImmediateDelivery(for:hasError:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
+    ///   docs/Widget-Functionality-Roadmap.md.
+    static func shouldCoalesceIdenticalNonPlayingRefresh(
+        requestedVisual: PlayerVisualState,
+        lastKnownVisual: PlayerVisualState?,
+        languageUnchanged: Bool,
+        errorFlagsMatch: Bool,
+        hasError: Bool
+    ) -> Bool {
+        guard !hasError, languageUnchanged, errorFlagsMatch else { return false }
+        guard let lastKnownVisual, lastKnownVisual == requestedVisual else { return false }
+        switch requestedVisual {
+        case .prePlay, .cleared, .userPaused, .thermalPaused, .securityLocked:
+            return true
+        case .playing:
+            // Active playing is rate-limited by adaptive debounce, not identity skip —
+            // a second playing push may still be required after a long gap.
+            return false
+        @unknown default:
+            return false
+        }
+    }
+
+    /// Pure policy: whether a deferred/debounced refresh target would reverse a more advanced
+    /// persisted widget snapshot.
+    ///
+    /// Intentional when a delayed intermediate (connecting chrome) loses a race to a newer
+    /// snapshot, or a delayed sticky pause loses to a soft-resume that already persisted
+    /// ``.playing``. Timeline reload alone cannot invent snapshot fields — discarding a
+    /// regressing target avoids a useless `reloadTimelines` that would re-read the newer
+    /// snapshot and paint the same chrome again. Dual-path architecture is unchanged.
+    ///
+    /// - Parameters:
+    ///   - requested: Visual the delayed/debounced work would load.
+    ///   - persisted: Authoritative ``PersistedWidgetState/visualState`` at execute time.
+    /// - Returns: `true` when the refresh must be discarded.
+    /// - SeeAlso: ``performRefreshIfNotStale(for:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    static func refreshWouldRegressPersistedSnapshot(
         executing requested: PlayerVisualState,
         persisted: PlayerVisualState
     ) -> Bool {
         if requested == persisted { return false }
         switch persisted {
         case .playing:
-            return requested == .prePlay || requested == .cleared || requested == .userPaused
+            // Intermediate connecting chrome after play accepted is stale.
+            // Sticky pause/thermal after resume-to-playing is also stale (debounced pause lost the race).
+            return requested == .prePlay
+                || requested == .cleared
+                || requested == .userPaused
+                || requested == .thermalPaused
         case .userPaused, .thermalPaused:
             return requested == .prePlay || requested == .cleared || requested == .playing
         case .securityLocked:
             return requested != .securityLocked
         case .prePlay, .cleared:
             return false
+        @unknown default:
+            return false
         }
+    }
+
+    /// Returns true if executing `requested` would regress the persisted widget snapshot.
+    private func refreshWouldRegress(
+        executing requested: PlayerVisualState,
+        persisted: PlayerVisualState
+    ) -> Bool {
+        Self.refreshWouldRegressPersistedSnapshot(executing: requested, persisted: persisted)
     }
     
     private func cancelCoalescedPrePlayRefresh() {
@@ -619,6 +698,7 @@ final class WidgetRefreshManager: @unchecked Sendable {
            refreshWouldRegress(executing: state.visualState, persisted: combined.visualState) {
             #if DEBUG
             print("[WidgetRefreshManager] Widget refresh discarded: stale debounced \(state.debugVisualStateLabel) vs persisted \(debugLabel(for: combined.visualState))")
+            recordDebounceOutcome(.discardedStaleDebouncedRegress)
             #endif
             return
         }

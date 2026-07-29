@@ -46,8 +46,12 @@ extension WidgetRefreshManager {
         case coalescedPrePlayToPlaying
         /// A rapid repeat refresh was scheduled behind the adaptive debounce interval.
         case scheduledAdaptiveDebounce
-        /// An immediate sticky-pause refresh was dropped as a duplicate of ``lastKnownState``.
-        case coalescedStickyImmediateDuplicate
+        /// Identical connecting or sticky chrome matched ``lastKnownState`` (attach / dual-path storm).
+        ///
+        /// Covers immediate event-path `.prePlay` storms and sticky pause/lock duplicates.
+        case coalescedIdenticalNonPlaying
+        /// Delayed refresh discarded because persisted snapshot already advanced past the target.
+        case discardedStaleDebouncedRegress
         /// ``performRefresh`` reached the execution point (timeline reload skipped under observation).
         case refreshExecuted
     }
