@@ -89,8 +89,14 @@ import WidgetSurface
 /// ensure enters a **quiet pending** state for that destination so status-driven media-surface
 /// refreshes do not thrash ActivityKit; re-arm on destination change, eligibility, become-active,
 /// or system `contentUpdates`. Language-only status re-pushes defer while quiet; visual mutations
-/// still push. On foreground / become-active with an **owned** activity, soft language + playing
-/// ensure run via ``ensureAuthoritativeContentOnForegroundIfNeeded()`` (clears quiet first);
+/// still push. Playing ensure has the same quiet-pending shape (``playingEnsureQuietPending``):
+/// after ``authoritativePlayingContentEnsureMaxAttempts`` without owned `.playing` while request
+/// is ineligible, visual-only status re-pushes that only repair `.playing` defer; pause
+/// (``.userPaused``) and language mutations still push. Re-arm playing quiet on authoritative
+/// play mutation (``setPlaying`` / soft-resume ensure), optimistic toggle / stream-switch,
+/// eligibility, become-active, or `contentUpdates`. On foreground / become-active with an
+/// **owned** activity, soft language + playing ensure run via
+/// ``ensureAuthoritativeContentOnForegroundIfNeeded()`` (clears both quiet flags first);
 /// eligible-only recreation is a last resort after soft ensure still fails (never while request
 /// is ineligible).
 ///
@@ -210,7 +216,14 @@ class RadioLiveActivityManager: ObservableObject {
     /// visual still lags authoritative `.playing` (ActivityKit acceptance lag after soft-resume
     /// or stream-switch audible start). Prefer this over end+request for visual-only freezes.
     ///
+    /// After this budget is exhausted while interactive request is **ineligible**, playing
+    /// soft-ensure enters quiet pending (``playingEnsureQuietPending``) so status-driven
+    /// media-surface refreshes do not re-burn the soft-retry budget until re-arm
+    /// (authoritative play mutation, optimistic toggle / stream-switch, eligibility,
+    /// become-active, or system `contentUpdates` acceptance).
+    ///
     /// - SeeAlso: ``ensureAuthoritativePlayingContentIfNeeded()``,
+    ///   ``shouldRunPlayingContentEnsureSoftPushes(needsPlayingEnsure:quietPending:isRequestEligible:)``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     static let authoritativePlayingContentEnsureMaxAttempts = 3
 
@@ -250,6 +263,28 @@ class RadioLiveActivityManager: ObservableObject {
     ///   ``shouldDeferRedundantLanguagePushWhileQuiet(candidateLanguage:ownedContentLanguage:ownedContentVisual:candidateVisual:quietPendingDestination:isRequestEligible:)``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     private var languageEnsureQuietPendingDestination: String?
+
+    /// Whether soft playing ensure exhausted while interactive request was ineligible and
+    /// owned visual still lagged authoritative `.playing`.
+    ///
+    /// When true, further ensure-driven soft pushes and **visual-only** status re-pushes that
+    /// only repair candidate `.playing` stay quiet until re-arm:
+    /// - Authoritative play mutation (``setPlaying`` / soft-resume ensure re-arm)
+    /// - Optimistic toggle or stream-switch ContentState (new control cycle)
+    /// - Interactive request becomes eligible
+    /// - Foreground / become-active owned-surface soft ensure
+    /// - System `contentUpdates` yield (acceptance moment)
+    /// - Owned visual converges to `.playing`
+    ///
+    /// Pause (``.userPaused``) and language mutations still push — quiet is playing-stall
+    /// thrash protection only, not a full content freeze. Does **not** invent `.playing`
+    /// during stream-switch hold / connecting.
+    ///
+    /// - SeeAlso: ``ensureAuthoritativePlayingContentIfNeeded()``,
+    ///   ``shouldRunPlayingContentEnsureSoftPushes(needsPlayingEnsure:quietPending:isRequestEligible:)``,
+    ///   ``shouldDeferRedundantPlayingPushWhileQuiet(candidateVisual:ownedContentVisual:ownedContentLanguage:candidateLanguage:quietPending:isRequestEligible:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    private var playingEnsureQuietPending = false
 
     /// Long-lived task observing the Live Activity attribute events stream.
     ///
@@ -679,6 +714,27 @@ class RadioLiveActivityManager: ObservableObject {
             return
         }
 
+        // After playing soft-ensure exhausted while request is ineligible, defer visual-only
+        // status re-pushes that only repair candidate `.playing`. Durable mirrors already warm.
+        // Pause (userPaused) and language mutations still push. Re-arm: authoritative play,
+        // optimistic toggle/switch, eligibility, become-active, or contentUpdates.
+        if Self.shouldDeferRedundantPlayingPushWhileQuiet(
+            candidateVisual: candidate.visualState,
+            ownedContentVisual: ownedVisual,
+            ownedContentLanguage: ownedLanguage,
+            candidateLanguage: candidate.currentLanguage,
+            quietPending: playingEnsureQuietPending,
+            isRequestEligible: requestEligibleForQuiet
+        ) {
+            #if DEBUG
+            print(
+                "🔴 Live Activity playing visual push deferred (quiet pending; owned visual=" +
+                "\(ownedVisual); keeping surface; wait for eligibility, become-active, or play mutation)"
+            )
+            #endif
+            return
+        }
+
         // SAFETY: Activity.update / Activity property access are not Sendable in the current
         // SDK; capture a local strong reference on the main actor, then read content/id only
         // under explicit `unsafe` (same capture pattern as end paths).
@@ -701,6 +757,13 @@ class RadioLiveActivityManager: ObservableObject {
             ownedOrSystemLanguage: accepted.currentLanguage
         ) {
             languageEnsureQuietPendingDestination = nil
+        }
+        // Owned visual converged to playing → clear playing ensure quiet.
+        if Self.shouldClearPlayingEnsureQuietPending(
+            quietPending: playingEnsureQuietPending,
+            ownedOrSystemVisual: accepted.visualState
+        ) {
+            playingEnsureQuietPending = false
         }
 
         let contentStalled = Self.isStalledLiveActivityContentPush(
@@ -1241,6 +1304,109 @@ class RadioLiveActivityManager: ObservableObject {
         return false
     }
 
+    /// Whether soft playing-ensure pushes should run now, or stay quiet after budget exhaustion.
+    ///
+    /// After ``authoritativePlayingContentEnsureMaxAttempts`` while request is ineligible,
+    /// the manager records ``playingEnsureQuietPending``. Further ensure-driven soft pushes
+    /// stay quiet until re-arm so status-driven media-surface refreshes do not re-burn the
+    /// soft-retry budget without acceptance.
+    ///
+    /// **Re-arm (returns true when playing ensure is still needed):**
+    /// - No quiet pending yet
+    /// - Interactive request became eligible (presentable cycle / unlock)
+    /// - Caller cleared quiet before ensure (authoritative play mutation, optimistic toggle)
+    ///
+    /// - Parameters:
+    ///   - needsPlayingEnsure: ``shouldEnsureAuthoritativePlayingContent(actorVisual:streamSwitchHold:isConnectingPlayback:lastPushedVisual:ownedVisual:)``.
+    ///   - quietPending: ``playingEnsureQuietPending``.
+    ///   - isRequestEligible: ``isInteractiveLiveActivityRequestEligible(areActivitiesEnabled:isApplicationActive:)``.
+    /// - Returns: `true` when soft playing pushes should run.
+    /// - SeeAlso: ``ensureAuthoritativePlayingContentIfNeeded()``,
+    ///   ``shouldEnterPlayingEnsureQuietPending(playingStillStalled:isRequestEligible:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    static func shouldRunPlayingContentEnsureSoftPushes(
+        needsPlayingEnsure: Bool,
+        quietPending: Bool,
+        isRequestEligible: Bool
+    ) -> Bool {
+        guard needsPlayingEnsure else { return false }
+        // Re-arm when request is eligible (unlock / presentable cycle).
+        if isRequestEligible { return true }
+        // Quiet while still ineligible → stop thrash.
+        if quietPending { return false }
+        return true
+    }
+
+    /// Whether playing soft-ensure should enter quiet pending after budget exhaustion.
+    ///
+    /// - Parameters:
+    ///   - playingStillStalled: Owned / last visual still lags authoritative `.playing`.
+    ///   - isRequestEligible: Whether interactive `Activity.request` could succeed now.
+    /// - Returns: `true` when quiet should engage (still stalled + request ineligible).
+    /// - SeeAlso: ``shouldRunPlayingContentEnsureSoftPushes(needsPlayingEnsure:quietPending:isRequestEligible:)``.
+    static func shouldEnterPlayingEnsureQuietPending(
+        playingStillStalled: Bool,
+        isRequestEligible: Bool
+    ) -> Bool {
+        guard playingStillStalled else { return false }
+        guard !isRequestEligible else { return false }
+        return true
+    }
+
+    /// Whether a status-driven `Activity.update` that is only repairing a playing visual stall
+    /// should defer while playing ensure is quiet-pending.
+    ///
+    /// Protects lock-stretch thrash: after soft playing ensure exhausted while request is
+    /// ineligible, every media-surface refresh would otherwise re-submit the same `.playing`
+    /// candidate (owned-visual suppress gate correctly denies suppress). Pause honesty
+    /// (``.userPaused``) and language mutations still push — quiet is playing-visual-only.
+    ///
+    /// - Parameters:
+    ///   - candidateVisual: Candidate ``ContentState.visualState``.
+    ///   - ownedContentVisual: Owned `content.state.visualState`.
+    ///   - ownedContentLanguage: Owned `content.state.currentLanguage`.
+    ///   - candidateLanguage: Candidate language.
+    ///   - quietPending: ``playingEnsureQuietPending``.
+    ///   - isRequestEligible: Interactive request eligibility.
+    /// - Returns: `true` when ActivityKit IPC should be skipped for this playing-visual stall.
+    /// - SeeAlso: ``updateCurrentActivity()``, ``shouldRunPlayingContentEnsureSoftPushes(needsPlayingEnsure:quietPending:isRequestEligible:)``.
+    static func shouldDeferRedundantPlayingPushWhileQuiet(
+        candidateVisual: PlayerVisualState,
+        ownedContentVisual: PlayerVisualState,
+        ownedContentLanguage: String,
+        candidateLanguage: String,
+        quietPending: Bool,
+        isRequestEligible: Bool
+    ) -> Bool {
+        guard quietPending else { return false }
+        guard !isRequestEligible else { return false }
+        // Language still differs → push (language honesty + co-push both axes).
+        if ownedContentLanguage != candidateLanguage { return false }
+        // Visual already matches → not a visual stall (suppress policy handles no-op).
+        if ownedContentVisual == candidateVisual { return false }
+        // Pause honesty must still push even when owned was stuck Connecting.
+        if candidateVisual == .userPaused { return false }
+        // Only defer redundant playing-repair thrash (candidate .playing, owned lagging).
+        guard candidateVisual == .playing else { return false }
+        return true
+    }
+
+    /// Whether playing ensure quiet should clear after system content yield or owned convergence.
+    ///
+    /// - Parameters:
+    ///   - quietPending: Current quiet flag.
+    ///   - ownedOrSystemVisual: Owned or system-accepted `content.state.visualState`.
+    /// - Returns: `true` when quiet should clear (owned visual reached `.playing`).
+    /// - SeeAlso: ``handleActivityContentUpdate(_:)``, ``ensureAuthoritativePlayingContentIfNeeded()``.
+    static func shouldClearPlayingEnsureQuietPending(
+        quietPending: Bool,
+        ownedOrSystemVisual: PlayerVisualState?
+    ) -> Bool {
+        guard quietPending else { return false }
+        if ownedOrSystemVisual == .playing { return true }
+        return false
+    }
+
     /// Samples actor visual + stream-switch/connect gates into the ContentState visual for a push.
     ///
     /// Stream-switch hold / in-flight connect: never advertise `.playing` while the engine is
@@ -1293,11 +1459,24 @@ class RadioLiveActivityManager: ObservableObject {
     /// (and stalled-push bookkeeping when ActivityKit still rejects); recreation stays behind
     /// the eligibility gate on the general update path.
     ///
-    /// Called from ``SharedPlayerManager/setPlaying()`` after the primary media-surface refresh,
-    /// and from the soft-resume publish path when actor visual is already `.playing` (publish
-    /// no-op) so a stuck Connecting glyph is still reconciled.
+    /// **Quiet pending while request ineligible:** After the soft-retry budget is exhausted
+    /// without owned `.playing` acceptance while ``isInteractiveLiveActivityRequestEligible``
+    /// is false, records ``playingEnsureQuietPending`` and stops re-running soft pushes on
+    /// every status callback. Re-arm when:
+    /// - Authoritative play mutation (``rearmPlayingEnsureQuietPending()`` from setPlaying /
+    ///   soft-resume)
+    /// - Optimistic toggle or stream-switch ContentState
+    /// - Interactive request becomes eligible
+    /// - Foreground / become-active (``ensureAuthoritativeContentOnForegroundIfNeeded`` clears quiet)
+    /// - System `contentUpdates` yield
+    ///
+    /// Called from ``SharedPlayerManager/setPlaying()`` after language ensure (serialize
+    /// language then visual so one ContentState push can carry both), and from the soft-resume
+    /// publish path when actor visual is already `.playing` (publish no-op) so a stuck
+    /// Connecting glyph is still reconciled.
     ///
     /// - SeeAlso: ``updateCurrentActivity()``, ``shouldEnsureAuthoritativePlayingContent(actorVisual:streamSwitchHold:isConnectingPlayback:lastPushedVisual:ownedVisual:)``,
+    ///   ``shouldRunPlayingContentEnsureSoftPushes(needsPlayingEnsure:quietPending:isRequestEligible:)``,
     ///   ``authoritativePlayingContentEnsureMaxAttempts``,
     ///   ``ensureAuthoritativeLanguageContentIfNeeded()``,
     ///   ``recordOptimisticStreamSwitchContent(language:visualState:)``,
@@ -1311,29 +1490,72 @@ class RadioLiveActivityManager: ObservableObject {
         guard currentActivity != nil else { return }
 
         let manager = SharedPlayerManager.shared
+        let visual = await manager.currentVisualState
+        let hold = await manager.isStreamSwitchPrePlayHoldActive
+        let connecting = await manager.isConnectingPlayback
+        let lastVisual = lastPushedContent?.visualState
+        let ownedVisual = currentActivity?.content.state.visualState
+        let needsEnsure = Self.shouldEnsureAuthoritativePlayingContent(
+            actorVisual: visual,
+            streamSwitchHold: hold,
+            isConnectingPlayback: connecting,
+            lastPushedVisual: lastVisual,
+            ownedVisual: ownedVisual
+        )
+        // Owned visual converged → drop quiet.
+        if Self.shouldClearPlayingEnsureQuietPending(
+            quietPending: playingEnsureQuietPending,
+            ownedOrSystemVisual: ownedVisual
+        ) {
+            playingEnsureQuietPending = false
+        }
+        guard needsEnsure else {
+            playingEnsureQuietPending = false
+            return
+        }
+
+        let requestEligible = Self.isInteractiveLiveActivityRequestEligible(
+            areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+            isApplicationActive: UIApplication.shared.applicationState == .active
+        )
+        guard Self.shouldRunPlayingContentEnsureSoftPushes(
+            needsPlayingEnsure: true,
+            quietPending: playingEnsureQuietPending,
+            isRequestEligible: requestEligible
+        ) else {
+            #if DEBUG
+            print(
+                "🔴 Live Activity playing ensure quiet (owned=\(String(describing: ownedVisual)); " +
+                "wait for eligibility, become-active, or play mutation)"
+            )
+            #endif
+            return
+        }
+
         for attempt in 1...Self.authoritativePlayingContentEnsureMaxAttempts {
             guard currentActivity != nil else { return }
 
-            let visual = await manager.currentVisualState
-            let hold = await manager.isStreamSwitchPrePlayHoldActive
-            let connecting = await manager.isConnectingPlayback
-            let lastVisual = lastPushedContent?.visualState
-            let ownedVisual = currentActivity?.content.state.visualState
+            let loopVisual = await manager.currentVisualState
+            let loopHold = await manager.isStreamSwitchPrePlayHoldActive
+            let loopConnecting = await manager.isConnectingPlayback
+            let loopLastVisual = lastPushedContent?.visualState
+            let loopOwnedVisual = currentActivity?.content.state.visualState
 
             guard Self.shouldEnsureAuthoritativePlayingContent(
-                actorVisual: visual,
-                streamSwitchHold: hold,
-                isConnectingPlayback: connecting,
-                lastPushedVisual: lastVisual,
-                ownedVisual: ownedVisual
+                actorVisual: loopVisual,
+                streamSwitchHold: loopHold,
+                isConnectingPlayback: loopConnecting,
+                lastPushedVisual: loopLastVisual,
+                ownedVisual: loopOwnedVisual
             ) else {
+                playingEnsureQuietPending = false
                 return
             }
 
             #if DEBUG
             print(
-                "🔴 Live Activity reconciling authoritative playing → last=\(String(describing: lastVisual)) " +
-                "owned=\(String(describing: ownedVisual)) attempt=\(attempt)/\(Self.authoritativePlayingContentEnsureMaxAttempts)"
+                "🔴 Live Activity reconciling authoritative playing → last=\(String(describing: loopLastVisual)) " +
+                "owned=\(String(describing: loopOwnedVisual)) attempt=\(attempt)/\(Self.authoritativePlayingContentEnsureMaxAttempts)"
             )
             #endif
             await updateCurrentActivity()
@@ -1341,6 +1563,7 @@ class RadioLiveActivityManager: ObservableObject {
             // Post-update verification: owned visual is the surface honesty SSOT.
             let acceptedVisual = currentActivity?.content.state.visualState
             if acceptedVisual == .playing {
+                playingEnsureQuietPending = false
                 return
             }
             // Brief yield so ActivityKit / contentUpdates can converge before the next soft push.
@@ -1349,6 +1572,50 @@ class RadioLiveActivityManager: ObservableObject {
                 try? await Task.sleep(for: .milliseconds(50))
             }
         }
+
+        // Soft budget exhausted without acceptance.
+        let finalVisual = await manager.currentVisualState
+        let finalHold = await manager.isStreamSwitchPrePlayHoldActive
+        let finalConnecting = await manager.isConnectingPlayback
+        let stillStalled = Self.shouldEnsureAuthoritativePlayingContent(
+            actorVisual: finalVisual,
+            streamSwitchHold: finalHold,
+            isConnectingPlayback: finalConnecting,
+            lastPushedVisual: lastPushedContent?.visualState,
+            ownedVisual: currentActivity?.content.state.visualState
+        )
+        let eligibleAfter = Self.isInteractiveLiveActivityRequestEligible(
+            areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+            isApplicationActive: UIApplication.shared.applicationState == .active
+        )
+        if Self.shouldEnterPlayingEnsureQuietPending(
+            playingStillStalled: stillStalled,
+            isRequestEligible: eligibleAfter
+        ) {
+            playingEnsureQuietPending = true
+            // Keep pending ensure so become-active owned-surface path re-arms recovery.
+            pendingInteractiveLiveActivityEnsure = true
+            #if DEBUG
+            print(
+                "🔴 Live Activity playing ensure quiet pending after max attempts " +
+                "(recreation remains eligibility-gated)"
+            )
+            #endif
+        }
+    }
+
+    /// Clears playing ensure quiet so the next soft-ensure cycle gets a full soft budget.
+    ///
+    /// Call on authoritative play mutations (``setPlaying`` / soft-resume ensure) so a prior
+    /// lock-stretch exhaustion cannot block a high-priority visual reconcile after audible
+    /// start. Does not invent `.playing` during hold — ensure gates still apply.
+    ///
+    /// - SeeAlso: ``ensureAuthoritativePlayingContentIfNeeded()``,
+    ///   ``recordOptimisticToggleContent(visualState:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    @MainActor
+    func rearmPlayingEnsureQuietPending() {
+        playingEnsureQuietPending = false
     }
 
     /// Whether playing reconcile should force a content push.
@@ -1667,11 +1934,13 @@ class RadioLiveActivityManager: ObservableObject {
         #endif
         guard currentActivity != nil else { return }
 
-        // Re-arm language ensure quiet so unlock / become-active always gets a soft cycle.
+        // Re-arm language + playing ensure quiet so unlock / become-active always gets a soft cycle.
         // Quiet is for lock-stretch thrash only — not a permanent freeze across presentable cycles.
         languageEnsureQuietPendingDestination = nil
+        playingEnsureQuietPending = false
 
         // Soft path first — never end the only card while ActivityKit may still accept updates.
+        // Language then visual so one ContentState push can co-converge both axes when possible.
         await ensureAuthoritativeLanguageContentIfNeeded()
         await ensureAuthoritativePlayingContentIfNeeded()
 
@@ -1747,6 +2016,9 @@ class RadioLiveActivityManager: ObservableObject {
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     @MainActor
     func recordOptimisticToggleContent(visualState: PlayerVisualState) {
+        // Control mutation re-arms playing ensure quiet so pause honesty and later soft-resume
+        // get a full soft budget even after prior lock-stretch playing thrash.
+        playingEnsureQuietPending = false
         let metadata =
             lastPushedContent?.streamMetadata
             ?? currentActivity?.content.state.streamMetadata
@@ -1784,6 +2056,10 @@ class RadioLiveActivityManager: ObservableObject {
     /// when it differs so the next ensure cycle gets one high-priority soft budget for the
     /// new language (home-widget and Live Activity stream chips share this path).
     ///
+    /// **Playing ensure re-arm:** Any stream-switch optimistic stamp clears
+    /// ``playingEnsureQuietPending`` so post-attach audible start / soft-resume can run a full
+    /// playing soft budget (Connecting honesty still gated by hold/connect).
+    ///
     /// Program metadata is cleared (same as the ActivityKit push) so a prior-stream title
     /// cannot suppress a language-only destination push.
     ///
@@ -1792,10 +2068,12 @@ class RadioLiveActivityManager: ObservableObject {
     ///   - visualState: Optimistic control visual (typically `.prePlay` or `.userPaused`).
     /// - Postcondition: ``lastPushedContent`` holds `visualState`, `nil` stream metadata, and
     ///   `language` (in-process only — not proof of system acceptance). Quiet language ensure
-    ///   is cleared when the destination differs from the prior quiet destination.
+    ///   is cleared when the destination differs from the prior quiet destination; playing
+    ///   ensure quiet is always cleared for the new switch cycle.
     /// - Note: Does not call `Activity.update` — the intent path owns ActivityKit IPC.
     /// - SeeAlso: ``recordOptimisticToggleContent(visualState:)``, ``updateCurrentActivity()``,
     ///   ``ensureAuthoritativeLanguageContentIfNeeded()``,
+    ///   ``ensureAuthoritativePlayingContentIfNeeded()``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
     ///   docs/Widget-Functionality-Roadmap.md (Live Activity language chrome SSOT).
     @MainActor
@@ -1805,6 +2083,8 @@ class RadioLiveActivityManager: ObservableObject {
         if languageEnsureQuietPendingDestination != language {
             languageEnsureQuietPendingDestination = nil
         }
+        // New stream-switch cycle re-arms playing ensure for post-attach audible start.
+        playingEnsureQuietPending = false
         lastPushedContent = LutheranRadioLiveActivityAttributes.ContentState(
             visualState: visualState,
             streamMetadata: nil,
@@ -1962,6 +2242,7 @@ class RadioLiveActivityManager: ObservableObject {
             consecutiveStalledContentPushes = 0
             interactiveContentRecreationsAttempted = 0
             languageEnsureQuietPendingDestination = nil
+            playingEnsureQuietPending = false
             if !isRecreatingLiveActivityAfterStalledContent {
                 pendingInteractiveLiveActivityEnsure = false
             }
@@ -1977,6 +2258,7 @@ class RadioLiveActivityManager: ObservableObject {
             consecutiveStalledContentPushes = 0
             interactiveContentRecreationsAttempted = 0
             languageEnsureQuietPendingDestination = nil
+            playingEnsureQuietPending = false
             if !isRecreatingLiveActivityAfterStalledContent {
                 pendingInteractiveLiveActivityEnsure = false
             }
@@ -1994,6 +2276,7 @@ class RadioLiveActivityManager: ObservableObject {
         lastPushedContent = nil
         consecutiveStalledContentPushes = 0
         languageEnsureQuietPendingDestination = nil
+        playingEnsureQuietPending = false
         // Do not reset interactiveContentRecreationsAttempted here when recreation is mid-flight
         // (end clears tracking before start). Recreation counter is owned by the recreation cycle.
         // Pending ensure survives an in-flight recreation end so a failed replacement start
@@ -2383,12 +2666,13 @@ class RadioLiveActivityManager: ObservableObject {
         _ content: ActivityContent<LutheranRadioLiveActivityAttributes.ContentState>
     ) {
         lastPushedContent = content.state
-        // System advanced content: clear stalled streak + recreation budget + language quiet.
+        // System advanced content: clear stalled streak + recreation budget + ensure quiet.
         consecutiveStalledContentPushes = 0
         interactiveContentRecreationsAttempted = 0
         // Any contentUpdates yield is an ActivityKit acceptance moment — drop quiet so a
-        // subsequent ensure can re-evaluate (or stay a no-op if language already matches).
+        // subsequent ensure can re-evaluate (or stay a no-op if language/visual already match).
         languageEnsureQuietPendingDestination = nil
+        playingEnsureQuietPending = false
         SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(content.state.visualState)
         SharedPlayerManager.persistLiveActivityLanguageMirror(content.state.currentLanguage)
     }
@@ -2405,6 +2689,7 @@ class RadioLiveActivityManager: ObservableObject {
             lastPushedContent = nil
             consecutiveStalledContentPushes = 0
             languageEnsureQuietPendingDestination = nil
+            playingEnsureQuietPending = false
             if !isRecreatingLiveActivityAfterStalledContent {
                 interactiveContentRecreationsAttempted = 0
             }
@@ -2418,6 +2703,7 @@ class RadioLiveActivityManager: ObservableObject {
         lastPushedContent = nil
         consecutiveStalledContentPushes = 0
         languageEnsureQuietPendingDestination = nil
+        playingEnsureQuietPending = false
         if !isRecreatingLiveActivityAfterStalledContent {
             interactiveContentRecreationsAttempted = 0
         }
@@ -2578,6 +2864,70 @@ class RadioLiveActivityManager: ObservableObject {
     /// White-box seam: set language ensure quiet destination (no ActivityKit).
     func _test_setLanguageEnsureQuietPendingDestination(_ value: String?) {
         languageEnsureQuietPendingDestination = value
+    }
+
+    /// White-box seam: whether soft playing ensure should run (quiet / eligibility).
+    func _test_shouldRunPlayingContentEnsureSoftPushes(
+        needsPlayingEnsure: Bool,
+        quietPending: Bool,
+        isRequestEligible: Bool
+    ) -> Bool {
+        Self.shouldRunPlayingContentEnsureSoftPushes(
+            needsPlayingEnsure: needsPlayingEnsure,
+            quietPending: quietPending,
+            isRequestEligible: isRequestEligible
+        )
+    }
+
+    /// White-box seam: enter playing quiet after soft budget exhaustion while ineligible.
+    func _test_shouldEnterPlayingEnsureQuietPending(
+        playingStillStalled: Bool,
+        isRequestEligible: Bool
+    ) -> Bool {
+        Self.shouldEnterPlayingEnsureQuietPending(
+            playingStillStalled: playingStillStalled,
+            isRequestEligible: isRequestEligible
+        )
+    }
+
+    /// White-box seam: visual-only playing push defer while quiet (no ActivityKit).
+    func _test_shouldDeferRedundantPlayingPushWhileQuiet(
+        candidateVisual: PlayerVisualState,
+        ownedContentVisual: PlayerVisualState,
+        ownedContentLanguage: String,
+        candidateLanguage: String,
+        quietPending: Bool,
+        isRequestEligible: Bool
+    ) -> Bool {
+        Self.shouldDeferRedundantPlayingPushWhileQuiet(
+            candidateVisual: candidateVisual,
+            ownedContentVisual: ownedContentVisual,
+            ownedContentLanguage: ownedContentLanguage,
+            candidateLanguage: candidateLanguage,
+            quietPending: quietPending,
+            isRequestEligible: isRequestEligible
+        )
+    }
+
+    /// White-box seam: clear playing quiet after owned visual reaches `.playing`.
+    func _test_shouldClearPlayingEnsureQuietPending(
+        quietPending: Bool,
+        ownedOrSystemVisual: PlayerVisualState?
+    ) -> Bool {
+        Self.shouldClearPlayingEnsureQuietPending(
+            quietPending: quietPending,
+            ownedOrSystemVisual: ownedOrSystemVisual
+        )
+    }
+
+    /// White-box seam: read playing ensure quiet flag (no ActivityKit).
+    func _test_playingEnsureQuietPendingValue() -> Bool {
+        playingEnsureQuietPending
+    }
+
+    /// White-box seam: set playing ensure quiet flag (no ActivityKit).
+    func _test_setPlayingEnsureQuietPending(_ value: Bool) {
+        playingEnsureQuietPending = value
     }
 
     /// White-box seam: clear suppress memory between tests (singleton isolation).

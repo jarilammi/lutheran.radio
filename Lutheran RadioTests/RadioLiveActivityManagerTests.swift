@@ -692,6 +692,181 @@ class RadioLiveActivityManagerTests: XCTestCase {
         manager._test_clearLastPushedContent()
     }
 
+    /// After playing soft-ensure budget exhaustion while request is ineligible, further
+    /// ensure-driven soft pushes stay quiet until re-arm.
+    ///
+    /// Protects lock-stretch thrash after stream-switch audible start / soft-resume when
+    /// ActivityKit does not accept owned `.playing`. Re-arm on authoritative play mutation,
+    /// optimistic toggle / stream-switch, eligibility, become-active, or contentUpdates.
+    /// Does **not** end+request while ineligible; does **not** invent `.playing` during hold.
+    func testPlayingEnsureQuietPendingAfterMaxAttemptsWhileIneligible() {
+        XCTAssertTrue(
+            manager._test_shouldEnterPlayingEnsureQuietPending(
+                playingStillStalled: true,
+                isRequestEligible: false
+            ),
+            "Exhausted soft budget while ineligible must enter playing quiet"
+        )
+        XCTAssertFalse(
+            manager._test_shouldEnterPlayingEnsureQuietPending(
+                playingStillStalled: true,
+                isRequestEligible: true
+            ),
+            "Eligible request must not enter playing quiet (foreground soft ensure / recreation owns recovery)"
+        )
+        XCTAssertFalse(
+            manager._test_shouldEnterPlayingEnsureQuietPending(
+                playingStillStalled: false,
+                isRequestEligible: false
+            ),
+            "Matched playing visual must not enter quiet"
+        )
+
+        XCTAssertFalse(
+            manager._test_shouldRunPlayingContentEnsureSoftPushes(
+                needsPlayingEnsure: true,
+                quietPending: true,
+                isRequestEligible: false
+            ),
+            "Quiet while ineligible must stop playing ensure soft pushes"
+        )
+        XCTAssertTrue(
+            manager._test_shouldRunPlayingContentEnsureSoftPushes(
+                needsPlayingEnsure: true,
+                quietPending: true,
+                isRequestEligible: true
+            ),
+            "Eligible request must re-arm playing ensure despite quiet"
+        )
+        XCTAssertTrue(
+            manager._test_shouldRunPlayingContentEnsureSoftPushes(
+                needsPlayingEnsure: true,
+                quietPending: false,
+                isRequestEligible: false
+            ),
+            "No quiet pending must allow soft pushes while ineligible"
+        )
+        XCTAssertFalse(
+            manager._test_shouldRunPlayingContentEnsureSoftPushes(
+                needsPlayingEnsure: false,
+                quietPending: false,
+                isRequestEligible: false
+            ),
+            "Matched playing chrome must not schedule soft pushes"
+        )
+
+        XCTAssertTrue(
+            manager._test_shouldClearPlayingEnsureQuietPending(
+                quietPending: true,
+                ownedOrSystemVisual: .playing
+            ),
+            "Owned visual .playing must clear playing quiet"
+        )
+        XCTAssertFalse(
+            manager._test_shouldClearPlayingEnsureQuietPending(
+                quietPending: true,
+                ownedOrSystemVisual: .prePlay
+            ),
+            "Still-stalled Connecting must not clear playing quiet"
+        )
+
+        // Instance seam: optimistic toggle / stream-switch re-arm playing quiet.
+        manager._test_setPlayingEnsureQuietPending(true)
+        XCTAssertTrue(manager._test_playingEnsureQuietPendingValue())
+        manager.recordOptimisticToggleContent(visualState: .userPaused)
+        XCTAssertFalse(
+            manager._test_playingEnsureQuietPendingValue(),
+            "Optimistic pause toggle must re-arm playing ensure quiet"
+        )
+        manager._test_setPlayingEnsureQuietPending(true)
+        manager.recordOptimisticStreamSwitchContent(language: "fi", visualState: .prePlay)
+        XCTAssertFalse(
+            manager._test_playingEnsureQuietPendingValue(),
+            "Optimistic stream-switch must re-arm playing ensure quiet for post-attach cycle"
+        )
+        manager.rearmPlayingEnsureQuietPending()
+        XCTAssertFalse(
+            manager._test_playingEnsureQuietPendingValue(),
+            "Authoritative play re-arm must clear playing quiet"
+        )
+        manager._test_setPlayingEnsureQuietPending(false)
+        manager._test_clearLastPushedContent()
+    }
+
+    /// Visual-only playing-repair status re-pushes defer while quiet; pause and language still push.
+    ///
+    /// After soft playing ensure exhausted while request ineligible, media-surface
+    /// ``updateCurrentActivity`` must not re-submit the same `.playing` candidate forever.
+    /// Pause honesty (userPaused) and language mutations remain non-suppressed.
+    func testPlayingOnlyStatusPushDefersWhileQuietPending() {
+        XCTAssertTrue(
+            manager._test_shouldDeferRedundantPlayingPushWhileQuiet(
+                candidateVisual: .playing,
+                ownedContentVisual: .prePlay,
+                ownedContentLanguage: "fi",
+                candidateLanguage: "fi",
+                quietPending: true,
+                isRequestEligible: false
+            ),
+            "Playing-only stall while quiet and ineligible must defer ActivityKit IPC"
+        )
+        XCTAssertFalse(
+            manager._test_shouldDeferRedundantPlayingPushWhileQuiet(
+                candidateVisual: .userPaused,
+                ownedContentVisual: .prePlay,
+                ownedContentLanguage: "fi",
+                candidateLanguage: "fi",
+                quietPending: true,
+                isRequestEligible: false
+            ),
+            "Pause honesty while playing quiet must still push"
+        )
+        XCTAssertFalse(
+            manager._test_shouldDeferRedundantPlayingPushWhileQuiet(
+                candidateVisual: .playing,
+                ownedContentVisual: .prePlay,
+                ownedContentLanguage: "de",
+                candidateLanguage: "fi",
+                quietPending: true,
+                isRequestEligible: false
+            ),
+            "Language mutation while playing quiet must still push (co-push both axes)"
+        )
+        XCTAssertFalse(
+            manager._test_shouldDeferRedundantPlayingPushWhileQuiet(
+                candidateVisual: .playing,
+                ownedContentVisual: .prePlay,
+                ownedContentLanguage: "fi",
+                candidateLanguage: "fi",
+                quietPending: true,
+                isRequestEligible: true
+            ),
+            "Eligible request must not defer playing visual push"
+        )
+        XCTAssertFalse(
+            manager._test_shouldDeferRedundantPlayingPushWhileQuiet(
+                candidateVisual: .playing,
+                ownedContentVisual: .prePlay,
+                ownedContentLanguage: "fi",
+                candidateLanguage: "fi",
+                quietPending: false,
+                isRequestEligible: false
+            ),
+            "No quiet must not defer playing visual push"
+        )
+        XCTAssertFalse(
+            manager._test_shouldDeferRedundantPlayingPushWhileQuiet(
+                candidateVisual: .playing,
+                ownedContentVisual: .playing,
+                ownedContentLanguage: "fi",
+                candidateLanguage: "fi",
+                quietPending: true,
+                isRequestEligible: false
+            ),
+            "Matched visual is not a playing stall deferral case"
+        )
+    }
+
     /// Language-only status re-pushes defer while quiet; visual mutations still push.
     ///
     /// After soft language ensure exhausted while request ineligible, media-surface

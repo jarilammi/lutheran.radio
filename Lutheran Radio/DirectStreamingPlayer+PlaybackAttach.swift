@@ -701,8 +701,10 @@ extension DirectStreamingPlayer {
             )
             #endif
             // Actor chrome already playing (soft-resume after setPlaying, or KVO re-entry).
-            // Still force bounded LA playing ensure so owned ContentState visual cannot stick
+            // Re-arm + bounded LA playing ensure so owned ContentState visual cannot stick
             // on `.prePlay` while audio continues — without relying on end+request recreation.
+            // Re-arm clears prior lock-stretch quiet so soft-resume always gets a full soft budget.
+            RadioLiveActivityManager.shared.rearmPlayingEnsureQuietPending()
             await RadioLiveActivityManager.shared.ensureAuthoritativePlayingContentIfNeeded()
             return
         }
