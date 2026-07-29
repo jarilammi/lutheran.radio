@@ -8,7 +8,9 @@
 //  LutheranRadioWidgetTests). Mechanical split of SharedPlayerManager — same actor,
 //  no API renames, no behavior change.
 //
-//  Purpose: Live Activity durable visual/language App Group mirrors, boot identity, and extension-hosted toggle planning helpers.
+//  Purpose: Live Activity durable visual/language App Group mirrors, boot identity,
+//  extension-hosted toggle planning helpers, and widget-refresh language derivation
+//  (stream attach / LA content-push SSOT under privacy write suppression).
 //
 //  - SeeAlso: SharedPlayerManager.swift, CODING_AGENT.md (cross-target membership exceptions).
 //
@@ -173,6 +175,78 @@ extension SharedPlayerManager {
             return mirrorLanguage
         }
         return preferredWidgetLanguage()
+    }
+
+    /// Language for ``WidgetRefreshManager`` derivation, coalesce bookkeeping, and DEBUG labels.
+    ///
+    /// Prefer the in-process session snapshot when present. When the snapshot is absent —
+    /// including privacy write suppression with **no home widgets** — prefer the same
+    /// stream-attach / Live Activity language surfaces used for content pushes so
+    /// coalesce / deferred-refresh logs do not report ``preferredWidgetLanguage()``'s
+    /// privacy hard-default `"en"` while the engine stream or durable LA language mirror
+    /// holds a non-English code.
+    ///
+    /// **Does not** open write suppression, write App Group snapshot keys, or change
+    /// home-widget Provider chrome resolution (still ``preferredWidgetLanguage()``).
+    ///
+    /// Resolution order (first non-empty wins):
+    /// 1. Session snapshot `currentLanguage`
+    /// 2. Main app: ``DirectStreamingPlayer/selectedStream`` language (stream attach SSOT)
+    /// 3. Durable Live Activity language mirror (destination stamp / last content push)
+    /// 4. Non-empty `fallbackLanguage` from the refresh caller (when not privacy-default-only)
+    /// 5. Main app: ``preferredMainAppInitialLanguageCode()``; extension: ``preferredWidgetLanguage()``
+    ///
+    /// - Parameter fallbackLanguage: Optional language already known to the caller
+    ///   (e.g. ``loadSharedState()``.currentLanguage). Used only after snapshot / attach /
+    ///   mirror when it is non-empty; under no-widgets a bare `"en"` fallback is ignored in
+    ///   favor of the main-app locale reseed so hard-default pollution does not win.
+    /// - Returns: Non-empty language code for refresh state and diagnostic labels.
+    /// - SeeAlso: ``mainAppLiveActivityLanguageCode()``, ``languageForLiveActivityOrWidgetOptimistic()``,
+    ///   ``liveActivityLanguageCodeForContentPush()``, ``preferredWidgetLanguage()``,
+    ///   ``WidgetRefreshManager/deriveRefreshParameters(for:)``,
+    ///   ``WidgetRefreshManager/refreshIfNeeded(visualState:currentLanguage:hasError:immediate:trigger:)``,
+    ///   docs/Widget-Functionality-Roadmap.md, docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    nonisolated static func languageForWidgetRefreshDerivation(fallbackLanguage: String = "") -> String {
+        if let snapshotLanguage = loadPersistedWidgetState()?.currentLanguage, !snapshotLanguage.isEmpty {
+            return snapshotLanguage
+        }
+
+        #if LUTHERAN_MAIN_APP
+        let selected = DirectStreamingPlayer.shared.selectedStream.languageCode
+        if !selected.isEmpty {
+            return selected
+        }
+        if let mirrorLanguage = loadLiveActivityLanguageMirror(), !mirrorLanguage.isEmpty {
+            return mirrorLanguage
+        }
+        // Under no home widgets, ``preferredWidgetLanguage()`` / ``loadSharedState()`` hard-default
+        // to `"en"`. Do not let that privacy default label active non-English streams; prefer
+        // main-app locale reseed, then a non-`"en"` caller signal, then intentional English.
+        let mainAppInitial = preferredMainAppInitialLanguageCode()
+        if !fallbackLanguage.isEmpty {
+            if fallbackLanguage != "en" {
+                return fallbackLanguage
+            }
+            if WidgetRefreshManager.hasActiveLutheranWidgets {
+                return fallbackLanguage
+            }
+            // Privacy hard-default `"en"` with no attach/mirror: locale reseed is more honest
+            // for diagnostics than inventing English from the privacy gate alone.
+            if !mainAppInitial.isEmpty {
+                return mainAppInitial
+            }
+            return fallbackLanguage
+        }
+        return mainAppInitial
+        #else
+        if let mirrorLanguage = loadLiveActivityLanguageMirror(), !mirrorLanguage.isEmpty {
+            return mirrorLanguage
+        }
+        if !fallbackLanguage.isEmpty, fallbackLanguage != "en" {
+            return fallbackLanguage
+        }
+        return languageForLiveActivityOrWidgetOptimistic()
+        #endif
     }
 
     // MARK: - Boot identity + durable-mirror play distrust (LA toggle hygiene)

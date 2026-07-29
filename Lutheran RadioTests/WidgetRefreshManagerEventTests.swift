@@ -297,6 +297,117 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
         XCTAssertEqual(derived.visualState, .prePlay)
     }
 
+    /// Under no home widgets, ``preferredWidgetLanguage()`` / ``loadSharedState()`` hard-default
+    /// to `"en"`. Refresh derivation must still report stream-attach language so coalesce
+    /// diagnostics (`lang:`) match the playing stream, not the privacy default.
+    ///
+    /// **Invariant protected:** privacy write suppression remains closed; only the language
+    /// label for ``WidgetRefreshManager`` bookkeeping uses content-push / stream-attach SSOT.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/languageForWidgetRefreshDerivation(fallbackLanguage:)``,
+    ///   ``SharedPlayerManager/preferredWidgetLanguage()``,
+    ///   ``WidgetRefreshManager/deriveRefreshParameters(for:)``.
+    func testDeriveRefreshParametersTracksStreamAttachWhenSnapshotAbsentUnderNoWidgets() async {
+        await SharedPlayerManager.clearAllLocalState()
+        SharedPlayerManager.clearLiveActivityLanguageMirror()
+        await MainActor.run {
+            WidgetRefreshManager.setHasActiveLutheranWidgets(false)
+            WidgetRefreshManager._test_setSuppressPlayerEventObservation(true)
+        }
+        XCTAssertNil(SharedPlayerManager.loadPersistedWidgetState())
+        XCTAssertEqual(
+            SharedPlayerManager.preferredWidgetLanguage(),
+            "en",
+            "Precondition: no-widgets preferred path must still hard-default to en"
+        )
+
+        let streams = manager.availableStreams
+        guard let estonian = streams.first(where: { $0.languageCode == "et" }) else {
+            XCTFail("Expected Estonian stream in catalog")
+            return
+        }
+        await manager.switchToStream(estonian)
+
+        let derived = refreshManager._test_deriveRefreshParameters(
+            for: .visualStateDidChange(.playing)
+        )
+
+        XCTAssertEqual(derived.visualState, .playing)
+        XCTAssertEqual(
+            derived.currentLanguage,
+            "et",
+            "No-snapshot privacy path must label refresh derivation with stream attach language, not hard-default en"
+        )
+    }
+
+    /// Session snapshot language remains the top precedence for refresh derivation when present.
+    func testDeriveRefreshParametersPrefersSnapshotLanguageOverStreamAttach() async {
+        let streams = manager.availableStreams
+        guard let german = streams.first(where: { $0.languageCode == "de" }) else {
+            XCTFail("Expected German stream in catalog")
+            return
+        }
+        await manager.switchToStream(german)
+
+        SharedPlayerManager.persistWidgetSnapshot(
+            visualState: .playing,
+            language: "fi",
+            hasError: false
+        )
+
+        let derived = refreshManager._test_deriveRefreshParameters(
+            for: .visualStateDidChange(.playing)
+        )
+
+        XCTAssertEqual(
+            derived.currentLanguage,
+            "fi",
+            "In-process snapshot must outrank stream attach for refresh derivation"
+        )
+    }
+
+    /// Imperative ``refreshIfNeeded`` re-resolves a privacy hard-default `"en"` caller language
+    /// to stream attach before coalesce bookkeeping / DEBUG labels consume it.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/languageForWidgetRefreshDerivation(fallbackLanguage:)``,
+    ///   ``WidgetRefreshManager/refreshIfNeeded(visualState:currentLanguage:hasError:immediate:trigger:)``.
+    func testRefreshIfNeededResolvesPrivacyHardDefaultCallerLanguageViaStreamAttach() async {
+        await SharedPlayerManager.clearAllLocalState()
+        SharedPlayerManager.clearLiveActivityLanguageMirror()
+        await MainActor.run {
+            WidgetRefreshManager.setHasActiveLutheranWidgets(false)
+            WidgetRefreshManager._test_setSuppressPlayerEventObservation(true)
+        }
+
+        let streams = manager.availableStreams
+        guard let german = streams.first(where: { $0.languageCode == "de" }) else {
+            XCTFail("Expected German stream in catalog")
+            return
+        }
+        await manager.switchToStream(german)
+
+        enableDebounceObservation()
+
+        refreshManager.refreshIfNeeded(
+            visualState: .playing,
+            currentLanguage: "en",
+            hasError: false,
+            immediate: true,
+            trigger: .test
+        )
+
+        let executed = await waitForDebounceOutcome(.refreshExecuted, timeout: 1.0)
+        XCTAssertTrue(
+            executed,
+            "Immediate playing refresh must execute under debounce observation; log: \(WidgetRefreshManager._test_debounceOutcomeLog())"
+        )
+        XCTAssertEqual(
+            refreshManager.lastKnownState?.currentLanguage,
+            "de",
+            "Caller privacy hard-default en must not stick in refresh bookkeeping while stream attach is de"
+        )
+    }
+
     /// Verifies that ``SharedPlayerManager/loadSharedState()`` error state propagates
     /// through derivation for non-carrying events.
     func testDeriveRefreshParametersPropagatesHasErrorFromPersistedSnapshot() {

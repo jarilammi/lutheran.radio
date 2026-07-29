@@ -333,7 +333,11 @@ final class WidgetRefreshManager: @unchecked Sendable {
     ///
     /// - Parameters:
     ///   - visualState: Target ``PlayerVisualState`` for the timeline entry.
-    ///   - currentLanguage: Stream language code for the entry.
+    ///   - currentLanguage: Caller-supplied stream language hint. Re-resolved via
+    ///     ``SharedPlayerManager/languageForWidgetRefreshDerivation(fallbackLanguage:)`` so
+    ///     coalesce / DEBUG labels track stream attach / LA content-push language under
+    ///     privacy write suppression (never privacy hard-default `"en"` alone while the
+    ///     engine stream is non-English).
     ///   - hasError: Permanent-error chrome flag from shared state.
     ///   - immediate: When `true`, bypasses prePlay coalesce deferral and adaptive debounce.
     ///   - trigger: Why this call was made (dual-path inventory + DEBUG dual-fire observation).
@@ -341,6 +345,7 @@ final class WidgetRefreshManager: @unchecked Sendable {
     ///     must pass the matching case.
     ///
     /// - SeeAlso: ``handlePlayerEvent(_:)``, ``WidgetRefreshTrigger``, `SharedPlayerManager.events`,
+    ///   ``SharedPlayerManager/languageForWidgetRefreshDerivation(fallbackLanguage:)``,
     ///   docs/Event-Driven-Refactor-Roadmap.md (dual-path inventory),
     ///   docs/Widget-Functionality-Roadmap.md (refresh inventory).
     func refreshIfNeeded(
@@ -403,10 +408,17 @@ final class WidgetRefreshManager: @unchecked Sendable {
         // converge here. All logic below (coalescing, debouncing, regress detection,
         // privacy gate) applies uniformly regardless of trigger source. The observer
         // path is intentionally non-special and never bypasses any check.
+        //
+        // Language re-resolution: ``loadSharedState()`` / ``preferredWidgetLanguage()``
+        // hard-default to `"en"` under no-widgets privacy. Coalesce bookkeeping and DEBUG
+        // `lang:` labels must track stream attach / LA content-push SSOT instead.
 
+        let resolvedLanguage = SharedPlayerManager.languageForWidgetRefreshDerivation(
+            fallbackLanguage: currentLanguage
+        )
         let newState = WidgetState(
             from: visualState,
-            currentLanguage: currentLanguage,
+            currentLanguage: resolvedLanguage,
             hasError: hasError,
             isTransitioning: false
         )
@@ -782,14 +794,20 @@ final class WidgetRefreshManager: @unchecked Sendable {
     ///   preferred even when the persisted snapshot is stale. All other cases — including
     ///   stream verbs, intent changes, metadata updates, and persist signals — fall back
     ///   to ``SharedPlayerManager/loadPersistedWidgetState()`` (or `.prePlay` when absent).
+    /// - Important: Language uses ``SharedPlayerManager/languageForWidgetRefreshDerivation(fallbackLanguage:)``
+    ///   so privacy hard-default `"en"` from ``loadSharedState()`` does not label non-English
+    ///   streams in coalesce diagnostics when the session snapshot is write-suppressed.
     /// - SeeAlso: ``handlePlayerEvent(_:)``,
     ///   ``refreshIfNeeded(visualState:currentLanguage:hasError:immediate:trigger:)``,
+    ///   ``SharedPlayerManager/languageForWidgetRefreshDerivation(fallbackLanguage:)``,
     ///   `SharedPlayerManager.loadSharedState`, docs/Event-Driven-Refactor-Roadmap.md.
     func deriveRefreshParameters(for event: PlayerEvent) -> RefreshDerivation {
         let persisted = SharedPlayerManager.loadPersistedWidgetState()
         let sharedState = SharedPlayerManager.shared.loadSharedState()
 
-        let language = persisted?.currentLanguage ?? sharedState.currentLanguage
+        let language = SharedPlayerManager.languageForWidgetRefreshDerivation(
+            fallbackLanguage: sharedState.currentLanguage
+        )
         let hasError = sharedState.hasError
 
         let visualState: PlayerVisualState
