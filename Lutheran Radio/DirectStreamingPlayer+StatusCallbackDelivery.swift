@@ -15,7 +15,8 @@
 //  Ownership (do not invert):
 //  - This domain owns **status callback delivery** (``safeOnStatusChange``,
 //    ``deliverStatusChange``, ``invokeStatusCallbacks``), **transient suppress
-//    gates** (``shouldSuppressTransientKVOStatus``,
+//    / force-save skip gates** (``shouldSuppressTransientKVOStatus``,
+//    ``shouldSkipForceWidgetSaveOnStableStatus``,
 //    ``shouldSkipWidgetSaveForTransientConnectOrBuffer``), and **metadata
 //    callback delivery** (``safeOnMetadataChange``).
 //  - Stored callbacks / dedup / init-queue state remain on the façade class body
@@ -56,6 +57,7 @@
 //
 
 import Foundation
+import WidgetSurface
 
 // MARK: - Status / metadata callback delivery
 
@@ -79,20 +81,83 @@ extension DirectStreamingPlayer {
 
     /// Returns true when a stable connect/buffer status should not trigger widget persistence:
     /// `isPlaying` is false but `currentVisualState` is already `.prePlay` or `.playing`.
+    ///
+    /// - SeeAlso: ``shouldSkipForceWidgetSaveOnStableStatus(isPlaying:reasonKey:visual:)``
     @MainActor
     func shouldSkipWidgetSaveForTransientConnectOrBuffer(
         isPlaying: Bool,
         reasonKey: String?
     ) async -> Bool {
-        guard !isPlaying, let reasonKey else { return false }
-        switch reasonKey {
-        case "status_connecting", "status_buffering":
-            break
-        default:
-            return false
-        }
         let visual = await SharedPlayerManager.shared.currentVisualState
-        return visual == .prePlay || visual == .playing
+        return Self.shouldSkipForceWidgetSaveOnStableStatus(
+            isPlaying: isPlaying,
+            reasonKey: reasonKey,
+            visual: visual
+        )
+    }
+
+    /// Pure policy: whether a stable status emission should skip the force ``saveCurrentState()`` side effect.
+    ///
+    /// Attach-path KVO storms emit many `status_stopped` / `status_connecting` / `status_buffering`
+    /// callbacks while visual chrome is already sticky Connecting (``.prePlay`` / ``.cleared``).
+    /// Sticky pause/lock already skips force save because the explicit stop path persisted chrome.
+    /// Sticky connecting uses the same rule: the authoritative stream-switch / play-entry write
+    /// already stamped language + connecting visual; status ticks must not re-persist identical chrome.
+    ///
+    /// **Still saves** for permanent-error / unavailability keys (chrome must advance) and when
+    /// visual is already ``.playing`` with an audible status (authoritative playing path).
+    /// Deferred ``setPlaying`` while visual is still Connecting skips force save — the playing
+    /// transition write is owned by ``setPlaying`` / ``publishAuthoritativePlayingIfNeeded``.
+    ///
+    /// - Parameters:
+    ///   - isPlaying: Engine audible flag for this status emission.
+    ///   - reasonKey: Exact Localizable status key, or `nil`.
+    ///   - visual: Current ``PlayerVisualState`` SSOT (not system-held Live Activity content).
+    /// - Returns: `true` when force widget save must no-op.
+    /// - SeeAlso: ``deliverStatusChange(isPlaying:reasonKey:)``,
+    ///   ``SharedPlayerManager/shouldSkipIdenticalStickyConnectingSnapshotWrite(currentVisual:previousVisual:languageUnchanged:errorUnchanged:metadataUnchanged:hasError:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md
+    static func shouldSkipForceWidgetSaveOnStableStatus(
+        isPlaying: Bool,
+        reasonKey: String?,
+        visual: PlayerVisualState
+    ) -> Bool {
+        // Sticky pause / security lock: explicit stop path already persisted correct visual+lang.
+        if visual.mustSuppressResurrection {
+            return true
+        }
+
+        // Permanent-error and unavailability keys always force a save so chrome can advance.
+        switch reasonKey {
+        case "status_security_failed",
+             "status_stream_unavailable",
+             "status_failed",
+             "status_no_internet",
+             "status_ssl_transition",
+             "status_thermal_paused",
+             "status_paused_call":
+            return false
+        default:
+            break
+        }
+
+        // Sticky connecting chrome: attach / readyToPlay wait storms (status_stopped, connecting,
+        // buffering) and deferred status_playing while visual is still Connecting.
+        if visual == .prePlay || visual == .cleared {
+            return true
+        }
+
+        // Transient connect/buffer while already audibly playing (ICY/Fig glitch class).
+        if !isPlaying, visual == .playing {
+            switch reasonKey {
+            case "status_connecting", "status_buffering":
+                return true
+            default:
+                return false
+            }
+        }
+
+        return false
     }
 
     @MainActor
@@ -117,26 +182,27 @@ extension DirectStreamingPlayer {
 
             if isStableState {
                 Task {
-                    if await self.shouldSkipWidgetSaveForTransientConnectOrBuffer(
+                    let vis = await SharedPlayerManager.shared.currentVisualState
+                    if Self.shouldSkipForceWidgetSaveOnStableStatus(
                         isPlaying: isPlaying,
-                        reasonKey: reasonKey
+                        reasonKey: reasonKey,
+                        visual: vis
                     ) {
                         #if DEBUG
-                        print("[DirectStreamingPlayer] safeOnStatusChange: transient \(reasonKey ?? "nil") — skipping widget save (visual SSOT prePlay/playing)")
+                        if vis.mustSuppressResurrection {
+                            print("[DirectStreamingPlayer] safeOnStatusChange: stable stopped (isPlaying=\(isPlaying), key='\(reasonKey ?? "nil")') while sticky pause — skipping force save (explicit stop path already persisted correct visual+lang)")
+                        } else if vis == .prePlay || vis == .cleared {
+                            print("[DirectStreamingPlayer] safeOnStatusChange: stable (isPlaying=\(isPlaying), key='\(reasonKey ?? "nil")') while sticky connecting — skipping force save (authoritative prePlay write already stamped visual+lang)")
+                        } else {
+                            print("[DirectStreamingPlayer] safeOnStatusChange: transient \(reasonKey ?? "nil") — skipping widget save (visual SSOT prePlay/playing)")
+                        }
                         #endif
                         return
                     }
-                    let vis = await SharedPlayerManager.shared.currentVisualState
-                    if vis.mustSuppressResurrection {
-                        #if DEBUG
-                        print("[DirectStreamingPlayer] safeOnStatusChange: stable stopped (isPlaying=\(isPlaying), key='\(reasonKey ?? "nil")') while sticky pause — skipping force save (explicit stop path already persisted correct visual+lang)")
-                        #endif
-                    } else {
-                        #if DEBUG
-                        print("[DirectStreamingPlayer] safeOnStatusChange: STABLE final state (isPlaying=\(isPlaying), key='\(reasonKey ?? "nil")') → forcing widget save")
-                        #endif
-                        await SharedPlayerManager.shared.saveCurrentState()
-                    }
+                    #if DEBUG
+                    print("[DirectStreamingPlayer] safeOnStatusChange: STABLE final state (isPlaying=\(isPlaying), key='\(reasonKey ?? "nil")') → forcing widget save")
+                    #endif
+                    await SharedPlayerManager.shared.saveCurrentState()
                 }
             } else {
                 #if DEBUG

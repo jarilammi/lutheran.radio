@@ -469,6 +469,21 @@ extension SharedPlayerManager {
         // Language change path: clear stale program metadata for the snapshot.
         // Uses the same helper as the Now-Playing-oriented clear to keep the nil-ing in one place.
         _clearIcyMetadataStash()
+
+        // Destination already stamped with matching visual + cleared metadata → no second write.
+        // First switch still writes when language differs or prior metadata remains.
+        if let previous = Self.loadPersistedWidgetState(),
+           previous.currentLanguage == language,
+           previous.visualState == currentVisualState,
+           previous.streamMetadata == nil,
+           previous.hasError == false {
+            Self.bumpWidgetLivenessTimestamp(policy: .immediate)
+            #if DEBUG
+            print("[SharedPlayerManager] saveCombinedWidgetState: destination already stamped — skipping persist")
+            #endif
+            return
+        }
+
         savePersistedWidgetState(visualState: currentVisualState, language: language, streamMetadata: nil)
 
         // Bare App Group `currentLanguage` is retired (purged only). Liveness uses the

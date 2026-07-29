@@ -831,4 +831,166 @@ final class SharedPlayerManagerMediaSurfaceTests: XCTestCase {
             )
         }
     }
+
+    // MARK: - Attach-path sticky connecting snapshot quiet
+
+    /// Pure policy: identical sticky Connecting chrome (``.prePlay`` / ``.cleared``) with
+    /// unchanged language/error/metadata skips re-persist; first transition, language change,
+    /// error, and sticky pause do not.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/shouldSkipIdenticalStickyConnectingSnapshotWrite(currentVisual:previousVisual:languageUnchanged:errorUnchanged:metadataUnchanged:hasError:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md
+    func testShouldSkipIdenticalStickyConnectingSnapshotWritePolicy() {
+        XCTAssertTrue(
+            SharedPlayerManager.shouldSkipIdenticalStickyConnectingSnapshotWrite(
+                currentVisual: .prePlay,
+                previousVisual: .prePlay,
+                languageUnchanged: true,
+                errorUnchanged: true,
+                metadataUnchanged: true,
+                hasError: false
+            ),
+            "Identical sticky Connecting must skip re-persist"
+        )
+        XCTAssertTrue(
+            SharedPlayerManager.shouldSkipIdenticalStickyConnectingSnapshotWrite(
+                currentVisual: .cleared,
+                previousVisual: .cleared,
+                languageUnchanged: true,
+                errorUnchanged: true,
+                metadataUnchanged: true,
+                hasError: false
+            ),
+            "Identical sticky cleared chrome must skip re-persist"
+        )
+        XCTAssertFalse(
+            SharedPlayerManager.shouldSkipIdenticalStickyConnectingSnapshotWrite(
+                currentVisual: .prePlay,
+                previousVisual: .playing,
+                languageUnchanged: true,
+                errorUnchanged: true,
+                metadataUnchanged: true,
+                hasError: false
+            ),
+            "First transition into Connecting must write"
+        )
+        XCTAssertFalse(
+            SharedPlayerManager.shouldSkipIdenticalStickyConnectingSnapshotWrite(
+                currentVisual: .prePlay,
+                previousVisual: .prePlay,
+                languageUnchanged: false,
+                errorUnchanged: true,
+                metadataUnchanged: true,
+                hasError: false
+            ),
+            "Language change must still write"
+        )
+        XCTAssertFalse(
+            SharedPlayerManager.shouldSkipIdenticalStickyConnectingSnapshotWrite(
+                currentVisual: .prePlay,
+                previousVisual: .prePlay,
+                languageUnchanged: true,
+                errorUnchanged: true,
+                metadataUnchanged: true,
+                hasError: true
+            ),
+            "Error repairs must still write"
+        )
+        XCTAssertFalse(
+            SharedPlayerManager.shouldSkipIdenticalStickyConnectingSnapshotWrite(
+                currentVisual: .userPaused,
+                previousVisual: .userPaused,
+                languageUnchanged: true,
+                errorUnchanged: true,
+                metadataUnchanged: true,
+                hasError: false
+            ),
+            "Sticky pause uses snapshot-unchanged + non-urgent path, not connecting skip"
+        )
+        XCTAssertFalse(
+            SharedPlayerManager.shouldSkipIdenticalStickyConnectingSnapshotWrite(
+                currentVisual: .playing,
+                previousVisual: .playing,
+                languageUnchanged: true,
+                errorUnchanged: true,
+                metadataUnchanged: true,
+                hasError: false
+            ),
+            "Active playing must not use connecting skip"
+        )
+        XCTAssertFalse(
+            SharedPlayerManager.shouldSkipIdenticalStickyConnectingSnapshotWrite(
+                currentVisual: .prePlay,
+                previousVisual: nil,
+                languageUnchanged: true,
+                errorUnchanged: true,
+                metadataUnchanged: true,
+                hasError: false
+            ),
+            "First session write (no previous snapshot) must not skip"
+        )
+    }
+
+    /// Verifies attach-path quiet: after one authoritative Connecting write for a language,
+    /// further ``saveCurrentState()`` calls do not re-emit ``.persistedWidgetStateDidUpdate``.
+    ///
+    /// Language change and visual transition to ``.playing`` still emit.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/performActualSave(_:widgetState:at:)``,
+    ///   ``SharedPlayerManager/shouldSkipIdenticalStickyConnectingSnapshotWrite(currentVisual:previousVisual:languageUnchanged:errorUnchanged:metadataUnchanged:hasError:)``
+    func testSaveCurrentStateSkipsIdenticalStickyConnectingPersist() async {
+        let manager = self.manager
+        await manager.resetToPrePlayForNewStream(connectingLanguageCode: "de")
+        await manager.saveCombinedWidgetState(language: "de")
+
+        let first = await collectSeamEvents(minimumCount: 1, timeout: 3.0) {
+            await manager.saveCurrentState()
+        }
+        let firstPersistCount = first.filter {
+            if case .persistedWidgetStateDidUpdate = $0 { return true }
+            return false
+        }.count
+        // First save may no-op if saveCombinedWidgetState already stamped identical chrome.
+        // Either zero or one emit is fine; the storm gate is the second call.
+        XCTAssertLessThanOrEqual(firstPersistCount, 1)
+
+        let second = await collectSeamEvents(minimumCount: 1, timeout: 2.0) {
+            await manager.saveCurrentState()
+            await manager.saveCurrentState()
+            await manager.saveCurrentState()
+        }
+        let secondPersistCount = second.filter {
+            if case .persistedWidgetStateDidUpdate = $0 { return true }
+            return false
+        }.count
+        XCTAssertEqual(
+            secondPersistCount,
+            0,
+            "Identical sticky Connecting must not re-persist; got: \(second)"
+        )
+
+        let languageChange = await collectSeamEvents(minimumCount: 1, timeout: 3.0) {
+            await manager.saveCombinedWidgetState(language: "fi")
+            await manager.saveCurrentState()
+        }
+        XCTAssertTrue(
+            languageChange.contains(where: {
+                if case .persistedWidgetStateDidUpdate = $0 { return true }
+                return false
+            }),
+            "Language change must still persist; got: \(languageChange)"
+        )
+
+        let playingTransition = await collectSeamEvents(minimumCount: 1, timeout: 3.0) {
+            await manager.setPlaying()
+            await manager.saveCurrentState()
+        }
+        XCTAssertTrue(
+            playingTransition.contains(where: {
+                if case .persistedWidgetStateDidUpdate = $0 { return true }
+                return false
+            }),
+            "Transition to playing must still persist; got: \(playingTransition)"
+        )
+    }
 }

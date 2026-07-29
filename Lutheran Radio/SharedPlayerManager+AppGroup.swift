@@ -400,6 +400,44 @@ extension SharedPlayerManager {
         }
     }
     
+    /// Pure policy: skip re-persist of identical sticky Connecting chrome (``.prePlay`` / ``.cleared``).
+    ///
+    /// Attach-path status storms and coordinator label saves call ``saveCurrentState()`` many times
+    /// while language and connecting visual are already correct. The first transition into Connecting
+    /// (prior visual ≠ connecting) still writes because ``previousVisual`` differs. Language changes,
+    /// error repairs, and metadata mutations still write. Parity with sticky-pause force-save skip
+    /// on the status pipeline and with ``WidgetRefreshManager/shouldCoalesceIdenticalNonPlayingRefresh``.
+    ///
+    /// - Parameters:
+    ///   - currentVisual: Actor visual about to be persisted.
+    ///   - previousVisual: Snapshot visual from the last write, if any.
+    ///   - languageUnchanged: `true` when candidate language matches the snapshot language.
+    ///   - errorUnchanged: `true` when permanent-error flags match.
+    ///   - metadataUnchanged: `true` when stream program metadata matches.
+    ///   - hasError: Candidate permanent-error flag (never skip error repairs).
+    /// - Returns: `true` when the persist must no-op (liveness-only).
+    /// - SeeAlso: ``performActualSave(_:widgetState:at:)``,
+    ///   ``DirectStreamingPlayer/shouldSkipForceWidgetSaveOnStableStatus(isPlaying:reasonKey:visual:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md
+    nonisolated static func shouldSkipIdenticalStickyConnectingSnapshotWrite(
+        currentVisual: PlayerVisualState,
+        previousVisual: PlayerVisualState?,
+        languageUnchanged: Bool,
+        errorUnchanged: Bool,
+        metadataUnchanged: Bool,
+        hasError: Bool
+    ) -> Bool {
+        guard !hasError else { return false }
+        guard languageUnchanged, errorUnchanged, metadataUnchanged else { return false }
+        guard let previousVisual, previousVisual == currentVisual else { return false }
+        switch currentVisual {
+        case .prePlay, .cleared:
+            return true
+        case .playing, .userPaused, .thermalPaused, .securityLocked:
+            return false
+        }
+    }
+
     internal func performActualSave(_ state: (isPlaying: Bool, currentLanguage: String, hasError: Bool),
                                    widgetState: WidgetState,
                                    at _: Date) {
@@ -415,9 +453,11 @@ extension SharedPlayerManager {
         let previousSnapshot = Self.loadPersistedWidgetState()
         let previousLanguage = previousSnapshot?.currentLanguage ?? ""
         let isLanguageChange = !previousLanguage.isEmpty && previousLanguage != state.currentLanguage
+        let languageUnchanged = previousSnapshot.map { $0.currentLanguage == state.currentLanguage } ?? false
 
         let previousHasError = previousSnapshot?.hasError ?? false
         let previousIsPlaying = previousSnapshot?.visualState.isActivelyPlaying ?? false
+        let errorUnchanged = previousHasError == state.hasError
 
         let metadataUnchanged = previousSnapshot?.streamMetadata == currentStreamMetadata
         let snapshotUnchanged =
@@ -432,8 +472,30 @@ extension SharedPlayerManager {
         let visualStateChanged = previousSnapshot?.visualState != currentVisualState
         let isTransitionToStickyPause = visualStateChanged && currentVisualState.mustSuppressResurrection
         // Widget optimistic pause may pre-write .userPaused; still urgent when isPlaying flips false.
+        // Do not treat playing→Connecting (stream-switch hold) as "playing stopped" urgency once
+        // Connecting chrome for the destination language is already on the snapshot — that is
+        // attach-path noise covered by ``shouldSkipIdenticalStickyConnectingSnapshotWrite``.
         let isPlayingStopped = previousIsPlaying && !state.isPlaying
+            && !(currentVisualState == .prePlay || currentVisualState == .cleared)
         let isUrgentUpdate = state.hasError || isLanguageChange || isTransitionToStickyPause || isPlayingStopped
+
+        // Attach-path quiet: identical sticky Connecting chrome + unchanged language → skip
+        // (parity with sticky-pause force-save skip). First prePlay write still lands when
+        // previous visual differs or language/error/metadata changed.
+        if Self.shouldSkipIdenticalStickyConnectingSnapshotWrite(
+            currentVisual: currentVisualState,
+            previousVisual: previousSnapshot?.visualState,
+            languageUnchanged: languageUnchanged,
+            errorUnchanged: errorUnchanged,
+            metadataUnchanged: metadataUnchanged,
+            hasError: state.hasError
+        ) {
+            Self.bumpWidgetLivenessTimestamp()
+            #if DEBUG
+            print("[SharedPlayerManager] performActualSave: identical sticky connecting — skipping persist")
+            #endif
+            return
+        }
 
         if snapshotUnchanged && !isUrgentUpdate {
             Self.bumpWidgetLivenessTimestamp()
