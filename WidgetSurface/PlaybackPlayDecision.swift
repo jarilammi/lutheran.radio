@@ -205,22 +205,31 @@ public enum PlaybackPlayDecision {
     /// Whether play should stamp connecting (``.prePlay``) chrome after security and before
     /// soft-resume / engine attach.
     ///
-    /// Does **not** force chrome when already ``.prePlay`` (including stream-switch hold) or
-    /// already ``.playing``. Only active playback intent receives connecting chrome.
+    /// Does **not** force chrome when already ``.prePlay`` (including stream-switch hold),
+    /// already ``.playing``, or when same-stream soft-pause resume is available (gapless
+    /// audible start would outrun Connecting paint on home widgets). Only active playback
+    /// intent receives connecting chrome for true attach / re-attach paths.
     ///
     /// - Parameters:
     ///   - visualState: Current ``PlayerVisualState``.
     ///   - isActivePlaybackIntent: Whether intent is actively requesting play.
+    ///   - canSoftResumeSameStream: When `true`, soft-pause holds a secured item for the
+    ///     selected language — Connecting would flash after audio is already live. Pass
+    ///     ``DirectStreamingPlayer/PlaybackAttachState/canSoftResumeSameStream``.
     /// - Returns: `true` when the actor should `applyVisualState(.prePlay)`.
     /// - Important: Authoritative ``.playing`` still arrives only from engine soft-resume or
     ///   readyToPlay first-play kick — never from this decision alone.
     /// - SeeAlso: SharedPlayerManager.play() post-security surfaces phase,
-    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (connecting until audible).
+    ///   SharedPlayerManager.setUserIntentToPlay(),
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (connecting until audible),
+    ///   docs/Widget-Presentation-Dataflow.md (home soft-resume refresh authority).
     public static func shouldApplyConnectingPrePlayChrome(
         visualState: PlayerVisualState,
-        isActivePlaybackIntent: Bool
+        isActivePlaybackIntent: Bool,
+        canSoftResumeSameStream: Bool = false
     ) -> Bool {
-        visualState != .prePlay
+        guard !canSoftResumeSameStream else { return false }
+        return visualState != .prePlay
             && visualState != .playing
             && isActivePlaybackIntent
     }

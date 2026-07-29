@@ -222,7 +222,7 @@ extension SharedPlayerManager {
             break
         }
 
-        switch runPlayPostSecuritySurfacesPhase() {
+        switch await runPlayPostSecuritySurfacesPhase() {
         case .finished:
             return
         case .continueToAttach:
@@ -444,12 +444,15 @@ extension SharedPlayerManager {
     /// Phase 4 — connecting chrome + extension optimistic surfaces (no engine attach yet).
     ///
     /// Connecting ``.prePlay`` only (never ``setPlaying()``) until soft-resume or readyToPlay.
+    /// Same-stream soft-pause resume skips Connecting (gapless audio would outrun yellow chrome).
     /// Stream-switch hold stays true so yellow ``.prePlay`` persists until engine ``setPlaying()``.
     /// Widget process finishes here with optimistic visual + pending action; main app continues.
-    private func runPlayPostSecuritySurfacesPhase() -> PlayPostSecuritySurfaceResult {
+    private func runPlayPostSecuritySurfacesPhase() async -> PlayPostSecuritySurfaceResult {
+        let canSoftResume = await canSoftResumeSameStreamForPlayChrome()
         if PlaybackPlayDecision.shouldApplyConnectingPrePlayChrome(
             visualState: currentVisualState,
-            isActivePlaybackIntent: currentPlaybackIntent.isActivePlaybackIntent
+            isActivePlaybackIntent: currentPlaybackIntent.isActivePlaybackIntent,
+            canSoftResumeSameStream: canSoftResume
         ) {
             applyVisualState(.prePlay)
             #if DEBUG
@@ -457,7 +460,9 @@ extension SharedPlayerManager {
             #endif
         }
         #if DEBUG
-        if holdPrePlayVisualUntilPlayback {
+        if canSoftResume {
+            print("[SharedPlayerManager] play() — soft-resume eligible; retaining visual until authoritative playing")
+        } else if holdPrePlayVisualUntilPlayback {
             print("[SharedPlayerManager] play() — stream-switch prePlay hold retained until engine setPlaying")
         } else {
             print("[SharedPlayerManager] play() — deferring setPlaying until soft-resume or readyToPlay kick")
@@ -609,8 +614,9 @@ extension SharedPlayerManager {
     ///    ``setUserIntentToPlay()`` so chrome is never forced through Connecting and the
     ///    secured item is never rebuilt (holds even inside the cold-launch relaxed window).
     /// 4. (Main-app only) `configureNowPlayingControlsIfNeeded()`
-    /// 5. `setUserIntentToPlay()` — forces `.prePlay` on sticky pause/clear, does
-    ///    `updatePlaybackIntent(to: .shouldBePlaying)`, double-saves.
+    /// 5. `setUserIntentToPlay()` — sticky pause/clear → Connecting ``.prePlay`` (skipped when
+    ///    same-stream soft-pause resume is available), then
+    ///    `updatePlaybackIntent(to: .shouldBePlaying)`, saves.
     /// 6. `play()` — the execution engine (defensive clear, classify cold/stream-switch/resume,
     ///    sticky/one-shot/security guards, connecting chrome, engine drive; ``setPlaying()`` only
     ///    after soft-resume or readyToPlay audible kick). Soft-paused same-language resume still
@@ -1083,6 +1089,14 @@ extension SharedPlayerManager {
     /// Clears `.userPaused` so `play()` can proceed via explicit `.shouldBePlaying` intent.
     /// Also moves thermal / security recovery chrome to Connecting (``.prePlay``) before
     /// validation so control surfaces do not keep policy-error glyphs while a recovery play runs.
+    ///
+    /// Same-stream soft-pause resume is an exception: Connecting is skipped and sticky visual
+    /// is retained until engine ``setPlaying()`` so home widgets do not paint post-audible
+    /// Connecting chrome on the gapless path.
+    ///
+    /// - SeeAlso: ``play()``, ``canSoftResumeSameStreamForPlayChrome()``,
+    ///   ``PlaybackPlayDecision/shouldApplyConnectingPrePlayChrome(visualState:isActivePlaybackIntent:canSoftResumeSameStream:)``,
+    ///   docs/Widget-Presentation-Dataflow.md (home soft-resume refresh authority).
     func setUserIntentToPlay() async {
         ensureVisualStateLoaded()
 
@@ -1095,17 +1109,28 @@ extension SharedPlayerManager {
         #if DEBUG
         print("[SharedPlayerManager] setUserIntentToPlay() called – clearing sticky / policy chrome for explicit play")
         #endif
+
+        let canSoftResume = await canSoftResumeSameStreamForPlayChrome()
         
         if currentVisualState == .userPaused
             || currentPlaybackIntent == .cleared
             || currentVisualState == .cleared
             || currentVisualState == .thermalPaused
             || currentVisualState == .securityLocked {
-            applyVisualState(.prePlay)
-            
-            #if DEBUG
-            print("[SharedPlayerManager] setUserIntentToPlay() → .prePlay with .shouldBePlaying (resume/clear/recovery path)")
-            #endif
+            if PlaybackPlayDecision.shouldApplyConnectingPrePlayChrome(
+                visualState: currentVisualState,
+                isActivePlaybackIntent: true,
+                canSoftResumeSameStream: canSoftResume
+            ) {
+                applyVisualState(.prePlay)
+                #if DEBUG
+                print("[SharedPlayerManager] setUserIntentToPlay() → .prePlay with .shouldBePlaying (resume/clear/recovery path)")
+                #endif
+            } else {
+                #if DEBUG
+                print("[SharedPlayerManager] setUserIntentToPlay() — soft-resume eligible; retaining \(currentVisualState) until authoritative playing")
+                #endif
+            }
         }
         
         updatePlaybackIntent(to: .shouldBePlaying)
@@ -1405,6 +1430,12 @@ extension SharedPlayerManager {
     /// Clears sticky pause/clear resurrection locks (.userPaused or .cleared) when an
     /// explicit user play action (widget, button, Siri, etc.) requests playback.
     /// Also handles sleepTimer special case. Called from play() and widget play paths.
+    ///
+    /// Same-stream soft-pause resume retains sticky visual until engine ``setPlaying()``
+    /// (no intermediate Connecting stamp) so home chrome stays honest on gapless resume.
+    ///
+    /// - SeeAlso: ``setUserIntentToPlay()``, ``canSoftResumeSameStreamForPlayChrome()``,
+    ///   ``PlaybackPlayDecision/shouldApplyConnectingPrePlayChrome(visualState:isActivePlaybackIntent:canSoftResumeSameStream:)``.
     public func clearUserPausedLockIfNeeded() async {
         ensureVisualStateLoaded()
 
@@ -1423,11 +1454,38 @@ extension SharedPlayerManager {
         print("[SharedPlayerManager] Cleared sticky lock for explicit play (visual=\(currentVisualState), intent=\(currentPlaybackIntent))")
         #endif
 
+        let canSoftResume = await canSoftResumeSameStreamForPlayChrome()
         if currentVisualState == .userPaused || currentPlaybackIntent == .cleared || currentVisualState == .cleared {
-            applyVisualState(.prePlay)
+            if PlaybackPlayDecision.shouldApplyConnectingPrePlayChrome(
+                visualState: currentVisualState,
+                isActivePlaybackIntent: true,
+                canSoftResumeSameStream: canSoftResume
+            ) {
+                applyVisualState(.prePlay)
+            }
         }
 
         updatePlaybackIntent(to: .shouldBePlaying)
+    }
+
+    /// Whether the engine holds a soft-paused secured item for the selected language
+    /// (gapless same-stream resume candidate).
+    ///
+    /// Used only for Connecting-chrome decisions on the main app. Widget extension and
+    /// UITest without an attached item always report `false` so recovery paths still get
+    /// honest Connecting chrome.
+    ///
+    /// - Returns: ``DirectStreamingPlayer/PlaybackAttachState/canSoftResumeSameStream``.
+    /// - SeeAlso: ``setUserIntentToPlay()``, ``clearUserPausedLockIfNeeded()``,
+    ///   ``runPlayPostSecuritySurfacesPhase()``.
+    private func canSoftResumeSameStreamForPlayChrome() async -> Bool {
+        #if LUTHERAN_MAIN_APP
+        await MainActor.run {
+            DirectStreamingPlayer.shared.currentPlaybackAttachState().canSoftResumeSameStream
+        }
+        #else
+        false
+        #endif
     }
     
     #if LUTHERAN_MAIN_APP

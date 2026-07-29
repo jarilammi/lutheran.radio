@@ -203,4 +203,22 @@ struct PlaybackPlayDecisionTests {
             )
         )
     }
+
+    /// Soft-pause same-stream resume must not stamp Connecting — gapless audio outruns yellow chrome.
+    @Test func connectingPrePlayChromeSkippedWhenSoftResumeSameStreamAvailable() {
+        #expect(
+            !PlaybackPlayDecision.shouldApplyConnectingPrePlayChrome(
+                visualState: .userPaused,
+                isActivePlaybackIntent: true,
+                canSoftResumeSameStream: true
+            )
+        )
+        #expect(
+            PlaybackPlayDecision.shouldApplyConnectingPrePlayChrome(
+                visualState: .userPaused,
+                isActivePlaybackIntent: true,
+                canSoftResumeSameStream: false
+            )
+        )
+    }
 }

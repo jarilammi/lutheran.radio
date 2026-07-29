@@ -594,22 +594,22 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
 
     // MARK: - Event-path immediate delivery
 
-    /// Verifies that ``handlePlayerEvent(_:)`` passes `immediate: true` to
-    /// ``refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)`` for terminal and
-    /// sticky-pause visuals (parity with former ``performActualSave`` urgency and teardown callers).
-    ///
-    /// Factory-reset, privacy-clear, and sticky pause/lock presentations must not be deferred
-    /// behind the `.prePlay` → `.playing` coalesce window on the Tier 2 observer path.
+    /// Verifies that ``handlePlayerEvent(_:)`` passes `immediate: true` for sticky pause/lock
+    /// and factory-reset ``.cleared``, while Connecting ``.prePlay`` stays non-immediate so the
+    /// ``.prePlay`` → ``.playing`` coalesce can supersede soft-resume connecting paints.
     ///
     /// - SeeAlso: ``handlePlayerEvent(_:)``,
+    ///   ``WidgetRefreshManager/refreshUsesImmediateDelivery(for:hasError:)``,
     ///   ``WidgetRefreshManager/_test_lastHandlePlayerEventImmediate()``,
-    ///   docs/Widget-Functionality-Roadmap.md (Tier 3), docs/Event-Driven-Refactor-Roadmap.md (Tier 5).
+    ///   docs/Widget-Functionality-Roadmap.md (Tier 3), docs/Event-Driven-Refactor-Roadmap.md (Tier 5),
+    ///   docs/Widget-Presentation-Dataflow.md (home soft-resume refresh authority).
     func testHandlePlayerEventEventPathUsesImmediateForPrePlayAndCleared() async {
         WidgetRefreshManager._test_setBypassUITestModeForRefreshGateObservation(true)
         WidgetRefreshManager._test_setRecordHandlePlayerEventImmediate(true)
 
+        // Sticky / factory-reset / policy chrome: immediate (must not wait behind debounce).
         let immediateVisuals: [PlayerVisualState] = [
-            .prePlay, .cleared, .userPaused, .thermalPaused, .securityLocked
+            .cleared, .userPaused, .thermalPaused, .securityLocked
         ]
         for visual in immediateVisuals {
             await refreshManager._test_invokeHandlePlayerEvent(.visualStateDidChange(visual))
@@ -619,6 +619,14 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
                 "Event path must pass immediate: true for \(visual)"
             )
         }
+
+        // Connecting participates in prePlay→playing coalesce (soft-resume home honesty).
+        await refreshManager._test_invokeHandlePlayerEvent(.visualStateDidChange(.prePlay))
+        XCTAssertEqual(
+            WidgetRefreshManager._test_lastHandlePlayerEventImmediate(),
+            false,
+            "Connecting .prePlay must defer so soft-resume .playing can supersede it"
+        )
 
         await refreshManager._test_invokeHandlePlayerEvent(.visualStateDidChange(.playing))
         XCTAssertEqual(
@@ -789,6 +797,91 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
             refreshExecutedCount(),
             1,
             "prePlay deferral must not produce a separate reload when playing supersedes it"
+        )
+    }
+
+    /// Soft-resume home honesty: event-path Connecting then authoritative playing must not
+    /// execute a separate post-audible ``.prePlay`` timeline reload.
+    ///
+    /// Drives ``refreshIfNeeded`` with the same `immediate` flags
+    /// ``refreshUsesImmediateDelivery(for:hasError:)`` would supply on the Tier 2 observer
+    /// (Connecting non-immediate, playing non-immediate). Playing supersedes the deferred
+    /// Connecting reload so soft-resume paints a single authoritative playing chrome.
+    ///
+    /// - SeeAlso: ``refreshUsesImmediateDelivery(for:hasError:)``,
+    ///   ``refreshIfNeeded(visualState:currentLanguage:hasError:immediate:trigger:)``,
+    ///   docs/Widget-Presentation-Dataflow.md (home soft-resume refresh authority).
+    func testEventPathSoftResumePrePlayIsSupersededByAuthoritativePlaying() async {
+        enableDebounceObservation()
+
+        let prePlayImmediate = refreshManager.refreshUsesImmediateDelivery(
+            for: .prePlay,
+            hasError: false
+        )
+        let playingImmediate = refreshManager.refreshUsesImmediateDelivery(
+            for: .playing,
+            hasError: false
+        )
+        XCTAssertFalse(prePlayImmediate, "Event-path Connecting must not force immediate delivery")
+        XCTAssertFalse(playingImmediate, "Playing remains eligible for coalesce/debounce")
+
+        refreshManager.refreshIfNeeded(
+            visualState: .prePlay,
+            currentLanguage: "de",
+            hasError: false,
+            immediate: prePlayImmediate,
+            trigger: .playerEvent
+        )
+        XCTAssertTrue(
+            WidgetRefreshManager._test_debounceOutcomeLog().contains(.scheduledPrePlayDeferral),
+            "Event-path prePlay must enter the coalesce deferral window"
+        )
+        XCTAssertEqual(refreshExecutedCount(), 0, "Deferred prePlay must not execute before playing")
+
+        refreshManager.refreshIfNeeded(
+            visualState: .playing,
+            currentLanguage: "de",
+            hasError: false,
+            immediate: playingImmediate,
+            trigger: .playerEvent
+        )
+
+        let executed = await waitForDebounceOutcome(.refreshExecuted, timeout: 1.0)
+        let log = WidgetRefreshManager._test_debounceOutcomeLog()
+
+        XCTAssertTrue(
+            executed,
+            "Authoritative playing must execute; log: \(log)"
+        )
+        XCTAssertTrue(
+            log.contains(.coalescedPrePlayToPlaying),
+            "Playing must supersede deferred Connecting; log: \(log)"
+        )
+        XCTAssertEqual(
+            refreshExecutedCount(),
+            1,
+            "Soft-resume must produce a single home reload (playing), not prePlay then playing; log: \(log)"
+        )
+    }
+
+    /// Pure policy: Connecting is never event-path immediate; sticky/clear/error are.
+    ///
+    /// - SeeAlso: ``WidgetRefreshManager/refreshUsesImmediateDelivery(for:hasError:)``.
+    func testRefreshUsesImmediateDeliveryPolicyForConnectingVersusSticky() {
+        XCTAssertFalse(
+            refreshManager.refreshUsesImmediateDelivery(for: .prePlay, hasError: false),
+            "Connecting must defer for soft-resume coalesce"
+        )
+        XCTAssertFalse(
+            refreshManager.refreshUsesImmediateDelivery(for: .playing, hasError: false)
+        )
+        XCTAssertTrue(refreshManager.refreshUsesImmediateDelivery(for: .cleared, hasError: false))
+        XCTAssertTrue(refreshManager.refreshUsesImmediateDelivery(for: .userPaused, hasError: false))
+        XCTAssertTrue(refreshManager.refreshUsesImmediateDelivery(for: .thermalPaused, hasError: false))
+        XCTAssertTrue(refreshManager.refreshUsesImmediateDelivery(for: .securityLocked, hasError: false))
+        XCTAssertTrue(
+            refreshManager.refreshUsesImmediateDelivery(for: .prePlay, hasError: true),
+            "Permanent-error chrome always immediate"
         )
     }
 

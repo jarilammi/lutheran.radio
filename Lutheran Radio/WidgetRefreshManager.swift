@@ -460,8 +460,8 @@ final class WidgetRefreshManager: @unchecked Sendable {
         }
         
         // Identical connecting / sticky chrome: skip further reloads (attach storms + dual-path).
-        // Event path uses immediate:true for `.prePlay` (factory-reset / teardown urgency); without
-        // this gate every attach status callback re-issues `reloadTimelines` for unchanged chrome.
+        // Connecting `.prePlay` is deferred (not event-path immediate) so soft-resume playing can
+        // supersede it; without this gate repeated attach-status prePlay still storms reloads.
         // Language already matched above; first transition into this visual still executes once.
         if let lastState = lastKnownState,
            Self.shouldCoalesceIdenticalNonPlayingRefresh(
@@ -582,9 +582,10 @@ final class WidgetRefreshManager: @unchecked Sendable {
     /// Pure policy: whether a second timeline reload for the same non-playing chrome is redundant.
     ///
     /// Event-path ``refreshUsesImmediateDelivery(for:hasError:)`` forces `immediate: true` for
-    /// ``PlayerVisualState/prePlay`` and sticky pause/lock (factory-reset / pause urgency).
-    /// Without this gate, attach-path status callbacks and dual-path post-stop hygiene re-issue
-    /// identical `reloadTimelines` storms while language and visual are unchanged.
+    /// sticky pause/lock and ``.cleared`` (factory-reset / pause urgency). Connecting
+    /// ``.prePlay`` is deferred so soft-resume ``.playing`` can coalesce. Without this gate,
+    /// attach-path status callbacks and dual-path post-stop hygiene re-issue identical
+    /// `reloadTimelines` storms while language and visual are unchanged.
     ///
     /// Language changes must be handled by the caller first — this helper assumes language
     /// equality has already been evaluated (``languageUnchanged``).
@@ -931,10 +932,13 @@ final class WidgetRefreshManager: @unchecked Sendable {
 
     /// Returns whether the event path must bypass coalesce deferral and adaptive debouncing.
     ///
-    /// Parity with the urgency rules formerly carried only by imperative ``performActualSave``
-    /// callers: factory-reset and privacy-clear visuals, sticky pause/lock states, and permanent
-    /// error chrome must not wait behind the `.prePlay` → `.playing` coalesce window or adaptive
-    /// debounce. Active ``PlayerVisualState/playing`` alone remains eligible for coalescing.
+    /// Factory-reset / privacy-clear (``.cleared``), sticky pause/lock, and permanent-error
+    /// chrome must not wait behind the adaptive debounce window. Connecting ``.prePlay`` is
+    /// intentionally **not** immediate: it participates in the ``.prePlay`` → ``.playing``
+    /// coalesce so same-stream soft-resume (audible within the window) schedules a single
+    /// authoritative ``.playing`` home reload instead of painting Connecting after audio is live.
+    /// True attach paths still show Connecting when the window elapses without a playing follow-up.
+    /// Active ``PlayerVisualState/playing`` remains eligible for adaptive coalesce/debounce.
     ///
     /// - Parameters:
     ///   - visualState: The visual derived from the ``PlayerEvent`` payload or SSOT readers.
@@ -942,16 +946,18 @@ final class WidgetRefreshManager: @unchecked Sendable {
     /// - Returns: `true` when the derived refresh must execute immediately.
     /// - SeeAlso: ``refreshIfNeeded(visualState:currentLanguage:hasError:immediate:trigger:)``,
     ///   ``handlePlayerEvent(_:)``, ``SharedPlayerManager/performActualSave(_:widgetState:at:)``,
-    ///   docs/Widget-Functionality-Roadmap.md (Tier 3), docs/Event-Driven-Refactor-Roadmap.md.
+    ///   docs/Widget-Functionality-Roadmap.md (Tier 3), docs/Event-Driven-Refactor-Roadmap.md,
+    ///   docs/Widget-Presentation-Dataflow.md (home soft-resume refresh authority).
     func refreshUsesImmediateDelivery(
         for visualState: PlayerVisualState,
         hasError: Bool
     ) -> Bool {
         if hasError { return true }
         switch visualState {
-        case .prePlay, .cleared, .userPaused, .thermalPaused, .securityLocked:
+        case .cleared, .userPaused, .thermalPaused, .securityLocked:
             return true
-        case .playing:
+        case .prePlay, .playing:
+            // Connecting participates in prePlay→playing coalesce; playing uses adaptive debounce.
             return false
         @unknown default:
             return true

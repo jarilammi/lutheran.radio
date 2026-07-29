@@ -153,14 +153,16 @@ final class SharedPlayerManagerMediaSurfaceTests: XCTestCase {
     /// Protects connecting-chrome honesty: explicit play intent must not claim `.playing`
     /// (rate 1 / pause glyph) until the engine publishes after soft-resume or readyToPlay kick.
     ///
-    /// ``setUserIntentToPlay()`` moves sticky pause → `.prePlay` + `.shouldBePlaying`.
-    /// Authoritative ``setPlaying()`` (or engine ``publishAuthoritativePlayingIfNeeded``) is the
-    /// only production transition to `.playing` chrome. Under UITestMode, ``play()`` still sets
-    /// `.playing` for assertions without real attach — that isolation path is intentional.
+    /// Without a soft-paused secured item (typical under UITestMode after ``stop()`` with no
+    /// attach), ``setUserIntentToPlay()`` moves sticky pause → `.prePlay` + `.shouldBePlaying`.
+    /// When same-stream soft-pause resume is available, Connecting is skipped and sticky visual
+    /// is retained until ``setPlaying()`` (home soft-resume honesty). Authoritative
+    /// ``setPlaying()`` is the only production transition to `.playing` chrome.
     ///
     /// - SeeAlso: ``SharedPlayerManager/setUserIntentToPlay()``, ``SharedPlayerManager/setPlaying()``,
     ///   ``SharedPlayerManager/play()``, docs/Live-Activity-Stacking-and-Media-Surfaces.md
-    ///   (connecting chrome vs audible start).
+    ///   (connecting chrome vs audible start), docs/Widget-Presentation-Dataflow.md
+    ///   (home soft-resume refresh authority).
     func testSetUserIntentToPlayLeavesConnectingChromeUntilSetPlaying() async {
         await manager.stop()
         var visual = await manager.currentVisualState
@@ -172,7 +174,7 @@ final class SharedPlayerManagerMediaSurfaceTests: XCTestCase {
         XCTAssertEqual(
             visual,
             .prePlay,
-            "Explicit play intent must show Connecting (.prePlay), not optimistic .playing"
+            "Without soft-resume eligibility, explicit play must show Connecting (.prePlay), not optimistic .playing"
         )
         XCTAssertEqual(intent, .shouldBePlaying)
         XCTAssertFalse(
