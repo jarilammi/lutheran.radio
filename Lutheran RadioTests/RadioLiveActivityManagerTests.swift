@@ -1019,6 +1019,162 @@ class RadioLiveActivityManagerTests: XCTestCase {
         )
     }
 
+    /// Owned-surface foreground soft ensure runs when language or visual lags destination.
+    ///
+    /// Protects unlock after deferred recreation while ineligible: missing-card ensure early-returns
+    /// when ``currentActivity != nil``; soft language/playing ensure must still fire so prior-stream
+    /// chrome is not left on the only interactive card. Pure policy (no ActivityKit).
+    func testForegroundOwnedSurfaceSoftEnsurePolicy() {
+        // Language lag with matched visual.
+        XCTAssertTrue(
+            manager._test_shouldEnsureAuthoritativeContentOnForeground(
+                hasCurrentActivity: true,
+                destinationLanguage: "et",
+                ownedContentLanguage: "de",
+                lastPushedLanguage: "et",
+                actorVisual: .playing,
+                streamSwitchHold: false,
+                isConnectingPlayback: false,
+                lastPushedVisual: .playing,
+                ownedVisual: .playing
+            ),
+            "Owned prior language must schedule foreground soft ensure even when visual matches"
+        )
+        // Visual lag (Connecting freeze) with matched language.
+        XCTAssertTrue(
+            manager._test_shouldEnsureAuthoritativeContentOnForeground(
+                hasCurrentActivity: true,
+                destinationLanguage: "et",
+                ownedContentLanguage: "et",
+                lastPushedLanguage: "et",
+                actorVisual: .playing,
+                streamSwitchHold: false,
+                isConnectingPlayback: false,
+                lastPushedVisual: .playing,
+                ownedVisual: .prePlay
+            ),
+            "Owned Connecting while actor is playing must schedule foreground soft ensure"
+        )
+        // Both match → cheap no-op.
+        XCTAssertFalse(
+            manager._test_shouldEnsureAuthoritativeContentOnForeground(
+                hasCurrentActivity: true,
+                destinationLanguage: "et",
+                ownedContentLanguage: "et",
+                lastPushedLanguage: "et",
+                actorVisual: .playing,
+                streamSwitchHold: false,
+                isConnectingPlayback: false,
+                lastPushedVisual: .playing,
+                ownedVisual: .playing
+            ),
+            "Matched owned language + visual is a cheap no-op on foreground"
+        )
+        // Unowned surface is the missing-card start path, not this soft ensure.
+        XCTAssertFalse(
+            manager._test_shouldEnsureAuthoritativeContentOnForeground(
+                hasCurrentActivity: false,
+                destinationLanguage: "et",
+                ownedContentLanguage: "de",
+                lastPushedLanguage: "de",
+                actorVisual: .playing,
+                streamSwitchHold: false,
+                isConnectingPlayback: false,
+                lastPushedVisual: .playing,
+                ownedVisual: .playing
+            ),
+            "Unowned activity must not schedule owned-surface soft ensure"
+        )
+        // Stream-switch hold: language lag still soft-ensures; playing ensure stays off (no invent .playing).
+        XCTAssertTrue(
+            manager._test_shouldEnsureAuthoritativeContentOnForeground(
+                hasCurrentActivity: true,
+                destinationLanguage: "et",
+                ownedContentLanguage: "de",
+                lastPushedLanguage: "de",
+                actorVisual: .playing,
+                streamSwitchHold: true,
+                isConnectingPlayback: false,
+                lastPushedVisual: .prePlay,
+                ownedVisual: .prePlay
+            ),
+            "Hold-time destination language lag still schedules language soft ensure"
+        )
+        XCTAssertFalse(
+            manager._test_shouldEnsureAuthoritativePlayingContent(
+                actorVisual: .playing,
+                streamSwitchHold: true,
+                isConnectingPlayback: false,
+                lastPushedVisual: .prePlay,
+                ownedVisual: .prePlay
+            ),
+            "Hold must not invent playing visual ensure during stream-switch Connecting honesty"
+        )
+    }
+
+    /// Eligible-only recreation after foreground soft ensure still fails; never while ineligible.
+    ///
+    /// **Invariant:** never destroy the only interactive Live Activity unless a replacement
+    /// `Activity.request` can succeed. Soft ensure is preferred; recreation is last resort.
+    func testForegroundRecreationOnlyAfterSoftEnsureFailsAndRequestEligible() {
+        let budget = RadioLiveActivityManager.maxInteractiveContentRecreations
+
+        XCTAssertTrue(
+            manager._test_shouldRecreateAfterForegroundSoftEnsureFailed(
+                languageStillMismatches: true,
+                playingStillStalled: false,
+                isRequestEligible: true,
+                recreationsAttempted: 0
+            ),
+            "Language still lagging after soft ensure + eligible request may recreate"
+        )
+        XCTAssertTrue(
+            manager._test_shouldRecreateAfterForegroundSoftEnsureFailed(
+                languageStillMismatches: false,
+                playingStillStalled: true,
+                isRequestEligible: true,
+                recreationsAttempted: 0
+            ),
+            "Playing visual still stalled after soft ensure + eligible request may recreate"
+        )
+        XCTAssertFalse(
+            manager._test_shouldRecreateAfterForegroundSoftEnsureFailed(
+                languageStillMismatches: true,
+                playingStillStalled: true,
+                isRequestEligible: false,
+                recreationsAttempted: 0
+            ),
+            "Ineligible request must never end the only interactive surface after soft ensure"
+        )
+        XCTAssertFalse(
+            manager._test_shouldRecreateAfterForegroundSoftEnsureFailed(
+                languageStillMismatches: false,
+                playingStillStalled: false,
+                isRequestEligible: true,
+                recreationsAttempted: 0
+            ),
+            "Matched chrome after soft ensure must not recreate"
+        )
+        XCTAssertFalse(
+            manager._test_shouldRecreateAfterForegroundSoftEnsureFailed(
+                languageStillMismatches: true,
+                playingStillStalled: false,
+                isRequestEligible: true,
+                recreationsAttempted: budget
+            ),
+            "Exhausted recreation budget must stop end/start loops on foreground"
+        )
+        XCTAssertTrue(
+            manager._test_shouldRecreateAfterForegroundSoftEnsureFailed(
+                languageStillMismatches: true,
+                playingStillStalled: false,
+                isRequestEligible: true,
+                recreationsAttempted: budget - 1
+            ),
+            "Last recreation budget slot remains available when soft ensure still fails"
+        )
+    }
+
     /// Playing ensure covers stale Connecting **and** soft-resume pause chrome.
     ///
     /// Soft-resume residual: owned `.prePlay` with optimistic last `.playing` must still

@@ -84,6 +84,10 @@ import WidgetSurface
 /// Soft-resume / post-audible **visual** honesty prefers bounded
 /// ``ensureAuthoritativePlayingContentIfNeeded()`` retries — not end+request — when the
 /// only lag is owned `.prePlay` vs candidate `.playing`.
+/// Language chrome prefers bounded ``ensureAuthoritativeLanguageContentIfNeeded()`` retries.
+/// On foreground / become-active with an **owned** activity, soft language + playing ensure
+/// run via ``ensureAuthoritativeContentOnForegroundIfNeeded()``; eligible-only recreation
+/// is a last resort after soft ensure still fails (never while request is ineligible).
 ///
 /// ## Test Isolation
 /// All real Activity creation/update/timer paths are short-circuited under
@@ -204,6 +208,16 @@ class RadioLiveActivityManager: ObservableObject {
     /// - SeeAlso: ``ensureAuthoritativePlayingContentIfNeeded()``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     static let authoritativePlayingContentEnsureMaxAttempts = 3
+
+    /// Maximum soft pushes from ``ensureAuthoritativeLanguageContentIfNeeded()`` while owned
+    /// `content.state.currentLanguage` still lags ``liveActivityLanguageCodeForContentPush()``
+    /// (ActivityKit acceptance lag after stream-switch / deferred recreation while ineligible).
+    /// Prefer this over end+request; eligible-only recreation is a last resort on foreground.
+    ///
+    /// - SeeAlso: ``ensureAuthoritativeLanguageContentIfNeeded()``,
+    ///   ``ensureAuthoritativeContentOnForegroundIfNeeded()``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    static let authoritativeLanguageContentEnsureMaxAttempts = 3
 
     /// Long-lived task observing the Live Activity attribute events stream.
     ///
@@ -1191,20 +1205,31 @@ class RadioLiveActivityManager: ObservableObject {
     /// (``.prePlay``) remains honest during stream-switch hold; only the language field is
     /// forced to the destination stamp / stream attach.
     ///
+    /// Performs up to ``authoritativeLanguageContentEnsureMaxAttempts`` soft pushes, re-reading
+    /// owned `content.state.currentLanguage` after each ``updateCurrentActivity()``. Stops early
+    /// when owned language matches destination, the ensure gate clears, or the interactive
+    /// activity disappears. Does **not** end+recreate — language freezes recover via soft
+    /// retries first; eligible-only recreation is owned by
+    /// ``ensureAuthoritativeContentOnForegroundIfNeeded()`` / the stalled-push path.
+    ///
     /// Wire points (main app):
     /// - After media-surface Live Activity update/start (``refreshAllMediaSurfaces``)
     /// - After ``setPlaying()``’s playing reconcile
     /// - After optimistic stream-switch ContentState when this process owns the activity
+    /// - Foreground / become-active owned-surface path via
+    ///   ``ensureAuthoritativeContentOnForegroundIfNeeded()``
     ///
     /// Relies on ``shouldSuppressLiveActivityContentPush`` so optimistic ``lastPushedContent``
     /// that already claims destination language cannot block a push when owned
     /// `content.state.currentLanguage` is still the prior stream.
     ///
     /// - Precondition: Main actor; interactive ``currentActivity`` may be nil (no-op).
-    /// - Postcondition: When a push was needed, ``updateCurrentActivity()`` ran (subject to
-    ///   test isolation and ActivityKit acceptance). Cheap no-op when owned + last language
-    ///   already match destination.
+    /// - Postcondition: When a push was needed, ``updateCurrentActivity()`` ran up to the
+    ///   soft-retry budget (subject to test isolation and ActivityKit acceptance). Cheap
+    ///   no-op when owned + last language already match destination.
     /// - SeeAlso: ``updateCurrentActivity()``, ``shouldEnsureAuthoritativeLanguageContent(destinationLanguage:ownedContentLanguage:lastPushedLanguage:)``,
+    ///   ``authoritativeLanguageContentEnsureMaxAttempts``,
+    ///   ``ensureAuthoritativeContentOnForegroundIfNeeded()``,
     ///   ``recordOptimisticStreamSwitchContent(language:visualState:)``,
     ///   ``SharedPlayerManager/liveActivityLanguageCodeForContentPush()``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
@@ -1217,25 +1242,208 @@ class RadioLiveActivityManager: ObservableObject {
         #endif
         guard currentActivity != nil else { return }
 
-        let destination = await SharedPlayerManager.shared.liveActivityLanguageCodeForContentPush()
+        for attempt in 1...Self.authoritativeLanguageContentEnsureMaxAttempts {
+            guard currentActivity != nil else { return }
+
+            let destination = await SharedPlayerManager.shared.liveActivityLanguageCodeForContentPush()
+            let ownedLanguage = currentActivity?.content.state.currentLanguage
+            let lastLanguage = lastPushedContent?.currentLanguage
+
+            guard Self.shouldEnsureAuthoritativeLanguageContent(
+                destinationLanguage: destination,
+                ownedContentLanguage: ownedLanguage,
+                lastPushedLanguage: lastLanguage
+            ) else {
+                return
+            }
+
+            #if DEBUG
+            print(
+                "🔴 Live Activity reconciling language chrome → destination=\(destination) " +
+                "owned=\(ownedLanguage ?? "nil") lastPushed=\(lastLanguage ?? "nil") " +
+                "attempt=\(attempt)/\(Self.authoritativeLanguageContentEnsureMaxAttempts)"
+            )
+            #endif
+            await updateCurrentActivity()
+
+            // Post-update verification: owned language is the surface honesty SSOT.
+            let acceptedLanguage = currentActivity?.content.state.currentLanguage
+            if acceptedLanguage == destination {
+                return
+            }
+            if attempt < Self.authoritativeLanguageContentEnsureMaxAttempts {
+                await Task.yield()
+                try? await Task.sleep(for: .milliseconds(50))
+            }
+        }
+    }
+
+    /// Whether an owned interactive Live Activity needs soft language and/or playing ensure
+    /// on foreground / become-active (ownership non-nil; missing-card start is separate).
+    ///
+    /// - Parameters:
+    ///   - hasCurrentActivity: Whether this process owns an interactive activity.
+    ///   - destinationLanguage: ``SharedPlayerManager/liveActivityLanguageCodeForContentPush()``.
+    ///   - ownedContentLanguage: Owned `content.state.currentLanguage`, if any.
+    ///   - lastPushedLanguage: ``lastPushedContent`` language, if any.
+    ///   - actorVisual: Actor ``currentVisualState``.
+    ///   - streamSwitchHold: ``isStreamSwitchPrePlayHoldActive``.
+    ///   - isConnectingPlayback: ``isConnectingPlayback``.
+    ///   - lastPushedVisual: ``lastPushedContent`` visual, if any.
+    ///   - ownedVisual: Owned `content.state.visualState`, if any.
+    /// - Returns: `true` when ownership is non-nil and language and/or playing ensure gates fire.
+    /// - Note: Does not invent `.playing` or decide end+request — soft ensure only.
+    /// - SeeAlso: ``ensureAuthoritativeContentOnForegroundIfNeeded()``,
+    ///   ``shouldEnsureAuthoritativeLanguageContent(destinationLanguage:ownedContentLanguage:lastPushedLanguage:)``,
+    ///   ``shouldEnsureAuthoritativePlayingContent(actorVisual:streamSwitchHold:isConnectingPlayback:lastPushedVisual:ownedVisual:)``.
+    static func shouldEnsureAuthoritativeContentOnForeground(
+        hasCurrentActivity: Bool,
+        destinationLanguage: String,
+        ownedContentLanguage: String?,
+        lastPushedLanguage: String?,
+        actorVisual: PlayerVisualState,
+        streamSwitchHold: Bool,
+        isConnectingPlayback: Bool,
+        lastPushedVisual: PlayerVisualState?,
+        ownedVisual: PlayerVisualState?
+    ) -> Bool {
+        guard hasCurrentActivity else { return false }
+        if shouldEnsureAuthoritativeLanguageContent(
+            destinationLanguage: destinationLanguage,
+            ownedContentLanguage: ownedContentLanguage,
+            lastPushedLanguage: lastPushedLanguage
+        ) {
+            return true
+        }
+        if shouldEnsureAuthoritativePlayingContent(
+            actorVisual: actorVisual,
+            streamSwitchHold: streamSwitchHold,
+            isConnectingPlayback: isConnectingPlayback,
+            lastPushedVisual: lastPushedVisual,
+            ownedVisual: ownedVisual
+        ) {
+            return true
+        }
+        return false
+    }
+
+    /// Whether eligible-only end+request may run after foreground soft ensure still leaves
+    /// owned chrome lagging the destination language and/or authoritative playing visual.
+    ///
+    /// **Invariant:** Never true when request is ineligible — keep the only interactive
+    /// surface while `Activity.request` cannot succeed (lock / background visibility).
+    ///
+    /// - Parameters:
+    ///   - languageStillMismatches: Soft language ensure gate still true after retries.
+    ///   - playingStillStalled: Soft playing ensure gate still true after retries.
+    ///   - isRequestEligible: ``isInteractiveLiveActivityRequestEligible(areActivitiesEnabled:isApplicationActive:)``.
+    ///   - recreationsAttempted: ``interactiveContentRecreationsAttempted`` this healthy cycle.
+    ///   - maxRecreations: Production ``maxInteractiveContentRecreations``.
+    /// - Returns: `true` only when soft path still fails **and** request is eligible **and**
+    ///   recreation budget remains.
+    /// - SeeAlso: ``ensureAuthoritativeContentOnForegroundIfNeeded()``,
+    ///   ``recreateInteractiveLiveActivityAfterStalledContent()``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    static func shouldRecreateAfterForegroundSoftEnsureFailed(
+        languageStillMismatches: Bool,
+        playingStillStalled: Bool,
+        isRequestEligible: Bool,
+        recreationsAttempted: Int,
+        maxRecreations: Int = RadioLiveActivityManager.maxInteractiveContentRecreations
+    ) -> Bool {
+        guard isRequestEligible else { return false }
+        guard languageStillMismatches || playingStillStalled else { return false }
+        guard recreationsAttempted < maxRecreations else { return false }
+        return true
+    }
+
+    /// Soft language + playing ensure for an **owned** interactive Live Activity on
+    /// foreground / become-active, then eligible-only recreation if soft ensure still fails.
+    ///
+    /// **Why:** Deferred recreation keeps the interactive card while request is ineligible;
+    /// system-held `content.state` may still trail destination language/visual after unlock.
+    /// ``ensureInteractiveLiveActivityIfNeeded()`` restores a **missing** card only
+    /// (`currentActivity == nil`); this is the owned-surface peer so become-active does not
+    /// leave a present card on prior-stream chrome.
+    ///
+    /// **Order:**
+    /// 1. Bounded ``ensureAuthoritativeLanguageContentIfNeeded()``
+    /// 2. Bounded ``ensureAuthoritativePlayingContentIfNeeded()``
+    /// 3. If owned language/visual still lag **and** request is eligible → single
+    ///    ``recreateInteractiveLiveActivityAfterStalledContent()`` (re-checks eligibility;
+    ///    never ends while ineligible)
+    ///
+    /// - Precondition: Main actor; no-op under UITestMode / under-test; no-op when unowned.
+    /// - Postcondition: Soft pushes attempted when needed; recreation only when eligible and
+    ///   soft path still failed with budget remaining.
+    /// - Important: Does not invent `.playing` during stream-switch hold; does not bypass
+    ///   privacy write suppression or home-widget write gating.
+    /// - SeeAlso: ``ensureInteractiveLiveActivityIfNeeded()``, ``handleAppDidEnterForeground()``,
+    ///   ``shouldEnsureAuthoritativeContentOnForeground(hasCurrentActivity:destinationLanguage:ownedContentLanguage:lastPushedLanguage:actorVisual:streamSwitchHold:isConnectingPlayback:lastPushedVisual:ownedVisual:)``,
+    ///   ``shouldRecreateAfterForegroundSoftEnsureFailed(languageStillMismatches:playingStillStalled:isRequestEligible:recreationsAttempted:maxRecreations:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
+    ///   docs/Widget-Functionality-Roadmap.md.
+    @MainActor
+    func ensureAuthoritativeContentOnForegroundIfNeeded() async {
+        if SharedPlayerManager.isRunningInUITestMode { return }
+        #if DEBUG
+        if isRunningUnderTest { return }
+        #endif
+        guard currentActivity != nil else { return }
+
+        // Soft path first — never end the only card while ActivityKit may still accept updates.
+        await ensureAuthoritativeLanguageContentIfNeeded()
+        await ensureAuthoritativePlayingContentIfNeeded()
+
+        guard currentActivity != nil else { return }
+
+        let manager = SharedPlayerManager.shared
+        let destination = await manager.liveActivityLanguageCodeForContentPush()
         let ownedLanguage = currentActivity?.content.state.currentLanguage
         let lastLanguage = lastPushedContent?.currentLanguage
-
-        guard Self.shouldEnsureAuthoritativeLanguageContent(
+        let languageStillMismatches = Self.shouldEnsureAuthoritativeLanguageContent(
             destinationLanguage: destination,
             ownedContentLanguage: ownedLanguage,
             lastPushedLanguage: lastLanguage
+        )
+
+        let visual = await manager.currentVisualState
+        let hold = await manager.isStreamSwitchPrePlayHoldActive
+        let connecting = await manager.isConnectingPlayback
+        let lastVisual = lastPushedContent?.visualState
+        let ownedVisual = currentActivity?.content.state.visualState
+        let playingStillStalled = Self.shouldEnsureAuthoritativePlayingContent(
+            actorVisual: visual,
+            streamSwitchHold: hold,
+            isConnectingPlayback: connecting,
+            lastPushedVisual: lastVisual,
+            ownedVisual: ownedVisual
+        )
+
+        let requestEligible = Self.isInteractiveLiveActivityRequestEligible(
+            areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+            isApplicationActive: UIApplication.shared.applicationState == .active
+        )
+
+        guard Self.shouldRecreateAfterForegroundSoftEnsureFailed(
+            languageStillMismatches: languageStillMismatches,
+            playingStillStalled: playingStillStalled,
+            isRequestEligible: requestEligible,
+            recreationsAttempted: interactiveContentRecreationsAttempted
         ) else {
             return
         }
 
         #if DEBUG
         print(
-            "🔴 Live Activity reconciling language chrome → destination=\(destination) " +
-            "owned=\(ownedLanguage ?? "nil") lastPushed=\(lastLanguage ?? "nil")"
+            "🔴 Live Activity foreground soft ensure still lagged " +
+            "(language=\(languageStillMismatches) playing=\(playingStillStalled)); " +
+            "eligible recreation"
         )
         #endif
-        await updateCurrentActivity()
+        // recreateInteractiveLiveActivityAfterStalledContent re-checks eligibility and never
+        // ends the only surface while request is ineligible.
+        await recreateInteractiveLiveActivityAfterStalledContent()
     }
 
     /// Aligns in-memory ``lastPushedContent`` with an intent-path optimistic Live Activity visual.
@@ -2116,6 +2324,48 @@ class RadioLiveActivityManager: ObservableObject {
         pendingInteractiveLiveActivityEnsure = value
     }
 
+    /// White-box seam: owned-surface foreground soft-ensure decision (no ActivityKit).
+    func _test_shouldEnsureAuthoritativeContentOnForeground(
+        hasCurrentActivity: Bool,
+        destinationLanguage: String,
+        ownedContentLanguage: String?,
+        lastPushedLanguage: String?,
+        actorVisual: PlayerVisualState,
+        streamSwitchHold: Bool,
+        isConnectingPlayback: Bool,
+        lastPushedVisual: PlayerVisualState?,
+        ownedVisual: PlayerVisualState?
+    ) -> Bool {
+        Self.shouldEnsureAuthoritativeContentOnForeground(
+            hasCurrentActivity: hasCurrentActivity,
+            destinationLanguage: destinationLanguage,
+            ownedContentLanguage: ownedContentLanguage,
+            lastPushedLanguage: lastPushedLanguage,
+            actorVisual: actorVisual,
+            streamSwitchHold: streamSwitchHold,
+            isConnectingPlayback: isConnectingPlayback,
+            lastPushedVisual: lastPushedVisual,
+            ownedVisual: ownedVisual
+        )
+    }
+
+    /// White-box seam: eligible-only recreation after foreground soft ensure still fails.
+    func _test_shouldRecreateAfterForegroundSoftEnsureFailed(
+        languageStillMismatches: Bool,
+        playingStillStalled: Bool,
+        isRequestEligible: Bool,
+        recreationsAttempted: Int,
+        maxRecreations: Int = RadioLiveActivityManager.maxInteractiveContentRecreations
+    ) -> Bool {
+        Self.shouldRecreateAfterForegroundSoftEnsureFailed(
+            languageStillMismatches: languageStillMismatches,
+            playingStillStalled: playingStillStalled,
+            isRequestEligible: isRequestEligible,
+            recreationsAttempted: recreationsAttempted,
+            maxRecreations: maxRecreations
+        )
+    }
+
     /// White-box seam: playing reconcile decision (Connecting / pause stuck → playing).
     func _test_shouldEnsureAuthoritativePlayingContent(
         actorVisual: PlayerVisualState,
@@ -2316,13 +2566,18 @@ extension RadioLiveActivityManager {
     ///
     /// 1. Ensures an interactive Live Activity when pending after a deferred recreation /
     ///    failed request, or when the session still needs chrome and none is owned.
-    /// 2. Pushes the current SSOT visual state so that any stale LA content
+    /// 2. When ownership is already non-nil, runs soft language + playing ensure (and
+    ///    eligible-only recreation if soft ensure still fails) via
+    ///    ``ensureAuthoritativeContentOnForegroundIfNeeded()`` inside
+    ///    ``ensureInteractiveLiveActivityIfNeeded()``.
+    /// 3. Pushes the current SSOT visual state so that any remaining stale LA content
     ///    (e.g. after a long background period) is corrected before the user sees it.
     ///
     /// Under DEBUG test runs we early-return to avoid even scheduling the no-op
     /// `updateCurrentActivity` Task.
     ///
     /// - SeeAlso: ``isRunningUnderTest``, ``ensureInteractiveLiveActivityIfNeeded()``,
+    ///   ``ensureAuthoritativeContentOnForegroundIfNeeded()``,
     ///   ``handleAppWillEnterBackground()``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     func handleAppDidEnterForeground() {
@@ -2340,20 +2595,27 @@ extension RadioLiveActivityManager {
     }
 
     /// Debounced foreground ensure: start an interactive Live Activity when session policy
-    /// needs one and none is owned (including after a deferred recreation or failed request).
+    /// needs one and none is owned (including after a deferred recreation or failed request);
+    /// when ownership is already non-nil, soft-reconcile language/visual chrome and optionally
+    /// recreate when request-eligible after soft ensure still fails.
     ///
     /// **Why:** `Activity.request` can fail with a visibility-class error while the process
     /// remains lock-screen / background driven. Ending the only interactive surface then leaves
     /// permanent absence until a later start succeeds. Recording
     /// ``pendingInteractiveLiveActivityEnsure`` and retrying on become-active restores the card
-    /// without inventing playback.
+    /// without inventing playback. Separately, an **owned** surface may still hold prior-stream
+    /// language/visual after deferred recreation while ineligible — soft
+    /// ``ensureAuthoritativeContentOnForegroundIfNeeded()`` repairs that without a second SSOT.
     ///
     /// - Precondition: Main actor; not UITestMode / under-test (callers and this method guard).
-    /// - Postcondition: At most one start attempt per debounce window; pending cleared when
-    ///   ownership is restored or the session no longer needs interactive chrome.
+    /// - Postcondition: At most one start attempt per debounce window when unowned; when owned,
+    ///   soft language/playing ensure (and eligible-only recreation if soft path still fails);
+    ///   pending cleared when ownership is restored or the session no longer needs interactive chrome.
     /// - Important: Does not stack multiple interactive activities — ``startActivity()`` ends
-    ///   any residual before request. Does not bypass privacy write suppression.
+    ///   any residual before request. Does not end while request is ineligible. Does not bypass
+    ///   privacy write suppression.
     /// - SeeAlso: ``startActivity()``, ``handleAppDidEnterForeground()``,
+    ///   ``ensureAuthoritativeContentOnForegroundIfNeeded()``,
     ///   ``shouldEnsureInteractiveLiveActivityStart(pendingEnsure:hasCurrentActivity:sessionNeedsInteractiveLiveActivity:areActivitiesEnabled:isRequestEligible:)``,
     ///   ``sessionNeedsInteractiveLiveActivity(isPlaying:visualState:)``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
@@ -2363,6 +2625,15 @@ extension RadioLiveActivityManager {
         #if DEBUG
         if isRunningUnderTest { return }
         #endif
+
+        // Owned surface: soft language/visual ensure is independent of the start-path debounce
+        // so SceneDelegate become-active + will-enter-foreground dual hooks can still reconcile
+        // chrome after unlock without waiting for a missing-card start window.
+        if currentActivity != nil {
+            pendingInteractiveLiveActivityEnsure = false
+            await ensureAuthoritativeContentOnForegroundIfNeeded()
+            return
+        }
 
         if let last = lastInteractiveLiveActivityEnsureAt,
            Date().timeIntervalSince(last) < Self.interactiveLiveActivityEnsureDebounceInterval {
@@ -2374,11 +2645,6 @@ extension RadioLiveActivityManager {
             areActivitiesEnabled: activitiesEnabled,
             isApplicationActive: UIApplication.shared.applicationState == .active
         )
-
-        if currentActivity != nil {
-            pendingInteractiveLiveActivityEnsure = false
-            return
-        }
 
         let manager = SharedPlayerManager.shared
         let isPlaying = manager.loadSharedState().isPlaying

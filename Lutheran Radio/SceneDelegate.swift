@@ -21,11 +21,14 @@ import WidgetSurface
 /// The extraction of `ParsedWidgetAction` and `rootViewController(in:)` centralizes the previously repeated VC lookup and query parsing. All "open" handling for Live Activity taps correctly surfaces the app without forcing playback (see resurrection check).
 ///
 /// For related background features, see `RadioLiveActivityManager.swift` (including deferred
-/// interactive Live Activity ensure on become-active after ineligible recreation / failed request).
+/// interactive Live Activity ensure on become-active after ineligible recreation / failed request,
+/// and owned-surface soft language/playing ensure via
+/// ``RadioLiveActivityManager/ensureAuthoritativeContentOnForegroundIfNeeded()``).
 /// Ensures seamless widget-to-app handoff without tracking.
 /// - SeeAlso: `ViewController.handleOpenFromLiveActivity`, `ViewController.handleWidgetAction`,
 ///   ``RadioPlayerCoordinator/checkForPendingWidgetActions()`` (pending-action drain SSOT; VC is thin shim),
 ///   ``RadioLiveActivityManager/ensureInteractiveLiveActivityIfNeeded()``,
+///   ``RadioLiveActivityManager/ensureAuthoritativeContentOnForegroundIfNeeded()``,
 ///   `SharedPlayerManager` (pending mailbox)
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     /// The main window for the app's user interface.
@@ -92,8 +95,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // *before* the liveness/save so that if a widget was (re)added while backgrounded, writes resume.
         // Save current state when becoming active (in case widget needs fresh data)
         // → non-blocking / fire-and-forget. The save paths now consult the refreshed flag.
-        // Live Activity: pending ensure after deferred recreation / failed request also runs on
-        // become-active (debounced with will-enter-foreground) so unlock restores the card.
+        // Live Activity: pending ensure after deferred recreation / failed request restores a
+        // missing card; when ownership is already non-nil, the same ensure path soft-reconciles
+        // language/visual chrome (eligible-only recreation only if soft ensure still fails).
         Task { @MainActor in
             await WidgetRefreshManager.shared.refreshHasActiveWidgets()
             await SharedPlayerManager.shared.recordWidgetLiveness()
