@@ -103,6 +103,18 @@ import WidgetSurface
 /// Eligible-only recreation is a last resort after soft ensure still fails (never while request
 /// is ineligible).
 ///
+/// ## Soft-ensure thrash protection (concurrent collapse + deferred announce-once)
+/// Status-driven media-surface refreshes and dual soft-ensure call sites can re-enter
+/// ``ensureAuthoritativeLanguageContentIfNeeded()`` / ``ensureAuthoritativePlayingContentIfNeeded()``
+/// while a soft-push loop is already in flight. In-flight guards collapse those concurrent
+/// entries so parallel attempt counters do not thrash ActivityKit. When stalled-push
+/// bookkeeping would recreate but request is ineligible, ``pendingInteractiveLiveActivityEnsure``
+/// is recorded **once** for that freeze (announce-once deferred recreation); subsequent
+/// identical stalls stay quiet until re-arm. DEBUG stall diagnostics for identical
+/// candidate/owned language+visual pairs are rate-limited the same way. Imperative
+/// ``updateCurrentActivity()`` on true mutations (setPlaying, stop, metadata, switch) is
+/// unchanged.
+///
 /// ## Test Isolation
 /// All real Activity creation/update/timer paths are short-circuited under
 /// `isRunningUnderTest` (and the UITestMode SSOT) so that `xcodebuild test`
@@ -304,6 +316,37 @@ class RadioLiveActivityManager: ObservableObject {
     ///   ``shouldDeferRedundantPlayingPushWhileQuiet(candidateVisual:ownedContentVisual:ownedContentLanguage:candidateLanguage:quietPending:isRequestEligible:)``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     private var playingEnsureQuietPending = false
+
+    /// Whether a language soft-ensure push loop is already running on the main actor.
+    ///
+    /// Concurrent re-entry (status callbacks + media-surface ensure + setPlaying) collapses
+    /// into a single loop so parallel attempt counters do not thrash ActivityKit.
+    ///
+    /// - SeeAlso: ``ensureAuthoritativeLanguageContentIfNeeded()``,
+    ///   ``shouldStartAuthoritativeContentEnsureSoftPushLoop(softPushesAlreadyInFlight:)``.
+    private var languageEnsureSoftPushesInFlight = false
+
+    /// Whether a playing soft-ensure push loop is already running on the main actor.
+    ///
+    /// - SeeAlso: ``ensureAuthoritativePlayingContentIfNeeded()``,
+    ///   ``shouldStartAuthoritativeContentEnsureSoftPushLoop(softPushesAlreadyInFlight:)``.
+    private var playingEnsureSoftPushesInFlight = false
+
+    /// Last DEBUG signature for stalled content diagnostics (candidate/owned language+visual).
+    ///
+    /// Identical freeze pairs log once until the signature changes or the surface converges.
+    ///
+    /// - SeeAlso: ``stalledContentDiagnosticsSignature(candidateLanguage:acceptedLanguage:candidateVisual:acceptedVisual:)``,
+    ///   ``shouldLogStalledContentDiagnostics(signature:lastLoggedSignature:)``.
+    private var lastLoggedStalledContentDiagnosticsSignature: String?
+
+    /// Whether the "language ensure quiet skip" DEBUG line has already been emitted for the
+    /// current quiet engagement (avoids status-callback spam after budget exhaustion).
+    private var languageEnsureQuietSkipLogged = false
+
+    /// Whether the "playing ensure quiet skip" DEBUG line has already been emitted for the
+    /// current quiet engagement.
+    private var playingEnsureQuietSkipLogged = false
 
     /// Long-lived task observing the Live Activity attribute events stream.
     ///
@@ -723,12 +766,26 @@ class RadioLiveActivityManager: ObservableObject {
             quietPendingDestination: languageEnsureQuietPendingDestination,
             isRequestEligible: requestEligibleForQuiet
         ) {
+            // Quiet language-only stall: durable mirrors already warm; no ActivityKit IPC.
+            // Rate-limit DEBUG — status callbacks re-hit this every attach frame.
             #if DEBUG
-            print(
-                "🔴 Live Activity language push deferred (quiet pending destination=" +
-                "\(languageEnsureQuietPendingDestination ?? "nil"); owned language=\(ownedLanguage); " +
-                "keeping surface; wait for eligibility, become-active, or language mutation)"
+            let deferSig = Self.stalledContentDiagnosticsSignature(
+                candidateLanguage: candidate.currentLanguage,
+                acceptedLanguage: ownedLanguage,
+                candidateVisual: candidate.visualState,
+                acceptedVisual: ownedVisual
             )
+            if Self.shouldLogStalledContentDiagnostics(
+                signature: "lang-defer|" + deferSig,
+                lastLoggedSignature: lastLoggedStalledContentDiagnosticsSignature
+            ) {
+                lastLoggedStalledContentDiagnosticsSignature = "lang-defer|" + deferSig
+                print(
+                    "🔴 Live Activity language push deferred (quiet pending destination=" +
+                    "\(languageEnsureQuietPendingDestination ?? "nil"); owned language=\(ownedLanguage); " +
+                    "keeping surface; wait for eligibility, become-active, or language mutation)"
+                )
+            }
             #endif
             return
         }
@@ -746,10 +803,22 @@ class RadioLiveActivityManager: ObservableObject {
             isRequestEligible: requestEligibleForQuiet
         ) {
             #if DEBUG
-            print(
-                "🔴 Live Activity playing visual push deferred (quiet pending; owned visual=" +
-                "\(ownedVisual); keeping surface; wait for eligibility, become-active, or play mutation)"
+            let deferSig = Self.stalledContentDiagnosticsSignature(
+                candidateLanguage: candidate.currentLanguage,
+                acceptedLanguage: ownedLanguage,
+                candidateVisual: candidate.visualState,
+                acceptedVisual: ownedVisual
             )
+            if Self.shouldLogStalledContentDiagnostics(
+                signature: "play-defer|" + deferSig,
+                lastLoggedSignature: lastLoggedStalledContentDiagnosticsSignature
+            ) {
+                lastLoggedStalledContentDiagnosticsSignature = "play-defer|" + deferSig
+                print(
+                    "🔴 Live Activity playing visual push deferred (quiet pending; owned visual=" +
+                    "\(ownedVisual); keeping surface; wait for eligibility, become-active, or play mutation)"
+                )
+            }
             #endif
             return
         }
@@ -776,6 +845,7 @@ class RadioLiveActivityManager: ObservableObject {
             ownedOrSystemLanguage: accepted.currentLanguage
         ) {
             languageEnsureQuietPendingDestination = nil
+            languageEnsureQuietSkipLogged = false
         }
         // Owned visual converged to playing → clear playing ensure quiet.
         if Self.shouldClearPlayingEnsureQuietPending(
@@ -783,6 +853,7 @@ class RadioLiveActivityManager: ObservableObject {
             ownedOrSystemVisual: accepted.visualState
         ) {
             playingEnsureQuietPending = false
+            playingEnsureQuietSkipLogged = false
         }
 
         let contentStalled = Self.isStalledLiveActivityContentPush(
@@ -795,28 +866,45 @@ class RadioLiveActivityManager: ObservableObject {
             // Healthy surface — clear recreation budget so a later freeze can recreate again.
             consecutiveStalledContentPushes = 0
             interactiveContentRecreationsAttempted = 0
+            lastLoggedStalledContentDiagnosticsSignature = nil
         }
 
         #if DEBUG
         // SAFETY: Activity.id on the nonisolated(unsafe) capture (DEBUG diagnostics only).
         let activityId = unsafe safeActivity.id
-        print(
-            "🔴 Live Activity update: id=\(activityId) candidateLang=\(candidate.currentLanguage) " +
-            "contentStateLang=\(accepted.currentLanguage) visual=\(accepted.visualState) " +
-            "candidateVisual=\(candidate.visualState)"
+        let stallSig = Self.stalledContentDiagnosticsSignature(
+            candidateLanguage: candidate.currentLanguage,
+            acceptedLanguage: accepted.currentLanguage,
+            candidateVisual: candidate.visualState,
+            acceptedVisual: accepted.visualState
         )
-        if !candidate.currentLanguage.isEmpty,
-           accepted.currentLanguage != candidate.currentLanguage {
+        // Rate-limit identical candidate/owned freeze pairs (lock-stretch ensure thrash).
+        // True mutations that change language or visual re-arm the signature and log again.
+        let shouldLogStall = !contentStalled || Self.shouldLogStalledContentDiagnostics(
+            signature: stallSig,
+            lastLoggedSignature: lastLoggedStalledContentDiagnosticsSignature
+        )
+        if shouldLogStall {
+            if contentStalled {
+                lastLoggedStalledContentDiagnosticsSignature = stallSig
+            }
             print(
-                "🔴 Live Activity language not yet on surface (candidate=\(candidate.currentLanguage) " +
-                "content.state=\(accepted.currentLanguage)); suppress memory kept system-held language"
+                "🔴 Live Activity update: id=\(activityId) candidateLang=\(candidate.currentLanguage) " +
+                "contentStateLang=\(accepted.currentLanguage) visual=\(accepted.visualState) " +
+                "candidateVisual=\(candidate.visualState)"
             )
-        } else if Self.isStalledLiveActivityContentPush(candidate: candidate, accepted: accepted),
-                  accepted.visualState != candidate.visualState {
-            print(
-                "🔴 Live Activity visual not yet on surface (candidate=\(candidate.visualState) " +
-                "content.state=\(accepted.visualState)); suppress memory kept system-held visual"
-            )
+            if !candidate.currentLanguage.isEmpty,
+               accepted.currentLanguage != candidate.currentLanguage {
+                print(
+                    "🔴 Live Activity language not yet on surface (candidate=\(candidate.currentLanguage) " +
+                    "content.state=\(accepted.currentLanguage)); suppress memory kept system-held language"
+                )
+            } else if contentStalled, accepted.visualState != candidate.visualState {
+                print(
+                    "🔴 Live Activity visual not yet on surface (candidate=\(candidate.visualState) " +
+                    "content.state=\(accepted.visualState)); suppress memory kept system-held visual"
+                )
+            }
         }
         #endif
 
@@ -833,22 +921,37 @@ class RadioLiveActivityManager: ObservableObject {
             maxRecreations: Self.maxInteractiveContentRecreations
         ) {
             await recreateInteractiveLiveActivityAfterStalledContent()
-        } else if Self.shouldRecreateInteractiveLiveActivityAfterStalledPushes(
-            consecutiveStalled: consecutiveStalledContentPushes,
-            recreationsAttempted: interactiveContentRecreationsAttempted,
-            threshold: Self.stalledContentPushRecreationThreshold,
-            maxRecreations: Self.maxInteractiveContentRecreations,
-            isRecreationInProgress: isRecreatingLiveActivityAfterStalledContent
-        ), !requestEligible {
+        } else {
             // Streak/cap would recreate, but request is not eligible — keep the existing
-            // interactive surface and recover on the next eligible foreground cycle.
-            pendingInteractiveLiveActivityEnsure = true
-            #if DEBUG
-            print(
-                "🔴 Live Activity recreation deferred — interactive request not eligible " +
-                "(keeping existing surface; pending ensure recorded)"
+            // interactive surface. Record pending ensure **once** for this freeze; further
+            // identical deferred evaluations stay quiet until re-arm (eligibility / mutation /
+            // become-active). Imperative true mutations still reach this path but do not spam.
+            let wouldRecreateByStreakCap = Self.shouldRecreateInteractiveLiveActivityAfterStalledPushes(
+                consecutiveStalled: consecutiveStalledContentPushes,
+                recreationsAttempted: interactiveContentRecreationsAttempted,
+                threshold: Self.stalledContentPushRecreationThreshold,
+                maxRecreations: Self.maxInteractiveContentRecreations,
+                isRecreationInProgress: isRecreatingLiveActivityAfterStalledContent
             )
-            #endif
+            if Self.shouldMarkPendingEnsureForDeferredRecreation(
+                wouldRecreateByStreakCap: wouldRecreateByStreakCap,
+                isRequestEligible: requestEligible
+            ) {
+                let announce = Self.shouldAnnounceDeferredInteractiveRecreationWhileIneligible(
+                    wouldRecreateByStreakCap: wouldRecreateByStreakCap,
+                    isRequestEligible: requestEligible,
+                    pendingEnsureAlreadyRecorded: pendingInteractiveLiveActivityEnsure
+                )
+                pendingInteractiveLiveActivityEnsure = true
+                #if DEBUG
+                if announce {
+                    print(
+                        "🔴 Live Activity recreation deferred — interactive request not eligible " +
+                        "(keeping existing surface; pending ensure recorded)"
+                    )
+                }
+                #endif
+            }
         }
     }
 
@@ -1426,6 +1529,122 @@ class RadioLiveActivityManager: ObservableObject {
         return false
     }
 
+    /// Whether a soft-ensure entry should start a new soft-push loop (collapse concurrent re-entry).
+    ///
+    /// Status-driven media-surface refreshes and dual call sites can re-enter language or
+    /// playing ensure while a loop is already mid-flight. Starting a second loop produces
+    /// parallel attempt counters and thrashing `Activity.update` without improving acceptance.
+    ///
+    /// - Parameter softPushesAlreadyInFlight: Whether this axis already has a soft-push loop running.
+    /// - Returns: `true` when this entry may begin the soft-push loop.
+    /// - SeeAlso: ``ensureAuthoritativeLanguageContentIfNeeded()``,
+    ///   ``ensureAuthoritativePlayingContentIfNeeded()``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    static func shouldStartAuthoritativeContentEnsureSoftPushLoop(
+        softPushesAlreadyInFlight: Bool
+    ) -> Bool {
+        !softPushesAlreadyInFlight
+    }
+
+    /// Whether stalled-push bookkeeping should mark ``pendingInteractiveLiveActivityEnsure``
+    /// when recreation is deferred because request is ineligible.
+    ///
+    /// - Parameters:
+    ///   - wouldRecreateByStreakCap: ``shouldRecreateInteractiveLiveActivityAfterStalledPushes``.
+    ///   - isRequestEligible: Interactive `Activity.request` eligibility.
+    /// - Returns: `true` when pending ensure should be set (idempotent for callers).
+    /// - SeeAlso: ``shouldAnnounceDeferredInteractiveRecreationWhileIneligible(wouldRecreateByStreakCap:isRequestEligible:pendingEnsureAlreadyRecorded:)``,
+    ///   ``updateCurrentActivity()``.
+    static func shouldMarkPendingEnsureForDeferredRecreation(
+        wouldRecreateByStreakCap: Bool,
+        isRequestEligible: Bool
+    ) -> Bool {
+        guard !isRequestEligible else { return false }
+        return wouldRecreateByStreakCap
+    }
+
+    /// Whether to emit the deferred-recreation DEBUG diagnostic for a freeze.
+    ///
+    /// First deferral for a freeze records pending ensure and may announce once; subsequent
+    /// identical stalled evaluations while still ineligible and already pending stay quiet
+    /// (battery / log thrash protection). Re-arm of pending (clear then set again after
+    /// mutation / eligibility / become-active) re-allows a single announce.
+    ///
+    /// - Parameters:
+    ///   - wouldRecreateByStreakCap: Streak/cap bookkeeping would recreate if eligible.
+    ///   - isRequestEligible: Interactive request eligibility.
+    ///   - pendingEnsureAlreadyRecorded: ``pendingInteractiveLiveActivityEnsure`` already true.
+    /// - Returns: `true` when this is the first deferred-recreation announce for the freeze.
+    /// - SeeAlso: ``shouldMarkPendingEnsureForDeferredRecreation(wouldRecreateByStreakCap:isRequestEligible:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    static func shouldAnnounceDeferredInteractiveRecreationWhileIneligible(
+        wouldRecreateByStreakCap: Bool,
+        isRequestEligible: Bool,
+        pendingEnsureAlreadyRecorded: Bool
+    ) -> Bool {
+        guard shouldMarkPendingEnsureForDeferredRecreation(
+            wouldRecreateByStreakCap: wouldRecreateByStreakCap,
+            isRequestEligible: isRequestEligible
+        ) else {
+            return false
+        }
+        return !pendingEnsureAlreadyRecorded
+    }
+
+    /// Compact signature for rate-limited stall diagnostics (candidate vs system-held chrome).
+    ///
+    /// - Parameters:
+    ///   - candidateLanguage: Submitted ContentState language.
+    ///   - acceptedLanguage: System-held / owned language after update.
+    ///   - candidateVisual: Submitted visual.
+    ///   - acceptedVisual: System-held / owned visual.
+    /// - Returns: Stable string for identical freeze pair comparison.
+    /// - SeeAlso: ``shouldLogStalledContentDiagnostics(signature:lastLoggedSignature:)``.
+    static func stalledContentDiagnosticsSignature(
+        candidateLanguage: String,
+        acceptedLanguage: String,
+        candidateVisual: PlayerVisualState,
+        acceptedVisual: PlayerVisualState
+    ) -> String {
+        "\(candidateLanguage)|\(acceptedLanguage)|\(candidateVisual)|\(acceptedVisual)"
+    }
+
+    /// Whether DEBUG stall diagnostics should emit for this signature.
+    ///
+    /// Identical candidate/owned freeze pairs log once until the signature changes
+    /// (true mutation) or the surface converges (caller clears last-logged).
+    ///
+    /// - Parameters:
+    ///   - signature: ``stalledContentDiagnosticsSignature(candidateLanguage:acceptedLanguage:candidateVisual:acceptedVisual:)``.
+    ///   - lastLoggedSignature: Last emitted signature, if any.
+    /// - Returns: `true` when this signature has not been logged yet.
+    /// - SeeAlso: ``updateCurrentActivity()``, docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    static func shouldLogStalledContentDiagnostics(
+        signature: String,
+        lastLoggedSignature: String?
+    ) -> Bool {
+        lastLoggedSignature != signature
+    }
+
+    /// Whether a soft-ensure "already quiet" skip should emit a DEBUG line.
+    ///
+    /// Status callbacks re-enter ensure after budget exhaustion; logging every skip floods
+    /// device logs. Emit once per quiet engagement; re-arm when quiet clears or soft pushes run.
+    ///
+    /// - Parameters:
+    ///   - softPushesSuppressedByQuiet: Soft-push gate returned false because quiet while ineligible.
+    ///   - alreadyLoggedQuietSkip: Whether this quiet engagement already logged a skip.
+    /// - Returns: `true` when this is the first quiet-skip log for the engagement.
+    /// - SeeAlso: ``ensureAuthoritativeLanguageContentIfNeeded()``,
+    ///   ``ensureAuthoritativePlayingContentIfNeeded()``.
+    static func shouldLogEnsureQuietSkipOnce(
+        softPushesSuppressedByQuiet: Bool,
+        alreadyLoggedQuietSkip: Bool
+    ) -> Bool {
+        guard softPushesSuppressedByQuiet else { return false }
+        return !alreadyLoggedQuietSkip
+    }
+
     /// Samples actor visual + stream-switch/connect gates into the ContentState visual for a push.
     ///
     /// Stream-switch hold / in-flight connect: never advertise `.playing` while the engine is
@@ -1489,6 +1708,10 @@ class RadioLiveActivityManager: ObservableObject {
     /// - Foreground / become-active (``ensureAuthoritativeContentOnForegroundIfNeeded`` clears quiet)
     /// - System `contentUpdates` yield
     ///
+    /// **Concurrent collapse:** Re-entry while a soft-push loop is already in flight is a
+    /// no-op (``shouldStartAuthoritativeContentEnsureSoftPushLoop``) so parallel attempt
+    /// counters do not thrash ActivityKit.
+    ///
     /// Called from ``SharedPlayerManager/setPlaying()`` after language ensure (serialize
     /// language then visual so one ContentState push can carry both), and from the soft-resume
     /// publish path when actor visual is already `.playing` (publish no-op) so a stuck
@@ -1496,6 +1719,7 @@ class RadioLiveActivityManager: ObservableObject {
     ///
     /// - SeeAlso: ``updateCurrentActivity()``, ``shouldEnsureAuthoritativePlayingContent(actorVisual:streamSwitchHold:isConnectingPlayback:lastPushedVisual:ownedVisual:)``,
     ///   ``shouldRunPlayingContentEnsureSoftPushes(needsPlayingEnsure:quietPending:isRequestEligible:)``,
+    ///   ``shouldStartAuthoritativeContentEnsureSoftPushLoop(softPushesAlreadyInFlight:)``,
     ///   ``authoritativePlayingContentEnsureMaxAttempts``,
     ///   ``ensureAuthoritativeLanguageContentIfNeeded()``,
     ///   ``recordOptimisticStreamSwitchContent(language:visualState:)``,
@@ -1527,9 +1751,11 @@ class RadioLiveActivityManager: ObservableObject {
             ownedOrSystemVisual: ownedVisual
         ) {
             playingEnsureQuietPending = false
+            playingEnsureQuietSkipLogged = false
         }
         guard needsEnsure else {
             playingEnsureQuietPending = false
+            playingEnsureQuietSkipLogged = false
             return
         }
 
@@ -1543,13 +1769,30 @@ class RadioLiveActivityManager: ObservableObject {
             isRequestEligible: requestEligible
         ) else {
             #if DEBUG
-            print(
-                "🔴 Live Activity playing ensure quiet (owned=\(String(describing: ownedVisual)); " +
-                "wait for eligibility, become-active, or play mutation)"
-            )
+            if Self.shouldLogEnsureQuietSkipOnce(
+                softPushesSuppressedByQuiet: true,
+                alreadyLoggedQuietSkip: playingEnsureQuietSkipLogged
+            ) {
+                playingEnsureQuietSkipLogged = true
+                print(
+                    "🔴 Live Activity playing ensure quiet (owned=\(String(describing: ownedVisual)); " +
+                    "wait for eligibility, become-active, or play mutation)"
+                )
+            }
             #endif
             return
         }
+
+        // Collapse concurrent re-entry: only one soft-push loop per axis.
+        guard Self.shouldStartAuthoritativeContentEnsureSoftPushLoop(
+            softPushesAlreadyInFlight: playingEnsureSoftPushesInFlight
+        ) else {
+            return
+        }
+        playingEnsureSoftPushesInFlight = true
+        defer { playingEnsureSoftPushesInFlight = false }
+        // Soft pushes running → allow a fresh quiet-skip log if this cycle exhausts again.
+        playingEnsureQuietSkipLogged = false
 
         for attempt in 1...Self.authoritativePlayingContentEnsureMaxAttempts {
             guard currentActivity != nil else { return }
@@ -1568,6 +1811,7 @@ class RadioLiveActivityManager: ObservableObject {
                 ownedVisual: loopOwnedVisual
             ) else {
                 playingEnsureQuietPending = false
+                playingEnsureQuietSkipLogged = false
                 return
             }
 
@@ -1583,6 +1827,7 @@ class RadioLiveActivityManager: ObservableObject {
             let acceptedVisual = currentActivity?.content.state.visualState
             if acceptedVisual == .playing {
                 playingEnsureQuietPending = false
+                playingEnsureQuietSkipLogged = false
                 return
             }
             // Brief yield so ActivityKit / contentUpdates can converge before the next soft push.
@@ -1612,6 +1857,7 @@ class RadioLiveActivityManager: ObservableObject {
             isRequestEligible: eligibleAfter
         ) {
             playingEnsureQuietPending = true
+            playingEnsureQuietSkipLogged = false
             // Keep pending ensure so become-active owned-surface path re-arms recovery.
             pendingInteractiveLiveActivityEnsure = true
             #if DEBUG
@@ -1635,6 +1881,7 @@ class RadioLiveActivityManager: ObservableObject {
     @MainActor
     func rearmPlayingEnsureQuietPending() {
         playingEnsureQuietPending = false
+        playingEnsureQuietSkipLogged = false
     }
 
     /// Whether playing reconcile should force a content push.
@@ -1696,6 +1943,9 @@ class RadioLiveActivityManager: ObservableObject {
     /// - Foreground / become-active (``ensureAuthoritativeContentOnForegroundIfNeeded`` clears quiet)
     /// - System `contentUpdates` yield
     ///
+    /// **Concurrent collapse:** Re-entry while a soft-push loop is already in flight is a
+    /// no-op so parallel language-ensure attempt counters do not thrash ActivityKit.
+    ///
     /// Wire points (main app):
     /// - After media-surface Live Activity update/start (``refreshAllMediaSurfaces``)
     /// - After ``setPlaying()``’s playing reconcile
@@ -1711,9 +1961,11 @@ class RadioLiveActivityManager: ObservableObject {
     /// - Postcondition: When a push was needed and not quiet-deferred, ``updateCurrentActivity()``
     ///   ran up to the soft-retry budget (subject to test isolation and ActivityKit acceptance).
     ///   Cheap no-op when owned + last language already match destination, or when quiet for
-    ///   the same destination while request remains ineligible.
+    ///   the same destination while request remains ineligible, or when a soft-push loop is
+    ///   already in flight for this axis.
     /// - SeeAlso: ``updateCurrentActivity()``, ``shouldEnsureAuthoritativeLanguageContent(destinationLanguage:ownedContentLanguage:lastPushedLanguage:)``,
     ///   ``shouldRunLanguageContentEnsureSoftPushes(needsLanguageEnsure:destinationLanguage:quietPendingDestination:isRequestEligible:)``,
+    ///   ``shouldStartAuthoritativeContentEnsureSoftPushLoop(softPushesAlreadyInFlight:)``,
     ///   ``authoritativeLanguageContentEnsureMaxAttempts``,
     ///   ``ensureAuthoritativeContentOnForegroundIfNeeded()``,
     ///   ``recordOptimisticStreamSwitchContent(language:visualState:)``,
@@ -1743,9 +1995,11 @@ class RadioLiveActivityManager: ObservableObject {
             ownedOrSystemLanguage: ownedLanguage
         ) {
             languageEnsureQuietPendingDestination = nil
+            languageEnsureQuietSkipLogged = false
         }
         guard needsEnsure else {
             languageEnsureQuietPendingDestination = nil
+            languageEnsureQuietSkipLogged = false
             return
         }
 
@@ -1760,13 +2014,29 @@ class RadioLiveActivityManager: ObservableObject {
             isRequestEligible: requestEligible
         ) else {
             #if DEBUG
-            print(
-                "🔴 Live Activity language ensure quiet (destination=\(destination) " +
-                "owned=\(ownedLanguage ?? "nil"); wait for eligibility, become-active, or language mutation)"
-            )
+            if Self.shouldLogEnsureQuietSkipOnce(
+                softPushesSuppressedByQuiet: true,
+                alreadyLoggedQuietSkip: languageEnsureQuietSkipLogged
+            ) {
+                languageEnsureQuietSkipLogged = true
+                print(
+                    "🔴 Live Activity language ensure quiet (destination=\(destination) " +
+                    "owned=\(ownedLanguage ?? "nil"); wait for eligibility, become-active, or language mutation)"
+                )
+            }
             #endif
             return
         }
+
+        // Collapse concurrent re-entry: only one soft-push loop per axis.
+        guard Self.shouldStartAuthoritativeContentEnsureSoftPushLoop(
+            softPushesAlreadyInFlight: languageEnsureSoftPushesInFlight
+        ) else {
+            return
+        }
+        languageEnsureSoftPushesInFlight = true
+        defer { languageEnsureSoftPushesInFlight = false }
+        languageEnsureQuietSkipLogged = false
 
         // Destination change re-arms: clear any prior quiet so this cycle can enter quiet
         // for the *new* destination if it also exhausts while ineligible.
@@ -1787,6 +2057,7 @@ class RadioLiveActivityManager: ObservableObject {
                 lastPushedLanguage: loopLast
             ) else {
                 languageEnsureQuietPendingDestination = nil
+                languageEnsureQuietSkipLogged = false
                 return
             }
 
@@ -1803,6 +2074,7 @@ class RadioLiveActivityManager: ObservableObject {
             let acceptedLanguage = currentActivity?.content.state.currentLanguage
             if acceptedLanguage == loopDestination {
                 languageEnsureQuietPendingDestination = nil
+                languageEnsureQuietSkipLogged = false
                 return
             }
             if attempt < Self.authoritativeLanguageContentEnsureMaxAttempts {
@@ -1829,6 +2101,7 @@ class RadioLiveActivityManager: ObservableObject {
             destinationLanguage: finalDestination
         ) {
             languageEnsureQuietPendingDestination = quietDestination
+            languageEnsureQuietSkipLogged = false
             // Keep pending ensure so become-active owned-surface path re-arms recovery.
             pendingInteractiveLiveActivityEnsure = true
             #if DEBUG
@@ -2043,6 +2316,10 @@ class RadioLiveActivityManager: ObservableObject {
         // quiet blocking visual recovery (and the reverse).
         languageEnsureQuietPendingDestination = nil
         playingEnsureQuietPending = false
+        languageEnsureQuietSkipLogged = false
+        playingEnsureQuietSkipLogged = false
+        // New presentable cycle may re-announce deferred recreation if soft ensure still fails.
+        lastLoggedStalledContentDiagnosticsSignature = nil
 
         // Soft path first — never end the only card while ActivityKit may still accept updates.
         // Language then visual so one ContentState push can co-converge both axes when possible.
@@ -2125,6 +2402,8 @@ class RadioLiveActivityManager: ObservableObject {
         // Control mutation re-arms playing ensure quiet so pause honesty and later soft-resume
         // get a full soft budget even after prior lock-stretch playing thrash.
         playingEnsureQuietPending = false
+        playingEnsureQuietSkipLogged = false
+        lastLoggedStalledContentDiagnosticsSignature = nil
         let metadata =
             lastPushedContent?.streamMetadata
             ?? currentActivity?.content.state.streamMetadata
@@ -2188,9 +2467,13 @@ class RadioLiveActivityManager: ObservableObject {
         // New language mutation re-arms soft language ensure for one high-priority cycle.
         if languageEnsureQuietPendingDestination != language {
             languageEnsureQuietPendingDestination = nil
+            languageEnsureQuietSkipLogged = false
         }
         // New stream-switch cycle re-arms playing ensure for post-attach audible start.
         playingEnsureQuietPending = false
+        playingEnsureQuietSkipLogged = false
+        // New mutation may re-log stall diagnostics and re-announce deferred recreation once.
+        lastLoggedStalledContentDiagnosticsSignature = nil
         lastPushedContent = LutheranRadioLiveActivityAttributes.ContentState(
             visualState: visualState,
             streamMetadata: nil,
@@ -2349,6 +2632,9 @@ class RadioLiveActivityManager: ObservableObject {
             interactiveContentRecreationsAttempted = 0
             languageEnsureQuietPendingDestination = nil
             playingEnsureQuietPending = false
+            languageEnsureQuietSkipLogged = false
+            playingEnsureQuietSkipLogged = false
+            lastLoggedStalledContentDiagnosticsSignature = nil
             if !isRecreatingLiveActivityAfterStalledContent {
                 pendingInteractiveLiveActivityEnsure = false
             }
@@ -2365,6 +2651,9 @@ class RadioLiveActivityManager: ObservableObject {
             interactiveContentRecreationsAttempted = 0
             languageEnsureQuietPendingDestination = nil
             playingEnsureQuietPending = false
+            languageEnsureQuietSkipLogged = false
+            playingEnsureQuietSkipLogged = false
+            lastLoggedStalledContentDiagnosticsSignature = nil
             if !isRecreatingLiveActivityAfterStalledContent {
                 pendingInteractiveLiveActivityEnsure = false
             }
@@ -2383,6 +2672,9 @@ class RadioLiveActivityManager: ObservableObject {
         consecutiveStalledContentPushes = 0
         languageEnsureQuietPendingDestination = nil
         playingEnsureQuietPending = false
+        languageEnsureQuietSkipLogged = false
+        playingEnsureQuietSkipLogged = false
+        lastLoggedStalledContentDiagnosticsSignature = nil
         // Do not reset interactiveContentRecreationsAttempted here when recreation is mid-flight
         // (end clears tracking before start). Recreation counter is owned by the recreation cycle.
         // Pending ensure survives an in-flight recreation end so a failed replacement start
@@ -2779,6 +3071,9 @@ class RadioLiveActivityManager: ObservableObject {
         // subsequent ensure can re-evaluate (or stay a no-op if language/visual already match).
         languageEnsureQuietPendingDestination = nil
         playingEnsureQuietPending = false
+        languageEnsureQuietSkipLogged = false
+        playingEnsureQuietSkipLogged = false
+        lastLoggedStalledContentDiagnosticsSignature = nil
         SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(content.state.visualState)
         SharedPlayerManager.persistLiveActivityLanguageMirror(content.state.currentLanguage)
     }
@@ -2796,6 +3091,9 @@ class RadioLiveActivityManager: ObservableObject {
             consecutiveStalledContentPushes = 0
             languageEnsureQuietPendingDestination = nil
             playingEnsureQuietPending = false
+            languageEnsureQuietSkipLogged = false
+            playingEnsureQuietSkipLogged = false
+            lastLoggedStalledContentDiagnosticsSignature = nil
             if !isRecreatingLiveActivityAfterStalledContent {
                 interactiveContentRecreationsAttempted = 0
             }
@@ -2810,6 +3108,9 @@ class RadioLiveActivityManager: ObservableObject {
         consecutiveStalledContentPushes = 0
         languageEnsureQuietPendingDestination = nil
         playingEnsureQuietPending = false
+        languageEnsureQuietSkipLogged = false
+        playingEnsureQuietSkipLogged = false
+        lastLoggedStalledContentDiagnosticsSignature = nil
         if !isRecreatingLiveActivityAfterStalledContent {
             interactiveContentRecreationsAttempted = 0
         }
@@ -3034,6 +3335,76 @@ class RadioLiveActivityManager: ObservableObject {
     /// White-box seam: set playing ensure quiet flag (no ActivityKit).
     func _test_setPlayingEnsureQuietPending(_ value: Bool) {
         playingEnsureQuietPending = value
+    }
+
+    /// White-box seam: concurrent soft-ensure collapse (no ActivityKit).
+    func _test_shouldStartAuthoritativeContentEnsureSoftPushLoop(
+        softPushesAlreadyInFlight: Bool
+    ) -> Bool {
+        Self.shouldStartAuthoritativeContentEnsureSoftPushLoop(
+            softPushesAlreadyInFlight: softPushesAlreadyInFlight
+        )
+    }
+
+    /// White-box seam: deferred recreation pending mark while request ineligible.
+    func _test_shouldMarkPendingEnsureForDeferredRecreation(
+        wouldRecreateByStreakCap: Bool,
+        isRequestEligible: Bool
+    ) -> Bool {
+        Self.shouldMarkPendingEnsureForDeferredRecreation(
+            wouldRecreateByStreakCap: wouldRecreateByStreakCap,
+            isRequestEligible: isRequestEligible
+        )
+    }
+
+    /// White-box seam: deferred recreation announce-once while request ineligible.
+    func _test_shouldAnnounceDeferredInteractiveRecreationWhileIneligible(
+        wouldRecreateByStreakCap: Bool,
+        isRequestEligible: Bool,
+        pendingEnsureAlreadyRecorded: Bool
+    ) -> Bool {
+        Self.shouldAnnounceDeferredInteractiveRecreationWhileIneligible(
+            wouldRecreateByStreakCap: wouldRecreateByStreakCap,
+            isRequestEligible: isRequestEligible,
+            pendingEnsureAlreadyRecorded: pendingEnsureAlreadyRecorded
+        )
+    }
+
+    /// White-box seam: stalled content diagnostics signature (rate-limit key).
+    func _test_stalledContentDiagnosticsSignature(
+        candidateLanguage: String,
+        acceptedLanguage: String,
+        candidateVisual: PlayerVisualState,
+        acceptedVisual: PlayerVisualState
+    ) -> String {
+        Self.stalledContentDiagnosticsSignature(
+            candidateLanguage: candidateLanguage,
+            acceptedLanguage: acceptedLanguage,
+            candidateVisual: candidateVisual,
+            acceptedVisual: acceptedVisual
+        )
+    }
+
+    /// White-box seam: rate-limit identical stall diagnostics.
+    func _test_shouldLogStalledContentDiagnostics(
+        signature: String,
+        lastLoggedSignature: String?
+    ) -> Bool {
+        Self.shouldLogStalledContentDiagnostics(
+            signature: signature,
+            lastLoggedSignature: lastLoggedSignature
+        )
+    }
+
+    /// White-box seam: quiet-skip DEBUG log once per quiet engagement.
+    func _test_shouldLogEnsureQuietSkipOnce(
+        softPushesSuppressedByQuiet: Bool,
+        alreadyLoggedQuietSkip: Bool
+    ) -> Bool {
+        Self.shouldLogEnsureQuietSkipOnce(
+            softPushesSuppressedByQuiet: softPushesSuppressedByQuiet,
+            alreadyLoggedQuietSkip: alreadyLoggedQuietSkip
+        )
     }
 
     /// White-box seam: clear suppress memory between tests (singleton isolation).

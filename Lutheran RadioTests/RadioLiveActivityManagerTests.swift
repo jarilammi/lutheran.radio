@@ -1012,6 +1012,147 @@ class RadioLiveActivityManagerTests: XCTestCase {
         )
     }
 
+    /// Soft-ensure thrash protection: concurrent re-entry, deferred recreation announce-once,
+    /// and rate-limited identical stall diagnostics.
+    ///
+    /// After honesty quiet pending (language/playing), residual thrash is concurrent soft-push
+    /// loops and repeated deferred-recreation / stall log spam while request stays ineligible.
+    /// Pure policies collapse concurrent ensure, record pending ensure once per freeze, and
+    /// rate-limit DEBUG for identical candidate/owned pairs. Imperative mutations still re-arm.
+    /// Does **not** end+request while ineligible; does **not** invent `.playing`.
+    func testSoftEnsureThrashCollapseAndDeferredRecreationAnnounceOnce() {
+        // Concurrent soft-push collapse.
+        XCTAssertTrue(
+            manager._test_shouldStartAuthoritativeContentEnsureSoftPushLoop(
+                softPushesAlreadyInFlight: false
+            ),
+            "First ensure entry must start the soft-push loop"
+        )
+        XCTAssertFalse(
+            manager._test_shouldStartAuthoritativeContentEnsureSoftPushLoop(
+                softPushesAlreadyInFlight: true
+            ),
+            "Concurrent re-entry must collapse into the in-flight loop"
+        )
+
+        // Deferred recreation pending mark + announce-once while ineligible.
+        XCTAssertTrue(
+            manager._test_shouldMarkPendingEnsureForDeferredRecreation(
+                wouldRecreateByStreakCap: true,
+                isRequestEligible: false
+            ),
+            "Streak/cap would recreate while ineligible must mark pending ensure"
+        )
+        XCTAssertFalse(
+            manager._test_shouldMarkPendingEnsureForDeferredRecreation(
+                wouldRecreateByStreakCap: true,
+                isRequestEligible: true
+            ),
+            "Eligible request uses end+request path — not deferred pending mark"
+        )
+        XCTAssertFalse(
+            manager._test_shouldMarkPendingEnsureForDeferredRecreation(
+                wouldRecreateByStreakCap: false,
+                isRequestEligible: false
+            ),
+            "Below recreation threshold must not mark deferred pending"
+        )
+        XCTAssertTrue(
+            manager._test_shouldAnnounceDeferredInteractiveRecreationWhileIneligible(
+                wouldRecreateByStreakCap: true,
+                isRequestEligible: false,
+                pendingEnsureAlreadyRecorded: false
+            ),
+            "First deferred recreation for a freeze must announce once"
+        )
+        XCTAssertFalse(
+            manager._test_shouldAnnounceDeferredInteractiveRecreationWhileIneligible(
+                wouldRecreateByStreakCap: true,
+                isRequestEligible: false,
+                pendingEnsureAlreadyRecorded: true
+            ),
+            "Subsequent identical deferred evaluations must stay quiet (no log thrash)"
+        )
+        XCTAssertFalse(
+            manager._test_shouldAnnounceDeferredInteractiveRecreationWhileIneligible(
+                wouldRecreateByStreakCap: true,
+                isRequestEligible: true,
+                pendingEnsureAlreadyRecorded: false
+            ),
+            "Eligible recreation must not use deferred announce path"
+        )
+
+        // Rate-limit identical candidate/owned stall diagnostics.
+        let sig = manager._test_stalledContentDiagnosticsSignature(
+            candidateLanguage: "fi",
+            acceptedLanguage: "de",
+            candidateVisual: .prePlay,
+            acceptedVisual: .prePlay
+        )
+        let sigSame = manager._test_stalledContentDiagnosticsSignature(
+            candidateLanguage: "fi",
+            acceptedLanguage: "de",
+            candidateVisual: .prePlay,
+            acceptedVisual: .prePlay
+        )
+        let sigVisualChange = manager._test_stalledContentDiagnosticsSignature(
+            candidateLanguage: "fi",
+            acceptedLanguage: "de",
+            candidateVisual: .playing,
+            acceptedVisual: .prePlay
+        )
+        XCTAssertEqual(sig, sigSame, "Identical freeze pairs must share a diagnostics signature")
+        XCTAssertNotEqual(
+            sig,
+            sigVisualChange,
+            "Visual mutation must re-arm stall diagnostics signature"
+        )
+        XCTAssertTrue(
+            manager._test_shouldLogStalledContentDiagnostics(
+                signature: sig,
+                lastLoggedSignature: nil
+            ),
+            "First stall signature must log"
+        )
+        XCTAssertFalse(
+            manager._test_shouldLogStalledContentDiagnostics(
+                signature: sig,
+                lastLoggedSignature: sig
+            ),
+            "Identical stall signature must not re-log"
+        )
+        XCTAssertTrue(
+            manager._test_shouldLogStalledContentDiagnostics(
+                signature: sigVisualChange,
+                lastLoggedSignature: sig
+            ),
+            "Changed freeze pair must re-log once"
+        )
+
+        // Quiet-skip DEBUG once per quiet engagement.
+        XCTAssertTrue(
+            manager._test_shouldLogEnsureQuietSkipOnce(
+                softPushesSuppressedByQuiet: true,
+                alreadyLoggedQuietSkip: false
+            ),
+            "First quiet skip must log once"
+        )
+        XCTAssertFalse(
+            manager._test_shouldLogEnsureQuietSkipOnce(
+                softPushesSuppressedByQuiet: true,
+                alreadyLoggedQuietSkip: true
+            ),
+            "Repeated quiet skip after announce must stay silent"
+        )
+        XCTAssertFalse(
+            manager._test_shouldLogEnsureQuietSkipOnce(
+                softPushesSuppressedByQuiet: false,
+                alreadyLoggedQuietSkip: false
+            ),
+            "Non-quiet path is not a quiet-skip log"
+        )
+    }
+
     /// Post-update suppress memory must not claim candidate language when content.state still differs.
     func testSuppressMemoryAfterUpdateKeepsSystemLanguageOnMismatch() {
         let candidate = LutheranRadioLiveActivityAttributes.ContentState(
