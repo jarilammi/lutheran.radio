@@ -114,6 +114,76 @@ struct WidgetSurfaceTests {
         #expect(WidgetIntentCoordinators.planLiveActivityToggle(resolution: fromMirror) == .pause)
     }
 
+    /// Stale system-held Connecting must not invert pause when durable mirror already paused.
+    ///
+    /// After lock-stretch visual freeze, ContentState can remain `.prePlay` while the durable
+    /// LA toggle mirror (and actor) already hold `.userPaused`. Planning from content alone
+    /// would treat Connecting as "play-eligible" and invert a second pause/resume cycle.
+    @Test func resolveLiveActivityToggleStaleConnectingDefersToUserPausedMirror() {
+        let resolution = WidgetIntentCoordinators.resolveLiveActivityToggleVisualState(
+            liveActivityContent: .prePlay,
+            durableMirror: .userPaused,
+            actorVisualState: .userPaused,
+            sessionSnapshot: nil
+        )
+        #expect(resolution.source == .durableCrossProcessMirror)
+        #expect(resolution.visualState == .userPaused)
+        #expect(
+            WidgetIntentCoordinators.planLiveActivityToggle(resolution: resolution) == .play,
+            "Paused peer after stale Connecting must plan play (resume), not re-plan play from Connecting alone"
+        )
+    }
+
+    /// Stale Connecting with still-playing audio prefers durable/actor playing → pause plan.
+    @Test func resolveLiveActivityToggleStaleConnectingDefersToPlayingPeer() {
+        let fromMirror = WidgetIntentCoordinators.resolveLiveActivityToggleVisualState(
+            liveActivityContent: .prePlay,
+            durableMirror: .playing,
+            actorVisualState: .prePlay,
+            sessionSnapshot: nil
+        )
+        #expect(fromMirror.source == .durableCrossProcessMirror)
+        #expect(WidgetIntentCoordinators.planLiveActivityToggle(resolution: fromMirror) == .pause)
+
+        let fromActor = WidgetIntentCoordinators.resolveLiveActivityToggleVisualState(
+            liveActivityContent: .prePlay,
+            durableMirror: nil,
+            actorVisualState: .playing,
+            sessionSnapshot: nil
+        )
+        #expect(fromActor.source == .actorVisualState)
+        #expect(WidgetIntentCoordinators.planLiveActivityToggle(resolution: fromActor) == .pause)
+    }
+
+    /// Intentional Connecting with no control-definite peer remains content-authoritative.
+    @Test func resolveLiveActivityToggleConnectingWithoutDefinitivePeerKeepsContent() {
+        let resolution = WidgetIntentCoordinators.resolveLiveActivityToggleVisualState(
+            liveActivityContent: .prePlay,
+            durableMirror: .prePlay,
+            actorVisualState: .prePlay,
+            sessionSnapshot: nil
+        )
+        #expect(resolution.source == .liveActivityContent)
+        #expect(resolution.visualState == .prePlay)
+        #expect(WidgetIntentCoordinators.planLiveActivityToggle(resolution: resolution) == .play)
+    }
+
+    /// Optimistic visual replace preserves language and program metadata (pause honesty).
+    @Test func contentStateReplacingVisualStateFromPrePlayPreservesLanguage() {
+        let metadata = StreamProgramMetadata(programTitle: "Vesper", speaker: "Cantor")
+        let connecting = LutheranRadioLiveActivityAttributes.ContentState(
+            visualState: .prePlay,
+            streamMetadata: metadata,
+            currentLanguage: "de"
+        )
+        let paused = connecting.replacingVisualState(.userPaused)
+        #expect(paused.visualState == .userPaused)
+        #expect(paused.currentLanguage == "de")
+        #expect(paused.streamMetadata == metadata)
+        #expect(PlayerVisualState.userPaused.isDefinitiveMediaToggleVisual)
+        #expect(!PlayerVisualState.prePlay.isDefinitiveMediaToggleVisual)
+    }
+
     @Test func planLiveActivityToggleDistrustBlocksPlayFromDurableMirrorAlone() {
         let pausedMirror = WidgetIntentCoordinators.resolveLiveActivityToggleVisualState(
             liveActivityContent: nil,

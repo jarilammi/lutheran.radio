@@ -373,6 +373,43 @@ class RadioLiveActivityManagerTests: XCTestCase {
         )
     }
 
+    /// Optimistic pause from stale Connecting suppress memory preserves language and does not
+    /// require owned visual to have been `.playing` first.
+    ///
+    /// Protects pause honesty after stream-switch visual freeze: replace Connecting with
+    /// `.userPaused` while language chrome stays on the destination stream.
+    func testOptimisticPauseFromPrePlayPreservesLanguageWithoutPriorPlaying() async {
+        let metadata = StreamProgramMetadata(programTitle: "Predigt", speaker: "Pfarrer")
+        let connecting = makeActivityContent(visualState: .prePlay, metadata: metadata, currentLanguage: "de")
+        let stream = AsyncStream<ActivityContent<LutheranRadioLiveActivityAttributes.ContentState>> { continuation in
+            continuation.yield(connecting)
+            continuation.finish()
+        }
+        manager._test_beginObservingSyntheticContentUpdates(stream)
+        let seeded = await waitUntil({ self.manager.lastPushedContent == connecting.state })
+        XCTAssertTrue(seeded, "Precondition: lastPushedContent must carry Connecting + language")
+
+        manager.recordOptimisticToggleContent(visualState: .userPaused)
+
+        XCTAssertEqual(manager.lastPushedContent?.visualState, .userPaused)
+        XCTAssertEqual(manager.lastPushedContent?.currentLanguage, "de")
+        XCTAssertEqual(manager.lastPushedContent?.streamMetadata, metadata)
+        // Owned surface still Connecting → suppress denied (ActivityKit push still required).
+        XCTAssertFalse(
+            RadioLiveActivityManager.shouldSuppressLiveActivityContentPush(
+                lastPushed: manager.lastPushedContent,
+                candidate: LutheranRadioLiveActivityAttributes.ContentState(
+                    visualState: .userPaused,
+                    streamMetadata: metadata,
+                    currentLanguage: "de"
+                ),
+                ownedContentLanguage: "de",
+                ownedContentVisual: .prePlay
+            ),
+            "Owned Connecting vs candidate userPaused must not suppress (pause honesty)"
+        )
+    }
+
     /// Content-push visual policy: hold/connect clamps playing → Connecting; clear hold keeps playing.
     ///
     /// Protects lock-screen chrome from advertising `.playing` mid stream-switch attach, and

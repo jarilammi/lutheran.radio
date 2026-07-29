@@ -115,6 +115,54 @@ final class WidgetIntentCoordinatorTests: XCTestCase {
         )
     }
 
+    /// Stale system-held Connecting + durable userPaused → plan play (no invert after pause).
+    ///
+    /// Protects pause honesty when ActivityKit never accepted `.userPaused` while lock-driven
+    /// and ContentState remains Connecting: durable mirror (and actor) already hold pause.
+    func testResolveLiveActivityToggleStaleConnectingDefersToUserPausedMirror() {
+        let resolution = WidgetIntentCoordinators.resolveLiveActivityToggleVisualState(
+            liveActivityContent: .prePlay,
+            durableMirror: .userPaused,
+            actorVisualState: .userPaused,
+            sessionSnapshot: nil
+        )
+        XCTAssertEqual(resolution.source, .durableCrossProcessMirror)
+        XCTAssertEqual(resolution.visualState, .userPaused)
+        XCTAssertEqual(
+            WidgetIntentCoordinators.planLiveActivityToggle(resolution: resolution),
+            .play,
+            "After pause with frozen Connecting content, second tap must plan resume"
+        )
+    }
+
+    /// Stale Connecting + still-playing durable/actor → plan pause (first lock-screen pause).
+    func testResolveLiveActivityToggleStaleConnectingDefersToPlayingPeer() {
+        let fromMirror = WidgetIntentCoordinators.resolveLiveActivityToggleVisualState(
+            liveActivityContent: .prePlay,
+            durableMirror: .playing,
+            actorVisualState: .prePlay,
+            sessionSnapshot: nil
+        )
+        XCTAssertEqual(fromMirror.source, .durableCrossProcessMirror)
+        XCTAssertEqual(
+            WidgetIntentCoordinators.planLiveActivityToggle(resolution: fromMirror),
+            .pause,
+            "Frozen Connecting must not invert first pause while audio is playing"
+        )
+
+        let fromActor = WidgetIntentCoordinators.resolveLiveActivityToggleVisualState(
+            liveActivityContent: .prePlay,
+            durableMirror: nil,
+            actorVisualState: .playing,
+            sessionSnapshot: nil
+        )
+        XCTAssertEqual(fromActor.source, .actorVisualState)
+        XCTAssertEqual(
+            WidgetIntentCoordinators.planLiveActivityToggle(resolution: fromActor),
+            .pause
+        )
+    }
+
     /// When ActivityKit activities are empty, durable App Group mirror still plans pause.
     func testResolveLiveActivityToggleUsesDurableMirrorWhenContentMissing() {
         let resolution = WidgetIntentCoordinators.resolveLiveActivityToggleVisualState(

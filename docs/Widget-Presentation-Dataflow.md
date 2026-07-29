@@ -131,7 +131,10 @@ Never derive presentation inside leaf view `body` for the three canonical surfac
 
 3. **Lock-screen toggle optimistic ContentState** (intent path, main or extension host):
    - ``WidgetIntentExecution/performLiveActivityToggle()`` plans from multi-source resolve, then writes the durable toggle mirror and calls ``pushOptimisticLiveActivityToggleContent(visualState:)``.
+   - Home/Control ``executeOptimisticToggle`` uses the same durable mirror + optimistic ContentState path for definitive play/pause targets so a home pause does not leave lock-screen chrome stuck on Connecting.
    - That helper updates interactive `Activity` instances with ``ContentState/replacingVisualState(_:)`` (program metadata **and** `currentLanguage` preserved) and, on the main app, ``RadioLiveActivityManager/recordOptimisticToggleContent(visualState:)`` so ``lastPushedContent`` matches the optimistic glyph before engine-complete refresh.
+   - ``SharedPlayerManager/stop()`` also warms the durable mirror at sticky lock and (main app) pushes optimistic ``.userPaused`` ContentState before soft silence — pause honesty does not require owned visual to have been ``.playing`` first.
+   - Multi-source resolve trusts non-Connecting ContentState; system-held Connecting defers to a definitive durable/actor/session peer so planning does not invert under lock-stretch freezes.
    - Resolve still prefers ActivityKit content over the durable mirror; the optimistic content publish is what makes a rapid second tap plan the opposite direction instead of re-reading stale pre-tap content.
    - UITestMode skips ActivityKit IPC; main-app last-pushed alignment still runs for white-box tests.
 

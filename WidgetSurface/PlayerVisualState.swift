@@ -131,9 +131,24 @@ import UIKit
     /// and ``SharedPlayerManager`` media-transport toggle — not by this flag alone.
     ///
     /// - SeeAlso: ``isActivelyPlaying``, ``blocksPlannedPlay``,
+    ///   ``isDefinitiveMediaToggleVisual``,
     ///   ``WidgetIntentCoordinators/planLiveActivityToggle(from:)``
     public var plansMediaToggleAsPause: Bool {
         isActivelyPlaying
+    }
+
+    /// Whether this visual is a definitive play/pause control signal for LA toggle planning.
+    ///
+    /// ``playing`` and ``userPaused`` are authoritative control chrome. Connecting
+    /// (``.prePlay``) is **not** definitive: under lock-stretch freezes the system-held
+    /// ContentState can remain Connecting while audio and durable mirrors already advanced
+    /// to playing or pause. Multi-source resolve prefers a definitive peer over stale
+    /// Connecting so toggle planning does not invert.
+    ///
+    /// - SeeAlso: ``WidgetIntentCoordinators/resolveLiveActivityToggleVisualState(liveActivityContent:durableMirror:actorVisualState:sessionSnapshot:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    public var isDefinitiveMediaToggleVisual: Bool {
+        self == .playing || self == .userPaused
     }
 
     /// Whether planned **play** must be refused while this visual is authoritative.

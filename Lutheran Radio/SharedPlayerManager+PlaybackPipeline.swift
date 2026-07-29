@@ -820,14 +820,24 @@ extension SharedPlayerManager {
     ///   `DirectStreamingPlayer.stop` also advances its attach generation so post-await start
     ///   paths cannot complete against a paused chrome surface.
     ///
-    /// - Important: Media surfaces (Now Playing rate, Live Activity glyph) are refreshed only
-    ///   **after** soft-pause completion (`player.pause` + `rate == 0` + `isSoftPaused`). This is
-    ///   the single ownership path for “user pause complete”: SPM owns sticky visual lock +
-    ///   `streamDidStop` + one ``refreshAllMediaSurfaces``; the engine is told
+    /// - Important: Media surfaces for **engine-complete** Now Playing rate and a second
+    ///   Live Activity reconcile are refreshed **after** soft-pause completion
+    ///   (`player.pause` + `rate == 0` + `isSoftPaused`). Sticky visual lock +
+    ///   `streamDidStop` remain immediate; the engine is told
     ///   `applyUserPauseVisualLock: false` so it does not re-enter ``setUserPaused()`` /
     ///   ``markAsUserPaused()`` (no second surface storm, no `streamDidPause` after `streamDidStop`).
     ///
+    /// - Important: **Pause honesty (Live Activity):** at sticky lock time this path always
+    ///   warms the durable LA toggle mirror to ``.userPaused`` (not gated by home widgets) and,
+    ///   on the main app, publishes optimistic ActivityKit ContentState via
+    ///   ``WidgetIntentExecution/pushOptimisticLiveActivityToggleContent(visualState:)`` **before**
+    ///   soft silence completes. That replaces a stale system-held Connecting (``.prePlay``)
+    ///   glyph without requiring owned visual to have been ``.playing`` first, and preserves
+    ///   language chrome. Post-silence ``refreshAllMediaSurfaces`` remains the engine-complete
+    ///   ownership path (suppresses when optimistic content already matches).
+    ///
     /// - Postcondition: visual + intent forced to `.userPaused`, timestamp recorded,
+    ///   durable LA toggle mirror = `.userPaused`, main-app optimistic LA ContentState pushed,
     ///   engine soft silence awaited (main), authoritative ``saveCurrentState()``
     ///   performed (privacy-gated), surfaces notified once after silence, and
     ///   `streamDidStop` emitted.
@@ -835,6 +845,8 @@ extension SharedPlayerManager {
     /// - SeeAlso: ``setUserPaused()``, ``markAsUserPaused()``, ``emit(_:)``,
     ///   `PlayerEvent.streamDidStop`,
     ///   `DirectStreamingPlayer.stopAndWait(reason:silent:applyUserPauseVisualLock:)`,
+    ///   ``persistLiveActivityToggleVisualStateMirror(_:)``,
+    ///   ``WidgetIntentExecution/pushOptimisticLiveActivityToggleContent(visualState:)``,
     ///   ``canProceedWithPlayback()``, CODING_AGENT.md (resurrection protection, SSOT stop path),
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     ///
@@ -870,6 +882,11 @@ extension SharedPlayerManager {
         // Additive only.
         emit(.streamDidStop)
 
+        // Durable LA planning signal at sticky lock — not gated by home-widget write
+        // suppression — so extension multi-source resolve prefers userPaused over a
+        // system-held Connecting freeze even before soft silence / ActivityKit acceptance.
+        Self.persistLiveActivityToggleVisualStateMirror(.userPaused)
+
         #if DEBUG
         print("[SharedPlayerManager] userPaused locked immediately in stop() (resurrection protection active)")
         #endif
@@ -878,6 +895,13 @@ extension SharedPlayerManager {
             handleWidgetStop()
             return
         }
+
+        // Optimistic LA ContentState before soft silence so lock-screen pause glyph tracks
+        // even when owned content was still Connecting (stale stream-switch freeze).
+        // Engine-complete refreshAllMediaSurfaces below remains the post-silence reconcile.
+        #if LUTHERAN_MAIN_APP
+        await WidgetIntentExecution.pushOptimisticLiveActivityToggleContent(visualState: .userPaused)
+        #endif
 
         // Main app path — await soft pause so rate is 0 before Now Playing / Live Activity flip.
         // applyUserPauseVisualLock: false — sticky lock + streamDidStop already applied above;

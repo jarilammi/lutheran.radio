@@ -1998,21 +1998,22 @@ class RadioLiveActivityManager: ObservableObject {
     /// Aligns in-memory ``lastPushedContent`` with an intent-path optimistic Live Activity visual.
     ///
     /// Called from ``WidgetIntentExecution`` after ActivityKit content is published (or when
-    /// no activity is visible in this process). Matching the optimistic visual here means
-    /// the subsequent engine-complete ``updateCurrentActivity()`` typically sees an equal
-    /// candidate and suppresses redundant IPC once the actor sticky-locks or setPlaying.
-    /// Program metadata and stream language are preserved from the last push, the owned
-    /// activity content, or main-app language resolution — never cleared solely because the
-    /// control flipped.
+    /// no activity is visible in this process), including main-app ``SharedPlayerManager/stop()``
+    /// sticky-lock pause honesty. Matching the optimistic visual here means the subsequent
+    /// engine-complete ``updateCurrentActivity()`` typically sees an equal candidate and
+    /// suppresses redundant IPC once the actor sticky-locks or setPlaying — **provided** owned
+    /// system-held visual also matches (owned-visual suppress gate). Pause from stale Connecting
+    /// does **not** require prior owned ``.playing``; language and program metadata are preserved.
     ///
     /// - Parameter visualState: Optimistic control visual (`.userPaused` or `.playing`).
     /// - Postcondition: ``lastPushedContent`` reflects `visualState` with preserved metadata
     ///   and language when any source is available; durable toggle mirrors stay the caller's
-    ///   job (already written before this alignment).
+    ///   job (already written before this alignment); ``playingEnsureQuietPending`` cleared.
     /// - Note: Does not call `Activity.update` — the intent path owns that IPC via
     ///   `Activity.activities` so extension-hosted and main-hosted toggles share one push site.
     /// - SeeAlso: ``updateCurrentActivity()``, ``recordOptimisticStreamSwitchContent(language:visualState:)``,
     ///   ``WidgetIntentExecution/performLiveActivityToggle()``,
+    ///   ``WidgetIntentExecution/executeOptimisticToggle(plan:language:)``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     @MainActor
     func recordOptimisticToggleContent(visualState: PlayerVisualState) {

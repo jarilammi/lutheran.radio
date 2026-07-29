@@ -175,16 +175,35 @@ public enum WidgetIntentCoordinators {
     ///   - actorVisualState: ``SharedPlayerManager/currentVisualState`` in the intent process (often `.prePlay` when the session snapshot is empty).
     ///   - sessionSnapshot: In-process `PersistedWidgetState.visualState` when present this process lifetime.
     /// - Returns: Effective visual state and which signal won.
-    /// - Important: Prefer Live Activity content over extension-local actor state so the plan matches the lock-screen glyph (playing → pause).
-    /// - SeeAlso: ``planLiveActivityToggle(from:)``, ``planLiveActivityToggle(resolution:)``.
+    /// - Important: Prefer Live Activity content over extension-local actor state so the plan matches the lock-screen glyph (playing → pause). **Exception:** system-held Connecting (``.prePlay``) alone is **not** trusted for toggle direction when a control-definite peer (``.playing`` or ``.userPaused``) exists — ActivityKit may freeze Connecting after stream-switch attach while audio and durable mirrors already advanced; trusting content alone would invert pause into play.
+    /// - SeeAlso: ``planLiveActivityToggle(from:)``, ``planLiveActivityToggle(resolution:)``,
+    ///   ``PlayerVisualState/isDefinitiveMediaToggleVisual``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     public static func resolveLiveActivityToggleVisualState(
         liveActivityContent: PlayerVisualState?,
         durableMirror: PlayerVisualState?,
         actorVisualState: PlayerVisualState?,
         sessionSnapshot: PlayerVisualState?
     ) -> LiveActivityToggleVisualResolution {
-        // 1. ActivityKit content — same SSOT the LA UI used for the control glyph.
+        // 1. ActivityKit content — same SSOT the LA UI used for the control glyph,
+        //    except stale Connecting when a control-definite peer disagrees.
         if let liveActivityContent {
+            if liveActivityContent != .prePlay {
+                return LiveActivityToggleVisualResolution(
+                    visualState: liveActivityContent,
+                    source: .liveActivityContent
+                )
+            }
+            // Connecting may be intentional (attach) **or** a lock-stretch freeze after
+            // attach / soft silence while owned content never accepted .playing/.userPaused.
+            // Prefer a control-definite peer so pause/resume planning does not invert.
+            if let peer = firstDefinitiveMediaTogglePeer(
+                durableMirror: durableMirror,
+                actorVisualState: actorVisualState,
+                sessionSnapshot: sessionSnapshot
+            ) {
+                return peer
+            }
             return LiveActivityToggleVisualResolution(
                 visualState: liveActivityContent,
                 source: .liveActivityContent
@@ -227,6 +246,50 @@ public enum WidgetIntentCoordinators {
             visualState: .prePlay,
             source: .defaultPrePlay
         )
+    }
+
+    /// First control-definite peer when system-held ContentState is still Connecting.
+    ///
+    /// Priority mirrors the post-content chain: durable → actively-playing actor →
+    /// session → sticky actor pause. Only ``.playing`` and ``.userPaused`` count —
+    /// other peers leave Connecting content authoritative (intentional attach chrome).
+    ///
+    /// - Parameters:
+    ///   - durableMirror: Cross-process LA toggle mirror.
+    ///   - actorVisualState: In-process actor visual.
+    ///   - sessionSnapshot: In-process session snapshot visual.
+    /// - Returns: Resolution when a definitive peer exists; otherwise `nil`.
+    /// - SeeAlso: ``resolveLiveActivityToggleVisualState(liveActivityContent:durableMirror:actorVisualState:sessionSnapshot:)``.
+    private static func firstDefinitiveMediaTogglePeer(
+        durableMirror: PlayerVisualState?,
+        actorVisualState: PlayerVisualState?,
+        sessionSnapshot: PlayerVisualState?
+    ) -> LiveActivityToggleVisualResolution? {
+        if let durableMirror, durableMirror.isDefinitiveMediaToggleVisual {
+            return LiveActivityToggleVisualResolution(
+                visualState: durableMirror,
+                source: .durableCrossProcessMirror
+            )
+        }
+        if let actorVisualState, actorVisualState.isActivelyPlaying {
+            return LiveActivityToggleVisualResolution(
+                visualState: actorVisualState,
+                source: .actorVisualState
+            )
+        }
+        if let sessionSnapshot, sessionSnapshot.isDefinitiveMediaToggleVisual {
+            return LiveActivityToggleVisualResolution(
+                visualState: sessionSnapshot,
+                source: .sessionSnapshot
+            )
+        }
+        if let actorVisualState, actorVisualState == .userPaused {
+            return LiveActivityToggleVisualResolution(
+                visualState: actorVisualState,
+                source: .actorVisualState
+            )
+        }
+        return nil
     }
 
     /// Plans Live Activity play/pause from a fully resolved multi-source visual state.

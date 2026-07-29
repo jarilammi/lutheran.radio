@@ -609,6 +609,32 @@ final class WidgetIntentContractExtensionTests: XCTestCase {
         XCTAssertEqual(snapshot?.currentLanguage, "et")
     }
 
+    /// Home-widget pause warms durable LA toggle mirror to `.userPaused` (not home-widget gated).
+    ///
+    /// Protects pause honesty when system-held LA ContentState is still Connecting: multi-source
+    /// resolve can plan from the durable mirror, and optimistic ContentState push preserves
+    /// language while replacing the control visual (ActivityKit IPC skipped under UITestMode).
+    func testExecuteOptimisticTogglePauseWarmsDurableLiveActivityMirror() async {
+        SharedPlayerManager.clearLiveActivityToggleVisualStateMirror()
+        SharedPlayerManager.persistWidgetSnapshot(visualState: .playing, language: "de")
+        SharedPlayerManager.persistLiveActivityLanguageMirror("de")
+
+        let plan = WidgetIntentCoordinators.planHomeWidgetToggle(from: .playing)
+        XCTAssertEqual(plan.action, .pause)
+        XCTAssertEqual(plan.targetVisualState, .userPaused)
+
+        await WidgetIntentExecution.executeOptimisticToggle(plan: plan, language: "de")
+
+        XCTAssertEqual(
+            SharedPlayerManager.loadLiveActivityToggleVisualStateMirror(),
+            .userPaused,
+            "Home pause must pin durable LA toggle mirror for lock-screen planning"
+        )
+        let snapshot = SharedPlayerManager.loadPersistedWidgetState()
+        XCTAssertEqual(snapshot?.visualState, .userPaused)
+        XCTAssertEqual(snapshot?.currentLanguage, "de")
+    }
+
     // MARK: - Instant feedback
 
     func testLoadSharedStatePrefersInstantFeedbackWithinFifteenSecondWindow() {

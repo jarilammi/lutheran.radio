@@ -409,10 +409,21 @@ enum WidgetIntentExecution {
     /// ``PlayerEvent``; immediate ``refreshIfNeeded`` is the only cross-process reload lever
     /// until the main app drains the pending action.
     ///
+    /// **Live Activity pause honesty:** When the plan targets a control visual (``.userPaused``
+    /// or ``.playing``), also warms the durable LA toggle mirror (not gated by home widgets)
+    /// and publishes optimistic ActivityKit ContentState via ``pushOptimisticLiveActivityToggleContent(visualState:)``.
+    /// That path preserves language chrome and replaces a stale system-held Connecting
+    /// (``.prePlay``) glyph so lock-screen controls track home/Control pause without waiting
+    /// for main-app soft silence + ``updateCurrentActivity()`` acceptance.
+    ///
     /// - Parameters:
     ///   - plan: Home-widget or Control-widget toggle plan.
     ///   - language: Language code from ``WidgetIntentCoordinators/languageForOptimisticUpdate(persistedLanguage:preferredLanguage:)``.
-    /// - SeeAlso: ``WidgetRefreshTrigger/extensionOptimistic``, docs/Event-Driven-Refactor-Roadmap.md.
+    /// - SeeAlso: ``WidgetRefreshTrigger/extensionOptimistic``,
+    ///   ``pushOptimisticLiveActivityToggleContent(visualState:)``,
+    ///   ``SharedPlayerManager/persistLiveActivityToggleVisualStateMirror(_:)``,
+    ///   docs/Event-Driven-Refactor-Roadmap.md,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     static func executeOptimisticToggle(plan: WidgetToggleActionPlan, language: String) async {
         guard plan.shouldExecutePendingAction else { return }
         let manager = SharedPlayerManager.shared
@@ -421,6 +432,17 @@ enum WidgetIntentExecution {
             action: plan.action.wireValue,
             language: language
         )
+        // Home/Control pause must not leave LA ContentState stuck on Connecting while the
+        // home snapshot already shows userPaused — same optimistic ContentState path as LA toggle.
+        if plan.targetVisualState.isDefinitiveMediaToggleVisual {
+            SharedPlayerManager.persistLiveActivityToggleVisualStateMirror(plan.targetVisualState)
+            if let contentLanguage = currentLiveActivityContentLanguage(), !contentLanguage.isEmpty {
+                SharedPlayerManager.persistLiveActivityLanguageMirror(contentLanguage)
+            } else if !language.isEmpty {
+                SharedPlayerManager.persistLiveActivityLanguageMirror(language)
+            }
+            await pushOptimisticLiveActivityToggleContent(visualState: plan.targetVisualState)
+        }
         let state = manager.loadSharedState()
         await WidgetRefreshManager.shared.refreshIfNeeded(
             visualState: plan.targetVisualState,
