@@ -1544,6 +1544,141 @@ class RadioLiveActivityManagerTests: XCTestCase {
         )
     }
 
+    /// Owned-surface foreground soft ensure is invoked on unlock recovery and debounced for dual hooks.
+    ///
+    /// **Invariant:** Lock-stretch language/playing quiet and ``pendingInteractiveLiveActivityEnsure``
+    /// are always consumed on a presentable cycle (clear quiet → language then playing soft ensure).
+    /// Dual SceneDelegate hooks (will-enter-foreground + become-active) and rapid resign/become
+    /// thrash must not re-burn soft budgets when nothing is pending; a second pass still runs when
+    /// chrome lags after a first pass that may have been request-ineligible. Pure policy (no ActivityKit).
+    func testOwnedSurfaceForegroundEnsureInvokeAndDebouncePolicy() {
+        let now = Date()
+        let interval = RadioLiveActivityManager.ownedSurfaceForegroundEnsureDebounceInterval
+        let recent = now.addingTimeInterval(-(interval / 2))
+        let stale = now.addingTimeInterval(-(interval + 0.5))
+
+        XCTAssertFalse(
+            manager._test_shouldInvokeOwnedSurfaceForegroundEnsure(
+                hasCurrentActivity: false,
+                lastOwnedSurfaceForegroundEnsureAt: nil,
+                now: now,
+                languageEnsureQuietPending: true,
+                playingEnsureQuietPending: true,
+                pendingInteractiveLiveActivityEnsure: true,
+                contentEnsureStillNeeded: true,
+                isRequestEligible: true
+            ),
+            "Unowned surface is the missing-card start path, not owned-surface soft ensure"
+        )
+
+        XCTAssertTrue(
+            manager._test_shouldInvokeOwnedSurfaceForegroundEnsure(
+                hasCurrentActivity: true,
+                lastOwnedSurfaceForegroundEnsureAt: nil,
+                now: now,
+                languageEnsureQuietPending: false,
+                playingEnsureQuietPending: false,
+                pendingInteractiveLiveActivityEnsure: false,
+                contentEnsureStillNeeded: false,
+                isRequestEligible: true
+            ),
+            "First owned-surface pass always runs (soft ensure is a cheap no-op when matched)"
+        )
+
+        XCTAssertTrue(
+            manager._test_shouldInvokeOwnedSurfaceForegroundEnsure(
+                hasCurrentActivity: true,
+                lastOwnedSurfaceForegroundEnsureAt: recent,
+                now: now,
+                languageEnsureQuietPending: true,
+                playingEnsureQuietPending: false,
+                pendingInteractiveLiveActivityEnsure: false,
+                contentEnsureStillNeeded: false,
+                isRequestEligible: false
+            ),
+            "Language quiet pending must force consume even inside the debounce window"
+        )
+        XCTAssertTrue(
+            manager._test_shouldInvokeOwnedSurfaceForegroundEnsure(
+                hasCurrentActivity: true,
+                lastOwnedSurfaceForegroundEnsureAt: recent,
+                now: now,
+                languageEnsureQuietPending: false,
+                playingEnsureQuietPending: true,
+                pendingInteractiveLiveActivityEnsure: false,
+                contentEnsureStillNeeded: false,
+                isRequestEligible: false
+            ),
+            "Playing quiet pending must force consume even inside the debounce window"
+        )
+        XCTAssertTrue(
+            manager._test_shouldInvokeOwnedSurfaceForegroundEnsure(
+                hasCurrentActivity: true,
+                lastOwnedSurfaceForegroundEnsureAt: recent,
+                now: now,
+                languageEnsureQuietPending: false,
+                playingEnsureQuietPending: false,
+                pendingInteractiveLiveActivityEnsure: true,
+                contentEnsureStillNeeded: false,
+                isRequestEligible: false
+            ),
+            "Deferred interactive pending ensure must force owned-surface soft ensure"
+        )
+
+        XCTAssertFalse(
+            manager._test_shouldInvokeOwnedSurfaceForegroundEnsure(
+                hasCurrentActivity: true,
+                lastOwnedSurfaceForegroundEnsureAt: recent,
+                now: now,
+                languageEnsureQuietPending: false,
+                playingEnsureQuietPending: false,
+                pendingInteractiveLiveActivityEnsure: false,
+                contentEnsureStillNeeded: false,
+                isRequestEligible: true
+            ),
+            "Dual will-enter-foreground + become-active hooks must debounce when nothing pending"
+        )
+        XCTAssertFalse(
+            manager._test_shouldInvokeOwnedSurfaceForegroundEnsure(
+                hasCurrentActivity: true,
+                lastOwnedSurfaceForegroundEnsureAt: recent,
+                now: now,
+                languageEnsureQuietPending: false,
+                playingEnsureQuietPending: false,
+                pendingInteractiveLiveActivityEnsure: false,
+                contentEnsureStillNeeded: true,
+                isRequestEligible: false
+            ),
+            "Inside debounce with lagging chrome but still-ineligible request must not thrash"
+        )
+        XCTAssertTrue(
+            manager._test_shouldInvokeOwnedSurfaceForegroundEnsure(
+                hasCurrentActivity: true,
+                lastOwnedSurfaceForegroundEnsureAt: recent,
+                now: now,
+                languageEnsureQuietPending: false,
+                playingEnsureQuietPending: false,
+                pendingInteractiveLiveActivityEnsure: false,
+                contentEnsureStillNeeded: true,
+                isRequestEligible: true
+            ),
+            "Become-active after ineligible first pass must soft-ensure when chrome still lags"
+        )
+        XCTAssertTrue(
+            manager._test_shouldInvokeOwnedSurfaceForegroundEnsure(
+                hasCurrentActivity: true,
+                lastOwnedSurfaceForegroundEnsureAt: stale,
+                now: now,
+                languageEnsureQuietPending: false,
+                playingEnsureQuietPending: false,
+                pendingInteractiveLiveActivityEnsure: false,
+                contentEnsureStillNeeded: false,
+                isRequestEligible: true
+            ),
+            "Outside debounce window must allow another owned-surface cycle"
+        )
+    }
+
     /// Eligible-only recreation after foreground soft ensure still fails; never while ineligible.
     ///
     /// **Invariant:** never destroy the only interactive Live Activity unless a replacement

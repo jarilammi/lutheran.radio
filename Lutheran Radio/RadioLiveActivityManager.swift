@@ -97,7 +97,10 @@ import WidgetSurface
 /// eligibility, become-active, or `contentUpdates`. On foreground / become-active with an
 /// **owned** activity, soft language + playing ensure run via
 /// ``ensureAuthoritativeContentOnForegroundIfNeeded()`` (clears both quiet flags first);
-/// eligible-only recreation is a last resort after soft ensure still fails (never while request
+/// dual SceneDelegate hooks are debounced for the owned-surface path while still
+/// **consuming** language/playing quiet and ``pendingInteractiveLiveActivityEnsure`` on
+/// unlock (and allowing a second pass when chrome still lags after a first ineligible pass).
+/// Eligible-only recreation is a last resort after soft ensure still fails (never while request
 /// is ineligible).
 ///
 /// ## Test Isolation
@@ -196,12 +199,28 @@ class RadioLiveActivityManager: ObservableObject {
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     private var pendingInteractiveLiveActivityEnsure = false
 
-    /// Debounce stamp for ``ensureInteractiveLiveActivityIfNeeded()`` so SceneDelegate +
-    /// AppDelegate dual foreground hooks do not double-request.
+    /// Debounce stamp for ``ensureInteractiveLiveActivityIfNeeded()`` **missing-card start**
+    /// so SceneDelegate dual foreground hooks do not double-request.
     private var lastInteractiveLiveActivityEnsureAt: Date?
 
-    /// Minimum interval between ensure-start attempts (SceneDelegate + AppDelegate both fire).
+    /// Minimum interval between ensure-start attempts (SceneDelegate dual hooks both fire).
     private static let interactiveLiveActivityEnsureDebounceInterval: TimeInterval = 1.0
+
+    /// Debounce stamp for **owned-surface** foreground soft language/playing ensure
+    /// (``ensureAuthoritativeContentOnForegroundIfNeeded()`` via
+    /// ``ensureInteractiveLiveActivityIfNeeded()``).
+    ///
+    /// Independent of the missing-card start stamp so a recent start attempt cannot block
+    /// unlock soft-reconcile, and a recent soft ensure cannot block a missing-card start.
+    private var lastOwnedSurfaceForegroundEnsureAt: Date?
+
+    /// Minimum interval between owned-surface foreground soft-ensure cycles when there is
+    /// nothing pending to consume (dual will-enter-foreground + become-active hooks, rapid
+    /// resign/become thrash). Quiet pending, interactive pending ensure, or chrome still
+    /// lagging while request-eligible force a re-invoke inside the window.
+    ///
+    /// - SeeAlso: ``shouldInvokeOwnedSurfaceForegroundEnsure(hasCurrentActivity:lastOwnedSurfaceForegroundEnsureAt:now:debounceInterval:languageEnsureQuietPending:playingEnsureQuietPending:pendingInteractiveLiveActivityEnsure:contentEnsureStillNeeded:isRequestEligible:)``.
+    static let ownedSurfaceForegroundEnsureDebounceInterval: TimeInterval = 1.0
 
     /// Consecutive stalled updates required before end + ``startActivity()`` recreation.
     ///
@@ -1837,6 +1856,7 @@ class RadioLiveActivityManager: ObservableObject {
     /// - Returns: `true` when ownership is non-nil and language and/or playing ensure gates fire.
     /// - Note: Does not invent `.playing` or decide end+request — soft ensure only.
     /// - SeeAlso: ``ensureAuthoritativeContentOnForegroundIfNeeded()``,
+    ///   ``shouldInvokeOwnedSurfaceForegroundEnsure(hasCurrentActivity:lastOwnedSurfaceForegroundEnsureAt:now:debounceInterval:languageEnsureQuietPending:playingEnsureQuietPending:pendingInteractiveLiveActivityEnsure:contentEnsureStillNeeded:isRequestEligible:)``,
     ///   ``shouldEnsureAuthoritativeLanguageContent(destinationLanguage:ownedContentLanguage:lastPushedLanguage:)``,
     ///   ``shouldEnsureAuthoritativePlayingContent(actorVisual:streamSwitchHold:isConnectingPlayback:lastPushedVisual:ownedVisual:)``.
     static func shouldEnsureAuthoritativeContentOnForeground(
@@ -1868,6 +1888,78 @@ class RadioLiveActivityManager: ObservableObject {
             return true
         }
         return false
+    }
+
+    /// Whether the owned-surface foreground soft-ensure cycle should run now.
+    ///
+    /// ``SceneDelegate`` calls ``ensureInteractiveLiveActivityIfNeeded()`` from both
+    /// ``sceneWillEnterForeground`` (via ``handleAppDidEnterForeground()``) and
+    /// ``sceneDidBecomeActive``. Missing-card start already has its own debounce; this gate
+    /// is the **owned-surface** peer so unlock recovery stays intentional without dual-hook
+    /// soft-budget thrash.
+    ///
+    /// **Always invoke (consume pending) when:**
+    /// - Language ensure quiet is set (lock-stretch thrash after max attempts while ineligible)
+    /// - Playing ensure quiet is set
+    /// - ``pendingInteractiveLiveActivityEnsure`` is set (deferred recreation / soft-exhaust)
+    ///
+    /// **Debounce skip when** none of the above and a cycle ran within ``debounceInterval``,
+    /// **unless** content still needs soft ensure **and** request is now eligible — so a first
+    /// pass that ran while application was not yet `.active` does not permanently skip the
+    /// presentable become-active pass.
+    ///
+    /// - Parameters:
+    ///   - hasCurrentActivity: Whether this process owns an interactive activity.
+    ///   - lastOwnedSurfaceForegroundEnsureAt: Stamp of the last owned-surface soft cycle.
+    ///   - now: Current time (injectable for tests).
+    ///   - debounceInterval: Production ``ownedSurfaceForegroundEnsureDebounceInterval``.
+    ///   - languageEnsureQuietPending: Whether ``languageEnsureQuietPendingDestination`` is set.
+    ///   - playingEnsureQuietPending: ``playingEnsureQuietPending``.
+    ///   - pendingInteractiveLiveActivityEnsure: Deferred ensure / soft-exhaust pending flag.
+    ///   - contentEnsureStillNeeded: ``shouldEnsureAuthoritativeContentOnForeground`` result.
+    ///   - isRequestEligible: ``isInteractiveLiveActivityRequestEligible``.
+    /// - Returns: `true` when ``ensureAuthoritativeContentOnForegroundIfNeeded()`` should run.
+    /// - Important: Does not decide end+request; never invents `.playing`. Unowned → `false`
+    ///   (missing-card start path is separate).
+    /// - SeeAlso: ``ensureInteractiveLiveActivityIfNeeded()``,
+    ///   ``ensureAuthoritativeContentOnForegroundIfNeeded()``,
+    ///   ``ownedSurfaceForegroundEnsureDebounceInterval``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    static func shouldInvokeOwnedSurfaceForegroundEnsure(
+        hasCurrentActivity: Bool,
+        lastOwnedSurfaceForegroundEnsureAt: Date?,
+        now: Date,
+        debounceInterval: TimeInterval = RadioLiveActivityManager.ownedSurfaceForegroundEnsureDebounceInterval,
+        languageEnsureQuietPending: Bool,
+        playingEnsureQuietPending: Bool,
+        pendingInteractiveLiveActivityEnsure: Bool,
+        contentEnsureStillNeeded: Bool,
+        isRequestEligible: Bool
+    ) -> Bool {
+        guard hasCurrentActivity else { return false }
+
+        // Consume lock-stretch quiet / deferred pending on a presentable cycle.
+        // Quiet is for thrash while request was ineligible — not a freeze across unlock.
+        if languageEnsureQuietPending
+            || playingEnsureQuietPending
+            || pendingInteractiveLiveActivityEnsure
+        {
+            return true
+        }
+
+        if let last = lastOwnedSurfaceForegroundEnsureAt,
+           now.timeIntervalSince(last) < debounceInterval {
+            // willEnterForeground may run before application is `.active`. become-active must
+            // still soft-ensure when chrome lags and request is now eligible.
+            if contentEnsureStillNeeded && isRequestEligible {
+                return true
+            }
+            return false
+        }
+
+        // First owned-surface pass this debounce window (or never). Soft ensure is a cheap
+        // no-op when language + visual already match destination / actor.
+        return true
     }
 
     /// Whether eligible-only end+request may run after foreground soft ensure still leaves
@@ -1905,23 +1997,34 @@ class RadioLiveActivityManager: ObservableObject {
     ///
     /// **Why:** Deferred recreation keeps the interactive card while request is ineligible;
     /// system-held `content.state` may still trail destination language/visual after unlock.
+    /// Real-device unlock heal (system `contentUpdates` after become-active without an in-app
+    /// stream switch) is the intentional recovery rail: clear lock-stretch quiet, soft-push
+    /// both axes, then optionally recreate only when request-eligible.
     /// ``ensureInteractiveLiveActivityIfNeeded()`` restores a **missing** card only
     /// (`currentActivity == nil`); this is the owned-surface peer so become-active does not
-    /// leave a present card on prior-stream chrome.
+    /// leave a present card on prior-stream chrome. Callers gate dual SceneDelegate hooks via
+    /// ``shouldInvokeOwnedSurfaceForegroundEnsure`` so quiet/pending are still **consumed**
+    /// while redundant soft cycles are debounced.
     ///
     /// **Order:**
-    /// 1. Bounded ``ensureAuthoritativeLanguageContentIfNeeded()``
-    /// 2. Bounded ``ensureAuthoritativePlayingContentIfNeeded()``
-    /// 3. If owned language/visual still lag **and** request is eligible → single
+    /// 1. Clear ``languageEnsureQuietPendingDestination`` + ``playingEnsureQuietPending``
+    ///    (lock-stretch thrash protection must not freeze chrome across presentable cycles)
+    /// 2. Bounded ``ensureAuthoritativeLanguageContentIfNeeded()``
+    /// 3. Bounded ``ensureAuthoritativePlayingContentIfNeeded()``
+    /// 4. If owned language/visual still lag **and** request is eligible → single
     ///    ``recreateInteractiveLiveActivityAfterStalledContent()`` (re-checks eligibility;
     ///    never ends while ineligible)
     ///
     /// - Precondition: Main actor; no-op under UITestMode / under-test; no-op when unowned.
-    /// - Postcondition: Soft pushes attempted when needed; recreation only when eligible and
-    ///   soft path still failed with budget remaining.
+    ///   Caller should have already decided invoke via
+    ///   ``shouldInvokeOwnedSurfaceForegroundEnsure`` (or equivalent ownership check).
+    /// - Postcondition: Quiet flags cleared; soft pushes attempted when needed; recreation
+    ///   only when eligible and soft path still failed with budget remaining.
     /// - Important: Does not invent `.playing` during stream-switch hold; does not bypass
-    ///   privacy write suppression or home-widget write gating.
+    ///   privacy write suppression or home-widget write gating. Does not end the only
+    ///   activity while request is ineligible.
     /// - SeeAlso: ``ensureInteractiveLiveActivityIfNeeded()``, ``handleAppDidEnterForeground()``,
+    ///   ``shouldInvokeOwnedSurfaceForegroundEnsure(hasCurrentActivity:lastOwnedSurfaceForegroundEnsureAt:now:debounceInterval:languageEnsureQuietPending:playingEnsureQuietPending:pendingInteractiveLiveActivityEnsure:contentEnsureStillNeeded:isRequestEligible:)``,
     ///   ``shouldEnsureAuthoritativeContentOnForeground(hasCurrentActivity:destinationLanguage:ownedContentLanguage:lastPushedLanguage:actorVisual:streamSwitchHold:isConnectingPlayback:lastPushedVisual:ownedVisual:)``,
     ///   ``shouldRecreateAfterForegroundSoftEnsureFailed(languageStillMismatches:playingStillStalled:isRequestEligible:recreationsAttempted:maxRecreations:)``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
@@ -1936,6 +2039,8 @@ class RadioLiveActivityManager: ObservableObject {
 
         // Re-arm language + playing ensure quiet so unlock / become-active always gets a soft cycle.
         // Quiet is for lock-stretch thrash only — not a permanent freeze across presentable cycles.
+        // AGENT NOTE: Both axes clear together — language-only unlock must not leave playing
+        // quiet blocking visual recovery (and the reverse).
         languageEnsureQuietPendingDestination = nil
         playingEnsureQuietPending = false
 
@@ -3074,6 +3179,31 @@ class RadioLiveActivityManager: ObservableObject {
         )
     }
 
+    /// White-box seam: owned-surface foreground invoke / debounce policy (no ActivityKit).
+    func _test_shouldInvokeOwnedSurfaceForegroundEnsure(
+        hasCurrentActivity: Bool,
+        lastOwnedSurfaceForegroundEnsureAt: Date?,
+        now: Date,
+        debounceInterval: TimeInterval = RadioLiveActivityManager.ownedSurfaceForegroundEnsureDebounceInterval,
+        languageEnsureQuietPending: Bool,
+        playingEnsureQuietPending: Bool,
+        pendingInteractiveLiveActivityEnsure: Bool,
+        contentEnsureStillNeeded: Bool,
+        isRequestEligible: Bool
+    ) -> Bool {
+        Self.shouldInvokeOwnedSurfaceForegroundEnsure(
+            hasCurrentActivity: hasCurrentActivity,
+            lastOwnedSurfaceForegroundEnsureAt: lastOwnedSurfaceForegroundEnsureAt,
+            now: now,
+            debounceInterval: debounceInterval,
+            languageEnsureQuietPending: languageEnsureQuietPending,
+            playingEnsureQuietPending: playingEnsureQuietPending,
+            pendingInteractiveLiveActivityEnsure: pendingInteractiveLiveActivityEnsure,
+            contentEnsureStillNeeded: contentEnsureStillNeeded,
+            isRequestEligible: isRequestEligible
+        )
+    }
+
     /// White-box seam: eligible-only recreation after foreground soft ensure still fails.
     func _test_shouldRecreateAfterForegroundSoftEnsureFailed(
         languageStillMismatches: Bool,
@@ -3331,16 +3461,22 @@ extension RadioLiveActivityManager {
     /// without inventing playback. Separately, an **owned** surface may still hold prior-stream
     /// language/visual after deferred recreation while ineligible — soft
     /// ``ensureAuthoritativeContentOnForegroundIfNeeded()`` repairs that without a second SSOT.
+    /// Dual SceneDelegate hooks (will-enter-foreground + become-active) are debounced for the
+    /// owned-surface path via ``shouldInvokeOwnedSurfaceForegroundEnsure`` while still
+    /// consuming language/playing quiet and pending ensure on unlock.
     ///
     /// - Precondition: Main actor; not UITestMode / under-test (callers and this method guard).
     /// - Postcondition: At most one start attempt per debounce window when unowned; when owned,
-    ///   soft language/playing ensure (and eligible-only recreation if soft path still fails);
-    ///   pending cleared when ownership is restored or the session no longer needs interactive chrome.
+    ///   at most one soft language/playing ensure cycle per owned-surface debounce window
+    ///   unless quiet/pending force consume or chrome still lags while request-eligible;
+    ///   pending cleared when ownership is restored, owned soft ensure runs, or the session
+    ///   no longer needs interactive chrome.
     /// - Important: Does not stack multiple interactive activities — ``startActivity()`` ends
     ///   any residual before request. Does not end while request is ineligible. Does not bypass
     ///   privacy write suppression.
     /// - SeeAlso: ``startActivity()``, ``handleAppDidEnterForeground()``,
     ///   ``ensureAuthoritativeContentOnForegroundIfNeeded()``,
+    ///   ``shouldInvokeOwnedSurfaceForegroundEnsure(hasCurrentActivity:lastOwnedSurfaceForegroundEnsureAt:now:debounceInterval:languageEnsureQuietPending:playingEnsureQuietPending:pendingInteractiveLiveActivityEnsure:contentEnsureStillNeeded:isRequestEligible:)``,
     ///   ``shouldEnsureInteractiveLiveActivityStart(pendingEnsure:hasCurrentActivity:sessionNeedsInteractiveLiveActivity:areActivitiesEnabled:isRequestEligible:)``,
     ///   ``sessionNeedsInteractiveLiveActivity(isPlaying:visualState:)``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
@@ -3351,10 +3487,58 @@ extension RadioLiveActivityManager {
         if isRunningUnderTest { return }
         #endif
 
-        // Owned surface: soft language/visual ensure is independent of the start-path debounce
-        // so SceneDelegate become-active + will-enter-foreground dual hooks can still reconcile
-        // chrome after unlock without waiting for a missing-card start window.
+        // Owned surface: independent of missing-card start debounce. Dual SceneDelegate hooks
+        // still reconcile chrome after unlock, but ``shouldInvokeOwnedSurfaceForegroundEnsure``
+        // consumes quiet/pending without re-burning soft budgets on every resign/become thrash.
         if currentActivity != nil {
+            let manager = SharedPlayerManager.shared
+            let destination = await manager.liveActivityLanguageCodeForContentPush()
+            let ownedLanguage = currentActivity?.content.state.currentLanguage
+            let lastLanguage = lastPushedContent?.currentLanguage
+            let visual = await manager.currentVisualState
+            let hold = await manager.isStreamSwitchPrePlayHoldActive
+            let connecting = await manager.isConnectingPlayback
+            let lastVisual = lastPushedContent?.visualState
+            let ownedVisual = currentActivity?.content.state.visualState
+            let contentStillNeeded = Self.shouldEnsureAuthoritativeContentOnForeground(
+                hasCurrentActivity: true,
+                destinationLanguage: destination,
+                ownedContentLanguage: ownedLanguage,
+                lastPushedLanguage: lastLanguage,
+                actorVisual: visual,
+                streamSwitchHold: hold,
+                isConnectingPlayback: connecting,
+                lastPushedVisual: lastVisual,
+                ownedVisual: ownedVisual
+            )
+            let requestEligible = Self.isInteractiveLiveActivityRequestEligible(
+                areActivitiesEnabled: ActivityAuthorizationInfo().areActivitiesEnabled,
+                isApplicationActive: UIApplication.shared.applicationState == .active
+            )
+            let shouldInvoke = Self.shouldInvokeOwnedSurfaceForegroundEnsure(
+                hasCurrentActivity: true,
+                lastOwnedSurfaceForegroundEnsureAt: lastOwnedSurfaceForegroundEnsureAt,
+                now: Date(),
+                debounceInterval: Self.ownedSurfaceForegroundEnsureDebounceInterval,
+                languageEnsureQuietPending: languageEnsureQuietPendingDestination != nil,
+                playingEnsureQuietPending: playingEnsureQuietPending,
+                pendingInteractiveLiveActivityEnsure: pendingInteractiveLiveActivityEnsure,
+                contentEnsureStillNeeded: contentStillNeeded,
+                isRequestEligible: requestEligible
+            )
+            guard shouldInvoke else {
+                #if DEBUG
+                print(
+                    "🔴 Live Activity owned-surface foreground ensure debounced " +
+                    "(quietLang=\(languageEnsureQuietPendingDestination ?? "nil") " +
+                    "quietPlay=\(playingEnsureQuietPending) pending=\(pendingInteractiveLiveActivityEnsure) " +
+                    "contentNeeded=\(contentStillNeeded) eligible=\(requestEligible))"
+                )
+                #endif
+                return
+            }
+            lastOwnedSurfaceForegroundEnsureAt = Date()
+            // Consume missing-card / soft-exhaust pending; owned soft ensure is the recovery rail.
             pendingInteractiveLiveActivityEnsure = false
             await ensureAuthoritativeContentOnForegroundIfNeeded()
             return
