@@ -385,6 +385,8 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
             return
         }
         await manager.switchToStream(german)
+        // Align memory SSOT with the intended playing refresh (production setPlaying advances first).
+        await manager.setVisualState(.playing)
 
         enableDebounceObservation()
 
@@ -771,12 +773,14 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
     func testRefreshIfNeededCoalescesPrePlayToPlayingWithinWindow() async {
         enableDebounceObservation()
 
+        await manager.setVisualState(.prePlay)
         refreshManager.refreshIfNeeded(
             visualState: .prePlay,
             currentLanguage: "fi",
             hasError: false,
             immediate: false
         )
+        await manager.setVisualState(.playing)
         refreshManager.refreshIfNeeded(
             visualState: .playing,
             currentLanguage: "fi",
@@ -825,6 +829,7 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
         XCTAssertFalse(prePlayImmediate, "Event-path Connecting must not force immediate delivery")
         XCTAssertFalse(playingImmediate, "Playing remains eligible for coalesce/debounce")
 
+        await manager.setVisualState(.prePlay)
         refreshManager.refreshIfNeeded(
             visualState: .prePlay,
             currentLanguage: "de",
@@ -838,6 +843,8 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
         )
         XCTAssertEqual(refreshExecutedCount(), 0, "Deferred prePlay must not execute before playing")
 
+        // Production ``setPlaying()`` advances memory before the playing refresh is scheduled.
+        await manager.setVisualState(.playing)
         refreshManager.refreshIfNeeded(
             visualState: .playing,
             currentLanguage: "de",
@@ -892,6 +899,7 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
     ///   ``WidgetRefreshManagerEventTests``.
     func testRefreshIfNeededSchedulesAdaptiveDebounceForRapidRepeats() async {
         enableDebounceObservation()
+        await manager.setVisualState(.playing)
 
         refreshManager.refreshIfNeeded(
             visualState: .playing,
@@ -1010,16 +1018,21 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
     }
 
     /// Pure policy: delayed intermediate chrome regresses against a more advanced snapshot;
-    /// matching visuals never regress. Sticky-pause regress is **directional**.
+    /// matching visuals never regress. Sticky-pause and connecting regress are **directional**.
     ///
     /// - Non-immediate ``.userPaused`` vs persisted ``.playing`` is a regress (late pause lost
     ///   soft-resume race).
     /// - Immediate sticky-pause / teardown urgency against lagging ``.playing`` is **not** a
     ///   regress (forward stop; session snapshot may lag until early sticky write).
+    /// - Non-immediate ``.prePlay`` vs persisted ``.playing`` is a regress; **immediate** language-
+    ///   change / switch Connecting is not (destination first paint).
+    /// - Connecting vs lagging sticky disk is **not** a regress (forward attach); reverse races
+    ///   use memory authority.
     ///
     /// Stale debounced discards are intentional — timeline reload cannot invent snapshot fields.
     ///
-    /// - SeeAlso: ``WidgetRefreshManager/refreshWouldRegressPersistedSnapshot(executing:persisted:isImmediate:)``.
+    /// - SeeAlso: ``WidgetRefreshManager/refreshWouldRegressPersistedSnapshot(executing:persisted:isImmediate:)``,
+    ///   ``WidgetRefreshManager/refreshWouldRegressMemoryAuthority(executing:memory:isImmediate:)``.
     func testRefreshWouldRegressPersistedSnapshotPolicy() {
         XCTAssertFalse(
             WidgetRefreshManager.refreshWouldRegressPersistedSnapshot(
@@ -1030,9 +1043,18 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
         XCTAssertTrue(
             WidgetRefreshManager.refreshWouldRegressPersistedSnapshot(
                 executing: .prePlay,
-                persisted: .playing
+                persisted: .playing,
+                isImmediate: false
             ),
-            "Connecting chrome after play accepted is stale"
+            "Non-immediate connecting after play accepted is stale"
+        )
+        XCTAssertFalse(
+            WidgetRefreshManager.refreshWouldRegressPersistedSnapshot(
+                executing: .prePlay,
+                persisted: .playing,
+                isImmediate: true
+            ),
+            "Immediate language-change / switch Connecting must advance lagging playing"
         )
         // Reverse soft-resume race: delayed/non-immediate pause after play already persisted.
         XCTAssertTrue(
@@ -1075,12 +1097,12 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
             ),
             "Delayed thermal pause after playing is stale"
         )
-        XCTAssertTrue(
+        XCTAssertFalse(
             WidgetRefreshManager.refreshWouldRegressPersistedSnapshot(
                 executing: .prePlay,
                 persisted: .userPaused
             ),
-            "Connecting chrome after sticky pause is stale"
+            "Connecting may advance lagging sticky disk (forward attach)"
         )
         XCTAssertTrue(
             WidgetRefreshManager.refreshWouldRegressPersistedSnapshot(
@@ -1094,7 +1116,7 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
                 executing: .playing,
                 persisted: .prePlay
             ),
-            "Playing may advance connecting chrome"
+            "Playing may advance connecting chrome on disk (memory hold still gates execute)"
         )
         XCTAssertFalse(
             WidgetRefreshManager.refreshWouldRegressPersistedSnapshot(
@@ -1102,6 +1124,71 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
                 persisted: .prePlay
             ),
             "Sticky pause may advance connecting chrome"
+        )
+    }
+
+    /// Pure policy: in-process memory visual SSOT beats lagging disk-derived refresh targets.
+    ///
+    /// - SeeAlso: ``WidgetRefreshManager/refreshWouldRegressMemoryAuthority(executing:memory:isImmediate:)``.
+    func testRefreshWouldRegressMemoryAuthorityPolicy() {
+        // Sticky memory: never reverse with connecting or playing.
+        XCTAssertTrue(
+            WidgetRefreshManager.refreshWouldRegressMemoryAuthority(
+                executing: .prePlay,
+                memory: .userPaused
+            ),
+            "Connecting must not reverse sticky memory lock"
+        )
+        XCTAssertTrue(
+            WidgetRefreshManager.refreshWouldRegressMemoryAuthority(
+                executing: .playing,
+                memory: .userPaused
+            ),
+            "Playing must not reverse sticky memory lock"
+        )
+        // Connecting / switch hold: no lagging sticky, no premature playing.
+        XCTAssertTrue(
+            WidgetRefreshManager.refreshWouldRegressMemoryAuthority(
+                executing: .userPaused,
+                memory: .prePlay
+            ),
+            "Residual sticky must not reverse intentional Connecting"
+        )
+        XCTAssertTrue(
+            WidgetRefreshManager.refreshWouldRegressMemoryAuthority(
+                executing: .playing,
+                memory: .prePlay
+            ),
+            "Premature playing must not execute during Connecting / switch hold"
+        )
+        XCTAssertFalse(
+            WidgetRefreshManager.refreshWouldRegressMemoryAuthority(
+                executing: .prePlay,
+                memory: .prePlay
+            )
+        )
+        // Audible memory: non-immediate late connecting is post-audible residual.
+        XCTAssertTrue(
+            WidgetRefreshManager.refreshWouldRegressMemoryAuthority(
+                executing: .prePlay,
+                memory: .playing,
+                isImmediate: false
+            ),
+            "Non-immediate connecting after audible is stale"
+        )
+        XCTAssertFalse(
+            WidgetRefreshManager.refreshWouldRegressMemoryAuthority(
+                executing: .prePlay,
+                memory: .playing,
+                isImmediate: true
+            ),
+            "Immediate language-change Connecting may advance lagging audible memory"
+        )
+        XCTAssertFalse(
+            WidgetRefreshManager.refreshWouldRegressMemoryAuthority(
+                executing: .playing,
+                memory: .playing
+            )
         )
     }
 
@@ -1158,6 +1245,8 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
             language: "fi",
             hasError: false
         )
+        // Memory SSOT advances before events in production ``stop()``; align for white-box drive.
+        await manager.setVisualState(.userPaused)
 
         // Forward stop: carried sticky visual is immediate (refreshUsesImmediateDelivery).
         let immediate = refreshManager.refreshUsesImmediateDelivery(
@@ -1202,6 +1291,7 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
             language: "sv",
             hasError: false
         )
+        await manager.setVisualState(.playing)
         refreshManager.refreshIfNeeded(
             visualState: .playing,
             currentLanguage: "sv",
@@ -1214,6 +1304,7 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
         XCTAssertEqual(refreshManager._test_lastKnownVisualState(), .playing)
 
         // Late non-immediate pause while disk still / again playing (soft-resume won).
+        // Memory remains playing (pause lost the race) so memory + disk authority discard.
         refreshManager.refreshIfNeeded(
             visualState: .userPaused,
             currentLanguage: "sv",
@@ -1383,6 +1474,7 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
     ///   ``WidgetRefreshTrigger``.
     func testRefreshIfNeededCoalescesIdenticalStickyUserPausedDualPath() async {
         enableDebounceObservation()
+        await manager.setVisualState(.userPaused)
 
         refreshManager.refreshIfNeeded(
             visualState: .userPaused,
@@ -1461,6 +1553,7 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
     /// Verifies non-immediate identical prePlay does not re-schedule deferral after lastKnown matches.
     func testRefreshIfNeededSkipsPrePlayDeferralWhenLastKnownAlreadyMatches() async {
         enableDebounceObservation()
+        await manager.setVisualState(.prePlay)
 
         refreshManager.refreshIfNeeded(
             visualState: .prePlay,
@@ -1488,5 +1581,225 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
             "Second non-immediate prePlay must identity-coalesce without re-deferral; log: \(log)"
         )
         XCTAssertEqual(refreshExecutedCount(), 0)
+    }
+
+    // MARK: - Home refresh authority (connecting advance / switch hold / defer bound)
+
+    /// Forward attach after sticky pause: memory Connecting + lagging sticky disk must execute
+    /// ``.prePlay`` (multi-surface lag must not leave home on residual pause chrome).
+    ///
+    /// - SeeAlso: ``refreshWouldRegressMemoryAuthority(executing:memory:isImmediate:)``,
+    ///   ``refreshWouldRegressPersistedSnapshot(executing:persisted:isImmediate:)``.
+    func testConnectingPrePlayAdvancesAfterStickyWhenMemoryAlreadyPrePlay() async {
+        enableDebounceObservation()
+        WidgetRefreshManager.setHasActiveLutheranWidgets(true)
+
+        SharedPlayerManager.persistWidgetSnapshot(
+            visualState: .userPaused,
+            language: "et",
+            hasError: false
+        )
+        await manager.setVisualState(.prePlay)
+
+        refreshManager.refreshIfNeeded(
+            visualState: .prePlay,
+            currentLanguage: "et",
+            hasError: false,
+            immediate: true,
+            trigger: .playerEvent
+        )
+
+        let executed = await waitForDebounceOutcome(.refreshExecuted, timeout: 1.0)
+        let log = WidgetRefreshManager._test_debounceOutcomeLog()
+        XCTAssertTrue(executed, "Connecting after intentional attach must execute; log: \(log)")
+        XCTAssertEqual(refreshManager._test_lastKnownVisualState(), .prePlay)
+        XCTAssertFalse(
+            log.contains(.discardedStaleDebouncedRegress),
+            "Lagging sticky disk must not discard forward Connecting; log: \(log)"
+        )
+        XCTAssertFalse(
+            log.contains(.discardedMemoryAuthorityRegress),
+            "Memory Connecting must authorize its own paint; log: \(log)"
+        )
+    }
+
+    /// Residual sticky refresh after memory advanced to Connecting must discard (home must not
+    /// re-paint pause while main SSOT is already prePlay).
+    func testResidualUserPausedDiscardsWhenMemoryAlreadyPrePlay() async {
+        enableDebounceObservation()
+        WidgetRefreshManager.setHasActiveLutheranWidgets(true)
+
+        SharedPlayerManager.persistWidgetSnapshot(
+            visualState: .userPaused,
+            language: "sv",
+            hasError: false
+        )
+        await manager.setVisualState(.prePlay)
+
+        refreshManager.refreshIfNeeded(
+            visualState: .userPaused,
+            currentLanguage: "sv",
+            hasError: false,
+            immediate: true,
+            trigger: .playerEvent
+        )
+
+        await Task.yield()
+        try? await Task.sleep(for: .milliseconds(100))
+
+        let log = WidgetRefreshManager._test_debounceOutcomeLog()
+        XCTAssertTrue(
+            log.contains(.discardedMemoryAuthorityRegress),
+            "Residual sticky must discard against memory Connecting; log: \(log)"
+        )
+        XCTAssertNotEqual(
+            refreshManager._test_lastKnownVisualState(),
+            .userPaused,
+            "Must not execute residual sticky after memory advanced to Connecting; log: \(log)"
+        )
+    }
+
+    /// Stream-switch hold honesty: memory Connecting must discard premature ``.playing`` for
+    /// destination language (no mid-switch playing flash).
+    func testPrematurePlayingDiscardsWhileMemoryHoldsConnecting() async {
+        enableDebounceObservation()
+        WidgetRefreshManager.setHasActiveLutheranWidgets(true)
+
+        SharedPlayerManager.persistWidgetSnapshot(
+            visualState: .prePlay,
+            language: "de",
+            hasError: false
+        )
+        await manager.setVisualState(.prePlay)
+
+        // Honest first paint for destination Connecting.
+        refreshManager.refreshIfNeeded(
+            visualState: .prePlay,
+            currentLanguage: "de",
+            hasError: false,
+            immediate: true,
+            trigger: .playerEvent
+        )
+        let prePlayExecuted = await waitForDebounceOutcome(.refreshExecuted, timeout: 1.0)
+        XCTAssertTrue(prePlayExecuted)
+        XCTAssertEqual(refreshManager._test_lastKnownVisualState(), .prePlay)
+
+        // Lagging / race-lead playing while hold still active in memory.
+        refreshManager.refreshIfNeeded(
+            visualState: .playing,
+            currentLanguage: "de",
+            hasError: false,
+            immediate: true,
+            trigger: .playerEvent
+        )
+        await Task.yield()
+        try? await Task.sleep(for: .milliseconds(100))
+
+        let log = WidgetRefreshManager._test_debounceOutcomeLog()
+        XCTAssertTrue(
+            log.contains(.discardedMemoryAuthorityRegress),
+            "Premature playing during Connecting hold must discard; log: \(log)"
+        )
+        XCTAssertEqual(
+            refreshManager._test_lastKnownVisualState(),
+            .prePlay,
+            "Last executed home visual must remain Connecting until memory advances"
+        )
+    }
+
+    /// Language-change urgency executes destination Connecting even when session snapshot still
+    /// reports prior-language playing (stream-switch first paint).
+    func testLanguageChangeConnectingAdvancesLaggingPlayingSnapshot() async {
+        enableDebounceObservation()
+        WidgetRefreshManager.setHasActiveLutheranWidgets(true)
+
+        SharedPlayerManager.persistWidgetSnapshot(
+            visualState: .playing,
+            language: "sv",
+            hasError: false
+        )
+        await manager.setVisualState(.playing)
+        refreshManager.refreshIfNeeded(
+            visualState: .playing,
+            currentLanguage: "sv",
+            hasError: false,
+            immediate: true,
+            trigger: .playerEvent
+        )
+        _ = await waitForDebounceOutcome(.refreshExecuted, timeout: 1.0)
+        XCTAssertEqual(refreshManager._test_lastKnownVisualState(), .playing)
+
+        // Switch hold advances memory + destination language; snapshot may still lag playing.
+        await manager.setVisualState(.prePlay)
+        SharedPlayerManager.persistWidgetSnapshot(
+            visualState: .playing,
+            language: "de",
+            hasError: false
+        )
+        refreshManager.refreshIfNeeded(
+            visualState: .prePlay,
+            currentLanguage: "de",
+            hasError: false,
+            immediate: false,
+            trigger: .playerEvent
+        )
+
+        let executed = await waitForRefreshExecutedCount(atLeast: 2, timeout: 1.0)
+        let log = WidgetRefreshManager._test_debounceOutcomeLog()
+        XCTAssertTrue(executed, "Language urgency Connecting must execute; log: \(log)")
+        XCTAssertEqual(refreshManager._test_lastKnownVisualState(), .prePlay)
+        XCTAssertEqual(refreshManager.lastKnownState?.currentLanguage, "de")
+        XCTAssertFalse(
+            log.contains(.discardedStaleDebouncedRegress),
+            "Immediate language Connecting must not regress against lagging playing; log: \(log)"
+        )
+    }
+
+    /// Attach-path storms re-enter Connecting deferral without resetting the coalesce deadline.
+    ///
+    /// First schedule records ``scheduledPrePlayDeferral``; subsequent storm callbacks record
+    /// ``heldPrePlayDeferralWindow`` and still produce a single execute after one window.
+    func testAttachStormHoldsPrePlayDeferralDeadlineWithoutReset() async {
+        enableDebounceObservation()
+        await manager.setVisualState(.prePlay)
+
+        refreshManager.refreshIfNeeded(
+            visualState: .prePlay,
+            currentLanguage: "fi",
+            hasError: false,
+            immediate: false,
+            trigger: .playerEvent
+        )
+        XCTAssertTrue(
+            WidgetRefreshManager._test_debounceOutcomeLog().contains(.scheduledPrePlayDeferral)
+        )
+
+        // Storm before the first deadline elapses.
+        for _ in 0..<8 {
+            refreshManager.refreshIfNeeded(
+                visualState: .prePlay,
+                currentLanguage: "fi",
+                hasError: false,
+                immediate: false,
+                trigger: .playerEvent
+            )
+        }
+
+        let logBefore = WidgetRefreshManager._test_debounceOutcomeLog()
+        XCTAssertEqual(refreshExecutedCount(), 0, "Storm must not execute before window; log: \(logBefore)")
+        XCTAssertGreaterThanOrEqual(
+            logBefore.filter { $0 == .heldPrePlayDeferralWindow }.count,
+            8,
+            "Each storm callback must hold the open window; log: \(logBefore)"
+        )
+
+        let executed = await waitForDebounceOutcome(.refreshExecuted, timeout: 1.0)
+        let log = WidgetRefreshManager._test_debounceOutcomeLog()
+        XCTAssertTrue(executed, "Single deferred Connecting must still execute; log: \(log)")
+        XCTAssertEqual(
+            refreshExecutedCount(),
+            1,
+            "Bounded deferral must produce one execute after one window; log: \(log)"
+        )
     }
 }

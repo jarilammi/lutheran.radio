@@ -42,7 +42,10 @@
 //   Lutheran widgets are installed.
 // - Coalesces `.prePlay` → `.playing` and dedupes **identical** non-playing chrome
 //   (connecting `.prePlay`/`.cleared` + sticky pause/lock) so attach-path and dual-path
-//   storms do not re-issue `reloadTimelines` for unchanged language/visual.
+//   storms do not re-issue `reloadTimelines` for unchanged language/visual. Attach-path
+//   Connecting deferral holds a single coalesce deadline (does not reset on each status
+//   callback). Execute-time memory SSOT authority blocks residual sticky after intentional
+//   Connecting and mid-switch premature `.playing` without inventing playing during hold.
 // - Main-app mutation-path reloads are driven by the `PlayerEvent` observer;
 //   imperative callers remain for lifecycle, teardown, extension optimistic,
 //   and optional media-surface coordination only (non-forcing dual path).
@@ -450,12 +453,22 @@ final class WidgetRefreshManager: @unchecked Sendable {
             cancelPendingRefresh()
         }
         
-        // ALWAYS refresh on language changes, regardless of throttling
+        // ALWAYS refresh on language changes, regardless of throttling.
+        // Mark language urgency as immediate for regress / memory-authority gates so destination
+        // Connecting can advance past a lagging session snapshot still on prior-language playing
+        // (stream-switch first paint) without inventing mid-hold playing.
         if let lastState = lastKnownState,
            lastState.currentLanguage != newState.currentLanguage {
             cancelCoalescedPrePlayRefresh()
+            let languageUrgentState = WidgetState(
+                from: newState.visualState,
+                currentLanguage: newState.currentLanguage,
+                hasError: newState.hasError,
+                isTransitioning: newState.isTransitioning,
+                isImmediateDelivery: true
+            )
             Task { @MainActor in
-                await performRefreshIfNotStale(for: newState)
+                await performRefreshIfNotStale(for: languageUrgentState)
             }
             return
         }
@@ -516,10 +529,18 @@ final class WidgetRefreshManager: @unchecked Sendable {
         // keep symmetric so in-process main-app driven paths behave consistently.)
         // `immediate: true` bypasses deferral for session teardown follow-up and termination hygiene.
         // Identical non-playing coalesce above already skipped when lastKnown matches.
+        // Attach-path storms re-enter here many times — ``scheduleCoalescedPrePlayRefresh`` keeps a
+        // single coalesce deadline (does not reset the window on each status callback).
         if !immediate, !hasError, newState.visualState == .prePlay || newState.visualState == .cleared {
             #if DEBUG
-            print("[WidgetRefreshManager] Widget refresh deferred: awaiting possible .playing follow-up — lang: \(newState.currentLanguage)")
-            recordDebounceOutcome(.scheduledPrePlayDeferral)
+            let alreadyDeferred = coalescedPrePlayWorkItem != nil
+            if alreadyDeferred {
+                print("[WidgetRefreshManager] Widget refresh deferred: coalesce window held (attach storm) — lang: \(newState.currentLanguage)")
+                recordDebounceOutcome(.heldPrePlayDeferralWindow)
+            } else {
+                print("[WidgetRefreshManager] Widget refresh deferred: awaiting possible .playing follow-up — lang: \(newState.currentLanguage)")
+                recordDebounceOutcome(.scheduledPrePlayDeferral)
+            }
             #endif
             scheduleCoalescedPrePlayRefresh(for: newState)
             return
@@ -640,6 +661,17 @@ final class WidgetRefreshManager: @unchecked Sendable {
     ///   (or authoritative save) lands. Discarding would drop the honest pause paint and
     ///   allow a non-carried follow-up to reload ``.playing``.
     ///
+    /// **Directionality (connecting advance / stream-switch hold):**
+    /// - **Non-immediate** ``.prePlay`` / ``.cleared`` against persisted ``.playing`` is a regress
+    ///   (late connecting after soft-resume / audible play already accepted).
+    /// - **Immediate** language-change / switch-optimistic Connecting against lagging
+    ///   ``.playing`` is **not** a regress — destination first paint must not wait for the
+    ///   prior-language playing snapshot to clear.
+    /// - Connecting against a lagging sticky ``.userPaused`` snapshot is **not** a regress
+    ///   (forward attach after pause). Reverse races (in-flight Connecting after sticky lock)
+    ///   are blocked by ``refreshWouldRegressMemoryAuthority(executing:memory:)`` when memory
+    ///   SSOT is already sticky. Playing against sticky disk remains a regress.
+    ///
     /// - Parameters:
     ///   - requested: Visual the delayed/debounced work would load.
     ///   - persisted: Authoritative ``PersistedWidgetState/visualState`` at execute time.
@@ -647,9 +679,10 @@ final class WidgetRefreshManager: @unchecked Sendable {
     ///     teardown, permanent-error, language-change urgency, or explicit `immediate: true`).
     /// - Returns: `true` when the refresh must be discarded.
     /// - SeeAlso: ``performRefreshIfNotStale(for:)``,
+    ///   ``refreshWouldRegressMemoryAuthority(executing:memory:)``,
     ///   ``refreshUsesImmediateDelivery(for:hasError:)``,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
-    ///   docs/Widget-Presentation-Dataflow.md (sticky pause home refresh authority).
+    ///   docs/Widget-Presentation-Dataflow.md (home refresh authority).
     static func refreshWouldRegressPersistedSnapshot(
         executing requested: PlayerVisualState,
         persisted: PlayerVisualState,
@@ -658,9 +691,10 @@ final class WidgetRefreshManager: @unchecked Sendable {
         if requested == persisted { return false }
         switch persisted {
         case .playing:
-            // Intermediate connecting chrome after play accepted is always stale.
+            // Delayed connecting after play accepted is stale (soft-resume residual).
+            // Immediate language-change / switch optimistic Connecting is forward hold paint.
             if requested == .prePlay || requested == .cleared {
-                return true
+                return !isImmediate
             }
             // Delayed sticky pause after soft-resume to playing is stale.
             // Immediate sticky-pause / teardown urgency is a forward stop — do not discard
@@ -670,10 +704,69 @@ final class WidgetRefreshManager: @unchecked Sendable {
             }
             return false
         case .userPaused, .thermalPaused:
+            // Playing must never reverse sticky via a lagging snapshot path.
+            // Connecting may advance sticky disk (forward attach after pause / early sticky lag).
+            // Reverse connecting-after-pause is blocked by memory authority when sticky is locked.
+            if requested == .playing {
+                return true
+            }
+            return false
+        case .securityLocked:
+            return requested != .securityLocked
+        case .prePlay, .cleared:
+            return false
+        @unknown default:
+            return false
+        }
+    }
+
+    /// Pure policy: whether a home refresh target would reverse in-process memory visual SSOT.
+    ///
+    /// Complements ``refreshWouldRegressPersistedSnapshot(executing:persisted:isImmediate:)`` when
+    /// the session snapshot lags ``SharedPlayerManager/currentVisualState`` (apply before save,
+    /// early sticky, stream-switch hold). Timeline reload cannot invent engine state — discarding
+    /// a regressing target avoids multi-surface lag and mid-switch ``.playing`` flashes.
+    ///
+    /// **Authority table (memory wins over lagging disk-derived requests):**
+    /// 1. Sticky pause / thermal / security lock — never lose to connecting or playing.
+    /// 2. Connecting / stream-switch hold (``.prePlay`` / ``.cleared``) — never lose to lagging
+    ///    sticky, and never accept premature ``.playing`` until memory advances via ``setPlaying()``.
+    /// 3. Authoritative ``.playing`` — discard non-immediate late connecting (post-audible prePlay);
+    ///    immediate language-change Connecting may still advance (switch hold first paint).
+    ///
+    /// - Parameters:
+    ///   - requested: Visual the refresh would load into WidgetCenter.
+    ///   - memory: ``SharedPlayerManager/currentVisualState`` (or extension optimistic force-set).
+    ///   - isImmediate: Language-change / sticky / teardown urgency — same meaning as disk regress.
+    /// - Returns: `true` when the refresh must be discarded.
+    /// - SeeAlso: ``performRefreshIfNotStale(for:)``,
+    ///   ``refreshWouldRegressPersistedSnapshot(executing:persisted:isImmediate:)``,
+    ///   docs/Widget-Presentation-Dataflow.md (home refresh authority).
+    static func refreshWouldRegressMemoryAuthority(
+        executing requested: PlayerVisualState,
+        memory: PlayerVisualState,
+        isImmediate: Bool = false
+    ) -> Bool {
+        if requested == memory { return false }
+        switch memory {
+        case .userPaused, .thermalPaused:
+            // Sticky memory lock: never paint connecting or playing that reverses it.
+            // ``setPlaying()`` / ``applyVisualState(.prePlay)`` advance memory before events.
             return requested == .prePlay || requested == .cleared || requested == .playing
         case .securityLocked:
             return requested != .securityLocked
         case .prePlay, .cleared:
+            // Connecting / switch hold: do not re-paint lagging sticky, and do not invent
+            // mid-hold playing until memory advances to authoritative playing.
+            return requested == .userPaused
+                || requested == .thermalPaused
+                || requested == .playing
+        case .playing:
+            // Audible memory: non-immediate late connecting is post-audible prePlay residual.
+            // Immediate language-change Connecting is forward switch hold (destination first paint).
+            if requested == .prePlay || requested == .cleared {
+                return !isImmediate
+            }
             return false
         @unknown default:
             return false
@@ -699,10 +792,23 @@ final class WidgetRefreshManager: @unchecked Sendable {
         coalescedPrePlayState = nil
     }
     
+    /// Schedules a single coalesce-window timer for Connecting chrome.
+    ///
+    /// Attach-path status storms call ``refreshIfNeeded`` with ``.prePlay`` repeatedly. Resetting
+    /// the deadline on every callback starves the first honest Connecting paint for multi-second
+    /// "awaiting possible .playing follow-up" storms. Keep the **first** deadline; only refresh
+    /// the pending state payload so the latest language/error flags still execute.
+    ///
+    /// - Parameter state: Latest non-playing Connecting candidate for the deferred reload.
+    /// - SeeAlso: ``refreshIfNeeded(visualState:currentLanguage:hasError:immediate:trigger:)``,
+    ///   docs/Widget-Presentation-Dataflow.md (home refresh authority).
     private func scheduleCoalescedPrePlayRefresh(for state: WidgetState) {
         coalescedPrePlayState = state
-        coalescedPrePlayWorkItem?.cancel()
-        
+        // Bound attach storms: do not reset the coalesce deadline while one is already pending.
+        if coalescedPrePlayWorkItem != nil {
+            return
+        }
+
         let workItem = DispatchWorkItem { [weak self] in
             Task { @MainActor in
                 guard let self, let pendingState = self.coalescedPrePlayState else { return }
@@ -711,7 +817,7 @@ final class WidgetRefreshManager: @unchecked Sendable {
                 await self.performRefreshIfNotStale(for: pendingState)
             }
         }
-        
+
         coalescedPrePlayWorkItem = workItem
         DispatchQueue.main.asyncAfter(
             deadline: .now() + Self.prePlayToPlayingCoalesceWindow,
@@ -738,6 +844,22 @@ final class WidgetRefreshManager: @unchecked Sendable {
     }
     
     private func performRefreshIfNotStale(for state: WidgetState) async {
+        // Memory SSOT authority (main app + extension optimistic force-set): blocks multi-surface
+        // lag (residual sticky after intentional Connecting) and mid-switch playing flashes while
+        // stream-switch hold keeps memory at ``.prePlay``.
+        let memoryVisual = await SharedPlayerManager.shared.currentVisualState
+        if Self.refreshWouldRegressMemoryAuthority(
+            executing: state.visualState,
+            memory: memoryVisual,
+            isImmediate: state.isImmediateDelivery
+        ) {
+            #if DEBUG
+            print("[WidgetRefreshManager] Widget refresh discarded: memory authority \(state.debugVisualStateLabel) vs memory \(debugLabel(for: memoryVisual))")
+            recordDebounceOutcome(.discardedMemoryAuthorityRegress)
+            #endif
+            return
+        }
+
         if let combined = SharedPlayerManager.loadPersistedWidgetState(),
            refreshWouldRegress(
                executing: state.visualState,

@@ -42,6 +42,9 @@ extension WidgetRefreshManager {
     enum DebounceObservationOutcome: Equatable, Sendable {
         /// A lone ``PlayerVisualState/prePlay`` or ``PlayerVisualState/cleared`` refresh was deferred.
         case scheduledPrePlayDeferral
+        /// Attach storm re-entered Connecting deferral while the coalesce window is already open
+        /// (deadline held; state payload updated — no multi-second starvation).
+        case heldPrePlayDeferralWindow
         /// A fast ``PlayerVisualState/playing`` follow-up superseded a deferred prePlay refresh.
         case coalescedPrePlayToPlaying
         /// A rapid repeat refresh was scheduled behind the adaptive debounce interval.
@@ -52,6 +55,9 @@ extension WidgetRefreshManager {
         case coalescedIdenticalNonPlaying
         /// Delayed refresh discarded because persisted snapshot already advanced past the target.
         case discardedStaleDebouncedRegress
+        /// Refresh discarded because in-process memory visual SSOT already advanced past the target
+        /// (or holds Connecting while a premature ``.playing`` was requested).
+        case discardedMemoryAuthorityRegress
         /// ``performRefresh`` reached the execution point (timeline reload skipped under observation).
         case refreshExecuted
     }
