@@ -337,8 +337,14 @@ extension SharedPlayerManager {
 
     /// Optimistic play/pause widget path: persist visual state, schedule pending action, notify main app.
     ///
+    /// Stamps in-process session RAM **and** privacy-gated ``homeWidgetLiveChrome`` via
+    /// ``persistOptimisticWidgetSnapshot`` (reason `"optimisticToggle"`). Main-app sticky pause /
+    /// ``setPlaying()`` later overwrite the mirror when the home-widget gate is open.
+    ///
     /// - Parameters:
-    ///   - visualState: Target (.playing or .userPaused) for instant widget icon/state flip.
+    ///   - visualState: Target from the pure toggle plan (``.userPaused`` on pause;
+    ///     ``PlayerVisualState/optimisticVisualAfterPlayPlan`` on play — never invent mid-hold
+    ///     ``.playing`` beyond product policy).
     ///   - action: "play" or "pause".
     ///   - language: Language code to pair with the snapshot (strongly recommended from widget).
     ///     If omitted, falls back inside ``persistOptimisticWidgetSnapshot``. Always pass the language the widget
@@ -346,6 +352,11 @@ extension SharedPlayerManager {
     ///
     /// Always bypasses privacy gate (via force + isWidgetProcess) because intent execution
     /// proves the widget is present.
+    ///
+    /// - SeeAlso: ``persistOptimisticWidgetSnapshot(_:language:)``,
+    ///   ``stampHomeWidgetLiveChromeFromSession(visualState:language:hasError:reason:)``,
+    ///   ``WidgetIntentExecution/executeOptimisticToggle(plan:language:)``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.3 extension optimistic stamp matrix).
     @discardableResult
     nonisolated func signalWidgetPendingAction(
         visualState: PlayerVisualState,
@@ -362,13 +373,30 @@ extension SharedPlayerManager {
     }
 
     /// Optimistic stream-switch widget path: instant feedback, snapshot, schedule, notify.
+    ///
+    /// Projects destination language + switch honesty visual into session RAM and
+    /// ``homeWidgetLiveChrome`` (reason `"optimisticSwitch"`). Visual must come from
+    /// ``WidgetIntentCoordinators/optimisticLiveActivityVisualForStreamSwitch(from:)`` —
+    /// actively playing → Connecting (``.prePlay``); sticky pause preserved.
+    ///
+    /// - Parameters:
+    ///   - visualState: Optimistic switch visual (``.prePlay`` leaving play; ``.userPaused`` when paused).
+    ///   - language: Destination stream language code.
+    /// - SeeAlso: ``persistWidgetSnapshot(visualState:language:streamMetadata:clearStreamMetadata:hasError:liveChromeStampReason:)``,
+    ///   ``handleWidgetSwitch(to:)``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.3, §9).
     @discardableResult
     nonisolated func signalWidgetSwitchAction(
         visualState: PlayerVisualState,
         language: String
     ) -> String? {
         Self.writeInstantFeedback(language: language)
-        Self.persistWidgetSnapshot(visualState: visualState, language: language, clearStreamMetadata: true)
+        Self.persistWidgetSnapshot(
+            visualState: visualState,
+            language: language,
+            clearStreamMetadata: true,
+            liveChromeStampReason: "optimisticSwitch"
+        )
         Self.bumpWidgetLivenessTimestamp(policy: .immediate)
         let actionId = scheduleWidgetAction(action: "switch", parameter: language)
         notifyMainApp(action: "switch", parameter: language)

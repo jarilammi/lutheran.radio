@@ -827,18 +827,25 @@ extension SharedPlayerManager {
     /// still runs and the authoritative ``saveCurrentState()`` has not yet landed —
     /// producing a brief home ``.playing`` flash after sticky pause is already locked.
     ///
+    /// Also projects privacy-gated ``homeWidgetLiveChrome`` via ``savePersistedWidgetState``
+    /// (``.userPaused`` + current language) so extension Providers can paint pause before soft
+    /// silence completes — same honesty window as the early session snapshot.
+    ///
     /// - Precondition: ``currentVisualState`` is already ``.userPaused`` (caller locked memory).
     /// - Postcondition: When ``hasActiveWidgets`` (or widget-process bypass) allows writes,
-    ///   the in-process session snapshot visual is ``.userPaused`` and
-    ///   ``PlayerEvent/persistedWidgetStateDidUpdate`` may emit. When the privacy gate is
-    ///   closed, no snapshot write occurs (write suppression unchanged).
+    ///   the in-process session snapshot visual is ``.userPaused``, live-chrome mirror matches
+    ///   when the gate is open, and ``PlayerEvent/persistedWidgetStateDidUpdate`` may emit.
+    ///   When the privacy gate is closed, no snapshot / mirror write occurs (write suppression
+    ///   unchanged).
     /// - Note: Reuses ``savePersistedWidgetState(visualState:language:streamMetadata:hasError:)``
     ///   only — no parallel write path. Later ``saveCurrentState()`` may no-op via snapshot-
     ///   unchanged skip when chrome is already aligned.
     /// - SeeAlso: ``stop()``, ``setUserPaused()``, ``markAsUserPaused()``,
+    ///   ``stampHomeWidgetLiveChromeFromSession(visualState:language:hasError:reason:)``,
     ///   ``WidgetRefreshManager/refreshWouldRegressPersistedSnapshot(executing:persisted:isImmediate:)``,
     ///   ``WidgetRefreshManager/deriveRefreshParameters(for:)``,
-    ///   docs/Widget-Presentation-Dataflow.md (sticky pause home refresh authority).
+    ///   docs/Widget-Presentation-Dataflow.md (sticky pause home refresh authority),
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.2 sticky pause, §5.4).
     internal func persistEarlyStickyUserPausedSnapshotIfPrivacyAllows() {
         guard Self.hasActiveWidgets || Self.isWidgetProcess() else {
             #if DEBUG
@@ -854,6 +861,7 @@ extension SharedPlayerManager {
             language = Self.preferredWidgetLanguage()
         }
         let hasError = prior?.hasError ?? false
+        // Session snapshot + live-chrome projection (``.userPaused``) before soft silence.
         savePersistedWidgetState(
             visualState: .userPaused,
             language: language,
@@ -1064,13 +1072,17 @@ extension SharedPlayerManager {
     ///   `initialPlaybackHasRun == false`, soft-pause ICY stash cleared (no stale program title
     ///   across languages). When `connectingLanguageCode` is non-empty, durable LA language mirror
     ///   and ``liveActivityLanguageCodeForContentPush()`` report that code for the hold duration.
-    ///   Main-app media surfaces refreshed so lock-screen chrome shows Connecting + target language.
+    ///   Privacy-gated ``homeWidgetLiveChrome`` projects ``.prePlay`` + destination language (never
+    ///   mid-hold ``.playing``) when the home-widget write gate is open. Main-app media surfaces
+    ///   refreshed so lock-screen chrome shows Connecting + target language.
     ///
     /// - SeeAlso: ``liveActivityLanguageCodeForContentPush()``, ``play()``, ``saveCurrentState()``,
+    ///   ``stampHomeWidgetLiveChromeFromSession(visualState:language:hasError:reason:)``,
     ///   ``clearSoftPauseMetadataStashForLanguageChange()``,
     ///   ``refreshAllMediaSurfaces(liveActivity:widgetRefresh:widgetRefreshImmediate:)``,
     ///   `RadioPlayerCoordinator.completeStreamSwitch`, `RadioPlayerCoordinator.switchToStreamFromWidget`,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.2 switch hold, §9),
     ///   docs/cold-launch-streamplay-regression-checklist.md (§6),
     ///   CODING_AGENT.md (Single Source of Truth Principles).
     func resetToPrePlayForNewStream(
@@ -1320,13 +1332,17 @@ extension SharedPlayerManager {
     ///   affordance) until this method runs.
     ///
     /// - Postcondition: `currentVisualState == .playing`, intent updated if appropriate,
-    ///   stream-switch hold cleared, snapshot saved (when the privacy gate allows), Now Playing /
-    ///   Live Activity surfaces notified via ``refreshAllMediaSurfaces(liveActivity: .startOrUpdate)``
-    ///   (main app, skipped in UITestMode), and `streamDidStart` emitted after the visual + intent mutations.
+    ///   stream-switch hold cleared, snapshot saved (when the privacy gate allows) with
+    ///   privacy-gated ``homeWidgetLiveChrome`` projected as ``.playing`` + current language,
+    ///   Now Playing / Live Activity surfaces notified via
+    ///   ``refreshAllMediaSurfaces(liveActivity: .startOrUpdate)`` (main app, skipped in UITestMode),
+    ///   and `streamDidStart` emitted after the visual + intent mutations.
     ///
     /// - SeeAlso: ``emit(_:)``, ``refreshAllMediaSurfaces(liveActivity:widgetRefresh:widgetRefreshImmediate:)``,
+    ///   ``stampHomeWidgetLiveChromeFromSession(visualState:language:hasError:reason:)``,
     ///   `DirectStreamingPlayer.startPlayback(context:)`, ``play()``, ``markPlaybackStoppedByStreamFailure(_:)``,
     ///   `PlayerEvent.streamDidStart`, docs/Live-Activity-Stacking-and-Media-Surfaces.md,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.2 setPlaying),
     ///   CODING_AGENT.md (SSOT for visual/intent, additive event emission).
     ///
     /// AGENT NOTE: Emission of `.streamDidStart` occurs here (after visual + intent
@@ -1636,8 +1652,15 @@ extension SharedPlayerManager {
         // via the shared pure rule so the first home timeline paint does not claim audible
         // playback on a stream that has not attached yet (main-app hold honesty).
         //
+        // Also stamps privacy-gated ``homeWidgetLiveChrome`` (reason `"optimisticSwitch"`) so
+        // extension cold wakes after main drain still see dest language + hold visual until
+        // setPlaying. Session-first Provider resolve prefers this process’s optimistic RAM.
+        //
         // - SeeAlso: ``WidgetIntentCoordinators/optimisticLiveActivityVisualForStreamSwitch(from:)``,
         //   ``WidgetIntentExecution/executeHomeWidgetStreamSwitch(languageCode:)``,
+        //   ``signalWidgetSwitchAction(visualState:language:)``,
+        //   ``WidgetProviderSnapshotResolver/resolveFromSnapshot()``,
+        //   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.3, §9),
         //   docs/Widget-Presentation-Dataflow.md.
         let snapshotVisual = Self.loadPersistedVisualStateDirect()
         let visualForSwitch = WidgetIntentCoordinators.optimisticLiveActivityVisualForStreamSwitch(

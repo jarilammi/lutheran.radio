@@ -47,7 +47,9 @@ extension SharedPlayerManager {
     /// ``clearHomeWidgetLivenessAndInstantFeedbackResiduals()`` (same helper as privacy-gate close).
     ///
     /// - SeeAlso: ``clearAllLocalState()``, ``clearHomeWidgetLivenessAndInstantFeedbackResiduals()``,
-    ///   ``clearPersistedVisualStateKeysFromDisk()``, CODING_AGENT.md.
+    ///   ``clearHomeWidgetStreamMetadataMirror()``, ``clearHomeWidgetLiveChromeMirror()``,
+    ///   ``clearPersistedVisualStateKeysFromDisk()``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§7), CODING_AGENT.md.
     nonisolated static func removeAllLocalPlaybackKeys() {
         clearInMemorySessionSnapshot()
         guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return }
@@ -69,8 +71,9 @@ extension SharedPlayerManager {
         // Live Activity toggle visual + language mirrors (cross-process signals; privacy clear ends LA).
         defaults.removeObject(forKey: liveActivityToggleVisualStateAppGroupKey)
         defaults.removeObject(forKey: liveActivityCurrentLanguageAppGroupKey)
-        // Privacy-gated home program-metadata mirror (extension Provider program chrome).
+        // Privacy-gated home program-metadata + live-chrome mirrors (extension Provider chrome).
         defaults.removeObject(forKey: homeWidgetStreamMetadataAppGroupKey)
+        clearHomeWidgetLiveChromeMirror()
         // Boot identity used only for post-reboot LA plan distrust; drop on privacy clear.
         defaults.removeObject(forKey: recordedSystemBootTimeAppGroupKey)
 

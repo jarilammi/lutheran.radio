@@ -197,11 +197,12 @@ final class SharedPlayerManagerPlaybackIntentTests: XCTestCase {
 
     // MARK: - Privacy residual (liveness + instant feedback)
 
-    /// Closing the home-widget privacy gate must drop residual `lastUpdateTime` and instant-feedback
-    /// keys so operational signals do not linger when no Lutheran widgets are configured.
+    /// Closing the home-widget privacy gate (true→false edge) must drop residual `lastUpdateTime`
+    /// and instant-feedback keys so operational signals do not linger when no Lutheran widgets
+    /// are configured.
     ///
-    /// **Invariant protected:** ``WidgetRefreshManager/setHasActiveLutheranWidgets(_:)`` with
-    /// `false` calls ``SharedPlayerManager/clearHomeWidgetLivenessAndInstantFeedbackResiduals()``.
+    /// **Invariant protected:** ``WidgetRefreshManager/setHasActiveLutheranWidgets(_:)`` on the
+    /// true→false edge calls ``SharedPlayerManager/clearHomeWidgetLivenessAndInstantFeedbackResiduals()``.
     /// Security DNS cache (`lastSecurityValidation` on the standard suite) is never touched.
     /// Pending-action mailbox and Live Activity durable mirrors are out of scope for this residual
     /// helper (privacy clear removes them via ``removeAllLocalPlaybackKeys()``).
@@ -246,6 +247,61 @@ final class SharedPlayerManagerPlaybackIntentTests: XCTestCase {
             securityMarker,
             "Privacy residual clear must never touch lastSecurityValidation"
         )
+    }
+
+    /// Re-asserting a closed privacy gate must not re-run residual liveness / instant-feedback
+    /// clear (edge-only true→false). Widget-process bypass may re-seed keys while main still
+    /// sees configs:0; repeated `set(false)` must leave those seeds intact until a real open→close.
+    ///
+    /// **Invariant protected:** ``WidgetRefreshManager/setHasActiveLutheranWidgets(false)`` while
+    /// already false is residual-clear no-op; true→false still clears.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/clearHomeWidgetLivenessAndInstantFeedbackResiduals()``,
+    ///   ``SharedPlayerManager/writeInstantFeedback(language:)``,
+    ///   ``WidgetRefreshManager/setHasActiveLutheranWidgets(_:)``.
+    func testReassertingPrivacyGateClosedDoesNotClearLivenessOrInstantFeedbackResiduals() async {
+        let suite = "group.radio.lutheran.shared"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            XCTFail("App Group UserDefaults unavailable")
+            return
+        }
+
+        await MainActor.run {
+            WidgetRefreshManager.setHasActiveLutheranWidgets(false)
+        }
+
+        SharedPlayerManager._test_setSimulateWidgetProcessContext(true)
+        defer { SharedPlayerManager._test_setSimulateWidgetProcessContext(false) }
+
+        SharedPlayerManager.bumpWidgetLivenessTimestamp(policy: .immediate)
+        SharedPlayerManager.writeInstantFeedback(language: "fi")
+        XCTAssertNotNil(defaults.object(forKey: "lastUpdateTime"))
+        XCTAssertEqual(defaults.bool(forKey: "isInstantFeedback"), true)
+        XCTAssertEqual(defaults.string(forKey: "instantFeedbackLanguage"), "fi")
+
+        await MainActor.run {
+            WidgetRefreshManager.setHasActiveLutheranWidgets(false)
+            WidgetRefreshManager.setHasActiveLutheranWidgets(false)
+        }
+
+        XCTAssertNotNil(
+            defaults.object(forKey: "lastUpdateTime"),
+            "Re-asserting closed gate must not wipe extension-seeded lastUpdateTime"
+        )
+        XCTAssertEqual(
+            defaults.bool(forKey: "isInstantFeedback"),
+            true,
+            "Re-asserting closed gate must not wipe extension-seeded instant feedback"
+        )
+        XCTAssertEqual(defaults.string(forKey: "instantFeedbackLanguage"), "fi")
+
+        await MainActor.run {
+            WidgetRefreshManager.setHasActiveLutheranWidgets(true)
+            WidgetRefreshManager.setHasActiveLutheranWidgets(false)
+        }
+        XCTAssertNil(defaults.object(forKey: "lastUpdateTime"))
+        XCTAssertNil(defaults.object(forKey: "isInstantFeedback"))
+        XCTAssertNil(defaults.object(forKey: "instantFeedbackLanguage"))
     }
 
     /// Full privacy clear removes liveness + instant keys and must not reintroduce them via

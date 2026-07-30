@@ -268,6 +268,7 @@ import WidgetKit
 /// | liveActivityToggleVisualState | String (case name) | `RadioLiveActivityManager` on every ContentState push; optimistic LA toggle | ``loadLiveActivityToggleVisualStateMirror()`` + ``WidgetIntentExecution/performLiveActivityToggle()`` | Durable cross-process LA play/pause plan signal when extension memory snapshot is empty | Cleared on LA end, termination, **factory reset**, privacy clear; **not** gated by home-widget `hasActiveWidgets` |
 /// | liveActivityCurrentLanguage | String (languageCode) | `RadioLiveActivityManager` on every ContentState push; optimistic LA paths | ``loadLiveActivityLanguageMirror()`` + ``languageForLiveActivityOrWidgetOptimistic()`` | Durable LA language chrome / optimistic intent language when extension has no session snapshot and home-widget writes are suppressed | Same lifecycle as visual mirror; **not** gated by `hasActiveWidgets` |
 /// | homeWidgetStreamMetadata | Data (JSON ``StreamProgramMetadata``) | ``persistHomeWidgetStreamMetadataMirror(_:)`` via ``persistStreamMetadataForWidgets()`` / ``savePersistedWidgetState`` / privacy-gate open re-stamp | ``loadHomeWidgetStreamMetadataMirror()`` + ``WidgetProviderSnapshotResolver/resolveFromSnapshot()`` | Privacy-gated **program title/speaker** for home/Control Providers (extension cannot read main-app session RAM) | Written only while ``hasActiveWidgets`` (or widget-process bypass); cleared on gate close, privacy clear, ICY clear / language hygiene |
+/// | homeWidgetLiveChrome | Data (JSON ``HomeWidgetLiveChrome``) | ``persistHomeWidgetLiveChromeMirror(_:)`` / ``stampHomeWidgetLiveChromeFromSession(visualState:language:hasError:reason:)`` via ``savePersistedWidgetState`` / ``persistWidgetSnapshot`` (sticky early pause, ``setPlaying``, switch hold, ``saveCombinedWidgetState``, ``performActualSave``) + ``restampHomeWidgetLiveChromeAfterPrivacyGateOpenIfNeeded()`` + extension optimistic (``persistOptimisticWidgetSnapshot`` / ``signalWidgetSwitchAction`` reasons `optimisticToggle` / `optimisticSwitch`) | ``loadHomeWidgetLiveChromeMirror()`` + ``WidgetProviderSnapshotResolver/resolveFromSnapshot()`` via ``resolveHomeWidgetChromeFields`` (agreement → session; disagreement → fresher `updatedAt`; neither → factory) | Privacy-gated **visual + language + hasError** for home/Control Providers (extension cannot read main-app session RAM) | Written only while ``hasActiveWidgets`` (or widget-process bypass); cleared on gate close, privacy clear, factory residual hygiene, terminate residual hygiene; session-scoped only (OI-1); identity skip on identical visual/language/hasError |
 /// | recordedSystemBootTime  | Double (epoch of boot) | ``recordCurrentSystemBootTime()`` on LA mirror write + factory reset | ``hasDeviceRebootedSinceLastRecordedBoot()`` / ``shouldDistrustDurableMirrorPlayPlanning()`` | Boot identity for post-reboot LA toggle hygiene | Lets lock-screen planning refuse durable-mirror-alone **play** after hard power-off |
 /// | preferredVolume         | Float                 | (Retired — purged on launch, never written)                  | (none) | Was UIKit App Group volume preference. User-facing level is system volume (`MPVolumeView`); engine relative gain defaults to 1.0. | Purged only |
 ///
@@ -1082,6 +1083,8 @@ actor SharedPlayerManager {
         // Explicit LA toggle visual + language mirror clear (factory reset hygiene; not only LA-end paths).
         Self.clearLiveActivityToggleVisualStateMirror()
         Self.clearLiveActivityLanguageMirror()
+        // Home live chrome residual hygiene (OI-1; same privacy class as metadata clear paths).
+        Self.clearHomeWidgetLiveChromeMirror()
         Self.recordCurrentSystemBootTime()
         currentVisualState = .prePlay
         currentStreamMetadata = nil
@@ -1126,15 +1129,17 @@ actor SharedPlayerManager {
     /// - Precondition: Main-app target only. Do not call while intentionally backgrounding live playback
     ///   unless `refreshWidgets` is `false` and factory reset is `false`.
     /// - Postcondition: System Now Playing cleared; optional LA ended; widgets reloaded when requested.
-    ///   Factory reset also clears ``liveActivityToggleVisualStateAppGroupKey`` and
-    ///   ``liveActivityCurrentLanguageAppGroupKey``.
+    ///   Factory reset also clears ``liveActivityToggleVisualStateAppGroupKey``,
+    ///   ``liveActivityCurrentLanguageAppGroupKey``, and ``homeWidgetLiveChromeAppGroupKey``.
     ///
     /// - SeeAlso: ``teardownNowPlayingSession()``, ``resetToFactoryDefaultsOnLaunch()``,
     ///   ``clearAllLocalState()``, ``performPostStopWidgetHygiene()``,
     ///   ``clearLiveActivityToggleVisualStateMirror()``, ``clearLiveActivityLanguageMirror()``,
+    ///   ``clearHomeWidgetLiveChromeMirror()``,
     ///   ``performSessionTeardownSynchronouslyForTermination()``,
     ///   `WidgetRefreshManager.refreshIfNeeded(visualState:currentLanguage:hasError:immediate:)`,
-    ///   docs/Event-Driven-Refactor-Roadmap.md, CODING_AGENT.md.
+    ///   docs/Event-Driven-Refactor-Roadmap.md,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md, CODING_AGENT.md.
     func performSessionAndWidgetTeardown(
         includeFactoryReset: Bool = false,
         liveActivityTeardown: LiveActivityTeardownStyle = .immediate,
@@ -1161,6 +1166,9 @@ actor SharedPlayerManager {
             // against pre-reset mirrors.
             Self.clearLiveActivityToggleVisualStateMirror()
             Self.clearLiveActivityLanguageMirror()
+            // Belt-and-suspenders: drop privacy-gated home live chrome so cold launch cannot
+            // paint prior-session visual/language from App Group (OI-1).
+            Self.clearHomeWidgetLiveChromeMirror()
             // Align boot identity after reset so same-boot post-reset planning does not
             // treat the process as "rebooted" solely because mirror was cleared.
             Self.recordCurrentSystemBootTime()
@@ -1385,7 +1393,16 @@ actor SharedPlayerManager {
     ///   docs/Event-Driven-Refactor-Roadmap.md, CODING_AGENT.md (SSOT + event-driven direction).
     nonisolated public func persistOptimisticWidgetSnapshot(_ state: PlayerVisualState, language: String? = nil) {
         let lang = language ?? Self.preferredWidgetLanguage()
-        Self.persistWidgetSnapshot(visualState: state, language: lang)
+        // Extension optimistic toggle: session RAM + privacy-gated live chrome (widget-process
+        // bypass). Visual must match the pure plan (``optimisticVisualAfterPlayPlan`` /
+        // pause → ``.userPaused``) — never invent mid-hold ``.playing`` beyond product policy.
+        // - SeeAlso: ``stampHomeWidgetLiveChromeFromSession``,
+        //   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.3).
+        Self.persistWidgetSnapshot(
+            visualState: state,
+            language: lang,
+            liveChromeStampReason: "optimisticToggle"
+        )
         // Update in-memory so the widget process sees the fresh state on the next snapshot
         // without waiting for a Darwin round-trip or a full re-load.
         Task { await Self.shared._forceSetCurrentVisualState(state) }

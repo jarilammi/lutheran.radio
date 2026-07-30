@@ -11,7 +11,8 @@
 //  Includes pure language chrome (``displayFlag(for:)``,
 //  ``displayLanguageName(for:preferredStreamLanguage:)``), pure Provider slice assembly
 //  (``WidgetProviderPresentationAssembly``), home-widget passive/chip chrome
-//  (``WidgetHomeChrome``), Live Activity shared layout (``LiveActivityPresentationChrome``),
+//  (``WidgetHomeChrome``), privacy-gated live-chrome payload (``HomeWidgetLiveChrome``),
+//  Live Activity shared layout (``LiveActivityPresentationChrome``),
 //  and pure alt-stream selection (``alternativeStreamCodes``). Snapshot hygiene,
 //  stream-catalog station labels, and intent *execution* remain membership-exception
 //  sources under `Lutheran Radio/` (`SharedPlayerManager`, `WidgetDisplayModels`,

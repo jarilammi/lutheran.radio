@@ -214,41 +214,52 @@ final class WidgetRefreshManager: @unchecked Sendable {
 
     /// Sets the home/Control widget privacy write-suppression flag.
     ///
-    /// When the gate **closes** (`value == false`), also removes residual App Group liveness
-    /// (`lastUpdateTime`), short-lived instant-feedback keys, and the privacy-gated program-
-    /// metadata mirror so operational / program signals do not linger after privacy clear or
-    /// when the user has no Lutheran widgets. Does not clear pending-action mailbox keys, Live
-    /// Activity durable mirrors, or security caches.
+    /// Residual App Group clear (liveness `lastUpdateTime`, instant-feedback triple, privacy-gated
+    /// program-metadata mirror, and live-chrome mirror) runs **only on the true→false edge** —
+    /// same spirit as the false→true re-stamp. Re-asserting `false` while the gate is already
+    /// closed is a no-op for residual keys so WidgetCenter lag (`configs: 0` while widgets still
+    /// exist and extension intent paths may have stamped under widget-process bypass) cannot
+    /// repeatedly wipe extension-readable chrome. Full privacy clear / factory / terminate paths
+    /// still clear via their own helpers and are unaffected.
+    ///
+    /// Does not clear pending-action mailbox keys, Live Activity durable mirrors, or security caches.
     ///
     /// When the gate **opens** (`value == true` after a closed state), schedules a one-shot
-    /// re-stamp of in-memory ICY program metadata into the session snapshot + App Group mirror
-    /// so home widgets receive live titles that arrived while writes were suppressed (identical
-    /// subsequent ICY is a no-op and would otherwise never re-persist).
+    /// re-stamp of in-memory ICY program metadata **and** session live chrome into privacy-gated
+    /// App Group mirrors so home widgets receive titles + visual/language that arrived while
+    /// writes were suppressed (identical subsequent ICY is a no-op and would otherwise never
+    /// re-persist; live chrome projects actor visual without inventing mid-hold ``.playing``).
     ///
     /// - Parameter value: `true` when at least one of our home/Control widget kinds is configured
     ///   (or a test/provider seam opens the gate); `false` forces write suppression.
     /// - SeeAlso: ``hasActiveLutheranWidgets``,
     ///   ``SharedPlayerManager/clearHomeWidgetLivenessAndInstantFeedbackResiduals()``,
     ///   ``SharedPlayerManager/clearHomeWidgetStreamMetadataMirror()``,
+    ///   ``SharedPlayerManager/clearHomeWidgetLiveChromeMirror()``,
     ///   ``SharedPlayerManager/restampHomeWidgetProgramMetadataAfterPrivacyGateOpenIfNeeded()``,
+    ///   ``SharedPlayerManager/restampHomeWidgetLiveChromeAfterPrivacyGateOpenIfNeeded()``,
     ///   ``SharedPlayerManager/bumpWidgetLivenessTimestamp(policy:minInterval:)``,
-    ///   ``SharedPlayerManager/clearAllLocalState()``.
+    ///   ``SharedPlayerManager/clearAllLocalState()``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.5, §7 privacy clear matrix).
     @MainActor
     static func setHasActiveLutheranWidgets(_ value: Bool) {
         let previous = hasActiveLutheranWidgets
         unsafe _hasActiveLutheranWidgets = value
-        if !value {
-            // Privacy residual: suppress future bumps via the flag, and drop any leftover
-            // heartbeat / optimistic language keys / program-metadata mirror that pre-dated
-            // the closed gate.
+        if previous && !value {
+            // true→false edge only: drop residual heartbeat / optimistic language keys /
+            // program-metadata + live-chrome mirrors. Re-asserting false must not wipe
+            // extension-stamped chrome while WidgetCenter still reports configs:0 lag.
             SharedPlayerManager.clearHomeWidgetLivenessAndInstantFeedbackResiduals()
             SharedPlayerManager.clearHomeWidgetStreamMetadataMirror()
-        } else if !previous {
-            // Privacy → write handoff: ICY may already sit in main-app memory (LA path) while
-            // home persist was suppressed. Re-stamp once so Providers see program chrome.
+            SharedPlayerManager.clearHomeWidgetLiveChromeMirror()
+        } else if value && !previous {
+            // false→true edge only: ICY + session visual/language may already sit in main-app
+            // memory (LA path / actor chrome) while home persist was suppressed. Re-stamp once
+            // so Providers can read program + live chrome after install-while-playing.
             #if LUTHERAN_MAIN_APP
             Task {
                 await SharedPlayerManager.shared.restampHomeWidgetProgramMetadataAfterPrivacyGateOpenIfNeeded()
+                await SharedPlayerManager.shared.restampHomeWidgetLiveChromeAfterPrivacyGateOpenIfNeeded()
             }
             #endif
         }

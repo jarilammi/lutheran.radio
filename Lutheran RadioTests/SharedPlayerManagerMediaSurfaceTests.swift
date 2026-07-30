@@ -587,6 +587,622 @@ final class SharedPlayerManagerMediaSurfaceTests: XCTestCase {
         )
     }
 
+    // MARK: - Home live chrome App Group mirror (privacy-gated)
+
+    /// Protects privacy write suppression for live home chrome: while ``hasActiveWidgets`` is
+    /// false, the main-app path must **not** write ``homeWidgetLiveChrome``.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/persistHomeWidgetLiveChromeMirror(_:)``,
+    ///   ``SharedPlayerManager/loadHomeWidgetLiveChromeMirror()``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§7, §10.1).
+    func testPersistHomeWidgetLiveChromeSuppressedWhilePrivacyGateClosed() async {
+        await MainActor.run {
+            WidgetRefreshManager.setHasActiveLutheranWidgets(false)
+        }
+        SharedPlayerManager.clearHomeWidgetLiveChromeMirror()
+
+        let chrome = HomeWidgetLiveChrome(
+            visualState: .playing,
+            currentLanguage: "fi",
+            hasError: false,
+            updatedAt: Date().timeIntervalSince1970,
+            stampReason: "testGateClosed"
+        )
+        SharedPlayerManager.persistHomeWidgetLiveChromeMirror(chrome)
+
+        XCTAssertNil(
+            SharedPlayerManager.loadHomeWidgetLiveChromeMirror(),
+            "App Group live-chrome mirror must not write while the privacy gate is closed on main"
+        )
+    }
+
+    /// Protects widget-process bypass: extension intent proof may stamp live chrome even when
+    /// the main-app ``hasActiveWidgets`` flag is closed.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/_test_setSimulateWidgetProcessContext(_:)``,
+    ///   ``SharedPlayerManager/persistHomeWidgetLiveChromeMirror(_:)``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.1 rank 3).
+    func testPersistHomeWidgetLiveChromeAllowedUnderWidgetProcessBypass() async {
+        await MainActor.run {
+            WidgetRefreshManager.setHasActiveLutheranWidgets(false)
+        }
+        SharedPlayerManager.clearHomeWidgetLiveChromeMirror()
+        SharedPlayerManager._test_setSimulateWidgetProcessContext(true)
+        defer { SharedPlayerManager._test_setSimulateWidgetProcessContext(false) }
+
+        let chrome = HomeWidgetLiveChrome(
+            visualState: .userPaused,
+            currentLanguage: "sv",
+            hasError: false,
+            updatedAt: Date().timeIntervalSince1970,
+            stampReason: "testWidgetBypass"
+        )
+        SharedPlayerManager.persistHomeWidgetLiveChromeMirror(chrome)
+
+        let loaded = SharedPlayerManager.loadHomeWidgetLiveChromeMirror()
+        XCTAssertEqual(loaded?.visualState, .userPaused)
+        XCTAssertEqual(loaded?.currentLanguage, "sv")
+        XCTAssertEqual(loaded?.hasError, false)
+    }
+
+    /// Protects load hygiene: missing key, corrupt payload, and unknown visual tokens yield `nil`
+    /// (safe factory path), never a crash or invented visual.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/loadHomeWidgetLiveChromeMirror()``,
+    ///   ``HomeWidgetLiveChrome/playerVisualState(fromStableToken:)``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§3 encoding notes).
+    func testLoadHomeWidgetLiveChromeMirrorMissingOrInvalidReturnsNil() async {
+        SharedPlayerManager.clearHomeWidgetLiveChromeMirror()
+        XCTAssertNil(SharedPlayerManager.loadHomeWidgetLiveChromeMirror())
+
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else {
+            XCTFail("App Group UserDefaults unavailable")
+            return
+        }
+
+        defaults.set(Data([0x00, 0x01, 0x02]), forKey: SharedPlayerManager.homeWidgetLiveChromeAppGroupKey)
+        XCTAssertNil(
+            SharedPlayerManager.loadHomeWidgetLiveChromeMirror(),
+            "Corrupt JSON must treat the mirror as absent"
+        )
+
+        let unknownTokenJSON = """
+        {"visualState":"notARealVisual","currentLanguage":"en","hasError":false,"updatedAt":1.0}
+        """
+        defaults.set(Data(unknownTokenJSON.utf8), forKey: SharedPlayerManager.homeWidgetLiveChromeAppGroupKey)
+        XCTAssertNil(
+            SharedPlayerManager.loadHomeWidgetLiveChromeMirror(),
+            "Unknown visual token must treat the mirror as absent"
+        )
+
+        let emptyLanguageJSON = """
+        {"visualState":"playing","currentLanguage":"","hasError":false,"updatedAt":1.0}
+        """
+        defaults.set(Data(emptyLanguageJSON.utf8), forKey: SharedPlayerManager.homeWidgetLiveChromeAppGroupKey)
+        XCTAssertNil(
+            SharedPlayerManager.loadHomeWidgetLiveChromeMirror(),
+            "Empty language must treat the mirror as absent"
+        )
+
+        SharedPlayerManager.clearHomeWidgetLiveChromeMirror()
+    }
+
+    /// Protects clear helper + gate-close residual path for live chrome.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/clearHomeWidgetLiveChromeMirror()``,
+    ///   ``WidgetRefreshManager/setHasActiveLutheranWidgets(_:)``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§7).
+    func testClearHomeWidgetLiveChromeMirrorRemovesKeyAndGateCloseClears() async {
+        await MainActor.run {
+            WidgetRefreshManager.setHasActiveLutheranWidgets(true)
+        }
+        SharedPlayerManager.persistHomeWidgetLiveChromeMirror(
+            HomeWidgetLiveChrome(
+                visualState: .prePlay,
+                currentLanguage: "en",
+                hasError: false,
+                updatedAt: Date().timeIntervalSince1970
+            )
+        )
+        XCTAssertNotNil(SharedPlayerManager.loadHomeWidgetLiveChromeMirror())
+
+        SharedPlayerManager.clearHomeWidgetLiveChromeMirror()
+        XCTAssertNil(
+            SharedPlayerManager.loadHomeWidgetLiveChromeMirror(),
+            "clearHomeWidgetLiveChromeMirror must remove the App Group key"
+        )
+
+        SharedPlayerManager.persistHomeWidgetLiveChromeMirror(
+            HomeWidgetLiveChrome(
+                visualState: .playing,
+                currentLanguage: "fi",
+                hasError: false,
+                updatedAt: Date().timeIntervalSince1970
+            )
+        )
+        XCTAssertNotNil(SharedPlayerManager.loadHomeWidgetLiveChromeMirror())
+
+        await MainActor.run {
+            WidgetRefreshManager.setHasActiveLutheranWidgets(false)
+        }
+        XCTAssertNil(
+            SharedPlayerManager.loadHomeWidgetLiveChromeMirror(),
+            "Closing the privacy gate (true→false edge) must clear the home live-chrome mirror"
+        )
+    }
+
+    /// Protects residual-clear edge semantics: re-asserting a closed privacy gate must **not**
+    /// wipe live chrome (or program-metadata) that extension intent paths stamped under
+    /// widget-process bypass while main WidgetCenter still reports no configs.
+    ///
+    /// **Invariant protected:** ``WidgetRefreshManager/setHasActiveLutheranWidgets(_:)`` clears
+    /// residual mirrors only on the true→false transition, not on every `false` call. Write
+    /// suppression while the gate is closed remains in force for the main-app path.
+    ///
+    /// - SeeAlso: ``WidgetRefreshManager/setHasActiveLutheranWidgets(_:)``,
+    ///   ``SharedPlayerManager/persistHomeWidgetLiveChromeMirror(_:)``,
+    ///   ``SharedPlayerManager/_test_setSimulateWidgetProcessContext(_:)``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§7).
+    func testReassertingPrivacyGateClosedDoesNotClearLiveChromeOrMetadataMirrors() async {
+        await MainActor.run {
+            WidgetRefreshManager.setHasActiveLutheranWidgets(false)
+        }
+        SharedPlayerManager.clearHomeWidgetLiveChromeMirror()
+        SharedPlayerManager.clearHomeWidgetStreamMetadataMirror()
+
+        // Extension-style stamp while main gate is closed (widget-process bypass).
+        SharedPlayerManager._test_setSimulateWidgetProcessContext(true)
+        defer { SharedPlayerManager._test_setSimulateWidgetProcessContext(false) }
+
+        SharedPlayerManager.persistHomeWidgetLiveChromeMirror(
+            HomeWidgetLiveChrome(
+                visualState: .playing,
+                currentLanguage: "sv",
+                hasError: false,
+                updatedAt: Date().timeIntervalSince1970,
+                stampReason: "extensionOptimisticWhileMainGateClosed"
+            )
+        )
+        SharedPlayerManager.persistHomeWidgetStreamMetadataMirror(
+            StreamProgramMetadata(programTitle: "Edge Residual Check", speaker: nil)
+        )
+        XCTAssertNotNil(SharedPlayerManager.loadHomeWidgetLiveChromeMirror())
+        XCTAssertNotNil(SharedPlayerManager.loadHomeWidgetStreamMetadataMirror())
+
+        // Main process repeatedly re-detects configs:0 → set(false) while already false.
+        await MainActor.run {
+            WidgetRefreshManager.setHasActiveLutheranWidgets(false)
+            WidgetRefreshManager.setHasActiveLutheranWidgets(false)
+        }
+
+        XCTAssertEqual(
+            SharedPlayerManager.loadHomeWidgetLiveChromeMirror()?.visualState,
+            .playing,
+            "Re-asserting closed privacy gate must not wipe extension-stamped live chrome"
+        )
+        XCTAssertEqual(
+            SharedPlayerManager.loadHomeWidgetLiveChromeMirror()?.currentLanguage,
+            "sv"
+        )
+        XCTAssertEqual(
+            SharedPlayerManager.loadHomeWidgetStreamMetadataMirror()?.programTitle,
+            "Edge Residual Check",
+            "Re-asserting closed privacy gate must not wipe extension-stamped program metadata"
+        )
+
+        // true→false still clears once the gate actually opens then closes.
+        await MainActor.run {
+            WidgetRefreshManager.setHasActiveLutheranWidgets(true)
+            WidgetRefreshManager.setHasActiveLutheranWidgets(false)
+        }
+        XCTAssertNil(
+            SharedPlayerManager.loadHomeWidgetLiveChromeMirror(),
+            "true→false edge must still clear live chrome"
+        )
+        XCTAssertNil(
+            SharedPlayerManager.loadHomeWidgetStreamMetadataMirror(),
+            "true→false edge must still clear program-metadata mirror"
+        )
+    }
+
+    /// Protects JSON round-trip for common presentation visuals via privacy-open persist/load.
+    ///
+    /// - SeeAlso: ``HomeWidgetLiveChrome``, ``SharedPlayerManager/persistHomeWidgetLiveChromeMirror(_:)``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§10.1).
+    func testHomeWidgetLiveChromeRoundTripCommonVisuals() async {
+        await MainActor.run {
+            WidgetRefreshManager.setHasActiveLutheranWidgets(true)
+        }
+        defer {
+            SharedPlayerManager.clearHomeWidgetLiveChromeMirror()
+        }
+
+        let cases: [PlayerVisualState] = [.prePlay, .playing, .userPaused]
+        for visual in cases {
+            let chrome = HomeWidgetLiveChrome(
+                visualState: visual,
+                currentLanguage: "nb",
+                hasError: visual == .prePlay,
+                updatedAt: 1_700_000_000,
+                stampReason: "roundTrip"
+            )
+            SharedPlayerManager.persistHomeWidgetLiveChromeMirror(chrome)
+            let loaded = SharedPlayerManager.loadHomeWidgetLiveChromeMirror()
+            XCTAssertEqual(loaded?.visualState, visual, "Round-trip visual for \(visual)")
+            XCTAssertEqual(loaded?.currentLanguage, "nb")
+            XCTAssertEqual(loaded?.hasError, visual == .prePlay)
+            XCTAssertEqual(loaded?.updatedAt, 1_700_000_000)
+            XCTAssertEqual(loaded?.stampReason, "roundTrip")
+        }
+    }
+
+    /// Protects privacy clear removing live chrome in the same transaction class as metadata.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/removeAllLocalPlaybackKeys()``,
+    ///   ``SharedPlayerManager/clearHomeWidgetLiveChromeMirror()``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§7.2).
+    func testRemoveAllLocalPlaybackKeysClearsHomeWidgetLiveChromeMirror() async {
+        await MainActor.run {
+            WidgetRefreshManager.setHasActiveLutheranWidgets(true)
+        }
+        SharedPlayerManager.persistHomeWidgetLiveChromeMirror(
+            HomeWidgetLiveChrome(
+                visualState: .playing,
+                currentLanguage: "de",
+                hasError: false,
+                updatedAt: Date().timeIntervalSince1970
+            )
+        )
+        XCTAssertNotNil(SharedPlayerManager.loadHomeWidgetLiveChromeMirror())
+
+        SharedPlayerManager.removeAllLocalPlaybackKeys()
+
+        XCTAssertNil(
+            SharedPlayerManager.loadHomeWidgetLiveChromeMirror(),
+            "Privacy clear must remove homeWidgetLiveChrome"
+        )
+    }
+
+    // MARK: - Home live chrome main-app stamp call sites (PR2)
+
+    /// Protects early sticky pause honesty: privacy-open sticky lock projects ``.userPaused``
+    /// into ``homeWidgetLiveChrome`` via ``persistEarlyStickyUserPausedSnapshotIfPrivacyAllows()``
+    /// (before soft silence / deferred ``saveCurrentState()``).
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/persistEarlyStickyUserPausedSnapshotIfPrivacyAllows()``,
+    ///   ``SharedPlayerManager/stampHomeWidgetLiveChromeFromSession(visualState:language:hasError:reason:)``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.2 sticky pause).
+    func testEarlyStickyUserPausedStampsHomeWidgetLiveChromeWhenGateOpen() async {
+        await MainActor.run {
+            WidgetRefreshManager.setHasActiveLutheranWidgets(true)
+        }
+        SharedPlayerManager.clearHomeWidgetLiveChromeMirror()
+        SharedPlayerManager.clearInMemorySessionSnapshot()
+
+        // Establish prior session language so sticky projection is deterministic.
+        SharedPlayerManager.persistWidgetSnapshot(visualState: .playing, language: "fi")
+        await manager.setUserPaused()
+        // Early sticky runs inside setUserPaused before deferred save; mirror must already be pause.
+        let chrome = SharedPlayerManager.loadHomeWidgetLiveChromeMirror()
+        XCTAssertEqual(
+            chrome?.visualState,
+            .userPaused,
+            "Early sticky pause must stamp .userPaused live chrome while the privacy gate is open"
+        )
+        XCTAssertEqual(chrome?.currentLanguage, "fi")
+        XCTAssertEqual(chrome?.hasError, false)
+    }
+
+    /// Protects authoritative ``setPlaying()`` projection: gate open → mirror ``.playing``.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/setPlaying()``,
+    ///   ``SharedPlayerManager/savePersistedWidgetState(visualState:language:streamMetadata:hasError:)``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.2 setPlaying).
+    func testSetPlayingStampsHomeWidgetLiveChromeWhenGateOpen() async {
+        await MainActor.run {
+            WidgetRefreshManager.setHasActiveLutheranWidgets(true)
+        }
+        SharedPlayerManager.clearHomeWidgetLiveChromeMirror()
+        SharedPlayerManager.persistWidgetSnapshot(visualState: .userPaused, language: "sv")
+
+        await manager.setPlaying()
+
+        let chrome = SharedPlayerManager.loadHomeWidgetLiveChromeMirror()
+        XCTAssertEqual(
+            chrome?.visualState,
+            .playing,
+            "setPlaying must project .playing into homeWidgetLiveChrome when the gate is open"
+        )
+        XCTAssertFalse(chrome?.currentLanguage.isEmpty ?? true)
+        XCTAssertEqual(chrome?.hasError, false)
+    }
+
+    /// Protects write suppression: sticky / setPlaying paths must not write live chrome while
+    /// ``hasActiveWidgets`` is false on the main app.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/persistEarlyStickyUserPausedSnapshotIfPrivacyAllows()``,
+    ///   ``SharedPlayerManager/setPlaying()``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§7).
+    func testHomeWidgetLiveChromeStampSuppressedWhilePrivacyGateClosed() async {
+        await MainActor.run {
+            WidgetRefreshManager.setHasActiveLutheranWidgets(false)
+        }
+        SharedPlayerManager.clearHomeWidgetLiveChromeMirror()
+
+        await manager.setUserPaused()
+        XCTAssertNil(
+            SharedPlayerManager.loadHomeWidgetLiveChromeMirror(),
+            "Sticky pause must not stamp live chrome while the privacy gate is closed"
+        )
+
+        await manager.setPlaying()
+        XCTAssertNil(
+            SharedPlayerManager.loadHomeWidgetLiveChromeMirror(),
+            "setPlaying must not stamp live chrome while the privacy gate is closed"
+        )
+    }
+
+    /// Protects stream-switch hold honesty: active-intent Connecting projects ``.prePlay`` +
+    /// destination language (never mid-hold ``.playing``).
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/resetToPrePlayForNewStream(preserveActiveSleepTimer:connectingLanguageCode:)``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.2 switch hold, §9).
+    func testStreamSwitchHoldStampsPrePlayPlusDestinationLanguageLiveChrome() async {
+        await MainActor.run {
+            WidgetRefreshManager.setHasActiveLutheranWidgets(true)
+        }
+        SharedPlayerManager.clearHomeWidgetLiveChromeMirror()
+        SharedPlayerManager.persistWidgetSnapshot(visualState: .playing, language: "en")
+        await manager.setPlaying()
+
+        await manager.resetToPrePlayForNewStream(connectingLanguageCode: "de")
+
+        let chrome = SharedPlayerManager.loadHomeWidgetLiveChromeMirror()
+        XCTAssertEqual(
+            chrome?.visualState,
+            .prePlay,
+            "Switch hold must stamp Connecting (.prePlay), never invent .playing mid-hold"
+        )
+        XCTAssertEqual(
+            chrome?.currentLanguage,
+            "de",
+            "Switch hold must project destination language into live chrome"
+        )
+        XCTAssertEqual(chrome?.hasError, false)
+    }
+
+    /// Protects paused stream switch: destination language with sticky ``.userPaused`` (no Connecting).
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/saveCombinedWidgetState(language:)``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.2 paused switch).
+    func testPausedStreamSwitchStampsUserPausedPlusDestinationLanguageLiveChrome() async {
+        await MainActor.run {
+            WidgetRefreshManager.setHasActiveLutheranWidgets(true)
+        }
+        SharedPlayerManager.clearHomeWidgetLiveChromeMirror()
+        SharedPlayerManager.persistWidgetSnapshot(visualState: .userPaused, language: "en")
+        await manager.setUserPaused()
+
+        await manager.saveCombinedWidgetState(language: "et")
+
+        let chrome = SharedPlayerManager.loadHomeWidgetLiveChromeMirror()
+        XCTAssertEqual(chrome?.visualState, .userPaused)
+        XCTAssertEqual(chrome?.currentLanguage, "et")
+        XCTAssertEqual(chrome?.hasError, false)
+    }
+
+    /// Protects soft-resume honesty: product skip policy retains sticky visual; live chrome must
+    /// not invent Connecting when ``canSoftResumeSameStream`` is true. Pure policy + stamp projection.
+    ///
+    /// Under UITestMode the engine rarely reports soft-resume eligibility, so this gates the
+    /// pure decision and verifies that holding ``.userPaused`` through save leaves the mirror
+    /// at pause until authoritative ``setPlaying()``.
+    ///
+    /// - SeeAlso: ``PlaybackPlayDecision/shouldApplyConnectingPrePlayChrome(visualState:isActivePlaybackIntent:canSoftResumeSameStream:)``,
+    ///   ``SharedPlayerManager/stampHomeWidgetLiveChromeFromSession(visualState:language:hasError:reason:)``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§9 soft-resume).
+    func testSoftResumeSkipPolicyDoesNotStampFalseConnectingLiveChrome() async {
+        // Pure product policy: soft-resume eligible → no Connecting chrome mutation.
+        XCTAssertFalse(
+            PlaybackPlayDecision.shouldApplyConnectingPrePlayChrome(
+                visualState: .userPaused,
+                isActivePlaybackIntent: true,
+                canSoftResumeSameStream: true
+            ),
+            "Soft-resume eligible play must not apply Connecting (.prePlay) chrome"
+        )
+        XCTAssertTrue(
+            PlaybackPlayDecision.shouldApplyConnectingPrePlayChrome(
+                visualState: .userPaused,
+                isActivePlaybackIntent: true,
+                canSoftResumeSameStream: false
+            ),
+            "True attach must still receive Connecting chrome when soft-resume is unavailable"
+        )
+
+        await MainActor.run {
+            WidgetRefreshManager.setHasActiveLutheranWidgets(true)
+        }
+        SharedPlayerManager.clearHomeWidgetLiveChromeMirror()
+        SharedPlayerManager.persistWidgetSnapshot(visualState: .userPaused, language: "nb")
+        await manager.setUserPaused()
+
+        // Hold residual pause chrome (soft-resume path does not stamp intermediate Connecting).
+        SharedPlayerManager.stampHomeWidgetLiveChromeFromSession(
+            visualState: .userPaused,
+            language: "nb",
+            hasError: false,
+            reason: "softResumeHold"
+        )
+        var chrome = SharedPlayerManager.loadHomeWidgetLiveChromeMirror()
+        XCTAssertEqual(
+            chrome?.visualState,
+            .userPaused,
+            "Soft-resume honesty: mirror holds .userPaused until setPlaying"
+        )
+
+        await manager.setPlaying()
+        chrome = SharedPlayerManager.loadHomeWidgetLiveChromeMirror()
+        XCTAssertEqual(
+            chrome?.visualState,
+            .playing,
+            "Authoritative setPlaying must settle live chrome to .playing after soft-resume hold"
+        )
+    }
+
+    /// Protects privacy→write live-chrome handoff: gate false→true re-stamps non-factory actor
+    /// chrome once (install-while-playing / install-while-paused).
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/restampHomeWidgetLiveChromeAfterPrivacyGateOpenIfNeeded()``,
+    ///   ``WidgetRefreshManager/setHasActiveLutheranWidgets(_:)``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.5).
+    func testPrivacyGateOpenRestampsHomeWidgetLiveChromeWhenSessionHasDisplayableChrome() async {
+        await MainActor.run {
+            WidgetRefreshManager.setHasActiveLutheranWidgets(false)
+        }
+        SharedPlayerManager.clearHomeWidgetLiveChromeMirror()
+        SharedPlayerManager.clearInMemorySessionSnapshot()
+
+        // Actor chrome while writes suppressed (no session snapshot write under closed gate).
+        await manager.setPlaying()
+        XCTAssertNil(
+            SharedPlayerManager.loadHomeWidgetLiveChromeMirror(),
+            "Precondition: closed gate must suppress live-chrome stamps"
+        )
+        let visual = await manager.currentVisualState
+        XCTAssertEqual(visual, .playing, "Precondition: actor must hold non-factory .playing")
+
+        await MainActor.run {
+            WidgetRefreshManager.setHasActiveLutheranWidgets(true)
+        }
+        // Allow the hop from setHasActiveLutheranWidgets → actor restamp to complete.
+        for _ in 0..<10 {
+            if SharedPlayerManager.loadHomeWidgetLiveChromeMirror() != nil { break }
+            await Task.yield()
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+
+        let chrome = SharedPlayerManager.loadHomeWidgetLiveChromeMirror()
+        XCTAssertEqual(
+            chrome?.visualState,
+            .playing,
+            "Privacy gate open must re-stamp non-factory actor live chrome into App Group"
+        )
+        XCTAssertFalse(
+            chrome?.currentLanguage.isEmpty ?? true,
+            "Re-stamp must carry a non-empty language for Provider paint"
+        )
+    }
+
+    // MARK: - Home live chrome Provider resolution + main settle overwrite (PR3)
+
+    /// Protects Provider paint when session RAM is nil and only the privacy-gated live chrome
+    /// mirror is present (extension cold wake after main-only transition).
+    ///
+    /// - SeeAlso: ``WidgetProviderSnapshotResolver/resolveFromSnapshot()``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§6.1).
+    func testProviderResolveFromLiveChromeWhenSessionNilMainProfile() async {
+        await MainActor.run {
+            WidgetRefreshManager.setHasActiveLutheranWidgets(true)
+        }
+        SharedPlayerManager.clearInMemorySessionSnapshot()
+        SharedPlayerManager.clearHomeWidgetLiveChromeMirror()
+
+        SharedPlayerManager.stampHomeWidgetLiveChromeFromSession(
+            visualState: .playing,
+            language: "et",
+            hasError: false,
+            reason: "mainProfileMirrorOnly"
+        )
+        XCTAssertNil(SharedPlayerManager.loadPersistedWidgetState())
+
+        let fields = WidgetProviderSnapshotResolver.resolveFromSnapshot()
+        XCTAssertEqual(fields.visualState, .playing)
+        XCTAssertEqual(fields.currentLanguage, "et")
+        XCTAssertFalse(fields.hasError)
+    }
+
+    /// Protects main-app settle overwrite: authoritative ``setPlaying()`` replaces optimistic
+    /// pause/connect chrome on the mirror when the privacy gate is open.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/setPlaying()``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.1 authority, §5.2 setPlaying).
+    func testMainAppSetPlayingOverwritesOptimisticLiveChromeWhenGateOpen() async {
+        await MainActor.run {
+            WidgetRefreshManager.setHasActiveLutheranWidgets(true)
+        }
+        SharedPlayerManager.clearHomeWidgetLiveChromeMirror()
+
+        // Simulate extension-shaped optimistic pause stamp still visible on App Group.
+        SharedPlayerManager.stampHomeWidgetLiveChromeFromSession(
+            visualState: .userPaused,
+            language: "fi",
+            hasError: false,
+            reason: "optimisticToggle"
+        )
+        XCTAssertEqual(
+            SharedPlayerManager.loadHomeWidgetLiveChromeMirror()?.visualState,
+            .userPaused
+        )
+
+        SharedPlayerManager.persistWidgetSnapshot(visualState: .userPaused, language: "fi")
+        await manager.setPlaying()
+
+        let chrome = SharedPlayerManager.loadHomeWidgetLiveChromeMirror()
+        XCTAssertEqual(
+            chrome?.visualState,
+            .playing,
+            "Main-app setPlaying must overwrite optimistic live chrome when the gate is open"
+        )
+        XCTAssertEqual(chrome?.hasError, false)
+    }
+
+    /// Protects identity skip: identical visual + language + hasError does not rewrite App Group
+    /// (stampReason / updatedAt ignored).
+    ///
+    /// - SeeAlso: ``shouldSkipIdenticalHomeWidgetLiveChromeWrite(existing:candidate:)``,
+    ///   ``SharedPlayerManager/stampHomeWidgetLiveChromeFromSession(visualState:language:hasError:reason:)``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§4 identity skip).
+    func testStampHomeWidgetLiveChromeIdentitySkipLeavesUpdatedAtUnchanged() async {
+        await MainActor.run {
+            WidgetRefreshManager.setHasActiveLutheranWidgets(true)
+        }
+        SharedPlayerManager.clearHomeWidgetLiveChromeMirror()
+
+        SharedPlayerManager.stampHomeWidgetLiveChromeFromSession(
+            visualState: .prePlay,
+            language: "en",
+            hasError: false,
+            reason: "first"
+        )
+        let first = SharedPlayerManager.loadHomeWidgetLiveChromeMirror()
+        XCTAssertNotNil(first)
+        let firstUpdatedAt = first?.updatedAt ?? 0
+        let firstReason = first?.stampReason
+
+        // Identical payload (different reason) must skip rewrite.
+        SharedPlayerManager.stampHomeWidgetLiveChromeFromSession(
+            visualState: .prePlay,
+            language: "en",
+            hasError: false,
+            reason: "secondIdentical"
+        )
+        let second = SharedPlayerManager.loadHomeWidgetLiveChromeMirror()
+        XCTAssertEqual(second?.updatedAt, firstUpdatedAt, "Identity skip must not refresh updatedAt")
+        XCTAssertEqual(second?.stampReason, firstReason, "Identity skip must retain original stampReason")
+
+        // Visual change must write.
+        SharedPlayerManager.stampHomeWidgetLiveChromeFromSession(
+            visualState: .playing,
+            language: "en",
+            hasError: false,
+            reason: "playing"
+        )
+        let third = SharedPlayerManager.loadHomeWidgetLiveChromeMirror()
+        XCTAssertEqual(third?.visualState, .playing)
+        XCTAssertEqual(third?.stampReason, "playing")
+    }
+
     /// Protects Tier 4 ``refreshAllMediaSurfaces(liveActivity:widgetRefresh:widgetRefreshImmediate:)``
     /// coordination ordering: Now Playing update precedes widget refresh; Live Activity IPC is
     /// skipped under UITestMode without blocking the NP path.

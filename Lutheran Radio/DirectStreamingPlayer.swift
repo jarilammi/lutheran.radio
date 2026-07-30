@@ -149,7 +149,7 @@ protocol StreamingPlayerDelegate: AnyObject {
 ///   - App Transport Security (ATS) enforces pinned public keys via `Info.plist` (`NSAppTransportSecurity`).
 ///   - Runtime SSL certificate validation with hostname verification is handled in `StreamingSessionDelegate`.
 /// - **Dynamic Access Control**:
-///   - Queries `securitymodels.lutheran.radio` TXT record to validate app authorization.
+///   - Queries ordered `securityModelDomains` TXT hosts (primary `securitymodels.siikkari.net`, secondary `securitymodels.lutheranradio.eu`, backup `securitymodels.lutheranradio.sk`) to validate app authorization.
 ///   - Supports remote access control without requiring app updates.
 ///   - Requires the app security model (`dallas`) to be in the authorized list.
 /// - **DNSSEC-authenticated name resolution** (iOS 16+ / always on this deployment target):

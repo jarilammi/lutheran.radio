@@ -7,11 +7,13 @@
 //  Extension-profile linkage for membership-exception display models and Provider
 //  synthesis. Full pure presentation matrices (every visual state, flag map) live
 //  in WidgetSurfaceTests. This suite keeps snapshot / catalog / blueprint smoke that
-//  exercises SharedPlayerManager under the widget compile profile.
+//  exercises SharedPlayerManager under the widget compile profile, including
+//  ``WidgetProviderSnapshotResolver`` live-chrome resolution (session vs mirror freshness).
 //
 //  - SeeAlso: ``widgetNowPlayingDisplayModel(visualState:streamMetadata:languageName:)``,
 //    ``WidgetProviderSnapshotResolver``, ``WidgetProviderPresentationAssembly``,
 //    ``displayFlag(for:)``, ``displayLanguageName(for:)``,
+//    docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§6),
 //    docs/Widget-Functionality-Roadmap.md.
 //
 
@@ -111,6 +113,170 @@ final class WidgetDisplayModelsExtensionTests: XCTestCase {
         XCTAssertEqual(fields.visualState, .prePlay)
         XCTAssertFalse(fields.hasError)
         XCTAssertFalse(fields.currentLanguage.isEmpty)
+    }
+
+    // MARK: - Live chrome Provider resolution (session vs mirror freshness → factory)
+
+    /// Protects design §6.1: when session RAM is nil, privacy-gated ``homeWidgetLiveChrome``
+    /// paints visual + language + hasError (typical extension cold wake after main-only settle).
+    ///
+    /// - SeeAlso: ``WidgetProviderSnapshotResolver/resolveFromSnapshot()``,
+    ///   ``SharedPlayerManager/loadHomeWidgetLiveChromeMirror()``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§6.1).
+    func testProviderResolveUsesLiveChromeWhenSessionNil() {
+        SharedPlayerManager.clearInMemorySessionSnapshot()
+        SharedPlayerManager.clearHomeWidgetLiveChromeMirror()
+        XCTAssertNil(SharedPlayerManager.loadPersistedWidgetState())
+
+        SharedPlayerManager.stampHomeWidgetLiveChromeFromSession(
+            visualState: .playing,
+            language: "fi",
+            hasError: false,
+            reason: "testMirrorOnly"
+        )
+        XCTAssertNil(
+            SharedPlayerManager.loadPersistedWidgetState(),
+            "Precondition: session RAM must remain nil so mirror is the paint source"
+        )
+
+        let fields = WidgetProviderSnapshotResolver.resolveFromSnapshot()
+        XCTAssertEqual(fields.visualState, .playing, "Nil session + mirror playing → paint playing")
+        XCTAssertEqual(fields.currentLanguage, "fi")
+        XCTAssertFalse(fields.hasError)
+    }
+
+    /// Protects fresher same-process optimistic session over a staler residual mirror.
+    ///
+    /// Seeds an older playing mirror, then a newer pause session without re-stamping the mirror
+    /// to the same tick, so disagreement + freshness selects session.
+    ///
+    /// - SeeAlso: ``resolveHomeWidgetChromeFields(sessionVisual:sessionLanguage:sessionHasError:sessionUpdatedAt:liveChrome:)``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§6.2).
+    func testProviderResolveFresherSessionWinsOverStaleLiveChromeMirror() {
+        SharedPlayerManager.clearInMemorySessionSnapshot()
+        SharedPlayerManager.clearHomeWidgetLiveChromeMirror()
+
+        // Older residual main-style mirror still holding .playing.
+        SharedPlayerManager.persistHomeWidgetLiveChromeMirror(
+            HomeWidgetLiveChrome(
+                visualState: .playing,
+                currentLanguage: "en",
+                hasError: false,
+                updatedAt: 1_000,
+                stampReason: "staleMainMirror"
+            )
+        )
+        // Newer extension-session pause (do not call persistWidgetSnapshot — that would re-stamp
+        // the mirror and collapse the disagreement under identity agreement).
+        SharedPlayerManager.inMemorySessionWidgetSnapshot = SharedPlayerManager.PersistedWidgetState(
+            visualState: .userPaused,
+            currentLanguage: "sv",
+            lastLanguageChangeTime: Date(timeIntervalSince1970: 2_000),
+            streamMetadata: nil,
+            hasError: false
+        )
+
+        let fields = WidgetProviderSnapshotResolver.resolveFromSnapshot()
+        XCTAssertEqual(
+            fields.visualState,
+            .userPaused,
+            "Fresher session pause must win over a staler mirror still holding .playing"
+        )
+        XCTAssertEqual(fields.currentLanguage, "sv")
+        XCTAssertFalse(fields.hasError)
+    }
+
+    /// Protects P0 paint heal: fresher main-app ``homeWidgetLiveChrome`` ``.playing`` must beat
+    /// a stale extension-session switch-hold ``.prePlay`` so home does not stay yellow Connecting
+    /// after main settle + ``reloadTimelines``.
+    ///
+    /// - SeeAlso: ``resolveHomeWidgetChromeFields(sessionVisual:sessionLanguage:sessionHasError:sessionUpdatedAt:liveChrome:)``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§6.2).
+    func testProviderResolveFresherLiveChromePlayingBeatsStaleSessionPrePlay() {
+        SharedPlayerManager.clearInMemorySessionSnapshot()
+        SharedPlayerManager.clearHomeWidgetLiveChromeMirror()
+
+        // Stale extension optimistic switch hold left process-local Connecting chrome.
+        SharedPlayerManager.inMemorySessionWidgetSnapshot = SharedPlayerManager.PersistedWidgetState(
+            visualState: .prePlay,
+            currentLanguage: "et",
+            lastLanguageChangeTime: Date(timeIntervalSince1970: 1_000),
+            streamMetadata: nil,
+            hasError: false
+        )
+        // Main-app setPlaying settle projected a newer App Group live chrome.
+        SharedPlayerManager.persistHomeWidgetLiveChromeMirror(
+            HomeWidgetLiveChrome(
+                visualState: .playing,
+                currentLanguage: "et",
+                hasError: false,
+                updatedAt: 2_000,
+                stampReason: "setPlaying"
+            )
+        )
+
+        let fields = WidgetProviderSnapshotResolver.resolveFromSnapshot()
+        XCTAssertEqual(
+            fields.visualState,
+            .playing,
+            "Fresher live chrome .playing must heal stale extension-session .prePlay"
+        )
+        XCTAssertEqual(fields.currentLanguage, "et")
+        XCTAssertFalse(fields.hasError)
+    }
+
+    /// Protects factory defaults when both session and live chrome are absent.
+    ///
+    /// - SeeAlso: docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§6.1 factory).
+    func testProviderResolveFactoryWhenSessionAndLiveChromeAbsent() {
+        SharedPlayerManager.clearInMemorySessionSnapshot()
+        SharedPlayerManager.clearHomeWidgetLiveChromeMirror()
+        XCTAssertNil(SharedPlayerManager.loadPersistedWidgetState())
+        XCTAssertNil(SharedPlayerManager.loadHomeWidgetLiveChromeMirror())
+
+        let fields = WidgetProviderSnapshotResolver.resolveFromSnapshot()
+        XCTAssertEqual(fields.visualState, .prePlay)
+        XCTAssertFalse(fields.hasError)
+        XCTAssertFalse(fields.currentLanguage.isEmpty, "Factory language is preferredWidgetLanguage()")
+    }
+
+    /// Protects hasError fall-through: session absent → live chrome hasError paints.
+    func testProviderResolveHasErrorFromLiveChromeWhenSessionNil() {
+        SharedPlayerManager.clearInMemorySessionSnapshot()
+        SharedPlayerManager.clearHomeWidgetLiveChromeMirror()
+        SharedPlayerManager.stampHomeWidgetLiveChromeFromSession(
+            visualState: .securityLocked,
+            language: "de",
+            hasError: true,
+            reason: "testErrorChrome"
+        )
+
+        let fields = WidgetProviderSnapshotResolver.resolveFromSnapshot()
+        XCTAssertEqual(fields.visualState, .securityLocked)
+        XCTAssertEqual(fields.currentLanguage, "de")
+        XCTAssertTrue(fields.hasError, "Live chrome hasError must paint when session is nil")
+    }
+
+    /// Protects program-metadata peer: session metadata still preferred; mirror metadata when
+    /// session is nil (unchanged single-concern path alongside live chrome visual).
+    func testProviderResolveProgramMetadataUnchangedWithLiveChrome() {
+        SharedPlayerManager.clearInMemorySessionSnapshot()
+        SharedPlayerManager.clearHomeWidgetLiveChromeMirror()
+        SharedPlayerManager.clearHomeWidgetStreamMetadataMirror()
+
+        let titleMeta = StreamProgramMetadata(programTitle: "Mirror Title", speaker: "Speaker")
+        SharedPlayerManager.persistHomeWidgetStreamMetadataMirror(titleMeta)
+        SharedPlayerManager.stampHomeWidgetLiveChromeFromSession(
+            visualState: .playing,
+            language: "nb",
+            hasError: false,
+            reason: "testMetaPeer"
+        )
+
+        let fields = WidgetProviderSnapshotResolver.resolveFromSnapshot()
+        XCTAssertEqual(fields.visualState, .playing)
+        XCTAssertEqual(fields.currentLanguage, "nb")
+        XCTAssertEqual(fields.streamMetadata?.programTitle, "Mirror Title")
     }
 
     func testResolveWithActorHygieneMatchesResolveFromSnapshot() async {

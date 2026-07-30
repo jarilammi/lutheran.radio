@@ -138,7 +138,7 @@ extension DirectStreamingPlayer {
     //
     // WHEN RELEASING A NEW SECURITY MODEL (certificate rotation, etc.):
     // 1. Update `expectedSecurityModel` in `Core/Configuration/SecurityConfiguration.swift`
-    // 2. Add the new codename to the TXT record on securitymodels.lutheran.radio
+    // 2. Add the new codename to the TXT on securitymodels.siikkari.net (primary) and keep secondary/backup (securitymodels.lutheranradio.eu, securitymodels.lutheranradio.sk) consistent
     // 3. Append a row to the Security Model History table in README.md
     // 4. Ship the app update → users on the new version will validate against the new model
     //

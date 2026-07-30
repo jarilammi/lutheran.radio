@@ -91,9 +91,11 @@ extension SharedPlayerManager {
     ///   ``WidgetRefreshManager/setHasActiveLutheranWidgets(_:)``,
     ///   CODING_AGENT.md (Single Source of Truth Principles).
     ///
-    /// AGENT NOTE: Call when the home-widget privacy gate closes. Privacy clear also removes
-    /// these keys via ``removeAllLocalPlaybackKeys()`` (same set). Widget-process one-shot
-    /// writes after re-add remain allowed via ``isWidgetProcess()`` bypasses on bump/instant.
+    /// AGENT NOTE: Call on the home-widget privacy gate **true→false** edge (via
+    /// ``WidgetRefreshManager/setHasActiveLutheranWidgets(_:)``). Re-asserting a closed gate
+    /// must not re-run this clear. Privacy clear also removes these keys via
+    /// ``removeAllLocalPlaybackKeys()`` (same set). Widget-process one-shot writes after re-add
+    /// remain allowed via ``isWidgetProcess()`` bypasses on bump/instant.
     nonisolated static func clearHomeWidgetLivenessAndInstantFeedbackResiduals() {
         guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return }
         defaults.removeObject(forKey: "lastUpdateTime")
@@ -282,8 +284,9 @@ extension SharedPlayerManager {
     /// - SeeAlso: ``isMainAppProcessRecentlyActive()``, ``hasExplicitTerminationSentinel()``,
     ///   AppDelegate.applicationWillTerminate, SceneDelegate.sceneDidDisconnect,
     ///   RadioLiveActivityManager.handleAppWillTerminate,
-    ///   ``removeAllLocalPlaybackKeys()``,
-    ///   docs/Event-Driven-Refactor-Roadmap.md, docs/Widget-Presentation-Dataflow.md.
+    ///   ``removeAllLocalPlaybackKeys()``, ``clearHomeWidgetLiveChromeMirror()``,
+    ///   docs/Event-Driven-Refactor-Roadmap.md, docs/Widget-Presentation-Dataflow.md,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§6.3, §7).
     nonisolated static func forceStaleLivenessTimestampForTermination() {
         guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return }
         defaults.set(0.0, forKey: "lastUpdateTime")
@@ -297,6 +300,9 @@ extension SharedPlayerManager {
         // extension cannot plan pause/play or stamp language chrome from a dead surface.
         clearLiveActivityToggleVisualStateMirror()
         clearLiveActivityLanguageMirror()
+        // Home live chrome is session-scoped only (OI-1): clear so passive post-terminate
+        // Providers do not briefly flash last playing/pause glyphs from a dead process.
+        clearHomeWidgetLiveChromeMirror()
         #if DEBUG
         print("[SharedPlayerManager] Forced stale lastUpdateTime (0) + cleared instant feedback for post-termination passive widget state")
         #endif

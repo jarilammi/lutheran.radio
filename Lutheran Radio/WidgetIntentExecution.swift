@@ -409,6 +409,12 @@ enum WidgetIntentExecution {
     /// ``PlayerEvent``; immediate ``refreshIfNeeded`` is the only cross-process reload lever
     /// until the main app drains the pending action.
     ///
+    /// **Home live chrome:** ``signalWidgetPendingAction`` → ``persistOptimisticWidgetSnapshot``
+    /// stamps privacy-gated ``homeWidgetLiveChrome`` with the plan’s ``targetVisualState``
+    /// (reason `"optimisticToggle"`). Pause → ``.userPaused``; play → plan optimistic visual
+    /// (``optimisticVisualAfterPlayPlan`` / Control ``.playing``) — never invent beyond the pure
+    /// planner. Main-app settle overwrites when the gate is open.
+    ///
     /// **Live Activity pause honesty:** When the plan targets a control visual (``.userPaused``
     /// or ``.playing``), also warms the durable LA toggle mirror (not gated by home widgets)
     /// and publishes optimistic ActivityKit ContentState via ``pushOptimisticLiveActivityToggleContent(visualState:)``.
@@ -422,6 +428,9 @@ enum WidgetIntentExecution {
     /// - SeeAlso: ``WidgetRefreshTrigger/extensionOptimistic``,
     ///   ``pushOptimisticLiveActivityToggleContent(visualState:)``,
     ///   ``SharedPlayerManager/persistLiveActivityToggleVisualStateMirror(_:)``,
+    ///   ``SharedPlayerManager/stampHomeWidgetLiveChromeFromSession(visualState:language:hasError:reason:)``,
+    ///   ``WidgetProviderSnapshotResolver/resolveFromSnapshot()``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.3),
     ///   docs/Event-Driven-Refactor-Roadmap.md,
     ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     static func executeOptimisticToggle(plan: WidgetToggleActionPlan, language: String) async {
@@ -461,15 +470,19 @@ enum WidgetIntentExecution {
     ///
     /// **First home paint honesty:** The optimistic refresh visual uses the same pure stream-switch
     /// rule as Live Activity ContentState — actively playing → Connecting (``.prePlay``); sticky
-    /// pause preserved. ``switchToStream`` on the widget path writes that visual into the session
-    /// snapshot before the immediate reload, so destination language does not flash mid-switch
-    /// "playing" chrome during silent attach hold. Authoritative ``.playing`` arrives later via
-    /// main-app attach / ``setPlaying()``.
+    /// pause preserved. ``switchToStream`` → ``handleWidgetSwitch`` → ``signalWidgetSwitchAction``
+    /// writes that visual + destination language into session RAM **and** privacy-gated
+    /// ``homeWidgetLiveChrome`` (reason `"optimisticSwitch"`) before the immediate reload, so
+    /// destination language does not flash mid-switch "playing" chrome during silent attach hold.
+    /// Authoritative ``.playing`` arrives later via main-app attach / ``setPlaying()``.
     ///
     /// - Parameter languageCode: Target stream BCP-47-style code from ``SwitchStreamIntent``.
     /// - SeeAlso: ``WidgetRefreshTrigger/extensionOptimistic``,
     ///   ``WidgetIntentCoordinators/optimisticLiveActivityVisualForStreamSwitch(from:)``,
     ///   ``pushOptimisticLiveActivityStreamSwitchContent(languageCode:visualState:)``,
+    ///   ``SharedPlayerManager/signalWidgetSwitchAction(visualState:language:)``,
+    ///   ``WidgetProviderSnapshotResolver/resolveFromSnapshot()``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.3, §9),
     ///   docs/Widget-Presentation-Dataflow.md.
     static func executeHomeWidgetStreamSwitch(languageCode: String) async {
         Task { @MainActor in WidgetRefreshManager.setHasActiveLutheranWidgets(true) }

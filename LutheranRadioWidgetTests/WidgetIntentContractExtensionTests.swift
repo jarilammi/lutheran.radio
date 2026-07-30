@@ -192,6 +192,122 @@ final class WidgetIntentContractExtensionTests: XCTestCase {
         XCTAssertEqual(snapshot?.currentLanguage, "en")
     }
 
+    // MARK: - Home live chrome optimistic stamps (extension profile)
+
+    /// Protects design §5.3: home toggle → pause stamps privacy-gated ``homeWidgetLiveChrome``
+    /// with ``.userPaused`` + current language (same pure plan as session optimistic snapshot).
+    ///
+    /// - SeeAlso: ``WidgetIntentExecution/performHomeWidgetToggle()``,
+    ///   ``SharedPlayerManager/loadHomeWidgetLiveChromeMirror()``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.3).
+    func testPerformHomeWidgetTogglePauseStampsLiveChromeUserPaused() async {
+        SharedPlayerManager.clearHomeWidgetLiveChromeMirror()
+        SharedPlayerManager.persistWidgetSnapshot(visualState: .playing, language: "en")
+
+        await WidgetIntentExecution.performHomeWidgetToggle()
+
+        let chrome = SharedPlayerManager.loadHomeWidgetLiveChromeMirror()
+        XCTAssertEqual(chrome?.visualState, .userPaused, "Optimistic pause must stamp live chrome .userPaused")
+        XCTAssertEqual(chrome?.currentLanguage, "en")
+        XCTAssertEqual(chrome?.hasError, false)
+    }
+
+    /// Protects design §5.3: stream switch while playing stamps ``.prePlay`` + destination language
+    /// (same honesty as ``optimisticLiveActivityVisualForStreamSwitch``).
+    ///
+    /// - SeeAlso: ``WidgetIntentExecution/performHomeWidgetStreamSwitch(languageCode:)``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.3, §9).
+    func testPerformHomeWidgetStreamSwitchFromPlayingStampsLiveChromePrePlayPlusDestLang() async {
+        let streams = manager.availableStreams
+        guard streams.count >= 2 else {
+            XCTFail("Stub stream list must include ≥2 languages")
+            return
+        }
+        let source = streams[0]
+        let target = streams[1]
+
+        SharedPlayerManager.clearHomeWidgetLiveChromeMirror()
+        SharedPlayerManager.persistWidgetSnapshot(visualState: .playing, language: source.languageCode)
+
+        await WidgetIntentExecution.performHomeWidgetStreamSwitch(languageCode: target.languageCode)
+
+        let chrome = SharedPlayerManager.loadHomeWidgetLiveChromeMirror()
+        XCTAssertEqual(
+            chrome?.visualState,
+            .prePlay,
+            "Switch while playing must stamp Connecting (.prePlay), never invent destination .playing"
+        )
+        XCTAssertEqual(chrome?.currentLanguage, target.languageCode)
+        XCTAssertEqual(chrome?.hasError, false)
+    }
+
+    /// Protects design §5.3: stream switch while paused stamps ``.userPaused`` + destination language.
+    func testPerformHomeWidgetStreamSwitchFromPausedStampsLiveChromeUserPausedPlusDestLang() async {
+        let streams = manager.availableStreams
+        guard streams.count >= 2 else {
+            XCTFail("Stub stream list must include ≥2 languages")
+            return
+        }
+        let source = streams[0]
+        let target = streams[1]
+
+        SharedPlayerManager.clearHomeWidgetLiveChromeMirror()
+        SharedPlayerManager.persistWidgetSnapshot(visualState: .userPaused, language: source.languageCode)
+
+        await WidgetIntentExecution.performHomeWidgetStreamSwitch(languageCode: target.languageCode)
+
+        let chrome = SharedPlayerManager.loadHomeWidgetLiveChromeMirror()
+        XCTAssertEqual(chrome?.visualState, .userPaused)
+        XCTAssertEqual(chrome?.currentLanguage, target.languageCode)
+    }
+
+    /// Protects connect / security recovery honesty: pure play plan from ``.securityLocked`` uses
+    /// ``optimisticVisualAfterPlayPlan`` → ``.prePlay`` (Connecting), never invents ``.playing``.
+    ///
+    /// - SeeAlso: ``PlayerVisualState/optimisticVisualAfterPlayPlan``,
+    ///   ``WidgetIntentCoordinators/planHomeWidgetToggle(from:)``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.3 soft-resume / connect).
+    func testHomeToggleFromSecurityLockedStampsLiveChromeConnectingNotPlaying() async {
+        SharedPlayerManager.clearHomeWidgetLiveChromeMirror()
+        SharedPlayerManager.persistWidgetSnapshot(visualState: .securityLocked, language: "fi")
+
+        let plan = WidgetIntentCoordinators.planHomeWidgetToggle(from: .securityLocked)
+        XCTAssertEqual(plan.action, .play)
+        XCTAssertEqual(
+            plan.targetVisualState,
+            .prePlay,
+            "Security recovery play plan must be Connecting, not invent .playing"
+        )
+
+        await WidgetIntentExecution.performHomeWidgetToggle()
+
+        let chrome = SharedPlayerManager.loadHomeWidgetLiveChromeMirror()
+        XCTAssertEqual(
+            chrome?.visualState,
+            .prePlay,
+            "Optimistic connect plan must not stamp .playing when plan is Connecting"
+        )
+        XCTAssertEqual(chrome?.currentLanguage, "fi")
+        XCTAssertNotEqual(chrome?.visualState, .playing)
+    }
+
+    /// Protects identity skip on repeated identical optimistic toggle stamps (no App Group spam).
+    func testOptimisticToggleLiveChromeIdentitySkipLeavesUpdatedAtUnchanged() async {
+        SharedPlayerManager.clearHomeWidgetLiveChromeMirror()
+        SharedPlayerManager.persistWidgetSnapshot(visualState: .playing, language: "de")
+        await WidgetIntentExecution.performHomeWidgetToggle()
+
+        let first = SharedPlayerManager.loadHomeWidgetLiveChromeMirror()
+        XCTAssertEqual(first?.visualState, .userPaused)
+        let firstUpdatedAt = first?.updatedAt ?? 0
+
+        // Re-stamp identical pause chrome via the same optimistic writer.
+        manager.persistOptimisticWidgetSnapshot(.userPaused, language: "de")
+        let second = SharedPlayerManager.loadHomeWidgetLiveChromeMirror()
+        XCTAssertEqual(second?.updatedAt, firstUpdatedAt, "Identity skip must not refresh updatedAt")
+        XCTAssertEqual(second?.visualState, .userPaused)
+    }
+
     /// ``performControlWidgetToggle(isPlayingRequested:)`` mirrors Control ``ToggleRadioIntent``.
     func testPerformControlWidgetTogglePlayAndPause() async {
         SharedPlayerManager.persistWidgetSnapshot(visualState: .userPaused, language: "sv")

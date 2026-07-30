@@ -8,7 +8,9 @@
 //  - SeeAlso: ``WidgetIntentCoordinators``, ``WidgetLivenessPresentation``,
 //    ``WidgetTimelineEntryFactory``, ``WidgetProviderPresentationAssembly``,
 //    ``displayFlag(for:)``, ``displayLanguageName(for:preferredStreamLanguage:)``,
-//    docs/Widget-Functionality-Roadmap.md.
+//    ``HomeWidgetLiveChrome``,
+//    docs/Widget-Functionality-Roadmap.md,
+//    docs/Home-Live-Chrome-App-Group-Mirror-Design.md.
 //
 
 import Foundation
@@ -16,6 +18,217 @@ import Testing
 import WidgetSurface
 
 struct WidgetSurfaceTests {
+
+    // MARK: - Home live chrome payload (pure encode / tokens)
+
+    /// Protects stable visual-token encode/decode for common home-chrome visuals.
+    ///
+    /// - SeeAlso: ``HomeWidgetLiveChrome``, docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§3, §10.1).
+    @Test func homeWidgetLiveChromeRoundTripCommonVisuals() throws {
+        let cases: [PlayerVisualState] = [.prePlay, .playing, .userPaused]
+        for visual in cases {
+            let chrome = HomeWidgetLiveChrome(
+                visualState: visual,
+                currentLanguage: "fi",
+                hasError: false,
+                updatedAt: 1_700_000_000,
+                stampReason: "pureRoundTrip"
+            )
+            let data = try JSONEncoder().encode(chrome)
+            let decoded = try JSONDecoder().decode(HomeWidgetLiveChrome.self, from: data)
+            #expect(decoded.visualState == visual)
+            #expect(decoded.currentLanguage == "fi")
+            #expect(decoded.hasError == false)
+            #expect(decoded.updatedAt == 1_700_000_000)
+            #expect(decoded.stampReason == "pureRoundTrip")
+        }
+    }
+
+    /// Unknown visual tokens must fail decode so App Group load treats the mirror as absent.
+    ///
+    /// - SeeAlso: ``HomeWidgetLiveChrome/playerVisualState(fromStableToken:)``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§3 encoding notes).
+    @Test func homeWidgetLiveChromeUnknownVisualTokenFailsDecode() {
+        let json = Data(
+            #"{"visualState":"notARealVisual","currentLanguage":"en","hasError":false,"updatedAt":1.0}"#.utf8
+        )
+        #expect((try? JSONDecoder().decode(HomeWidgetLiveChrome.self, from: json)) == nil)
+        #expect(HomeWidgetLiveChrome.playerVisualState(fromStableToken: "notARealVisual") == nil)
+    }
+
+    /// Identity skip ignores stampReason / updatedAt when visual + language + hasError match.
+    ///
+    /// - SeeAlso: ``shouldSkipIdenticalHomeWidgetLiveChromeWrite(existing:candidate:)``.
+    @Test func homeWidgetLiveChromeIdentitySkipIgnoresReasonAndTime() {
+        let a = HomeWidgetLiveChrome(
+            visualState: .playing,
+            currentLanguage: "en",
+            hasError: false,
+            updatedAt: 1,
+            stampReason: "first"
+        )
+        let b = HomeWidgetLiveChrome(
+            visualState: .playing,
+            currentLanguage: "en",
+            hasError: false,
+            updatedAt: 99,
+            stampReason: "second"
+        )
+        #expect(shouldSkipIdenticalHomeWidgetLiveChromeWrite(existing: a, candidate: b))
+        let c = HomeWidgetLiveChrome(
+            visualState: .userPaused,
+            currentLanguage: "en",
+            hasError: false,
+            updatedAt: 99,
+            stampReason: "second"
+        )
+        #expect(!shouldSkipIdenticalHomeWidgetLiveChromeWrite(existing: a, candidate: c))
+        #expect(!shouldSkipIdenticalHomeWidgetLiveChromeWrite(existing: nil, candidate: b))
+    }
+
+    // MARK: - Session vs live-chrome freshness (Provider paint)
+
+    /// Protects factory path when both session and mirror are absent.
+    @Test func resolveHomeWidgetChromeFieldsFactoryWhenBothAbsent() {
+        let resolved = resolveHomeWidgetChromeFields(
+            sessionVisual: nil,
+            sessionLanguage: nil,
+            sessionHasError: nil,
+            sessionUpdatedAt: nil,
+            liveChrome: nil
+        )
+        #expect(resolved.visualState == .prePlay)
+        #expect(resolved.currentLanguage == nil)
+        #expect(resolved.hasError == false)
+        #expect(resolved.source == .factory)
+    }
+
+    /// Protects mirror-only paint (extension cold wake after main-only settle).
+    @Test func resolveHomeWidgetChromeFieldsMirrorOnlyPlaying() {
+        let mirror = HomeWidgetLiveChrome(
+            visualState: .playing,
+            currentLanguage: "fi",
+            hasError: false,
+            updatedAt: 100,
+            stampReason: "setPlaying"
+        )
+        let resolved = resolveHomeWidgetChromeFields(
+            sessionVisual: nil,
+            sessionLanguage: nil,
+            sessionHasError: nil,
+            sessionUpdatedAt: nil,
+            liveChrome: mirror
+        )
+        #expect(resolved.visualState == .playing)
+        #expect(resolved.currentLanguage == "fi")
+        #expect(resolved.source == .liveChrome)
+    }
+
+    /// Protects fresher main-app mirror settle over stale extension-session Connecting hold (P0).
+    ///
+    /// - SeeAlso: ``resolveHomeWidgetChromeFields(sessionVisual:sessionLanguage:sessionHasError:sessionUpdatedAt:liveChrome:)``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§6.2).
+    @Test func resolveHomeWidgetChromeFieldsFresherMirrorPlayingBeatsStaleSessionPrePlay() {
+        let mirror = HomeWidgetLiveChrome(
+            visualState: .playing,
+            currentLanguage: "et",
+            hasError: false,
+            updatedAt: 200,
+            stampReason: "setPlaying"
+        )
+        let resolved = resolveHomeWidgetChromeFields(
+            sessionVisual: .prePlay,
+            sessionLanguage: "et",
+            sessionHasError: false,
+            sessionUpdatedAt: 100,
+            liveChrome: mirror
+        )
+        #expect(resolved.visualState == .playing)
+        #expect(resolved.currentLanguage == "et")
+        #expect(resolved.hasError == false)
+        #expect(resolved.source == .liveChrome)
+    }
+
+    /// Protects fresher same-process optimistic pause over a staler residual playing mirror.
+    @Test func resolveHomeWidgetChromeFieldsFresherSessionPauseBeatsStaleMirrorPlaying() {
+        let mirror = HomeWidgetLiveChrome(
+            visualState: .playing,
+            currentLanguage: "sv",
+            hasError: false,
+            updatedAt: 100,
+            stampReason: "staleMain"
+        )
+        let resolved = resolveHomeWidgetChromeFields(
+            sessionVisual: .userPaused,
+            sessionLanguage: "sv",
+            sessionHasError: false,
+            sessionUpdatedAt: 200,
+            liveChrome: mirror
+        )
+        #expect(resolved.visualState == .userPaused)
+        #expect(resolved.currentLanguage == "sv")
+        #expect(resolved.source == .session)
+    }
+
+    /// Protects equal chrome fields preferring session (optimistic continuity).
+    @Test func resolveHomeWidgetChromeFieldsAgreementPrefersSession() {
+        let mirror = HomeWidgetLiveChrome(
+            visualState: .userPaused,
+            currentLanguage: "de",
+            hasError: false,
+            updatedAt: 999,
+            stampReason: "mirror"
+        )
+        let resolved = resolveHomeWidgetChromeFields(
+            sessionVisual: .userPaused,
+            sessionLanguage: "de",
+            sessionHasError: false,
+            sessionUpdatedAt: 1,
+            liveChrome: mirror
+        )
+        #expect(resolved.visualState == .userPaused)
+        #expect(resolved.source == .session)
+    }
+
+    /// Protects timestamp tie on disagreement preferring session.
+    @Test func resolveHomeWidgetChromeFieldsDisagreementTiePrefersSession() {
+        let mirror = HomeWidgetLiveChrome(
+            visualState: .playing,
+            currentLanguage: "en",
+            hasError: false,
+            updatedAt: 50,
+            stampReason: "mirror"
+        )
+        let resolved = resolveHomeWidgetChromeFields(
+            sessionVisual: .prePlay,
+            sessionLanguage: "en",
+            sessionHasError: false,
+            sessionUpdatedAt: 50,
+            liveChrome: mirror
+        )
+        #expect(resolved.visualState == .prePlay)
+        #expect(resolved.source == .session)
+    }
+
+    /// Untimestamped session loses to a stamped mirror when fields disagree (heal residual).
+    @Test func resolveHomeWidgetChromeFieldsUntimestampedSessionLosesToMirrorOnDisagree() {
+        let mirror = HomeWidgetLiveChrome(
+            visualState: .playing,
+            currentLanguage: "nb",
+            hasError: false,
+            updatedAt: 1,
+            stampReason: "setPlaying"
+        )
+        let resolved = resolveHomeWidgetChromeFields(
+            sessionVisual: .prePlay,
+            sessionLanguage: "nb",
+            sessionHasError: false,
+            sessionUpdatedAt: nil,
+            liveChrome: mirror
+        )
+        #expect(resolved.visualState == .playing)
+        #expect(resolved.source == .liveChrome)
+    }
 
     // MARK: - Intent coordinators
 

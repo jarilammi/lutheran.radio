@@ -109,6 +109,19 @@ final class SharedPlayerManagerColdLaunchHygieneTests: XCTestCase {
         SharedPlayerManager.persistLiveActivityLanguageMirror("fi")
         XCTAssertEqual(SharedPlayerManager.loadLiveActivityToggleVisualStateMirror(), .playing)
         XCTAssertEqual(SharedPlayerManager.loadLiveActivityLanguageMirror(), "fi")
+        // Seed live chrome with widget-process bypass so residual is present before factory reset
+        // (main-app gate may be closed under test isolation).
+        SharedPlayerManager._test_setSimulateWidgetProcessContext(true)
+        SharedPlayerManager.persistHomeWidgetLiveChromeMirror(
+            HomeWidgetLiveChrome(
+                visualState: .playing,
+                currentLanguage: "fi",
+                hasError: false,
+                updatedAt: Date().timeIntervalSince1970
+            )
+        )
+        SharedPlayerManager._test_setSimulateWidgetProcessContext(false)
+        XCTAssertNotNil(SharedPlayerManager.loadHomeWidgetLiveChromeMirror())
 
         await manager.resetToFactoryDefaultsOnLaunch()
 
@@ -141,6 +154,10 @@ final class SharedPlayerManagerColdLaunchHygieneTests: XCTestCase {
         XCTAssertNil(
             SharedPlayerManager.loadLiveActivityLanguageMirror(),
             "Factory reset must explicitly clear liveActivityCurrentLanguage"
+        )
+        XCTAssertNil(
+            SharedPlayerManager.loadHomeWidgetLiveChromeMirror(),
+            "Factory reset must clear privacy-gated homeWidgetLiveChrome (OI-1 residual hygiene)"
         )
         // Boot identity realigned so same-boot post-reset planning is not false-reboot.
         XCTAssertFalse(SharedPlayerManager.hasDeviceRebootedSinceLastRecordedBoot())

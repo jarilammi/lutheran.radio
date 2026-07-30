@@ -78,44 +78,80 @@ internal func displayLanguageName(for code: String) -> String {
 /// Pure presentation assembly is ``WidgetProviderPresentationAssembly``; this type owns
 /// ``SharedPlayerManager`` snapshot reads, actor hygiene, and stream-catalog labels.
 ///
+/// **Live chrome resolution (visual / language / hasError):**
+/// Uses pure ``resolveHomeWidgetChromeFields`` over process-local session + privacy-gated
+/// ``homeWidgetLiveChrome``:
+/// - Agreeing chrome fields → prefer session (same-process optimistic continuity)
+/// - Disagreeing fields → **fresher** `updatedAt` wins (main settle mirror can heal stale
+///   extension-session ``.prePlay`` after switch hold)
+/// - Only one source → that source; neither → factory ``.prePlay``
+///
+/// Interactive vs passive chrome still comes from liveness (`lastUpdateTime` /
+/// ``WidgetLivenessPresentation``) — live chrome alone is **not** proof the main app is interactive.
+///
 /// - SeeAlso: ``SharedPlayerManager/refreshVisualStateFromPersistence()``,
 ///   ``SharedPlayerManager/loadPersistedWidgetState()``,
-///   ``WidgetProviderPresentationAssembly``, docs/Widget-Functionality-Roadmap.md.
+///   ``SharedPlayerManager/loadHomeWidgetLiveChromeMirror()``,
+///   ``SharedPlayerManager/loadHomeWidgetStreamMetadataMirror()``,
+///   ``resolveHomeWidgetChromeFields(sessionVisual:sessionLanguage:sessionHasError:sessionUpdatedAt:liveChrome:)``,
+///   ``WidgetProviderPresentationAssembly``,
+///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§6 Provider read order),
+///   docs/Widget-Functionality-Roadmap.md.
 enum WidgetProviderSnapshotResolver {
 
     /// Resolves snapshot fields without an actor hop.
     ///
     /// Safe when the Provider consumes only static snapshot readers (`loadPersistedWidgetState`,
-    /// `preferredWidgetLanguage`, `streamForLanguageCode`, ``loadHomeWidgetStreamMetadataMirror()``)
-    /// and never consults ``SharedPlayerManager/currentVisualState``. Home-widget timeline
-    /// rendering uses this after optional hygiene because `getPendingOrCurrentState` never falls
-    /// back to actor state.
+    /// `preferredWidgetLanguage`, `streamForLanguageCode`, ``loadHomeWidgetStreamMetadataMirror()``,
+    /// ``loadHomeWidgetLiveChromeMirror()``) and never consults
+    /// ``SharedPlayerManager/currentVisualState``. Home-widget timeline rendering uses this after
+    /// optional hygiene because `getPendingOrCurrentState` never falls back to actor state.
     ///
-    /// **Program metadata:** Prefer session-snapshot `streamMetadata`, then the privacy-gated
-    /// App Group mirror. Visual chrome stays memory-only (OI-1); program title/speaker require
-    /// the mirror so extension Providers can show live ICY after main-app parse.
+    /// **Chrome resolution (visual / language / hasError):** pure
+    /// ``resolveHomeWidgetChromeFields`` — session vs ``homeWidgetLiveChrome`` by field agreement
+    /// and wall-clock freshness (not rigid session-first). Language falls through to
+    /// ``preferredWidgetLanguage()`` when both sources leave language empty.
     ///
-    /// - Returns: Authoritative session snapshot fields (with mirror-backed metadata when needed),
-    ///   or factory `.prePlay` defaults when absent (mirror metadata may still populate title chrome).
+    /// **Program metadata:** session `streamMetadata` → ``loadHomeWidgetStreamMetadataMirror()``
+    /// (unchanged single-concern peer; not folded into live chrome).
+    ///
+    /// **Must never:** invent ``.playing`` when the winning source holds ``.prePlay`` (switch hold);
+    /// treat live chrome as interactive-app proof (liveness still drives passive `tap_to_open`);
+    /// read LA durable mirrors or retired on-disk visual keys for home chrome.
+    ///
+    /// - Returns: Snapshot fields for Provider presentation assembly; factory defaults when both
+    ///   session and live-chrome mirrors are absent (program-metadata mirror may still populate title).
+    /// - SeeAlso: docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§6.1–§6.5),
+    ///   ``resolveHomeWidgetChromeFields(sessionVisual:sessionLanguage:sessionHasError:sessionUpdatedAt:liveChrome:)``,
+    ///   ``SharedPlayerManager/stampHomeWidgetLiveChromeFromSession(visualState:language:hasError:reason:)``,
+    ///   ``persistHomeWidgetStreamMetadataMirror`` (program-title peer).
     nonisolated static func resolveFromSnapshot() -> WidgetProviderSnapshotFields {
         // Program metadata: prefer in-process session snapshot, then privacy-gated App Group
         // mirror. The mirror is required because the session snapshot is process-local (OI-1)
         // while home Providers run in the widget extension and must still show live ICY titles
         // after main-app parse + timeline reload.
         let mirroredMetadata = SharedPlayerManager.loadHomeWidgetStreamMetadataMirror()
-        if let combined = SharedPlayerManager.loadPersistedWidgetState() {
-            return WidgetProviderSnapshotFields(
-                currentLanguage: combined.currentLanguage,
-                hasError: combined.hasError,
-                visualState: combined.visualState,
-                streamMetadata: combined.streamMetadata ?? mirroredMetadata
-            )
-        }
+        // Live chrome + session: pure freshness selection so main-app settle on the App Group
+        // mirror can heal a stale extension-session Connecting hold without rigid session-first.
+        let liveChrome = SharedPlayerManager.loadHomeWidgetLiveChromeMirror()
+        let session = SharedPlayerManager.loadPersistedWidgetState()
+
+        let chrome = resolveHomeWidgetChromeFields(
+            sessionVisual: session?.visualState,
+            sessionLanguage: session?.currentLanguage,
+            sessionHasError: session?.hasError,
+            sessionUpdatedAt: session?.updatedAt,
+            liveChrome: liveChrome
+        )
+
+        let language = chrome.currentLanguage ?? SharedPlayerManager.preferredWidgetLanguage()
+        let streamMetadata = session?.streamMetadata ?? mirroredMetadata
+
         return WidgetProviderSnapshotFields(
-            currentLanguage: SharedPlayerManager.preferredWidgetLanguage(),
-            hasError: false,
-            visualState: .prePlay,
-            streamMetadata: mirroredMetadata
+            currentLanguage: language,
+            hasError: chrome.hasError,
+            visualState: chrome.visualState,
+            streamMetadata: streamMetadata
         )
     }
 

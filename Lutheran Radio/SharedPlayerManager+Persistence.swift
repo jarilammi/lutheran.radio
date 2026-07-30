@@ -9,9 +9,11 @@
 //  no API renames, no behavior change.
 //
 //  Purpose: In-process PersistedWidgetState session snapshot, privacy-gated home-widget
-//  program-metadata App Group mirror, retired App Group key purge, and thermal visual sanitization.
+//  program-metadata App Group mirror, privacy-gated home live-chrome App Group mirror
+//  (visual + language + hasError), retired App Group key purge, and thermal visual sanitization.
 //
-//  - SeeAlso: SharedPlayerManager.swift, CODING_AGENT.md (cross-target membership exceptions).
+//  - SeeAlso: SharedPlayerManager.swift, docs/Home-Live-Chrome-App-Group-Mirror-Design.md,
+//    CODING_AGENT.md (cross-target membership exceptions).
 //
 
 import Foundation
@@ -243,6 +245,7 @@ extension SharedPlayerManager {
         }
 
         let metadataToPersist = streamMetadata ?? currentStreamMetadata
+        let visualForWrite = Self.visualStateForPersistenceWrite(visualState)
         Self.updateInMemorySessionSnapshot(
             visualState: visualState,
             language: language,
@@ -252,6 +255,17 @@ extension SharedPlayerManager {
         // Cross-process program chrome: extension Providers read the privacy-gated mirror
         // because the session snapshot is process-local (OI-1 memory-only visual policy).
         Self.persistHomeWidgetStreamMetadataMirror(metadataToPersist)
+        // Cross-process live chrome (visual + language + hasError): same privacy class as
+        // program-metadata mirror. Projects session settle for extension Providers; identity
+        // skip avoids App Group spam on attach-path identical Connecting storms.
+        // Soft-resume honesty: product never mutates sticky `.userPaused` → `.prePlay` when
+        // soft-resume eligible, so this projection holds pause chrome until setPlaying.
+        Self.stampHomeWidgetLiveChromeFromSession(
+            visualState: visualForWrite,
+            language: language,
+            hasError: hasError,
+            reason: "sessionSave"
+        )
 
         // Emission after the authoritative in-session snapshot update.
         // Only emitted on main-app actor paths that reach a real write (privacy gate passed).
@@ -276,17 +290,31 @@ extension SharedPlayerManager {
     ///
     /// Thread-safety: nonisolated; safe from any widget/extension context. Sole canonical reader
     /// for ``inMemorySessionWidgetSnapshot`` — do not access that storage elsewhere.
+    ///
+    /// ``updatedAt`` is the session last-write epoch (`lastLanguageChangeTime`) used by
+    /// ``resolveHomeWidgetChromeFields`` when comparing session vs ``homeWidgetLiveChrome``
+    /// freshness. `nil` when the snapshot has no timestamp.
+    ///
+    /// - SeeAlso: ``WidgetProviderSnapshotResolver/resolveFromSnapshot()``,
+    ///   ``resolveHomeWidgetChromeFields(sessionVisual:sessionLanguage:sessionHasError:sessionUpdatedAt:liveChrome:)``.
     nonisolated static func loadPersistedWidgetState() -> (
         visualState: PlayerVisualState,
         currentLanguage: String,
         streamMetadata: StreamProgramMetadata?,
-        hasError: Bool
+        hasError: Bool,
+        updatedAt: TimeInterval?
     )? {
         clearPersistedVisualStateKeysFromDisk()
 
         guard let snapshot = unsafe inMemorySessionWidgetSnapshot else { return nil }
         let visual = sanitizedVisualStateForCrossProcessRestore(snapshot.visualState)
-        return (visual, snapshot.currentLanguage, snapshot.streamMetadata, snapshot.hasError)
+        return (
+            visual,
+            snapshot.currentLanguage,
+            snapshot.streamMetadata,
+            snapshot.hasError,
+            snapshot.lastLanguageChangeTime?.timeIntervalSince1970
+        )
     }
 
     /// Returns the latest persisted stream program metadata, if any.
@@ -299,10 +327,11 @@ extension SharedPlayerManager {
     /// Primary writer used by:
     /// - Main-app `performActualSave` / `saveCurrentState` (authoritative path)
     /// - Widget intents (optimistic instant-feedback path)
-    /// - `persistOptimisticWidgetSnapshot`
+    /// - `persistOptimisticWidgetSnapshot` / ``signalWidgetSwitchAction``
     ///
-    /// The snapshot is the **single source of truth** for what widgets and Live
-    /// Activities should display.
+    /// The in-process session snapshot is the **process-local** SSOT for visual/language.
+    /// Cross-process home/Control Providers also receive the privacy-gated
+    /// ``homeWidgetLiveChrome`` projection stamped here (identity skip when unchanged).
     ///
     /// - Parameters:
     ///   - visualState: The `PlayerVisualState` to persist (`.playing`, `.userPaused`, etc.).
@@ -310,14 +339,22 @@ extension SharedPlayerManager {
     ///   - streamMetadata: Optional currently playing program metadata.
     ///   - clearStreamMetadata: When true, explicitly clears any prior metadata.
     ///   - hasError: Whether a permanent error condition should be shown.
+    ///   - liveChromeStampReason: Optional reason token for the live-chrome App Group stamp
+    ///     (e.g. `"optimisticToggle"`, `"optimisticSwitch"`, `"persistSnapshot"`). Identity skip
+    ///     ignores reason; main-app settle overwrites optimistic stamps when the gate is open.
     ///
     /// - Precondition: Must only be called on paths that have already performed
-    ///   privacy gating via `hasActiveWidgets` (the method itself also guards).
+    ///   privacy gating via `hasActiveWidgets` (the method itself also guards; widget-process
+    ///   bypass allows extension intent proof when the main gate is closed).
     ///
-    /// - Postcondition: In-process session snapshot updated (or suppressed if no widgets active).
-    ///   UserDefaults visual keys are never written.
+    /// - Postcondition: In-process session snapshot updated (or suppressed if no widgets active
+    ///   on main). UserDefaults visual keys are never written. When the write is allowed,
+    ///   ``stampHomeWidgetLiveChromeFromSession`` projects visual + language + hasError.
     ///
     /// - SeeAlso: ``loadPersistedWidgetState()``, ``savePersistedWidgetState``,
+    ///   ``stampHomeWidgetLiveChromeFromSession(visualState:language:hasError:reason:)``,
+    ///   ``WidgetProviderSnapshotResolver/resolveFromSnapshot()``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.3 extension optimistic),
     ///   CODING_AGENT.md (SSOT section), `WidgetRefreshManager`.
     ///
     /// Thread-safety: nonisolated static facade; performs no actor hop.
@@ -326,7 +363,8 @@ extension SharedPlayerManager {
         language: String,
         streamMetadata: StreamProgramMetadata? = nil,
         clearStreamMetadata: Bool = false,
-        hasError: Bool = false
+        hasError: Bool = false,
+        liveChromeStampReason: String? = "persistSnapshot"
     ) {
         guard Self.hasActiveWidgets || Self.isWidgetProcess() else {
             if !Self.isWidgetProcess() {
@@ -338,6 +376,7 @@ extension SharedPlayerManager {
             return
         }
 
+        let visualForWrite = visualStateForPersistenceWrite(visualState)
         updateInMemorySessionSnapshot(
             visualState: visualState,
             language: language,
@@ -351,6 +390,15 @@ extension SharedPlayerManager {
         } else if let streamMetadata {
             persistHomeWidgetStreamMetadataMirror(streamMetadata)
         }
+        // Project live chrome for home/Control Providers (privacy gate already passed above).
+        // Extension optimistic intents use this path with reason optimisticToggle / optimisticSwitch;
+        // main-app settle overwrites later. Identity skip avoids App Group spam.
+        stampHomeWidgetLiveChromeFromSession(
+            visualState: visualForWrite,
+            language: language,
+            hasError: hasError,
+            reason: liveChromeStampReason
+        )
     }
 
     /// Convenience alias to the single-source hasActiveLutheranWidgets flag (WidgetRefreshManager).
@@ -509,6 +557,148 @@ extension SharedPlayerManager {
         #endif
     }
 
+    // MARK: - Home live chrome App Group mirror (privacy-gated)
+
+    /// App Group key for privacy-gated live home/Control chrome (visual + language + hasError).
+    ///
+    /// Parallel privacy class to ``homeWidgetStreamMetadataAppGroupKey``: written only while
+    /// ``hasActiveWidgets`` (or widget-process bypass). Session-scoped projection for extension
+    /// Providers — never cold-launch play resurrection (OI-1).
+    ///
+    /// - SeeAlso: ``persistHomeWidgetLiveChromeMirror(_:)``, ``loadHomeWidgetLiveChromeMirror()``,
+    ///   ``clearHomeWidgetLiveChromeMirror()``, ``HomeWidgetLiveChrome``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md,
+    ///   CODING_AGENT.md (Single Source of Truth Principles).
+    ///
+    /// AGENT NOTE: Single source of truth key name — any rename must update the App Group
+    /// table in SharedPlayerManager.swift and the permanent design doc.
+    nonisolated static let homeWidgetLiveChromeAppGroupKey = "homeWidgetLiveChrome"
+
+    /// Writes the privacy-gated home live-chrome mirror for cross-process Providers.
+    ///
+    /// - Parameter chrome: Live visual + language + hasError payload, or `nil` to clear.
+    /// - Precondition: Home-widget privacy gate open **or** widget-process bypass (intent proof).
+    /// - Postcondition: When allowed, App Group holds JSON for `chrome` (or key removed when `nil`
+    ///   / empty language). When the gate is closed on the main app, **no** key is written.
+    /// - SeeAlso: ``loadHomeWidgetLiveChromeMirror()``, ``clearHomeWidgetLiveChromeMirror()``,
+    ///   ``persistHomeWidgetStreamMetadataMirror(_:)`` (privacy-class peer),
+    ///   ``HomeWidgetLiveChrome``, docs/Home-Live-Chrome-App-Group-Mirror-Design.md.
+    nonisolated static func persistHomeWidgetLiveChromeMirror(_ chrome: HomeWidgetLiveChrome?) {
+        guard Self.hasActiveWidgets || Self.isWidgetProcess() else {
+            #if DEBUG
+            print("[SharedPlayerManager] Suppressing home-widget live-chrome mirror write (no active widgets — privacy mode)")
+            #endif
+            return
+        }
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return }
+        guard let chrome, !chrome.currentLanguage.isEmpty else {
+            defaults.removeObject(forKey: homeWidgetLiveChromeAppGroupKey)
+            return
+        }
+        do {
+            let data = try JSONEncoder().encode(chrome)
+            defaults.set(data, forKey: homeWidgetLiveChromeAppGroupKey)
+        } catch {
+            #if DEBUG
+            print("[SharedPlayerManager] Failed to encode home-widget live-chrome mirror: \(error.localizedDescription)")
+            #endif
+            defaults.removeObject(forKey: homeWidgetLiveChromeAppGroupKey)
+        }
+    }
+
+    /// Reads the privacy-gated home live-chrome mirror, if present and well-formed.
+    ///
+    /// - Returns: Parsed ``HomeWidgetLiveChrome``, or `nil` when missing, decode fails
+    ///   (including unknown visual token), or language is empty (treat as absent → factory path).
+    /// - SeeAlso: ``persistHomeWidgetLiveChromeMirror(_:)``, ``clearHomeWidgetLiveChromeMirror()``,
+    ///   ``HomeWidgetLiveChrome``, docs/Home-Live-Chrome-App-Group-Mirror-Design.md.
+    nonisolated static func loadHomeWidgetLiveChromeMirror() -> HomeWidgetLiveChrome? {
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared"),
+              let data = defaults.data(forKey: homeWidgetLiveChromeAppGroupKey)
+        else {
+            return nil
+        }
+        guard let chrome = try? JSONDecoder().decode(HomeWidgetLiveChrome.self, from: data),
+              !chrome.currentLanguage.isEmpty
+        else {
+            return nil
+        }
+        return chrome
+    }
+
+    /// Removes the home live-chrome mirror (privacy gate close, privacy clear, factory residual, terminate).
+    ///
+    /// - SeeAlso: ``persistHomeWidgetLiveChromeMirror(_:)``,
+    ///   ``WidgetRefreshManager/setHasActiveLutheranWidgets(_:)``,
+    ///   ``removeAllLocalPlaybackKeys()``, ``forceStaleLivenessTimestampForTermination()``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§7 privacy clear matrix).
+    nonisolated static func clearHomeWidgetLiveChromeMirror() {
+        guard let defaults = UserDefaults(suiteName: "group.radio.lutheran.shared") else { return }
+        defaults.removeObject(forKey: homeWidgetLiveChromeAppGroupKey)
+        #if DEBUG
+        print("[SharedPlayerManager] Cleared home-widget live-chrome mirror")
+        #endif
+    }
+
+    /// Builds and persists live chrome from session fields when the privacy gate allows.
+    ///
+    /// Convenience writer for main-app stamp sites (sticky pause, setPlaying, switch hold,
+    /// session save projection) **and** extension optimistic intent projection (via
+    /// ``persistWidgetSnapshot`` / ``persistOptimisticWidgetSnapshot`` /
+    /// ``signalWidgetSwitchAction``). Sets `updatedAt` to now. No-ops when the main-app gate is
+    /// closed (same suppression as ``persistHomeWidgetLiveChromeMirror(_:)``); widget-process
+    /// bypass remains for intent proof.
+    ///
+    /// **Identity skip:** When visual + language + hasError already match the App Group mirror,
+    /// the write is skipped (``shouldSkipIdenticalHomeWidgetLiveChromeWrite``) so attach-path
+    /// Connecting storms, identical session saves, and repeated optimistic stamps do not spam
+    /// UserDefaults.
+    ///
+    /// **Soft-resume honesty (main app):** Callers must pass the **actual** session visual.
+    /// Product soft-resume retains sticky ``.userPaused`` until ``setPlaying()``; do not invent
+    /// intermediate ``.prePlay`` on the main settle path. Extension optimistic play may stamp
+    /// the pure plan’s visual (``optimisticVisualAfterPlayPlan``) — that is existing dual-tap
+    /// product policy, not a new invention.
+    ///
+    /// - Parameters:
+    ///   - visualState: Presentation visual to project (never invent mid-hold ``.playing`` beyond
+    ///     pure planners).
+    ///   - language: Stream language code (empty language clears the mirror when gate open).
+    ///   - hasError: Permanent-error chrome flag.
+    ///   - reason: Optional stamp reason for DEBUG / future coalesce (e.g. `"stickyPause"`,
+    ///     `"setPlaying"`, `"switchHold"`, `"sessionSave"`, `"privacyGateOpen"`,
+    ///     `"optimisticToggle"`, `"optimisticSwitch"`, `"persistSnapshot"`).
+    /// - SeeAlso: ``persistHomeWidgetLiveChromeMirror(_:)``,
+    ///   ``shouldSkipIdenticalHomeWidgetLiveChromeWrite(existing:candidate:)``,
+    ///   ``restampHomeWidgetLiveChromeAfterPrivacyGateOpenIfNeeded()``,
+    ///   ``WidgetProviderSnapshotResolver/resolveFromSnapshot()``,
+    ///   ``persistHomeWidgetStreamMetadataMirror(_:)`` (privacy-class peer),
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§4, §5.2–§5.3, §6, §9).
+    nonisolated static func stampHomeWidgetLiveChromeFromSession(
+        visualState: PlayerVisualState,
+        language: String,
+        hasError: Bool,
+        reason: String? = nil
+    ) {
+        let chrome = HomeWidgetLiveChrome(
+            visualState: visualState,
+            currentLanguage: language,
+            hasError: hasError,
+            updatedAt: Date().timeIntervalSince1970,
+            stampReason: reason
+        )
+        if shouldSkipIdenticalHomeWidgetLiveChromeWrite(
+            existing: loadHomeWidgetLiveChromeMirror(),
+            candidate: chrome
+        ) {
+            #if DEBUG
+            print("[SharedPlayerManager] Skipping identical home-widget live-chrome stamp (visual=\(visualState), lang=\(language))")
+            #endif
+            return
+        }
+        persistHomeWidgetLiveChromeMirror(chrome)
+    }
+
     #if LUTHERAN_MAIN_APP
     /// Persists the current stream metadata into the combined widget snapshot **and** the
     /// privacy-gated App Group program-metadata mirror for extension Providers.
@@ -549,6 +739,7 @@ extension SharedPlayerManager {
     ///   and ``PlayerEvent/persistedWidgetStateDidUpdate`` is emitted; otherwise no-op.
     /// - Important: Does **not** invent catalog titles; does **not** write when the gate is closed.
     /// - SeeAlso: ``persistStreamMetadataForWidgets()``,
+    ///   ``restampHomeWidgetLiveChromeAfterPrivacyGateOpenIfNeeded()``,
     ///   ``WidgetRefreshManager/setHasActiveLutheranWidgets(_:)``,
     ///   ``didUpdateStreamMetadata(_:)``, docs/Live-Activity-Stacking-and-Media-Surfaces.md.
     ///
@@ -567,13 +758,91 @@ extension SharedPlayerManager {
         #endif
         persistStreamMetadataForWidgets()
     }
+
+    /// Re-stamps main-app session visual + language + hasError into the privacy-gated live-chrome
+    /// App Group mirror after the home-widget write gate opens (false → true).
+    ///
+    /// **Why:** While ``hasActiveWidgets`` is false, main-app sticky pause / setPlaying / switch
+    /// saves suppress App Group writes. Actor memory still holds honest chrome. When the user
+    /// installs a home widget mid-session, Providers need one projection of that chrome without
+    /// waiting for the next settle mutation.
+    ///
+    /// - Precondition: Caller has already opened the privacy gate (``hasActiveWidgets`` true).
+    /// - Postcondition: When session has non-factory displayable chrome, ``homeWidgetLiveChrome``
+    ///   carries actor visual + resolved language + hasError (identity skip OK if already aligned).
+    /// - Important: Projects **actor** ``currentVisualState`` — never invents ``.playing`` during
+    ///   stream-switch Connecting hold (``.prePlay`` + destination language). Soft-resume residual
+    ///   sticky ``.userPaused`` is preserved until a later ``setPlaying()`` save.
+    /// - Important: Pure factory cold-launch (``.prePlay``, no session, no hold, no active/paused
+    ///   intent) is a no-op so gate open does not seed residual chrome.
+    /// - SeeAlso: ``stampHomeWidgetLiveChromeFromSession(visualState:language:hasError:reason:)``,
+    ///   ``restampHomeWidgetProgramMetadataAfterPrivacyGateOpenIfNeeded()`` (privacy-class peer),
+    ///   ``WidgetRefreshManager/setHasActiveLutheranWidgets(_:)``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.5, §7).
+    ///
+    /// AGENT NOTE: Sole handoff for privacy→write live-chrome honesty. Keep gated on
+    /// ``hasActiveWidgets`` and non-factory session chrome only.
+    func restampHomeWidgetLiveChromeAfterPrivacyGateOpenIfNeeded() {
+        guard Self.hasActiveWidgets else { return }
+
+        let visual = Self.visualStateForPersistenceWrite(currentVisualState)
+        let session = Self.loadPersistedWidgetState()
+        let language: String = {
+            if let pending = streamSwitchConnectingLanguageCode, !pending.isEmpty {
+                return pending
+            }
+            if let sessionLanguage = session?.currentLanguage, !sessionLanguage.isEmpty {
+                return sessionLanguage
+            }
+            let model = DirectStreamingPlayer.shared.selectedStream.languageCode
+            if !model.isEmpty {
+                return model
+            }
+            return Self.preferredWidgetLanguage()
+        }()
+        guard !language.isEmpty else {
+            #if DEBUG
+            print("[SharedPlayerManager] Privacy gate open — empty language; skipping live-chrome re-stamp")
+            #endif
+            return
+        }
+
+        let hasError = session?.hasError ?? false
+        let isNonFactory =
+            visual != .prePlay
+            || holdPrePlayVisualUntilPlayback
+            || hasError
+            || session != nil
+            || currentPlaybackIntent.isActivePlaybackIntent
+            || currentPlaybackIntent == .userPaused
+            || currentVisualState == .userPaused
+
+        guard isNonFactory else {
+            #if DEBUG
+            print("[SharedPlayerManager] Privacy gate open — no non-factory live chrome to re-stamp")
+            #endif
+            return
+        }
+
+        #if DEBUG
+        print("[SharedPlayerManager] Privacy gate open — re-stamping live chrome (visual=\(visual), lang=\(language))")
+        #endif
+        Self.stampHomeWidgetLiveChromeFromSession(
+            visualState: visual,
+            language: language,
+            hasError: hasError,
+            reason: "privacyGateOpen"
+        )
+    }
     #endif
 
     /// Explicit destination-language snapshot write for stream/language switch paths.
     ///
     /// Persists **current** visual state together with the given language code so widgets and
     /// session readers see the destination language without inventing `.prePlay` (paused switches
-    /// keep sticky `.userPaused` chrome). Privacy-gated: no write when `!hasActiveWidgets`.
+    /// keep sticky `.userPaused` chrome). Also projects privacy-gated ``homeWidgetLiveChrome``
+    /// (visual + destination language) via ``savePersistedWidgetState``. Privacy-gated: no write
+    /// when `!hasActiveWidgets`.
     ///
     /// **Ordering:** Stream-switch orchestrators await this via
     /// ``RadioPlayerCoordinator/updateUserDefaultsLanguage(_:)`` **before** media-surface refresh
@@ -583,10 +852,14 @@ extension SharedPlayerManager {
     ///
     /// - Parameter language: Destination stream language code (e.g. after `switchToStream`).
     /// - Postcondition: When the privacy gate allows, in-process session snapshot language equals
-    ///   `language` and ``PlayerEvent/persistedWidgetStateDidUpdate`` has been emitted.
+    ///   `language`, live-chrome mirror projects current visual + destination language (identity
+    ///   skip OK), and ``PlayerEvent/persistedWidgetStateDidUpdate`` has been emitted.
     /// - SeeAlso: ``saveCurrentState()``, ``savePersistedWidgetState(visualState:language:streamMetadata:hasError:)``,
+    ///   ``stampHomeWidgetLiveChromeFromSession(visualState:language:hasError:reason:)``,
     ///   ``RadioPlayerCoordinator/updateUserDefaultsLanguage(_:)``,
-    ///   ``PersistedLanguageResolution``, CODING_AGENT.md (Single Source of Truth Principles).
+    ///   ``PersistedLanguageResolution``,
+    ///   docs/Home-Live-Chrome-App-Group-Mirror-Design.md (§5.2 switch, §5.4),
+    ///   CODING_AGENT.md (Single Source of Truth Principles).
     func saveCombinedWidgetState(language: String) {
         guard Self.hasActiveWidgets else {
             #if DEBUG
@@ -600,11 +873,19 @@ extension SharedPlayerManager {
 
         // Destination already stamped with matching visual + cleared metadata → no second write.
         // First switch still writes when language differs or prior metadata remains.
+        // Still project live chrome (identity skip when mirror already matches) so a residual
+        // clear of `homeWidgetLiveChrome` alone cannot leave session language without paint payload.
         if let previous = Self.loadPersistedWidgetState(),
            previous.currentLanguage == language,
            previous.visualState == currentVisualState,
            previous.streamMetadata == nil,
            previous.hasError == false {
+            Self.stampHomeWidgetLiveChromeFromSession(
+                visualState: Self.visualStateForPersistenceWrite(currentVisualState),
+                language: language,
+                hasError: false,
+                reason: "saveCombinedAlreadyStamped"
+            )
             Self.bumpWidgetLivenessTimestamp(policy: .immediate)
             #if DEBUG
             print("[SharedPlayerManager] saveCombinedWidgetState: destination already stamped — skipping persist")
