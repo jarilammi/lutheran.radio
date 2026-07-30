@@ -1628,19 +1628,25 @@ extension SharedPlayerManager {
     
     // This helper must be nonisolated because it's called from the nonisolated switchToStream
     nonisolated private func handleWidgetSwitch(to stream: DirectStreamingPlayer.Stream) {
-        // Preserve the current play/pause (or other) visual across language switch for the
-        // optimistic PersistedWidgetState snapshot. Must use loadPersistedVisualStateDirect()
-        // (in-process session snapshot via persistOptimisticWidgetSnapshot / persistWidgetSnapshot).
-        // Retired App Group `isPlaying` is never consulted; playback chrome is snapshot-derived only.
+        // Optimistic home-widget (and extension LA co-path) snapshot for stream switch.
+        // Snapshot-derived only — retired App Group `isPlaying` is never consulted.
         //
-        // Using the snapshot visual ensures switch while paused carries .userPaused + new
-        // language; the follow-on "play" pending + preferred-lang alignment inside play()
-        // then starts the correct stream.
-        let visualForSwitch = Self.loadPersistedVisualStateDirect()
+        // Sticky pause and other non-playing chrome are preserved so a paused switch carries
+        // `.userPaused` + destination language. Active play maps to Connecting (``.prePlay``)
+        // via the shared pure rule so the first home timeline paint does not claim audible
+        // playback on a stream that has not attached yet (main-app hold honesty).
+        //
+        // - SeeAlso: ``WidgetIntentCoordinators/optimisticLiveActivityVisualForStreamSwitch(from:)``,
+        //   ``WidgetIntentExecution/executeHomeWidgetStreamSwitch(languageCode:)``,
+        //   docs/Widget-Presentation-Dataflow.md.
+        let snapshotVisual = Self.loadPersistedVisualStateDirect()
+        let visualForSwitch = WidgetIntentCoordinators.optimisticLiveActivityVisualForStreamSwitch(
+            from: snapshotVisual
+        )
         signalWidgetSwitchAction(visualState: visualForSwitch, language: stream.languageCode)
 
         #if DEBUG
-        print("[SharedPlayerManager] Widget stream switch scheduled: \(stream.languageCode)")
+        print("[SharedPlayerManager] Widget stream switch scheduled: \(stream.languageCode) visual=\(visualForSwitch)")
         #endif
     }
     

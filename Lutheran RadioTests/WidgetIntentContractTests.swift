@@ -223,6 +223,41 @@ final class WidgetIntentContractTests: XCTestCase {
         XCTAssertEqual(snapshot?.currentLanguage, target.languageCode)
     }
 
+    /// Active-play widget-path switch stamps Connecting (``.prePlay``) + destination language on
+    /// the optimistic session snapshot — never mid-switch ``.playing``.
+    ///
+    /// - SeeAlso: ``WidgetIntentCoordinators/optimisticLiveActivityVisualForStreamSwitch(from:)``,
+    ///   docs/Widget-Presentation-Dataflow.md.
+    func testWidgetSwitchFromPlayingUsesConnectingOptimisticSnapshot() async {
+        let streams = manager.availableStreams
+        guard streams.count >= 2 else { return }
+
+        let source = streams[0]
+        let target = streams[1]
+
+        SharedPlayerManager.persistWidgetSnapshot(visualState: .playing, language: source.languageCode)
+
+        SharedPlayerManager._test_setSimulateWidgetProcessContext(true)
+        defer { SharedPlayerManager._test_setSimulateWidgetProcessContext(false) }
+
+        await manager.switchToStream(target)
+
+        guard let pending = manager.getPendingActionIfFresh() else {
+            XCTFail("Widget switch must schedule a pending switch action")
+            return
+        }
+        XCTAssertEqual(pending.action, "switch")
+        XCTAssertEqual(pending.parameter, target.languageCode)
+
+        let snapshot = SharedPlayerManager.loadPersistedWidgetState()
+        XCTAssertEqual(
+            snapshot?.visualState,
+            .prePlay,
+            "Active-play switch must not claim destination playing during attach hold"
+        )
+        XCTAssertEqual(snapshot?.currentLanguage, target.languageCode)
+    }
+
     /// Main-app reconciliation for an explicit-paused widget switch updates the engine model
     /// without auto-resume (`switchToStreamFromWidget` paused branch).
     func testPausedWidgetSwitchReconciliationPreservesIntentAndUpdatesStreamModel() async {

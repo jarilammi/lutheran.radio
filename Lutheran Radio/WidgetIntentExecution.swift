@@ -459,9 +459,18 @@ enum WidgetIntentExecution {
     /// When a Live Activity is visible in this process, also pushes destination language into
     /// ActivityKit ContentState so lock-screen flag chrome does not lag a home-widget chip tap.
     ///
+    /// **First home paint honesty:** The optimistic refresh visual uses the same pure stream-switch
+    /// rule as Live Activity ContentState — actively playing → Connecting (``.prePlay``); sticky
+    /// pause preserved. ``switchToStream`` on the widget path writes that visual into the session
+    /// snapshot before the immediate reload, so destination language does not flash mid-switch
+    /// "playing" chrome during silent attach hold. Authoritative ``.playing`` arrives later via
+    /// main-app attach / ``setPlaying()``.
+    ///
     /// - Parameter languageCode: Target stream BCP-47-style code from ``SwitchStreamIntent``.
     /// - SeeAlso: ``WidgetRefreshTrigger/extensionOptimistic``,
-    ///   ``pushOptimisticLiveActivityStreamSwitchContent(languageCode:visualState:)``.
+    ///   ``WidgetIntentCoordinators/optimisticLiveActivityVisualForStreamSwitch(from:)``,
+    ///   ``pushOptimisticLiveActivityStreamSwitchContent(languageCode:visualState:)``,
+    ///   docs/Widget-Presentation-Dataflow.md.
     static func executeHomeWidgetStreamSwitch(languageCode: String) async {
         Task { @MainActor in WidgetRefreshManager.setHasActiveLutheranWidgets(true) }
 
@@ -470,15 +479,23 @@ enum WidgetIntentExecution {
             return
         }
 
+        // Snapshot visual before switch (playing / paused) drives optimistic chrome for both
+        // LA ContentState and the home timeline reload. Do not re-read after switch alone —
+        // prefer the pure rule explicitly so a lagging disk playing cannot force a dishonest
+        // first paint if the snapshot write and refresh ever race.
+        let preSwitchVisual = SharedPlayerManager.loadPersistedVisualStateDirect()
+        let optimisticHomeVisual = WidgetIntentCoordinators.optimisticLiveActivityVisualForStreamSwitch(
+            from: preSwitchVisual
+        )
+
         // Lock-screen LA may coexist with the home widget — advance flag chrome before drain.
         await publishOptimisticStreamSwitchLanguageChrome(languageCode: languageCode)
 
         await manager.switchToStream(targetStream)
 
         let state = manager.loadSharedState()
-        let visualState = SharedPlayerManager.loadPersistedVisualStateDirect()
         await WidgetRefreshManager.shared.refreshIfNeeded(
-            visualState: visualState,
+            visualState: optimisticHomeVisual,
             currentLanguage: languageCode,
             hasError: state.hasError,
             immediate: true,

@@ -231,6 +231,42 @@ final class WidgetIntentContractExtensionTests: XCTestCase {
         XCTAssertEqual(snapshot?.currentLanguage, target.languageCode)
     }
 
+    /// Active-play home stream switch: first optimistic session visual for destination language is
+    /// Connecting (``.prePlay``), never mid-switch ``.playing``.
+    ///
+    /// Protects home first-paint honesty during silent attach hold. Terminal ``.playing`` after
+    /// main-app attach is a later authoritative write — not part of this optimistic snapshot.
+    ///
+    /// - SeeAlso: ``WidgetIntentCoordinators/optimisticLiveActivityVisualForStreamSwitch(from:)``,
+    ///   ``WidgetIntentExecution/executeHomeWidgetStreamSwitch(languageCode:)``,
+    ///   docs/Widget-Presentation-Dataflow.md.
+    func testPerformHomeWidgetStreamSwitchFromPlayingUsesConnectingOptimisticVisual() async {
+        let streams = manager.availableStreams
+        guard streams.count >= 2 else {
+            XCTFail("Stub stream list must include ≥2 languages")
+            return
+        }
+        let source = streams[0]
+        let target = streams[1]
+
+        SharedPlayerManager.persistWidgetSnapshot(visualState: .playing, language: source.languageCode)
+
+        await WidgetIntentExecution.performHomeWidgetStreamSwitch(languageCode: target.languageCode)
+
+        let snapshot = SharedPlayerManager.loadPersistedWidgetState()
+        XCTAssertEqual(
+            snapshot?.visualState,
+            .prePlay,
+            "Leaving active play for home stream switch must paint Connecting, not destination playing"
+        )
+        XCTAssertEqual(snapshot?.currentLanguage, target.languageCode)
+        XCTAssertNotEqual(
+            snapshot?.visualState,
+            .playing,
+            "Must not invent mid-switch playing chrome for a stream that has not attached"
+        )
+    }
+
     /// Durable LA toggle mirror + empty session: first lock-screen-style toggle plans pause.
     ///
     /// Reproduces the lockscreen regression: extension actor defaults to `.prePlay` and the
@@ -476,9 +512,12 @@ final class WidgetIntentContractExtensionTests: XCTestCase {
         XCTAssertEqual(snapshot?.currentLanguage, target.languageCode)
     }
 
-    /// Playing snapshot: LA switch updates language; App Group snapshot may keep `.playing`
-    /// while Live Activity ContentState uses Connecting honesty for destination chrome.
-    func testPerformLiveActivityStreamSwitchFromPlayingUpdatesLanguageOnly() async {
+    /// Playing snapshot: LA switch updates language and applies Connecting honesty on the shared
+    /// optimistic session visual (same pure rule as home-widget stream switch).
+    ///
+    /// Live Activity ContentState also uses Connecting when leaving active play; the session
+    /// snapshot must not keep mid-switch ``.playing`` for a stream that has not attached.
+    func testPerformLiveActivityStreamSwitchFromPlayingUsesConnectingOptimisticVisual() async {
         let streams = manager.availableStreams
         guard streams.count >= 2 else {
             XCTFail("Stub stream list must include ≥2 languages")
@@ -495,7 +534,11 @@ final class WidgetIntentContractExtensionTests: XCTestCase {
         XCTAssertTrue(switched)
 
         let snapshot = SharedPlayerManager.loadPersistedWidgetState()
-        XCTAssertEqual(snapshot?.visualState, .playing, "Playing visual must survive LA optimistic switch")
+        XCTAssertEqual(
+            snapshot?.visualState,
+            .prePlay,
+            "Leaving play for LA stream switch must pin session visual to Connecting"
+        )
         XCTAssertEqual(snapshot?.currentLanguage, target.languageCode)
     }
 

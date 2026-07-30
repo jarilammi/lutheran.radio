@@ -273,8 +273,10 @@ struct WidgetSurfaceTests {
         #expect(pausedSwitch.streamMetadata == nil)
     }
 
-    /// Stream-switch optimistic visual: playing → Connecting; sticky pause preserved.
-    @Test func optimisticLiveActivityVisualForStreamSwitchHonesty() {
+    /// Shared stream-switch optimistic visual (home + LA): playing → Connecting; sticky pause preserved.
+    ///
+    /// Protects first-paint honesty for destination language during silent attach hold.
+    @Test func optimisticStreamSwitchVisualPlayingMapsToConnectingPausePreserved() {
         #expect(
             WidgetIntentCoordinators.optimisticLiveActivityVisualForStreamSwitch(from: .playing)
                 == .prePlay
@@ -290,6 +292,14 @@ struct WidgetSurfaceTests {
         #expect(
             WidgetIntentCoordinators.optimisticLiveActivityVisualForStreamSwitch(from: .thermalPaused)
                 == .thermalPaused
+        )
+        #expect(
+            WidgetIntentCoordinators.optimisticLiveActivityVisualForStreamSwitch(from: .cleared)
+                == .cleared
+        )
+        #expect(
+            WidgetIntentCoordinators.optimisticLiveActivityVisualForStreamSwitch(from: .securityLocked)
+                == .securityLocked
         )
     }
 
