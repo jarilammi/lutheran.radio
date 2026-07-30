@@ -60,11 +60,12 @@ extension SharedPlayerManager {
 
     /// Recreates the authoritative ``events`` ``AsyncStream`` for XCTest isolation.
     ///
-    /// ``AsyncStream`` admits one iterator at a time. A cancelled Tier 2 observer or replay
-    /// forwarding task can leave the shared stream in a state where new collectors receive
-    /// no yields even though ``emit(_:)`` continues to post the DEBUG notification seam.
+    /// ``AsyncStream`` admits one iterator at a time on the primary stream. A cancelled
+    /// Tier 2 observer can leave that stream in a state where new collectors receive no
+    /// yields even though ``emit(_:)`` continues to post the DEBUG notification seam.
     /// Emitter live-stream contract tests call this after suspending ``WidgetRefreshManager``
-    /// observation and before attaching a fresh collector.
+    /// observation and before attaching a fresh collector. Also tears down multi-cast
+    /// replay subscriptions via ``cancelReplayForwarding()``.
     ///
     /// - Important: DEBUG and XCTest only. Production observers must never call this.
     /// - SeeAlso: ``events``, ``cancelReplayForwarding()``,

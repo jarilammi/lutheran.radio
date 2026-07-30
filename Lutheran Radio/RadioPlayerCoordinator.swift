@@ -80,11 +80,13 @@ import WidgetSurface
 /// `PlayerViewModel` and all language / widget / stream-switch paths). Behavior lives in
 /// `RadioPlayerCoordinator+StreamSwitch.swift`. The host does not mirror this value.
 ///
-/// **Status / chrome distribution:** `updateUI`, `handleStatusChange`, and
-/// `RadioPlayerChromeVisualResolver` live in `RadioPlayerCoordinator+StatusDistribution.swift`
-/// (same type). Host only hops `StreamingPlayerDelegate` into ``handleStatusChange(_:reasonKey:)``.
-/// SPM remains visual/intent SSOT; this domain only paints chrome (and may lead SPM by one frame
-/// during deferred ``setPlaying()``).
+/// **Status / chrome distribution:** `updateUI`, `handleStatusChange`, SSOT visual observation
+/// (``beginObservingVisualStateForChrome()``), and `RadioPlayerChromeVisualResolver` live in
+/// `RadioPlayerCoordinator+StatusDistribution.swift` (same type). Host only hops
+/// `StreamingPlayerDelegate` into ``handleStatusChange(_:reasonKey:)``. SPM remains visual/intent
+/// SSOT; **primary** paint for durable visual transitions follows ``PlayerEvent/visualStateDidChange``;
+/// status path is a **demoted adapter** (optional one-frame race lead + error/unavailable/SSL side
+/// effects only — pure policy may promote early; supersession gate blocks regressing settled SSOT chrome).
 ///
 /// **Metadata:** Registers `DirectStreamingPlayer.onMetadataChange` in ``wireAndInitialSetup()`` for
 /// **in-app ViewModel only**. Live ICY StreamTitle SSOT is ``SharedPlayerManager/didUpdateStreamMetadata(_:)``
@@ -119,7 +121,7 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
     // | Sleep-timer UI glue | RadioPlayerCoordinator+SleepTimer.swift | Dialog settle windows, preset/cancel, local countdown Task + VM sync, SleepTimerNotification, metadata deferral window |
     // | Tuning sounds | RadioPlayerCoordinator+Tuning.swift | Cold-launch special clip, stream-switch delight, stop/interrupt, AVAudioPlayerDelegate finish → TuningSoundCoordinator |
     // | Stream switch / language | RadioPlayerCoordinator+StreamSwitch.swift | Flag-tap completeStreamSwitch, widget silent switch, external deep-link switch, updateUserDefaultsLanguage, language VoiceOver announce |
-    // | Status / chrome distribution | RadioPlayerCoordinator+StatusDistribution.swift | updateUI, handleStatusChange, RadioPlayerChromeVisualResolver, VM metadata/switch-flag sync, no-internet chrome, NP/widget save forwarders, thermal VoiceOver |
+    // | Status / chrome distribution | RadioPlayerCoordinator+StatusDistribution.swift | updateUI, handleStatusChange, SSOT visual chrome observation, RadioPlayerChromeVisualResolver, VM metadata/switch-flag sync, no-internet chrome, NP/widget save forwarders, thermal VoiceOver |
     // | Play / pause toggle | (this file) | handlePlayAction / handlePauseAction / handleTogglePlayback / handleUserTogglePlayback / pausePlayback / stopPlayback public shims |
     // | Privacy clear | (this file) | confirmAndClearLocalState + localStateCleared observer |
     // | Layout / energy hooks | (this file) | notifyLayoutChange, viewDidAppearResurrectionCheck, memory/energy forwarders |
@@ -186,6 +188,12 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
     var lastAppliedVisualState: PlayerVisualState?
     var hasShownSecurityAlert = false
     var hasEverPlayed = false
+    /// Multi-cast ``PlayerEvent`` observer that paints in-app chrome from visual SSOT
+    /// transitions (``visualStateDidChange``) without requiring a status emission.
+    /// Owned by +StatusDistribution; stored here because extensions cannot declare storage.
+    let visualChromeEventObserver = WidgetEventObserver<PlayerEvent>()
+    /// Observation task seam for SSOT chrome paint (cancelled in deinit / restart).
+    var visualChromeObservationTask: Task<Void, Never>?
     // Tuning clip stamps (owned by +Tuning; deep coupling to TuningSoundCoordinator +
     // startLocalClipPlayer remains). Internal access so the extension file and language-
     // selection wait path on this file can share the same flags.
@@ -278,6 +286,13 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
 
         // Sleep-timer VM closures + SleepTimerNotification observer (+SleepTimer domain).
         wireSleepTimerUIGlue()
+
+        // Main chrome paint from SPM visual SSOT transitions (setPlaying / pause / stop /
+        // policy visuals). Non-forcing multi-cast observation — does not steal the primary
+        // events iterator from WidgetRefreshManager. Status path remains race lead + errors.
+        Task { @MainActor [weak self] in
+            await self?.beginObservingVisualStateForChrome()
+        }
 
         // ICY metadata → in-app ViewModel only.
         //
@@ -694,6 +709,9 @@ final class RadioPlayerCoordinator: NSObject, AVAudioPlayerDelegate {
     // MARK: - Deinit cleanup for coordinator-owned observers
     deinit {
         sleepTimerDisplayTask?.cancel()
+        // Cancel SSOT chrome observation without hopping to MainActor (Task.cancel is
+        // nonisolated). Stream onTermination removes the multi-cast subscription.
+        visualChromeObservationTask?.cancel()
         NotificationCenter.default.removeObserver(
             self,
             name: SleepTimerNotification.stateDidChange,

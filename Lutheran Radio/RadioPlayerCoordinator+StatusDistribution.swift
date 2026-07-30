@@ -7,10 +7,25 @@
 //  Status / chrome distribution domain for RadioPlayerCoordinator (mechanical split).
 //
 //  Owns: applying `PlayerVisualState` to in-app chrome (`updateUI`), engine status
-//  choke point (`handleStatusChange`), pure chrome resolver
-//  (`RadioPlayerChromeVisualResolver`), VM metadata/switch-flag sync, no-internet
-//  chrome, Now Playing / widget save thin forwarders, legacy status-label allowlist
-//  announcements, and thermal enter/exit VoiceOver on the modern chrome path.
+//  choke point (`handleStatusChange` — **adapter only**: race lead + error/unavailable
+//  side effects; **not** long-term visual SSOT), pure in-app chrome visual policy
+//  (`RadioPlayerChromeVisualResolver` — soft-resume hold promote, Connecting race,
+//  sticky pause, switch hold, status-path supersession gate), **primary SSOT visual
+//  chrome observation** (`beginObservingVisualStateForChrome` — paints from
+//  `visualStateDidChange` without requiring a second status emission), VM
+//  metadata/switch-flag sync, no-internet chrome, Now Playing / widget save thin
+//  forwarders, legacy status-label allowlist announcements, and thermal enter/exit
+//  VoiceOver on the modern chrome path.
+//
+//  Dual-path discipline (main chrome):
+//  1. **Primary paint:** ``beginObservingVisualStateForChrome()`` on
+//     ``PlayerEvent/visualStateDidChange`` after SPM mutations (`setPlaying`, pause,
+//     stop, policy). Durable visual transitions must not depend on engine status.
+//  2. **Status adapter:** ``handleStatusChange`` may lead by one frame when the engine
+//     reports audible before the actor visual is visible (Connecting race / soft-resume
+//     hold promote via pure policy). It must not overwrite settled SSOT chrome with a
+//     superseded pure-policy result (``shouldApplyStatusPathChromePaint``).
+//  3. Both paths share ``updateUI(for:)`` dedupe (`lastAppliedVisualState`).
 //
 //  Does not own: play/pause toggle shims (primary coordinator file), stream-switch
 //  orchestration (`+StreamSwitch` calls into this domain for chrome), pending-action
@@ -20,12 +35,14 @@
 //  visual/intent SSOT (SharedPlayerManager).
 //
 //  Stored chrome stamps (`lastAppliedVisualState`, `hasShownSecurityAlert`,
-//  `hasEverPlayed`) remain on the primary type body (extensions cannot declare
-//  stored properties); this file owns the behavior that mutates them.
+//  `hasEverPlayed`, `visualChromeEventObserver`, `visualChromeObservationTask`) remain
+//  on the primary type body (extensions cannot declare stored properties); this file
+//  owns the behavior that mutates them.
 //
 //  Public/entry surfaces on the same type:
-//  - ``updateUI(for:)`` — paint chrome from a resolved visual
-//  - ``handleStatusChange(_:reasonKey:)`` — StreamingPlayerDelegate hop (via host)
+//  - ``updateUI(for:)`` — paint chrome from a resolved visual (deduped)
+//  - ``beginObservingVisualStateForChrome()`` — **primary** paint from visual SSOT transitions
+//  - ``handleStatusChange(_:reasonKey:)`` — status-path adapter (race lead + errors only)
 //  - ``updateUIForNoInternet()`` — airplane / path-loss chrome
 //  - ``updateNowPlayingInfo(title:)`` / ``saveStateForWidget()`` — thin SPM forwarders
 //    (`title:` re-enters ICY SSOT; prefer engine ``safeOnMetadataChange`` for live StreamTitle)
@@ -33,14 +50,18 @@
 //  - ``safeUpdateStatusLabel(text:backgroundColor:textColor:isPermanentError:)``
 //
 //  Pure resolver (same module, free type):
-//  - ``RadioPlayerChromeVisualResolver`` — engine status → chrome visual (unit-tested)
+//  - ``RadioPlayerChromeVisualResolver`` — engine status → chrome visual + status paint gate
 //
 //  - SeeAlso: ``DirectStreamingPlayer/safeOnStatusChange``,
 //    ``DirectStreamingPlayer/safeOnMetadataChange(metadata:)``,
 //    ``SharedPlayerManager/setPlaying()``, ``SharedPlayerManager/currentVisualState``,
+//    ``SharedPlayerManager/makeEventsStreamWithReplay()``,
 //    ``SharedPlayerManager/didUpdateStreamMetadata(_:)``,
 //    RadioPlayerCoordinator.swift (isolation map),
-//    docs/Live-Activity-Stacking-and-Media-Surfaces.md (ICY single-owner path),
+//    docs/Widget-Presentation-Dataflow.md (Main-App Chrome Authority — dual path + soft-resume hold),
+//    docs/Live-Activity-Stacking-and-Media-Surfaces.md (Connecting vs audible start; soft-resume surfaces;
+//    ICY single-owner path — LA ensure remains orthogonal to main status adapter),
+//    docs/Event-Driven-Refactor-Roadmap.md (non-forcing main chrome consumer; multi-cast replay),
 //    CODING_AGENT.md (Single Source of Truth Principles).
 //
 
@@ -55,9 +76,14 @@ extension RadioPlayerCoordinator {
     /// Applies a `PlayerVisualState` to in-app chrome (SwiftUI `PlayerViewModel` + security alert).
     ///
     /// Dedupes consecutive identical states via `lastAppliedVisualState` so connecting/buffering
-    /// chatter does not thrash the pill. Authoritative promotion to `.playing` after deferred
-    /// Connecting is decided in ``handleStatusChange(_:reasonKey:)`` /
-    /// ``RadioPlayerChromeVisualResolver`` — this method only paints what it is given.
+    /// chatter and dual-path status + SSOT observation cannot thrash the pill. Callers:
+    /// - **Primary (visual SSOT):** ``beginObservingVisualStateForChrome()`` on
+    ///   ``PlayerEvent/visualStateDidChange`` after ``setPlaying()`` / pause / stop / policy.
+    ///   This is the long-term paint authority for durable visual transitions.
+    /// - **Status race lead (adapter only):** ``handleStatusChange(_:reasonKey:)`` via pure
+    ///   ``RadioPlayerChromeVisualResolver`` — may lead SPM by one frame on soft-resume /
+    ///   deferred Connecting promote; must not regress settled SSOT chrome (supersession gate).
+    /// - **Explicit coordinator paths:** pause/stop shims, privacy clear, stream switch.
     ///
     /// VoiceOver: thermal enter/exit is announced here (modern chrome SSOT) via
     /// ``announceThermalVisualTransition(from:to:)`` so `status_thermal_paused` is spoken
@@ -65,9 +91,10 @@ extension RadioPlayerCoordinator {
     /// legacy `safeUpdateStatusLabel` allowlist where that path still runs.
     ///
     /// - Parameter visualState: Chrome visual to apply (not necessarily equal to SPM yet during
-    ///   the deferred ``setPlaying()`` window).
-    /// - SeeAlso: ``handleStatusChange(_:reasonKey:)``, ``RadioPlayerChromeVisualResolver``,
-    ///   ``announceThermalVisualTransition(from:to:)``, `PlayerViewModel`,
+    ///   the deferred ``setPlaying()`` window when status path promotes early).
+    /// - SeeAlso: ``beginObservingVisualStateForChrome()``, ``handleStatusChange(_:reasonKey:)``,
+    ///   ``RadioPlayerChromeVisualResolver``, ``announceThermalVisualTransition(from:to:)``,
+    ///   `PlayerViewModel`, docs/Widget-Presentation-Dataflow.md,
     ///   CODING_AGENT.md (Single Source of Truth Principles).
     @MainActor
     func updateUI(for visualState: PlayerVisualState) {
@@ -263,49 +290,192 @@ extension RadioPlayerCoordinator {
         unsafe UIAccessibility.post(notification: .announcement, argument: message)
     }
 
+    // MARK: - Visual SSOT chrome observation (primary paint for visual transitions)
+
+    /// Begins (or restarts) coordinator-owned observation of SPM visual transitions for in-app chrome.
+    ///
+    /// Consumes ``SharedPlayerManager/makeEventsStreamWithReplay()`` so late attach receives the
+    /// current visual as a prefix event, then live ``PlayerEvent/visualStateDidChange`` values
+    /// paint via ``updateUI(for:)`` **without requiring a second engine status emission**.
+    ///
+    /// **Why required:** Soft-resume holds residual `.userPaused` visual until
+    /// ``SharedPlayerManager/setPlaying()``. That mutation emits `visualStateDidChange(.playing)`
+    /// and refreshes widgets / Live Activity, but status delivery can race, last-value-dedupe,
+    /// or never re-deliver after a prior `status_playing`. Painting from the visual SSOT event
+    /// closes stuck grey pause chrome while audio is live.
+    ///
+    /// **Non-forcing:** Observation never mutates SPM, never calls `play()` / `stop()`, never
+    /// bypasses privacy write suppression, and never forces WidgetCenter. Multi-cast live
+    /// delivery coexists with ``WidgetRefreshManager`` (primary ``events`` iterator untouched).
+    ///
+    /// **Dual-path discipline:** This observer is **primary** for durable visual transitions.
+    /// Status path (``handleStatusChange``) is demoted to optional one-frame race lead +
+    /// error/unavailable/SSL side effects — never a second visual SSOT. Both paths share
+    /// ``updateUI(for:)`` dedupe via `lastAppliedVisualState`; status additionally uses
+    /// ``RadioPlayerChromeVisualResolver/shouldApplyStatusPathChromePaint`` so a late
+    /// pure-policy result cannot regress chrome already settled to SPM SSOT.
+    ///
+    /// - Postcondition: ``visualChromeObservationTask`` holds the live observation task.
+    ///   Subsequent ``setPlaying()`` / ``setUserPaused()`` / stop visual mutations paint
+    ///   ``PlayerViewModel`` when the event arrives on MainActor. Replay prefix may paint
+    ///   the current SPM visual once on attach (deduped if chrome already matches).
+    /// - Precondition: Call from ``wireAndInitialSetup()`` (fire-and-forget Task) or `await`
+    ///   from tests. Idempotent restart cancels the prior task first.
+    /// - SeeAlso: ``updateUI(for:)``, ``handleStatusChange(_:reasonKey:)``,
+    ///   ``SharedPlayerManager/makeEventsStreamWithReplay()``, ``SharedPlayerManager/setPlaying()``,
+    ///   `PlayerEvent.visualStateDidChange`, `WidgetEventObserver`,
+    ///   docs/Widget-Presentation-Dataflow.md, docs/Event-Driven-Refactor-Roadmap.md,
+    ///   CODING_AGENT.md (Single Source of Truth Principles).
+    @MainActor
+    func beginObservingVisualStateForChrome() async {
+        guard !SharedPlayerManager.isWidgetProcess() else { return }
+
+        visualChromeEventObserver.cancel()
+        visualChromeObservationTask?.cancel()
+        visualChromeObservationTask = nil
+
+        let stream = await SharedPlayerManager.shared.makeEventsStreamWithReplay()
+        visualChromeEventObserver.beginObserving(stream) { [weak self] event in
+            await self?.handleVisualChromePlayerEvent(event)
+        }
+        visualChromeObservationTask = visualChromeEventObserver.task
+        // Let the for-await reach its first suspension and drain the replay prefix so
+        // subsequent setPlaying / setUserPaused mutations are live-forwarded reliably.
+        await Task.yield()
+        await Task.yield()
+        try? await Task.sleep(for: .milliseconds(50))
+        #if DEBUG
+        print("[RadioPlayerCoordinator] began SSOT visual chrome observation (multi-cast replay)")
+        #endif
+    }
+
+    /// Stops SSOT visual chrome observation (test teardown / explicit restart helper).
+    ///
+    /// Idempotent. Production deinit cancels ``visualChromeObservationTask`` only (nonisolated);
+    /// this MainActor entry also clears the observer task reference.
+    ///
+    /// - SeeAlso: ``beginObservingVisualStateForChrome()``.
+    @MainActor
+    func stopObservingVisualStateForChrome() {
+        visualChromeEventObserver.cancel()
+        visualChromeObservationTask?.cancel()
+        visualChromeObservationTask = nil
+    }
+
+    /// Applies a single ``PlayerEvent`` to in-app chrome when it carries a visual SSOT transition.
+    ///
+    /// Only ``PlayerEvent/visualStateDidChange`` paints — the event payload **is** the mutation.
+    /// Other cases are ignored (intent / metadata / stream verbs / persist signals do not own
+    /// main chrome glyphs). Never mutates SPM or starts playback.
+    ///
+    /// - Parameter event: Domain event from the multi-cast replay stream.
+    /// - SeeAlso: ``beginObservingVisualStateForChrome()``, ``updateUI(for:)``.
+    @MainActor
+    func handleVisualChromePlayerEvent(_ event: PlayerEvent) async {
+        guard case .visualStateDidChange(let visual) = event else { return }
+        #if DEBUG
+        if lastAppliedVisualState != visual {
+            print("[RadioPlayerCoordinator] SSOT visual chrome → \(visual)")
+            if visual == .playing {
+                MediaTransportLatencyTimeline.mark(
+                    .inAppChromeAppliedPlaying,
+                    detail: "source=visualStateDidChange"
+                )
+            }
+        }
+        #endif
+        updateUI(for: visual)
+    }
+
+    #if DEBUG
+    /// White-box seam: delivers one event through the production SSOT chrome handler.
+    ///
+    /// - Parameter event: Domain event to apply (typically ``visualStateDidChange``).
+    /// - SeeAlso: ``handleVisualChromePlayerEvent(_:)``, chrome visual resolver tests.
+    @MainActor
+    func _test_applyVisualChromePlayerEvent(_ event: PlayerEvent) async {
+        await handleVisualChromePlayerEvent(event)
+    }
+    #endif
+
     // MARK: - Streaming status distribution entry (called from VC's StreamingPlayerDelegate hop)
 
-    /// Receives every status update from the streaming engine and decides UI, visual state,
-    /// alerts, and widget/Live Activity side effects.
+    /// Receives every status update from the streaming engine: optional chrome **race lead**
+    /// via pure policy, then error / unavailable / SSL / no-internet **side effects**.
     ///
-    /// This is the central choke point for mapping low-level `PlayerStatus` + `reasonKey`
-    /// (from `DirectStreamingPlayer.safeOnStatusChange`) into high-level `PlayerVisualState`
-    /// and user-visible surfaces via ``RadioPlayerChromeVisualResolver``.
+    /// **Demoted role (adapter, not visual SSOT):** Durable main-app chrome for visual
+    /// transitions is owned by ``beginObservingVisualStateForChrome()`` on
+    /// ``PlayerEvent/visualStateDidChange``. This status path is **not** the long-term paint
+    /// authority. It remains for:
+    /// 1. **Optional one-frame race lead** — engine `status_playing` / audible truth can
+    ///    arrive on MainActor before SPM ``setPlaying()`` is visible; pure policy may promote
+    ///    Connecting or soft-resume hold chrome early (defense in depth after SSOT paint).
+    /// 2. **Error / unavailable / SSL / no-internet side effects** — alerts, recovery windows,
+    ///    ``markPlaybackStoppedByStreamFailure``, haptic / background flush, widget save.
+    ///
+    /// Chrome mapping for the race-lead branch is solely
+    /// ``RadioPlayerChromeVisualResolver/resolve(status:reasonKey:visualState:playbackIntent:engineIsActuallyPlaying:)``.
+    /// Before paint, SPM visual/intent are re-sampled and pure policy re-resolved so a concurrent
+    /// ``setPlaying()`` / ``setUserPaused()`` cannot leave a stale snapshot in charge. Paint is
+    /// gated by ``RadioPlayerChromeVisualResolver/shouldApplyStatusPathChromePaint`` so settled
+    /// SSOT chrome is never overwritten by a superseded pure-policy result.
     ///
     /// **Connecting-until-audible chrome:** While the start pipeline is active, SPM holds
     /// `.prePlay` until engine ``setPlaying()`` / `publishAuthoritativePlayingIfNeeded`.
     /// Engine `status_playing` can arrive on MainActor **before** that actor mutation is
-    /// visible. Chrome must still promote to `.playing` promptly — freezing `.prePlay` here
+    /// visible. Race-lead promote to `.playing` remains allowed — freezing `.prePlay` here
     /// leaves the in-app pill yellow while audio and Live Activity already show playing.
-    /// Sticky `.userPaused` / `.cleared` / policy chrome remain protected.
+    ///
+    /// **Soft-resume hold promote (intent-gated):** Soft-resume retains residual `.userPaused`
+    /// **visual** until ``setPlaying()`` while intent is already active. Pure policy promotes
+    /// chrome to `.playing` when the engine reports audible play (or is already audible) —
+    /// freezing on residual visual alone would leave grey pause chrome while audio is live.
+    /// True sticky pause still freezes when **intent** is `.userPaused` (late `status_playing`
+    /// must not resurrect green). Privacy `.cleared` / security / thermal policy chrome remain
+    /// protected.
     ///
     /// Special handling exists for transient states (connecting/buffering preserve optimistic
-    /// prePlay/playing, with an engine-audible race guard) and for explicit user pauses. The
-    /// unavailable/failed reaction includes an `isInInitialRecoveryWindow` guard so that normal
-    /// self-healing ICY decoder noise immediately after a language switch (or cold launch)
-    /// does not force `.userPaused` + alert.
+    /// prePlay/playing/soft-resume residual grey, with an engine-audible race guard) and for
+    /// explicit user pauses. The unavailable/failed reaction includes an
+    /// `isInInitialRecoveryWindow` guard so that normal self-healing ICY decoder noise
+    /// immediately after a language switch (or cold launch) does not force `.userPaused` + alert.
     ///
     /// - Parameters:
     ///   - status: Coarse player status.
     ///   - reasonKey: Exact Localizable key (e.g. "status_playing", "status_stream_unavailable").
     ///     Used both for localization and for precise branching.
+    /// - Postcondition: When race lead or hold/sticky correction is still valid against latest
+    ///   SPM SSOT, ``PlayerViewModel`` chrome matches the pure-policy result (deduped by
+    ///   ``updateUI(for:)``). When SSOT chrome is already settled and policy would diverge
+    ///   without race-lead authority, chrome is left unchanged (side effects still run).
+    ///   Soft-resume hold with active intent + audible report may still paint `.playing` one
+    ///   frame early; sticky pause intent keeps `.userPaused`.
     ///
-    /// - SeeAlso: ``RadioPlayerChromeVisualResolver/resolve(status:reasonKey:visualState:playbackIntent:engineIsActuallyPlaying:)``,
+    /// - SeeAlso: ``beginObservingVisualStateForChrome()``,
+    ///   ``RadioPlayerChromeVisualResolver/resolve(status:reasonKey:visualState:playbackIntent:engineIsActuallyPlaying:)``,
+    ///   ``RadioPlayerChromeVisualResolver/shouldApplyStatusPathChromePaint(policyResult:latestVisual:latestIntent:lastApplied:)``,
     ///   `DirectStreamingPlayer.safeOnStatusChange`, `handleItemStatusFailure(_:)`,
     ///   `streamingPlayer.isInInitialRecoveryWindow`, `SharedPlayerManager.markPlaybackStoppedByStreamFailure`,
-    ///   `SharedPlayerManager.setPlaying()`, `updateUI(for:)`, CODING_AGENT.md (transient vs permanent modeling)
+    ///   `SharedPlayerManager.setPlaying()`, `updateUI(for:)`,
+    ///   docs/Widget-Presentation-Dataflow.md, docs/Event-Driven-Refactor-Roadmap.md,
+    ///   CODING_AGENT.md (transient vs permanent modeling, Single Source of Truth Principles)
     func handleStatusChange(_ status: PlayerStatus, reasonKey: String?) async {
-        let visualState = await SharedPlayerManager.shared.currentVisualState
-        let playbackIntent = await SharedPlayerManager.shared.currentPlaybackIntent
-        // Engine-truth for the deferred-setPlaying race: status_playing / brief buffer while
-        // rate is already 1 must not re-stick Connecting chrome before SPM flips to `.playing`.
+        // Engine-truth for deferred-setPlaying and soft-resume hold races: status_playing /
+        // brief buffer while rate is already 1 must promote chrome before SPM flips to `.playing`.
         let engineIsActuallyPlaying = streamingPlayer.isActuallyPlaying()
 
+        // Sample SPM once for logging, then re-sample immediately before chrome paint so a
+        // concurrent setPlaying / setUserPaused cannot leave a stale snapshot in charge of
+        // the race-lead branch (status is adapter; SSOT may advance while we await).
+        var visualState = await SharedPlayerManager.shared.currentVisualState
+        var playbackIntent = await SharedPlayerManager.shared.currentPlaybackIntent
+
         #if DEBUG
-        print("[RadioPlayerCoordinator] onStatusChange → \(status) (reasonKey: \(reasonKey ?? "nil")) → visualState \(visualState) enginePlaying=\(engineIsActuallyPlaying)")
+        print("[RadioPlayerCoordinator] onStatusChange → \(status) (reasonKey: \(reasonKey ?? "nil")) → visualState \(visualState) intent=\(playbackIntent) enginePlaying=\(engineIsActuallyPlaying)")
         #endif
 
-        let effectiveVisualState = RadioPlayerChromeVisualResolver.resolve(
+        // Sole chrome mapping for this path — pure table (sticky intent freeze vs soft-resume promote).
+        var effectiveVisualState = RadioPlayerChromeVisualResolver.resolve(
             status: status,
             reasonKey: reasonKey,
             visualState: visualState,
@@ -313,25 +483,73 @@ extension RadioPlayerCoordinator {
             engineIsActuallyPlaying: engineIsActuallyPlaying
         )
 
+        // Supersession: re-read SSOT and re-resolve so race-lead paint uses latest actor truth.
+        let latestVisual = await SharedPlayerManager.shared.currentVisualState
+        let latestIntent = await SharedPlayerManager.shared.currentPlaybackIntent
+        if latestVisual != visualState || latestIntent != playbackIntent {
+            #if DEBUG
+            print("[RadioPlayerCoordinator] status path re-resolved after SSOT advanced (snapshot \(visualState)/\(playbackIntent) → \(latestVisual)/\(latestIntent))")
+            #endif
+            visualState = latestVisual
+            playbackIntent = latestIntent
+            effectiveVisualState = RadioPlayerChromeVisualResolver.resolve(
+                status: status,
+                reasonKey: reasonKey,
+                visualState: visualState,
+                playbackIntent: playbackIntent,
+                engineIsActuallyPlaying: engineIsActuallyPlaying
+            )
+        }
+
         #if DEBUG
         if effectiveVisualState == .playing
-            && visualState == .prePlay
             && (reasonKey == "status_playing" || engineIsActuallyPlaying) {
-            print("[RadioPlayerCoordinator] in-app chrome → .playing while SPM still .prePlay (deferred setPlaying race; engine audible)")
-            MediaTransportLatencyTimeline.mark(
-                .inAppChromeAppliedPlaying,
-                detail: "spmVisual=prePlay reasonKey=\(reasonKey ?? "nil")"
-            )
+            if visualState == .prePlay {
+                print("[RadioPlayerCoordinator] in-app chrome → .playing while SPM still .prePlay (status race lead; deferred setPlaying; engine audible)")
+                MediaTransportLatencyTimeline.mark(
+                    .inAppChromeAppliedPlaying,
+                    detail: "source=statusRaceLead spmVisual=prePlay reasonKey=\(reasonKey ?? "nil")"
+                )
+            } else if visualState == .userPaused, playbackIntent.isActivePlaybackIntent {
+                // Soft-resume hold: residual sticky visual with active play intent must promote.
+                print("[RadioPlayerCoordinator] in-app chrome → .playing while SPM still .userPaused (status race lead; soft-resume hold promote; active intent)")
+                MediaTransportLatencyTimeline.mark(
+                    .inAppChromeAppliedPlaying,
+                    detail: "source=statusRaceLead spmVisual=userPaused softResumeHold reasonKey=\(reasonKey ?? "nil")"
+                )
+            }
+        } else if effectiveVisualState == .userPaused, reasonKey == "status_playing", playbackIntent == .userPaused {
+            // True sticky pause: late audible report must not resurrect green.
+            print("[RadioPlayerCoordinator] in-app chrome stays .userPaused on status_playing (sticky pause intent freeze)")
         }
         #endif
 
-        self.updateUI(for: effectiveVisualState)
+        // Status is not sole visual SSOT: skip chrome paint when settled SSOT already matches
+        // SPM and pure policy would diverge without race-lead authority.
+        let shouldPaintChrome = RadioPlayerChromeVisualResolver.shouldApplyStatusPathChromePaint(
+            policyResult: effectiveVisualState,
+            latestVisual: visualState,
+            latestIntent: playbackIntent,
+            lastApplied: lastAppliedVisualState
+        )
+        if shouldPaintChrome {
+            self.updateUI(for: effectiveVisualState)
+        } else {
+            #if DEBUG
+            print("[RadioPlayerCoordinator] status path skipped chrome paint (superseded by settled SSOT lastApplied=\(String(describing: lastAppliedVisualState)) spm=\(visualState) policy=\(effectiveVisualState))")
+            #endif
+        }
 
         // If we had to correct the UI to .userPaused for a real sticky user pause (despite the
         // actor having loaded a stale .prePlay), repair the in-memory SSOT immediately so that
         // any follow-on save uses the correct visual.
         // Never do this repair for .cleared (the post-reset visual).
-        if effectiveVisualState == .userPaused && visualState == .prePlay && playbackIntent == .userPaused {
+        // Only when status chrome paint was allowed (or chrome already sticky) — do not drive
+        // SPM mutations from a superseded race-lead branch.
+        if shouldPaintChrome,
+           effectiveVisualState == .userPaused,
+           visualState == .prePlay,
+           playbackIntent == .userPaused {
             Task {
                 await SharedPlayerManager.shared.setVisualState(.userPaused)
             }
@@ -419,53 +637,92 @@ extension RadioPlayerCoordinator {
     }
 }
 
-// MARK: - In-app chrome visual resolver (engine status → pill / glyph)
+// MARK: - In-app chrome visual policy (engine status + SSOT → pill / glyph)
 
-/// Pure mapping from streaming-engine status callbacks into the in-app chrome `PlayerVisualState`.
+/// Pure, side-effect-free policy mapping engine status + SPM visual/intent into in-app chrome.
 ///
-/// ``RadioPlayerCoordinator/handleStatusChange(_:reasonKey:)`` is the sole production call site.
-/// Logic lives here so unit tests can assert Connecting-until-audible, sticky pause, and privacy
-/// clear contracts without constructing a full UIKit host or driving `AVPlayer`.
+/// ## Dual-path ownership (main chrome)
+///
+/// | Path | Role | Entry |
+/// |------|------|--------|
+/// | **Visual SSOT (primary)** | Durable paint after SPM mutations | ``RadioPlayerCoordinator/beginObservingVisualStateForChrome()`` on ``PlayerEvent/visualStateDidChange`` |
+/// | **Status adapter (demoted)** | Optional one-frame race lead + error side effects | ``RadioPlayerCoordinator/handleStatusChange(_:reasonKey:)`` |
+///
+/// This pure table is the sole **status-path** mapping when engine status arrives before / without
+/// a matching actor visual hop. Durable transitions must not depend on status alone — SSOT paint
+/// is primary. Status paint is further gated by ``shouldApplyStatusPathChromePaint`` so a
+/// superseded pure-policy result cannot regress chrome already settled to SPM SSOT.
+///
+/// Logic lives here so unit tests can assert soft-resume hold promote, Connecting-until-audible,
+/// sticky pause, switch hold, privacy clear, and status supersession without a UIKit host or
+/// `AVPlayer`.
+///
+/// ## Policy table (authoritative)
+///
+/// | Situation | Inputs (conceptual) | Chrome output |
+/// |-----------|---------------------|---------------|
+/// | Privacy clear | intent `.cleared` | `.cleared` |
+/// | True sticky pause | sticky pause **intent** + late audible report | `.userPaused` |
+/// | Soft-resume hold promote | residual `.userPaused` **visual**, **active** play intent, audible report or engine audible | `.playing` |
+/// | Connecting race | `.prePlay` visual, active intent, audible | `.playing` |
+/// | True Connecting / switch hold | `.prePlay`, active intent, not audible | `.prePlay` (never invent green) |
+/// | Soft-resume intermediate | residual `.userPaused` visual, active intent, not yet audible | `.userPaused` (never invent Connecting) |
+/// | Policy chrome | security / thermal authoritative | keep policy visual |
+/// | Terminal stop while sticky | stop/pause keys + sticky pause | `.userPaused` |
+///
+/// ## Why residual `.userPaused` visual alone must not freeze
+///
+/// Soft-resume intentionally retains sticky **visual** until engine ``setPlaying()`` while
+/// intent is already active (``.shouldBePlaying`` / ``.sleepTimer``). Freezing chrome on
+/// residual visual alone leaves the main-app pill grey while audio is live. Sticky freeze
+/// requires sticky **intent** (user still wants pause), not residual visual under active play.
 ///
 /// ## Why this is not a dumb pass-through of SPM visual
 ///
 /// SharedPlayerManager defers authoritative ``setPlaying()`` until soft-resume rate kick or
 /// readyToPlay first-play kick (`publishAuthoritativePlayingIfNeeded`). Engine
 /// `status_playing` is delivered via `DispatchQueue.main.async` and can interleave **before**
-/// the SPM actor mutation is visible. Freezing chrome on SPM `.prePlay` in that window leaves
-/// the main-app pill yellow (Connecting) while audio is live and Live Activity / Now Playing
-/// already show playing.
-///
-/// Holding `.prePlay` during **true** Connecting (`status_connecting` / buffering while the
-/// engine is not audibly playing) remains correct.
-///
-/// ## Sticky / policy protection (must not regress)
-///
-/// - `.userPaused` visual or intent on terminal stop/pause keys → grey pause chrome.
-/// - `.cleared` intent (privacy clear) → blue cleared chrome for any residual engine chatter.
-/// - `.securityLocked` / `.thermalPaused` while those visuals are authoritative → keep policy chrome
-///   even if a late `status_playing` races in (engine kick should already be suppressed).
+/// the SPM actor mutation is visible. Status path may lead SPM by one frame on pure policy promote;
+/// SPM remains SSOT for persistence / widgets / Live Activity and for durable main chrome via
+/// ``visualStateDidChange``.
 ///
 /// - SeeAlso: ``RadioPlayerCoordinator/handleStatusChange(_:reasonKey:)``,
+///   ``RadioPlayerCoordinator/beginObservingVisualStateForChrome()``,
+///   ``shouldApplyStatusPathChromePaint(policyResult:latestVisual:latestIntent:lastApplied:)``,
 ///   ``SharedPlayerManager/setPlaying()``, `DirectStreamingPlayer.publishAuthoritativePlayingIfNeeded`,
-///   `PlayerVisualState`, CODING_AGENT.md (Single Source of Truth Principles).
+///   `PlayerVisualState`, `PlaybackIntent`,
+///   docs/Widget-Presentation-Dataflow.md (Main-App Chrome Authority),
+///   docs/Live-Activity-Stacking-and-Media-Surfaces.md (Connecting vs audible start),
+///   docs/Event-Driven-Refactor-Roadmap.md (main chrome consumer),
+///   CODING_AGENT.md (Single Source of Truth Principles).
 enum RadioPlayerChromeVisualResolver: Sendable {
 
-    /// Resolves the chrome visual that ``RadioPlayerCoordinator/updateUI(for:)`` should apply.
+    /// Resolves the in-app chrome visual from engine status + current SPM visual/intent.
+    ///
+    /// Pure and side-effect free: does **not** mutate SPM, start Live Activities, or paint UI.
+    /// Status-path callers apply the result only when
+    /// ``shouldApplyStatusPathChromePaint(policyResult:latestVisual:latestIntent:lastApplied:)``
+    /// allows, via ``RadioPlayerCoordinator/updateUI(for:)``.
     ///
     /// - Parameters:
     ///   - status: Coarse `PlayerStatus` from the streaming delegate (note: `status_connecting` is
     ///     often delivered with `isPlaying: true` → `.playing` status; always prefer `reasonKey`).
     ///   - reasonKey: Exact Localizable key from `safeOnStatusChange` (e.g. `"status_playing"`).
-    ///   - visualState: Current SPM `currentVisualState` (may still be `.prePlay` after audible start).
-    ///   - playbackIntent: Current SPM `currentPlaybackIntent`.
+    ///   - visualState: Current SPM `currentVisualState` (may still be `.prePlay` or residual
+    ///     `.userPaused` soft-resume hold after audible start). Prefer the **latest** sample
+    ///     immediately before paint (status adapter re-samples after concurrent SPM mutations).
+    ///   - playbackIntent: Current SPM `currentPlaybackIntent` — sticky vs active distinguishes
+    ///     true pause freeze from soft-resume hold promote.
     ///   - engineIsActuallyPlaying: ``DirectStreamingPlayer/isActuallyPlaying()`` — rate + timeControl
-    ///     truth used to avoid re-sticking Connecting chrome during the deferred-`setPlaying` race
-    ///     when buffering/connecting keys arrive while audio is already flowing.
-    /// - Returns: Chrome visual to apply. Does **not** mutate SPM; the actor remains SSOT for
-    ///   persistence / widgets / LA. In-app chrome may lead SPM by one frame during deferred setPlaying.
-    /// - SeeAlso: ``RadioPlayerCoordinator/handleStatusChange(_:reasonKey:)``,
-    ///   ``SharedPlayerManager/setPlaying()``, CODING_AGENT.md.
+    ///     truth used for soft-resume / deferred-`setPlaying` promote when status keys race or chatter.
+    /// - Returns: Chrome visual the status path *proposes*. In-app chrome may lead SPM by one frame
+    ///   during deferred setPlaying / soft-resume hold; actor remains SSOT for persistence /
+    ///   widgets / LA and for durable main chrome via visual SSOT observation.
+    /// - Important: Never invent `.playing` during silent attach or stream-switch hold (not audible).
+    ///   Never invent Connecting (`.prePlay`) during soft-resume hold (residual `.userPaused` + active intent).
+    /// - SeeAlso: ``shouldApplyStatusPathChromePaint(policyResult:latestVisual:latestIntent:lastApplied:)``,
+    ///   ``RadioPlayerCoordinator/handleStatusChange(_:reasonKey:)``,
+    ///   ``SharedPlayerManager/setPlaying()``, ``PlaybackIntent/isActivePlaybackIntent``, CODING_AGENT.md.
     static func resolve(
         status: PlayerStatus,
         reasonKey: String?,
@@ -473,8 +730,8 @@ enum RadioPlayerChromeVisualResolver: Sendable {
         playbackIntent: PlaybackIntent,
         engineIsActuallyPlaying: Bool = false
     ) -> PlayerVisualState {
-        // Privacy clear: intent alone blocks resurrection; chrome must stay blue `.cleared`
-        // through residual connecting/stopped callbacks from the silent teardown.
+        // 1. Privacy clear: intent alone blocks resurrection; chrome stays blue `.cleared`
+        // through residual connecting/stopped callbacks from silent teardown.
         if playbackIntent == .cleared {
             return .cleared
         }
@@ -486,46 +743,56 @@ enum RadioPlayerChromeVisualResolver: Sendable {
             reasonKey == "status_playing"
             || (status == .playing && reasonKey == nil)
 
-        if isAuthoritativePlayingReport {
-            if visualState == .userPaused || playbackIntent == .userPaused {
+        // Promote window: engine reports audible play, or rate/timeControl already proves
+        // audio while intent still wants play (soft-resume / deferred setPlaying races).
+        let shouldConsiderPlayingPromote =
+            isAuthoritativePlayingReport
+            || (engineIsActuallyPlaying && playbackIntent.isActivePlaybackIntent)
+
+        if shouldConsiderPlayingPromote {
+            // 2. True sticky pause: freeze only when intent still wants pause — not residual
+            // `.userPaused` visual under active play intent (soft-resume hold).
+            if playbackIntent == .userPaused {
                 return .userPaused
             }
+            // Residual cleared visual without cleared intent (defensive).
             if visualState == .cleared {
                 return .cleared
             }
+            // 7. Policy chrome: security / thermal stay authoritative against late audible reports.
             if visualState == .securityLocked || playbackIntent == .securityLocked {
                 return .securityLocked
             }
             if visualState == .thermalPaused {
                 return .thermalPaused
             }
-            // Deferred Connecting (.prePlay), already-playing SPM, or any other non-sticky
-            // surface: promote chrome to green promptly when the engine reports audible play.
+            // 3–4. Soft-resume hold promote (residual .userPaused + active intent), deferred
+            // Connecting race (.prePlay), already-playing SPM, or any other non-policy surface:
+            // promote chrome to green when the engine is (or reports) audible.
             return .playing
         }
 
-        // Connecting / buffering: preserve optimistic chrome.
+        // Connecting / buffering without promote window: preserve optimistic / hold chrome.
         // Key off reasonKey only — do not require `status != .playing`, because connecting is
         // emitted with isPlaying:true → PlayerStatus.playing.
         if let reasonKey,
            reasonKey == "status_connecting" || reasonKey == "status_buffering" {
-            // Deferred setPlaying race: engine already audible, SPM still .prePlay, and a
-            // buffer/connect key arrives after we (or status_playing) painted green — do not
-            // re-stick yellow Connecting while rate is 1 and intent still wants play.
-            if engineIsActuallyPlaying,
-               playbackIntent.isActivePlaybackIntent,
-               visualState == .prePlay || visualState == .playing {
-                return .playing
-            }
-            if visualState == .prePlay || visualState == .playing || visualState == .cleared {
+            // 5–6. True Connecting / switch hold: keep yellow while silent attach or hold.
+            // Soft-resume intermediate: residual grey pause must not become Connecting.
+            // Already-playing / cleared: preserve optimistic surface through buffer chatter.
+            if visualState == .prePlay
+                || visualState == .playing
+                || visualState == .cleared
+                || visualState == .userPaused {
                 return visualState
             }
+            // Active intent with non-hold visual (e.g. unexpected) → Connecting.
             if playbackIntent.isActivePlaybackIntent {
                 return .prePlay
             }
         }
 
-        // Explicit user pause: terminal stop/pause keys must not regress grey → yellow Connecting.
+        // 8. Explicit user pause: terminal stop/pause keys must not regress grey → yellow Connecting.
         if status == .stopped || status == .paused
             || reasonKey == "status_stopped" || reasonKey == "status_paused" {
             if visualState == .userPaused || playbackIntent == .userPaused {
@@ -533,11 +800,58 @@ enum RadioPlayerChromeVisualResolver: Sendable {
             }
         }
 
-        // Protect sticky chrome from other engine chatter (SSL keys, unavailable noise, etc.).
-        // Authoritative playing is handled above so this no longer freezes Connecting after audible start.
+        // Protect sticky / hold / cleared chrome from other engine chatter (SSL keys,
+        // unavailable noise, etc.). Promote window above already handled audible start.
         if visualState == .userPaused || visualState == .prePlay || visualState == .cleared {
             return visualState
         }
         return visualState
+    }
+
+    /// Whether the status adapter may call ``RadioPlayerCoordinator/updateUI(for:)`` with
+    /// `policyResult`, or must skip because settled visual SSOT already owns chrome.
+    ///
+    /// Status path is demoted: optional **one-frame race lead** when pure policy promotes
+    /// `.playing` while SPM still holds Connecting (`.prePlay`) or soft-resume residual
+    /// (`.userPaused` + active intent), plus hold/sticky corrections when chrome lags.
+    /// It must **not** overwrite chrome that already matches latest SPM visual with a
+    /// divergent pure-policy result (superseded race-lead / stale status).
+    ///
+    /// Pure and side-effect free — unit-tested without a coordinator host.
+    ///
+    /// - Parameters:
+    ///   - policyResult: Output of ``resolve(status:reasonKey:visualState:playbackIntent:engineIsActuallyPlaying:)``
+    ///     against **latest** SPM visual/intent.
+    ///   - latestVisual: Latest ``SharedPlayerManager/currentVisualState`` used for resolve.
+    ///   - latestIntent: Latest ``SharedPlayerManager/currentPlaybackIntent`` used for resolve.
+    ///   - lastApplied: Coordinator `lastAppliedVisualState` (chrome already shown), if any.
+    /// - Returns: `true` when status may paint; `false` when paint would regress settled SSOT.
+    /// - SeeAlso: ``resolve(status:reasonKey:visualState:playbackIntent:engineIsActuallyPlaying:)``,
+    ///   ``RadioPlayerCoordinator/handleStatusChange(_:reasonKey:)``,
+    ///   ``RadioPlayerCoordinator/beginObservingVisualStateForChrome()``,
+    ///   docs/Widget-Presentation-Dataflow.md, CODING_AGENT.md (Single Source of Truth Principles).
+    static func shouldApplyStatusPathChromePaint(
+        policyResult: PlayerVisualState,
+        latestVisual: PlayerVisualState,
+        latestIntent: PlaybackIntent,
+        lastApplied: PlayerVisualState?
+    ) -> Bool {
+        // Race lead still valid against latest SSOT: promote playing while actor holds
+        // Connecting or soft-resume residual under active play intent.
+        if policyResult == .playing,
+           latestIntent.isActivePlaybackIntent,
+           latestVisual == .prePlay || latestVisual == .userPaused {
+            return true
+        }
+
+        // Chrome already matches settled SPM visual — status must not diverge away from SSOT.
+        // (Identical policy is allowed; updateUI dedupes the no-op.)
+        if let lastApplied, lastApplied == latestVisual {
+            return policyResult == latestVisual
+        }
+
+        // Chrome lags SSOT or is unset — allow pure-policy paint (including sticky freeze /
+        // hold preservation / catch-up toward latest when policy agrees).
+        return true
     }
 }

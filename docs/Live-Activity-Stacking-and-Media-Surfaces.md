@@ -291,17 +291,28 @@ Required convergence: paused chrome and silent engine — never durable “pause
 
 | Phase | Visual / intent | Surfaces |
 |-------|-----------------|----------|
-| Explicit play intent (pause → play) | ``setUserIntentToPlay()`` → `.prePlay` + `.shouldBePlaying` | Connecting chrome; `isActivelyPlaying == false` (play affordance, rate 0) |
-| Soft-resume success | Rate kick then ``publishAuthoritativePlayingIfNeeded()`` → ``setPlaying()`` | Rate 1, pause glyph, LA start/update |
+| Explicit play intent (true attach / switch) | ``setUserIntentToPlay()`` → `.prePlay` + active intent | Connecting chrome; `isActivelyPlaying == false` (play affordance, rate 0) |
+| Soft-resume eligible (same stream) | Residual sticky visual held (no Connecting stamp) + active intent until ``setPlaying()`` | Gapless intermediate: home skips yellow Connecting; main may briefly show residual pause chrome; LA still settles only after authoritative publish |
+| Soft-resume success | Rate kick then ``publishAuthoritativePlayingIfNeeded()`` → ``setPlaying()`` | Rate 1, pause glyph, LA start/update + settled playing acceptance / soft ensure |
 | Full attach | `startPlayback` stays on `status_connecting` / stream-switch prePlay hold | Same connecting chrome until readyToPlay |
 | readyToPlay first-play kick | `playImmediately` then ``publishAuthoritativePlayingIfNeeded()`` | Authoritative `.playing` |
 | User pause during connect | Sticky `.userPaused` + generation discard (see above) | Paused chrome + silent engine |
 
 **Authoritative publish helper:** ``DirectStreamingPlayer`` `publishAuthoritativePlayingIfNeeded()` calls ``setPlaying()`` only when intent still allows play and visual is not already `.playing` (readyToPlay + timeControl KVO cannot double-emit).
 
+**Surface paint after ``setPlaying()`` (shared intermediate, independent consumers):**
+
+| Surface | How `.playing` reaches chrome after audible start |
+|---------|---------------------------------------------------|
+| Live Activity | Direct ``refreshAllMediaSurfaces`` / ``updateCurrentActivity``; settled playing acceptance + soft ensure when owned ContentState lags (this document) |
+| Home widget | Tier 2 ``PlayerEvent`` observer + soft-resume coalesce / Connecting skip ([`docs/Widget-Presentation-Dataflow.md`](Widget-Presentation-Dataflow.md)) |
+| Main-app play/pause + status pill | **Primary:** ``RadioPlayerCoordinator/beginObservingVisualStateForChrome()`` on ``visualStateDidChange``; status path is demoted race lead + errors only via pure ``RadioPlayerChromeVisualResolver`` (soft-resume hold promote is intent-gated). See **Main-App Chrome Authority** in Widget Presentation Dataflow. |
+
+Do **not** re-solve main-app grey residual by inventing `.playing` before the engine kick, reintroducing soft-resume Connecting stamps, or routing main paint through LA ensure loops. Soft-resume Connecting skip for home remains intentional; main chrome must settle from SPM visual SSOT once ``setPlaying()`` emits.
+
 **Extension optimistic paths** (widget `handleWidgetPlay`, Live Activity toggle ContentState) may still flip control chrome immediately for cross-process latency; main-app engine chrome follows the table above. Security recovery optimistic play uses Connecting (``.prePlay``), not green `.playing`, until validation + audible start succeed.
 
-**SeeAlso:** ``SharedPlayerManager/play()``, ``SharedPlayerManager/setPlaying()``, `resumeFromSoftPauseIfAvailable`, readyToPlay kick in `addObservers`, `Lutheran RadioTests` connecting-chrome and publish-idempotency gates.
+**SeeAlso:** ``SharedPlayerManager/play()``, ``SharedPlayerManager/setPlaying()``, `resumeFromSoftPauseIfAvailable`, readyToPlay kick in `addObservers`, ``RadioPlayerCoordinator/beginObservingVisualStateForChrome()``, ``RadioPlayerChromeVisualResolver``, [`docs/Widget-Presentation-Dataflow.md`](Widget-Presentation-Dataflow.md) (main-app chrome authority; home soft-resume refresh), `Lutheran RadioTests` connecting-chrome and publish-idempotency gates.
 
 ---
 
@@ -327,10 +338,11 @@ Required convergence: paused chrome and silent engine — never durable “pause
 
 ## Cross-References
 
-- [`docs/Widget-Presentation-Dataflow.md`](Widget-Presentation-Dataflow.md) — presentation surfaces, LA event-driven model, termination invariant
+- [`docs/Widget-Presentation-Dataflow.md`](Widget-Presentation-Dataflow.md) — presentation surfaces, LA event-driven model, termination invariant, **main-app chrome authority** (SSOT visual paint + demoted status adapter; soft-resume hold contract)
 - [`docs/Widget-Functionality-Roadmap.md`](Widget-Functionality-Roadmap.md) — Tier 4 completion status
-- [`docs/Event-Driven-Refactor-Roadmap.md`](Event-Driven-Refactor-Roadmap.md) — `PlayerEvent` consumer paths
+- [`docs/Event-Driven-Refactor-Roadmap.md`](Event-Driven-Refactor-Roadmap.md) — `PlayerEvent` consumers (``WidgetRefreshManager``, main-app chrome observation, ``PlayerEventSubscriber``)
 - `Lutheran RadioTests/RadioLiveActivityManagerTests.swift` — LA diff suppression
 - `Lutheran RadioTests/SharedPlayerManagerMediaSurfaceTests.swift` — `refreshAllMediaSurfaces` contract; Now Playing rate/`playbackState` alignment; unsupported remote-command disable; media-transport mailbox (double-toggle, pause preemption, LA + remote interleave)
 - `Lutheran RadioTests/SharedPlayerManagerMediaTransportLatencyTests.swift` — DEBUG ``MediaTransportLatencyTimeline`` pause + LA toggle chains
 - `Lutheran Radio/MediaTransportLatencyTimeline.swift` — DEBUG-only structured latency timeline (membership-exception; stripped from Release)
+- `Lutheran Radio/RadioPlayerCoordinator+StatusDistribution.swift` — main-app dual-path chrome (orthogonal to LA ContentState ensure; shared soft-resume intermediate language only)

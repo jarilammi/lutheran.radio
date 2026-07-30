@@ -14,9 +14,12 @@
 //  - Hosts the primary SwiftUI player surface (via UIHostingController in ViewController).
 //  - Chrome is driven exclusively by `PlayerViewModel` + coordinator (status, control,
 //    metadata, language index, sleep timer). There is no third presentation path.
+//  - Production paint authority for visual transitions lives on
+//    ``RadioPlayerCoordinator/beginObservingVisualStateForChrome()`` (multi-cast
+//    `visualStateDidChange` → `updateUI`). Status path is race lead + errors only.
 //  - `PlayerEventSubscriber` remains available as a testable observation helper type in this
-//    file; production `RadioPlayerView` does not attach empty `.onChange` no-ops or
-//    re-drive chrome from events (non-forcing event roadmap: additive, not dual UI).
+//    file (UI-only counters / intent observation). Production `RadioPlayerView` does not
+//    attach a second paint path from events (non-forcing: one chrome owner).
 //
 //  Key invariants (UI layer only):
 //  - No security, certificate, DNS, or Core/ logic lives here or is called from here.
@@ -243,14 +246,16 @@ final class PlayerEventSubscriber {
     /// belt-and-suspenders cleanup.
     ///
     /// - Postcondition: No further events will be processed by this subscriber
-    ///   instance until the next `beginObserving`. The replay live-forwarding attachment
-    ///   on ``SharedPlayerManager/events`` is released so other observers can attach.
-    /// - SeeAlso: ``SharedPlayerManager/cancelReplayForwarding()``.
+    ///   instance until the next `beginObserving`. Cancelling this consumer finishes
+    ///   only its multi-cast replay subscription; sibling consumers (main-app chrome
+    ///   observation, other tests) keep receiving live emissions.
+    /// - SeeAlso: ``SharedPlayerManager/makeEventsStreamWithReplay()``,
+    ///   ``SharedPlayerManager/cancelReplayForwarding()`` (bulk test isolation only).
     func cancel() {
+        // Cancel the local for-await only. Multi-cast replay teardown is per-stream
+        // via AsyncStream onTermination — do not call bulk ``cancelReplayForwarding()``
+        // (that would tear down main-app chrome observation and sibling consumers).
         eventObserver.cancel()
-        Task {
-            await SharedPlayerManager.shared.cancelReplayForwarding()
-        }
     }
 
     #if DEBUG

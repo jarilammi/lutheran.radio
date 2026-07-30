@@ -751,11 +751,17 @@ actor SharedPlayerManager {
 
     internal var eventContinuation: AsyncStream<PlayerEvent>.Continuation?
     internal var _events: AsyncStream<PlayerEvent>?
-    /// Live-forwarding task for the most recent ``makeEventsStreamWithReplay()`` consumer.
+    /// Multi-cast live continuations for ``makeEventsStreamWithReplay()`` (and any future
+    /// secondary consumers) that must receive every ``emit`` **without** taking the sole
+    /// primary ``events`` iterator (held by ``WidgetRefreshManager`` in production).
     ///
-    /// ``AsyncStream`` admits one iterator on ``events``; this task is cancelled when a replay
-    /// consumer ends or when a new replay stream is created so other observers can attach.
-    internal var replayForwardingTask: Task<Void, Never>?
+    /// Primary ``events`` remains a single-iterator ``AsyncStream`` for the Tier 2 refresh
+    /// observer and direct live collectors. Replay / main-chrome consumers register here so
+    /// they do not steal or split that iterator.
+    internal var additionalEventContinuations: [UUID: AsyncStream<PlayerEvent>.Continuation] = [:]
+    /// Forwarding tasks owned by active ``makeEventsStreamWithReplay()`` consumers.
+    /// Cancelled by ``cancelReplayForwarding()`` (test isolation / explicit teardown).
+    internal var replayForwardingTasks: [UUID: Task<Void, Never>] = [:]
 
     /// The stream of `PlayerEvent` instances emitted by this manager.
     ///
@@ -765,7 +771,10 @@ actor SharedPlayerManager {
     /// transitions are expressed here after their state mutations.
     ///
     /// The stream is created once and remains valid for the lifetime of the manager.
-    /// All subscribers receive events yielded after they begin consuming the stream.
+    /// **One** live iterator attaches to this primary stream (typically
+    /// ``WidgetRefreshManager``). Late / multi-consumer subscribers use
+    /// ``makeEventsStreamWithReplay()``, which multi-casts live emissions without
+    /// competing for this iterator.
     ///
     /// Access from outside the actor requires `await`.
     ///
@@ -805,9 +814,13 @@ actor SharedPlayerManager {
     /// `PlayerEvent` (Tier 1 coverage: stream transitions, metadata, visual, persisted
     /// widget state, and intent).
     ///
+    /// Delivery fans out to:
+    /// 1. The primary ``events`` continuation (single-iterator; WidgetRefreshManager / live collectors)
+    /// 2. Every multi-cast continuation registered by ``makeEventsStreamWithReplay()``
+    ///
     /// - Parameter event: The domain event to deliver to observers of `events`.
-    /// - Postcondition: If a continuation exists, the event has been yielded to
-    ///   active subscribers. No other side effects.
+    /// - Postcondition: If any continuation exists, the event has been yielded to
+    ///   active primary and multi-cast subscribers. No other side effects.
     /// - SeeAlso: ``events``, ``currentState``, ``makeEventsStreamWithReplay()``,
     ///   ``updatePlaybackIntent(to:)``, ``setPlaying()``,
     ///   ``stop()``, ``setUserPaused()``, ``markAsUserPaused()``,
@@ -829,6 +842,11 @@ actor SharedPlayerManager {
         // intended for observers) come from the main app process only.
         guard !isRunningInWidget() else { return }
         eventContinuation?.yield(event)
+        // Multi-cast to independent replay / main-chrome consumers (does not use the
+        // primary ``events`` iterator — coexistence with WidgetRefreshManager).
+        for continuation in additionalEventContinuations.values {
+            continuation.yield(event)
+        }
 
         #if DEBUG
         // Test seam: allows unit tests (and debug tools) to reliably observe emissions
@@ -906,10 +924,17 @@ actor SharedPlayerManager {
     /// the finalized Tier 3 replay contract. See ``PlayerCurrentState`` and the
     /// architectural evaluation in the roadmap.
     ///
+    /// **Live multi-cast (not the primary iterator):** Live forwarding registers an
+    /// independent multi-cast continuation that receives every ``emit`` directly.
+    /// It does **not** iterate the primary ``events`` stream, so
+    /// ``WidgetRefreshManager``, main-app chrome observation, and other replay
+    /// consumers coexist without stealing a single ``AsyncStream`` iterator.
+    ///
     /// - Returns: A stream whose first elements represent the state at the time
     ///   the stream was created, followed by live events.
     /// - SeeAlso: ``events``, ``currentState``, `PlayerCurrentState`, `PlayerEvent`,
     ///   `WidgetEventObserver`, `PlayerEventSubscriber`,
+    ///   ``RadioPlayerCoordinator/beginObservingVisualStateForChrome()``,
     ///   `PlayerCurrentState.isInPermanentError`,
     ///   `PlayerCurrentState.isBlockedByStickyIntent`,
     ///   docs/Event-Driven-Refactor-Roadmap.md (Tier 3 current-state replay + error and recovery surface).
@@ -917,21 +942,26 @@ actor SharedPlayerManager {
     ///   observation of `events` and all imperative paths are unaffected.
     /// - Note: The replay events are synthesized from current state; they do not
     ///   represent historical transition ordering.
-    /// Cancels the active replay live-forwarding attachment on ``events``.
+    /// Cancels all multi-cast replay live-forwarding attachments.
     ///
-    /// Called when a replay consumer ends (for example ``PlayerEventSubscriber/cancel()``)
-    /// or before creating a new replay stream so the shared ``AsyncStream`` iterator is
-    /// released for the Tier 2 refresh observer or direct test collectors.
+    /// Used by test isolation (``_test_resetEventsStreamForIsolation()``) and
+    /// suite teardown so leftover multi-cast continuations do not retain yields.
+    /// Production consumers cancel their own observation task; stream termination
+    /// removes that consumer's multi-cast entry without finishing siblings.
     ///
     /// - SeeAlso: ``makeEventsStreamWithReplay()``, ``events``, ``PlayerEventSubscriber``.
     func cancelReplayForwarding() {
-        replayForwardingTask?.cancel()
-        replayForwardingTask = nil
+        for task in replayForwardingTasks.values {
+            task.cancel()
+        }
+        replayForwardingTasks.removeAll()
+        for continuation in additionalEventContinuations.values {
+            continuation.finish()
+        }
+        additionalEventContinuations.removeAll()
     }
 
     public func makeEventsStreamWithReplay() async -> AsyncStream<PlayerEvent> {
-        cancelReplayForwarding()
-
         let (stream, continuation) = AsyncStream.makeStream(of: PlayerEvent.self)
 
         // Replay current state as the events that would have produced it.
@@ -948,20 +978,26 @@ actor SharedPlayerManager {
         continuation.yield(.metadataDidUpdate(state.streamMetadata))
         continuation.yield(.persistedWidgetStateDidUpdate)
 
-        // Forward every future live event from the primary stream.
-        // The forwarding task lives for the lifetime of this per-subscriber
-        // stream (or until the process ends). Yields to a finished continuation
-        // are ignored by AsyncStream.
-        //
-        // Materialize the shared live stream while already actor-isolated so the
-        // forwarding task does not need a second actor hop before subscribing.
-        let liveEvents = await events
-        replayForwardingTask = Task {
-            for await event in liveEvents {
+        // Independent multi-cast live feed — does not take the primary ``events`` iterator.
+        // Multiple replay consumers (main chrome, PlayerEventSubscriber, tests) may attach
+        // concurrently; each registers its own continuation and forwarding task.
+        let subscriptionID = UUID()
+        let (liveFeed, liveContinuation) = AsyncStream.makeStream(of: PlayerEvent.self)
+        additionalEventContinuations[subscriptionID] = liveContinuation
+
+        let forwardTask = Task {
+            for await event in liveFeed {
                 if Task.isCancelled { break }
                 continuation.yield(event)
             }
             continuation.finish()
+        }
+        replayForwardingTasks[subscriptionID] = forwardTask
+
+        continuation.onTermination = { @Sendable [subscriptionID] _ in
+            Task {
+                await SharedPlayerManager.shared._removeReplaySubscription(subscriptionID)
+            }
         }
 
         // Allow the forwarding task to reach its first suspended `for await` before
@@ -971,6 +1007,21 @@ actor SharedPlayerManager {
         try? await Task.sleep(for: .milliseconds(50))
 
         return stream
+    }
+
+    /// Tears down one multi-cast replay subscription (forwarding task + live continuation).
+    ///
+    /// Invoked from the per-stream ``AsyncStream`` termination handler when a consumer
+    /// cancels its iterator, and from ``cancelReplayForwarding()`` for bulk isolation.
+    ///
+    /// - Parameter id: Subscription key created by ``makeEventsStreamWithReplay()``.
+    /// - SeeAlso: ``makeEventsStreamWithReplay()``, ``cancelReplayForwarding()``.
+    internal func _removeReplaySubscription(_ id: UUID) {
+        replayForwardingTasks[id]?.cancel()
+        replayForwardingTasks.removeValue(forKey: id)
+        if let liveContinuation = additionalEventContinuations.removeValue(forKey: id) {
+            liveContinuation.finish()
+        }
     }
 
     // MARK: - Computed Properties (nonisolated safe access)

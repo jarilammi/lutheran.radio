@@ -84,7 +84,7 @@ Never derive presentation inside leaf view `body` for the three canonical surfac
   - `RadioLiveActivityManager.handleAppWillTerminate()` **sweeps all** system-held Live Activities (not only the local `currentActivity` ref), pushes a final coherent `.userPaused` ContentState that **preserves last-known language chrome** (and program metadata when available), ends with `.immediate` dismissal, and **waits** (bounded run-loop pump + detached ActivityKit work) so process death cannot race an unfinished unstructured `Task`.
   - `WidgetRefreshManager.cancelPendingRefresh()` drops in-flight debounced work.
   - While the main process is alive, ``WidgetRefreshManager`` also identity-coalesces identical connecting / sticky chrome (`shouldCoalesceIdenticalNonPlayingRefresh`) so attach-path and dual-path storms do not spam `reloadTimelines` for unchanged language/visual. Language changes always reload; stale debounced targets that regress a newer snapshot are discarded (`refreshWouldRegressPersistedSnapshot`).
-  - **Home soft-resume refresh authority:** Event-path Connecting (``.prePlay``) is **not** immediate (`refreshUsesImmediateDelivery`); it defers behind the ``.prePlay`` → ``.playing`` coalesce window so same-stream soft-resume schedules a single authoritative ``.playing`` home reload instead of painting Connecting after audio is already live. Sticky pause/lock and ``.cleared`` remain immediate. Independently, ``setUserIntentToPlay`` / play connecting chrome skip when ``DirectStreamingPlayer/PlaybackAttachState/canSoftResumeSameStream`` is true so gapless resume retains sticky visual until engine ``setPlaying()`` (no intermediate Connecting stamp). True attach / stream-switch still get Connecting until audible start. Dual-path architecture and privacy write suppression are unchanged.
+  - **Home soft-resume refresh authority:** Event-path Connecting (``.prePlay``) is **not** immediate (`refreshUsesImmediateDelivery`); it defers behind the ``.prePlay`` → ``.playing`` coalesce window so same-stream soft-resume schedules a single authoritative ``.playing`` home reload instead of painting Connecting after audio is already live. Sticky pause/lock and ``.cleared`` remain immediate. Independently, ``setUserIntentToPlay`` / play connecting chrome skip when ``DirectStreamingPlayer/PlaybackAttachState/canSoftResumeSameStream`` is true so gapless resume retains sticky visual until engine ``setPlaying()`` (no intermediate Connecting stamp). True attach / stream-switch still get Connecting until audible start. Dual-path architecture and privacy write suppression are unchanged. **Main-app in-process chrome** follows the same soft-resume intermediate and paints from visual SSOT (see **Main-App Chrome Authority** below) — orthogonal to WidgetKit reload timing.
   - Attach-path status / label saves identity-skip sticky Connecting snapshot re-persists (`shouldSkipForceWidgetSaveOnStableStatus`, `shouldSkipIdenticalStickyConnectingSnapshotWrite`) so `readyToPlay` wait storms do not re-emit ``.persistedWidgetStateDidUpdate`` for unchanged language + ``.prePlay``.
 - **After force-quit** (notification not delivered): no further main-process saves or `reloadTimelines` occur. The 60 s window is the worst-case staleness for the heuristic; after that widgets naturally render passive. The snapshot (`PersistedWidgetState`) is deliberately left behind (last-known visual + language + metadata). Any Live Activity residual is **reaped on next cold launch** by `RadioLiveActivityManager.observeExistingActivities()` (final paused frame + immediate end — never re-adopted as interactive `.playing` without a live engine). When deferred observe finds this-process ``currentActivity`` already set (start raced ahead of post-init yield), full ``endActivity`` is not used for the owned surface; **sibling** system residuals (other activity ids) are still ended so ownership cannot leave a second residual interactive.
 - **Passive presentation**:
@@ -199,6 +199,50 @@ The fallback timer is retained for the rare situation where normal event deliver
 
 See `RadioLiveActivityManager.swift` (class docs, ``updateCurrentActivity()``, ``lastPushedContent``, ``beginObservingActivityEvents(_:)``, ``activityObservationTask``, `startLocalUpdateTimer`) and the call sites in `SharedPlayerManager` (set* methods + `didUpdateStreamMetadata`) and `RadioPlayerCoordinator`.
 
+## Main-App Chrome Authority (In-Process, Not WidgetKit)
+
+Home widgets and Live Activities derive chrome from snapshots / ContentState. The **main app** play/pause control and status pill are in-process UI owned by ``RadioPlayerCoordinator``. They share the same SPM visual SSOT and soft-resume intermediate as widgets, but paint through a dual-path discipline that must not invent a second visual authority.
+
+### Dual-path ownership
+
+| Path | Role | Entry |
+|------|------|--------|
+| **Visual SSOT (primary)** | Durable paint after SPM mutations (`setPlaying`, pause, stop, policy) | ``RadioPlayerCoordinator/beginObservingVisualStateForChrome()`` multi-cast-observes ``makeEventsStreamWithReplay()`` and applies ``updateUI(for:)`` on ``PlayerEvent/visualStateDidChange`` — **no** second engine status emission required |
+| **Status adapter (demoted)** | Error / unavailable / SSL / no-internet side effects + optional **one-frame race lead** when the engine reports audible before the actor visual is visible | ``handleStatusChange(_:reasonKey:)`` → pure ``RadioPlayerChromeVisualResolver`` → ``updateUI`` only when ``shouldApplyStatusPathChromePaint`` allows |
+
+Both paths share ``updateUI(for:)`` dedupe (`lastAppliedVisualState`). Observation is **non-forcing**: it never mutates SPM, never calls `play()`/`stop()`, and never bypasses privacy write suppression. ``PlayerEventSubscriber`` (``RadioPlayerView``) remains UI-only counters — not a second paint owner.
+
+### Soft-resume hold contract
+
+Same-stream soft-resume (`canSoftResumeSameStream`) intentionally **skips** stamping Connecting (``.prePlay``) and retains residual sticky visual until engine ``setPlaying()``:
+
+| Phase | SPM visual | Intent | Main chrome |
+|-------|------------|--------|-------------|
+| Sticky pause | `.userPaused` | sticky pause | Grey pause |
+| Explicit play, soft-resume eligible | residual `.userPaused` (held) | active play | May briefly remain grey (honest intermediate) |
+| Engine rate kick + ``setPlaying()`` | `.playing` | active play | **Must** settle playing (green / pause control) via SSOT observation |
+| Status race before actor hop | residual hold | active | Pure policy may promote one frame when audible report / engine is audible |
+
+**Sticky pause freeze is intent-gated:** late `status_playing` cannot resurrect green while intent still wants pause. Residual `.userPaused` **visual** alone under active play intent is soft-resume hold promote, not sticky freeze.
+
+**Must not:** Invent `.playing` during silent attach or stream-switch hold; reintroduce Connecting stamp on soft-resume “to fix grey”; treat status as long-term visual SSOT.
+
+### Pure policy (status-path mapping)
+
+``RadioPlayerChromeVisualResolver`` is the sole pure table for status-path chrome proposals (privacy clear, sticky vs soft-resume promote, Connecting race, switch hold, security/thermal). Full table and supersession gate live on the type in `RadioPlayerCoordinator+StatusDistribution.swift`.
+
+### Relationship to other surfaces
+
+| Surface | Soft-resume / audible-start paint |
+|---------|-----------------------------------|
+| Home widget | Connecting skip + event-path coalesce (this doc, termination section) |
+| Main app | Primary: ``visualStateDidChange`` → ``updateUI``; status race lead only (this section) |
+| Live Activity | ``setPlaying`` → settled playing acceptance + soft ensure; **not** main-app status resolver — see [`docs/Live-Activity-Stacking-and-Media-Surfaces.md`](Live-Activity-Stacking-and-Media-Surfaces.md) “Connecting Chrome vs Audible Start” |
+
+**SeeAlso:** ``RadioPlayerCoordinator/beginObservingVisualStateForChrome()``, ``RadioPlayerCoordinator/handleStatusChange(_:reasonKey:)``, ``RadioPlayerChromeVisualResolver``, ``SharedPlayerManager/setPlaying()``, ``SharedPlayerManager/makeEventsStreamWithReplay()``, [`docs/Event-Driven-Refactor-Roadmap.md`](Event-Driven-Refactor-Roadmap.md) (main-app chrome consumer), [`docs/Live-Activity-Stacking-and-Media-Surfaces.md`](Live-Activity-Stacking-and-Media-Surfaces.md), `Lutheran RadioTests/RadioPlayerChromeVisualResolverTests.swift`.
+
+---
+
 ## Media Surface Coordination & Lock Screen Stacking
 
 System Now Playing, Live Activities, and widgets are three independent iOS surfaces with intentional coexistence. When both Now Playing and a Live Activity are active, iOS stacks both cards on the Lock Screen — expected platform behavior, not a defect.
@@ -234,13 +278,19 @@ Full stacking matrix, push-cost analysis, and QA scenarios: [`docs/Live-Activity
 - `LutheranRadioWidgetControl.swift` — Control widget `Value` + toggle (same derivation path as home widgets).
 - `SharedPlayerManager.swift` — `PersistedWidgetState`, `isMainAppProcessRecentlyActive`, `forceStaleLivenessTimestampForTermination`, `bumpWidgetLivenessTimestamp`.
 - `RadioLiveActivityManager.swift`, `WidgetRefreshManager.swift`, `AppDelegate.swift`, `SceneDelegate.swift`.
+- `RadioPlayerCoordinator+StatusDistribution.swift` — main-app chrome dual path: ``beginObservingVisualStateForChrome()`` (primary SSOT paint), ``handleStatusChange`` (demoted adapter), pure ``RadioPlayerChromeVisualResolver`` (soft-resume hold promote, sticky pause, Connecting race, supersession gate).
 - `CODING_AGENT.md` — Documentation & Comment Standards, Single Source of Truth Principles, cross-target shared files.
 - [`docs/Widget-Functionality-Roadmap.md`](Widget-Functionality-Roadmap.md) — widget backlog, test coverage, `WidgetSurface` coordinator status.
+- [`docs/Event-Driven-Refactor-Roadmap.md`](Event-Driven-Refactor-Roadmap.md) — non-forcing `PlayerEvent` consumers including main-app chrome observation.
+- [`docs/Live-Activity-Stacking-and-Media-Surfaces.md`](Live-Activity-Stacking-and-Media-Surfaces.md) — Connecting-until-audible, soft-resume publish, LA settled acceptance (orthogonal to main chrome status adapter).
 
 All user-visible strings use `String(localized: "...", table: "Localizable")`.
 
 ## See Also
 
-- `README.md` (Single Sources of Truth section)
+- `README.md` (Single Sources of Truth section — event-driven consumers + presentation surfaces)
 - [`docs/Widget-Functionality-Roadmap.md`](Widget-Functionality-Roadmap.md)
+- [`docs/Event-Driven-Refactor-Roadmap.md`](Event-Driven-Refactor-Roadmap.md) (main-app chrome consumer; multi-cast replay)
+- [`docs/Live-Activity-Stacking-and-Media-Surfaces.md`](Live-Activity-Stacking-and-Media-Surfaces.md) (Connecting vs audible start; soft-resume / setPlaying surfaces)
+- ``RadioPlayerCoordinator/beginObservingVisualStateForChrome()``, ``RadioPlayerChromeVisualResolver``
 - `<doc:Architecture>` (in the Core DocC catalog)
