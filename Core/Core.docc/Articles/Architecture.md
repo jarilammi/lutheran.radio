@@ -48,7 +48,7 @@ A plain `struct` (value type) that exposes only the minimal public surface requi
 - `requiresDNSSECValidationForStreaming` + `makeSecureEphemeralConfiguration()` / `applySecureNetworkingRequirements(to:)` (the single place that turns on `URLSessionConfiguration.requiresDNSSECValidation` and related hardening for streaming hosts)
 - `current` (the canonical instance)
 
-DNS TXT allow-list hosts (`securityModelDomains`) remain an **independent** ordered list (`securitymodels.siikkari.net` primary, then `securitymodels.lutheran.radio`, then `securitymodels.lutheranradio.sk`) and are not assumed to share apexes with media preference.
+DNS TXT allow-list hosts (`securityModelDomains`) remain an **independent** ordered list (`securitymodels.siikkari.net` primary, then `securitymodels.lutheranradio.eu`, then `securitymodels.lutheranradio.sk`) and are not assumed to share apexes with media preference.
 
 All other properties are internal by design. The struct is deliberately not an actor because it contains only immutable policy after initialization.
 

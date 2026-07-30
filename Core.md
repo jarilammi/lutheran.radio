@@ -17,7 +17,7 @@ The `Core` module is the central, isolated foundation of **lutheran.radio**. It 
 - Required security parameters — any deviation from these values is treated as a validation failure.
 
 ### SecurityModelValidator
-- Actor-isolated (plain `actor` with strict Swift 6 concurrency, not `@MainActor`) responsible for DNS TXT record validation against the ordered list of security model domains (`securitymodels.siikkari.net` → `securitymodels.lutheran.radio` → `securitymodels.lutheranradio.sk`) with smart fallback on **transient** errors only.
+- Actor-isolated (plain `actor` with strict Swift 6 concurrency, not `@MainActor`) responsible for DNS TXT record validation against the ordered list of security model domains (`securitymodels.siikkari.net` → `securitymodels.lutheranradio.eu` → `securitymodels.lutheranradio.sk`) with smart fallback on **transient** errors only.
 - Handles caching (1-hour TTL), transient vs. permanent failures, and safe bridging for C callbacks.
 - Used by `DirectStreamingPlayer` and other components instead of scattered local security state.
 

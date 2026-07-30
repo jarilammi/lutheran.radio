@@ -28,7 +28,7 @@
 //    livestream.siikkari.net and language hosts are the sole data plane.
 //  - securityModelDomains remains an independent ordered list for DNS TXT allow-list
 //    queries (`securitymodels.siikkari.net` primary, then
-//    `securitymodels.lutheran.radio`, then `securitymodels.lutheranradio.sk` backup).
+//    `securitymodels.lutheranradio.eu`, then `securitymodels.lutheranradio.sk` backup).
 //    Transient DNS failures advance the list (existing validator policy). Streaming
 //    apex and TXT query hosts are separate SSOTs — do not assume they share apexes.
 //
@@ -57,21 +57,23 @@ public struct SecurityConfiguration: Sendable {
     /// Primary domain queried for TXT record containing valid models (comma-separated).
     ///
     /// First entry in ``securityModelDomains``. Aligns with the media apex brand
-    /// (`siikkari.net`). Until this zone publishes a live TXT allow-list, DNS-SD
-    /// failure / no-record responses remain **transient** and
-    /// ``SecurityModelValidator`` continues down ``securityModelDomains`` without
-    /// any change to permanent-vs-transient semantics.
+    /// (`siikkari.net`). Live production allow-list is published here (DNSSEC-signed
+    /// TXT + RRSIG). Transient DNS-SD failure / no-record responses still advance
+    /// ``SecurityModelValidator`` down ``securityModelDomains`` without changing
+    /// permanent-vs-transient semantics.
     ///
     /// Independent of ``preferredStreamingDomainSuffixes`` (media hosts vs TXT hosts
     /// are separate SSOTs even when both use the siikkari brand).
     let primarySecurityModelDomain: String = "securitymodels.siikkari.net"
     
-    /// Secondary DNS TXT host (established production allow-list).
+    /// Secondary DNS TXT host (transient-only redundancy).
     ///
     /// Queried on **transient** failure of the primary only (existing validator
-    /// policy — no permanent failure falls through). Currently the operational
-    /// source of truth until `securitymodels.siikkari.net` is fully populated.
-    let secondarySecurityModelDomain: String = "securitymodels.lutheran.radio"
+    /// policy — no permanent failure falls through). Mirrors the primary allow-list
+    /// for resilience across apexes. Replaced former secondary
+    /// `securitymodels.lutheran.radio` after the allow-list published on
+    /// `lutheranradio.eu` (DNSSEC-signed TXT + RRSIG).
+    let secondarySecurityModelDomain: String = "securitymodels.lutheranradio.eu"
     
     /// Final backup domain for redundancy (different TLD / apex).
     ///
@@ -110,7 +112,7 @@ public struct SecurityConfiguration: Sendable {
     /// explicit preference without call-site rewrites. Today there is **no** media
     /// fallback to `lutheran.radio` — that apex is not used for streaming in this
     /// binary. DNS TXT allow-list hosts stay on ``securityModelDomains`` (still
-    /// `securitymodels.lutheran.radio` / `.lutheranradio.sk`) and are unrelated.
+    /// `securitymodels.lutheranradio.eu` / `.lutheranradio.sk`) and are unrelated.
     ///
     /// **Security Invariant:** Host matching for DNSSEC session policy
     /// (``hostRequiresDNSSECValidation(_:)`` / ``isProtectedStreamingHost(_:)``)
@@ -333,17 +335,17 @@ public struct SecurityConfiguration: Sendable {
     ///
     /// After this date: strict runtime pinning enforcement (no ATS leniency on pin mismatch).
     /// Must stay in sync with the current preferred-apex certificate expiry
-    /// (`*.siikkari.net` → 2027-01-22 22:41:27 GMT until the next rotation).
+    /// (`*.siikkari.net` → 2027-02-10 23:59:59 GMT until the next rotation).
     ///
     /// - SeeAlso: ``transitionWindowStart``, ``isInTransitionWindow``
     let transitionWindowEnd: Date = {
         var components = DateComponents(calendar: .current, timeZone: .gmt)
         components.year   = 2027
-        components.month  = 1
-        components.day    = 22
-        components.hour   = 12
-        components.minute = 41
-        components.second = 27
+        components.month  = 2
+        components.day    = 10
+        components.hour   = 23
+        components.minute = 59
+        components.second = 59
         return Calendar.current.date(from: components) ?? Date.distantPast
     }()
     

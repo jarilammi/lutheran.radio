@@ -32,7 +32,7 @@ private final class QueryContext: @unchecked Sendable {
 /// `SecurityModelValidator` is the **single source of truth** for determining whether
 /// the current app build is permitted to stream content. It queries DNS TXT records
 /// in ``SecurityConfiguration/securityModelDomains`` order (today:
-/// `securitymodels.siikkari.net` → `securitymodels.lutheran.radio` →
+/// `securitymodels.siikkari.net` → `securitymodels.lutheranradio.eu` →
 /// `securitymodels.lutheranradio.sk`) and requires that
 /// ``SecurityConfiguration/expectedSecurityModel`` appears in the response.
 ///

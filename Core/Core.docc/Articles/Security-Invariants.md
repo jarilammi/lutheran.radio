@@ -14,7 +14,7 @@ This document defines the **required security invariants** of the Lutheran Radio
 
 ## Invariant 1: Security Model Validation (DNS TXT)
 
-- The app **must** successfully validate that its embedded `expectedSecurityModel` appears in the comma-separated TXT record returned by a host in ``SecurityConfiguration/securityModelDomains`` (ordered: `securitymodels.siikkari.net` → `securitymodels.lutheran.radio` → `securitymodels.lutheranradio.sk`) before any streaming is allowed.
+- The app **must** successfully validate that its embedded `expectedSecurityModel` appears in the comma-separated TXT record returned by a host in ``SecurityConfiguration/securityModelDomains`` (ordered: `securitymodels.siikkari.net` → `securitymodels.lutheranradio.eu` → `securitymodels.lutheranradio.sk`) before any streaming is allowed.
 - The query uses `kDNSServiceFlagsValidate`; the callback in ``SecurityModelValidator`` **requires** the validation bit in the returned flags before parsing or accepting rdata. Responses without successful DNSSEC validation are treated as transient failures (never trusted).
 - Validation is performed exclusively by ``SecurityModelValidator``.
 - **Ordered host walk** (``SecurityModelValidator`` / ``securityModelDomains`` — do not weaken):
@@ -67,10 +67,10 @@ All of the following values exist **only** inside ``SecurityConfiguration`` and 
 - `maxAllowedTimeSkew`
 - `modelCacheDuration` (DNS TXT success cache only — 1 hour)
 - `certificateValidationCacheDuration` (runtime pin-result cache — 10 minutes; never reuse `modelCacheDuration`)
-- DNS TXT host list (`securityModelDomains` — siikkari primary, lutheran.radio secondary, sk backup; independent of media preference)
+- DNS TXT host list (`securityModelDomains` — siikkari primary, lutheranradio.eu secondary, sk backup; independent of media preference)
 - Streaming media apex (`preferredStreamingDomainSuffixes` — sole apex `siikkari.net`; use ``streamingHostCandidates(leadingLabel:)`` for host construction)
 
-**Media vs TXT separation:** Production media uses only `siikkari.net` (`european` / `livestream` / language hosts). DNS TXT allow-list queries use ordered `securityModelDomains` (`securitymodels.siikkari.net` primary → `securitymodels.lutheran.radio` → `securitymodels.lutheranradio.sk`) and are **independent** of the media apex list. Preserve the four-point ordered host walk in Invariant 1 when reordering hosts. Retired `lutheran.radio` media hosts are not protected streaming hosts in this binary.
+**Media vs TXT separation:** Production media uses only `siikkari.net` (`european` / `livestream` / language hosts). DNS TXT allow-list queries use ordered `securityModelDomains` (`securitymodels.siikkari.net` primary → `securitymodels.lutheranradio.eu` → `securitymodels.lutheranradio.sk`) and are **independent** of the media apex list. Preserve the four-point ordered host walk in Invariant 1 when reordering hosts. Retired `lutheran.radio` media hosts are not protected streaming hosts in this binary.
 
 ## Invariant 6: No Bypass Paths
 

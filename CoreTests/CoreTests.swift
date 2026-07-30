@@ -56,11 +56,11 @@ struct CoreTests {
         // fallbacks (independent of media apex list construction).
         #expect(policy.securityModelDomains == [
             "securitymodels.siikkari.net",
-            "securitymodels.lutheran.radio",
+            "securitymodels.lutheranradio.eu",
             "securitymodels.lutheranradio.sk"
         ])
         #expect(policy.primarySecurityModelDomain == "securitymodels.siikkari.net")
-        #expect(policy.secondarySecurityModelDomain == "securitymodels.lutheran.radio")
+        #expect(policy.secondarySecurityModelDomain == "securitymodels.lutheranradio.eu")
         #expect(policy.backupSecurityModelDomain == "securitymodels.lutheranradio.sk")
     }
 

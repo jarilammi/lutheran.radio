@@ -157,7 +157,7 @@ struct SecurityModelValidatorTests {
             if domain.contains("siikkari.net") {
                 throw NSError(domain: "test.dns", code: -1001, userInfo: nil)
             }
-            if domain.contains("lutheran.radio") {
+            if domain.contains("lutheranradio.eu") {
                 return [testExpectedSecurityModel]
             }
             throw NSError(domain: "test.dns", code: -1001, userInfo: nil)
