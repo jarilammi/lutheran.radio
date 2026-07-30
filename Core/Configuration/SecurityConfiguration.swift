@@ -333,17 +333,17 @@ public struct SecurityConfiguration: Sendable {
     ///
     /// After this date: strict runtime pinning enforcement (no ATS leniency on pin mismatch).
     /// Must stay in sync with the current preferred-apex certificate expiry
-    /// (`*.siikkari.net` → 2027-02-10 23:59:59 GMT until the next rotation).
+    /// (`*.siikkari.net` → 2027-01-22 22:41:27 GMT until the next rotation).
     ///
     /// - SeeAlso: ``transitionWindowStart``, ``isInTransitionWindow``
     let transitionWindowEnd: Date = {
         var components = DateComponents(calendar: .current, timeZone: .gmt)
         components.year   = 2027
-        components.month  = 2
-        components.day    = 10
-        components.hour   = 23
-        components.minute = 59
-        components.second = 59
+        components.month  = 1
+        components.day    = 22
+        components.hour   = 12
+        components.minute = 41
+        components.second = 27
         return Calendar.current.date(from: components) ?? Date.distantPast
     }()
     
