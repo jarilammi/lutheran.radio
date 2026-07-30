@@ -308,6 +308,18 @@ extension WidgetRefreshManager {
         adaptiveInterval = 0.5
     }
 
+    /// Visual from the last executed refresh under debounce observation (``lastKnownState``).
+    ///
+    /// Used by sticky-pause honesty tests to assert no ``.playing`` execute after a sticky
+    /// ``.userPaused`` lock without reading WidgetCenter. `nil` when no refresh has executed
+    /// since the last timing reset.
+    ///
+    /// - SeeAlso: ``_test_resetRefreshTimingState()``, ``_test_setBypassUITestModeForDebounceObservation(_:)``.
+    @MainActor
+    func _test_lastKnownVisualState() -> PlayerVisualState? {
+        lastKnownState?.visualState
+    }
+
     /// Snapshot of refresh parameters derived by ``handlePlayerEvent(_:)`` for white-box tests.
     ///
     /// Compiled out of Release builds; zero production effect.

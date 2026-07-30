@@ -442,7 +442,8 @@ final class WidgetRefreshManager: @unchecked Sendable {
             from: visualState,
             currentLanguage: resolvedLanguage,
             hasError: hasError,
-            isTransitioning: false
+            isTransitioning: false,
+            isImmediateDelivery: immediate
         )
         
         if shouldCancelPendingDebounce(for: newState.visualState) {
@@ -631,25 +632,43 @@ final class WidgetRefreshManager: @unchecked Sendable {
     /// regressing target avoids a useless `reloadTimelines` that would re-read the newer
     /// snapshot and paint the same chrome again. Dual-path architecture is unchanged.
     ///
+    /// **Directionality (sticky pause vs lagging ``.playing``):**
+    /// - **Non-immediate** (adaptive debounce / delayed work): ``.userPaused`` / ``.thermalPaused``
+    ///   against persisted ``.playing`` is a regress — late pause lost the soft-resume race.
+    /// - **Immediate** (sticky pause / teardown urgency): same pair is **not** a regress —
+    ///   forward stop may still see a lagging session snapshot until the early sticky write
+    ///   (or authoritative save) lands. Discarding would drop the honest pause paint and
+    ///   allow a non-carried follow-up to reload ``.playing``.
+    ///
     /// - Parameters:
     ///   - requested: Visual the delayed/debounced work would load.
     ///   - persisted: Authoritative ``PersistedWidgetState/visualState`` at execute time.
+    ///   - isImmediate: `true` when the refresh bypassed adaptive debounce (sticky pause,
+    ///     teardown, permanent-error, language-change urgency, or explicit `immediate: true`).
     /// - Returns: `true` when the refresh must be discarded.
     /// - SeeAlso: ``performRefreshIfNotStale(for:)``,
-    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    ///   ``refreshUsesImmediateDelivery(for:hasError:)``,
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
+    ///   docs/Widget-Presentation-Dataflow.md (sticky pause home refresh authority).
     static func refreshWouldRegressPersistedSnapshot(
         executing requested: PlayerVisualState,
-        persisted: PlayerVisualState
+        persisted: PlayerVisualState,
+        isImmediate: Bool = false
     ) -> Bool {
         if requested == persisted { return false }
         switch persisted {
         case .playing:
-            // Intermediate connecting chrome after play accepted is stale.
-            // Sticky pause/thermal after resume-to-playing is also stale (debounced pause lost the race).
-            return requested == .prePlay
-                || requested == .cleared
-                || requested == .userPaused
-                || requested == .thermalPaused
+            // Intermediate connecting chrome after play accepted is always stale.
+            if requested == .prePlay || requested == .cleared {
+                return true
+            }
+            // Delayed sticky pause after soft-resume to playing is stale.
+            // Immediate sticky-pause / teardown urgency is a forward stop — do not discard
+            // solely because the session snapshot still lags on .playing.
+            if requested == .userPaused || requested == .thermalPaused {
+                return !isImmediate
+            }
+            return false
         case .userPaused, .thermalPaused:
             return requested == .prePlay || requested == .cleared || requested == .playing
         case .securityLocked:
@@ -664,9 +683,14 @@ final class WidgetRefreshManager: @unchecked Sendable {
     /// Returns true if executing `requested` would regress the persisted widget snapshot.
     private func refreshWouldRegress(
         executing requested: PlayerVisualState,
-        persisted: PlayerVisualState
+        persisted: PlayerVisualState,
+        isImmediate: Bool
     ) -> Bool {
-        Self.refreshWouldRegressPersistedSnapshot(executing: requested, persisted: persisted)
+        Self.refreshWouldRegressPersistedSnapshot(
+            executing: requested,
+            persisted: persisted,
+            isImmediate: isImmediate
+        )
     }
     
     private func cancelCoalescedPrePlayRefresh() {
@@ -715,7 +739,11 @@ final class WidgetRefreshManager: @unchecked Sendable {
     
     private func performRefreshIfNotStale(for state: WidgetState) async {
         if let combined = SharedPlayerManager.loadPersistedWidgetState(),
-           refreshWouldRegress(executing: state.visualState, persisted: combined.visualState) {
+           refreshWouldRegress(
+               executing: state.visualState,
+               persisted: combined.visualState,
+               isImmediate: state.isImmediateDelivery
+           ) {
             #if DEBUG
             print("[WidgetRefreshManager] Widget refresh discarded: stale debounced \(state.debugVisualStateLabel) vs persisted \(debugLabel(for: combined.visualState))")
             recordDebounceOutcome(.discardedStaleDebouncedRegress)
@@ -1027,12 +1055,17 @@ struct WidgetState {
     let isTransitioning: Bool
     let isThermalPaused: Bool
     let timestamp: Date
+    /// Whether this candidate bypassed adaptive debounce (sticky pause, teardown, error).
+    /// Carried into ``performRefreshIfNotStale`` so regress policy can distinguish forward
+    /// sticky pause from a late debounced pause that lost the soft-resume race.
+    let isImmediateDelivery: Bool
     
     /// Modern initializer — this is the only path now
     init(from visualState: PlayerVisualState,
          currentLanguage: String,
          hasError: Bool,
-         isTransitioning: Bool = false) {
+         isTransitioning: Bool = false,
+         isImmediateDelivery: Bool = false) {
         self.visualState     = visualState
         self.isPlaying       = visualState.isActivelyPlaying
         self.currentLanguage = currentLanguage
@@ -1040,6 +1073,7 @@ struct WidgetState {
         self.isTransitioning = isTransitioning
         self.isThermalPaused = (visualState == .thermalPaused)
         self.timestamp       = Date()
+        self.isImmediateDelivery = isImmediateDelivery
     }
     
     #if DEBUG

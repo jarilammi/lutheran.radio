@@ -1010,11 +1010,16 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
     }
 
     /// Pure policy: delayed intermediate chrome regresses against a more advanced snapshot;
-    /// matching visuals never regress.
+    /// matching visuals never regress. Sticky-pause regress is **directional**.
+    ///
+    /// - Non-immediate ``.userPaused`` vs persisted ``.playing`` is a regress (late pause lost
+    ///   soft-resume race).
+    /// - Immediate sticky-pause / teardown urgency against lagging ``.playing`` is **not** a
+    ///   regress (forward stop; session snapshot may lag until early sticky write).
     ///
     /// Stale debounced discards are intentional — timeline reload cannot invent snapshot fields.
     ///
-    /// - SeeAlso: ``WidgetRefreshManager/refreshWouldRegressPersistedSnapshot(executing:persisted:)``.
+    /// - SeeAlso: ``WidgetRefreshManager/refreshWouldRegressPersistedSnapshot(executing:persisted:isImmediate:)``.
     func testRefreshWouldRegressPersistedSnapshotPolicy() {
         XCTAssertFalse(
             WidgetRefreshManager.refreshWouldRegressPersistedSnapshot(
@@ -1029,12 +1034,46 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
             ),
             "Connecting chrome after play accepted is stale"
         )
+        // Reverse soft-resume race: delayed/non-immediate pause after play already persisted.
+        XCTAssertTrue(
+            WidgetRefreshManager.refreshWouldRegressPersistedSnapshot(
+                executing: .userPaused,
+                persisted: .playing,
+                isImmediate: false
+            ),
+            "Non-immediate pause after soft-resume to playing is stale"
+        )
         XCTAssertTrue(
             WidgetRefreshManager.refreshWouldRegressPersistedSnapshot(
                 executing: .userPaused,
                 persisted: .playing
             ),
-            "Debounced pause after soft-resume to playing is stale"
+            "Default (non-immediate) pause vs playing remains a regress for soft-resume safety"
+        )
+        // Forward sticky pause: immediate urgency must not discard solely because snapshot lags.
+        XCTAssertFalse(
+            WidgetRefreshManager.refreshWouldRegressPersistedSnapshot(
+                executing: .userPaused,
+                persisted: .playing,
+                isImmediate: true
+            ),
+            "Immediate sticky pause against lagging playing must execute (forward stop)"
+        )
+        XCTAssertFalse(
+            WidgetRefreshManager.refreshWouldRegressPersistedSnapshot(
+                executing: .thermalPaused,
+                persisted: .playing,
+                isImmediate: true
+            ),
+            "Immediate thermal pause against lagging playing must execute"
+        )
+        XCTAssertTrue(
+            WidgetRefreshManager.refreshWouldRegressPersistedSnapshot(
+                executing: .thermalPaused,
+                persisted: .playing,
+                isImmediate: false
+            ),
+            "Delayed thermal pause after playing is stale"
         )
         XCTAssertTrue(
             WidgetRefreshManager.refreshWouldRegressPersistedSnapshot(
@@ -1063,6 +1102,229 @@ final class WidgetRefreshManagerEventTests: XCTestCase {
                 persisted: .prePlay
             ),
             "Sticky pause may advance connecting chrome"
+        )
+    }
+
+    /// After sticky pause locks and the early sticky session snapshot is written, non-carried
+    /// ``streamDidStop`` must derive ``.userPaused`` — never lagging ``.playing``.
+    ///
+    /// - SeeAlso: ``SharedPlayerManager/persistEarlyStickyUserPausedSnapshotIfPrivacyAllows()``,
+    ///   ``WidgetRefreshManager/deriveRefreshParameters(for:)``.
+    func testDeriveStreamDidStopUsesStickyUserPausedAfterEarlyStickySnapshot() async {
+        WidgetRefreshManager.setHasActiveLutheranWidgets(true)
+        SharedPlayerManager.persistWidgetSnapshot(
+            visualState: .playing,
+            language: "de",
+            hasError: false
+        )
+        XCTAssertEqual(
+            SharedPlayerManager.loadPersistedWidgetState()?.visualState,
+            .playing,
+            "Precondition: session snapshot starts as playing"
+        )
+
+        await manager.setVisualState(.userPaused)
+        await manager.persistEarlyStickyUserPausedSnapshotIfPrivacyAllows()
+
+        XCTAssertEqual(
+            SharedPlayerManager.loadPersistedWidgetState()?.visualState,
+            .userPaused,
+            "Early sticky write must advance session snapshot before non-carried events"
+        )
+
+        let derived = refreshManager._test_deriveRefreshParameters(for: .streamDidStop)
+        XCTAssertEqual(
+            derived.visualState,
+            .userPaused,
+            "streamDidStop must not re-derive .playing after sticky snapshot"
+        )
+        XCTAssertEqual(derived.currentLanguage, "de")
+    }
+
+    /// Event-path sticky pause honesty: with lagging session snapshot still ``.playing``,
+    /// immediate ``.userPaused`` must execute (not discard); a later non-immediate pause
+    /// against advanced ``.playing`` must still discard (soft-resume reverse race).
+    ///
+    /// Simulates the dual refresh-authority edges without WidgetCenter IPC.
+    ///
+    /// - SeeAlso: ``refreshWouldRegressPersistedSnapshot(executing:persisted:isImmediate:)``,
+    ///   ``refreshIfNeeded(visualState:currentLanguage:hasError:immediate:trigger:)``.
+    func testImmediateStickyPauseExecutesAgainstLaggingPlayingSnapshot() async {
+        enableDebounceObservation()
+        WidgetRefreshManager.setHasActiveLutheranWidgets(true)
+
+        SharedPlayerManager.persistWidgetSnapshot(
+            visualState: .playing,
+            language: "fi",
+            hasError: false
+        )
+
+        // Forward stop: carried sticky visual is immediate (refreshUsesImmediateDelivery).
+        let immediate = refreshManager.refreshUsesImmediateDelivery(
+            for: .userPaused,
+            hasError: false
+        )
+        XCTAssertTrue(immediate, "Sticky pause must request immediate delivery")
+
+        refreshManager.refreshIfNeeded(
+            visualState: .userPaused,
+            currentLanguage: "fi",
+            hasError: false,
+            immediate: immediate,
+            trigger: .playerEvent
+        )
+
+        let executed = await waitForDebounceOutcome(.refreshExecuted, timeout: 1.0)
+        let log = WidgetRefreshManager._test_debounceOutcomeLog()
+        XCTAssertTrue(executed, "Immediate sticky pause must execute; log: \(log)")
+        XCTAssertFalse(
+            log.contains(.discardedStaleDebouncedRegress),
+            "Forward pause must not be discarded as stale vs lagging playing; log: \(log)"
+        )
+        XCTAssertEqual(
+            refreshManager._test_lastKnownVisualState(),
+            .userPaused,
+            "Executed home target must be sticky pause, not playing"
+        )
+    }
+
+    /// Soft-resume reverse race: non-immediate ``.userPaused`` after session snapshot advanced
+    /// to ``.playing`` must discard at execute time (must not reverse authoritative playing).
+    ///
+    /// - SeeAlso: ``refreshWouldRegressPersistedSnapshot(executing:persisted:isImmediate:)``.
+    func testDelayedUserPausedDiscardsWhenPersistedPlayingAfterSoftResume() async {
+        enableDebounceObservation()
+        WidgetRefreshManager.setHasActiveLutheranWidgets(true)
+
+        // Establish a prior refresh so adaptive debounce will schedule the late pause.
+        SharedPlayerManager.persistWidgetSnapshot(
+            visualState: .playing,
+            language: "sv",
+            hasError: false
+        )
+        refreshManager.refreshIfNeeded(
+            visualState: .playing,
+            currentLanguage: "sv",
+            hasError: false,
+            immediate: true,
+            trigger: .playerEvent
+        )
+        let playingExecuted = await waitForDebounceOutcome(.refreshExecuted, timeout: 1.0)
+        XCTAssertTrue(playingExecuted, "Precondition: playing refresh executes")
+        XCTAssertEqual(refreshManager._test_lastKnownVisualState(), .playing)
+
+        // Late non-immediate pause while disk still / again playing (soft-resume won).
+        refreshManager.refreshIfNeeded(
+            visualState: .userPaused,
+            currentLanguage: "sv",
+            hasError: false,
+            immediate: false,
+            trigger: .playerEvent
+        )
+        XCTAssertTrue(
+            WidgetRefreshManager._test_debounceOutcomeLog().contains(.scheduledAdaptiveDebounce),
+            "Non-immediate pause after recent refresh must schedule adaptive debounce"
+        )
+
+        let discarded = await waitForDebounceOutcome(
+            .discardedStaleDebouncedRegress,
+            timeout: 3.0
+        )
+        let log = WidgetRefreshManager._test_debounceOutcomeLog()
+        XCTAssertTrue(
+            discarded,
+            "Delayed pause must discard when persisted snapshot is playing; log: \(log)"
+        )
+        XCTAssertEqual(
+            refreshManager._test_lastKnownVisualState(),
+            .playing,
+            "Last executed visual must remain playing after discarded late pause"
+        )
+    }
+
+    /// Full forward-pause refresh sequence after early sticky snapshot: non-carried
+    /// ``streamDidStop`` and sticky carried visual never execute a ``.playing`` home target.
+    ///
+    /// - SeeAlso: ``persistEarlyStickyUserPausedSnapshotIfPrivacyAllows()``,
+    ///   ``deriveRefreshParameters(for:)``,
+    ///   ``refreshIfNeeded(visualState:currentLanguage:hasError:immediate:trigger:)``.
+    func testStopEventPathDoesNotExecutePlayingAfterStickyUserPausedLock() async {
+        enableDebounceObservation()
+        WidgetRefreshManager.setHasActiveLutheranWidgets(true)
+
+        SharedPlayerManager.persistWidgetSnapshot(
+            visualState: .playing,
+            language: "de",
+            hasError: false
+        )
+
+        // Memory + early sticky snapshot (production stop() order after sticky lock).
+        await manager.setVisualState(.userPaused)
+        await manager.persistEarlyStickyUserPausedSnapshotIfPrivacyAllows()
+        XCTAssertEqual(
+            SharedPlayerManager.loadPersistedWidgetState()?.visualState,
+            .userPaused
+        )
+
+        // Carried visualStateDidChange(.userPaused) — immediate.
+        refreshManager.refreshIfNeeded(
+            visualState: .userPaused,
+            currentLanguage: "de",
+            hasError: false,
+            immediate: true,
+            trigger: .playerEvent
+        )
+        _ = await waitForDebounceOutcome(.refreshExecuted, timeout: 1.0)
+
+        // Non-carried streamDidStop / playbackIntentChanged derive from session snapshot.
+        let stopDerived = refreshManager._test_deriveRefreshParameters(for: .streamDidStop)
+        let intentDerived = refreshManager._test_deriveRefreshParameters(
+            for: .playbackIntentChanged(.userPaused)
+        )
+        XCTAssertEqual(stopDerived.visualState, .userPaused)
+        XCTAssertEqual(intentDerived.visualState, .userPaused)
+
+        refreshManager.refreshIfNeeded(
+            visualState: stopDerived.visualState,
+            currentLanguage: stopDerived.currentLanguage,
+            hasError: stopDerived.hasError,
+            immediate: refreshManager.refreshUsesImmediateDelivery(
+                for: stopDerived.visualState,
+                hasError: stopDerived.hasError
+            ),
+            trigger: .playerEvent
+        )
+        // Identical sticky may identity-coalesce; either way last known must stay userPaused.
+        await Task.yield()
+        try? await Task.sleep(for: .milliseconds(150))
+
+        let log = WidgetRefreshManager._test_debounceOutcomeLog()
+        XCTAssertEqual(
+            refreshManager._test_lastKnownVisualState(),
+            .userPaused,
+            "Home execute target after sticky lock must settle on userPaused; log: \(log)"
+        )
+        XCTAssertNotEqual(
+            refreshManager._test_lastKnownVisualState(),
+            .playing,
+            "Must not leave playing as last execute after sticky lock; log: \(log)"
+        )
+    }
+
+    /// Privacy gate closed: early sticky snapshot must not create a session write.
+    ///
+    /// - SeeAlso: ``persistEarlyStickyUserPausedSnapshotIfPrivacyAllows()``.
+    func testEarlyStickyUserPausedSnapshotSuppressedWhenPrivacyGateClosed() async {
+        await SharedPlayerManager.clearAllLocalState()
+        WidgetRefreshManager.setHasActiveLutheranWidgets(false)
+        XCTAssertNil(SharedPlayerManager.loadPersistedWidgetState())
+
+        await manager.setVisualState(.userPaused)
+        await manager.persistEarlyStickyUserPausedSnapshotIfPrivacyAllows()
+
+        XCTAssertNil(
+            SharedPlayerManager.loadPersistedWidgetState(),
+            "Early sticky write must not create a session snapshot while privacy gate is closed"
         )
     }
 

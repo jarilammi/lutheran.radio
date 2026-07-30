@@ -798,12 +798,16 @@ extension SharedPlayerManager {
         // Record authoritative pause timestamp for recovery paths.
         // This lets wasRecentlyUserPaused() return correct answers without raw UD reads.
         lastUserPauseTimestamp = Date().timeIntervalSince1970
+
+        // Privacy-gated early sticky snapshot so home refresh sees .userPaused before
+        // deferred save (same race as ``stop()``).
+        persistEarlyStickyUserPausedSnapshotIfPrivacyAllows()
         
         // Emission after the state mutation (visual + intent). Authoritative for
         // streamDidPause. All save / notify paths remain exactly as before.
         emit(.streamDidPause)
         
-        // Persist the locked state
+        // Persist the locked state (may no-op when early sticky already wrote identical chrome)
         await saveCurrentState()
         
         #if LUTHERAN_MAIN_APP
@@ -812,6 +816,51 @@ extension SharedPlayerManager {
         
         #if DEBUG
         print("[SharedPlayerManager] Visual state locked to .userPaused")
+        #endif
+    }
+
+    /// Privacy-gated early sticky ``.userPaused`` session snapshot after memory lock.
+    ///
+    /// Home timeline refresh derives non-carried events (``streamDidStop``,
+    /// ``playbackIntentChanged``, ``streamDidPause``) from ``loadPersistedWidgetState()``.
+    /// Without this write, those events re-read lagging ``.playing`` while soft silence
+    /// still runs and the authoritative ``saveCurrentState()`` has not yet landed —
+    /// producing a brief home ``.playing`` flash after sticky pause is already locked.
+    ///
+    /// - Precondition: ``currentVisualState`` is already ``.userPaused`` (caller locked memory).
+    /// - Postcondition: When ``hasActiveWidgets`` (or widget-process bypass) allows writes,
+    ///   the in-process session snapshot visual is ``.userPaused`` and
+    ///   ``PlayerEvent/persistedWidgetStateDidUpdate`` may emit. When the privacy gate is
+    ///   closed, no snapshot write occurs (write suppression unchanged).
+    /// - Note: Reuses ``savePersistedWidgetState(visualState:language:streamMetadata:hasError:)``
+    ///   only — no parallel write path. Later ``saveCurrentState()`` may no-op via snapshot-
+    ///   unchanged skip when chrome is already aligned.
+    /// - SeeAlso: ``stop()``, ``setUserPaused()``, ``markAsUserPaused()``,
+    ///   ``WidgetRefreshManager/refreshWouldRegressPersistedSnapshot(executing:persisted:isImmediate:)``,
+    ///   ``WidgetRefreshManager/deriveRefreshParameters(for:)``,
+    ///   docs/Widget-Presentation-Dataflow.md (sticky pause home refresh authority).
+    internal func persistEarlyStickyUserPausedSnapshotIfPrivacyAllows() {
+        guard Self.hasActiveWidgets || Self.isWidgetProcess() else {
+            #if DEBUG
+            print("[SharedPlayerManager] Early sticky userPaused snapshot suppressed (no active widgets)")
+            #endif
+            return
+        }
+        let prior = Self.loadPersistedWidgetState()
+        let language: String
+        if let priorLanguage = prior?.currentLanguage, !priorLanguage.isEmpty {
+            language = priorLanguage
+        } else {
+            language = Self.preferredWidgetLanguage()
+        }
+        let hasError = prior?.hasError ?? false
+        savePersistedWidgetState(
+            visualState: .userPaused,
+            language: language,
+            hasError: hasError
+        )
+        #if DEBUG
+        print("[SharedPlayerManager] Early sticky userPaused session snapshot written (home refresh authority)")
         #endif
     }
     
@@ -843,18 +892,21 @@ extension SharedPlayerManager {
     ///   ownership path (suppresses when optimistic content already matches).
     ///
     /// - Postcondition: visual + intent forced to `.userPaused`, timestamp recorded,
+    ///   privacy-gated early sticky session snapshot written when widgets are active,
     ///   durable LA toggle mirror = `.userPaused`, main-app optimistic LA ContentState pushed,
     ///   engine soft silence awaited (main), authoritative ``saveCurrentState()``
-    ///   performed (privacy-gated), surfaces notified once after silence, and
-    ///   `streamDidStop` emitted.
+    ///   performed (privacy-gated; may no-op when early sticky already matched), surfaces
+    ///   notified once after silence, and `streamDidStop` emitted.
     ///
     /// - SeeAlso: ``setUserPaused()``, ``markAsUserPaused()``, ``emit(_:)``,
+    ///   ``persistEarlyStickyUserPausedSnapshotIfPrivacyAllows()``,
     ///   `PlayerEvent.streamDidStop`,
     ///   `DirectStreamingPlayer.stopAndWait(reason:silent:applyUserPauseVisualLock:)`,
     ///   ``persistLiveActivityToggleVisualStateMirror(_:)``,
     ///   ``WidgetIntentExecution/pushOptimisticLiveActivityToggleContent(visualState:)``,
     ///   ``canProceedWithPlayback()``, CODING_AGENT.md (resurrection protection, SSOT stop path),
-    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md.
+    ///   docs/Live-Activity-Stacking-and-Media-Surfaces.md,
+    ///   docs/Widget-Presentation-Dataflow.md (sticky pause home refresh authority).
     ///
     /// AGENT NOTE: `.streamDidStop` is emitted here after the immediate mutation
     /// because `stop()` is the public authoritative stop entry. Widget vs main paths
@@ -875,7 +927,6 @@ extension SharedPlayerManager {
 
         // Note: Lock .userPaused IMMEDIATELY at the very top
         // This closes the race window that causes resurrection after pause.
-        // Authoritative cross-process snapshot is written later via saveCurrentState().
         applyVisualState(.userPaused)
 
         updatePlaybackIntent(to: .userPaused)
@@ -883,7 +934,13 @@ extension SharedPlayerManager {
         // Record authoritative pause timestamp (used by recovery query).
         lastUserPauseTimestamp = Date().timeIntervalSince1970
 
-        // Emission of streamDidStop after the core mutation (visual + intent).
+        // Early sticky session snapshot (privacy-gated) so home refresh derivation and
+        // regress checks see .userPaused before soft silence / deferred saveCurrentState.
+        // Without this, non-carried streamDidStop / playbackIntentChanged re-read lagging
+        // .playing and can execute a home playing flash after sticky pause is locked.
+        persistEarlyStickyUserPausedSnapshotIfPrivacyAllows()
+
+        // Emission of streamDidStop after the core mutation (visual + intent + early snapshot).
         // Distinguishes terminal stop from transient pause for future observers.
         // Additive only.
         emit(.streamDidStop)
@@ -1235,6 +1292,10 @@ extension SharedPlayerManager {
         
         // Record authoritative pause timestamp.
         lastUserPauseTimestamp = Date().timeIntervalSince1970
+
+        // Privacy-gated early sticky snapshot so home refresh sees .userPaused before
+        // deferred save (same race as ``stop()``).
+        persistEarlyStickyUserPausedSnapshotIfPrivacyAllows()
         
         // Emission after state mutation. Authoritative emitter site for pause.
         // Additive: saveCurrentState + NowPlaying + LA paths are unaltered.
