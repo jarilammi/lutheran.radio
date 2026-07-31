@@ -1385,8 +1385,10 @@ actor SharedPlayerManager {
         // Main app never owns widget intent execution; WidgetKit env covers Xcode previews only.
         return ProcessInfo.processInfo.environment["WidgetKit"] != nil
         #else
-        // Widget / Live Activity extension — bundle is radio.lutheran.Lutheran-Radio.LutheranRadioWidget
-        // (no ".widget" suffix), and App Intent perform() does not set WidgetKit env.
+        // Widget / Live Activity extension — PRODUCT_BUNDLE_IDENTIFIER is
+        // radio.lutheran.LutheranRadio.LutheranRadioWidget (matches App Store main app
+        // radio.lutheran.LutheranRadio; no ".widget" suffix). App Intent perform() does
+        // not set WidgetKit env, so this compile-path return is the process detector.
         return true
         #endif
     }
